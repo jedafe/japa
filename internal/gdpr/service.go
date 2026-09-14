@@ -251,8 +251,8 @@ func (s *Service) RequestDataExport(ctx context.Context, tenantID, userID pgtype
 	// Enqueue background job.
 	payload, marshalErr := json.Marshal(map[string]any{
 		"request_id": request.ID.String(),
-		"tenant_id":  tenantID.String(),
-		"user_id":    userID.String(),
+
+		"user_id": userID.String(),
 	})
 	if marshalErr == nil {
 		if err := s.enqueuer.Enqueue(worker.TypeDataExport, payload); err != nil {
@@ -480,8 +480,8 @@ func (s *Service) RequestAccountDeletion(ctx context.Context, tenantID, userID p
 	// Enqueue background job.
 	payload, marshalErr := json.Marshal(map[string]any{
 		"request_id": request.ID.String(),
-		"tenant_id":  tenantID.String(),
-		"user_id":    userID.String(),
+
+		"user_id": userID.String(),
 	})
 	if marshalErr == nil {
 		if err := s.enqueuer.Enqueue(worker.TypeAccountDeletionCleanup, payload); err != nil {
@@ -1965,8 +1965,8 @@ func (s *Service) enqueueSearchIndexDelete(tenantID, entityID pgtype.UUID, entit
 	payload, _ := json.Marshal(map[string]string{
 		"entity_id":   entityID.String(),
 		"entity_type": entityType,
-		"tenant_id":   tenantID.String(),
-		"operation":   "delete",
+
+		"operation": "delete",
 	})
 	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
 		slog.Warn("gdpr: failed to enqueue search:index_entity delete", "entity_id", entityID.String(), "entity_type", entityType, "error", err)
@@ -2199,8 +2199,8 @@ type UserDataExport struct {
 func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.UUID) (*UserDataExport, error) {
 	export := &UserDataExport{
 		ExportMetadata: map[string]interface{}{
-			"user_id":   userID.String(),
-			"tenant_id": tenantID.String(),
+			"user_id": userID.String(),
+
 			"generated": time.Now().UTC().Format(time.RFC3339),
 			"version":   "1.0",
 			"platform":  s.siteName,
@@ -2955,8 +2955,8 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 			}
 
 			m := map[string]interface{}{
-				"id":                   id.String(),
-				"tenant_id":            tenantID2.String(),
+				"id": id.String(),
+
 				"user_id":              userID2.String(),
 				"destination_space_id": destSpaceID.String(),
 				"input_text":           inputText,

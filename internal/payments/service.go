@@ -385,8 +385,8 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 	// instead of scanning all pending payments (BUG-002 / BUG-019).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]string{
-			"event_id":     event.EventID,
-			"tenant_id":    tenantID.String(),
+			"event_id": event.EventID,
+
 			"status":       status,
 			"provider_ref": event.ProviderRef,
 			"provider":     provider,
@@ -774,8 +774,8 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 		}
 
 		payload, _ := json.Marshal(map[string]string{
-			"event_id":     "admin_refund:" + refund.ID.String(),
-			"tenant_id":    input.TenantID.String(),
+			"event_id": "admin_refund:" + refund.ID.String(),
+
 			"status":       PaymentStatusRefunded,
 			"provider_ref": providerRefStr,
 			"provider":     updated.Provider,

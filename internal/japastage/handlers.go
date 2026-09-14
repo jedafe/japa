@@ -330,8 +330,8 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	// duplicate PATCH within the same minute does not double-dispatch.
 	if h.asynqClient != nil {
 		payload, _ := json.Marshal(map[string]any{
-			"user_id":              user.UserID.String(),
-			"tenant_id":            tenantID.String(),
+			"user_id": user.UserID.String(),
+
 			"stage":                input.Stage,
 			"destination_space_id": input.DestSpaceID,
 		})

@@ -863,10 +863,10 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 		completionPoints := s.settings.GetIntOr(ctx, "scholarship_finder.completion_points", 10)
 		if completionPoints > 0 {
 			payload, _ := json.Marshal(map[string]interface{}{
-				"tenant_id": tenantID.String(),
-				"user_id":   userID.String(),
-				"amount":    completionPoints,
-				"reason":    "scholarship_saved",
+
+				"user_id": userID.String(),
+				"amount":  completionPoints,
+				"reason":  "scholarship_saved",
 			})
 			if err := s.enqueuer.Enqueue(TaskAwardPoints, payload); err != nil {
 				slog.Warn("scholarships: enqueue award points failed", "error", err)

@@ -83,8 +83,8 @@ func main() {
 	for _, item := range items {
 		// Fan-out type "followers": distribute to author's followers.
 		payload, err := json.Marshal(map[string]string{
-			"content_id":   item.ContentID.String(),
-			"tenant_id":    item.TenantID.String(),
+			"content_id": item.ContentID.String(),
+
 			"author_id":    item.AuthorID.String(),
 			"space_id":     pgtype.UUID{}.String(), // zero UUID — no space assignment
 			"content_type": item.ContentType,

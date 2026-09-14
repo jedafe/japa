@@ -206,7 +206,6 @@ func (s *Service) CreateExport(ctx context.Context, tenantID, userID pgtype.UUID
 	// Enqueue background task (fire-and-forget, Rule 8).
 	payload, _ := json.Marshal(map[string]string{
 		"export_id": exp.ID.String(),
-		"tenant_id": tenantID.String(),
 	})
 	if err := s.enqueuer.Enqueue("platform:data_export", payload); err != nil {
 		slog.Error("dataexport: enqueue failed", "error", err)

@@ -1110,8 +1110,8 @@ func (s *Service) enqueueGenerateEmbedding(ctx context.Context, tenantID, userID
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"tenant_id": tenantID.String(),
-		"user_id":   userID.String(),
+
+		"user_id": userID.String(),
 	})
 	if err != nil {
 		slog.Warn("mentorship: marshal embedding task payload", "error", err)
@@ -1133,8 +1133,8 @@ func (s *Service) enqueueUpdateMeilisearch(ctx context.Context, tenantID, mentor
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"tenant_id": tenantID.String(),
-		"user_id":   mentorID.String(),
+
+		"user_id": mentorID.String(),
 	})
 	if err != nil {
 		slog.Warn("mentorship: marshal meilisearch task payload", "error", err)

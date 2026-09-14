@@ -74,8 +74,8 @@ func (h *Handlers) enqueueSearchIndex(operation string, entityID, tenantID pgtyp
 	payload, err := json.Marshal(map[string]string{
 		"entity_id":   entityID.String(),
 		"entity_type": "organization",
-		"tenant_id":   tenantID.String(),
-		"operation":   operation,
+
+		"operation": operation,
 	})
 	if err != nil {
 		slog.Warn("organizations: failed to marshal search index payload", "error", err)

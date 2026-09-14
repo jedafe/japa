@@ -300,8 +300,8 @@ func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pg
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"content_id":   contentID.String(),
-		"tenant_id":    tenantID.String(),
+		"content_id": contentID.String(),
+
 		"author_id":    authorID.String(),
 		"space_id":     spaceID.String(),
 		"content_type": contentType,
@@ -340,7 +340,6 @@ func scheduleScholarshipSyncFromGuide(ctx context.Context, contentID, tenantID p
 
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
-		"tenant_id":  tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("scheduleScholarshipSyncFromGuide: failed to marshal payload", "error", err)
@@ -362,9 +361,7 @@ func scheduleRSSRegenerate(enq *Enqueuer, tenantID pgtype.UUID) {
 		return
 	}
 
-	payload, err := json.Marshal(map[string]string{
-		"tenant_id": tenantID.String(),
-	})
+	payload, err := json.Marshal(map[string]string{})
 	if err != nil {
 		slog.Warn("scheduleRSSRegenerate: failed to marshal payload", "error", err)
 		return
@@ -719,7 +716,7 @@ func enqueueUniversityEnrollment(tenantID pgtype.UUID, p gen.Payment) {
 	}
 
 	enrollPayload, _ := json.Marshal(map[string]any{
-		"tenant_id":  tenantID.String(),
+
 		"user_id":    p.UserID.String(),
 		"track_id":   p.PurposeID.String(),
 		"payment_id": p.ID.String(),
@@ -748,8 +745,8 @@ func enqueueCreditPurchaseGrant(tenantID pgtype.UUID, p gen.Payment) {
 	}
 
 	creditPayload, _ := json.Marshal(map[string]any{
-		"payment_id":       p.ID.String(),
-		"tenant_id":        tenantID.String(),
+		"payment_id": p.ID.String(),
+
 		"user_id":          p.UserID.String(),
 		"credits_to_grant": creditsToGrant,
 		"currency_code":    currencyCode,
@@ -771,7 +768,7 @@ func enqueueReferralConversion(tenantID pgtype.UUID, p gen.Payment) {
 	}
 
 	referralPayload, _ := json.Marshal(map[string]any{
-		"tenant_id":  tenantID.String(),
+
 		"payer_id":   p.UserID.String(),
 		"payment_id": p.ID.String(),
 		"session_id": p.UserID.String(), // attribution key is per-user at signup
@@ -856,8 +853,8 @@ func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.
 			creditsToGrant, currencyCode := parseCreditPurchaseMetadata(p.Metadata)
 			if creditsToGrant > 0 {
 				reversalPayload, _ := json.Marshal(map[string]any{
-					"payment_id":       p.ID.String(),
-					"tenant_id":        tenantID.String(),
+					"payment_id": p.ID.String(),
+
 					"user_id":          p.UserID.String(),
 					"credits_to_grant": -creditsToGrant, // negative = debit
 					"currency_code":    currencyCode,

@@ -65,7 +65,6 @@ func SourceCrawlNowHandler(deps *ToolDeps) ToolHandler {
 		payload, _ := json.Marshal(map[string]string{
 			"version":   "v1",
 			"source_id": a.SourceID,
-			"tenant_id": tenantID.String(),
 		})
 		if err := deps.TaskEnqueuer.Enqueue(worker.TypeIntelFetchSource, payload); err != nil {
 			return errorToolResult("enqueue_failed", fmt.Sprintf("failed to enqueue crawl: %v", err)), nil
@@ -153,7 +152,6 @@ func RecordUpdateNowHandler(deps *ToolDeps) ToolHandler {
 		payload, _ := json.Marshal(map[string]string{
 			"version":   "v1",
 			"source_id": sourceID.String(),
-			"tenant_id": tenantID.String(),
 		})
 		if err := deps.TaskEnqueuer.Enqueue(worker.TypeIntelFetchSource, payload); err != nil {
 			return errorToolResult("enqueue_failed", fmt.Sprintf("failed to enqueue update: %v", err)), nil
@@ -216,7 +214,6 @@ func ContentRegenerateFromSourceHandler(deps *ToolDeps) ToolHandler {
 		payload, _ := json.Marshal(map[string]string{
 			"content_id":      a.ContentID,
 			"intel_record_id": a.IntelRecordID,
-			"tenant_id":       tenantID.String(),
 		})
 		if err := deps.TaskEnqueuer.Enqueue(worker.TypeContentRegenerateFromSource, payload); err != nil {
 			return errorToolResult("enqueue_failed", fmt.Sprintf("failed to enqueue regeneration: %v", err)), nil

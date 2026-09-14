@@ -65,22 +65,6 @@ func listTenantIDs(ctx context.Context, database *db.DB) ([]pgtype.UUID, error) 
 	return ids, rows.Err()
 }
 
-// lookupTenantIDByEntity resolves the for a single entity row by
-// table name and entity UUID. Used by entity-specific task adapters that
-// receive only the entity ID in the Asynq payload.
-func lookupTenantIDByEntity(ctx context.Context, database *db.DB, table, entityCol string, id pgtype.UUID) (pgtype.UUID, error) {
-	query := fmt.Sprintf("SELECT tenant_id FROM %s WHERE %s = $1", table, entityCol)
-
-	var tenantID pgtype.UUID
-
-	err := database.Reader.QueryRow(ctx, query, id).Scan(&tenantID)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("looking up tenant_id from %s by %s: %w", table, entityCol, err)
-	}
-
-	return tenantID, nil
-}
-
 // ---------------------------------------------------------------------------
 // JobsAdapter — wraps jobs.Service to satisfy JobsProcessor (§63, ADR-081).
 // ---------------------------------------------------------------------------
@@ -128,11 +112,6 @@ func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, erro
 // HTTP handler before the task was enqueued; this method only sends the
 // notification (§63, ADR-081).
 func (a *JobsAdapter) NotifyApplicationStatus(ctx context.Context, applicationID pgtype.UUID) error {
-	_, err := lookupTenantIDByEntity(ctx, a.db, "job_applications", "id", applicationID)
-	if err != nil {
-		return err
-	}
-
 	app, err := a.svc.GetApplicationForNotification(ctx, applicationID)
 	if err != nil {
 		return fmt.Errorf("jobs: notify application status: fetch application: %w", err)
@@ -448,11 +427,6 @@ func NewRemittanceAdapter(svc *remittance.Service, database *db.DB) *RemittanceA
 // enqueues this task), and the scheduler enqueues it on the configured
 // interval.
 func (a *RemittanceAdapter) FetchRates(ctx context.Context, providerID pgtype.UUID) error {
-	_, err := lookupTenantIDByEntity(ctx, a.db, "remittance_providers", "id", providerID)
-	if err != nil {
-		return err
-	}
-
 	return a.svc.FetchProviderRates(ctx, providerID)
 }
 
@@ -602,23 +576,13 @@ func NewAdsSelfServeAdapter(svc *adsselfserve.Service, database *db.DB) *AdsSelf
 
 // RefundCampaignCredits resolves the campaign's tenant and refunds credits.
 func (a *AdsSelfServeAdapter) RefundCampaignCredits(ctx context.Context, campaignID pgtype.UUID) error {
-	tid, err := lookupTenantIDByEntity(ctx, a.db, "ad_campaigns", "id", campaignID)
-	if err != nil {
-		return err
-	}
-
-	return a.svc.RefundCampaignCredits(ctx, tid, campaignID)
+	return a.svc.RefundCampaignCredits(ctx, pgtype.UUID{}, campaignID)
 }
 
 // NotifyCampaignStatus resolves the campaign's tenant and notifies the
 // advertiser of the review decision (approved/rejected).
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks).
 func (a *AdsSelfServeAdapter) NotifyCampaignStatus(ctx context.Context, campaignID pgtype.UUID) error {
-	_, err := lookupTenantIDByEntity(ctx, a.db, "ad_campaigns", "id", campaignID)
-	if err != nil {
-		return err
-	}
-
 	return a.svc.NotifyCampaignStatus(ctx, campaignID)
 }
 

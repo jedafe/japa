@@ -622,8 +622,8 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
 			Payload: map[string]any{
-				"prompt":     prompt,
-				"tenant_id":  tenantID,
+				"prompt": prompt,
+
 				"guide_type": "arrival_checklist",
 			},
 		})

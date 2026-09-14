@@ -565,7 +565,7 @@ func HandleImportProcessSource(ctx context.Context, t *asynq.Task) error {
 
 // HandleImportFetchMedia fetches media for an import (§65).
 func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "import:fetch_media", importProcessor != nil, []string{"tenant_id", "user_id", "content_id"},
+	return procTask(ctx, t, "import:fetch_media", importProcessor != nil, []string{"user_id", "content_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return importProcessor.FetchMedia(ctx, ids[0], ids[1], ids[2])
 		})
@@ -576,7 +576,7 @@ func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
 // the submission_id + (the result row does not exist yet — scoring
 // creates it).
 func HandleAssessmentScoreSubmission(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "assessment:score_submission", assessmentProcessor != nil, []string{"submission_id", "tenant_id"},
+	return procTask(ctx, t, "assessment:score_submission", assessmentProcessor != nil, []string{"submission_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return assessmentProcessor.ScoreSubmission(ctx, ids[0], ids[1])
 		})
@@ -686,7 +686,7 @@ func HandleReferralRecordClick(ctx context.Context, t *asynq.Task) error {
 // Triggered fire-and-forget by the payment webhook handler on succeeded.
 func HandleReferralCheckConversion(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "referral:check_conversion", referralProcessor != nil,
-		[]string{"tenant_id", "payer_id", "payment_id"},
+		[]string{"payer_id", "payment_id"},
 		func(ctx context.Context, ids []pgtype.UUID, p map[string]string) error {
 			return referralProcessor.CheckConversion(ctx, ids[0], ids[1], ids[2], p["session_id"])
 		})
@@ -773,7 +773,7 @@ func HandlePersonaDispatchAction(ctx context.Context, t *asynq.Task) error {
 
 // HandleStudioRunBatch runs an AI Content Studio batch (§75).
 func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "studio:run_batch", studioProcessor != nil, []string{"tenant_id", "batch_id"},
+	return procTask(ctx, t, "studio:run_batch", studioProcessor != nil, []string{"batch_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return studioProcessor.RunBatch(ctx, ids[0], ids[1])
 		})
@@ -783,7 +783,7 @@ func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 // ADR-076 §7). The task payload carries a batch_id; the processor retries
 // all failed jobs in that batch asynchronously.
 func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "studio:retry_failed", studioProcessor != nil, []string{"tenant_id", "batch_id"},
+	return procTask(ctx, t, "studio:retry_failed", studioProcessor != nil, []string{"batch_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			count, err := studioProcessor.RetryBatchFailed(ctx, ids[1])
 			if err != nil {
@@ -799,7 +799,7 @@ func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 // HandleMentorGenerateEmbedding generates a pgvector embedding for a
 // mentor's bio (§102, ADR-110). Called after a mentor updates their bio.
 func HandleMentorGenerateEmbedding(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "mentor:generate_embedding", mentorProcessor != nil, []string{"tenant_id", "user_id"},
+	return procTask(ctx, t, "mentor:generate_embedding", mentorProcessor != nil, []string{"user_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return mentorProcessor.GenerateEmbedding(ctx, ids[1])
 		})
@@ -808,7 +808,7 @@ func HandleMentorGenerateEmbedding(ctx context.Context, t *asynq.Task) error {
 // HandleMentorUpdateMeilisearch syncs a mentor's profile to the
 // Meilisearch mentors index (§102, ADR-110).
 func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "mentor:update_meilisearch", mentorProcessor != nil, []string{"tenant_id", "user_id"},
+	return procTask(ctx, t, "mentor:update_meilisearch", mentorProcessor != nil, []string{"user_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return mentorProcessor.UpdateMeilisearch(ctx, ids[1])
 		})
@@ -818,7 +818,7 @@ func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
 // appointment slots (§91, ADR-099). When availability is detected the
 // processor enqueues embassy:dispatch_alerts for the matching slug.
 func HandleEmbassyPoll(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "embassy:poll", embassyAlerterProcessor != nil, []string{"embassy_id", "tenant_id"},
+	return procTask(ctx, t, "embassy:poll", embassyAlerterProcessor != nil, []string{"embassy_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return embassyAlerterProcessor.PollEmbassy(ctx, ids[0], ids[1])
 		})
@@ -827,7 +827,7 @@ func HandleEmbassyPoll(ctx context.Context, t *asynq.Task) error {
 // HandleEmbassyDispatchAlerts dispatches notifications to all users with an
 // active alert matching the embassy whose availability was detected (§91).
 func HandleEmbassyDispatchAlerts(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "embassy:dispatch_alerts", embassyAlerterProcessor != nil, []string{"tenant_id"},
+	return procTask(ctx, t, "embassy:dispatch_alerts", embassyAlerterProcessor != nil, []string{},
 		func(ctx context.Context, ids []pgtype.UUID, p map[string]string) error {
 			return embassyAlerterProcessor.DispatchAlerts(ctx, p["embassy_slug"], ids[0])
 		})
@@ -1219,7 +1219,7 @@ func HandlePlanningGroupCheckinReminder(ctx context.Context, _ *asynq.Task) erro
 // wallet:award_points for the reporter (§81, ADR-089). Fire-and-forget on
 // the default queue.
 func HandleScamAlertNotifySubscribers(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "scam_alert:notify_subscribers", scamAlertProcessor != nil, []string{"report_id", "tenant_id"},
+	return procTask(ctx, t, "scam_alert:notify_subscribers", scamAlertProcessor != nil, []string{"report_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return scamAlertProcessor.NotifySubscribers(ctx, ids[0], ids[1])
 		})

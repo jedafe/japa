@@ -143,9 +143,8 @@ func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID, tenantID pgtype
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"user_id":   userID.String(),
-		"track_id":  trackID.String(),
-		"tenant_id": tenantID.String(),
+		"user_id":  userID.String(),
+		"track_id": trackID.String(),
 	})
 	if err != nil {
 		slog.Warn("learning: failed to marshal track completion payload", "error", err)
@@ -836,10 +835,10 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 			// task handles the revenue split with source='pro_stream'.
 			if h.AsynqClient != nil {
 				payload, err := json.Marshal(map[string]string{
-					"tenant_id": t.ID.String(),
-					"user_id":   user.UserID.String(),
-					"track_id":  trackIDStr,
-					"source":    "pro_stream",
+
+					"user_id":  user.UserID.String(),
+					"track_id": trackIDStr,
+					"source":   "pro_stream",
 				})
 				if err != nil {
 					slog.Warn("learning: marshal pro_stream enrollment payload", "error", err)

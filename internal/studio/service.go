@@ -426,8 +426,8 @@ func (s *Service) enqueueGeneration(ctx context.Context, job Job) error {
 	}
 
 	payload := map[string]any{
-		"job_id":       job.ID.String(),
-		"tenant_id":    job.TenantID.String(),
+		"job_id": job.ID.String(),
+
 		"persona_id":   job.PersonaID.String(),
 		"content_type": job.ContentType,
 		"topic_prompt": job.TopicPrompt,
@@ -457,8 +457,7 @@ func (s *Service) enqueueRunBatch(ctx context.Context, tenantID, batchID pgtype.
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"batch_id":  batchID.String(),
-		"tenant_id": tenantID.String(),
+		"batch_id": batchID.String(),
 	})
 	if err != nil {
 		return fmt.Errorf("studio: marshal run_batch payload: %w", err)
@@ -479,8 +478,7 @@ func (s *Service) enqueueRetryFailed(ctx context.Context, tenantID, batchID pgty
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"batch_id":  batchID.String(),
-		"tenant_id": tenantID.String(),
+		"batch_id": batchID.String(),
 	})
 	if err != nil {
 		return fmt.Errorf("studio: marshal retry_failed payload: %w", err)

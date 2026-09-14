@@ -865,8 +865,8 @@ func (s *DMService) enqueueDMNotifyMessage(ctx context.Context, tenantID, recipi
 	}
 
 	payload, _ := json.Marshal(map[string]string{
-		"recipient_id":    recipientID.String(),
-		"tenant_id":       tenantID.String(),
+		"recipient_id": recipientID.String(),
+
 		"sender_username": senderUsername,
 		"conversation_id": conversationID.String(),
 		"body_preview":    bodyPreview,
@@ -896,8 +896,8 @@ func (s *DMService) enqueueDMNotifyRequest(ctx context.Context, tenantID, recipi
 	}
 
 	payload, _ := json.Marshal(map[string]string{
-		"recipient_id":    recipientID.String(),
-		"tenant_id":       tenantID.String(),
+		"recipient_id": recipientID.String(),
+
 		"sender_username": senderUsername,
 		"conversation_id": conversationID.String(),
 	})

@@ -512,8 +512,7 @@ func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, ten
 	resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 		Category: "content_generation",
 		Payload: map[string]any{
-			"prompt":    prompt,
-			"tenant_id": tenantID,
+			"prompt": prompt,
 		},
 	})
 	if err != nil {
@@ -1946,8 +1945,7 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 	}
 
 	payload := map[string]any{
-		"prompt":    prompt,
-		"tenant_id": tenantID,
+		"prompt": prompt,
 	}
 	if job.AIModel != nil && *job.AIModel != "" {
 		payload["model"] = *job.AIModel

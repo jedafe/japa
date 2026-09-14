@@ -82,7 +82,6 @@ func main() {
 	for _, s := range sources {
 		payload, err := json.Marshal(map[string]string{
 			"source_id": s.ID.String(),
-			"tenant_id": s.TenantID.String(),
 		})
 		if err != nil {
 			slog.Warn("skipping: failed to marshal payload", "source_id", s.ID.String(), "error", err)

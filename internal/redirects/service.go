@@ -357,7 +357,6 @@ func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path 
 func (s *Service) enqueueRecordHit(tenantID pgtype.UUID, idStr string) {
 	payload, err := json.Marshal(map[string]string{
 		"redirect_id": idStr,
-		"tenant_id":   tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("failed to marshal redirect hit payload", "id", idStr, "error", err)

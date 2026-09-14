@@ -518,7 +518,7 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	// Award credits to referrer wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
-			"tenant_id":   tenantID.String(),
+
 			"user_id":     referral.ReferrerID.String(),
 			"amount":      rewardCredits,
 			"ledger_type": "credits",

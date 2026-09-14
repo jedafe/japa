@@ -254,16 +254,25 @@ func allImplementersRemove(pkgs []*packages.Package, namedByPkg map[*packages.Pa
 
 func refactorPackage(p *packages.Package, removals map[types.Object][]int) error {
 	for _, f := range p.Syntax {
-		fname := p.Fset.Position(f.Pos()).Filename
-		if !strings.HasSuffix(fname, "_test.go") {
-			continue
-		}
 		astutil.Apply(f, func(c *astutil.Cursor) bool {
 			switch n := c.Node().(type) {
 			case *ast.FuncDecl:
 				obj := p.TypesInfo.Defs[n.Name]
 				if pos, ok := removals[obj]; ok {
 					n.Type.Params = removeFields(n.Type.Params, pos)
+				}
+			case *ast.FuncLit:
+				if n.Type == nil || n.Type.Params == nil {
+					break
+				}
+				if t := p.TypesInfo.Types[n.Type]; t.Type != nil {
+					if sig, ok := t.Type.(*types.Signature); ok {
+						if obj := sig.Recv(); obj != nil {
+							if pos, found := removals[obj]; found {
+								n.Type.Params = removeFields(n.Type.Params, pos)
+							}
+						}
+					}
 				}
 			case *ast.CallExpr:
 				callee := calleeObject(p, n)

@@ -24,8 +24,6 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
-var tenantID pgtype.UUID
-
 // TaskEnqueueClient is the interface for enqueueing background tasks.
 type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
@@ -713,7 +711,6 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 			"title":            title,
 			"slug":             slug,
 			"user_id":          user.UserID.String(),
-			"tenant_id":        tenantID.String(),
 			"audience":         audience,
 			"related_features": relatedFeatures,
 		})
@@ -737,7 +734,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 
 		taskID := fmt.Sprintf(
 			"docs:generate_page:%s:%s:%s",
-			tenantID.String(),
+			pgtype.UUID{}.String(),
 			audience,
 			idSeed,
 		)
@@ -775,10 +772,9 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]any{
-		"prompt":    input.Prompt,
-		"context":   input.Context,
-		"user_id":   user.UserID.String(),
-		"tenant_id": tenantID.String(),
+		"prompt":  input.Prompt,
+		"context": input.Context,
+		"user_id": user.UserID.String(),
 	}
 
 	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, input.Category, "ai.model.default."+input.Category) {
@@ -954,7 +950,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		// header is absent.
 		ragLang := resolveAcceptLanguage(r)
 
-		chunks, err := h.ragService.Retrieve(r.Context(), tenantID, input.Message, ragLang, nil)
+		chunks, err := h.ragService.Retrieve(r.Context(), pgtype.UUID{}, input.Message, ragLang, nil)
 		if err != nil {
 			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG", "error", err)
 		} else if len(chunks) > 0 {
@@ -980,7 +976,6 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		"prompt":          input.Message,
 		"context":         aiContext,
 		"user_id":         user.UserID.String(),
-		"tenant_id":       tenantID.String(),
 		"task":            "chat",
 		"conversation_id": input.ConversationID,
 	}
@@ -1119,11 +1114,10 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]any{
-		"prompt":    "Improve the following text for clarity, grammar, and style. Tone: " + tone + ".\n\n" + input.Text,
-		"user_id":   user.UserID.String(),
-		"tenant_id": tenantID.String(),
-		"task":      "improve",
-		"tone":      tone,
+		"prompt":  "Improve the following text for clarity, grammar, and style. Tone: " + tone + ".\n\n" + input.Text,
+		"user_id": user.UserID.String(),
+		"task":    "improve",
+		"tone":    tone,
 	}
 
 	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
@@ -1189,7 +1183,6 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]any{
 		"prompt":    "Summarize the following text in at most " + strconv.Itoa(maxWords) + " words.\n\n" + input.Text,
 		"user_id":   user.UserID.String(),
-		"tenant_id": tenantID.String(),
 		"task":      "summarize",
 		"max_words": maxWords,
 	}
@@ -1258,7 +1251,6 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]any{
 		"prompt":        "Translate the following text to locale " + input.TargetLocale + ".\n\n" + input.Text,
 		"user_id":       user.UserID.String(),
-		"tenant_id":     tenantID.String(),
 		"task":          "translate",
 		"target_locale": input.TargetLocale,
 	}
@@ -1317,10 +1309,9 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]any{
-		"prompt":    "Generate relevant content tags for the following. Return as a JSON array of strings.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
-		"user_id":   user.UserID.String(),
-		"tenant_id": tenantID.String(),
-		"task":      "generate_tags",
+		"prompt":  "Generate relevant content tags for the following. Return as a JSON array of strings.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
+		"user_id": user.UserID.String(),
+		"task":    "generate_tags",
 	}
 
 	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
@@ -1381,7 +1372,6 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]any{
 		"prompt":       "Generate Open Graph metadata (og:title, og:description, og:image alt text) for the following " + contentType + ". Return as JSON.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
 		"user_id":      user.UserID.String(),
-		"tenant_id":    tenantID.String(),
 		"task":         "generate_og",
 		"content_type": contentType,
 	}
@@ -1492,7 +1482,6 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]any{
 		"prompt":          prompt,
 		"user_id":         user.UserID.String(),
-		"tenant_id":       tenantID.String(),
 		"content_type":    input.ContentType,
 		"tone":            input.Tone,
 		"task":            "draft",
@@ -2218,7 +2207,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 	offset := parsePageOffset(r)
 	sourceFilter := r.URL.Query().Get("source")
 
-	reviews, err := ListPendingReviews(r.Context(), h.Store, tenantID, sourceFilter, limit, offset)
+	reviews, err := ListPendingReviews(r.Context(), h.Store, pgtype.UUID{}, sourceFilter, limit, offset)
 	if err != nil {
 		slog.Error("listing pending HITL reviews", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list reviews")
@@ -2226,7 +2215,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	total, err := CountPendingReviews(r.Context(), h.Store, tenantID, sourceFilter)
+	total, err := CountPendingReviews(r.Context(), h.Store, pgtype.UUID{}, sourceFilter)
 	if err != nil {
 		slog.Error("counting pending HITL reviews", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count reviews")
@@ -2624,7 +2613,7 @@ func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
 
 	provider := r.URL.Query().Get("provider") // optional filter
 
-	summary, err := h.Store.GetAIUsageSummary(r.Context(), tenantID, periodDays, provider)
+	summary, err := h.Store.GetAIUsageSummary(r.Context(), pgtype.UUID{}, periodDays, provider)
 	if err != nil {
 		slog.Error("getting ai usage summary", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve AI usage")

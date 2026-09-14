@@ -240,7 +240,7 @@ func (s *Store) ListAchievements(ctx context.Context, f ListAchievementsFilter) 
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
-        WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
+        WHERE r.entity_id = c.id
           AND r.entity_type = 'content') AS reaction_count,
        c.published_at, c.created_at, c.updated_at,
        am.milestone_type,
@@ -316,7 +316,7 @@ const achievementSelectColumns = `
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
-        WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
+        WHERE r.entity_id = c.id
           AND r.entity_type = 'content') AS reaction_count,
        c.published_at, c.created_at, c.updated_at,
        am.milestone_type,
@@ -445,7 +445,7 @@ func (s *Store) ListBySpace(ctx context.Context, spaceSlug string, limit int32) 
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
-        WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
+        WHERE r.entity_id = c.id
           AND r.entity_type = 'content') AS reaction_count,
        c.published_at, c.created_at, c.updated_at,
        am.milestone_type,
@@ -562,7 +562,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Achievement
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
-        WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
+        WHERE r.entity_id = c.id
           AND r.entity_type = 'content') AS reaction_count,
        c.published_at, c.created_at, c.updated_at,
        am.milestone_type,

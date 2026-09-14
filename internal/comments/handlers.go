@@ -175,8 +175,8 @@ func (h *Handlers) enqueueContentFanOut(contentID, tenantID, authorID, spaceID p
 	}
 
 	payload, err := json.Marshal(map[string]interface{}{
-		"content_id":   contentID.String(),
-		"tenant_id":    tenantID.String(),
+		"content_id": contentID.String(),
+
 		"author_id":    authorID.String(),
 		"space_id":     spaceID.String(),
 		"content_type": contentType,

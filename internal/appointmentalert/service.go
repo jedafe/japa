@@ -324,7 +324,6 @@ func (s *Service) TriggerPoll(ctx context.Context, id, tenantID pgtype.UUID) err
 	if s.enqueuer != nil {
 		payload, err := json.Marshal(map[string]string{
 			"embassy_id": id.String(),
-			"tenant_id":  tenantID.String(),
 		})
 		if err != nil {
 			return fmt.Errorf("appointmentalert: trigger poll: marshal payload: %w", err)
@@ -448,7 +447,6 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 	if s.enqueuer != nil {
 		payload, err := json.Marshal(map[string]string{
 			"embassy_slug": embassy.Slug,
-			"tenant_id":    tenantID.String(),
 		})
 		if err != nil {
 			return fmt.Errorf("appointmentalert: poll embassy: marshal dispatch payload: %w", err)
@@ -592,7 +590,6 @@ func (s *Service) ScheduleDuePolls(ctx context.Context) (int, error) {
 	for _, e := range embassies {
 		payload, err := json.Marshal(map[string]string{
 			"embassy_id": e.ID.String(),
-			"tenant_id":  e.TenantID.String(),
 		})
 		if err != nil {
 			slog.Warn("appointmentalert: schedule due polls: marshal payload failed", "embassy_id", e.ID.String(), "error", err)

@@ -140,8 +140,8 @@ func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID, te
 	payload, err := json.Marshal(map[string]string{
 		"entity_id":   entityID.String(),
 		"entity_type": entityType,
-		"tenant_id":   tenantID.String(),
-		"operation":   operation,
+
+		"operation": operation,
 	})
 	if err != nil {
 		slog.Warn("forum: failed to marshal search index payload", "error", err)
@@ -166,7 +166,6 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
-		"tenant_id":  tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("forum: failed to marshal content embedding payload", "error", err)

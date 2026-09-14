@@ -57,7 +57,7 @@ func TestToPostCards_LeanAndCorrect(t *testing.T) {
 	}
 
 	got := string(blob)
-	for _, leaked := range []string{"tenant_id", "field_values", "content_hash", "canonical_url", "\"body\"", "geo_space_id", "\"status\"", "visibility", "is_locked", "reshare_count"} {
+	for _, leaked := range []string{"field_values", "content_hash", "canonical_url", "\"body\"", "geo_space_id", "\"status\"", "visibility", "is_locked", "reshare_count"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("PostCard JSON leaks internal field %q: %s", leaked, got)
 		}

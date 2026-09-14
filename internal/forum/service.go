@@ -432,7 +432,6 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 				"entity_id":   reply.ID.String(),
 				"thread_id":   threadID.String(),
 				"author_id":   authorUserID.String(),
-				"tenant_id":   tenantID.String(),
 			})
 			_, _ = s.asynq.Enqueue(
 				asynq.NewTask(
@@ -447,8 +446,8 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 			searchPayload, _ := json.Marshal(map[string]string{
 				"entity_type": "forum_thread",
 				"entity_id":   threadID.String(),
-				"tenant_id":   tenantID.String(),
-				"operation":   "index",
+
+				"operation": "index",
 			})
 			_, _ = s.asynq.Enqueue(
 				asynq.NewTask(

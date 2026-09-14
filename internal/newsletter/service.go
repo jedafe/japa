@@ -155,7 +155,6 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID 
 
 	payload, err := json.Marshal(map[string]any{
 		"newsletter_id": campaignID.String(),
-		"tenant_id":     tenantID.String(),
 	})
 	if err != nil {
 		return fmt.Errorf("marshalling newsletter payload: %w", err)
