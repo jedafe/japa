@@ -3913,3 +3913,81 @@ export interface CatalogOption {
 	label: string;
 	default?: boolean;
 }
+
+/* ------------------------------------------------------------------ *
+ * Guest homepage (ADR-058 §5 Exception #3 default seed)
+ * ------------------------------------------------------------------ */
+
+/** A curated tool card surfaced on the guest landing page.
+ *  Backed by the public `landing.tools` site setting (Rule 16),
+ *  falling back to the platform's default tool registry. */
+export interface GuestHomeTool {
+	id: string;
+	name: string;
+	slug?: string;
+	description?: string;
+	href?: string;
+	icon?: string;
+	accent?: string;
+	badge?: string;
+}
+
+/** A featured-opportunity card on the guest landing page.
+ *  Populated from the admin-configurable `landing.featured_opportunities`
+ *  public setting; falls back to a curated seed set. */
+export interface GuestHomeOpportunity {
+	id: string;
+	type: 'job' | 'scholarship' | 'visa' | 'business' | 'internship' | string;
+	title: string;
+	organization: string;
+	location: string;
+	location_code?: string;
+	tag: string;
+	badge?: string;
+	value?: string;
+	logo_url?: string | null;
+	href: string;
+	published_at?: string;
+}
+
+/** A success-story card on the guest landing page.
+ *  Loaded from GET /api/v1/stories; falls back to seed examples. */
+export interface GuestHomeStory {
+	id: string;
+	slug?: string;
+	title: string;
+	quote: string;
+	author_name: string;
+	author_role?: string;
+	author_avatar_url?: string | null;
+	destination?: string;
+}
+
+/** A marketing-stat block on the guest landing page.
+ *  Backed by the public `landing.stats` setting; falls back to defaults. */
+export interface GuestHomeStat {
+	value: string;
+	label: string;
+	icon: string;
+}
+
+/** A category card on the guest landing page.
+ *  Backed by the public `landing.categories` setting; falls back to defaults. */
+export interface GuestHomeCategory {
+	id: string;
+	title: string;
+	description: string;
+	href: string;
+	icon: string;
+	color: string;
+}
+
+/** SSR payload for the default guest homepage. */
+export interface GuestHomeData {
+	topDestinations: SpaceSuggestion[];
+	opportunities: GuestHomeOpportunity[];
+	stories: GuestHomeStory[];
+	tools: GuestHomeTool[];
+	stats: GuestHomeStat[];
+	categories: GuestHomeCategory[];
+}
