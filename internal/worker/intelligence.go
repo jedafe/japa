@@ -27,19 +27,6 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/stores"
 )
 
-// defaultIntelTenantID is the system tenant UUID used as the fallback tenant
-// for intelligence operations. Per ADR-112 Amendment 2, all intelligence
-// tables and Valkey keys are tenant-scoped. In a single-tenant deployment
-// (the current state), all intelligence data belongs to the default tenant
-// 00000000-0000-0000-0000-000000000001. The intel.* system_settings are
-// also seeded at this tenant level per migration 000431.
-var defaultIntelTenantID = func() pgtype.UUID {
-	var id pgtype.UUID
-	id.Bytes[15] = 1 // 00000000-0000-0000-0000-000000000001
-	id.Valid = true
-	return id
-}()
-
 // ---------------------------------------------------------------------------
 // Intelligence System (Section INTEL) — Asynq task handlers for the
 // ingestion spine. The 11 handlers below implement the task chain defined in
@@ -287,24 +274,6 @@ type intelNotifyPayload struct {
 // Handlers
 // ---------------------------------------------------------------------------
 
-// parseTenantID parses a tenant UUID from a payload string field. When the
-// payload does not carry a (e.g. a legacy enqueued task), the
-// default system tenant is returned so the spine remains runnable during
-// the migration window. Per ADR-112 Amendment 2 all intelligence data is
-// tenant-scoped; new enqueues always include .
-func parseTenantID(raw string) pgtype.UUID {
-	if raw == "" {
-		return defaultIntelTenantID
-	}
-
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		return defaultIntelTenantID
-	}
-
-	return pgtype.UUID{Bytes: id, Valid: true}
-}
-
 // HandleIntelScheduleCrawls is the cron entry point for the ingestion spine.
 // It selects due sources via the scheduler and enqueues a fetch_source task
 // per due source (Section 4, step 1).
@@ -339,9 +308,8 @@ func HandleIntelScheduleCrawls(ctx context.Context, _ *asynq.Task) error {
 	// BUG-13 fix: acquire leader lock to prevent duplicate cron runs across
 	// worker instances. The lock TTL (5 min) is shorter than the typical
 	// cron interval (15 min) so a crashed leader releases the lock quickly.
-	// The lock key is tenant-scoped per ADR-112 Amendment 2.
 	if rdb != nil {
-		leaderKey := "jc:intel:scheduler_leader:" + defaultIntelTenantID.String()
+		leaderKey := "jc:intel:scheduler_leader"
 
 		locked, err := rdb.SetNX(ctx, leaderKey, "1", 5*time.Minute).Result()
 		if err != nil {
@@ -624,8 +592,6 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:detect_changes: %w", err)
 	}
-	_ = parseTenantID("")
-
 	// Load the freshly persisted raw document to get its content_hash.
 	rawDocID, err := scanUUID(p.RawDocID)
 	if err != nil {
@@ -694,8 +660,6 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:extract: raw_doc_id: %w", err)
 	}
-	_ = parseTenantID("")
-
 	// Load the raw document to get the source text (body) and source id.
 	rawDoc, err := intelStores.GetIntelRawDocument(ctx, rawDocID)
 	if err != nil {
@@ -832,8 +796,6 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:dedup: %w", err)
 	}
-	_ = parseTenantID("")
-
 	record, err := intelStores.GetIntelRecord(ctx, recordID)
 	if err != nil {
 		return fmt.Errorf("task:intel:dedup: get record: %w", err)
@@ -934,8 +896,6 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:publish_gate: %w", err)
 	}
-	_ = parseTenantID("")
-
 	record, err := intelStores.GetIntelRecord(ctx, recordID)
 	if err != nil {
 		return fmt.Errorf("task:intel:publish_gate: get record: %w", err)
@@ -1025,8 +985,6 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:promote: %w", err)
 	}
-	_ = parseTenantID("")
-
 	// Load the record to resolve its entity_type so we can dispatch to the
 	// correct domain promoter from the registry.
 	record, err := intelStores.GetIntelRecord(ctx, recordID)
@@ -1246,8 +1204,6 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:notify_discoveries: domain_id: %w", err)
 	}
-	_ = parseTenantID("")
-
 	// Resolve the geo space id for the promoted entity. For scholarships
 	// (and other domains with a country_space_id column), load the row
 	// and extract the space id. For domains without a structured table
@@ -1392,8 +1348,6 @@ func HandleIntelRetryFailedSource(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:retry_failed_source: %w", err)
 	}
-	_ = parseTenantID("")
-
 	// Verify the source exists before re-enqueuing the fetch.
 	if _, err := intelSourcesStore.Get(ctx, sourceID); err != nil {
 		return fmt.Errorf("task:intel:retry_failed_source: get source: %w", err)
