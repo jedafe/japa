@@ -176,7 +176,7 @@ func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) 
 // points leaderboard. Query params: scope (global|space:{id}), period
 // (all_time|monthly|weekly). Public route.
 func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -215,7 +215,7 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	entries, err := h.service.GetLeaderboard(r.Context(), tenantID, scope, period, limit)
+	entries, err := h.service.GetLeaderboard(r.Context(), scope, period, limit)
 	if err != nil {
 		if writeDisabled(w, err) {
 			return

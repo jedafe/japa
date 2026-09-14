@@ -10,7 +10,7 @@ import "context"
 // resizing, optimizing, and generating thumbnails via imgproxy or
 // similar tooling.
 type ImageProcessor interface {
-	ProcessImage(ctx context.Context, mediaID, tenantID, operation string, width, height int) error
+	ProcessImage(ctx context.Context, mediaID, operation string, width, height int) error
 }
 
 var imageProcessor ImageProcessor

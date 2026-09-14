@@ -66,7 +66,7 @@ type AIResponse struct {
 // The assessment service uses it to ground AI-assisted roadmap steps in
 // platform content.
 type RAGRetriever interface {
-	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error)
+	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error)
 	FormatContext(chunks []RAGChunk) string
 }
 
@@ -249,7 +249,7 @@ func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e 
 // Fire-and-forget (Rule 8): failures are logged, never propagated. A
 // duplicate reference hits ON CONFLICT DO NOTHING and returns ErrNoRows,
 // which is treated as "already recorded" rather than an error.
-func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
 	if s.activity == nil || !userID.Valid {
 		return
 	}
@@ -267,7 +267,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
 		slog.Warn("assessment: enqueue activity event failed", "activity_key", key, "error", err)
 	}
 }
@@ -348,7 +348,7 @@ type ScoreSubmissionInput struct {
 // // The caller provides the submission's field_values and user_id via
 // ScoreSubmissionInput. The worker handler fetches the submission row from
 // the shared form_submissions store and passes its field_values here.
-func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, input ScoreSubmissionInput) (pgtype.UUID, error) {
+func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInput) (pgtype.UUID, error) {
 	form, err := s.store.GetActiveAssessmentForm(ctx)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: get form: %w", err)
@@ -394,7 +394,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		}
 
 		if aiEnabled {
-			aiSteps := s.generateAIRoadmapSteps(ctx, tenantID, result.JourneyContext, result.DimensionScores, result.ThresholdLabel)
+			aiSteps := s.generateAIRoadmapSteps(ctx, result.JourneyContext, result.DimensionScores, result.ThresholdLabel)
 			if len(aiSteps) > 0 {
 				// Append AI steps after curated steps, continuing the priority
 				// sequence. Skip any step that links to content already in the
@@ -460,7 +460,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	// §64: record the assessment.completed activity so badge/challenge
 	// triggers (e.g. japa_ready) can fire. Reference is per result so each
 	// completion counts once.
-	s.emitActivity(ctx, tenantID, input.UserID, wallet.ActivityKeyAssessmentCompleted, "assessment:"+ar.ID.String(), map[string]interface{}{
+	s.emitActivity(ctx, input.UserID, wallet.ActivityKeyAssessmentCompleted, "assessment:"+ar.ID.String(), map[string]interface{}{
 		"form_id":   submission.FormID.String(),
 		"threshold": result.ThresholdLabel,
 	})
@@ -471,7 +471,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	if s.settings != nil && input.UserID.Valid && priorResults == 0 {
 		points := s.settings.GetIntOr(ctx, "assessment.completion_points", 50)
 		if points > 0 && s.enqueuer != nil {
-			idempotencyKey := fmt.Sprintf("assessment:completion:%s:%s:%s", tenantID.String(), input.UserID.String(), submission.FormID.String())
+			idempotencyKey := fmt.Sprintf("assessment:completion::%s:%s", input.UserID.String(), submission.FormID.String())
 
 			payload, err := json.Marshal(map[string]any{
 				"user_id": input.UserID.String(),
@@ -1257,7 +1257,7 @@ func stepMatchesJourney(step RoadmapStep, journeyCtx JourneyContext) bool {
 // the AI can target its recommendations to the user's weakest areas.
 // RAG grounding (when available) injects relevant platform content passages
 // so the AI's recommendations reference real JapaConnect resources.
-func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UUID, journeyCtx JourneyContext, dimensionScores map[string]int, thresholdLabel string) []RoadmapStep {
+func (s *Service) generateAIRoadmapSteps(ctx context.Context, journeyCtx JourneyContext, dimensionScores map[string]int, thresholdLabel string) []RoadmapStep {
 	// Build a summary of the user's weakest dimensions for the prompt.
 	weakestDims := make([]string, 0, len(dimensionScores))
 
@@ -1326,7 +1326,7 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UU
 	if s.rag != nil {
 		query := "relocation readiness advice for weak areas: " + strings.Join(weakestDims[:min(3, len(weakestDims))], ", ")
 
-		chunks, err := s.rag.Retrieve(ctx, tenantID, query, "en", &journeyCtx.GeoSpaceID)
+		chunks, err := s.rag.Retrieve(ctx, query, "en", &journeyCtx.GeoSpaceID)
 		if err != nil {
 			slog.Warn("assessment: ai roadmap: RAG retrieve failed", "error", err)
 		} else if len(chunks) > 0 {

@@ -275,14 +275,14 @@ RETURNING id, destination_space_id, slug, name, booking_url,
 
 // UpdateEmbassy updates the mutable config fields on a monitored_embassies
 // row. Only non-nil/non-zero fields in the input are applied.
-func (s *Store) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, name, bookingURL *string, pollInterval *int32, isActive *bool) (EmbassyRow, error) {
+func (s *Store) UpdateEmbassy(ctx context.Context, id pgtype.UUID, name, bookingURL *string, pollInterval *int32, isActive *bool) (EmbassyRow, error) {
 	var (
 		sets []string
 		args []any
 		idx  = 1
 	)
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 	idx = 3
 
 	if name != nil {
@@ -311,7 +311,7 @@ func (s *Store) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, nam
 
 	if len(sets) == 0 {
 		// Nothing to update; just return the current row.
-		return s.getEmbassyByID(ctx, id, tenantID)
+		return s.getEmbassyByID(ctx, id)
 	}
 
 	sets = append(sets, "updated_at = now()")
@@ -343,7 +343,7 @@ RETURNING id, destination_space_id, slug, name, booking_url,
 }
 
 // getEmbassyByID fetches a single monitored embassy by its PK.
-func (s *Store) getEmbassyByID(ctx context.Context, id, tenantID pgtype.UUID) (EmbassyRow, error) {
+func (s *Store) getEmbassyByID(ctx context.Context, id pgtype.UUID) (EmbassyRow, error) {
 	const q = `
 SELECT e.id, e.destination_space_id, sp.name AS dest_space_name,
        e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
@@ -356,7 +356,7 @@ LIMIT 1
 
 	var r EmbassyRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
 		&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
@@ -375,14 +375,14 @@ LIMIT 1
 // MarkEmbassyPolled sets last_polled_at = now() for the given embassy.
 // The actual scraping is performed by the Asynq worker; this just records
 // that a poll cycle has been triggered.
-func (s *Store) MarkEmbassyPolled(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) MarkEmbassyPolled(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE monitored_embassies
 SET last_polled_at = now(), updated_at = now()
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("appointmentalert: mark embassy polled: %w", err)
 	}
@@ -495,7 +495,7 @@ WHERE %s
 }
 
 // GetAlertByID returns a single appointment alert by its PK.
-func (s *Store) GetAlertByID(ctx context.Context, id, tenantID pgtype.UUID) (AlertRow, error) {
+func (s *Store) GetAlertByID(ctx context.Context, id pgtype.UUID) (AlertRow, error) {
 	const q = `
 SELECT a.id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
        a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,
@@ -509,7 +509,7 @@ LIMIT 1
 
 	var r AlertRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
 		&r.Status, &r.LastCheckedAt, &r.FiredAt, &r.ExpiresAt,
@@ -570,14 +570,14 @@ RETURNING id, user_id, destination_space_id, embassy_slug, visa_category,
 
 // UpdateAlert updates the mutable fields on an appointment_alerts row.
 // Only non-nil fields in the input are applied. Returns the updated row.
-func (s *Store) UpdateAlert(ctx context.Context, id, tenantID pgtype.UUID, status, visaCategory *string, dateRangeStart, dateRangeEnd, expiresAt *pgtype.Date, channels []string) (AlertRow, error) {
+func (s *Store) UpdateAlert(ctx context.Context, id pgtype.UUID, status, visaCategory *string, dateRangeStart, dateRangeEnd, expiresAt *pgtype.Date, channels []string) (AlertRow, error) {
 	var (
 		sets []string
 		args []any
 		idx  = 1
 	)
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 	idx = 3
 
 	if status != nil {
@@ -617,7 +617,7 @@ func (s *Store) UpdateAlert(ctx context.Context, id, tenantID pgtype.UUID, statu
 	}
 
 	if len(sets) == 0 {
-		return s.GetAlertByID(ctx, id, tenantID)
+		return s.GetAlertByID(ctx, id)
 	}
 
 	sets = append(sets, "updated_at = now()")
@@ -654,14 +654,14 @@ RETURNING id, user_id, destination_space_id, embassy_slug, visa_category,
 // delete of user content in V1 app code; only account:deletion_cleanup may
 // hard-delete). Returns pgx.ErrNoRows if the row does not exist, is already
 // soft-deleted, or belongs to a different tenant.
-func (s *Store) DeleteAlert(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteAlert(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE appointment_alerts
 SET deleted_at = now(), updated_at = now(), status = 'expired'
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("appointmentalert: delete alert: %w", err)
 	}
@@ -753,14 +753,14 @@ ORDER BY a.created_at ASC
 // appointment_alert. The 24-hour pause-after-fire (ADR-099) is enforced by
 // the caller: DispatchAlerts only re-fires an alert if fired_at is NULL or
 // older than 24 hours. Returns pgx.ErrNoRows if the alert is not active.
-func (s *Store) MarkAlertFired(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) MarkAlertFired(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE appointment_alerts
 SET fired_at = now(), status = 'fired', last_checked_at = now(), updated_at = now()
 WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("appointmentalert: mark alert fired: %w", err)
 	}
@@ -852,6 +852,6 @@ ORDER BY e.last_polled_at ASC NULLS FIRST
 
 // GetEmbassyByID returns a single monitored embassy by its PK within the
 // tenant. Used by PollEmbassy to load the booking_url and slug.
-func (s *Store) GetEmbassyByID(ctx context.Context, id, tenantID pgtype.UUID) (EmbassyRow, error) {
-	return s.getEmbassyByID(ctx, id, tenantID)
+func (s *Store) GetEmbassyByID(ctx context.Context, id pgtype.UUID) (EmbassyRow, error) {
+	return s.getEmbassyByID(ctx, id)
 }

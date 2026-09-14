@@ -610,7 +610,7 @@ type UpdateComparisonInput struct {
 // (set when the caller has comparison.edit_any, BUG-002/BUG-011).
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
-func (s *Service) UpdateComparison(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonInput, bypassOwnership bool) (gen.UpdateContentRow, error) {
+func (s *Service) UpdateComparison(ctx context.Context, id pgtype.UUID, input UpdateComparisonInput, bypassOwnership bool) (gen.UpdateContentRow, error) {
 	existing, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return gen.UpdateContentRow{}, fmt.Errorf("getting comparison for update: %w", err)
@@ -629,7 +629,7 @@ func (s *Service) UpdateComparison(ctx context.Context, id, tenantID pgtype.UUID
 	visibility := input.Visibility
 	body := input.Body
 
-	return s.contentSvc.UpdateContent(ctx, id, tenantID, input.EditedBy, content.UpdateContentInput{
+	return s.contentSvc.UpdateContent(ctx, id, input.EditedBy, content.UpdateContentInput{
 		Title:      input.Title,
 		Slug:       input.Slug,
 		Body:       body,

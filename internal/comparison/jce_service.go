@@ -611,7 +611,7 @@ type UpdateJCEComparisonInput struct {
 
 // UpdateJCEComparison updates the content and metadata of a JCE comparison.
 // Only the author or users with comparison.edit_any may update.
-func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateJCEComparisonInput, bypassOwnership bool) (JCEComparison, error) {
+func (s *Service) UpdateJCEComparison(ctx context.Context, id, userID pgtype.UUID, input UpdateJCEComparisonInput, bypassOwnership bool) (JCEComparison, error) {
 	existing, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("getting comparison for update: %w", err)
@@ -654,7 +654,7 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID 
 		status == content.StatusPublished
 	seoIndexable := &indexable
 
-	_, uerr := s.contentSvc.UpdateContent(ctx, id, tenantID, userID, content.UpdateContentInput{
+	_, uerr := s.contentSvc.UpdateContent(ctx, id, userID, content.UpdateContentInput{
 		Title:        title,
 		Slug:         input.Slug,
 		Body:         input.Body,

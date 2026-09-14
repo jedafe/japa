@@ -114,8 +114,8 @@ func TestExchangeKey_InvalidKey(t *testing.T) {
 func TestExchangeKey_InsufficientScope(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	ctx := &publicapi.APIKeyContext{
-		KeyID:    uid,
-		UserID:   uid,
+		KeyID:  uid,
+		UserID: uid,
 
 		Scopes: []string{"api.read.content"},
 	}
@@ -136,8 +136,8 @@ func TestExchangeKey_InsufficientScope(t *testing.T) {
 func TestExchangeKey_IPNotAllowed(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	ctx := &publicapi.APIKeyContext{
-		KeyID:    uid,
-		UserID:   uid,
+		KeyID:  uid,
+		UserID: uid,
 
 		Scopes: []string{"api.write.content"},
 	}
@@ -159,8 +159,8 @@ func TestExchangeKey_IPNotAllowed(t *testing.T) {
 func TestExchangeKey_Success(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	ctx := &publicapi.APIKeyContext{
-		KeyID:    uid,
-		UserID:   uid,
+		KeyID:  uid,
+		UserID: uid,
 
 		Scopes: []string{"api.write.content"},
 	}
@@ -234,9 +234,9 @@ func TestExchangeKey_WildcardScope(t *testing.T) {
 		{"api.read.*", "api.write.*"},
 	} {
 		ctx := &publicapi.APIKeyContext{
-			KeyID:    uid,
-			UserID:   uid,
-	
+			KeyID:  uid,
+			UserID: uid,
+
 			Scopes: scopes,
 		}
 		q := &fakeRefreshCreator{}
@@ -260,8 +260,8 @@ func TestExchangeKey_WildcardScope(t *testing.T) {
 func TestExchangeKey_BodyFallback(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	ctx := &publicapi.APIKeyContext{
-		KeyID:    uid,
-		UserID:   uid,
+		KeyID:  uid,
+		UserID: uid,
 
 		Scopes: []string{"api.write.content"},
 	}

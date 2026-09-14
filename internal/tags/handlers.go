@@ -442,7 +442,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 
 // ToggleTagFollow handles POST/DELETE /api/v1/tags/{slug}/follow.
 func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -457,7 +457,7 @@ func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	following, err := h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, follows.EntityTypeTag, tag.ID)
+	following, err := h.follows.ToggleFollow(r.Context(), user.UserID, follows.EntityTypeTag, tag.ID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle tag follow")
 		return

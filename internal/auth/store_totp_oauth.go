@@ -159,7 +159,7 @@ func NewOAuthStore(database *db.DB) *OAuthStoreImpl {
 }
 
 // GetOAuthAccount retrieves a linked OAuth account by provider and provider user ID.
-func (s *OAuthStoreImpl) GetOAuthAccount(ctx context.Context, tenantID pgtype.UUID, provider, providerUserID string) (*OAuthAccount, error) {
+func (s *OAuthStoreImpl) GetOAuthAccount(ctx context.Context, provider, providerUserID string) (*OAuthAccount, error) {
 	query := `
 		SELECT id, user_id, provider, provider_user_id
 		FROM oauth_accounts
@@ -169,7 +169,7 @@ func (s *OAuthStoreImpl) GetOAuthAccount(ctx context.Context, tenantID pgtype.UU
 
 	var acct OAuthAccount
 
-	err := s.db.Reader.QueryRow(ctx, query, tenantID, provider, providerUserID).Scan(
+	err := s.db.Reader.QueryRow(ctx, query, provider, providerUserID).Scan(
 		&acct.ID, &acct.UserID, &acct.Provider, &acct.ProviderUserID,
 	)
 	if err != nil {
@@ -180,7 +180,7 @@ func (s *OAuthStoreImpl) GetOAuthAccount(ctx context.Context, tenantID pgtype.UU
 }
 
 // GetOAuthAccountByUser retrieves a linked OAuth account by user ID and provider.
-func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, tenantID, userID pgtype.UUID, provider string) (*OAuthAccount, error) {
+func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, userID pgtype.UUID, provider string) (*OAuthAccount, error) {
 	query := `
 		SELECT id, user_id, provider, provider_user_id
 		FROM oauth_accounts
@@ -190,7 +190,7 @@ func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, tenantID, us
 
 	var acct OAuthAccount
 
-	err := s.db.Reader.QueryRow(ctx, query, tenantID, userID, provider).Scan(
+	err := s.db.Reader.QueryRow(ctx, query, userID, provider).Scan(
 		&acct.ID, &acct.UserID, &acct.Provider, &acct.ProviderUserID,
 	)
 	if err != nil {
@@ -201,13 +201,13 @@ func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, tenantID, us
 }
 
 // LinkOAuthAccount creates a new OAuth account linkage.
-func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, tenantID, userID pgtype.UUID, provider, providerUserID string) error {
+func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, userID pgtype.UUID, provider, providerUserID string) error {
 	query := `
 		INSERT INTO oauth_accounts (user_id, provider, provider_user_id)
 		VALUES ($1, $2, $3, $4)
 	`
 
-	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, provider, providerUserID)
+	_, err := s.db.Writer.Exec(ctx, query, userID, provider, providerUserID)
 	if err != nil {
 		return fmt.Errorf("linking OAuth account: %w", err)
 	}
@@ -217,7 +217,7 @@ func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, tenantID, userID 
 
 // GetUserByEmail looks up a user by email within a tenant.
 // Delegates to the auth DBStore query pattern.
-func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error) {
+func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	query := `
 		SELECT id, email, password_hash, username, profile_type, status, email_verified_at, is_bot
 		FROM users
@@ -227,7 +227,7 @@ func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, tenantID pgtype.UUI
 
 	var u User
 
-	err := s.db.Reader.QueryRow(ctx, query, tenantID, email).Scan(
+	err := s.db.Reader.QueryRow(ctx, query, email).Scan(
 		&u.ID, &(pgtype.UUID{}), &u.Email, &u.PasswordHash, &u.Username, &u.ProfileType, &u.Status, &u.EmailVerifiedAt, &u.IsBot,
 	)
 	if err != nil {

@@ -690,7 +690,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 	// --- Dedup: new record (no rows) vs update (same source re-extraction). ---
 	sourceID := newUUID()
 	newLister := &mockRecordLister{found: false}
-	dedupSvc := dedup.NewService(newLister, pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true})
+	dedupSvc := dedup.NewService(newLister)
 
 	dec, err := dedupSvc.Check(t.Context(), sourceID, "ext-key-1")
 	if err != nil {
@@ -702,7 +702,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 	}
 
 	updateLister := &mockRecordLister{found: true}
-	dedupSvc2 := dedup.NewService(updateLister, pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true})
+	dedupSvc2 := dedup.NewService(updateLister)
 
 	dec, err = dedupSvc2.Check(t.Context(), sourceID, "ext-key-1")
 	if err != nil {

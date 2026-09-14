@@ -148,7 +148,7 @@ func (s *Service) Enabled(ctx context.Context) bool {
 // Create creates a new planning group owned by the requesting user. The
 // caller must have the planning_group.create permission (checked at route
 // registration).
-func (s *Service) Create(ctx context.Context, tenantID, ownerID pgtype.UUID, input CreateGroupInput) (PlanningGroupDTO, error) {
+func (s *Service) Create(ctx context.Context, ownerID pgtype.UUID, input CreateGroupInput) (PlanningGroupDTO, error) {
 	if input.Name == "" || input.DestinationSpaceID == "" {
 		return PlanningGroupDTO{}, errors.New("name and destination_space_id are required")
 	}
@@ -223,7 +223,7 @@ func (s *Service) Create(ctx context.Context, tenantID, ownerID pgtype.UUID, inp
 	}
 
 	// The owner is automatically a member of their own group.
-	if err := s.store.JoinGroup(ctx, group.ID, ownerID, tenantID, pgtype.Date{}); err != nil {
+	if err := s.store.JoinGroup(ctx, group.ID, ownerID, pgtype.Date{}); err != nil {
 		return PlanningGroupDTO{}, fmt.Errorf("planninggroups: create: auto-join owner: %w", err)
 	}
 
@@ -373,7 +373,7 @@ func (s *Service) DeleteOwn(ctx context.Context, id, userID pgtype.UUID) error {
 // caller must have the planning_group.create permission (checked at route
 // registration). departureDate is optional (RFC 3339 or YYYY-MM-DD).
 // Checks is_open_join and max_members capacity per §82.
-func (s *Service) Join(ctx context.Context, groupID, userID, tenantID pgtype.UUID, departureDate string) error {
+func (s *Service) Join(ctx context.Context, groupID, userID pgtype.UUID, departureDate string) error {
 	group, err := s.store.GetGroup(ctx, groupID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -384,7 +384,7 @@ func (s *Service) Join(ctx context.Context, groupID, userID, tenantID pgtype.UUI
 	}
 
 	// Check if already a member.
-	isMember, err := s.store.IsMember(ctx, groupID, userID, tenantID)
+	isMember, err := s.store.IsMember(ctx, groupID, userID)
 	if err != nil {
 		return fmt.Errorf("planninggroups: join: is_member: %w", err)
 	}
@@ -414,7 +414,7 @@ func (s *Service) Join(ctx context.Context, groupID, userID, tenantID pgtype.UUI
 		dep = pgtype.Date{Time: t, Valid: true}
 	}
 
-	if err := s.store.JoinGroup(ctx, groupID, userID, tenantID, dep); err != nil {
+	if err := s.store.JoinGroup(ctx, groupID, userID, dep); err != nil {
 		return fmt.Errorf("planninggroups: join: %w", err)
 	}
 
@@ -464,8 +464,8 @@ func (s *Service) CreateMilestone(ctx context.Context, groupID, userID pgtype.UU
 }
 
 // ListMilestones returns all milestones for the requesting user in a group.
-func (s *Service) ListMilestones(ctx context.Context, groupID, userID, tenantID pgtype.UUID) ([]MilestoneDTO, error) {
-	milestones, err := s.store.ListMilestones(ctx, groupID, userID, tenantID)
+func (s *Service) ListMilestones(ctx context.Context, groupID, userID pgtype.UUID) ([]MilestoneDTO, error) {
+	milestones, err := s.store.ListMilestones(ctx, groupID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: list milestones: %w", err)
 	}
@@ -484,7 +484,7 @@ func (s *Service) ListMilestones(ctx context.Context, groupID, userID, tenantID 
 // the user's milestones in the group are now complete; if so, it dispatches
 // a "Mission Complete" celebration notification with a prompt to share in
 // the Achievement Feed (§82 Integration with §89).
-func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, userID, tenantID pgtype.UUID, completed bool) error {
+func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, userID pgtype.UUID, completed bool) error {
 	if err := s.store.UpdateMilestone(ctx, milestoneID, groupID, userID, completed); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -498,7 +498,7 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, use
 	// just marked complete and the achievement feature is enabled.
 	if completed && s.notifier != nil &&
 		s.settings.GetBoolOr(ctx, "achievement.enabled", false) {
-		remaining, err := s.store.CountIncompleteMilestones(ctx, groupID, userID, tenantID)
+		remaining, err := s.store.CountIncompleteMilestones(ctx, groupID, userID)
 		if err != nil {
 			slog.Warn("planninggroups: count incomplete milestones failed", "error", err)
 		} else if remaining == 0 {
@@ -516,15 +516,15 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, use
 }
 
 // IsMember returns true if the user is a member of the planning group.
-func (s *Service) IsMember(ctx context.Context, groupID, userID, tenantID pgtype.UUID) (bool, error) {
-	return s.store.IsMember(ctx, groupID, userID, tenantID)
+func (s *Service) IsMember(ctx context.Context, groupID, userID pgtype.UUID) (bool, error) {
+	return s.store.IsMember(ctx, groupID, userID)
 }
 
 // InviteMember adds a user to a planning group by invitation. Only the
 // group owner may invite (checked at the handler level via
 // planning_group.manage_own). The invited user is added directly as a
 // member (§82: "invite user (owner only)").
-func (s *Service) InviteMember(ctx context.Context, groupID, inviteeUserID, tenantID pgtype.UUID) error {
+func (s *Service) InviteMember(ctx context.Context, groupID, inviteeUserID pgtype.UUID) error {
 	group, err := s.store.GetGroup(ctx, groupID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -538,7 +538,7 @@ func (s *Service) InviteMember(ctx context.Context, groupID, inviteeUserID, tena
 		return ErrGroupFull
 	}
 
-	if err := s.store.InviteMember(ctx, groupID, inviteeUserID, tenantID); err != nil {
+	if err := s.store.InviteMember(ctx, groupID, inviteeUserID); err != nil {
 		return fmt.Errorf("planninggroups: invite: %w", err)
 	}
 

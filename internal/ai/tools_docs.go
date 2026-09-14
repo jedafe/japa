@@ -41,7 +41,7 @@ import (
 // for the tenant (any status, any audience — the agent needs the full
 // catalog for admin operations).
 func DocsListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Docs == nil {
 			return errorToolResult("docs_unavailable", "docs service is not configured"), nil
 		}
@@ -74,7 +74,7 @@ type docsReadArgs struct {
 
 // DocsReadHandler returns a ToolHandler that reads a single doc page by ID.
 func DocsReadHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Docs == nil {
 			return errorToolResult("docs_unavailable", "docs service is not configured"), nil
 		}
@@ -121,7 +121,7 @@ type docsCreateArgs struct {
 // (docs.admin); the tool config sets requires_hitl = true. The review
 // status defaults to "draft" — the agent never publishes directly.
 func DocsCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Docs == nil {
 			return errorToolResult("docs_unavailable", "docs service is not configured"), nil
 		}
@@ -159,7 +159,7 @@ func DocsCreateHandler(deps *ToolDeps) ToolHandler {
 			content = json.RawMessage(`""`)
 		}
 
-		id, err := deps.Docs.CreateDocPage(ctx, tenantID, DocsCreatePageRequest{
+		id, err := deps.Docs.CreateDocPage(ctx, DocsCreatePageRequest{
 			Title:        a.Title,
 			Slug:         a.Slug,
 			Audience:     a.Audience,
@@ -200,7 +200,7 @@ type docsUpdateArgs struct {
 // agent — the §44 workflow requires approved → published transition via
 // the human reviewer. The handler rejects "published" status.
 func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Docs == nil {
 			return errorToolResult("docs_unavailable", "docs service is not configured"), nil
 		}
@@ -225,7 +225,7 @@ func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
 			reviewStatus = "draft"
 		}
 
-		if err := deps.Docs.UpdateDocPage(ctx, tenantID, docID, DocsUpdatePageRequest{
+		if err := deps.Docs.UpdateDocPage(ctx, docID, DocsUpdatePageRequest{
 			Title:        a.Title,
 			Content:      a.Content,
 			ReviewStatus: reviewStatus,
@@ -260,7 +260,7 @@ type docsOrganizeEntry struct {
 // the nav tree by updating their parent_id and position. Requires the
 // DocsOrganizer bridge — nil returns "not configured".
 func DocsOrganizeHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil {
 			return errorToolResult("docs_unavailable", "tool deps not configured"), nil
 		}
@@ -304,7 +304,7 @@ func DocsOrganizeHandler(deps *ToolDeps) ToolHandler {
 			})
 		}
 
-		if err := deps.DocsOrganize(ctx, tenantID, entries); err != nil {
+		if err := deps.DocsOrganize(ctx, entries); err != nil {
 			return errorToolResult("docs_organize_failed", err.Error()), nil
 		}
 

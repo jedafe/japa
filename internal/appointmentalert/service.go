@@ -125,7 +125,7 @@ type permissionChecker interface {
 // means SMS dispatch is a graceful no-op with a warning log (pending
 // platform-wide SMS gateway integration, §91, ADR-099).
 type SMSSender interface {
-	SendSMS(ctx context.Context, tenantID, userID pgtype.UUID, message, actionURL string) error
+	SendSMS(ctx context.Context, userID pgtype.UUID, message, actionURL string) error
 }
 
 // availabilityCacheTTL is the TTL for the jc:embassy_avail:{slug} Valkey key
@@ -293,8 +293,8 @@ func (s *Service) CreateEmbassy(ctx context.Context, input CreateEmbassyInput) (
 }
 
 // UpdateEmbassy updates a monitored embassy's config (admin only).
-func (s *Service) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, input UpdateEmbassyInput) (EmbassyDTO, error) {
-	row, err := s.store.UpdateEmbassy(ctx, id, tenantID, input.Name, input.BookingURL, input.PollIntervalSeconds, input.IsActive)
+func (s *Service) UpdateEmbassy(ctx context.Context, id pgtype.UUID, input UpdateEmbassyInput) (EmbassyDTO, error) {
+	row, err := s.store.UpdateEmbassy(ctx, id, input.Name, input.BookingURL, input.PollIntervalSeconds, input.IsActive)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return EmbassyDTO{}, pgx.ErrNoRows
@@ -310,8 +310,8 @@ func (s *Service) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, i
 // and enqueues the embassy:poll Asynq task so the worker scrapes the booking
 // page for open slots. The actual scraping is performed asynchronously by
 // the Asynq worker (§91, ADR-099).
-func (s *Service) TriggerPoll(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.MarkEmbassyPolled(ctx, id, tenantID); err != nil {
+func (s *Service) TriggerPoll(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.MarkEmbassyPolled(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -358,8 +358,8 @@ func (s *Service) ExpireAlerts(ctx context.Context) (int, error) {
 // booked" indicator, availability is assumed. This is intentionally
 // conservative — false positives trigger a notification that links to the
 // official booking page where the user can confirm (§91, ADR-099).
-func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UUID) error {
-	embassy, err := s.store.GetEmbassyByID(ctx, embassyID, tenantID)
+func (s *Service) PollEmbassy(ctx context.Context, embassyID pgtype.UUID) error {
+	embassy, err := s.store.GetEmbassyByID(ctx, embassyID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil // embassy deleted since the task was enqueued
@@ -371,7 +371,7 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 	// Mark as polled so the recurring scheduler doesn't re-enqueue
 	// immediately (§91). Best-effort — a failure here does not abort the
 	// poll because the availability check is the critical path.
-	if err := s.store.MarkEmbassyPolled(ctx, embassyID, tenantID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err := s.store.MarkEmbassyPolled(ctx, embassyID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Warn("appointmentalert: poll embassy: mark polled failed", "embassy_id", embassyID.String(), "error", err)
 	}
 
@@ -470,7 +470,7 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 // transitions back to 'active' on the next poll cycle if the user hasn't
 // paused it). The 24-hour pause prevents notification spam when slots open
 // briefly and then disappear (§91, ADR-099).
-func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenantID pgtype.UUID) error {
+func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string) error {
 	if s.notifier == nil {
 		slog.Warn("appointmentalert: dispatch alerts: no notifier configured, skipping", "embassy_slug", embassySlug)
 		return nil
@@ -531,7 +531,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 			if s.smsSender != nil {
 				smsBody := fmt.Sprintf("JapaConnect: appointment available at %s. Book quickly — slots can disappear fast. %s",
 					embassy.Name, embassy.BookingURL)
-				if err := s.smsSender.SendSMS(ctx, tenantID, alert.UserID, smsBody, embassy.BookingURL); err != nil {
+				if err := s.smsSender.SendSMS(ctx, alert.UserID, smsBody, embassy.BookingURL); err != nil {
 					slog.Warn("appointmentalert: dispatch alerts: sms send failed", "alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)
 				}
 			} else {
@@ -541,7 +541,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 
 		// Mark the alert as fired (sets fired_at = now(), status = 'fired').
 		// The 24-hour pause prevents re-firing on the next poll cycle.
-		if err := s.store.MarkAlertFired(ctx, alert.ID, tenantID); err != nil {
+		if err := s.store.MarkAlertFired(ctx, alert.ID); err != nil {
 			slog.Warn("appointmentalert: dispatch alerts: mark fired failed", "alert_id", alert.ID.String(), "error", err)
 			continue
 		}
@@ -754,8 +754,8 @@ func (s *Service) CreateAlert(ctx context.Context, userID pgtype.UUID, input Cre
 
 // UpdateAlert updates a user's own appointment alert. The caller must
 // verify ownership (user_id must match) before calling this method.
-func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateAlertInput) (AlertDTO, error) {
-	existing, err := s.store.GetAlertByID(ctx, id, tenantID)
+func (s *Service) UpdateAlert(ctx context.Context, id, userID pgtype.UUID, input UpdateAlertInput) (AlertDTO, error) {
+	existing, err := s.store.GetAlertByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AlertDTO{}, pgx.ErrNoRows
@@ -827,7 +827,7 @@ func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.U
 		channels = input.NotificationChannels
 	}
 
-	row, err := s.store.UpdateAlert(ctx, id, tenantID, input.Status, visaCat, dateStart, dateEnd, expiresAt, channels)
+	row, err := s.store.UpdateAlert(ctx, id, input.Status, visaCat, dateStart, dateEnd, expiresAt, channels)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AlertDTO{}, pgx.ErrNoRows
@@ -841,8 +841,8 @@ func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.U
 
 // DeleteAlert deletes a user's own appointment alert. The caller must
 // verify ownership (user_id must match) before calling this method.
-func (s *Service) DeleteAlert(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	existing, err := s.store.GetAlertByID(ctx, id, tenantID)
+func (s *Service) DeleteAlert(ctx context.Context, id, userID pgtype.UUID) error {
+	existing, err := s.store.GetAlertByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -855,7 +855,7 @@ func (s *Service) DeleteAlert(ctx context.Context, id, tenantID, userID pgtype.U
 		return ErrNotOwner
 	}
 
-	if err := s.store.DeleteAlert(ctx, id, tenantID); err != nil {
+	if err := s.store.DeleteAlert(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

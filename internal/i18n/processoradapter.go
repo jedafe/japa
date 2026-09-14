@@ -30,7 +30,7 @@ func (a *ProcessorAdapter) SetAIDispatcher(d AIDispatcher) {
 // from sourceLang to targetLang. It fetches all keys from the source locale,
 // checks which ones are missing in the target, dispatches each to the AI
 // gateway for translation, and upserts the results.
-func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang, targetLang, tenantID string) error {
+func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang, targetLang string) error {
 	slog.Info("i18n:translate_language_pack", "pack_id", packID, "source", sourceLang, "target", targetLang)
 
 	if a.svc == nil {
@@ -39,20 +39,20 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 	}
 
 	var tid pgtype.UUID
-	if err := tid.Scan(tenantID); err != nil {
+	if err := tid.Scan(); err != nil {
 		slog.Warn("i18n:translate_language_pack — invalid the id", "error", err)
 		return nil
 	}
 
 	// Fetch all translations from the source locale.
-	sourceTranslations, err := a.svc.GetTranslationsByLocale(ctx, tid, sourceLang)
+	sourceTranslations, err := a.svc.GetTranslationsByLocale(ctx, sourceLang)
 	if err != nil {
 		slog.Error("i18n:translate_language_pack — failed to fetch source translations", "error", err)
 		return err
 	}
 
 	// Fetch existing translations in the target locale.
-	targetTranslations, err := a.svc.GetTranslationsByLocale(ctx, tid, targetLang)
+	targetTranslations, err := a.svc.GetTranslationsByLocale(ctx, targetLang)
 	if err != nil {
 		slog.Warn("i18n:translate_language_pack — no existing target translations, will create all", "error", err)
 
@@ -92,7 +92,7 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 			})
 		}
 
-		if err := a.svc.UpsertBatch(ctx, tid, items); err != nil {
+		if err := a.svc.UpsertBatch(ctx, items); err != nil {
 			slog.Error("i18n:translate_language_pack — fallback batch upsert failed", "error", err, "count", len(items))
 			return err
 		}
@@ -142,7 +142,7 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 	}
 
 	// Batch upsert the translated strings.
-	if err := a.svc.UpsertBatch(ctx, tid, items); err != nil {
+	if err := a.svc.UpsertBatch(ctx, items); err != nil {
 		slog.Error("i18n:translate_language_pack — batch upsert failed", "error", err, "count", len(items))
 		return err
 	}
@@ -154,5 +154,5 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 
 // Ensure ProcessorAdapter satisfies the interface at compile time.
 var _ interface {
-	TranslatePack(ctx context.Context, packID, sourceLang, targetLang, tenantID string) error
+	TranslatePack(ctx context.Context, packID, sourceLang, targetLang string) error
 } = (*ProcessorAdapter)(nil)

@@ -166,7 +166,7 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 // HandleGetPathway handles GET /credentials/:id — pathway detail plus
 // published community notes. Public.
 func (h *Handlers) HandleGetPathway(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -181,7 +181,7 @@ func (h *Handlers) HandleGetPathway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	detail, err := h.service.GetPathway(r.Context(), id, tenantID)
+	detail, err := h.service.GetPathway(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
@@ -206,7 +206,7 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -232,7 +232,7 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	note, err := h.service.CreateNote(r.Context(), pathwayID, tenantID, user.UserID, input.Note)
+	note, err := h.service.CreateNote(r.Context(), pathwayID, user.UserID, input.Note)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
@@ -315,7 +315,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -346,7 +346,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathway, err := h.service.CreatePathway(r.Context(), tenantID, input)
+	pathway, err := h.service.CreatePathway(r.Context(), input)
 	if err != nil {
 		slog.Error("credentialchecker: admin create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create pathway")
@@ -415,7 +415,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -436,7 +436,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathway, err := h.service.UpdatePathway(r.Context(), id, tenantID, input)
+	pathway, err := h.service.UpdatePathway(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
@@ -463,7 +463,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -482,7 +482,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	// Body is optional; decode best-effort.
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	pathway, err := h.service.ApprovePathway(r.Context(), id, tenantID, user.UserID, body.ReviewNotes)
+	pathway, err := h.service.ApprovePathway(r.Context(), id, user.UserID, body.ReviewNotes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")

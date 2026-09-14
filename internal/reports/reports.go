@@ -162,12 +162,12 @@ func (s *Service) ListMyReports(ctx context.Context, reporterUserID pgtype.UUID,
 
 // CountReports returns the total number of reports for the tenant (respecting
 // optional status and entity_type filters) so callers can paginate.
-func (s *Service) CountReports(ctx context.Context, tenantID pgtype.UUID, status, entityType, q *string) (int32, error) {
+func (s *Service) CountReports(ctx context.Context, status, entityType, q *string) (int32, error) {
 	var total int32
 
 	query := `SELECT COUNT(*)::int FROM content_reports `
 
-	args := []any{tenantID}
+	args := []any{pgtype.UUID{}}
 	if status != nil {
 		args = append(args, *status)
 		query += fmt.Sprintf(` AND status = $%d`, len(args))

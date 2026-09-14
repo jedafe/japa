@@ -32,7 +32,7 @@ type campaignCreateArgs struct {
 // ContentCampaignCreateHandler returns a ToolHandler that creates and plans
 // (and optionally runs) a multi-persona content campaign.
 func ContentCampaignCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Campaign == nil {
 			return errorToolResult("campaign_not_configured", "campaign service is not configured"), nil
 		}
@@ -77,7 +77,7 @@ func ContentCampaignCreateHandler(deps *ToolDeps) ToolHandler {
 			RunImmediately:        &runImmediately,
 		}
 
-		result, err := deps.Campaign.CreateCampaign(ctx, tenantID, userID, in)
+		result, err := deps.Campaign.CreateCampaign(ctx, userID, in)
 		if err != nil {
 			return errorToolResult("campaign_create_failed", err.Error()), nil
 		}

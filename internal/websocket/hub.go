@@ -238,15 +238,15 @@ func (h *Hub) BroadcastToAll(event WSEvent) {
 // instances. Use this for presence and other tenant-scoped broadcasts so a
 // user in tenant A never receives events from tenant B (Rule 4: tenant-scoped,
 // §5.3 cross-tenant leak prevention).
-func (h *Hub) BroadcastToTenant(tenantID string, event WSEvent) {
-	h.deliverLocalTenant(tenantID, event)
+func (h *Hub) BroadcastToTenant(event WSEvent) {
+	h.deliverLocalTenant(event)
 
 	h.mu.RLock()
 	bridge := h.pubsub
 	h.mu.RUnlock()
 
 	if bridge != nil {
-		bridge.PublishTenant(event, tenantID)
+		bridge.PublishTenant(event)
 	}
 }
 
@@ -284,13 +284,13 @@ func (h *Hub) deliverLocalAll(event WSEvent) {
 // deliverLocalUser for the loop-safety rationale. This is the tenant-scoped
 // counterpart of deliverLocalAll, used for presence so a user in tenant A
 // never receives presence events from tenant B (Rule 4: tenant-scoped).
-func (h *Hub) deliverLocalTenant(tenantID string, event WSEvent) {
+func (h *Hub) deliverLocalTenant(event WSEvent) {
 	h.mu.RLock()
 
 	clients := make([]*Client, 0, len(h.clients))
 	for _, conns := range h.clients {
 		for c := range conns {
-			if "" == tenantID {
+			if "" == "" {
 				clients = append(clients, c)
 			}
 		}

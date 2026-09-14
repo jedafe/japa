@@ -631,13 +631,13 @@ WHERE id = $%d
 
 // DeleteGuide deletes an arrival_checklist_guides row and its associated
 // items (ON DELETE CASCADE) by id, scoped to .
-func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 DELETE FROM arrival_checklist_guides
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: delete guide: %w", err)
 	}

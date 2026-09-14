@@ -30,7 +30,7 @@ type Handlers struct {
 // FollowService is the subset of the follows.Service used by org handlers.
 // Ref: japaconnect-engineering/sections/31-follow-system.md.
 type FollowService interface {
-	ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	ToggleFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
 }
 
 // JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
@@ -192,10 +192,9 @@ type createOrganizationRequest struct {
 // //	japaconnect-engineering/sections/08-custom-field-architecture.md
 func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
-	tenantID := pgtype.UUID{}
 
 	if t != nil {
-		tenantID = t.ID
+
 	}
 
 	orgTypes := []map[string]string{
@@ -210,7 +209,7 @@ func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
 
 	// Read org types from the custom_fields table (key='org_type') when the
 	// lookup is available. The field's options JSONB stores [{value, label}].
-	if h.customFieldLookup != nil && tenantID.Valid {
+	if h.customFieldLookup != nil && false {
 		field, err := h.customFieldLookup.GetCustomFieldByKey(r.Context(), "org_type")
 		if err == nil && len(field.Options) > 0 {
 			var opts []map[string]string
@@ -251,7 +250,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -264,7 +263,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 
 	input := CreateOrganizationInput(req)
 
-	result, err := h.service.CreateOrganization(r.Context(), tenantID, user.UserID, input)
+	result, err := h.service.CreateOrganization(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -349,7 +348,7 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -391,7 +390,7 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		input.OrgType = *req.OrgType
 	}
 
-	if err := h.service.UpdateOrganization(r.Context(), id, tenantID, user.UserID, input); err != nil {
+	if err := h.service.UpdateOrganization(r.Context(), id, user.UserID, input); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -409,7 +408,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -420,7 +419,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteOrganization(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteOrganization(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -567,7 +566,7 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -586,7 +585,7 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 
 	input := InviteMemberInput(req)
 
-	result, err := h.service.InviteMember(r.Context(), orgID, tenantID, user.UserID, input)
+	result, err := h.service.InviteMember(r.Context(), orgID, user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -830,7 +829,7 @@ func (h *Handlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -849,7 +848,7 @@ func (h *Handlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 
 	input := ReviewClaimInput(req)
 
-	if err := h.service.ReviewOwnershipClaim(r.Context(), claimID, tenantID, user.UserID, input); err != nil {
+	if err := h.service.ReviewOwnershipClaim(r.Context(), claimID, user.UserID, input); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -874,12 +873,12 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
 
-	following, err := h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, entityTypeOrganization, orgID)
+	following, err := h.follows.ToggleFollow(r.Context(), user.UserID, entityTypeOrganization, orgID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle follow")
 		return
@@ -1008,7 +1007,7 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -1021,7 +1020,7 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 
 	input := CreateOrganizationInput(req)
 
-	result, err := h.service.CreateOrganization(r.Context(), tenantID, user.UserID, input)
+	result, err := h.service.CreateOrganization(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1035,7 +1034,7 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 
 // AdminUpdateOrganization handles PATCH /admin/organizations/{id}.
 func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -1077,7 +1076,7 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 		input.OrgType = *req.OrgType
 	}
 
-	if err := h.service.AdminUpdateOrganization(r.Context(), id, tenantID, input); err != nil {
+	if err := h.service.AdminUpdateOrganization(r.Context(), id, input); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1090,7 +1089,7 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 
 // AdminDeleteOrganization handles DELETE /admin/organizations/{id}.
 func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -1101,7 +1100,7 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.service.AdminDeleteOrganization(r.Context(), id, tenantID); err != nil {
+	if err := h.service.AdminDeleteOrganization(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}

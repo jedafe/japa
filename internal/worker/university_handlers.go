@@ -42,7 +42,7 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 		return err
 	}
 
-	if err := universityProcessor.ProcessEnrollment(ctx, "", payload.UserID,
+	if err := universityProcessor.ProcessEnrollment(ctx, payload.UserID,
 		payload.TrackID, payload.PaymentID, payload.Source, payload.GrossKobo); err != nil {
 		slog.Error("task:university:process_enrollment: processor failed", "error", err)
 		return err
@@ -119,8 +119,8 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 		return nil
 	}
 
-	for _, tenantID := range tenantIDs {
-		if err := universityProcessor.CalculatePeriodPayouts(ctx, tenantID.String(),
+	for range tenantIDs {
+		if err := universityProcessor.CalculatePeriodPayouts(ctx,
 			payload.PeriodStart, payload.PeriodEnd); err != nil {
 			// Continue to the next tenant — a single tenant failure must not
 			// abort the whole sweep (mirrors the sitemap/RSS sweep handlers).
@@ -152,7 +152,7 @@ func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) er
 		return err
 	}
 
-	if err := universityProcessor.SendInstructorPayout(ctx, "", payload.PayoutID); err != nil {
+	if err := universityProcessor.SendInstructorPayout(ctx, payload.PayoutID); err != nil {
 		slog.Error("task:university:send_instructor_payout: processor failed", "error", err)
 		return err
 	}
@@ -179,7 +179,7 @@ func HandleUniversityNotifyInstructorApproved(ctx context.Context, t *asynq.Task
 		return err
 	}
 
-	return universityProcessor.NotifyInstructorApproved(ctx, "", payload.InstructorID)
+	return universityProcessor.NotifyInstructorApproved(ctx, payload.InstructorID)
 }
 
 // HandleUniversityNotifyCourseApproved notifies a creator that their
@@ -200,7 +200,7 @@ func HandleUniversityNotifyCourseApproved(ctx context.Context, t *asynq.Task) er
 		return err
 	}
 
-	return universityProcessor.NotifyCourseApproved(ctx, "", payload.TrackID)
+	return universityProcessor.NotifyCourseApproved(ctx, payload.TrackID)
 }
 
 // HandleUniversityFetchLogo downloads a university logo from a remote URL,
@@ -237,7 +237,7 @@ func HandleUniversityFetchLogo(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	if err := universityProcessor.FetchLogo(ctx, "", payload.SpaceID, payload.LogoURL, payload.UploadedBy); err != nil {
+	if err := universityProcessor.FetchLogo(ctx, payload.SpaceID, payload.LogoURL, payload.UploadedBy); err != nil {
 		slog.Error("task:university:fetch_logo: processor failed", "error", err)
 		return err
 	}

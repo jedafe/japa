@@ -47,7 +47,7 @@ func TestCheck_NewRecord(t *testing.T) {
 	t.Parallel()
 
 	mock := &mockLister{err: pgx.ErrNoRows}
-	svc := NewService(mock, testTenantID())
+	svc := NewService(mock)
 
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 
@@ -80,7 +80,7 @@ func TestCheck_UpdateRecord(t *testing.T) {
 		record: gen.IntelRecord{ExternalKey: "ext-123"},
 		err:    nil,
 	}
-	svc := NewService(mock, testTenantID())
+	svc := NewService(mock)
 
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 
@@ -99,7 +99,7 @@ func TestCheck_StoreError(t *testing.T) {
 
 	wantErr := errors.New("connection refused")
 	mock := &mockLister{err: wantErr}
-	svc := NewService(mock, testTenantID())
+	svc := NewService(mock)
 
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 
@@ -139,7 +139,7 @@ func TestCheckAcrossSources_NoConflict(t *testing.T) {
 	mock := &mockLister{
 		crossSourceRecords: nil,
 	}
-	svc := NewService(mock, testTenantID())
+	svc := NewService(mock)
 
 	got, err := svc.CheckAcrossSources(t.Context(), sourceID, "ext-123")
 	if err != nil {
@@ -160,7 +160,7 @@ func TestCheckAcrossSources_SameSourceNoConflict(t *testing.T) {
 			{SourceID: sourceID, ExternalKey: "ext-123"},
 		},
 	}
-	svc := NewService(mock, testTenantID())
+	svc := NewService(mock)
 
 	got, err := svc.CheckAcrossSources(t.Context(), sourceID, "ext-123")
 	if err != nil {
@@ -183,7 +183,7 @@ func TestCheckAcrossSources_DifferentSourceConflict(t *testing.T) {
 			{SourceID: otherSourceID, ExternalKey: "ext-123"},
 		},
 	}
-	svc := NewService(mock, testTenantID())
+	svc := NewService(mock)
 
 	got, err := svc.CheckAcrossSources(t.Context(), sourceID, "ext-123")
 	if err != nil {

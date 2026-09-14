@@ -19,7 +19,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -38,7 +38,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if h.follows != nil {
-		followed, err = h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, "space", space.ID)
+		followed, err = h.follows.ToggleFollow(r.Context(), user.UserID, "space", space.ID)
 	} else {
 		followed, err = h.Service.ToggleFollowSpace(r.Context(), user.UserID, space.ID)
 	}
@@ -66,7 +66,7 @@ func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -77,7 +77,7 @@ func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.MuteSpace(r.Context(), tenantID, user.UserID, space.ID); err != nil {
+	if err := h.Service.MuteSpace(r.Context(), user.UserID, space.ID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -92,7 +92,7 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -103,7 +103,7 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UnmuteSpace(r.Context(), tenantID, user.UserID, space.ID); err != nil {
+	if err := h.Service.UnmuteSpace(r.Context(), user.UserID, space.ID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

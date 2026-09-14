@@ -16,7 +16,7 @@ import "context"
 // Banking, Community, Housing) for a Country Space when wiki.enabled is
 // activated.
 type WikiSeedStubPagesProcessor interface {
-	SeedStubPages(ctx context.Context, spaceID, tenantID string) error
+	SeedStubPages(ctx context.Context, spaceID string) error
 }
 
 var wikiSeedStubPagesProcessor WikiSeedStubPagesProcessor

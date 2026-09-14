@@ -58,7 +58,7 @@ func (h *Handlers) Render(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := h.Renderer.Render(r.Context(), t.ID, contentID, updatedAt, input.JSON)
+	html, err := h.Renderer.Render(r.Context(), contentID, updatedAt, input.JSON)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "render_failed", "Failed to render content")
 		return

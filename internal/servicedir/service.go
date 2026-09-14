@@ -31,9 +31,9 @@ import (
 // needs. Defined as an interface so the servicedir package depends on a
 // narrow contract, not the full content service.
 type ContentService interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+	CreateContent(ctx context.Context, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
-	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
+	UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	DeleteContent(ctx context.Context, id pgtype.UUID) error
 }
 
@@ -180,7 +180,7 @@ var ErrInvalidVerificationType = errors.New("invalid verification_type")
 // listing is created in 'draft' status; the author can submit for review
 // (set status to 'pending') via the content update flow. Auth required
 // (service.create permission checked at route level).
-func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, input CreateServiceInput) (ServiceDTO, error) {
+func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input CreateServiceInput) (ServiceDTO, error) {
 	if input.Title == "" {
 		return ServiceDTO{}, errors.New("title is required")
 	}
@@ -216,7 +216,7 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		return ServiceDTO{}, fmt.Errorf("invalid origin_communities: %w", err)
 	}
 
-	contentRow, err := s.content.CreateContent(ctx, tenantID, content.CreateContentInput{
+	contentRow, err := s.content.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:       authorID,
 		OrganizationID: orgID,
 		ContentType:    content.TypeServiceListing,
@@ -264,7 +264,7 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		return ServiceDTO{}, fmt.Errorf("servicedir: create service_listing_meta: %w", err)
 	}
 
-	return s.getServiceDTOByID(ctx, contentRow.ID, tenantID)
+	return s.getServiceDTOByID(ctx, contentRow.ID)
 }
 
 // GetBySlug returns a single published service listing by its slug.
@@ -325,7 +325,7 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 // An admin with service.edit_any (checked at route level via
 // RequireAnyPermission) bypasses the ownership check (BUG-008, BUG-009).
 // Only the provided (non-nil) fields are updated.
-func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditServiceInput, isEditAny bool) (ServiceDTO, error) {
+func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, input EditServiceInput, isEditAny bool) (ServiceDTO, error) {
 	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -341,7 +341,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		if existing.AuthorID != userID {
 			// Not the author — check if the user is a member of the org
 			// that owns the listing (§98: service.edit_own = "listing owner org").
-			meta, err := s.store.GetMeta(ctx, contentID, tenantID)
+			meta, err := s.store.GetMeta(ctx, contentID)
 			if err != nil {
 				return ServiceDTO{}, fmt.Errorf("servicedir: edit: get meta: %w", err)
 			}
@@ -373,7 +373,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		updateInput.Body = *input.Body
 	}
 
-	if _, err := s.content.UpdateContent(ctx, contentID, tenantID, userID, updateInput, false); err != nil {
+	if _, err := s.content.UpdateContent(ctx, contentID, userID, updateInput, false); err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: edit: update content: %w", err)
 	}
 
@@ -430,11 +430,11 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		meta.PriceRange = input.PriceRange
 	}
 
-	if err := s.store.UpdateMeta(ctx, contentID, tenantID, meta); err != nil {
+	if err := s.store.UpdateMeta(ctx, contentID, meta); err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: edit: update service_listing_meta: %w", err)
 	}
 
-	return s.getServiceDTOByID(ctx, contentID, tenantID)
+	return s.getServiceDTOByID(ctx, contentID)
 }
 
 // ErrNotOrgMember is returned when a user tries to claim a listing on
@@ -450,7 +450,7 @@ var ErrAlreadyClaimed = errors.New("service listing is already claimed")
 // must have the service.claim permission (checked at route level). This
 // method verifies the user is a member of the claiming org (BUG-006) and
 // that the listing is not already claimed (BUG-007).
-func (s *Service) Claim(ctx context.Context, contentID, tenantID, userID, orgID pgtype.UUID) error {
+func (s *Service) Claim(ctx context.Context, contentID, userID, orgID pgtype.UUID) error {
 	isMember, err := s.store.IsOrgMember(ctx, orgID, userID)
 	if err != nil {
 		return fmt.Errorf("servicedir: claim: check org membership: %w", err)
@@ -460,7 +460,7 @@ func (s *Service) Claim(ctx context.Context, contentID, tenantID, userID, orgID 
 		return ErrNotOrgMember
 	}
 
-	if err := s.store.ClaimIfUnclaimed(ctx, contentID, tenantID, orgID); err != nil {
+	if err := s.store.ClaimIfUnclaimed(ctx, contentID, orgID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrAlreadyClaimed
 		}
@@ -513,7 +513,7 @@ func (s *Service) AdminList(ctx context.Context, status, claimStatus, serviceCat
 // verification was performed (§98: self|community|admin|professional_body);
 // the admin user_id is recorded in verified_by for audit (ADR-088, BUG-015).
 // The verificationType is validated against the §98 enum (BUG-010).
-func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verifiedBy pgtype.UUID, verificationType string) error {
+func (s *Service) AdminVerify(ctx context.Context, contentID, verifiedBy pgtype.UUID, verificationType string) error {
 	if verificationType == "" {
 		verificationType = VerificationTypeAdmin
 	}
@@ -522,7 +522,7 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verified
 		return ErrInvalidVerificationType
 	}
 
-	if err := s.store.VerifyService(ctx, contentID, tenantID, verifiedBy, verificationType); err != nil {
+	if err := s.store.VerifyService(ctx, contentID, verifiedBy, verificationType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -535,8 +535,8 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verified
 
 // AdminUnverify marks a service listing as unverified by an admin
 // (service.verify permission). Clears the verified flag and audit trail.
-func (s *Service) AdminUnverify(ctx context.Context, contentID, tenantID pgtype.UUID) error {
-	if err := s.store.UnverifyService(ctx, contentID, tenantID); err != nil {
+func (s *Service) AdminUnverify(ctx context.Context, contentID pgtype.UUID) error {
+	if err := s.store.UnverifyService(ctx, contentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -552,8 +552,8 @@ func (s *Service) AdminUnverify(ctx context.Context, contentID, tenantID pgtype.
 // rejecting sets claim_status to 'rejected' and clears claimed_by_org_id
 // (service.verify permission). Only pending claims can be resolved
 // (BUG-015).
-func (s *Service) AdminResolveClaim(ctx context.Context, contentID, tenantID, orgID pgtype.UUID, approve bool) error {
-	if err := s.store.ResolveClaimIfPending(ctx, contentID, tenantID, orgID, approve); err != nil {
+func (s *Service) AdminResolveClaim(ctx context.Context, contentID, orgID pgtype.UUID, approve bool) error {
+	if err := s.store.ResolveClaimIfPending(ctx, contentID, orgID, approve); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -566,13 +566,13 @@ func (s *Service) AdminResolveClaim(ctx context.Context, contentID, tenantID, or
 
 // getServiceDTOByID fetches a service listing by content_id and converts
 // to DTO.
-func (s *Service) getServiceDTOByID(ctx context.Context, contentID, tenantID pgtype.UUID) (ServiceDTO, error) {
+func (s *Service) getServiceDTOByID(ctx context.Context, contentID pgtype.UUID) (ServiceDTO, error) {
 	contentRow, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: get by id: %w", err)
 	}
 
-	meta, err := s.store.GetMeta(ctx, contentID, tenantID)
+	meta, err := s.store.GetMeta(ctx, contentID)
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: get meta by id: %w", err)
 	}

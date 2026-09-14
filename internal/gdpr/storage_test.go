@@ -18,12 +18,11 @@ func TestLocalStorageRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	ls := NewLocalStorage(tmp)
 
-	tenantID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 	requestID := pgtype.UUID{Bytes: [16]byte{4, 5, 6}, Valid: true}
 	data := []byte(`{"user":"test","export":"data"}`)
 
 	// Store the export file.
-	url, size, err := ls.Store(t.Context(), tenantID, requestID, "application/json", data)
+	url, size, err := ls.Store(t.Context(), requestID, "application/json", data)
 	if err != nil {
 		t.Fatalf("Store failed: %v", err)
 	}
@@ -37,7 +36,7 @@ func TestLocalStorageRoundTrip(t *testing.T) {
 	}
 
 	// Resolve the path back.
-	path, err := ls.GetPath(tenantID, requestID)
+	path, err := ls.GetPath(requestID)
 	if err != nil {
 		t.Fatalf("GetPath failed: %v", err)
 	}
@@ -53,7 +52,7 @@ func TestLocalStorageRoundTrip(t *testing.T) {
 	}
 
 	// Verify the file is under the tenant directory (path-traversal guard).
-	tenantDir := filepath.Join(tmp, tenantID.String())
+	tenantDir := filepath.Join(tmp, "")
 	if !strings.HasPrefix(path, tenantDir+string(os.PathSeparator)) {
 		t.Errorf("path %q escapes tenant dir %q", path, tenantDir)
 	}
@@ -67,10 +66,9 @@ func TestLocalStorageGetPathMissingFile(t *testing.T) {
 	tmp := t.TempDir()
 	ls := NewLocalStorage(tmp)
 
-	tenantID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 	requestID := pgtype.UUID{Bytes: [16]byte{4, 5, 6}, Valid: true}
 
-	_, err := ls.GetPath(tenantID, requestID)
+	_, err := ls.GetPath(requestID)
 	if err == nil {
 		t.Fatal("expected error for missing file, got nil")
 	}
@@ -85,18 +83,17 @@ func TestLocalStoragePathTraversalGuard(t *testing.T) {
 	tmp := t.TempDir()
 	ls := NewLocalStorage(tmp)
 
-	tenantID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 	requestID := pgtype.UUID{Bytes: [16]byte{4, 5, 6}, Valid: true}
 	data := []byte("test")
 
-	if _, _, err := ls.Store(t.Context(), tenantID, requestID, "application/json", data); err != nil {
+	if _, _, err := ls.Store(t.Context(), requestID, "application/json", data); err != nil {
 		t.Fatalf("Store failed: %v", err)
 	}
 
 	// A different tenant should not be able to access the file.
 	otherTenant := pgtype.UUID{Bytes: [16]byte{9, 9, 9}, Valid: true}
 
-	_, err := ls.GetPath(otherTenant, requestID)
+	_, err := ls.GetPath(requestID)
 	if err == nil {
 		t.Fatal("expected error for cross-tenant access, got nil")
 	}

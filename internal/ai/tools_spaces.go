@@ -45,7 +45,7 @@ type spacesFindArgs struct {
 // geo code, or keywords. The handler tries each lookup in order and
 // returns the first match (or all keyword matches when keywords are used).
 func SpacesFindHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Spaces == nil {
 			return errorToolResult("spaces_unavailable", "spaces service is not configured"), nil
 		}
@@ -120,7 +120,7 @@ type spacesReadArgs struct {
 
 // SpacesReadHandler returns a ToolHandler that reads a single space by ID.
 func SpacesReadHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Spaces == nil {
 			return errorToolResult("spaces_unavailable", "spaces service is not configured"), nil
 		}
@@ -154,7 +154,7 @@ func SpacesReadHandler(deps *ToolDeps) ToolHandler {
 // The list is viewer-scoped (the service filters by the viewer's membership
 // and visibility rules).
 func SpacesListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Spaces == nil {
 			return errorToolResult("spaces_unavailable", "spaces service is not configured"), nil
 		}
@@ -202,7 +202,7 @@ type spacesCreateArgs struct {
 // executor's RBAC gate checks the required_permission (spaces.create); the
 // tool config sets requires_hitl = true so a human reviews the creation.
 func SpacesCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Spaces == nil {
 			return errorToolResult("spaces_unavailable", "spaces service is not configured"), nil
 		}
@@ -320,7 +320,7 @@ type spacesUpdateArgs struct {
 // The executor's RBAC gate checks the required_permission (spaces.edit);
 // the tool config sets requires_hitl = true.
 func SpacesUpdateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Spaces == nil {
 			return errorToolResult("spaces_unavailable", "spaces service is not configured"), nil
 		}

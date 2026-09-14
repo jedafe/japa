@@ -343,15 +343,15 @@ func (s *Service) IsManualRateStale(fetchedAt time.Time) bool {
 // ratesCacheKey builds the tenant-scoped Valkey key for cached latest rates
 // of a corridor. Tenant scoping prevents cross-tenant data bleed (Rule 4,
 // §4.2). Ref: conventions/valkey-keys-catalog.md (jc:remit:rates).
-func ratesCacheKey(tenantID pgtype.UUID, sendCurrency, receiveCurrency string) string {
-	return valkey.MustKey("remit:rates:%s:%s:%s", tenantID.String(), sendCurrency, receiveCurrency)
+func ratesCacheKey(sendCurrency, receiveCurrency string) string {
+	return valkey.MustKey("remit:rates::%s:%s", sendCurrency, receiveCurrency)
 }
 
 // bestCacheKey builds the tenant-scoped Valkey key for the cached best rate
 // of a corridor. Tenant scoping prevents cross-tenant data bleed (Rule 4,
 // §4.2). Ref: conventions/valkey-keys-catalog.md (jc:remit:best).
-func bestCacheKey(tenantID pgtype.UUID, sendCurrency, receiveCurrency string) string {
-	return valkey.MustKey("remit:best:%s:%s:%s", tenantID.String(), sendCurrency, receiveCurrency)
+func bestCacheKey(sendCurrency, receiveCurrency string) string {
+	return valkey.MustKey("remit:best::%s:%s", sendCurrency, receiveCurrency)
 }
 
 // ---------------------------------------------------------------------------
@@ -361,12 +361,12 @@ func bestCacheKey(tenantID pgtype.UUID, sendCurrency, receiveCurrency string) st
 // GetRates returns the latest rates for a corridor across all active
 // providers. Results are cached in Valkey (jc:remit:rates:{tenant}:{send}:{receive},
 // 15-min TTL) and fall back to a live DB query on cache miss.
-func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]RateInfo, error) {
+func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency string) ([]RateInfo, error) {
 	if !s.IsEnabled(ctx) {
 		return nil, errors.New("remittance: tracker disabled")
 	}
 
-	key := ratesCacheKey(tenantID, sendCurrency, receiveCurrency)
+	key := ratesCacheKey(sendCurrency, receiveCurrency)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, key).Result(); err == nil && cached != "" {
 			var rates []RateInfo
@@ -437,12 +437,12 @@ func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurren
 // GetBestRate returns the provider with the best (highest) effective rate for
 // a corridor. Results are cached in Valkey (jc:remit:best:{tenant}:{send}:{receive},
 // 15-min TTL) and fall back to a live DB query on cache miss.
-func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) (*BestRate, error) {
+func (s *Service) GetBestRate(ctx context.Context, sendCurrency, receiveCurrency string) (*BestRate, error) {
 	if !s.IsEnabled(ctx) {
 		return nil, errors.New("remittance: tracker disabled")
 	}
 
-	key := bestCacheKey(tenantID, sendCurrency, receiveCurrency)
+	key := bestCacheKey(sendCurrency, receiveCurrency)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, key).Result(); err == nil && cached != "" {
 			var best BestRate
@@ -452,7 +452,7 @@ func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCur
 		}
 	}
 
-	rates, err := s.GetRates(ctx, tenantID, sendCurrency, receiveCurrency)
+	rates, err := s.GetRates(ctx, sendCurrency, receiveCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -489,7 +489,7 @@ func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCur
 // Calculate returns a ranked list of providers with estimated receive amount,
 // total fees, and effective rate for a given send amount. Reads from the
 // Valkey cache of latest rates, falling back to a live DB query.
-func (s *Service) Calculate(ctx context.Context, tenantID pgtype.UUID, sendAmount float64, sendCurrency, receiveCurrency string) (*CalculateResult, error) {
+func (s *Service) Calculate(ctx context.Context, sendAmount float64, sendCurrency, receiveCurrency string) (*CalculateResult, error) {
 	if !s.IsEnabled(ctx) {
 		return nil, errors.New("remittance: tracker disabled")
 	}
@@ -498,7 +498,7 @@ func (s *Service) Calculate(ctx context.Context, tenantID pgtype.UUID, sendAmoun
 		return nil, errors.New("remittance: send amount must be positive")
 	}
 
-	rates, err := s.GetRates(ctx, tenantID, sendCurrency, receiveCurrency)
+	rates, err := s.GetRates(ctx, sendCurrency, receiveCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -852,7 +852,7 @@ func (s *Service) InsertManualRate(ctx context.Context, providerID pgtype.UUID, 
 		return gen.RemittanceRate{}, fmt.Errorf("remittance: insert manual rate: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, pgtype.UUID{}, sendCurrency, receiveCurrency)
+	s.InvalidateRateCache(ctx, sendCurrency, receiveCurrency)
 
 	return r, nil
 }
@@ -924,7 +924,7 @@ func (s *Service) CreateRate(ctx context.Context, input CreateRateInput) (RateIn
 		return RateInfo{}, fmt.Errorf("remittance: create rate: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, pgtype.UUID{}, input.SendCurrency, input.ReceiveCurrency)
+	s.InvalidateRateCache(ctx, input.SendCurrency, input.ReceiveCurrency)
 
 	return RateInfo{
 		ID:              r.ID.String(),
@@ -968,7 +968,7 @@ func (s *Service) UpdateRate(ctx context.Context, id pgtype.UUID, input UpdateRa
 		return RateInfo{}, fmt.Errorf("remittance: update rate: get provider: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, pgtype.UUID{}, r.SendCurrency, r.ReceiveCurrency)
+	s.InvalidateRateCache(ctx, r.SendCurrency, r.ReceiveCurrency)
 
 	return RateInfo{
 		ID:              r.ID.String(),
@@ -1001,7 +1001,7 @@ func (s *Service) DeleteRate(ctx context.Context, id pgtype.UUID) error {
 		return fmt.Errorf("remittance: delete rate: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, pgtype.UUID{}, r.SendCurrency, r.ReceiveCurrency)
+	s.InvalidateRateCache(ctx, r.SendCurrency, r.ReceiveCurrency)
 
 	return nil
 }
@@ -1071,14 +1071,14 @@ func (s *Service) PruneOldRates(ctx context.Context, cutoffDate time.Time) error
 
 // InvalidateRateCache deletes the tenant-scoped Valkey cache keys for a
 // corridor. Called after every successful rate fetch (API or manual insert).
-func (s *Service) InvalidateRateCache(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) {
+func (s *Service) InvalidateRateCache(ctx context.Context, sendCurrency, receiveCurrency string) {
 	if s.cache == nil {
 		return
 	}
 
 	keys := []string{
-		ratesCacheKey(tenantID, sendCurrency, receiveCurrency),
-		bestCacheKey(tenantID, sendCurrency, receiveCurrency),
+		ratesCacheKey(sendCurrency, receiveCurrency),
+		bestCacheKey(sendCurrency, receiveCurrency),
 	}
 	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("remittance: invalidate cache failed", "send", sendCurrency, "receive", receiveCurrency, "error", err)
@@ -1192,7 +1192,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, providerID pgtype.UUID
 			continue
 		}
 
-		s.InvalidateRateCache(ctx, pgtype.UUID{}, snap.SendCurrency, snap.ReceiveCurrency)
+		s.InvalidateRateCache(ctx, snap.SendCurrency, snap.ReceiveCurrency)
 	}
 
 	slog.Info("remittance: fetch provider rates: completed", "provider_id", providerID.String(), "slug", provider.Slug, "snapshots", len(snapshots))
@@ -1233,7 +1233,7 @@ func (s *Service) FetchAllProviderRates(ctx context.Context) (int, error) {
 // (rate above/below target) and the 24-hour debounce window has elapsed, a
 // notification is dispatched and the alert's last_triggered_at is updated
 // (ADR-075 §4). Returns the number of alerts that fired.
-func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UUID) (int, error) {
+func (s *Service) CheckAndDispatchAlerts(ctx context.Context) (int, error) {
 	if s.notifier == nil {
 		return 0, errors.New("remittance: no notifier configured")
 	}
@@ -1258,7 +1258,7 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UU
 
 		best, ok := rateCache[key]
 		if !ok {
-			best, err = s.GetBestRate(ctx, tenantID, alert.SendCurrency, alert.ReceiveCurrency)
+			best, err = s.GetBestRate(ctx, alert.SendCurrency, alert.ReceiveCurrency)
 			if err != nil {
 				slog.Warn("remittance: check alerts: get best rate failed", "send", alert.SendCurrency, "receive", alert.ReceiveCurrency, "error", err)
 

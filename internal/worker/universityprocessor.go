@@ -15,12 +15,12 @@ import "context"
 // period payout aggregation, payout execution, creator notifications, and
 // university logo fetching for auto-seeded university spaces (Section 39).
 type UniversityProcessor interface {
-	ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID, source string, grossKobo int64) error
-	CalculatePeriodPayouts(ctx context.Context, tenantID, periodStart, periodEnd string) error
-	SendInstructorPayout(ctx context.Context, tenantID, payoutID string) error
-	NotifyInstructorApproved(ctx context.Context, tenantID, instructorID string) error
-	NotifyCourseApproved(ctx context.Context, tenantID, trackID string) error
-	FetchLogo(ctx context.Context, tenantID, spaceID, logoURL, uploadedBy string) error
+	ProcessEnrollment(ctx context.Context, userID, trackID, paymentID, source string, grossKobo int64) error
+	CalculatePeriodPayouts(ctx context.Context, periodStart, periodEnd string) error
+	SendInstructorPayout(ctx context.Context, payoutID string) error
+	NotifyInstructorApproved(ctx context.Context, instructorID string) error
+	NotifyCourseApproved(ctx context.Context, trackID string) error
+	FetchLogo(ctx context.Context, spaceID, logoURL, uploadedBy string) error
 }
 
 var universityProcessor UniversityProcessor

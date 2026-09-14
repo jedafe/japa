@@ -95,7 +95,7 @@ func (s *Service) IncrementEngagementShares(ctx context.Context, contentID pgtyp
 
 // GetTopContentByVelocity returns the top N content IDs ordered by velocity
 // score descending. Used for trending/popular content feeds.
-func (s *Service) GetTopContentByVelocity(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]ContentWithScore, error) {
+func (s *Service) GetTopContentByVelocity(ctx context.Context, limit int32) ([]ContentWithScore, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -107,7 +107,7 @@ func (s *Service) GetTopContentByVelocity(ctx context.Context, tenantID pgtype.U
 		WHERE c.status = 'published'
 		ORDER BY ce.velocity_score DESC
 		LIMIT $1
-	`, tenantID, limit)
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("querying top content by velocity: %w", err)
 	}

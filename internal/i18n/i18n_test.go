@@ -18,11 +18,10 @@ func TestCacheSetAndGet(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
-	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
-	svc.cacheSet(tenantID, "en", map[string]string{"hello": "Hello"})
+	svc.cacheSet("en", map[string]string{"hello": "Hello"})
 
-	m, ok := svc.cacheGet(tenantID, "en")
+	m, ok := svc.cacheGet("en")
 	if !ok {
 		t.Fatal("expected cache hit")
 	}
@@ -36,14 +35,13 @@ func TestCacheGetReturnsCopy(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
-	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
-	svc.cacheSet(tenantID, "en", map[string]string{"a": "1"})
+	svc.cacheSet("en", map[string]string{"a": "1"})
 
-	m, _ := svc.cacheGet(tenantID, "en")
+	m, _ := svc.cacheGet("en")
 	m["c"] = "3" // mutate the copy
 
-	m2, _ := svc.cacheGet(tenantID, "en")
+	m2, _ := svc.cacheGet("en")
 	if _, ok := m2["c"]; ok {
 		t.Error("cache returned a shared reference instead of a copy")
 	}
@@ -53,12 +51,11 @@ func TestCacheInvalidate(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
-	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
-	svc.cacheSet(tenantID, "en", map[string]string{"key": "val"})
-	svc.cacheInvalidate(tenantID, "en")
+	svc.cacheSet("en", map[string]string{"key": "val"})
+	svc.cacheInvalidate("en")
 
-	_, ok := svc.cacheGet(tenantID, "en")
+	_, ok := svc.cacheGet("en")
 	if ok {
 		t.Error("expected cache miss after invalidation")
 	}
@@ -68,11 +65,10 @@ func TestCacheMissForDifferentLocale(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
-	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
-	svc.cacheSet(tenantID, "en", map[string]string{"a": "1"})
+	svc.cacheSet("en", map[string]string{"a": "1"})
 
-	_, ok := svc.cacheGet(tenantID, "fr")
+	_, ok := svc.cacheGet("fr")
 	if ok {
 		t.Error("expected cache miss for different locale")
 	}
@@ -85,9 +81,9 @@ func TestCacheMissForDifferentTenant(t *testing.T) {
 	tenant1 := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	tenant2 := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 
-	svc.cacheSet(tenant1, "en", map[string]string{"a": "1"})
+	svc.cacheSet("en", map[string]string{"a": "1"})
 
-	_, ok := svc.cacheGet(tenant2, "en")
+	_, ok := svc.cacheGet("en")
 	if ok {
 		t.Error("expected cache miss for different tenant")
 	}

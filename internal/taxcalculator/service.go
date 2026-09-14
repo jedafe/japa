@@ -291,8 +291,8 @@ func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, req UpdateGui
 }
 
 // DeleteGuide deletes a tax obligation guide by id and (admin).
-func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteGuide(ctx, id, tenantID); err != nil {
+func (s *Service) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteGuide(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -306,13 +306,13 @@ func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) err
 // ApproveGuide performs the Human-in-the-Loop approval for a guide
 // (admin). Sets hitl_reviewed_by, hitl_reviewed_at = now(), and
 // status = 'published'.
-func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, req ApproveGuideRequest) (GuideDTO, error) {
+func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, req ApproveGuideRequest) (GuideDTO, error) {
 	var notes *string
 	if req.Notes != nil && *req.Notes != "" {
 		notes = req.Notes
 	}
 
-	if err := s.store.ApproveGuide(ctx, id, tenantID, reviewerID, notes); err != nil {
+	if err := s.store.ApproveGuide(ctx, id, reviewerID, notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}

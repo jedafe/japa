@@ -365,7 +365,7 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -384,7 +384,7 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 	// Body is optional; ignore decode errors so an empty body is accepted.
 	_ = json.NewDecoder(r.Body).Decode(&input)
 
-	guide, err := h.service.ApproveGuide(r.Context(), id, tenantID, user.UserID, input)
+	guide, err := h.service.ApproveGuide(r.Context(), id, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Tax guide not found")

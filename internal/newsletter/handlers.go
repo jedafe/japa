@@ -59,8 +59,8 @@ func requireID(w http.ResponseWriter, r *http.Request, paramName, entityName str
 }
 
 // getByID is a shared helper for GET /{entity}/{id} handlers.
-func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, fetchFn func(ctx context.Context, tenantID, id pgtype.UUID) (T, error)) {
-	tenantID, ok := extractTenant(w, r)
+func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, fetchFn func(ctx context.Context, id pgtype.UUID) (T, error)) {
+	_, ok := extractTenant(w, r)
 	if !ok {
 		return
 	}
@@ -70,7 +70,7 @@ func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, f
 		return
 	}
 
-	result, err := fetchFn(r.Context(), tenantID, id)
+	result, err := fetchFn(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", entityName+" not found")
 		return
@@ -80,8 +80,8 @@ func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, f
 }
 
 // deleteByID is a shared helper for DELETE /{entity}/{id} handlers.
-func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, tenantID, id pgtype.UUID) error) {
-	tenantID, ok := extractTenant(w, r)
+func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, id pgtype.UUID) error) {
+	_, ok := extractTenant(w, r)
 	if !ok {
 		return
 	}
@@ -91,7 +91,7 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 		return
 	}
 
-	if err := deleteFn(r.Context(), tenantID, id); err != nil {
+	if err := deleteFn(r.Context(), id); err != nil {
 		slog.Error("deleting newsletter "+entityName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete "+entityName)
 
@@ -397,7 +397,7 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 // GetSubscriber returns a single newsletter subscriber by ID.
 // GET /admin/newsletter/subscribers/{id}.
 func (h *Handlers) GetSubscriber(w http.ResponseWriter, r *http.Request) {
-	getByID(w, r, "subscriber", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
+	getByID(w, r, "subscriber", func(ctx context.Context, id pgtype.UUID) (any, error) {
 		return h.Service.GetSubscriber(ctx, id)
 	})
 }
@@ -405,7 +405,7 @@ func (h *Handlers) GetSubscriber(w http.ResponseWriter, r *http.Request) {
 // DeleteSubscriber removes a newsletter subscriber.
 // DELETE /admin/newsletter/subscribers/{id}.
 func (h *Handlers) DeleteSubscriber(w http.ResponseWriter, r *http.Request) {
-	deleteByID(w, r, "subscriber", func(ctx context.Context, tenantID, id pgtype.UUID) error {
+	deleteByID(w, r, "subscriber", func(ctx context.Context, id pgtype.UUID) error {
 		return h.Service.DeleteSubscriber(ctx, id)
 	})
 }
@@ -471,7 +471,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 // GetCampaign returns a single newsletter campaign by ID.
 // GET /admin/newsletter/campaigns/{id}.
 func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
-	getByID(w, r, "campaign", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
+	getByID(w, r, "campaign", func(ctx context.Context, id pgtype.UUID) (any, error) {
 		return h.Service.GetCampaign(ctx, id)
 	})
 }
@@ -691,7 +691,7 @@ func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 // DeleteCampaign removes a newsletter campaign.
 // DELETE /admin/newsletter/campaigns/{id}.
 func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
-	deleteByID(w, r, "campaign", func(ctx context.Context, tenantID, id pgtype.UUID) error {
+	deleteByID(w, r, "campaign", func(ctx context.Context, id pgtype.UUID) error {
 		return h.Service.DeleteCampaign(ctx, id)
 	})
 }

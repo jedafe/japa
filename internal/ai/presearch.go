@@ -155,7 +155,7 @@ func NewPreSearcher(deps *ToolDeps) *PreSearcher {
 // geoSpaceID is optional — when nil, both searches run tenant-wide. When
 // provided, the content search is scoped to the space and RAG retrieval is
 // geo-filtered (§103 Geo-Filtered RAG amendment to §69).
-func (p *PreSearcher) PreSearch(ctx context.Context, tenantID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID) (*PreSearchResult, error) {
+func (p *PreSearcher) PreSearch(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID) (*PreSearchResult, error) {
 	if p == nil {
 		return &PreSearchResult{Level: PreSearchNone}, nil
 	}
@@ -168,19 +168,19 @@ func (p *PreSearcher) PreSearch(ctx context.Context, tenantID pgtype.UUID, promp
 
 	// --- Content search (§13 / §54 full-text) ---
 	if p.content != nil {
-		items := p.searchContent(ctx, tenantID, prompt, geoSpaceID)
+		items := p.searchContent(ctx, prompt, geoSpaceID)
 		result.Content = items
 	}
 
 	// --- RAG retrieval (§69, geo-filtered) ---
 	if p.rag != nil {
-		chunks, err := p.rag.Retrieve(ctx, tenantID, prompt, "", geoSpaceID)
+		chunks, err := p.rag.Retrieve(ctx, prompt, "", geoSpaceID)
 		if err != nil {
 			// RAG failure is non-fatal — pre-search can proceed with
 			// content results alone. Log and continue.
 			slog.Warn("ai: pre-search RAG retrieval failed", "error", err)
 		} else {
-			result.RAGChunks = filterExemptRAGChunks(ctx, p.privacy, tenantID, chunks)
+			result.RAGChunks = filterExemptRAGChunks(ctx, p.privacy, chunks)
 		}
 	}
 
@@ -197,7 +197,7 @@ func (p *PreSearcher) PreSearch(ctx context.Context, tenantID pgtype.UUID, promp
 // searchContent runs the content search and filters exempt rows. When
 // geoSpaceID is provided the search is space-scoped; otherwise it is
 // tenant-wide.
-func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID) []PreSearchContentItem {
+func (p *PreSearcher) searchContent(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID) []PreSearchContentItem {
 	filter := visibility.InternalVisibilityFilter(pgtype.UUID{})
 	if geoSpaceID != nil && geoSpaceID.Valid {
 		rows, err := p.content.SearchContentsBySpace(ctx, *geoSpaceID, prompt, preSearchLimit, 0, filter)
@@ -206,7 +206,7 @@ func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, p
 			return nil
 		}
 
-		filtered := filterExemptContentFromSpace(ctx, p.privacy, tenantID, rows)
+		filtered := filterExemptContentFromSpace(ctx, p.privacy, rows)
 
 		return toPreSearchItems(contentSearchResultsFromSpace(filtered))
 	}
@@ -217,7 +217,7 @@ func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, p
 		return nil
 	}
 
-	filtered := filterExemptContentFromTenant(ctx, p.privacy, tenantID, rows)
+	filtered := filterExemptContentFromTenant(ctx, p.privacy, rows)
 
 	return toPreSearchItems(contentSearchResultsFromTenant(filtered))
 }

@@ -362,7 +362,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -383,7 +383,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timeline, err := h.service.UpdateOwn(r.Context(), id, tenantID, user.UserID, input)
+	timeline, err := h.service.UpdateOwn(r.Context(), id, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
@@ -413,7 +413,7 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -439,7 +439,7 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	milestone, err := h.service.AddMilestone(r.Context(), timelineID, tenantID, user.UserID, input)
+	milestone, err := h.service.AddMilestone(r.Context(), timelineID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
@@ -474,7 +474,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -500,7 +500,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.UpdateMilestone(r.Context(), milestoneID, timelineID, tenantID, user.UserID, input); err != nil {
+	if err := h.service.UpdateMilestone(r.Context(), milestoneID, timelineID, user.UserID, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Timeline or milestone not found")
 			return
@@ -612,7 +612,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -627,7 +627,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminDelete(r.Context(), id, tenantID); err != nil {
+	if err := h.service.AdminDelete(r.Context(), id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
 			return

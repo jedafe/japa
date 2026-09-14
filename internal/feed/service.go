@@ -1060,7 +1060,7 @@ func (s *Service) loadAffinity(
 // The geo boost is also disabled when the tenant setting
 // geo_personalization.enabled is false (Section 32 L147–149).
 func (s *Service) GetForYouFeed(
-	ctx context.Context, tenantID, userID pgtype.UUID, sortMode string, limit, offset int32,
+	ctx context.Context, userID pgtype.UUID, sortMode string, limit, offset int32,
 	vc *visitor.VisitorContext,
 ) ([]FeedItem, error) {
 	if limit <= 0 || limit > MaxPageSize {
@@ -1120,7 +1120,7 @@ func (s *Service) GetForYouFeed(
 		w.HalfLifeHours = s.settings.GetFloatOr(ctx, "feed.for_you_half_life_hours", w.HalfLifeHours)
 	}
 
-	key := forYouCacheKey(tenantID, userID, sortMode, vc)
+	key := forYouCacheKey(userID, sortMode, vc)
 
 	// Use the shared cache helper with distributed lock stampede protection
 	// (BUG-008). On cache miss, the lock holder loads affinity, fetches

@@ -68,7 +68,7 @@ type UploadResult struct {
 
 // InitiateUpload creates a media row and returns presigned URL details.
 // The client uploads directly to SeaweedFS using the presigned URL.
-func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64) (UploadResult, error) {
+func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64) (UploadResult, error) {
 	// Guard: validate inputs early.
 	if filename == "" {
 		return UploadResult{}, errors.New("filename is required")
@@ -96,9 +96,8 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 
 	// Generate unique storage path under temp/ prefix.
 	ext := filepath.Ext(filename)
-	storagePath := fmt.Sprintf("%s/%s/%s%s",
-		StoragePathTemp,
-		tenantID.String(),
+	storagePath := fmt.Sprintf("%s//%s%s", StoragePathTemp,
+
 		uuid.New().String(),
 		ext)
 
@@ -594,7 +593,7 @@ func (s *Service) DirectUpload(ctx context.Context, uploaderID pgtype.UUID, file
 
 // StoreFromBytes stores raw bytes as a confirmed media item. When attribution
 // is non-nil, the source_* columns are populated for stock photo attribution.
-func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtype.UUID, data []byte, filename string, attribution *MediaAttribution) (pgtype.UUID, error) {
+func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, data []byte, filename string, attribution *MediaAttribution) (pgtype.UUID, error) {
 	if len(data) == 0 {
 		return pgtype.UUID{}, errors.New("data is empty")
 	}
@@ -609,10 +608,8 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 
 	// Generate unique storage path.
 	ext := extensionFromMIME(mimeType)
-	storagePath := fmt.Sprintf(
-		"%s/%s/%s%s",
-		StoragePathMedia,
-		tenantID.String(),
+	storagePath := fmt.Sprintf("%s//%s%s", StoragePathMedia,
+
 		uuid.New().String(),
 		ext,
 	)
@@ -672,7 +669,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 // like university:fetch_logo (Section 39).
 //
 // The uploaderID is the system/admin user ID to attribute the media to.
-func (s *Service) StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error) {
+func (s *Service) StoreFromURL(ctx context.Context, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error) {
 	// 1. Download the image.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
@@ -703,7 +700,7 @@ func (s *Service) StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.
 		return pgtype.UUID{}, fmt.Errorf("logo body is empty from %s", sourceURL)
 	}
 
-	return s.StoreFromBytes(ctx, tenantID, uploaderID, body, filename, nil)
+	return s.StoreFromBytes(ctx, uploaderID, body, filename, nil)
 }
 
 // storeLocalMediaFile writes body to disk at data/media/{bucket}/{storagePath}

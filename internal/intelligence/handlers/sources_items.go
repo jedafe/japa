@@ -53,9 +53,8 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	userID, authed := optionalUser(w, r)

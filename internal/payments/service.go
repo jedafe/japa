@@ -36,7 +36,7 @@ type CreatePaymentResult struct {
 	CheckoutURL string
 }
 
-func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput) (CreatePaymentResult, error) {
+func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input CreatePaymentInput) (CreatePaymentResult, error) {
 	if input.Provider == "" {
 		return CreatePaymentResult{}, errors.New("provider is required")
 	}
@@ -83,7 +83,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 
 	// Credit payments are synchronous wallet debits — no external provider call.
 	if input.Provider == ProviderCredit {
-		p, err := s.payWithCreditInternal(ctx, tenantID, userID, input, currency, netAmount, discountAmount, discountCodeID)
+		p, err := s.payWithCreditInternal(ctx, userID, input, currency, netAmount, discountAmount, discountCodeID)
 		if err != nil {
 			return CreatePaymentResult{}, err
 		}
@@ -237,7 +237,7 @@ func (s *Service) createPaymentRow(ctx context.Context, userID pgtype.UUID, inpu
 // payWithCreditInternal handles credit wallet payments.
 // Uses pending-first ordering (BUG-004): create payment row, then debit
 // credits, then mark succeeded. See PayWithCredit for full rationale.
-func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency string, amount, discountAmount int64, discountCodeID pgtype.UUID) (gen.Payment, error) {
+func (s *Service) payWithCreditInternal(ctx context.Context, userID pgtype.UUID, input CreatePaymentInput, currency string, amount, discountAmount int64, discountCodeID pgtype.UUID) (gen.Payment, error) {
 	if s.wallet == nil {
 		return gen.Payment{}, errors.New("wallet service not configured")
 	}
@@ -256,7 +256,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 		PurposeType: input.PurposeType,
 		PurposeID:   input.PurposeID,
 	}
-	if _, err := s.wallet.SpendCredits(ctx, tenantID, userID, creditInput); err != nil {
+	if _, err := s.wallet.SpendCredits(ctx, userID, creditInput); err != nil {
 		// Debit failed — mark the payment as failed.
 		failed, fErr := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusFailed)
 		if fErr != nil {

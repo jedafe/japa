@@ -240,7 +240,7 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 // encodes space_id::user_id, which is split and applied via the existing
 // UpdateSpaceJoinRequest store call.
 func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Request, status string) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -283,7 +283,7 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 		// §64: approval is the moment a pending requester becomes a member —
 		// record space.joined so badge/challenge triggers (e.g.
 		// space_explorer) fire for the request-approval join path too.
-		h.Service.emitActivity(r.Context(), tenantID, userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
+		h.Service.emitActivity(r.Context(), userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": composite, "status": status})

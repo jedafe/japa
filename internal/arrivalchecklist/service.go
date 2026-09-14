@@ -503,8 +503,8 @@ func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, req UpdateGui
 
 // DeleteGuide deletes an arrival checklist guide and its items by id.
 // Auth and permission checks are done at the handler/agent layer.
-func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteGuide(ctx, id, tenantID); err != nil {
+func (s *Service) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteGuide(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

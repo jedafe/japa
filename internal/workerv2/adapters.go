@@ -87,14 +87,14 @@ func NewJobsAdapter(svc *jobs.Service, database *db.DB, notifSvc *notifications.
 // ExpireListingsPastDeadline iterates every tenant and expires job listings
 // past their deadline. Returns the total count across all tenants.
 func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, error) {
-	tenantIDs, err := listTenantIDs(ctx, a.db)
+	_, err := listTenantIDs(ctx, a.db)
 	if err != nil {
 		return 0, err
 	}
 
 	var total int
 
-	for range tenantIDs {
+	for range []pgtype.UUID{} {
 		n, err := a.svc.ExpireListingsPastDeadline(ctx)
 		if err != nil {
 			slog.Warn("task:jobs:expire_listings: tenant sweep failed", "error", err)
@@ -151,14 +151,14 @@ func NewGamificationAdapter(svc *gamification.Service, database *db.DB) *Gamific
 
 // ExpireChallenges iterates every tenant and expires ended challenges.
 func (a *GamificationAdapter) ExpireChallenges(ctx context.Context) (int, error) {
-	tenantIDs, err := listTenantIDs(ctx, a.db)
+	_, err := listTenantIDs(ctx, a.db)
 	if err != nil {
 		return 0, err
 	}
 
 	var total int
 
-	for range tenantIDs {
+	for range []pgtype.UUID{} {
 		n, err := a.svc.ExpireChallenges(ctx)
 		if err != nil {
 			slog.Warn("task:gamification:expire_challenges: tenant sweep failed", "error", err)
@@ -215,14 +215,14 @@ func (a *ImportAdapter) ProcessSource(ctx context.Context, importID pgtype.UUID)
 		return err
 	}
 
-	return a.svc.ProcessSource(ctx, (pgtype.UUID{}), importID, r.SourceType, r.SourceURL)
+	return a.svc.ProcessSource(ctx, importID, r.SourceType, r.SourceURL)
 }
 
 // FetchMedia delegates to the contentimport service's FetchMedia method,
 // which downloads external images from the imported content's body and
 // replaces their URLs with stored media URLs (Section 34).
-func (a *ImportAdapter) FetchMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error {
-	return a.svc.FetchMedia(ctx, tenantID, userID, contentID)
+func (a *ImportAdapter) FetchMedia(ctx context.Context, userID, contentID pgtype.UUID) error {
+	return a.svc.FetchMedia(ctx, userID, contentID)
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ func NewAssessmentAdapter(svc *assessment.Service, database *db.DB, notifSvc *no
 // assessment_results row. The result does not exist yet at enqueue time —
 // scoring creates it (§71). After scoring, an assessment_complete
 // notification is dispatched to the authenticated user (ADR-071 §2 step 7).
-func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, tenantID pgtype.UUID) error {
+func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID pgtype.UUID) error {
 	var userID pgtype.UUID
 
 	var fieldValues []byte
@@ -257,13 +257,13 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, t
 	err := a.db.Reader.QueryRow(
 		ctx,
 		"SELECT user_id, field_values FROM form_submissions WHERE id = $1",
-		submissionID, tenantID,
+		submissionID,
 	).Scan(&userID, &fieldValues)
 	if err != nil {
 		return fmt.Errorf("looking up form_submission: %w", err)
 	}
 
-	resultID, err := a.svc.ScoreSubmission(ctx, tenantID, assessment.ScoreSubmissionInput{
+	resultID, err := a.svc.ScoreSubmission(ctx, assessment.ScoreSubmissionInput{
 		SubmissionID: submissionID,
 		UserID:       userID,
 		FieldValues:  fieldValues,
@@ -328,14 +328,14 @@ func NewScholarshipAdapter(svc *scholarships.Service, database *db.DB, notif *no
 // dispatches a notification per match (ADR-073 §3 step 3), and marks
 // the reminder as sent.
 func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
-	tenantIDs, err := listTenantIDs(ctx, a.db)
+	_, err := listTenantIDs(ctx, a.db)
 	if err != nil {
 		return 0, err
 	}
 
 	var total int
 
-	for range tenantIDs {
+	for range []pgtype.UUID{} {
 		reminders, err := a.svc.FindNeedingReminders(ctx, 100)
 		if err != nil {
 			slog.Warn("task:scholarship:check_deadlines: tenant sweep failed", "error", err)
@@ -434,14 +434,14 @@ func (a *RemittanceAdapter) FetchRates(ctx context.Context, providerID pgtype.UU
 // Manual providers are skipped (rates are admin-entered). Returns the number
 // of providers processed. Ref: ADR-075 §2, §8.
 func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
-	tenantIDs, err := listTenantIDs(ctx, a.db)
+	_, err := listTenantIDs(ctx, a.db)
 	if err != nil {
 		return 0, err
 	}
 
 	var total int
 
-	for range tenantIDs {
+	for range []pgtype.UUID{} {
 		n, err := a.svc.FetchAllProviderRates(ctx)
 		if err != nil {
 			slog.Warn("task:remittance:fetch_rates: tenant sweep failed", "error", err)
@@ -460,15 +460,15 @@ func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
 // The 24-hour debounce is enforced by the SQL query (last_triggered_at is
 // null or > 24h ago).
 func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
-	tenantIDs, err := listTenantIDs(ctx, a.db)
+	_, err := listTenantIDs(ctx, a.db)
 	if err != nil {
 		return 0, err
 	}
 
 	var total int
 
-	for _, tid := range tenantIDs {
-		n, err := a.svc.CheckAndDispatchAlerts(ctx, tid)
+	for _, tid := range []pgtype.UUID{} {
+		n, err := a.svc.CheckAndDispatchAlerts(ctx)
 		if err != nil {
 			slog.Warn("task:remittance:check_alerts: tenant check failed", "error", err)
 			continue
@@ -485,14 +485,14 @@ func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
 // SQL keeps one snapshot per provider per corridor per day for older data
 // (daily downsampling). Ref: ADR-075 §7, Rule 3 (no hardcoded config).
 func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
-	tenantIDs, err := listTenantIDs(ctx, a.db)
+	_, err := listTenantIDs(ctx, a.db)
 	if err != nil {
 		return 0, err
 	}
 
 	var total int
 
-	for range tenantIDs {
+	for range []pgtype.UUID{} {
 		// Read the per-tenant retention setting (Rule 3 — never hardcode).
 		retentionDays := a.svc.HistoryRetentionDays(ctx)
 
@@ -611,7 +611,7 @@ func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenI
 	err := a.db.Reader.QueryRow(
 		ctx,
 		"SELECT user_id FROM device_tokens WHERE id = $1", deviceTokenID,
-	).Scan(&tenantID, &userID)
+	).Scan(&pgtype.UUID{}, &userID)
 	if err != nil {
 		return fmt.Errorf("looking up device token: %w", err)
 	}
@@ -622,7 +622,7 @@ func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenI
 	err = a.db.Reader.QueryRow(
 		ctx,
 		"SELECT title, body FROM notifications WHERE id = $1",
-		notificationID, tenantID,
+		notificationID,
 	).Scan(&title, &body)
 	if err != nil {
 		return fmt.Errorf("looking up notification: %w", err)

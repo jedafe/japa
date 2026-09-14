@@ -73,8 +73,8 @@ type PersonaInput struct {
 // the email is an internal identifier, not a deliverable address. The
 // is embedded to avoid UNIQUE( email) collisions when
 // two tenants create personas with the same slug (BUG-008).
-func personaEmail(slug string, tenantID pgtype.UUID) string {
-	return fmt.Sprintf("persona+%s+%s@bot.internal", slug, tenantID.String())
+func personaEmail(slug string) string {
+	return fmt.Sprintf("persona+%s+@bot.internal", slug)
 }
 
 // PersonaDetail is the API-facing persona record with joined user + profile
@@ -180,7 +180,7 @@ type ProvisionResult struct {
 // // The batch size is capped by the persona.max_batch_size system setting
 // (BUG-006: an unbounded batch holds a long write transaction and can DoS
 // the writer pool). Default cap is 100 when the setting is unset.
-func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, inputs []PersonaInput) ([]ProvisionResult, error) {
+func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID, inputs []PersonaInput) ([]ProvisionResult, error) {
 	if len(inputs) == 0 {
 		return nil, errors.New("personas: no personas to provision")
 	}
@@ -263,7 +263,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		}
 
 		// 1. Create the backing user (is_bot = true).
-		email := personaEmail(in.Slug, tenantID)
+		email := personaEmail(in.Slug)
 
 		user, err := s.store.CreatePersonaUser(ctx, q, email, in.Slug)
 		if err != nil {

@@ -124,7 +124,7 @@ RETURNING id, user_id, origin_space_id, destination_space_id,
 }
 
 // GetTimeline retrieves a single non-deleted timeline by id within a tenant.
-func (s *Store) GetTimeline(ctx context.Context, id, tenantID pgtype.UUID) (Timeline, error) {
+func (s *Store) GetTimeline(ctx context.Context, id pgtype.UUID) (Timeline, error) {
 	const q = `
 SELECT id, user_id, origin_space_id, destination_space_id,
        visa_category, consulate, application_method, outcome, is_shared,
@@ -135,7 +135,7 @@ WHERE id = $1 AND deleted_at IS NULL
 
 	var t Timeline
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&t.ID, &t.UserID, &t.OriginSpaceID, &t.DestinationSpaceID,
 		&t.VisaCategory, &t.Consulate, &t.ApplicationMethod, &t.Outcome, &t.IsShared,
 		&t.AnonymisedAt, &t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
@@ -285,11 +285,11 @@ UPDATE visa_timelines SET %s WHERE id = $%d AND deleted_at IS NULL
 
 // DeleteTimeline soft-deletes a timeline by stamping deleted_at. The caller
 // must verify ownership before calling.
-func (s *Store) DeleteTimeline(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteTimeline(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE visa_timelines SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-`, id, tenantID)
+`, id)
 	if err != nil {
 		return fmt.Errorf("visatimeline: delete timeline: %w", err)
 	}

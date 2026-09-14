@@ -108,7 +108,7 @@ func TestToolWriterCreateAll(t *testing.T) {
 			"rent_ranges":          map[string]any{},
 			"scam_categories":      []string{},
 		}
-		_, err := reg.CreateTool(ctx, pgtype.UUID{}, userID, toolType, payload)
+		_, err := reg.CreateTool(ctx, userID, toolType, payload)
 		results[toolType] = err
 	}
 

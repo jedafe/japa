@@ -67,14 +67,14 @@ type SpaceTypeCategory struct {
 // ListSpaceTypeCategories returns the distinct categories used by space types
 // for this tenant, plus the global system geo categories that are not selectable
 // when creating custom types.
-func (s *Service) ListSpaceTypeCategories(ctx context.Context, tenantID pgtype.UUID) ([]SpaceTypeCategory, error) {
+func (s *Service) ListSpaceTypeCategories(ctx context.Context) ([]SpaceTypeCategory, error) {
 	query := `
 		SELECT DISTINCT COALESCE(category, '') AS value
 		FROM space_types
 		
 		ORDER BY value`
 
-	rows, err := s.db.Reader.Query(ctx, query, tenantID)
+	rows, err := s.db.Reader.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("listing space type categories: %w", err)
 	}
@@ -825,7 +825,7 @@ func (s *Service) maybeCreateSourceForSpace(ctx context.Context, space gen.Creat
 		sourceURL = fmt.Sprintf("%s/spaces/%s", s.siteURL, space.Slug)
 	}
 
-	source, sErr := s.sources.CreateSourceFromEntity(ctx, pgtype.UUID{}, space.ID, creatorUserID, "space", space.Name, space.Slug, sourceURL, category)
+	source, sErr := s.sources.CreateSourceFromEntity(ctx, space.ID, creatorUserID, "space", space.Name, space.Slug, sourceURL, category)
 	if sErr != nil {
 		slog.Warn("spaces: failed to create source for space", "space_id", space.ID, "error", sErr)
 		return
@@ -1165,7 +1165,7 @@ func (s *Service) IsOwner(ctx context.Context, spaceID, userID pgtype.UUID) (boo
 }
 
 // Join adds the user as a member of the space.
-func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
+func (s *Service) Join(ctx context.Context, spaceID, userID pgtype.UUID) error {
 	if err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
 		SpaceID: spaceID,
 		UserID:  userID,
@@ -1176,7 +1176,7 @@ func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUI
 	// §64: record the space.joined activity so badge/challenge triggers
 	// (e.g. space_explorer) can fire. Reference is per space so leave/rejoin
 	// cycles cannot farm the count.
-	s.emitActivity(ctx, tenantID, userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
+	s.emitActivity(ctx, userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
 
 	return nil
 }

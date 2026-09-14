@@ -29,9 +29,9 @@ import (
 // needs. Defined as an interface so the achievement package depends on a
 // narrow contract, not the full content service.
 type ContentService interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+	CreateContent(ctx context.Context, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
-	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
+	UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	UpdateContentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id pgtype.UUID) error
 }
@@ -99,7 +99,7 @@ type EditInput struct {
 // (wallet → worker → ... → achievement). Ref: §64 Gamification.
 type ActivityEmitter interface {
 	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input ActivityEventInput) (ActivityEvent, error)
-	EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error
+	EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error
 }
 
 // ActivityEventInput mirrors wallet.EmitActivityEventInput. Declared here to
@@ -210,7 +210,7 @@ func IsValidMilestoneType(v string) bool {
 // content_type='achievement' plus an achievement_meta row. The achievement is
 // published immediately (member+ is gated by the achievement.create
 // permission at the route level). Auth required.
-func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, input SubmitInput) (AchievementDTO, error) {
+func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input SubmitInput) (AchievementDTO, error) {
 	if input.Title == "" || input.DestinationSpaceID == "" {
 		return AchievementDTO{}, errors.New("title and destination_space_id are required")
 	}
@@ -231,7 +231,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	// §89 Geo Awareness: destination must be a country-level space. The spec
 	// tags every achievement by destination_country_id; filing it in a city
 	// or topic space would break the destination filter and Space widget.
-	level, err := s.store.GetSpaceLevel(ctx, destSpaceID, tenantID)
+	level, err := s.store.GetSpaceLevel(ctx, destSpaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, ErrInvalidDestination
@@ -253,7 +253,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 
 	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 
-	contentRow, err := s.content.CreateContent(ctx, tenantID, content.CreateContentInput{
+	contentRow, err := s.content.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:    authorID,
 		ContentType: content.TypeAchievement,
 		Title:       input.Title,
@@ -296,20 +296,20 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		})
 		if err != nil {
 			slog.Warn("achievement: emit activity event failed", "content_id", contentRow.ID, "error", err)
-		} else if err := s.emitter.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+		} else if err := s.emitter.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
 			slog.Warn("achievement: enqueue activity event failed", "content_id", contentRow.ID, "error", err)
 		}
 	}
 
-	return s.getAchievementDTOByID(ctx, contentRow.ID, tenantID, authorID)
+	return s.getAchievementDTOByID(ctx, contentRow.ID, authorID)
 }
 
 // GetBySlug returns a single achievement by its slug. Only published
 // achievements are visible to anonymous viewers; an unpublished achievement
 // (e.g. admin-moderated) is visible only to its own author. Pass a zero
 // (invalid) viewerID for anonymous access.
-func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID, viewerID pgtype.UUID) (AchievementDTO, error) {
-	row, err := s.store.GetBySlug(ctx, slug, tenantID, viewerID)
+func (s *Service) GetBySlug(ctx context.Context, slug string, viewerID pgtype.UUID) (AchievementDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, pgx.ErrNoRows
@@ -323,8 +323,8 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID, viewerID
 
 // GetBySlugWithReactions returns a single achievement by slug, populated
 // with the curated reaction set for the detail page UI (§89 Reaction Set).
-func (s *Service) GetBySlugWithReactions(ctx context.Context, slug string, tenantID, viewerID pgtype.UUID) (AchievementDTO, error) {
-	dto, err := s.GetBySlug(ctx, slug, tenantID, viewerID)
+func (s *Service) GetBySlugWithReactions(ctx context.Context, slug string, viewerID pgtype.UUID) (AchievementDTO, error) {
+	dto, err := s.GetBySlug(ctx, slug, viewerID)
 	if err != nil {
 		return AchievementDTO{}, err
 	}
@@ -386,7 +386,7 @@ func (s *Service) ListBySpace(ctx context.Context, spaceSlug string, limit int32
 // EditOwn updates the author's own achievement. The caller must verify
 // ownership (achievement.edit_own permission + author_id match). Only the
 // provided (non-nil) fields are updated.
-func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditInput) (AchievementDTO, error) {
+func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, input EditInput) (AchievementDTO, error) {
 	// Fetch existing content to verify ownership.
 	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
@@ -416,7 +416,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		updateInput.Body = *input.Body
 	}
 
-	if _, err := s.content.UpdateContent(ctx, contentID, tenantID, userID, updateInput, false); err != nil {
+	if _, err := s.content.UpdateContent(ctx, contentID, userID, updateInput, false); err != nil {
 		return AchievementDTO{}, fmt.Errorf("achievement: edit: update content: %w", err)
 	}
 
@@ -424,7 +424,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	// apply only the non-nil input fields onto it, so a partial edit (e.g.
 	// title-only) does not zero out milestone_type / destination_space_id /
 	// origin_space_id / is_anonymous (ACH-002).
-	existingMeta, err := s.store.GetMeta(ctx, contentID, tenantID)
+	existingMeta, err := s.store.GetMeta(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, fmt.Errorf("achievement: edit: achievement_meta not found: %w", err)
@@ -441,7 +441,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 			return AchievementDTO{}, fmt.Errorf("achievement: edit: invalid destination_space_id: %w", err)
 		}
 		// §89 Geo Awareness: destination must be a country-level space.
-		level, err := s.store.GetSpaceLevel(ctx, dest, tenantID)
+		level, err := s.store.GetSpaceLevel(ctx, dest)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return AchievementDTO{}, ErrInvalidDestination
@@ -483,11 +483,11 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		meta.IsAnonymous = *input.IsAnonymous
 	}
 
-	if err := s.store.UpdateMeta(ctx, contentID, tenantID, meta); err != nil {
+	if err := s.store.UpdateMeta(ctx, contentID, meta); err != nil {
 		return AchievementDTO{}, fmt.Errorf("achievement: edit: update achievement_meta: %w", err)
 	}
 
-	return s.getAchievementDTOByID(ctx, contentID, tenantID, userID)
+	return s.getAchievementDTOByID(ctx, contentID, userID)
 }
 
 // DeleteOwn soft-deletes the author's own achievement. The caller must verify
@@ -575,8 +575,8 @@ func (s *Service) AdminDelete(ctx context.Context, contentID pgtype.UUID) error 
 // author info) and converts it to a DTO. The viewerID authorises viewing
 // unpublished achievements owned by the viewer; pass a zero (invalid) UUID
 // when the caller is a system/admin context that should see any achievement.
-func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, tenantID, viewerID pgtype.UUID) (AchievementDTO, error) {
-	row, err := s.store.GetByID(ctx, contentID, tenantID, viewerID)
+func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, viewerID pgtype.UUID) (AchievementDTO, error) {
+	row, err := s.store.GetByID(ctx, contentID, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, pgx.ErrNoRows

@@ -207,9 +207,8 @@ func TestToggleFollowSelfFollowPrevention(t *testing.T) {
 
 	svc := &Service{} // no store — we only test validation logic
 	userID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
-	tenantID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 
-	_, err := svc.ToggleFollow(t.Context(), tenantID, userID, EntityTypeUser, userID)
+	_, err := svc.ToggleFollow(t.Context(), userID, EntityTypeUser, userID)
 	if err == nil {
 		t.Error("expected error for self-follow, got nil")
 	}
@@ -224,9 +223,8 @@ func TestToggleFollowInvalidEntityType(t *testing.T) {
 
 	svc := &Service{}
 	userID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
-	tenantID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 
-	_, err := svc.ToggleFollow(t.Context(), tenantID, userID, "invalid_type", userID)
+	_, err := svc.ToggleFollow(t.Context(), userID, "invalid_type", userID)
 	if err == nil {
 		t.Error("expected error for invalid entity type, got nil")
 	}

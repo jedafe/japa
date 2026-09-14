@@ -440,13 +440,13 @@ WHERE id = $%d
 }
 
 // DeleteGuide deletes a tax_obligation_guides row by id and .
-func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 DELETE FROM tax_obligation_guides
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("taxcalculator: delete guide: %w", err)
 	}
@@ -461,7 +461,7 @@ WHERE id = $1
 // ApproveGuide performs the Human-in-the-Loop approval: sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), status = 'published', and
 // optional review notes.
-func (s *Store) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
+func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE tax_obligation_guides
 SET hitl_reviewed_by = $2,
@@ -472,7 +472,7 @@ SET hitl_reviewed_by = $2,
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("taxcalculator: approve guide: %w", err)
 	}
@@ -626,13 +626,13 @@ WHERE id = $%d
 }
 
 // DeleteTreaty deletes a tax_treaty_pairs row by id and .
-func (s *Store) DeleteTreaty(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteTreaty(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 DELETE FROM tax_treaty_pairs
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("taxcalculator: delete treaty: %w", err)
 	}

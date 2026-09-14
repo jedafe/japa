@@ -82,12 +82,12 @@ type RichTextSanitizer func(raw string) string
 
 // WalletSpender deducts credits from a user's wallet.
 type WalletSpender interface {
-	SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID, input wallet.SpendCreditsInput) (int64, error)
+	SpendCredits(ctx context.Context, userID pgtype.UUID, input wallet.SpendCreditsInput) (int64, error)
 }
 
 // PaymentCreator creates payment intents for paid submissions.
 type PaymentCreator interface {
-	CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input payments.CreatePaymentInput) (payments.CreatePaymentResult, error)
+	CreatePayment(ctx context.Context, userID pgtype.UUID, input payments.CreatePaymentInput) (payments.CreatePaymentResult, error)
 }
 
 // SettingsReader reads system_settings values.
@@ -2069,7 +2069,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Tenant is required even for public submissions so the row is scoped.
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2173,7 +2173,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, spendErr := h.wallet.SpendCredits(r.Context(), tenantID, userID, wallet.SpendCreditsInput{
+		_, spendErr := h.wallet.SpendCredits(r.Context(), userID, wallet.SpendCreditsInput{
 			Amount:      feeCredits,
 			Source:      "form_submission",
 			Reference:   "form_submission:" + formID.String(),
@@ -2212,7 +2212,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		result, pErr := h.payments.CreatePayment(r.Context(), tenantID, userID, payments.CreatePaymentInput{
+		result, pErr := h.payments.CreatePayment(r.Context(), userID, payments.CreatePaymentInput{
 			Provider:    req.PaymentMethod,
 			PurposeType: "form_submission",
 			PurposeID:   formID.String(),

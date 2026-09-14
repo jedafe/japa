@@ -75,7 +75,7 @@ func bulkMaxItems(ctx context.Context, settings SettingsReader, key string) int 
 // HITL: the tool config sets requires_hitl=true because bulk creation is a bulk
 // operation under §103 HITL Rules.
 func ContentBulkCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ContentCreator == nil {
 			return errorToolResult("content_bulk_create_unavailable", "content bulk creation is not wired"), nil
 		}
@@ -104,7 +104,7 @@ func ContentBulkCreateHandler(deps *ToolDeps) ToolHandler {
 		errorCount := 0
 
 		for i, item := range a.Items {
-			res, created := createOneBulkItem(ctx, deps, userID, tenantID, i, item, permittedTypes)
+			res, created := createOneBulkItem(ctx, deps, userID, i, item, permittedTypes)
 			results = append(results, res)
 
 			if created {
@@ -124,7 +124,7 @@ func ContentBulkCreateHandler(deps *ToolDeps) ToolHandler {
 }
 
 // createOneBulkItem creates a single content row from a bulk item.
-func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgtype.UUID, idx int, item bulkCreateItem, permittedTypes map[string]bool) (bulkCreateResult, bool) {
+func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID pgtype.UUID, idx int, item bulkCreateItem, permittedTypes map[string]bool) (bulkCreateResult, bool) {
 	res := bulkCreateResult{Index: idx, Title: item.Title}
 
 	if item.Title == "" {
@@ -214,7 +214,7 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgt
 		return res, false
 	}
 
-	row, err := deps.ContentCreator(ctx, tenantID, ContentCreateInput{
+	row, err := deps.ContentCreator(ctx, ContentCreateInput{
 		AuthorID:       authorID,
 		SpaceID:        spaceID,
 		ContentType:    item.ContentType,
@@ -264,7 +264,7 @@ type bulkPublishResult struct {
 //
 // Permissions: content.publish (executor catalog gate).
 func ContentBulkPublishHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ContentLifecycle == nil {
 			return errorToolResult("content_bulk_publish_unavailable", "content lifecycle service is not configured"), nil
 		}
@@ -293,7 +293,7 @@ func ContentBulkPublishHandler(deps *ToolDeps) ToolHandler {
 		errorCount := 0
 
 		for i, idStr := range a.ContentIDs {
-			res, ok := publishOneBulkItem(ctx, deps, tenantID, i, idStr, status)
+			res, ok := publishOneBulkItem(ctx, deps, i, idStr, status)
 			results = append(results, res)
 
 			if ok {
@@ -312,7 +312,7 @@ func ContentBulkPublishHandler(deps *ToolDeps) ToolHandler {
 	}
 }
 
-func publishOneBulkItem(ctx context.Context, deps *ToolDeps, tenantID pgtype.UUID, idx int, idStr, status string) (bulkPublishResult, bool) {
+func publishOneBulkItem(ctx context.Context, deps *ToolDeps, idx int, idStr, status string) (bulkPublishResult, bool) {
 	res := bulkPublishResult{Index: idx}
 
 	contentID, err := scanUUID(idStr)
@@ -327,7 +327,7 @@ func publishOneBulkItem(ctx context.Context, deps *ToolDeps, tenantID pgtype.UUI
 
 	// Defense-in-depth privacy re-check.
 	if deps.Privacy != nil {
-		exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, contentID)
+		exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, contentID)
 		if err != nil {
 			res.ErrorCode = "privacy_check_failed"
 			res.Error = err.Error()

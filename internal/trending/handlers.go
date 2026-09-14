@@ -175,7 +175,7 @@ func parseLevelPtr(r *http.Request) *string {
 // GetTrendingContent handles GET /api/v1/trending/content.
 // BUG-007: supports ?type=discussion|blog_post filter (Section 53).
 func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -192,7 +192,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	// The cache always stores maxLimit rows; per-request ?limit= is applied
 	// by truncating after the cache lookup so that different limit values
 	// share one cache entry (no limit-suffix collision).
-	tenantStr := tenantID.String()
+	tenantStr := ""
 
 	cacheKey := vkcache.MustKey("trending:content:%s:%s:%s", tenantStr, geoCode, window)
 	if contentType != nil {
@@ -255,7 +255,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 // Uses distributed lock stampede protection (BUG-008/BUG-013) via the
 // shared vkcache.GetOrComputeNative helper.
 func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -271,7 +271,7 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	//
 	// The cache always stores maxLimit rows; per-request ?limit= is applied
 	// by truncating after the cache lookup.
-	tenantStr := tenantID.String()
+	tenantStr := ""
 	cacheKey := vkcache.MustKey("trending:tags:%s:%s:%s", tenantStr, geoCode, window)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingTagsRow, error) {
@@ -312,7 +312,7 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 // GetTrendingSpaces handles GET /api/v1/trending/spaces.
 // BUG-008: supports ?level=country|state|city|custom filter (Section 53).
 func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -330,7 +330,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	//
 	// The cache always stores maxLimit rows; per-request ?limit= is applied
 	// by truncating after the cache lookup.
-	tenantStr := tenantID.String()
+	tenantStr := ""
 
 	cacheKey := vkcache.MustKey("trending:spaces:%s:%s:%s", tenantStr, geoCode, window)
 	if level != nil {

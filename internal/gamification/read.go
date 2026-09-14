@@ -88,8 +88,8 @@ func ValidateLeaderboardPeriod(period string) bool {
 }
 
 // leaderboardCacheKey builds the Valkey key for a cached leaderboard.
-func leaderboardCacheKey(tenantID pgtype.UUID, scope, period string) string {
-	return valkey.MustKey("leaderboard:%s:%s:%s", uuidStr(tenantID), scope, period)
+func leaderboardCacheKey(scope, period string) string {
+	return valkey.MustKey("leaderboard:%s:%s:%s", uuidStr(), scope, period)
 }
 
 // periodStartDate returns the UTC start-of-period time for weekly/monthly.
@@ -111,7 +111,7 @@ func periodStartDate(period string) time.Time {
 // the full top-N size; the requested limit slices the cached/queried set.
 // Scope: "global" or "space:{uuid}". Period: "all_time", "monthly", "weekly".
 // Returns ErrGamificationDisabled when gamification.leaderboard_enabled is off.
-func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scope, period string, limit int32) ([]LeaderboardEntry, error) {
+func (s *Service) GetLeaderboard(ctx context.Context, scope, period string, limit int32) ([]LeaderboardEntry, error) {
 	if !s.leaderboardEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
@@ -132,7 +132,7 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 		}
 	}
 
-	key := leaderboardCacheKey(tenantID, scope, period)
+	key := leaderboardCacheKey(scope, period)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, key).Result(); err == nil && cached != "" {
 			var entries []LeaderboardEntry

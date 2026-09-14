@@ -322,7 +322,7 @@ ORDER BY sp.name`, where)
 }
 
 // GetApprovedRevision returns the latest approved revision for a wiki page.
-func (s *Store) GetApprovedRevision(ctx context.Context, pageID, tenantID pgtype.UUID) (WikiRevision, error) {
+func (s *Store) GetApprovedRevision(ctx context.Context, pageID pgtype.UUID) (WikiRevision, error) {
 	const q = `
 SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
@@ -338,7 +338,7 @@ LIMIT 1
 
 	var r WikiRevision
 
-	err := s.pool.Reader.QueryRow(ctx, q, pageID, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, pageID).Scan(
 		&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
 		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
 		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
@@ -357,7 +357,7 @@ LIMIT 1
 }
 
 // ListRevisions returns the revision history for a wiki page (all statuses).
-func (s *Store) ListRevisions(ctx context.Context, pageID, tenantID pgtype.UUID, limit, offset int32) ([]WikiRevision, int64, error) {
+func (s *Store) ListRevisions(ctx context.Context, pageID pgtype.UUID, limit, offset int32) ([]WikiRevision, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -381,7 +381,7 @@ ORDER BY wr.created_at DESC
 LIMIT $2 OFFSET $3
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, pageID, tenantID, limit, offset)
+	rows, err := s.pool.Reader.Query(ctx, q, pageID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: list revisions: %w", err)
 	}
@@ -649,7 +649,7 @@ RETURNING id
 
 // CreatePageWithRevision creates a new wiki page and its initial pending
 // revision inside a single transaction.
-func (s *Store) CreatePageWithRevision(ctx context.Context, tenantID, spaceID, userID pgtype.UUID, slug, title, category string, content []byte, summary string) (pageID, revID pgtype.UUID, err error) {
+func (s *Store) CreatePageWithRevision(ctx context.Context, spaceID, userID pgtype.UUID, slug, title, category string, content []byte, summary string) (pageID, revID pgtype.UUID, err error) {
 	tx, err := s.pool.Writer.Begin(ctx)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page tx: %w", err)
@@ -681,7 +681,7 @@ RETURNING id
 
 	// Insert the initial pending revision.
 	var revIDResult pgtype.UUID
-	if err := tx.QueryRow(ctx, "\nINSERT INTO wiki_revisions (wiki_page_id, content, summary, status,\n    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)\nVALUES ($1, $2, $3, $4, 'pending', $5, false, NULL, $6)\nRETURNING", tenantID, pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
+	if err := tx.QueryRow(ctx, "\nINSERT INTO wiki_revisions (wiki_page_id, content, summary, status,\n    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)\nVALUES ($1, $2, $3, $4, 'pending', $5, false, NULL, $6)\nRETURNING", pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "wiki_revisions_page_hash") {
 			return pgtype.UUID{}, pgtype.UUID{}, ErrDuplicateContent

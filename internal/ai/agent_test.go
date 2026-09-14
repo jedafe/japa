@@ -277,7 +277,7 @@ func newTestAgentHandler(t *testing.T, provider *mockAgentProvider, opts ...Agen
 			"required": []any{"query"},
 		},
 	}, "", pgtype.UUID{})
-	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		return &ToolResult{Status: ToolCallStatusSuccess, Content: `{"results":[]}`}, nil
 	})
 
@@ -308,7 +308,7 @@ func TestHandleAgentRequest_AgentDisabled(t *testing.T) {
 		}),
 	)
 
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err == nil {
 		t.Fatal("expected error when agent is disabled, got nil")
 	}
@@ -327,7 +327,7 @@ func TestHandleAgentRequest_NoPermission(t *testing.T) {
 		WithAgentPerms(&stubPerms{granted: map[string]bool{}}), // no agent.use
 	)
 
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err == nil {
 		t.Fatal("expected error when user lacks agent.use, got nil")
 	}
@@ -350,7 +350,7 @@ func TestHandleAgentRequest_RateLimited(t *testing.T) {
 		}),
 	)
 
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err == nil {
 		t.Fatal("expected rate limit error, got nil")
 	}
@@ -372,7 +372,7 @@ func TestHandleAgentRequest_RateLimiterFailsOpen(t *testing.T) {
 		WithAgentSessions(sessions),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed when rate limiter fails (fail-open), got error: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestHandleAgentRequest_DailyBudgetExceeded(t *testing.T) {
 		}),
 	)
 
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err == nil {
 		t.Fatal("expected budget exceeded error, got nil")
 	}
@@ -423,7 +423,7 @@ func TestHandleAgentRequest_DailyBudgetWithinLimit(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed within budget, got error: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestHandleAgentRequest_DailyBudgetDisabled(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed when budget disabled (0), got error: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestHandleAgentRequest_DailyBudgetGetFailsOpen(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed when budget GET fails (fail-open), got error: %v", err)
 	}
@@ -496,7 +496,7 @@ func TestHandleAgentRequest_EmptyPrompt(t *testing.T) {
 	provider := &mockAgentProvider{name: "mock"}
 	h := newTestAgentHandler(t, provider)
 
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "")
 	if err == nil {
 		t.Fatal("expected error for empty prompt, got nil")
 	}
@@ -518,7 +518,7 @@ func TestHandleAgentRequest_FinalResponseNoToolCalls(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "What is JapaConnect?")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "What is JapaConnect?")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -580,7 +580,7 @@ func TestHandleAgentRequest_ToolCallThenFinalResponse(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "Search for visa info")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "Search for visa info")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -646,7 +646,7 @@ func TestHandleAgentRequest_MaxIterationsExceeded(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -692,7 +692,7 @@ func TestHandleAgentRequest_LLMError(t *testing.T) {
 		WithAgentSessions(sessions),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -752,7 +752,7 @@ func TestHandleAgentRequest_CostLimitExceeded(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -807,7 +807,7 @@ func TestHandleAgentRequest_GeoContextResolved(t *testing.T) {
 		WithAgentGeoResolver(geo),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -855,7 +855,7 @@ func TestHandleAgentRequest_ToolCatalogCached(t *testing.T) {
 		WithAgentCache(cache),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -940,7 +940,7 @@ func TestHandleAgentRequest_EventOrdering(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1009,7 +1009,7 @@ func TestHandleAgentRequest_TimeoutEnforced(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1048,7 +1048,7 @@ func TestHandleAgentRequest_UserCancellation(t *testing.T) {
 		WithAgentCache(cache),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

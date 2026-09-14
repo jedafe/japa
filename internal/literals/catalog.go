@@ -38,9 +38,9 @@ func NewCatalog(queries *gen.Queries, valkey valkeycompat.Cmdable) *Catalog {
 
 // GetActive returns all active template literals for a tenant, preferring the
 // Valkey cache. Cache failures are best-effort and never return an error.
-func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]TemplateLiteral, error) {
+func (c *Catalog) GetActive(ctx context.Context) ([]TemplateLiteral, error) {
 	if c.valkey != nil {
-		cached, err := c.valkey.Get(ctx, c.cacheKey(tenantID)).Result()
+		cached, err := c.valkey.Get(ctx, c.cacheKey()).Result()
 		if err == nil && cached != "" {
 			var lits []TemplateLiteral
 			if err := json.Unmarshal([]byte(cached), &lits); err == nil {
@@ -87,7 +87,7 @@ func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]Templa
 	if c.valkey != nil {
 		encoded, err := json.Marshal(lits)
 		if err == nil {
-			if sErr := c.valkey.Set(ctx, c.cacheKey(tenantID), string(encoded), catalogCacheTTL).Err(); sErr != nil {
+			if sErr := c.valkey.Set(ctx, c.cacheKey(), string(encoded), catalogCacheTTL).Err(); sErr != nil {
 				slog.Warn("literals: failed to cache active literals", "error", sErr)
 			}
 		}
@@ -102,8 +102,8 @@ func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]Templa
 // is configured. Built-in variables are included in the map so the frontend
 // resolver can use bare tokens such as {{Current_Year}} without each tenant
 // having to redefine them.
-func (c *Catalog) ResolveMap(ctx context.Context, tenantID pgtype.UUID, rc RenderContext) (map[string]string, error) {
-	tokens, err := c.GetActive(ctx, tenantID)
+func (c *Catalog) ResolveMap(ctx context.Context, rc RenderContext) (map[string]string, error) {
+	tokens, err := c.GetActive(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -180,16 +180,16 @@ func addBuiltinVars(out map[string]string, env *expr.Env) {
 }
 
 // Invalidate removes the cached active literal list for a tenant.
-func (c *Catalog) Invalidate(ctx context.Context, tenantID pgtype.UUID) error {
+func (c *Catalog) Invalidate(ctx context.Context) error {
 	if c.valkey == nil {
 		return nil
 	}
 
-	return c.valkey.Del(ctx, c.cacheKey(tenantID)).Err()
+	return c.valkey.Del(ctx, c.cacheKey()).Err()
 }
 
-func (c *Catalog) cacheKey(tenantID pgtype.UUID) string {
-	return valkey.MustKey(catalogKeyTemplate, tenantID.String())
+func (c *Catalog) cacheKey() string {
+	return valkey.MustKey(catalogKeyTemplate, nil())
 }
 
 func resolveExpressionWithEnv(ctx context.Context, expression string, fallback *string, env *expr.Env) (string, bool) {

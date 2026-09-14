@@ -147,7 +147,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // published achievements are visible to anonymous viewers; an unpublished
 // (admin-moderated) achievement is visible only to its own author.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -170,7 +170,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		viewerID = u.UserID
 	}
 
-	achievement, err := h.service.GetBySlugWithReactions(r.Context(), slug, tenantID, viewerID)
+	achievement, err := h.service.GetBySlugWithReactions(r.Context(), slug, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
@@ -198,7 +198,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -229,7 +229,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	achievement, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
+	achievement, err := h.service.Submit(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrMissingMilestone) {
 			errpkg.WriteError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
@@ -263,7 +263,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -284,7 +284,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	achievement, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input)
+	achievement, err := h.service.EditOwn(r.Context(), contentID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")

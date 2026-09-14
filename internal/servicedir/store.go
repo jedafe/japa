@@ -201,7 +201,7 @@ INSERT INTO service_listing_meta (
 }
 
 // GetMeta retrieves the service_listing_meta row for a given content_id.
-func (s *Store) GetMeta(ctx context.Context, contentID, tenantID pgtype.UUID) (ServiceMeta, error) {
+func (s *Store) GetMeta(ctx context.Context, contentID pgtype.UUID) (ServiceMeta, error) {
 	const q = `
 SELECT id, content_id, org_id, service_category, destination_space_id,
        city_space_id, origin_communities, is_remote, website_url, booking_url,
@@ -214,7 +214,7 @@ WHERE content_id = $1
 
 	var m ServiceMeta
 
-	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, contentID).Scan(
 		&m.ID, &(pgtype.UUID{}), &m.ContentID, &m.OrgID, &m.ServiceCategory,
 		&m.DestinationSpaceID, &m.CitySpaceID, &m.OriginCommunities,
 		&m.IsRemote, &m.WebsiteURL, &m.BookingURL, &m.PriceRange,
@@ -235,7 +235,7 @@ WHERE content_id = $1
 
 // UpdateMeta updates the mutable structured fields on a service_listing_meta
 // row. Called when the author edits their service listing.
-func (s *Store) UpdateMeta(ctx context.Context, contentID, tenantID pgtype.UUID, meta ServiceMeta) error {
+func (s *Store) UpdateMeta(ctx context.Context, contentID pgtype.UUID, meta ServiceMeta) error {
 	originCommunities := meta.OriginCommunities
 	if originCommunities == nil {
 		originCommunities = []string{}
@@ -258,7 +258,7 @@ WHERE content_id = $1
 
 	_, err := s.pool.Writer.Exec(
 		ctx, q,
-		contentID, tenantID,
+		contentID,
 		meta.OrgID, meta.ServiceCategory, meta.DestinationSpaceID,
 		meta.CitySpaceID, originCommunities, meta.IsRemote,
 		meta.WebsiteURL, meta.BookingURL, meta.PriceRange,
@@ -655,7 +655,7 @@ WHERE %s
 // VerifyService marks a service listing as verified by an admin, recording
 // the verification type (§98: self|community|admin|professional_body) and
 // the admin user_id + timestamp for audit (ADR-088 HITL, BUG-015).
-func (s *Store) VerifyService(ctx context.Context, contentID, tenantID, verifiedBy pgtype.UUID, verificationType string) error {
+func (s *Store) VerifyService(ctx context.Context, contentID, verifiedBy pgtype.UUID, verificationType string) error {
 	const q = `
 UPDATE service_listing_meta
 SET is_verified = true,
@@ -666,7 +666,7 @@ SET is_verified = true,
 WHERE content_id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, verifiedBy, verificationType)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, verifiedBy, verificationType)
 	if err != nil {
 		return fmt.Errorf("servicedir: verify service: %w", err)
 	}
@@ -680,7 +680,7 @@ WHERE content_id = $1
 
 // UnverifyService marks a service listing as unverified by an admin
 // (service.verify permission). Clears the verified flag and the audit trail.
-func (s *Store) UnverifyService(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+func (s *Store) UnverifyService(ctx context.Context, contentID pgtype.UUID) error {
 	const q = `
 UPDATE service_listing_meta
 SET is_verified = false,
@@ -691,7 +691,7 @@ SET is_verified = false,
 WHERE content_id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID)
 	if err != nil {
 		return fmt.Errorf("servicedir: unverify service: %w", err)
 	}
@@ -706,14 +706,14 @@ WHERE content_id = $1
 // UpdateClaimStatus updates the claim_status and claimed_by_org_id on a
 // service_listing_meta row. Used to initiate, approve, or reject an
 // organization claim (§98).
-func (s *Store) UpdateClaimStatus(ctx context.Context, contentID, tenantID pgtype.UUID, claimStatus string, orgID pgtype.UUID) error {
+func (s *Store) UpdateClaimStatus(ctx context.Context, contentID pgtype.UUID, claimStatus string, orgID pgtype.UUID) error {
 	const q = `
 UPDATE service_listing_meta
 SET claim_status = $2, claimed_by_org_id = $3, updated_at = now()
 WHERE content_id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, claimStatus, orgID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, claimStatus, orgID)
 	if err != nil {
 		return fmt.Errorf("servicedir: update claim status: %w", err)
 	}
@@ -748,14 +748,14 @@ SELECT EXISTS (
 // currently unclaimed (BUG-007: prevents overwriting an existing pending
 // or approved claim). Returns pgx.ErrNoRows if the listing does not exist
 // or is already claimed.
-func (s *Store) ClaimIfUnclaimed(ctx context.Context, contentID, tenantID, orgID pgtype.UUID) error {
+func (s *Store) ClaimIfUnclaimed(ctx context.Context, contentID, orgID pgtype.UUID) error {
 	const q = `
 UPDATE service_listing_meta
 SET claim_status = 'pending', claimed_by_org_id = $2, updated_at = now()
 WHERE content_id = $1 AND claim_status = 'unclaimed'
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, orgID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, orgID)
 	if err != nil {
 		return fmt.Errorf("servicedir: claim if unclaimed: %w", err)
 	}
@@ -771,7 +771,7 @@ WHERE content_id = $1 AND claim_status = 'unclaimed'
 // currently pending (BUG-015: prevents resolving an already-approved or
 // unclaimed listing). Returns pgx.ErrNoRows if the listing does not exist
 // or the claim is not pending.
-func (s *Store) ResolveClaimIfPending(ctx context.Context, contentID, tenantID, orgID pgtype.UUID, approve bool) error {
+func (s *Store) ResolveClaimIfPending(ctx context.Context, contentID, orgID pgtype.UUID, approve bool) error {
 	var claimStatus, claimedByOrgID any
 
 	claimStatus = ClaimStatusApproved
@@ -788,7 +788,7 @@ SET claim_status = $2, claimed_by_org_id = $3, updated_at = now()
 WHERE content_id = $1 AND claim_status = 'pending'
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, claimStatus, claimedByOrgID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, claimStatus, claimedByOrgID)
 	if err != nil {
 		return fmt.Errorf("servicedir: resolve claim if pending: %w", err)
 	}

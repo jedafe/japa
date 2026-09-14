@@ -30,7 +30,7 @@ func NewHandlers(checker *Checker) *Handlers {
 // needs flags before the user logs in to render navigation correctly.
 func (h *Handlers) HandleGetFeatureFlags(w http.ResponseWriter, r *http.Request) {
 
-	flags := h.checker.GetAllEnabled(r.Context(), pgtype.UUID{})
+	flags := h.checker.GetAllEnabled(r.Context())
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": flags})
 }
 

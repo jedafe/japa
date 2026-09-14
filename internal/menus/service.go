@@ -24,7 +24,7 @@ type PermissionResolver interface {
 // FeatureChecker resolves tenant-level feature flags so the menu resolver can
 // prune items tied to disabled features.
 type FeatureChecker interface {
-	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // Service provides business logic for navigating menus and managing items.
@@ -117,7 +117,7 @@ func (s *Service) GetMenu(ctx context.Context, id pgtype.UUID) (*MenuResponse, e
 }
 
 // GetMenuBySlug is an exported method.
-func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*MenuResponse, error) {
+func (s *Service) GetMenuBySlug(ctx context.Context, slug string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*MenuResponse, error) {
 	menu, err := s.store.getMenuBySlug(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("getting menu by slug: %w", err)
@@ -152,7 +152,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 		// not in the user's resolved permissions are pruned.)
 	}
 
-	filteredItems := filterMenuItems(ctx, jsonItems, tenantID, userGroupIDs, isAuthenticated, userPerms, s.features)
+	filteredItems := filterMenuItems(ctx, jsonItems, userGroupIDs, isAuthenticated, userPerms, s.features)
 	treeItems := buildMenuTree(filteredItems)
 
 	return &MenuResponse{
@@ -455,7 +455,7 @@ func genMenuItemsToJSON(rows []gen.ListMenuItemsRow) []MenuItem {
 // check). Items with a non-empty feature_flag are shown only when the flag is
 // enabled for the tenant. Items with no permission_node are visible to everyone
 // per visibility rules.
-func filterMenuItems(ctx context.Context, items []MenuItem, tenantID pgtype.UUID, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool, features FeatureChecker) []MenuItem {
+func filterMenuItems(ctx context.Context, items []MenuItem, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool, features FeatureChecker) []MenuItem {
 	var filtered []MenuItem
 
 	for _, item := range items {
@@ -506,7 +506,7 @@ func filterMenuItems(ctx context.Context, items []MenuItem, tenantID pgtype.UUID
 		// regardless of auth state because disabled features are hidden from
 		// everyone. Fail closed if the feature checker is unavailable.
 		if item.FeatureFlag != nil && *item.FeatureFlag != "" {
-			if features == nil || !features.IsEnabled(ctx, tenantID, *item.FeatureFlag) {
+			if features == nil || !features.IsEnabled(ctx, *item.FeatureFlag) {
 				continue
 			}
 		}

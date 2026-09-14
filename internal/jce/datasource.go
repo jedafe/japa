@@ -32,7 +32,7 @@ const (
 // dataSourceRegistry is the small surface of intelligence/sources needed to
 // link comparison data sources to the canonical intel_sources registry.
 type dataSourceRegistry interface {
-	CreateAutoForComparison(ctx context.Context, tenantID, userID pgtype.UUID, sourceName, sourceURL *string, trustLevel int32) (gen.IntelSource, error)
+	CreateAutoForComparison(ctx context.Context, userID pgtype.UUID, sourceName, sourceURL *string, trustLevel int32) (gen.IntelSource, error)
 }
 
 // dataSourceStore provides persistence for comparison_data_sources.
@@ -67,14 +67,14 @@ type dataSourceMapped struct {
 }
 
 // create inserts a new data source and returns the populated domain model.
-func (s *dataSourceStore) create(ctx context.Context, tenantID, userID pgtype.UUID, in DataSourceInput) (DataSource, error) {
+func (s *dataSourceStore) create(ctx context.Context, userID pgtype.UUID, in DataSourceInput) (DataSource, error) {
 	params, err := dataSourceCreateParams(in)
 	if err != nil {
 		return DataSource{}, err
 	}
 
 	if s.sourceRegistry != nil {
-		src, sErr := s.sourceRegistry.CreateAutoForComparison(ctx, tenantID, userID, &in.SourceName, in.SourceURL, int32(in.TrustLevel))
+		src, sErr := s.sourceRegistry.CreateAutoForComparison(ctx, userID, &in.SourceName, in.SourceURL, int32(in.TrustLevel))
 		if sErr == nil {
 			params.SourceID = src.ID
 		} else {
@@ -499,8 +499,8 @@ func dataSourceUpdateParams(id pgtype.UUID, in DataSourceInput) (gen.UpdateDataS
 }
 
 // CreateDataSource creates a new data source for the tenant.
-func (s *Service) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
-	if !s.featureEnabled(ctx, tenantID, dataSourcesFeatureFlag) {
+func (s *Service) CreateDataSource(ctx context.Context, in DataSourceInput) (DataSource, error) {
+	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return DataSource{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
 	}
 
@@ -509,20 +509,20 @@ func (s *Service) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in
 		return DataSource{}, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceManagePerm)
 	}
 
-	ds, err := s.dataSources.create(ctx, tenantID, userID, in)
+	ds, err := s.dataSources.create(ctx, userID, in)
 	if err != nil {
 		return DataSource{}, fmt.Errorf("creating data source: %w", err)
 	}
 
-	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
-	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness::*"))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor::*"))
 
 	return ds, nil
 }
 
 // ListDataSources returns the tenant's data sources, optionally filtered by entity.
-func (s *Service) ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
-	if !s.featureEnabled(ctx, tenantID, dataSourcesFeatureFlag) {
+func (s *Service) ListDataSources(ctx context.Context, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
+	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return nil, 0, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
 	}
 
@@ -550,8 +550,8 @@ func (s *Service) ListDataSources(ctx context.Context, tenantID pgtype.UUID, ent
 }
 
 // GetDataSource returns a single data source by id and tenant.
-func (s *Service) GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error) {
-	if !s.featureEnabled(ctx, tenantID, dataSourcesFeatureFlag) {
+func (s *Service) GetDataSource(ctx context.Context, id pgtype.UUID) (DataSource, error) {
+	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return DataSource{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
 	}
 
@@ -573,8 +573,8 @@ func (s *Service) GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (
 }
 
 // UpdateDataSource updates an existing data source.
-func (s *Service) UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
-	if !s.featureEnabled(ctx, tenantID, dataSourcesFeatureFlag) {
+func (s *Service) UpdateDataSource(ctx context.Context, id pgtype.UUID, in DataSourceInput) (DataSource, error) {
+	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return DataSource{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
 	}
 
@@ -592,15 +592,15 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID
 		return DataSource{}, fmt.Errorf("updating data source: %w", err)
 	}
 
-	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
-	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness::*"))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor::*"))
 
 	return ds, nil
 }
 
 // DeleteDataSource removes a data source by id and tenant.
-func (s *Service) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if !s.featureEnabled(ctx, tenantID, dataSourcesFeatureFlag) {
+func (s *Service) DeleteDataSource(ctx context.Context, id pgtype.UUID) error {
+	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
 	}
 
@@ -621,8 +621,8 @@ func (s *Service) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID
 		return fmt.Errorf("deleting data source: %w", err)
 	}
 
-	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
-	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness::*"))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor::*"))
 
 	return nil
 }

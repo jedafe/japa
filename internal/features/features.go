@@ -30,7 +30,7 @@ const flagCacheKeyPrefix = "jc:flags:"
 // reading system_settings directly, so that feature_flags remains the single
 // source of truth for feature reachability.
 type FeatureChecker interface {
-	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // Checker resolves whether a feature is enabled for a given tenant.
@@ -94,7 +94,7 @@ func (c *Checker) Close() {
 // Lookup order: L1 → L2 → DB. Results are cached at both layers.
 // On transient DB errors the default is returned for the current request
 // but NOT cached — the next request retries the DB.
-func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
+func (c *Checker) IsEnabled(ctx context.Context, key string) bool {
 	// Ref: .jeos/sections/42-feature-flags.md (removal in progress).
 	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
 	if cached := c.cacheGet(key); cached != nil {
@@ -108,7 +108,7 @@ func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key strin
 	}
 
 	// DB — source of truth
-	enabled, err := c.queryEnabled(ctx, tenantID, key)
+	enabled, err := c.queryEnabled(ctx, key)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		// Transient DB error (connection failure, context cancellation, etc.).
 		// Return the registry default for this request but do NOT cache it —
@@ -133,7 +133,7 @@ func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key strin
 // outcome for a given flag until the percentage or enabled state changes.
 // Returns (default, ErrNoRows) when the flag is not set so the caller can
 // distinguish "not set" from a real DB error.
-func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error) {
+func (c *Checker) queryEnabled(ctx context.Context, key string) (bool, error) {
 	var enabled bool
 
 	var configBytes []byte
@@ -160,7 +160,7 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 	if len(configBytes) > 0 {
 		if jsonErr := json.Unmarshal(configBytes, &cfg); jsonErr == nil {
 			if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
-				return hashInRollout(tenantID, key, cfg.RolloutPercentage), nil
+				return hashInRollout(key, cfg.RolloutPercentage), nil
 			}
 		}
 	}
@@ -171,8 +171,8 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 // hashInRollout deterministically decides whether a (tenantID, key) pair falls
 // inside the rollout cohort. It hashes the pair into a 0–99 bucket and returns
 // true when bucket < percentage. The result is stable for a given pair.
-func hashInRollout(tenantID pgtype.UUID, key string, percentage int) bool {
-	h := fnvHash64(tenantID.String() + ":" + key)
+func hashInRollout(key string, percentage int) bool {
+	h := fnvHash64("" + ":" + key)
 	bucket := int(h % 100) // #nosec
 
 	return bucket < percentage
@@ -327,7 +327,7 @@ func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
 // for the given tenant. Used by the frontend layout to get all flags at once.
 // Fetches all tenant flag rows in a single DB query instead of issuing one
 // query per registry key (eliminates the N+1 pattern on cold cache).
-func (c *Checker) GetAllEnabled(ctx context.Context, tenantID pgtype.UUID) map[string]bool {
+func (c *Checker) GetAllEnabled(ctx context.Context) map[string]bool {
 	result := make(map[string]bool)
 
 	// Start with registry defaults.
@@ -368,7 +368,7 @@ func (c *Checker) GetAllEnabled(ctx context.Context, tenantID pgtype.UUID) map[s
 		if len(r.Config) > 0 {
 			if jsonErr := json.Unmarshal(r.Config, &cfg); jsonErr == nil {
 				if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
-					result[r.Key] = hashInRollout(tenantID, r.Key, cfg.RolloutPercentage)
+					result[r.Key] = hashInRollout(r.Key, cfg.RolloutPercentage)
 					continue
 				}
 			}
@@ -559,7 +559,7 @@ func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 				return
 			}
 
-			if !checker.IsEnabled(r.Context(), t.ID, key) {
+			if !checker.IsEnabled(r.Context(), key) {
 				errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
 				return
 			}

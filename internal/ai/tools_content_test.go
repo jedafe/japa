@@ -105,7 +105,7 @@ type stubPrivacyChecker struct {
 	err    error
 }
 
-func (s *stubPrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
+func (s *stubPrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	return s.exempt, s.err
 }
 
@@ -114,7 +114,7 @@ type selectivePrivacyChecker struct {
 	exemptIDs map[string]bool
 }
 
-func (s *selectivePrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
+func (s *selectivePrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	if !entityID.Valid {
 		return false, nil
 	}
@@ -405,7 +405,7 @@ func TestContentCreateHandler_Success(t *testing.T) {
 	contentID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 	userID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			// Verify _ai_provenance was injected into field_values.
 			var fv map[string]any
 			if err := json.Unmarshal(input.FieldValues, &fv); err != nil {
@@ -460,7 +460,7 @@ func TestContentCreateHandler_OrganizationAndPublishAt(t *testing.T) {
 	var got ContentCreateInput
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			got = input
 			return ContentCreateRow{
 				ID:             contentID,
@@ -509,7 +509,7 @@ func TestContentCreateHandler_UnauthorizedAuthor(t *testing.T) {
 	otherID := mustUUID(t, "00000000-0000-0000-0000-000000000098")
 	deps := &ToolDeps{
 		Permission: &stubPerms{granted: map[string]bool{"content.create": true}},
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			t.Fatal("creator should not be called without content.assign_author")
 			return ContentCreateRow{}, nil
 		},
@@ -545,7 +545,7 @@ func TestContentCreateHandler_UnauthorizedContentType(t *testing.T) {
 	deps := &ToolDeps{
 		ContentTypes: contentSvc,
 		Permission:   permSvc,
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			t.Fatal("creator should not be called for unauthorized content type")
 			return ContentCreateRow{}, nil
 		},
@@ -567,7 +567,7 @@ func TestContentCreateHandler_MissingTitle(t *testing.T) {
 	t.Parallel()
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			t.Fatal("creator should not be called for invalid input")
 			return ContentCreateRow{}, nil
 		},

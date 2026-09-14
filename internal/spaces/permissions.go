@@ -17,7 +17,7 @@ type PermissionChecker interface {
 // UserVerifiedChecker returns true if the user's email is verified. The
 // "verified" posting axis (Section 05 line 149) requires a verified account.
 // Implemented by a closure or store method.
-type UserVerifiedChecker func(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error)
+type UserVerifiedChecker func(ctx context.Context, userID pgtype.UUID) (bool, error)
 
 // CanPostInSpace reports whether the given user may post content into the
 // space, based on the space's posting_perm axis (Section 05 lines 145-154,
@@ -31,7 +31,7 @@ type UserVerifiedChecker func(ctx context.Context, userID, tenantID pgtype.UUID)
 func (s *Service) CanPostInSpace(
 	ctx context.Context,
 	space gen.GetSpaceByIDRow,
-	userID, tenantID pgtype.UUID,
+	userID pgtype.UUID,
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
@@ -55,7 +55,7 @@ func (s *Service) CanPostInSpace(
 			return false
 		}
 
-		verified, err := verifiedChecker(ctx, userID, tenantID)
+		verified, err := verifiedChecker(ctx, userID)
 		if err != nil || !verified {
 			return false
 		}
@@ -85,11 +85,11 @@ func (s *Service) CanPostInSpace(
 func (s *Service) CanReplyInSpace(
 	ctx context.Context,
 	space gen.GetSpaceByIDRow,
-	userID, tenantID pgtype.UUID,
+	userID pgtype.UUID,
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
-	return canActInSpace(ctx, s, space.ReplyingPerm, space, userID, tenantID, permChecker, verifiedChecker)
+	return canActInSpace(ctx, s, space.ReplyingPerm, space, userID, permChecker, verifiedChecker)
 }
 
 // CanCommentInSpace reports whether the given user may comment on content in
@@ -98,11 +98,11 @@ func (s *Service) CanReplyInSpace(
 func (s *Service) CanCommentInSpace(
 	ctx context.Context,
 	space gen.GetSpaceByIDRow,
-	userID, tenantID pgtype.UUID,
+	userID pgtype.UUID,
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
-	return canActInSpace(ctx, s, space.CommentingPerm, space, userID, tenantID, permChecker, verifiedChecker)
+	return canActInSpace(ctx, s, space.CommentingPerm, space, userID, permChecker, verifiedChecker)
 }
 
 // canActInSpace is the shared enforcement logic for the posting, replying, and
@@ -113,7 +113,7 @@ func canActInSpace(
 	s *Service,
 	perm string,
 	space gen.GetSpaceByIDRow,
-	userID, tenantID pgtype.UUID,
+	userID pgtype.UUID,
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
@@ -137,7 +137,7 @@ func canActInSpace(
 			return false
 		}
 
-		verified, err := verifiedChecker(ctx, userID, tenantID)
+		verified, err := verifiedChecker(ctx, userID)
 		if err != nil || !verified {
 			return false
 		}

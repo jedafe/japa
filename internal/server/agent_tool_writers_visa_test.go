@@ -88,7 +88,7 @@ func TestToolWriterCreateSmoke(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			record, err := reg.CreateTool(ctx, pgtype.UUID{}, userID, tt.toolType, tt.payload)
+			record, err := reg.CreateTool(ctx, userID, tt.toolType, tt.payload)
 			if err != nil {
 				t.Fatalf("create %s: %v", tt.toolType, err)
 			}

@@ -137,7 +137,7 @@ func (a *ProcessorAdapter) SetSystemUserID(id pgtype.UUID) {
 // AutoPopulateSpace seeds a newly created space with default content based
 // on its space type. For geo spaces, this includes fetching Wikipedia data
 // and flag images. For other space types, it creates default rules and tags.
-func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenantID string) error {
+func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID string) error {
 	slog.Info("space:auto_populate", "space_id", spaceID)
 
 	if a.svc == nil {
@@ -151,7 +151,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 		return nil
 	}
 
-	if err := tid.Scan(tenantID); err != nil {
+	if err := tid.Scan(); err != nil {
 		slog.Warn("space:auto_populate — invalid the id", "error", err)
 		return nil
 	}
@@ -888,5 +888,5 @@ func fetchWikipediaSummary(ctx context.Context, title string) (*wikipediaSummary
 
 // Ensure ProcessorAdapter satisfies the interface at compile time.
 var _ interface {
-	AutoPopulateSpace(ctx context.Context, spaceID, tenantID string) error
+	AutoPopulateSpace(ctx context.Context, spaceID string) error
 } = (*ProcessorAdapter)(nil)

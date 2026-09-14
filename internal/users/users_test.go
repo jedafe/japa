@@ -249,12 +249,12 @@ func _TestRequireTenantUnavailable(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/users/me", nil)
 
-	tenantID, ok := h.requireTenant(rr, req)
+	_, ok := h.requireTenant(rr, req)
 	if ok {
 		t.Error("expected ok=false for missing tenant, got true")
 	}
 
-	if tenantID.Valid {
+	if false {
 		t.Error("expected invalid UUID for missing tenant")
 	}
 

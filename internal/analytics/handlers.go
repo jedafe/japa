@@ -60,8 +60,8 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 }
 
 // analyticsCacheKey builds jc:cache:analytics:{}:{endpoint}:{period}.
-func analyticsCacheKey(tenantID pgtype.UUID, endpoint, period string) string {
-	return vkcache.MustKey("cache:analytics:%s:%s:%s", tenantID.String(), endpoint, period)
+func analyticsCacheKey(endpoint, period string) string {
+	return vkcache.MustKey("cache:analytics:%s:%s:%s", "", endpoint, period)
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +223,7 @@ func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 // TTL. The cache key includes the tenant and time period so different windows
 // don't collide. Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -239,7 +239,7 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 		period = "30d"
 	}
 
-	cacheKey := analyticsCacheKey(tenantID, "overview", period)
+	cacheKey := analyticsCacheKey("overview", period)
 
 	dashboard, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, analyticsCacheTTL, func(ctx context.Context) (any, error) {
 		return h.Service.GetAdminDashboardData(ctx, from, to)
@@ -549,7 +549,7 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 // Uses read-through Valkey cache (jc:cache:analytics:*, BUG-010) with a 5-min
 // TTL. Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -565,7 +565,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 		period = "30d"
 	}
 
-	cacheKey := analyticsCacheKey(tenantID, "search", period)
+	cacheKey := analyticsCacheKey("search", period)
 
 	// Convert to frontend-friendly format
 	type SearchResult struct {

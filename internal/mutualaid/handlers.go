@@ -273,7 +273,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /mutual-aid/:id — single active post.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -288,7 +288,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.service.Get(r.Context(), postID, tenantID)
+	post, err := h.service.Get(r.Context(), postID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
@@ -318,7 +318,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -402,7 +402,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	post, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
+	post, err := h.service.Create(r.Context(), user.UserID, input)
 	if err != nil {
 		slog.Error("mutualaid: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create post")
@@ -421,7 +421,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -448,7 +448,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.service.UpdateOwn(r.Context(), postID, tenantID, user.UserID, input)
+	post, err := h.service.UpdateOwn(r.Context(), postID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
@@ -478,7 +478,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -493,7 +493,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.service.Get(r.Context(), postID, tenantID)
+	post, err := h.service.Get(r.Context(), postID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
@@ -577,7 +577,7 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -592,7 +592,7 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.MarkFulfilled(r.Context(), postID, tenantID, user.UserID); err != nil {
+	if err := h.service.MarkFulfilled(r.Context(), postID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
@@ -620,7 +620,7 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -635,7 +635,7 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.service.Renew(r.Context(), postID, tenantID, user.UserID)
+	post, err := h.service.Renew(r.Context(), postID, user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
@@ -664,7 +664,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -679,7 +679,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteOwn(r.Context(), postID, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteOwn(r.Context(), postID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
@@ -776,7 +776,7 @@ func (h *Handlers) HandleAdminModerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -805,7 +805,7 @@ func (h *Handlers) HandleAdminModerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminModerate(r.Context(), postID, tenantID, body.Status); err != nil {
+	if err := h.service.AdminModerate(r.Context(), postID, body.Status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return

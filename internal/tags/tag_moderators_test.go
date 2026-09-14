@@ -40,18 +40,16 @@ func TestTagModeratorsIntegration(t *testing.T) {
 		return id
 	}
 
-	tenantID = mustExecReturning(`INSERT INTO tenants (id,name,slug,status,created_at,updated_at)
-		VALUES (gen_random_uuid(),'tm','tm_'||replace(gen_random_uuid()::text,'-',''),'active',now(),now()) RETURNING id`)
 	userID = mustExecReturning(`INSERT INTO users (id,email,username,profile_type,status,created_at,updated_at,follower_count,force_password_change)
-		VALUES (gen_random_uuid(),$1,gen_random_uuid()::text||'@test.local','mod_'||replace(gen_random_uuid()::text,'-',''),'personal','active',now(),now(),0,false) RETURNING id`, tenantID)
+		VALUES (gen_random_uuid(),$1,gen_random_uuid()::text||'@test.local','mod_'||replace(gen_random_uuid()::text,'-',''),'personal','active',now(),now(),0,false) RETURNING id`)
 	tagID = mustExecReturning(`INSERT INTO tags (id,name,slug,follower_count,created_at,updated_at)
-		VALUES (gen_random_uuid(),$1,'modtag','modtag_'||replace(gen_random_uuid()::text,'-',''),0,now(),now()) RETURNING id`, tenantID)
+		VALUES (gen_random_uuid(),$1,'modtag','modtag_'||replace(gen_random_uuid()::text,'-',''),0,now(),now()) RETURNING id`)
 
 	t.Cleanup(func() {
 		database.Writer.Exec(ctx, `DELETE FROM tag_moderators `)
 		database.Writer.Exec(ctx, `DELETE FROM tags WHERE id=$1`, tagID)
 		database.Writer.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
-		database.Writer.Exec(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID)
+		database.Writer.Exec(ctx, `DELETE FROM tenants WHERE id=$1`)
 	})
 
 	// Add.

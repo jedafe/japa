@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -47,7 +46,7 @@ func NewRobotsChecker(rdb valkeycompat.Cmdable) *RobotsChecker {
 // and nil on success. If robots.txt cannot be fetched (404, network
 // error), the default policy (allow all, no crawl-delay) is returned.
 // The cache key is tenant-scoped per ADR-112 Amendment 2.
-func (c *RobotsChecker) Check(ctx context.Context, tenantID pgtype.UUID, targetURL string) (RobotsPolicy, error) {
+func (c *RobotsChecker) Check(ctx context.Context, targetURL string) (RobotsPolicy, error) {
 	parsed, err := url.Parse(targetURL)
 	if err != nil {
 		return RobotsPolicy{}, fmt.Errorf("robots: parse url: %w", err)
@@ -58,7 +57,7 @@ func (c *RobotsChecker) Check(ctx context.Context, tenantID pgtype.UUID, targetU
 		return RobotsPolicy{}, fmt.Errorf("robots: empty domain in url %q", targetURL)
 	}
 
-	cacheKey := fmt.Sprintf("jc:intel:robots:%s:%s", tenantID.String(), domain)
+	cacheKey := fmt.Sprintf("jc:intel:robots::%s", domain)
 
 	// Try cache first. A corrupt cache entry falls through to the fetch below.
 	if cached, err := c.rdb.Get(ctx, cacheKey).Result(); err == nil {

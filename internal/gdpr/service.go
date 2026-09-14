@@ -363,7 +363,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	var exportURL string
 
 	if s.storage != nil {
-		url, _, storeErr := s.storage.Store(ctx, pgtype.UUID{}, requestID, "application/json", exportJSON)
+		url, _, storeErr := s.storage.Store(ctx, requestID, "application/json", exportJSON)
 		if storeErr != nil {
 			if _, statusErr := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
 				ID:     requestID,
@@ -423,7 +423,7 @@ func (s *Service) CleanupExpiredExports(ctx context.Context) error {
 		// Delete the file from storage (best-effort). The LocalStorage
 		// GetPath resolves the on-disk file; we remove it via os.Remove.
 		if s.storage != nil {
-			if path, pathErr := s.storage.GetPath(pgtype.UUID{}, e); pathErr == nil {
+			if path, pathErr := s.storage.GetPath(e); pathErr == nil {
 				if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
 					slog.Warn("gdpr: failed to delete expired export file", "request_id", e.String(), "error", rmErr)
 				}

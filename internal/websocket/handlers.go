@@ -147,7 +147,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	var userID pgtype.UUID
 
-	var tenantID pgtype.UUID
+	var ()
 
 	// Try Valkey first for fast lookup.
 	if h.vkClient != nil {
@@ -169,7 +169,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if val, ok := fields["the id"]; ok {
-				if scanErr := tenantID.Scan(val); scanErr != nil {
+				if scanErr := (error)(nil); scanErr != nil {
 					slog.Error("cached ws ticket holds an invalid tenant id", "error", scanErr, "ticket", ticketStr)
 				}
 			}
@@ -187,7 +187,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		userID = ticket.UserID
-		tenantID = pgtype.UUID{}
+
 	}
 
 	// Mark ticket as used in DB, validating alongside user_id so a
@@ -228,7 +228,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Send presence event to the caller's tenant only. Broadcasting to all
 	// connected clients would leak presence across tenant boundaries (Rule 4:
 	// tenant-scoped, §5.3 cross-tenant leak prevention).
-	h.hub.BroadcastToTenant("", WSEvent{
+	h.hub.BroadcastToTenant(WSEvent{
 		Type:    EventPresence,
 		Payload: map[string]interface{}{"user_id": userID.String(), "status": "online"},
 	})
@@ -256,7 +256,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 		// without this counterpart, other users see the user as online
 		// indefinitely after disconnect (§11 presence tracking).
 		if !c.Hub.IsUserOnline(c.UserID) {
-			c.Hub.BroadcastToTenant("", WSEvent{
+			c.Hub.BroadcastToTenant(WSEvent{
 				Type: EventPresence,
 				Payload: map[string]interface{}{
 					"user_id": c.UserID,

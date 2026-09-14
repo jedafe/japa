@@ -139,7 +139,7 @@ func (s *Service) GetRedirect(ctx context.Context, id pgtype.UUID) (gen.Redirect
 }
 
 // CreateRedirect is an exported method.
-func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sourcePath, targetURL string, httpStatus int16, notes *string) (gen.Redirect, error) {
+func (s *Service) CreateRedirect(ctx context.Context, sourcePath, targetURL string, httpStatus int16, notes *string) (gen.Redirect, error) {
 	if httpStatus != 301 && httpStatus != 302 && httpStatus != 307 {
 		return gen.Redirect{}, ErrInvalidHTTPStatus
 	}
@@ -160,13 +160,13 @@ func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sour
 		return gen.Redirect{}, err
 	}
 
-	s.invalidateValkeyCache(ctx, tenantID.String(), sourcePath)
+	s.invalidateValkeyCache(ctx, "", sourcePath)
 
 	return r, nil
 }
 
 // UpdateRedirect is an exported method.
-func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, sourcePath, targetURL string, httpStatus int16, isActive *bool, notes *string) (gen.Redirect, error) {
+func (s *Service) UpdateRedirect(ctx context.Context, id pgtype.UUID, sourcePath, targetURL string, httpStatus int16, isActive *bool, notes *string) (gen.Redirect, error) {
 	if httpStatus != 301 && httpStatus != 302 && httpStatus != 307 {
 		return gen.Redirect{}, ErrInvalidHTTPStatus
 	}
@@ -199,7 +199,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 		return gen.Redirect{}, err
 	}
 
-	tenantIDStr := tenantID.String()
+	tenantIDStr := ""
 	// Invalidate the new source_path.
 	s.invalidateValkeyCache(ctx, tenantIDStr, sourcePath)
 	// Invalidate the old source_path if it changed.
@@ -211,7 +211,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 }
 
 // DeleteRedirect is an exported method.
-func (s *Service) DeleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteRedirect(ctx context.Context, id pgtype.UUID) error {
 	r, err := s.store.getRedirect(ctx, id)
 	if err != nil {
 		return err
@@ -221,7 +221,7 @@ func (s *Service) DeleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) 
 		return err
 	}
 
-	s.invalidateValkeyCache(ctx, tenantID.String(), r.SourcePath)
+	s.invalidateValkeyCache(ctx, "", r.SourcePath)
 
 	return nil
 }
@@ -233,7 +233,7 @@ type BulkActionInput struct {
 }
 
 // BulkAction is an exported method.
-func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input BulkActionInput) error {
+func (s *Service) BulkAction(ctx context.Context, input BulkActionInput) error {
 	// Validate the action before any store access so bad input is rejected
 	// without requiring a database connection (matches test expectations).
 	switch input.Action {
@@ -263,7 +263,7 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 		return fmt.Errorf("fetching redirects for bulk action: %w", err)
 	}
 
-	tenantIDStr := tenantID.String()
+	tenantIDStr := ""
 
 	switch input.Action {
 	case "activate":
@@ -293,16 +293,16 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 // Returns the target URL and HTTP status code, or empty string and 0 if no match.
 // Per ADR-056, paths longer than maxPathLength (2048 chars) are skipped to
 // prevent cache key flooding.
-func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, path string) (string, int) {
+func (s *Service) ResolveRedirect(ctx context.Context, path string) (string, int) {
 	if len(path) > maxPathLength {
 		return "", 0
 	}
 
 	if s.vk == nil {
-		return s.resolveFromDB(ctx, tenantID, path)
+		return s.resolveFromDB(ctx, path)
 	}
 
-	cacheKey := redirectCacheKeyPrefix + tenantID.String() + ":" + path
+	cacheKey := redirectCacheKeyPrefix + "" + ":" + path
 	if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 		var entry struct {
 			TargetURL  string `json:"target_url"`
@@ -317,10 +317,10 @@ func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, pat
 		}
 	}
 
-	return s.resolveFromDB(ctx, tenantID, path)
+	return s.resolveFromDB(ctx, path)
 }
 
-func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path string) (string, int) {
+func (s *Service) resolveFromDB(ctx context.Context, path string) (string, int) {
 	r, err := s.store.getRedirectByPath(ctx, path)
 	if err != nil {
 		// "no rows" is expected — no redirect for this path. Real DB errors
@@ -340,7 +340,7 @@ func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path 
 	})
 
 	if s.vk != nil {
-		cacheKey := redirectCacheKeyPrefix + tenantID.String() + ":" + path
+		cacheKey := redirectCacheKeyPrefix + "" + ":" + path
 		// Propagate the request context instead of a detached Background one.
 		if err := s.vk.Set(ctx, cacheKey, string(entry), redirectCacheTTL).Err(); err != nil {
 			slog.Warn("failed to cache redirect", "key", cacheKey, "error", err)

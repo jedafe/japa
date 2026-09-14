@@ -52,7 +52,7 @@ type TierManager interface {
 // SourceManager creates canonical intel_sources rows for new entity profiles
 // (v2 source directory, Task 5).
 type SourceManager interface {
-	CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
+	CreateSourceFromEntity(ctx context.Context, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
 }
 
 // AuthHandlers holds dependencies for auth HTTP handlers.
@@ -91,7 +91,7 @@ func (h *AuthHandlers) SetTierManager(m TierManager) { h.TierManager = m }
 // user publisher profiles in the v2 source directory.
 func (h *AuthHandlers) SetSourceManager(m SourceManager) { h.SourceManager = m }
 
-func (h *AuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, userID pgtype.UUID, username string) {
+func (h *AuthHandlers) maybeCreateUserSource(ctx context.Context, userID pgtype.UUID, username string) {
 	if h.SourceManager == nil {
 		return
 	}
@@ -108,7 +108,7 @@ func (h *AuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, user
 		sourceURL = fmt.Sprintf("%s/u/%s", strings.TrimRight(h.SiteURL, "/"), username)
 	}
 
-	source, err := h.SourceManager.CreateSourceFromEntity(ctx, tenantID, userID, userID, "user", username, username, sourceURL, "news")
+	source, err := h.SourceManager.CreateSourceFromEntity(ctx, userID, userID, "user", username, username, sourceURL, "news")
 	if err != nil {
 		slog.Warn("register: failed to create canonical user source", "user_id", userID.String(), "error", err)
 		return
@@ -344,7 +344,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	// v2 source directory: auto-create a canonical source for verified publisher
 	// users when the tenant setting is enabled. Non-fatal.
-	h.maybeCreateUserSource(r.Context(), tenant.ID, userID, req.Username)
+	h.maybeCreateUserSource(r.Context(), userID, req.Username)
 
 	// Send welcome email (fire-and-forget, Golden Rule 8).
 	if h.AsynqClient != nil {
@@ -364,7 +364,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenant.ID)
+	accessToken, err := h.KeyRotation.MintAccessToken(userID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -552,7 +552,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasTOTP {
-		challengeToken, err := h.KeyRotation.MintTOTPChallengeToken(user.ID, (pgtype.UUID{}))
+		challengeToken, err := h.KeyRotation.MintTOTPChallengeToken(user.ID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create challenge token")
 			return
@@ -573,7 +573,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := h.KeyRotation.MintAccessToken(user.ID, (pgtype.UUID{}))
+	accessToken, err := h.KeyRotation.MintAccessToken(user.ID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -717,7 +717,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	accessToken, err := h.KeyRotation.MintAccessToken(stored.UserID, (pgtype.UUID{}))
+	accessToken, err := h.KeyRotation.MintAccessToken(stored.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -790,8 +790,8 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(""); err != nil {
+	var ()
+	if err := (error)(nil); err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
 	}
@@ -833,7 +833,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		slog.Warn("update last_login_at", "error", err)
 	}
 
-	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenantID)
+	accessToken, err := h.KeyRotation.MintAccessToken(userID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -896,8 +896,8 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(""); err != nil {
+	var ()
+	if err := (error)(nil); err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
 	}
@@ -955,7 +955,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		slog.Warn("update last_login_at", "error", err)
 	}
 
-	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenantID)
+	accessToken, err := h.KeyRotation.MintAccessToken(userID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return

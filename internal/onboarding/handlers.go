@@ -73,7 +73,7 @@ func (h *Handlers) UpdateStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -84,7 +84,7 @@ func (h *Handlers) UpdateStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdateStep(r.Context(), tenantID, user.UserID, &req); err != nil {
+	if err := h.Service.UpdateStep(r.Context(), user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -118,12 +118,12 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	recs, err := h.Service.GetRecommendations(r.Context(), tenantID, user.UserID)
+	recs, err := h.Service.GetRecommendations(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

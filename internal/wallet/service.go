@@ -61,7 +61,7 @@ func (s *Service) EmitActivityEvent(ctx context.Context, userID pgtype.UUID, inp
 }
 
 // ProcessActivityEvent processes a single activity event (called by Asynq task).
-func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
+func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error {
 	// Get the event
 	event, err := s.store.getActivityEventByID(ctx, eventID)
 	if err != nil {
@@ -84,7 +84,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		// Distinguish "not found" from real DB errors (BUG-007). The activity
 		// still counts for badges/challenges even without a point rule.
 		if errors.Is(err, pgx.ErrNoRows) {
-			s.settleWithoutPoints(ctx, tenantID, event)
+			s.settleWithoutPoints(ctx, event)
 			return nil
 		}
 
@@ -93,7 +93,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 	// Check if rule is enabled
 	if rule.IsEnabled != nil && !*rule.IsEnabled {
-		s.settleWithoutPoints(ctx, tenantID, event)
+		s.settleWithoutPoints(ctx, event)
 		return nil
 	}
 
@@ -108,7 +108,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			// EnableEarning killswitch — no points, but the activity still
 			// counts toward badges/challenges.
 			if !ws.EnableEarning {
-				s.settleWithoutPoints(ctx, tenantID, event)
+				s.settleWithoutPoints(ctx, event)
 				return nil
 			}
 		}
@@ -122,7 +122,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		}
 
 		if count > int64(*rule.CapPerDay) {
-			s.settleWithoutPoints(ctx, tenantID, event)
+			s.settleWithoutPoints(ctx, event)
 			return nil // Cap exceeded, skip
 		}
 	}
@@ -134,7 +134,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		}
 
 		if count > int64(*rule.CapPerWeek) {
-			s.settleWithoutPoints(ctx, tenantID, event)
+			s.settleWithoutPoints(ctx, event)
 			return nil // Cap exceeded, skip
 		}
 	}
@@ -152,7 +152,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	qtx := s.store.write.WithTx(tx)
 
 	// Serialize concurrent balance mutations for this user.
-	lockKey := "wallet:" + tenantID.String() + ":" + event.UserID.String()
+	lockKey := "wallet:" + "" + ":" + event.UserID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("acquiring wallet lock: %w", err)
 	}
@@ -181,7 +181,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			}
 
 			// The activity still counts toward badges/challenges.
-			s.evaluateGamification(ctx, tenantID, event)
+			s.evaluateGamification(ctx, event)
 
 			return nil
 		}
@@ -241,7 +241,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 				return fmt.Errorf("committing capped event skip: %w", cerr)
 			}
 
-			s.evaluateGamification(ctx, tenantID, event)
+			s.evaluateGamification(ctx, event)
 
 			return nil
 		}
@@ -252,7 +252,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 	// Create idempotency key from event. Include tenant and user to avoid
 	// cross-tenant collisions (ADR-004, Section 28).
-	idempotencyKey := fmt.Sprintf("activity:%s:%s:%s:%s", tenantID.String(), event.UserID.String(), event.ActivityKey, event.Reference)
+	idempotencyKey := fmt.Sprintf("activity::%s:%s:%s", event.UserID.String(), event.ActivityKey, event.Reference)
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
@@ -284,7 +284,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	// (BUG-GAMMA-001, ADR-082 §2). Fire-and-forget — a badge evaluation
 	// failure must not fail the already-committed ledger entry; the event
 	// is marked processed and the points are already credited.
-	s.evaluateGamification(ctx, tenantID, event)
+	s.evaluateGamification(ctx, event)
 
 	return nil
 }
@@ -292,12 +292,12 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 // evaluateGamification runs badge and challenge evaluation for the activity.
 // Fire-and-forget (Rule 8): a failure is logged, never propagated — the
 // points decision is already settled by the time this runs.
-func (s *Service) evaluateGamification(ctx context.Context, tenantID pgtype.UUID, event gen.ActivityEvent) {
+func (s *Service) evaluateGamification(ctx context.Context, event gen.ActivityEvent) {
 	if s.gamificationEvaluator == nil {
 		return
 	}
 
-	if err := s.gamificationEvaluator.EvaluateForWallet(ctx, tenantID, event.UserID, event.ActivityKey); err != nil {
+	if err := s.gamificationEvaluator.EvaluateForWallet(ctx, event.UserID, event.ActivityKey); err != nil {
 		slog.Warn("wallet: gamification badge evaluation failed",
 			"user_id", event.UserID.String(),
 			"activity_key", event.ActivityKey,
@@ -310,13 +310,13 @@ func (s *Service) evaluateGamification(ctx context.Context, tenantID pgtype.UUID
 // points are credited — no rule, disabled rule, or frequency caps.
 // Badges/challenges count the activity itself, not the payout (Section 64);
 // marking processed gives exactly-once evaluation on any replay.
-func (s *Service) settleWithoutPoints(ctx context.Context, tenantID pgtype.UUID, event gen.ActivityEvent) {
+func (s *Service) settleWithoutPoints(ctx context.Context, event gen.ActivityEvent) {
 	if err := s.store.markEventProcessed(ctx, event.ID); err != nil {
 		slog.Warn("wallet: mark skipped event processed failed",
 			"event_id", event.ID.String(), "error", err)
 	}
 
-	s.evaluateGamification(ctx, tenantID, event)
+	s.evaluateGamification(ctx, event)
 }
 
 // GetBalance returns the current balance for a user (points and/or credits).
@@ -371,7 +371,7 @@ type ConvertPointsToCreditsInput struct {
 // (2) global system_settings key wallet.points_to_credit_rate, (3) compiled-in
 // DefaultPointsToCreditsRate (AUDIT-BE2-SETTING-007). The minimum convertible
 // amount is enforced from wallet.min_convert_points (AUDIT-BE2-SETTING-008).
-func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID pgtype.UUID, input ConvertPointsToCreditsInput) (pointsBalance, creditsBalance int64, err error) {
+func (s *Service) ConvertPointsToCredits(ctx context.Context, userID pgtype.UUID, input ConvertPointsToCreditsInput) (pointsBalance, creditsBalance int64, err error) {
 	if input.PointsToConvert <= 0 {
 		return 0, 0, fmt.Errorf("%w: points to convert must be positive", errpkg.ErrInvalid)
 	}
@@ -423,7 +423,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	// both passing the sufficient-funds check and double-spending. A
 	// transaction-scoped advisory lock keyed on the user serializes them; it is
 	// released automatically on commit/rollback. See AUDIT-BE-005.
-	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	lockKey := "wallet:" + "" + ":" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return 0, 0, fmt.Errorf("acquiring wallet lock: %w", err)
 	}
@@ -543,7 +543,7 @@ type SpendCreditsInput struct {
 }
 
 // SpendCredits spends credits (synchronous, not a Provider).
-func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID, input SpendCreditsInput) (int64, error) {
+func (s *Service) SpendCredits(ctx context.Context, userID pgtype.UUID, input SpendCreditsInput) (int64, error) {
 	if input.Amount <= 0 {
 		return 0, errors.New("amount must be positive")
 	}
@@ -559,7 +559,7 @@ func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID
 	qtx := s.store.write.WithTx(tx)
 
 	// Serialize concurrent balance mutations for this user. See AUDIT-BE-005.
-	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	lockKey := "wallet:" + "" + ":" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
 	}
@@ -619,7 +619,7 @@ type AdminAdjustInput struct {
 }
 
 // AdminAdjustBalance performs a manual admin adjustment.
-func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID pgtype.UUID, input AdminAdjustInput) (int64, error) {
+func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUID, input AdminAdjustInput) (int64, error) {
 	if input.Amount == 0 {
 		return 0, errors.New("amount cannot be zero")
 	}
@@ -649,7 +649,7 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 	qtx := s.store.write.WithTx(tx)
 
 	// Serialize concurrent balance mutations for the target user. See AUDIT-BE-005.
-	lockKey := "wallet:" + tenantID.String() + ":" + targetUserID.String()
+	lockKey := "wallet:" + "" + ":" + targetUserID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
 	}

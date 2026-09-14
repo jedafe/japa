@@ -92,7 +92,7 @@ type Handlers struct {
 // ADR-069). The rag.Service satisfies this. When nil, HandleChat falls back
 // to a non-RAG LLM call.
 type RAGRetriever interface {
-	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]rag.RetrievedChunk, error)
+	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]rag.RetrievedChunk, error)
 	FormatContext(chunks []rag.RetrievedChunk) string
 }
 
@@ -950,7 +950,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		// header is absent.
 		ragLang := resolveAcceptLanguage(r)
 
-		chunks, err := h.ragService.Retrieve(r.Context(), pgtype.UUID{}, input.Message, ragLang, nil)
+		chunks, err := h.ragService.Retrieve(r.Context(), input.Message, ragLang, nil)
 		if err != nil {
 			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG", "error", err)
 		} else if len(chunks) > 0 {
@@ -2207,7 +2207,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 	offset := parsePageOffset(r)
 	sourceFilter := r.URL.Query().Get("source")
 
-	reviews, err := ListPendingReviews(r.Context(), h.Store, pgtype.UUID{}, sourceFilter, limit, offset)
+	reviews, err := ListPendingReviews(r.Context(), h.Store, sourceFilter, limit, offset)
 	if err != nil {
 		slog.Error("listing pending HITL reviews", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list reviews")
@@ -2215,7 +2215,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	total, err := CountPendingReviews(r.Context(), h.Store, pgtype.UUID{}, sourceFilter)
+	total, err := CountPendingReviews(r.Context(), h.Store, sourceFilter)
 	if err != nil {
 		slog.Error("counting pending HITL reviews", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count reviews")
@@ -2613,7 +2613,7 @@ func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
 
 	provider := r.URL.Query().Get("provider") // optional filter
 
-	summary, err := h.Store.GetAIUsageSummary(r.Context(), pgtype.UUID{}, periodDays, provider)
+	summary, err := h.Store.GetAIUsageSummary(r.Context(), periodDays, provider)
 	if err != nil {
 		slog.Error("getting ai usage summary", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve AI usage")

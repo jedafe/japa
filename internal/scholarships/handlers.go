@@ -105,7 +105,7 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 // HandleScholarshipDetail returns a single scholarship guide.
 // GET /scholarships/{id}.
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -121,7 +121,7 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	result, err := h.svc.GetScholarshipDetail(r.Context(), tenantID, guideID)
+	result, err := h.svc.GetScholarshipDetail(r.Context(), guideID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship not found")
 		return
@@ -157,7 +157,7 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -173,7 +173,7 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	saved, err := h.svc.SaveScholarship(r.Context(), tenantID, userID, guideID)
+	saved, err := h.svc.SaveScholarship(r.Context(), userID, guideID)
 	if err != nil {
 		if errors.Is(err, ErrGuideNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", err.Error())
@@ -268,7 +268,7 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -276,7 +276,7 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 	status := r.URL.Query().Get("status")
 	page, limit := parsePagination(r)
 
-	rows, total, err := h.svc.ListSavedScholarships(r.Context(), tenantID, userID, status, page, limit)
+	rows, total, err := h.svc.ListSavedScholarships(r.Context(), userID, status, page, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return

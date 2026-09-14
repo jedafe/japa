@@ -182,12 +182,8 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	var contentID, tenantID pgtype.UUID
+	var contentID pgtype.UUID
 	if err := contentID.Scan(payload.ContentID); err != nil {
-		return err
-	}
-
-	if err := tenantID.Scan(""); err != nil {
 		return err
 	}
 	// AUDIT-BE-TASK-001: respect the affiliate.scan_on_publish system setting.

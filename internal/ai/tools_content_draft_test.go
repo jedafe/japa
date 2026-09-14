@@ -73,7 +73,6 @@ func TestContentCreateDraftHandler_Success_PersonaAuthor(t *testing.T) {
 	personaUserID := mustUUID(t, "00000000-0000-0000-0000-0000000000bb")
 	personaID := mustUUID(t, "00000000-0000-0000-0000-0000000000cc")
 	callingUserID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
-	tenantID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 
 	var capturedInput ContentCreateInput
 
@@ -106,7 +105,7 @@ func TestContentCreateDraftHandler_Success_PersonaAuthor(t *testing.T) {
 
 	handler := ContentCreateDraftHandler(deps)
 
-	tr, err := handler(t.Context(), argsJSON, callingUserID, tenantID)
+	tr, err := handler(t.Context(), argsJSON, callingUserID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

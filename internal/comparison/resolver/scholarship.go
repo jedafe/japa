@@ -42,7 +42,7 @@ func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any) (
 		return ResolvedItem{}, false, err
 	}
 
-	s, err := r.svc.GetScholarshipDetail(ctx, pgtype.UUID{}, id)
+	s, err := r.svc.GetScholarshipDetail(ctx, id)
 	if err != nil {
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil

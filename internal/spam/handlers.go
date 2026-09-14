@@ -21,12 +21,12 @@ const (
 
 // deleteByID is a shared helper for DELETE handlers that follow the pattern:
 // require user → require tenant → parse UUID → call delete function → return.
-func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, id, tenantID pgtype.UUID) error) {
+func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, id pgtype.UUID) error) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -37,7 +37,7 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 		return
 	}
 
-	if err := deleteFn(r.Context(), id, tenantID); err != nil {
+	if err := deleteFn(r.Context(), id); err != nil {
 		slog.Error("deleting "+entityName, "error", err)
 		handleServiceError(w, err)
 
@@ -352,7 +352,7 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 
 // DeleteIPBlock handles DELETE /admin/spam/ip-blocks/{id}.
 func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
-	deleteByID(w, r, "IP block", func(ctx context.Context, id, tenantID pgtype.UUID) error {
+	deleteByID(w, r, "IP block", func(ctx context.Context, id pgtype.UUID) error {
 		return h.Store.DeleteIPBlock(ctx, id)
 	})
 }

@@ -161,7 +161,7 @@ func (s *Service) Research(ctx context.Context, destSpaceID, issuingSpaceID pgty
 		client = http.DefaultClient
 	}
 
-	destName, err := s.store.GetSpaceName(ctx, destSpaceID, pgtype.UUID{})
+	destName, err := s.store.GetSpaceName(ctx, destSpaceID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -171,7 +171,7 @@ func (s *Service) Research(ctx context.Context, destSpaceID, issuingSpaceID pgty
 		dest = destSpaceID.String()
 	}
 
-	issuingName, err := s.store.GetSpaceName(ctx, issuingSpaceID, pgtype.UUID{})
+	issuingName, err := s.store.GetSpaceName(ctx, issuingSpaceID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -356,8 +356,8 @@ func (s *Service) List(ctx context.Context, destSpaceID, issuingSpaceID pgtype.U
 // GetByID returns a single published attestation pathway by id.
 // Anonymous-accessible. Only returns pathways with status='published' and
 // is_active=true (BUG-001: prevent leaking unpublished pathways).
-func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayDTO, error) {
-	row, err := s.store.GetPublishedPathwayByID(ctx, id, tenantID)
+func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (PathwayDTO, error) {
+	row, err := s.store.GetPublishedPathwayByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
@@ -371,7 +371,7 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (Pathwa
 
 // Create creates a new attestation pathway. Admin-only
 // (attestation_guide.manage permission checked at route level).
-func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input CreatePathwayInput) (PathwayDTO, error) {
+func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (PathwayDTO, error) {
 	if input.DocumentType == "" {
 		return PathwayDTO{}, errors.New("document_type is required")
 	}
@@ -444,7 +444,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 		return PathwayDTO{}, fmt.Errorf("attestationguide: create: %w", err)
 	}
 
-	row, err := s.store.GetPathwayByID(ctx, created.ID, tenantID)
+	row, err := s.store.GetPathwayByID(ctx, created.ID)
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("attestationguide: create: reload: %w", err)
 	}
@@ -459,7 +459,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 // category); if the dispatcher is not wired or the call fails, the draft is
 // created with empty steps so the reviewer can fill them manually. Admin-only
 // (attestation_guide.manage permission).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GeneratePathwayInput) (PathwayDTO, error) {
+func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput) (PathwayDTO, error) {
 	if input.DocumentType == "" || input.IssuingSpaceID == "" || input.DestinationSpaceID == "" {
 		return PathwayDTO{}, errors.New("document_type, issuing_space_id, and destination_space_id are required")
 	}
@@ -477,8 +477,8 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// Look up the issuing and destination jurisdiction names so the prompt
 	// and research queries are human-readable. Missing names are non-fatal;
 	// we fall back to the supplied IDs.
-	issuingName, _ := s.store.GetSpaceName(ctx, issuingSpaceID, tenantID)
-	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	issuingName, _ := s.store.GetSpaceName(ctx, issuingSpaceID)
+	destName, _ := s.store.GetSpaceName(ctx, destSpaceID)
 
 	issuing := issuingName
 	if issuing == "" {
@@ -569,7 +569,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		return PathwayDTO{}, fmt.Errorf("attestationguide: generate draft: %w", err)
 	}
 
-	row, err := s.store.GetPathwayByID(ctx, created.ID, tenantID)
+	row, err := s.store.GetPathwayByID(ctx, created.ID)
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("attestationguide: generate draft: reload: %w", err)
 	}
@@ -603,10 +603,10 @@ func parsePathwayStepsFromAIResponse(resp ai.Response) []byte {
 // hitl_reviewed_by, hitl_reviewed_at = now(), status = 'published'.
 // Also recomputes apostille_required from the Hague Convention lookup
 // (§97). Admin-only (attestation_guide.manage permission).
-func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes string) (PathwayDTO, error) {
+func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes string) (PathwayDTO, error) {
 	// Load the pathway to determine the destination country for the Hague
 	// Convention lookup (BUG-002/BUG-003).
-	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	row, err := s.store.GetPathwayByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
@@ -622,7 +622,7 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 		notesPtr = &notes
 	}
 
-	if err := s.store.ApprovePathway(ctx, id, tenantID, reviewerID, apostilleRequired, notesPtr); err != nil {
+	if err := s.store.ApprovePathway(ctx, id, reviewerID, apostilleRequired, notesPtr); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
@@ -630,7 +630,7 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: %w", err)
 	}
 
-	row, err = s.store.GetPathwayByID(ctx, id, tenantID)
+	row, err = s.store.GetPathwayByID(ctx, id)
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: reload: %w", err)
 	}
@@ -641,10 +641,10 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 // SubmitCommunityUpdate creates a pending community update for a
 // pathway. Auth required (attestation_guide.update permission). Only
 // published, active pathways accept community updates (BUG-002).
-func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, tenantID, userID pgtype.UUID, input CreateCommunityUpdateInput) (CommunityUpdateDTO, error) {
+func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, userID pgtype.UUID, input CreateCommunityUpdateInput) (CommunityUpdateDTO, error) {
 	// Verify the pathway exists, belongs to the tenant, and is published +
 	// active (BUG-002: no updates on draft/ai_draft/pending/rejected pathways).
-	if _, err := s.store.GetPublishedPathwayByID(ctx, pathwayID, tenantID); err != nil {
+	if _, err := s.store.GetPublishedPathwayByID(ctx, pathwayID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
@@ -680,13 +680,13 @@ func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, tenantID
 // parent pathway's pathway_steps at the step_index, and community_last_verified
 // is bumped (BUG-003 + BUG-004). Admin-only (attestation_guide.manage
 // permission).
-func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID, reviewerID pgtype.UUID, approve bool) (CommunityUpdateDTO, error) {
+func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, reviewerID pgtype.UUID, approve bool) (CommunityUpdateDTO, error) {
 	status := UpdateStatusApproved
 	if !approve {
 		status = UpdateStatusRejected
 	}
 
-	if err := s.store.ReviewCommunityUpdate(ctx, updateID, tenantID, reviewerID, status); err != nil {
+	if err := s.store.ReviewCommunityUpdate(ctx, updateID, reviewerID, status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
@@ -694,7 +694,7 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID,
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: %w", err)
 	}
 	// Reload the full row so the DTO includes all fields (BUG-005 fix).
-	row, err := s.store.GetCommunityUpdateByID(ctx, updateID, tenantID)
+	row, err := s.store.GetCommunityUpdateByID(ctx, updateID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
@@ -706,7 +706,7 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID,
 	// BUG-003 + BUG-004: on approval, apply the update to the parent pathway
 	// (patch pathway_steps + bump community_last_verified).
 	if approve && row.PathwayID.Valid {
-		if err := s.store.ApplyApprovedUpdateToPathway(ctx, row.PathwayID, tenantID, row.StepIndex, row.FeeEstimate, row.TurnaroundDays); err != nil {
+		if err := s.store.ApplyApprovedUpdateToPathway(ctx, row.PathwayID, row.StepIndex, row.FeeEstimate, row.TurnaroundDays); err != nil {
 			return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: apply: %w", err)
 		}
 	}

@@ -305,7 +305,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -320,7 +320,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.InitiateClaim(r.Context(), id, tenantID); err != nil {
+	if err := h.service.InitiateClaim(r.Context(), id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
@@ -406,7 +406,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -421,7 +421,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	org, err := h.service.ApproveOrg(r.Context(), id, tenantID, user.UserID)
+	org, err := h.service.ApproveOrg(r.Context(), id, user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
@@ -445,7 +445,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -460,7 +460,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	org, err := h.service.VerifyOrg(r.Context(), id, tenantID)
+	org, err := h.service.VerifyOrg(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
@@ -486,7 +486,7 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -519,7 +519,7 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	org, err := h.service.ResolveClaim(r.Context(), id, tenantID, *body.Approve)
+	org, err := h.service.ResolveClaim(r.Context(), id, *body.Approve)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
@@ -601,7 +601,7 @@ func (h *Handlers) HandleAdminArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -616,7 +616,7 @@ func (h *Handlers) HandleAdminArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	org, err := h.service.ArchiveOrg(r.Context(), id, tenantID)
+	org, err := h.service.ArchiveOrg(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
@@ -641,7 +641,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -656,7 +656,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteOrg(r.Context(), id, tenantID); err != nil {
+	if err := h.service.DeleteOrg(r.Context(), id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return

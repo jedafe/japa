@@ -31,10 +31,10 @@ type agentToolsRegistry struct {
 // Each closure adapts the generic map[string]any contract used by the
 // ai package into the typed input/outputs of the per-tool service.
 type toolWriter struct {
-	create    func(ctx context.Context, tenantID, userID pgtype.UUID, payload map[string]any) (map[string]any, error)
-	update    func(ctx context.Context, tenantID, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
-	delete    func(ctx context.Context, tenantID, userID pgtype.UUID, id string) error
-	assignGeo func(ctx context.Context, tenantID, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
+	create    func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error)
+	update    func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
+	delete    func(ctx context.Context, userID pgtype.UUID, id string) error
+	assignGeo func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
 }
 
 // pgxQuerier is the subset of *pgxpool.Pool needed for count/read queries.
@@ -409,7 +409,7 @@ func (r *agentToolsRegistry) findToolWriter(toolType string) (*toolWriter, error
 }
 
 // CreateTool creates a new record in the named tool table.
-func (r *agentToolsRegistry) CreateTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error) {
+func (r *agentToolsRegistry) CreateTool(ctx context.Context, userID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error) {
 
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
@@ -420,11 +420,11 @@ func (r *agentToolsRegistry) CreateTool(ctx context.Context, tenantID, userID pg
 		return nil, fmt.Errorf("tools registry: %q does not support create yet", toolType)
 	}
 
-	return w.create(ctx, tenantID, userID, payload)
+	return w.create(ctx, userID, payload)
 }
 
 // UpdateTool updates an existing record in the named tool table.
-func (r *agentToolsRegistry) UpdateTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
+func (r *agentToolsRegistry) UpdateTool(ctx context.Context, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
 
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
@@ -435,11 +435,11 @@ func (r *agentToolsRegistry) UpdateTool(ctx context.Context, tenantID, userID pg
 		return nil, fmt.Errorf("tools registry: %q does not support update yet", toolType)
 	}
 
-	return w.update(ctx, tenantID, userID, id, payload)
+	return w.update(ctx, userID, id, payload)
 }
 
 // DeleteTool soft-deletes an existing record from the named tool table.
-func (r *agentToolsRegistry) DeleteTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string) error {
+func (r *agentToolsRegistry) DeleteTool(ctx context.Context, userID pgtype.UUID, toolType, id string) error {
 
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
@@ -450,11 +450,11 @@ func (r *agentToolsRegistry) DeleteTool(ctx context.Context, tenantID, userID pg
 		return fmt.Errorf("tools registry: %q does not support delete yet", toolType)
 	}
 
-	return w.delete(ctx, tenantID, userID, id)
+	return w.delete(ctx, userID, id)
 }
 
 // AssignGeo updates the geo-scoping fields of an existing record in the named tool table.
-func (r *agentToolsRegistry) AssignGeo(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
+func (r *agentToolsRegistry) AssignGeo(ctx context.Context, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
 
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
@@ -465,7 +465,7 @@ func (r *agentToolsRegistry) AssignGeo(ctx context.Context, tenantID, userID pgt
 		return nil, fmt.Errorf("tools registry: %q does not support assign_geo yet", toolType)
 	}
 
-	return w.assignGeo(ctx, tenantID, userID, id, payload)
+	return w.assignGeo(ctx, userID, id, payload)
 }
 
 // Compile-time interface check.

@@ -43,7 +43,7 @@ type userReadProfileArgs struct {
 // public profile subset is surfaced. The executor's privacy gate blocks
 // the call when the target user is ai_exempt.
 func UserReadProfileHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Users == nil {
 			return errorToolResult("users_unavailable", "users service is not configured"), nil
 		}
@@ -128,7 +128,7 @@ type userUpdateProfileArgs struct {
 // user_id in the arguments MUST match the calling user's ID. A mismatch
 // returns an error result.
 func UserUpdateProfileHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Users == nil {
 			return errorToolResult("users_unavailable", "users service is not configured"), nil
 		}
@@ -187,7 +187,7 @@ type userReadOwnFieldsArgs struct {
 // see their own data. The privacy gate is not registered because the
 // target is always self.
 func UserReadOwnFieldsHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFields == nil {
 			return errorToolResult("custom_fields_unavailable", "custom fields service is not configured"), nil
 		}

@@ -628,8 +628,8 @@ func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, req Upd
 }
 
 // DeleteRequirement deletes a requirement by id (admin).
-func (s *Service) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteRequirement(ctx, id, tenantID); err != nil {
+func (s *Service) DeleteRequirement(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteRequirement(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -779,7 +779,7 @@ func parseRequirementFromAIResponse(resp ai.Response) (string, []byte, *string, 
 
 // ApproveRequirement marks a requirement as reviewed and published by an
 // admin (HITL approve).
-func (s *Service) ApproveRequirement(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, reviewNotes string) error {
+func (s *Service) ApproveRequirement(ctx context.Context, id, reviewerID pgtype.UUID, reviewNotes string) error {
 	var notes *string
 
 	if reviewNotes != "" {
@@ -787,7 +787,7 @@ func (s *Service) ApproveRequirement(ctx context.Context, id, tenantID, reviewer
 		notes = &n
 	}
 
-	if err := s.store.ApproveRequirement(ctx, id, tenantID, reviewerID, notes); err != nil {
+	if err := s.store.ApproveRequirement(ctx, id, reviewerID, notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

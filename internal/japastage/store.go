@@ -65,7 +65,7 @@ type DirectoryRow struct {
 
 // GetUserProfile fetches the user_profiles row (with japa_stage columns)
 // for a given user_id, joining users + spaces for display fields.
-func (s *Store) GetUserProfile(ctx context.Context, userID, tenantID pgtype.UUID) (ProfileRow, error) {
+func (s *Store) GetUserProfile(ctx context.Context, userID pgtype.UUID) (ProfileRow, error) {
 	const q = `
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_stage_dest_space_id,
@@ -80,7 +80,7 @@ LIMIT 1
 
 	var r ProfileRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, userID, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, userID).Scan(
 		&r.UserID, &r.Username, &r.DisplayName, &r.AvatarURL,
 		&r.JapaStage, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
@@ -99,7 +99,7 @@ LIMIT 1
 
 // GetProfileByUsername fetches the japa_stage profile by username (for the
 // public view). Joins users + spaces.
-func (s *Store) GetProfileByUsername(ctx context.Context, username string, tenantID pgtype.UUID) (ProfileRow, error) {
+func (s *Store) GetProfileByUsername(ctx context.Context, username string) (ProfileRow, error) {
 	const q = `
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_stage_dest_space_id,
@@ -114,7 +114,7 @@ LIMIT 1
 
 	var r ProfileRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, username, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, username).Scan(
 		&r.UserID, &r.Username, &r.DisplayName, &r.AvatarURL,
 		&r.JapaStage, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
@@ -144,7 +144,7 @@ LIMIT 1
 // `japa_stage_history: [{stage, dest_space_id, set_at}]`); the destination
 // is stored as a `spaces` row (country-level space per ADR-053) because no
 // `geo_countries` table exists.
-func (s *Store) UpdateStage(ctx context.Context, userID, tenantID pgtype.UUID, stage string, destSpaceID pgtype.UUID, isPublic *bool) error {
+func (s *Store) UpdateStage(ctx context.Context, userID pgtype.UUID, stage string, destSpaceID pgtype.UUID, isPublic *bool) error {
 	const q = `
 INSERT INTO user_profiles (user_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history)
 VALUES (
@@ -172,7 +172,7 @@ ON CONFLICT (user_id) DO UPDATE SET
     )
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, userID, tenantID, stage, destSpaceID, isPublic)
+	cmd, err := s.pool.Writer.Exec(ctx, q, userID, stage, destSpaceID, isPublic)
 	if err != nil {
 		return fmt.Errorf("japastage: update stage: %w", err)
 	}
@@ -185,14 +185,14 @@ ON CONFLICT (user_id) DO UPDATE SET
 }
 
 // SetPublic updates the japa_stage_is_public visibility toggle.
-func (s *Store) SetPublic(ctx context.Context, userID, tenantID pgtype.UUID, isPublic bool) error {
+func (s *Store) SetPublic(ctx context.Context, userID pgtype.UUID, isPublic bool) error {
 	const q = `
 UPDATE user_profiles
 SET japa_stage_is_public = $2
 WHERE user_id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, userID, tenantID, isPublic)
+	cmd, err := s.pool.Writer.Exec(ctx, q, userID, isPublic)
 	if err != nil {
 		return fmt.Errorf("japastage: set public: %w", err)
 	}

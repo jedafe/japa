@@ -117,14 +117,14 @@ type Service struct {
 // system (Section 58). The implementation deletes the
 // jc:wallet:currencies:{} key after any currency CRUD operation.
 type CacheInvalidator interface {
-	InvalidateCurrenciesCache(ctx context.Context, tenantID pgtype.UUID) error
+	InvalidateCurrenciesCache(ctx context.Context) error
 }
 
 // PaymentCreator is the subset of the payments.Service API that wallet needs to
 // create credit-purchase payment rows (Section 17 + Section 58). Defined as a
 // local interface so the wallet package does not import payments.
 type PaymentCreator interface {
-	CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input PaymentCreateInput) (PaymentCreateResult, error)
+	CreatePayment(ctx context.Context, userID pgtype.UUID, input PaymentCreateInput) (PaymentCreateResult, error)
 }
 
 // PaymentCreateInput mirrors payments.CreatePaymentInput (Section 17).
@@ -177,7 +177,7 @@ func (s *Service) SetCacheInvalidator(c CacheInvalidator) { s.cacheInvalidator =
 // wallet ledger earn (BUG-GAMMA-001, ADR-082 §2). Implemented by
 // *gamification.Service; nil-safe on the Service struct.
 type GamificationEvaluator interface {
-	EvaluateForWallet(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error
+	EvaluateForWallet(ctx context.Context, userID pgtype.UUID, activityKey string) error
 }
 
 // SetGamificationEvaluator injects the gamification service for post-earn
@@ -194,7 +194,7 @@ func (s *Service) SetGamificationEvaluator(e GamificationEvaluator) {
 // each defining their own adapter interface.
 type ActivityEmitter interface {
 	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input EmitActivityEventInput) (gen.ActivityEvent, error)
-	EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error
+	EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error
 }
 
 // walletEnqueuer is the subset of worker.Enqueuer that wallet needs.
@@ -232,7 +232,7 @@ func (s *Service) Store() *Store {
 // reads the latest balance via the sqlc-generated query, and inserts the
 // ledger entry with a deterministic idempotency key so duplicate calls
 // (e.g. gamination retries) are safe (Rule 9).
-func (s *Service) AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID, points int, reason string) error {
+func (s *Service) AwardPoints(ctx context.Context, userID pgtype.UUID, points int, reason string) error {
 	if points <= 0 {
 		return nil
 	}
@@ -247,7 +247,7 @@ func (s *Service) AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID,
 	qtx := s.store.write.WithTx(tx)
 
 	// Serialize concurrent balance mutations for this user (AUDIT-BE-005).
-	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	lockKey := "wallet:" + "" + ":" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("acquiring wallet lock: %w", err)
 	}

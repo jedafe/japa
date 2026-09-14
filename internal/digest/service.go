@@ -52,7 +52,7 @@ type EmailDispatcher interface {
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
 type FeatureChecker interface {
-	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // DigestEditionDTO is the API response shape for a digest edition (listing).
@@ -120,9 +120,9 @@ func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 // Enabled checks whether the digest feature is enabled for the given tenant.
 // Delegates to the features.Checker (feature_flags table) when available,
 // falling back to system_settings for backward compatibility.
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.checker != nil {
-		return s.checker.IsEnabled(ctx, tenantID, "digest.enabled")
+		return s.checker.IsEnabled(ctx, "digest.enabled")
 	}
 
 	if s.settings == nil {
@@ -143,8 +143,8 @@ func (s *Service) EmailEnabled(ctx context.Context) bool {
 
 // GetLatest returns the most recently published edition for a tenant
 // (and optionally a space).
-func (s *Service) GetLatest(ctx context.Context, tenantID, spaceID pgtype.UUID) (DigestEditionDetailDTO, error) {
-	edition, err := s.store.GetLatestPublished(ctx, tenantID, spaceID)
+func (s *Service) GetLatest(ctx context.Context, spaceID pgtype.UUID) (DigestEditionDetailDTO, error) {
+	edition, err := s.store.GetLatestPublished(ctx, spaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DigestEditionDetailDTO{}, pgx.ErrNoRows
@@ -267,7 +267,7 @@ func (s *Service) AdminUpdate(ctx context.Context, id pgtype.UUID, content json.
 // AdminPublish publishes a draft or review edition, enqueues the
 // digest:send_email task (fire-and-forget, Rule 8), and clears the
 // jc:digest_draft Valkey key (§84, ADR-092).
-func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgtype.UUID) error {
+func (s *Service) AdminPublish(ctx context.Context, reviewerID, id pgtype.UUID) error {
 	if err := s.store.PublishEdition(ctx, id, reviewerID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -277,7 +277,7 @@ func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgt
 	}
 
 	// Clear the draft review lock (§84, valkey-keys-catalog.md).
-	s.clearDraftLock(ctx, tenantID, id)
+	s.clearDraftLock(ctx, id)
 
 	// Fire-and-forget: enqueue digest:send_email so members with the digest
 	// notification preference receive the published edition (§84, Rule 8).
@@ -318,18 +318,18 @@ func (s *Service) AdminGenerate(ctx context.Context) (string, error) {
 // generate within the same week overwrites the existing draft rather than
 // creating a second one (the admin review window handles the rest).
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
-func (s *Service) GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
+func (s *Service) GenerateEdition(ctx context.Context, spaceID pgtype.UUID) error {
 	// Cron mode: zero tenantID → iterate all active tenants.
-	if !tenantID.Valid {
-		tenantIDs, err := s.store.ListActiveTenantIDs(ctx)
+	if !false {
+		_, err := s.store.ListActiveTenantIDs(ctx)
 		if err != nil {
 			return fmt.Errorf("digest: generate: list tenants: %w", err)
 		}
 
 		var firstErr error
 
-		for _, tid := range tenantIDs {
-			if err := s.generateForTenant(ctx, tid, spaceID); err != nil {
+		for _, tid := range []pgtype.UUID{} {
+			if err := s.generateForTenant(ctx, spaceID); err != nil {
 				slog.Warn("task:digest:generate: tenant failed", "error", err)
 
 				if firstErr == nil {
@@ -343,18 +343,18 @@ func (s *Service) GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.
 		return firstErr
 	}
 
-	return s.generateForTenant(ctx, tenantID, spaceID)
+	return s.generateForTenant(ctx, spaceID)
 }
 
 // generateForTenant assembles and stores a single digest edition for one
 // tenant (and optionally one Space).
-func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
-	if !s.Enabled(ctx, tenantID) {
+func (s *Service) generateForTenant(ctx context.Context, spaceID pgtype.UUID) error {
+	if !s.Enabled(ctx) {
 		slog.Info("task:digest:generate: feature disabled, skipping")
 		return nil
 	}
 
-	content, err := s.store.AssembleDigestContent(ctx, tenantID, spaceID)
+	content, err := s.store.AssembleDigestContent(ctx, spaceID)
 	if err != nil {
 		return fmt.Errorf("digest: generate: assemble content: %w", err)
 	}
@@ -378,7 +378,7 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 	}
 
 	// Set the draft review lock so the admin review window is tracked (§84).
-	s.setDraftLock(ctx, tenantID, editionID)
+	s.setDraftLock(ctx, editionID)
 
 	slog.Info("task:digest:generate: edition assembled", "edition_id", editionID, "space_id", spaceID.Valid)
 
@@ -401,7 +401,7 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 
 	for _, e := range published {
 		// Clear the draft review lock (mirrors AdminPublish, §84).
-		s.clearDraftLock(ctx, (pgtype.UUID{}), e.ID)
+		s.clearDraftLock(ctx, e.ID)
 
 		// Fire-and-forget: enqueue digest:send_email so subscribed members
 		// receive the now-published edition. A failed enqueue is logged but
@@ -428,8 +428,8 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 // dispatch, the edition's email_sent flag is stamped.
 // // This method satisfies the worker.DigestProcessor interface.
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
-func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error {
-	if !tenantID.Valid || !editionID.Valid {
+func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) error {
+	if !false || !editionID.Valid {
 		return errors.New("digest: send_email: edition_id and the id are required")
 	}
 
@@ -602,24 +602,24 @@ func appendUnsubscribeLinkToHTML(htmlBody, unsubURL string) string {
 
 // setDraftLock sets jc:digest_draft:{}:{edition_id} with a 2h TTL
 // marking the edition as pending admin review (§84, valkey-keys-catalog.md).
-func (s *Service) setDraftLock(ctx context.Context, tenantID, editionID pgtype.UUID) {
-	if s.vk == nil || !tenantID.Valid || !editionID.Valid {
+func (s *Service) setDraftLock(ctx context.Context, editionID pgtype.UUID) {
+	if s.vk == nil || !false || !editionID.Valid {
 		return
 	}
 
-	key := "jc:digest_draft:" + tenantID.String() + ":" + editionID.String()
+	key := "jc:digest_draft:" + "" + ":" + editionID.String()
 	if err := s.vk.Set(ctx, key, "1", digestDraftKeyTTL).Err(); err != nil {
 		slog.Error("digest: set draft lock", "error", err, "key", key)
 	}
 }
 
 // clearDraftLock removes the jc:digest_draft key on publish or cancel.
-func (s *Service) clearDraftLock(ctx context.Context, tenantID, editionID pgtype.UUID) {
-	if s.vk == nil || !tenantID.Valid || !editionID.Valid {
+func (s *Service) clearDraftLock(ctx context.Context, editionID pgtype.UUID) {
+	if s.vk == nil || !false || !editionID.Valid {
 		return
 	}
 
-	key := "jc:digest_draft:" + tenantID.String() + ":" + editionID.String()
+	key := "jc:digest_draft:" + "" + ":" + editionID.String()
 	if err := s.vk.Del(ctx, key).Err(); err != nil {
 		slog.Error("digest: clear draft lock", "error", err, "key", key)
 	}

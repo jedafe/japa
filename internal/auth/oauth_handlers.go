@@ -49,7 +49,7 @@ func (h *OAuthHandlers) SetTierManager(m TierManager) { h.TierManager = m }
 // user publisher profiles in the v2 source directory.
 func (h *OAuthHandlers) SetSourceManager(m SourceManager) { h.SourceManager = m }
 
-func (h *OAuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, userID pgtype.UUID, username string) {
+func (h *OAuthHandlers) maybeCreateUserSource(ctx context.Context, userID pgtype.UUID, username string) {
 	if h.SourceManager == nil {
 		return
 	}
@@ -66,7 +66,7 @@ func (h *OAuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, use
 		sourceURL = fmt.Sprintf("%s/u/%s", strings.TrimRight(h.FrontendBaseURL, "/"), username)
 	}
 
-	source, err := h.SourceManager.CreateSourceFromEntity(ctx, tenantID, userID, userID, "user", username, username, sourceURL, "news")
+	source, err := h.SourceManager.CreateSourceFromEntity(ctx, userID, userID, "user", username, username, sourceURL, "news")
 	if err != nil {
 		slog.Warn("oauth register: failed to create canonical user source", "user_id", userID.String(), "error", err)
 		return
@@ -242,15 +242,15 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to find existing linked account — returning user.
-	existing, err := h.Store.GetOAuthAccount(r.Context(), t.ID, providerName, userInfo.ProviderUserID)
+	existing, err := h.Store.GetOAuthAccount(r.Context(), providerName, userInfo.ProviderUserID)
 	if err == nil && existing != nil {
-		h.issueSessionAndRedirect(w, r, existing.UserID, t.ID, redirectPath, false)
+		h.issueSessionAndRedirect(w, r, existing.UserID, redirectPath, false)
 		return
 	}
 
 	// Try to find user by email — if found, merge the OAuth identity.
 	if userInfo.Email != "" {
-		user, err := h.Store.GetUserByEmail(r.Context(), t.ID, userInfo.Email)
+		user, err := h.Store.GetUserByEmail(r.Context(), userInfo.Email)
 		if err == nil && user != nil {
 			// ADR-068 §1: AI persona backing accounts cannot log in via any
 			// auth flow, including OAuth. Block is_bot accounts explicitly.
@@ -262,11 +262,11 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if linkErr := h.Store.LinkOAuthAccount(r.Context(), t.ID, user.ID, providerName, userInfo.ProviderUserID); linkErr != nil {
+			if linkErr := h.Store.LinkOAuthAccount(r.Context(), user.ID, providerName, userInfo.ProviderUserID); linkErr != nil {
 				slog.Error("link OAuth account", "error", linkErr)
 			}
 
-			h.issueSessionAndRedirect(w, r, user.ID, t.ID, redirectPath, false)
+			h.issueSessionAndRedirect(w, r, user.ID, redirectPath, false)
 
 			return
 		}
@@ -281,7 +281,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.createOAuthUser(r.Context(), t.ID, userInfo, providerName)
+	userID, err := h.createOAuthUser(r.Context(), userInfo, providerName)
 	if err != nil {
 		slog.Error("create OAuth user", "provider", providerName, "error", err)
 		h.redirectOAuthError(w, r, "create_failed")
@@ -290,13 +290,13 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// New user → onboarding wizard, regardless of the stored redirect path.
-	h.issueSessionAndRedirect(w, r, userID, t.ID, "/onboarding", true)
+	h.issueSessionAndRedirect(w, r, userID, "/onboarding", true)
 }
 
 // createOAuthUser creates a new OAuth-only user (password_hash = NULL) with a
 // unique username derived from the email local-part and provider, then links
 // the OAuth account. Retries on username collision with a random suffix.
-func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUID, info *OAuthUserInfo, providerName string) (pgtype.UUID, error) {
+func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo, providerName string) (pgtype.UUID, error) {
 	base := sanitizeUsernameBase(info.Email, info.Name)
 	attempt := base + "_" + providerName
 
@@ -333,7 +333,7 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 			}
 		}
 
-		if linkErr := h.Store.LinkOAuthAccount(ctx, tenantID, userID, providerName, info.ProviderUserID); linkErr != nil {
+		if linkErr := h.Store.LinkOAuthAccount(ctx, userID, providerName, info.ProviderUserID); linkErr != nil {
 			return pgtype.UUID{}, fmt.Errorf("link OAuth account: %w", linkErr)
 		}
 
@@ -345,7 +345,7 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 		}
 
 		// v2 source directory: auto-create a canonical source for publisher users.
-		h.maybeCreateUserSource(ctx, tenantID, userID, candidate)
+		h.maybeCreateUserSource(ctx, userID, candidate)
 
 		return userID, nil
 	}
@@ -404,7 +404,7 @@ func randomSuffix(n int) (string, error) {
 // cookies, updates last_login_at, and redirects the browser to the frontend.
 // isNew controls the redirect target: new users go to /onboarding (passed as
 // redirectPath by the caller); returning users go to redirectPath.
-func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.Request, userID, tenantID pgtype.UUID, redirectPath string, _ bool) {
+func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.Request, userID pgtype.UUID, redirectPath string, _ bool) {
 	if h.Queries != nil {
 		if err := h.Queries.UpdateLastLoginAt(r.Context(),
 
@@ -414,7 +414,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	accessToken, err := h.KeyRot.MintAccessTokenWithContext(r.Context(), userID, tenantID)
+	accessToken, err := h.KeyRot.MintAccessTokenWithContext(r.Context(), userID)
 	if err != nil {
 		slog.Error("mint access token", "error", err)
 		h.redirectOAuthError(w, r, "token_error")

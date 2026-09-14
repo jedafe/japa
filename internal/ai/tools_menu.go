@@ -41,7 +41,7 @@ type menuListArgs struct {
 // MenuListHandler returns a ToolHandler that lists menus with optional
 // placement/status filters.
 func MenuListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Menus == nil {
 			return errorToolResult("menus_unavailable", "menus service is not configured"), nil
 		}
@@ -108,7 +108,7 @@ type menuCreateArgs struct {
 // executor's RBAC gate checks the required_permission (menus.manage); the
 // tool config sets requires_hitl = true.
 func MenuCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Menus == nil {
 			return errorToolResult("menus_unavailable", "menus service is not configured"), nil
 		}
@@ -193,7 +193,7 @@ type menuUpdateArgs struct {
 // executor's RBAC gate checks the required_permission (menus.manage); the
 // tool config sets requires_hitl = true.
 func MenuUpdateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Menus == nil {
 			return errorToolResult("menus_unavailable", "menus service is not configured"), nil
 		}
@@ -267,7 +267,7 @@ type menuDeleteArgs struct {
 // executor's RBAC gate checks the required_permission (menus.manage); the
 // tool config sets requires_hitl = true.
 func MenuDeleteHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Menus == nil {
 			return errorToolResult("menus_unavailable", "menus service is not configured"), nil
 		}

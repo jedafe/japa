@@ -38,8 +38,8 @@ import (
 
 // updater is the subset of Service methods used by the public edit handler.
 type updater interface {
-	Enabled(ctx context.Context, tenantID pgtype.UUID) bool
-	Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error)
+	Enabled(ctx context.Context) bool
+	Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error)
 }
 
 // Handlers exposes the scam-alert board endpoints.
@@ -108,12 +108,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /scam-alerts — list confirmed scam reports.
 // Query params: ?dest=&scam_type=&page=&limit= (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
@@ -156,12 +156,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleSchema handles GET /scam-alerts/schema — returns the canonical
 // scam_type and platform option lists (Rule 16).
 func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
@@ -172,12 +172,12 @@ func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /scam-alerts/:id — single confirmed scam report.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
@@ -187,7 +187,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := h.service.Get(r.Context(), tenantID, id)
+	report, err := h.service.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
@@ -220,12 +220,12 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // optional: authenticated users have their reporter_id stamped; anonymous
 // reports are accepted when scam_alert.anonymous_reports is enabled.
 func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
@@ -296,7 +296,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -306,7 +306,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.updater == nil || !h.updater.Enabled(r.Context(), tenantID) {
+	if h.updater == nil || !h.updater.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
@@ -332,7 +332,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := h.updater.Update(r.Context(), id, tenantID, user.UserID, input)
+	report, err := h.updater.Update(r.Context(), id, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrInvalidScamType) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_scam_type", "Scam type must be one of: fraudulent_agent, fake_job, housing_fraud, fake_scholarship, whatsapp_telegram, other")
@@ -376,7 +376,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -386,13 +386,13 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
 
 	// Fetch the report to resolve its destination_space_id.
-	report, err := h.service.Get(r.Context(), tenantID, id)
+	report, err := h.service.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
@@ -411,7 +411,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Subscribe(r.Context(), user.UserID, tenantID, destSpaceID); err != nil {
+	if err := h.service.Subscribe(r.Context(), user.UserID, destSpaceID); err != nil {
 		slog.Error("scamalert: subscribe failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "subscribe_failed", "Failed to subscribe")
 
@@ -430,7 +430,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -440,13 +440,13 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
 
 	// Fetch the report to resolve its destination_space_id.
-	report, err := h.service.Get(r.Context(), tenantID, id)
+	report, err := h.service.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")

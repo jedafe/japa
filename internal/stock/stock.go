@@ -384,7 +384,7 @@ func (s *Service) GetPhoto(ctx context.Context, providerName, photoID string) (*
 }
 
 // ImportPhoto downloads a stock photo and stores it in the media library.
-func (s *Service) ImportPhoto(ctx context.Context, tenantID, uploaderID pgtype.UUID, providerName, photoID string) (pgtype.UUID, error) {
+func (s *Service) ImportPhoto(ctx context.Context, uploaderID pgtype.UUID, providerName, photoID string) (pgtype.UUID, error) {
 	s.mu.RLock()
 	p, ok := s.providers[providerName]
 	s.mu.RUnlock()
@@ -407,7 +407,7 @@ func (s *Service) ImportPhoto(ctx context.Context, tenantID, uploaderID pgtype.U
 		SourcePhotoID:         downloaded.ProviderPhotoID,
 	}
 
-	mediaID, err := s.media.StoreFromBytes(ctx, tenantID, uploaderID, downloaded.Data, downloaded.Filename, attr)
+	mediaID, err := s.media.StoreFromBytes(ctx, uploaderID, downloaded.Data, downloaded.Filename, attr)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("storing imported photo: %w", err)
 	}

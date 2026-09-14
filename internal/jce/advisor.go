@@ -32,7 +32,7 @@ const (
 const defaultAdvisorRecommendations = 10
 
 // advisorCacheKey returns the canonical Valkey cache key for an advisor result.
-func advisorCacheKey(tenantID, contentID, profileID pgtype.UUID, seed string) string {
+func advisorCacheKey(contentID, profileID pgtype.UUID, seed string) string {
 	pid := "none"
 	if profileID.Valid {
 		pid = profileID.String()
@@ -40,7 +40,7 @@ func advisorCacheKey(tenantID, contentID, profileID pgtype.UUID, seed string) st
 
 	h := sha256.Sum256([]byte(seed))
 
-	return fmt.Sprintf("jc:jce:advisor:%s:%s:%s:%x", tenantID.String(), contentID.String(), pid, h)
+	return fmt.Sprintf("jc:jce:advisor::%s:%s:%x", contentID.String(), pid, h)
 }
 
 // advisorCacheSeed builds a deterministic seed for the cache key that depends
@@ -322,11 +322,11 @@ func fallbackAdvisorText(kind string, input AdvisorInput, ranking []AdvisorRankI
 // builds the prompt, calls the dispatcher, and returns a result whose ranking
 // and next actions are derived from the engine.
 func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInput) (AdvisorResult, error) {
-	if !s.featureEnabled(ctx, (pgtype.UUID{}), advisorFeatureFlag) {
+	if !s.featureEnabled(ctx, advisorFeatureFlag) {
 		return AdvisorResult{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, advisorFeatureFlag)
 	}
 
-	if !s.featureEnabled(ctx, (pgtype.UUID{}), "feature.jce.scoring") {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return AdvisorResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -364,7 +364,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 
 	cacheSeed := advisorCacheSeed(kind, input)
 
-	cacheKey := advisorCacheKey((pgtype.UUID{}),
+	cacheKey := advisorCacheKey(
 
 		input.ContentID, ptrToUUID(input.ProfileID), cacheSeed)
 	if s.vk != nil {
@@ -443,7 +443,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 
 	var recommendations []ComparisonRecommendation
 	if kind == "recommend" || kind == "analyze" {
-		recommendations, err = s.ListRecommendations(ctx, input.ContentID, (pgtype.UUID{}), input.UserID, input.ProfileID, recCount)
+		recommendations, err = s.ListRecommendations(ctx, input.ContentID, input.UserID, input.ProfileID, recCount)
 		if err != nil {
 			// Fall back to the recommendations embedded in the score result if
 			// the recommendation store cannot be queried.
@@ -477,7 +477,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		}
 	}
 
-	freshness, err := s.FreshnessForComparison(ctx, input.ContentID, (pgtype.UUID{}), input.UserID)
+	freshness, err := s.FreshnessForComparison(ctx, input.ContentID, input.UserID)
 	if err != nil {
 		return AdvisorResult{}, fmt.Errorf("loading freshness: %w", err)
 	}

@@ -23,7 +23,6 @@ import (
 
 // Seeded UUIDs — must match the values in the migration seed data.
 const (
-	tenantID          = "00000000-0000-0000-0000-000000000001"
 	superAdminGroupID = "00000000-0000-0000-0000-000000000010"
 	membersGroupID    = "00000000-0000-0000-0000-000000000020"
 	countrySpaceType  = "00000000-0000-0000-0000-000000000060"
@@ -90,7 +89,7 @@ func run() error {
 	defer database.Close()
 
 	// Parse the tenant ID once.
-	tid := parseUUID(tenantID)
+	tid := parseUUID()
 
 	// ── Check if admin already exists (idempotent) ─────────────────────
 	var existingID pgtype.UUID

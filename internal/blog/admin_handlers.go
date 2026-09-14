@@ -18,7 +18,7 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -50,7 +50,7 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 		input.Visibility = "public"
 	}
 
-	post, err := h.content.CreateContent(r.Context(), tenantID, content.CreateContentInput{
+	post, err := h.content.CreateContent(r.Context(), content.CreateContentInput{
 		AuthorID:     user.UserID,
 		ContentType:  contentTypeBlogPost,
 		Title:        input.Title,
@@ -91,7 +91,7 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -148,7 +148,7 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 		prevStatus = existing.Status
 	}
 
-	post, err := h.content.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, true)
+	post, err := h.content.UpdateContent(r.Context(), id, user.UserID, updateInput, true)
 	if err != nil {
 		slog.Error("failed to update blog post (admin)", "error", err, "id", id)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update blog post")

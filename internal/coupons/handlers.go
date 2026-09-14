@@ -93,7 +93,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListPublicCoupons handles GET /api/v1/coupons.
 func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -109,7 +109,7 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
 
-	coupons, err := h.Service.ListActiveCoupons(r.Context(), tenantID, providerID, couponType, search, page, pageSize)
+	coupons, err := h.Service.ListActiveCoupons(r.Context(), providerID, couponType, search, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -353,7 +353,7 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 
 // CreateCouponAdmin handles POST /api/v1/admin/coupons.
 func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -387,7 +387,7 @@ func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		input.Status = string(CouponStatusActive)
 	}
 
-	coupon, err := h.Service.CreateCoupon(r.Context(), tenantID, user.UserID, input)
+	coupon, err := h.Service.CreateCoupon(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -420,7 +420,7 @@ func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // UpdateCouponAdmin handles PATCH /api/v1/admin/coupons/:id.
 func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -447,7 +447,7 @@ func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coupon, err := h.Service.UpdateCoupon(r.Context(), id, tenantID, input)
+	coupon, err := h.Service.UpdateCoupon(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -458,7 +458,7 @@ func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // DeleteCouponAdmin handles DELETE /api/v1/admin/coupons/:id.
 func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -469,7 +469,7 @@ func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteCoupon(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteCoupon(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}

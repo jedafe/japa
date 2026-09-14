@@ -450,7 +450,6 @@ func TestParseFieldScoringConfig(t *testing.T) {
 // withTenant returns a context with a test tenant set, so requireTenant
 // passes in handler tests.
 func withTenant(ctx context.Context) context.Context {
-	tenantID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
 	return context.WithValue(ctx, struct{}{}, &struct {
 		ID   pgtype.UUID

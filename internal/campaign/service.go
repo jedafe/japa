@@ -48,7 +48,7 @@ type storer interface {
 // personaProvisioner is the subset of the personas service the campaign layer
 // uses to auto-provision missing personas.
 type personaProvisioner interface {
-	ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, inputs []personas.PersonaInput) ([]personas.ProvisionResult, error)
+	ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID, inputs []personas.PersonaInput) ([]personas.ProvisionResult, error)
 }
 
 // studioService is the subset of the studio service the campaign layer uses to
@@ -96,7 +96,7 @@ func NewService(store storer, planner Planner, personas personaProvisioner, stud
 
 // CreateCampaign validates the input, creates a campaign row, plans it, and
 // optionally runs it immediately.
-func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (Campaign, []CampaignItem, error) {
+func (s *Service) CreateCampaign(ctx context.Context, userID pgtype.UUID, in CreateCampaignInput) (Campaign, []CampaignItem, error) {
 	if !s.isEnabled(ctx) {
 		return Campaign{}, nil, errors.New("campaign: feature is disabled")
 	}
@@ -116,7 +116,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 		return Campaign{}, nil, fmt.Errorf("campaign: create campaign: %w", err)
 	}
 
-	planned, items, err := s.PlanCampaign(ctx, tenantID, userID, campaign.ID)
+	planned, items, err := s.PlanCampaign(ctx, userID, campaign.ID)
 	if err != nil {
 		return planned, nil, err
 	}
@@ -146,7 +146,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 // PlanCampaign validates the persona pool, provisions missing personas if
 // allowed, generates a content plan, and persists the items with the campaign
 // in the 'planned' status.
-func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID pgtype.UUID) (Campaign, []CampaignItem, error) {
+func (s *Service) PlanCampaign(ctx context.Context, userID, campaignID pgtype.UUID) (Campaign, []CampaignItem, error) {
 	campaign, err := s.store.GetCampaign(ctx, campaignID)
 	if err != nil {
 		return Campaign{}, nil, fmt.Errorf("campaign: get campaign: %w", err)
@@ -157,7 +157,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 	}
 
 	// Build the target persona pool.
-	pool, err := s.buildPersonaPool(ctx, tenantID, campaign, userID)
+	pool, err := s.buildPersonaPool(ctx, campaign, userID)
 	if err != nil {
 		if errors.Is(err, ErrPersonaPoolTooSmall) || errors.Is(err, errpkg.ErrForbidden) {
 			_ = s.failCampaign(ctx, campaign, err.Error())
@@ -554,7 +554,7 @@ type personaPoolEntry struct {
 	Spec        *PersonaSpec
 }
 
-func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, campaign gen.ContentCampaign, userID pgtype.UUID) ([]personaPoolEntry, error) {
+func (s *Service) buildPersonaPool(ctx context.Context, campaign gen.ContentCampaign, userID pgtype.UUID) ([]personaPoolEntry, error) {
 	pool := make([]personaPoolEntry, 0)
 
 	if len(campaign.PersonaPool) > 0 {
@@ -615,7 +615,7 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 			inputs = append(inputs, in)
 		}
 
-		results, err := s.personas.ProvisionPersonas(ctx, tenantID, userID, inputs)
+		results, err := s.personas.ProvisionPersonas(ctx, userID, inputs)
 		if err != nil {
 			return nil, fmt.Errorf("campaign: provision personas: %w", err)
 		}

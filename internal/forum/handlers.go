@@ -75,8 +75,8 @@ type settingsReader interface {
 // to keep a backing contents row in sync with each forum thread. A nil value
 // disables the sync (test-only, backward compat).
 type ContentStore interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
-	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
+	CreateContent(ctx context.Context, input content.CreateContentInput) (gen.CreateContentRow, error)
+	UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	DeleteContent(ctx context.Context, id pgtype.UUID) error
 	EnsureContentScore(ctx context.Context, contentID pgtype.UUID) error
@@ -395,7 +395,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -485,7 +485,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 			status = content.StatusPublished
 		}
 
-		contentRow, err := h.content.CreateContent(r.Context(), tenantID, content.CreateContentInput{
+		contentRow, err := h.content.CreateContent(r.Context(), content.CreateContentInput{
 			AuthorID:     user.UserID,
 			ContentType:  "forum_thread",
 			Title:        input.Title,
@@ -996,7 +996,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1026,7 +1026,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-004: keep the backing contents row in sync with title/body changes.
 	if thread.ContentID.Valid {
-		h.syncThreadContent(r.Context(), tenantID, user.UserID, thread.ContentID, thread.Title, thread.Slug, input.Body)
+		h.syncThreadContent(r.Context(), user.UserID, thread.ContentID, thread.Title, thread.Slug, input.Body)
 	}
 
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
@@ -2175,7 +2175,7 @@ func (h *Handlers) ListThreadTags(w http.ResponseWriter, r *http.Request) {
 // syncThreadContent updates the backing contents row for a forum thread
 // when its title or body changes. It preserves existing content metadata and
 // re-queues embedding generation. Errors are logged, never propagated.
-func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, contentID pgtype.UUID, title, slug string, body []byte) {
+func (h *Handlers) syncThreadContent(ctx context.Context, userID, contentID pgtype.UUID, title, slug string, body []byte) {
 	if h.content == nil {
 		return
 	}
@@ -2247,7 +2247,7 @@ func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, cont
 		TargetCountry:   existing.TargetCountry,
 	}
 
-	if _, err := h.content.UpdateContent(ctx, contentID, tenantID, userID, input, true); err != nil {
+	if _, err := h.content.UpdateContent(ctx, contentID, userID, input, true); err != nil {
 		slog.Warn("forum: failed to sync backing content for thread", "content_id", contentID.String(), "error", err)
 		return
 	}

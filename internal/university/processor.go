@@ -24,8 +24,8 @@ func NewProcessor(service *Service) *Processor {
 
 // ProcessEnrollment handles university:process_enrollment.
 // Payload: { , user_id, track_id, payment_id, source, gross_kobo }.
-func (p *Processor) ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID, source string, grossKobo int64) error {
-	tID, err := scanUUID(tenantID)
+func (p *Processor) ProcessEnrollment(ctx context.Context, userID, trackID, paymentID, source string, grossKobo int64) error {
+	tID, err := scanUUID()
 	if err != nil {
 		return fmt.Errorf("university: process enrollment: %w", err)
 	}
@@ -47,13 +47,13 @@ func (p *Processor) ProcessEnrollment(ctx context.Context, tenantID, userID, tra
 		}
 	}
 
-	return p.service.ProcessEnrollment(ctx, tID, uID, trID, payID, source, grossKobo)
+	return p.service.ProcessEnrollment(ctx, uID, trID, payID, source, grossKobo)
 }
 
 // CalculatePeriodPayouts handles university:calculate_period_payouts.
 // Payload: { , period_start, period_end }.
-func (p *Processor) CalculatePeriodPayouts(ctx context.Context, tenantID, periodStart, periodEnd string) error {
-	tID, err := scanUUID(tenantID)
+func (p *Processor) CalculatePeriodPayouts(ctx context.Context, periodStart, periodEnd string) error {
+	tID, err := scanUUID()
 	if err != nil {
 		return fmt.Errorf("university: calculate payouts: %w", err)
 	}
@@ -68,13 +68,13 @@ func (p *Processor) CalculatePeriodPayouts(ctx context.Context, tenantID, period
 		return fmt.Errorf("university: calculate payouts: invalid period_end: %w", err)
 	}
 
-	return p.service.CalculatePeriodPayouts(ctx, tID, start, end)
+	return p.service.CalculatePeriodPayouts(ctx, start, end)
 }
 
 // SendInstructorPayout handles university:send_instructor_payout.
 // Payload: { , payout_id }.
-func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID string) error {
-	_, err := scanUUID(tenantID)
+func (p *Processor) SendInstructorPayout(ctx context.Context, payoutID string) error {
+	_, err := scanUUID()
 	if err != nil {
 		return fmt.Errorf("university: send payout: %w", err)
 	}
@@ -92,8 +92,8 @@ func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID
 // Dispatches an in-app notification to the creator via the notifications
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
-func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, instructorID string) error {
-	_, err := scanUUID(tenantID)
+func (p *Processor) NotifyInstructorApproved(ctx context.Context, instructorID string) error {
+	_, err := scanUUID()
 	if err != nil {
 		return fmt.Errorf("university: notify instructor approved: %w", err)
 	}
@@ -111,8 +111,8 @@ func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, inst
 // Dispatches an in-app notification to the creator via the notifications
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
-func (p *Processor) NotifyCourseApproved(ctx context.Context, tenantID, trackID string) error {
-	_, err := scanUUID(tenantID)
+func (p *Processor) NotifyCourseApproved(ctx context.Context, trackID string) error {
+	_, err := scanUUID()
 	if err != nil {
 		return fmt.Errorf("university: notify course approved: %w", err)
 	}
@@ -132,8 +132,8 @@ func (p *Processor) NotifyCourseApproved(ctx context.Context, tenantID, trackID 
 // acting admin's user ID) is attributed as the media uploader; there is no
 // generic "system user" row so an invalid/missing uploaded_by is passed
 // through as an invalid pgtype.UUID and Service.FetchLogo skips gracefully.
-func (p *Processor) FetchLogo(ctx context.Context, tenantID, spaceID, logoURL, uploadedBy string) error {
-	tID, err := scanUUID(tenantID)
+func (p *Processor) FetchLogo(ctx context.Context, spaceID, logoURL, uploadedBy string) error {
+	tID, err := scanUUID()
 	if err != nil {
 		return fmt.Errorf("university: fetch logo: %w", err)
 	}
@@ -146,7 +146,7 @@ func (p *Processor) FetchLogo(ctx context.Context, tenantID, spaceID, logoURL, u
 	// a zero-value (invalid) pgtype.UUID rather than failing the task.
 	uID, _ := scanUUID(uploadedBy)
 
-	return p.service.FetchLogo(ctx, tID, sID, logoURL, uID)
+	return p.service.FetchLogo(ctx, sID, logoURL, uID)
 }
 
 // scanUUID parses a UUID string into a pgtype.UUID.

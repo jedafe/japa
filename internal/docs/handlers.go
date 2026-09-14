@@ -201,7 +201,7 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 // GetDocPage handles GET /api/v1/docs/{audience}/{slug}.
 // Returns a single published page.
 func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,7 +218,7 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.GetDocPageBySlug(r.Context(), tenantID, audience, slug)
+	page, err := h.Service.GetDocPageBySlug(r.Context(), audience, slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -231,14 +231,14 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 // Returns the published-pages navigation tree grouped by audience, filtered
 // to only the audiences the requester may read (§44 — audience-gated nav).
 func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	allowed := h.accessibleAudiences(r)
 
-	nav, err := h.Service.GetDocNav(r.Context(), tenantID, allowed)
+	nav, err := h.Service.GetDocNav(r.Context(), allowed)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -411,7 +411,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 
 // CreateDocPage handles POST /api/v1/admin/docs/pages.
 func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -427,7 +427,7 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pageID, err := h.Service.CreateDocPage(r.Context(), tenantID, req)
+	pageID, err := h.Service.CreateDocPage(r.Context(), req)
 	if err != nil {
 		slog.Error("CreateDocPage failed", "err", err, "title", req.Title, "slug", req.Slug)
 		handleServiceError(w, err)
@@ -474,7 +474,7 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 
 // UpdateDocPage handles PATCH /api/v1/admin/docs/pages/{id}.
 func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -498,7 +498,7 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdateDocPage(r.Context(), tenantID, id, req); err != nil {
+	if err := h.Service.UpdateDocPage(r.Context(), id, req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -512,7 +512,7 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 // ApproveDocPage handles POST /api/v1/admin/docs/pages/{id}/approve.
 // Sets review_status to 'approved' and records the reviewer (§44).
 func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -529,7 +529,7 @@ func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.ApproveDocPage(r.Context(), tenantID, id, user.UserID); err != nil {
+	if err := h.Service.ApproveDocPage(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -541,7 +541,7 @@ func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
 // PublishDocPage handles POST /api/v1/admin/docs/pages/{id}/publish.
 // Sets review_status to 'published'. Requires current status = 'approved' (§44).
 func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -558,7 +558,7 @@ func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.PublishDocPage(r.Context(), tenantID, id, user.UserID); err != nil {
+	if err := h.Service.PublishDocPage(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -569,7 +569,7 @@ func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
 
 // DeleteDocPage handles DELETE /api/v1/admin/docs/{id}.
 func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -580,7 +580,7 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteDocPage(r.Context(), tenantID, id); err != nil {
+	if err := h.Service.DeleteDocPage(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}

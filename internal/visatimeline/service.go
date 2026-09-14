@@ -187,8 +187,8 @@ func (s *Service) Create(ctx context.Context, userID pgtype.UUID, input CreateTi
 // Get returns a single timeline by id. The caller is responsible for any
 // share-visibility enforcement (public stats use the aggregated table, not
 // individual timelines).
-func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (TimelineDTO, error) {
-	t, err := s.store.GetTimeline(ctx, id, tenantID)
+func (s *Service) Get(ctx context.Context, id pgtype.UUID) (TimelineDTO, error) {
+	t, err := s.store.GetTimeline(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return TimelineDTO{}, pgx.ErrNoRows
@@ -217,8 +217,8 @@ func (s *Service) ListOwn(ctx context.Context, userID pgtype.UUID) ([]TimelineDT
 
 // UpdateOwn updates the authenticated user's own timeline (outcome / share
 // toggle). Ownership is verified against the stored user_id.
-func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateTimelineInput) (TimelineDTO, error) {
-	existing, err := s.store.GetTimeline(ctx, id, tenantID)
+func (s *Service) UpdateOwn(ctx context.Context, id, userID pgtype.UUID, input UpdateTimelineInput) (TimelineDTO, error) {
+	existing, err := s.store.GetTimeline(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return TimelineDTO{}, pgx.ErrNoRows
@@ -240,13 +240,13 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 		return TimelineDTO{}, fmt.Errorf("visatimeline: update: %w", err)
 	}
 
-	return s.Get(ctx, id, tenantID)
+	return s.Get(ctx, id)
 }
 
 // DeleteOwn soft-deletes the authenticated user's own timeline. Ownership is
 // verified against the stored user_id.
-func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	existing, err := s.store.GetTimeline(ctx, id, tenantID)
+func (s *Service) DeleteOwn(ctx context.Context, id, userID pgtype.UUID) error {
+	existing, err := s.store.GetTimeline(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -259,7 +259,7 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 		return ErrNotOwner
 	}
 
-	if err := s.store.DeleteTimeline(ctx, id, tenantID); err != nil {
+	if err := s.store.DeleteTimeline(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -291,12 +291,12 @@ var ErrImplausibleSequence = errors.New("implausible milestone sequence")
 // user. Ownership is verified against the stored user_id. Implausible
 // milestone sequences (e.g. decision before applied, or a date that precedes
 // an earlier-stage milestone) are rejected per §83 anti-gaming rules.
-func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID pgtype.UUID, input AddMilestoneInput) (MilestoneDTO, error) {
+func (s *Service) AddMilestone(ctx context.Context, timelineID, userID pgtype.UUID, input AddMilestoneInput) (MilestoneDTO, error) {
 	if input.MilestoneType == "" {
 		return MilestoneDTO{}, errors.New("milestone_type is required")
 	}
 
-	existing, err := s.store.GetTimeline(ctx, timelineID, tenantID)
+	existing, err := s.store.GetTimeline(ctx, timelineID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return MilestoneDTO{}, pgx.ErrNoRows
@@ -379,8 +379,8 @@ func (s *Service) flagImplausible(ctx context.Context, userID, timelineID pgtype
 
 // UpdateMilestone edits a milestone belonging to a timeline owned by the
 // authenticated user. Ownership is verified via the parent timeline.
-func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, tenantID, userID pgtype.UUID, input UpdateMilestoneInput) error {
-	existing, err := s.store.GetTimeline(ctx, timelineID, tenantID)
+func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, userID pgtype.UUID, input UpdateMilestoneInput) error {
+	existing, err := s.store.GetTimeline(ctx, timelineID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -487,8 +487,8 @@ func (s *Service) AdminList(ctx context.Context, filter AdminListFilter) ([]Time
 
 // AdminDelete soft-deletes any timeline (admin override, visa_timeline.manage_any
 // permission checked at route level).
-func (s *Service) AdminDelete(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteTimeline(ctx, id, tenantID); err != nil {
+func (s *Service) AdminDelete(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteTimeline(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

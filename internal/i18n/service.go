@@ -35,8 +35,7 @@ type cacheEntry struct {
 
 // cacheKey is a composite key of tenant + locale.
 type cacheKey struct {
-	tenantID pgtype.UUID
-	locale   string
+	locale string
 }
 
 // l1CacheTTL is the in-memory L1 cache TTL (5 minutes).
@@ -73,8 +72,8 @@ func NewService(database *db.DB) *Service {
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // l2Key returns the Valkey L2 cache key for a tenant+locale.
-func l2Key(tenantID pgtype.UUID, locale string) string {
-	return valkey.MustKey("cache:i18n:%s:%s", tenantID.String(), locale)
+func l2Key(locale string) string {
+	return valkey.MustKey("cache:i18n::%s", locale)
 }
 
 // ---------------------------------------------------------------------------
@@ -85,19 +84,19 @@ func l2Key(tenantID pgtype.UUID, locale string) string {
 // Results are served from the L1 in-memory cache when available; otherwise the
 // L2 Valkey cache is checked; otherwise the cache is populated from the
 // database on first access (Section 18 / VALKEY-002).
-func (s *Service) GetTranslationsByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) (map[string]string, error) {
+func (s *Service) GetTranslationsByLocale(ctx context.Context, locale string) (map[string]string, error) {
 	// L1: in-memory cache.
-	if m, ok := s.cacheGet(tenantID, locale); ok {
+	if m, ok := s.cacheGet(locale); ok {
 		return m, nil
 	}
 
 	// L2: distributed Valkey cache.
 	if s.vk != nil {
-		if cached, err := s.vk.Get(ctx, l2Key(tenantID, locale)).Result(); err == nil && cached != "" {
+		if cached, err := s.vk.Get(ctx, l2Key(locale)).Result(); err == nil && cached != "" {
 			var m map[string]string
 			if err := json.Unmarshal([]byte(cached), &m); err == nil && m != nil {
 				// Populate L1 from L2 so subsequent reads skip the network.
-				s.cacheSet(tenantID, locale, m)
+				s.cacheSet(locale, m)
 				// Return a copy to prevent mutation of cached data.
 				out := make(map[string]string, len(m))
 				for k, v := range m {
@@ -120,15 +119,15 @@ func (s *Service) GetTranslationsByLocale(ctx context.Context, tenantID pgtype.U
 		m[r.Key] = r.Value
 	}
 
-	s.cacheSet(tenantID, locale, m)
+	s.cacheSet(locale, m)
 
 	return m, nil
 }
 
 // Translate returns the value for a single key, falling back to defaults if
 // the key is not found. Pass an empty defaults map if no fallback is needed.
-func (s *Service) Translate(ctx context.Context, tenantID pgtype.UUID, locale, key string, defaults map[string]string) (string, error) {
-	m, err := s.GetTranslationsByLocale(ctx, tenantID, locale)
+func (s *Service) Translate(ctx context.Context, locale, key string, defaults map[string]string) (string, error) {
+	m, err := s.GetTranslationsByLocale(ctx, locale)
 	if err != nil {
 		return "", err
 	}
@@ -147,8 +146,8 @@ func (s *Service) Translate(ctx context.Context, tenantID pgtype.UUID, locale, k
 }
 
 // TranslateMany returns values for multiple keys in one call.
-func (s *Service) TranslateMany(ctx context.Context, tenantID pgtype.UUID, locale string, keys []string) (map[string]string, error) {
-	m, err := s.GetTranslationsByLocale(ctx, tenantID, locale)
+func (s *Service) TranslateMany(ctx context.Context, locale string, keys []string) (map[string]string, error) {
+	m, err := s.GetTranslationsByLocale(ctx, locale)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +170,7 @@ func (s *Service) TranslateMany(ctx context.Context, tenantID pgtype.UUID, local
 // ---------------------------------------------------------------------------
 
 // Upsert inserts or updates a single translation and invalidates the cache.
-func (s *Service) Upsert(ctx context.Context, tenantID pgtype.UUID, locale, key, value string, ctxPtr *string) error {
+func (s *Service) Upsert(ctx context.Context, locale, key, value string, ctxPtr *string) error {
 	if err := s.store.Upsert(ctx, gen.UpsertTranslationParams{
 
 		Locale:  locale,
@@ -182,13 +181,13 @@ func (s *Service) Upsert(ctx context.Context, tenantID pgtype.UUID, locale, key,
 		return err
 	}
 
-	s.cacheInvalidate(tenantID, locale)
+	s.cacheInvalidate(locale)
 
 	return nil
 }
 
 // UpsertBatch inserts or updates multiple translations at once.
-func (s *Service) UpsertBatch(ctx context.Context, tenantID pgtype.UUID, translations []UpsertBatchItem) error {
+func (s *Service) UpsertBatch(ctx context.Context, translations []UpsertBatchItem) error {
 	affectedLocales := make(map[string]struct{})
 
 	for _, t := range translations {
@@ -206,7 +205,7 @@ func (s *Service) UpsertBatch(ctx context.Context, tenantID pgtype.UUID, transla
 	}
 
 	for locale := range affectedLocales {
-		s.cacheInvalidate(tenantID, locale)
+		s.cacheInvalidate(locale)
 	}
 
 	return nil
@@ -221,23 +220,23 @@ type UpsertBatchItem struct {
 }
 
 // Delete removes a translation and invalidates the cache.
-func (s *Service) Delete(ctx context.Context, tenantID, id pgtype.UUID, locale string) error {
+func (s *Service) Delete(ctx context.Context, id pgtype.UUID, locale string) error {
 	if err := s.store.Delete(ctx, id); err != nil {
 		return err
 	}
 
-	s.cacheInvalidate(tenantID, locale)
+	s.cacheInvalidate(locale)
 
 	return nil
 }
 
 // DeleteByLocale removes all translations for a locale and invalidates the cache.
-func (s *Service) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) error {
+func (s *Service) DeleteByLocale(ctx context.Context, locale string) error {
 	if err := s.store.DeleteByLocale(ctx, locale); err != nil {
 		return err
 	}
 
-	s.cacheInvalidate(tenantID, locale)
+	s.cacheInvalidate(locale)
 
 	return nil
 }
@@ -259,7 +258,7 @@ func (s *Service) Counts(ctx context.Context) ([]gen.CountTranslationsByLocaleRo
 
 // RefreshCache forces a full reload of all translations for a tenant into
 // the in-memory cache. Call after bulk imports or migration events.
-func (s *Service) RefreshCache(ctx context.Context, tenantID pgtype.UUID) error {
+func (s *Service) RefreshCache(ctx context.Context) error {
 	locales, err := s.store.ListLocales(ctx)
 	if err != nil {
 		return fmt.Errorf("refresh cache: listing locales: %w", err)
@@ -276,10 +275,10 @@ func (s *Service) RefreshCache(ctx context.Context, tenantID pgtype.UUID) error 
 			m[r.Key] = r.Value
 		}
 
-		s.cacheSet(tenantID, locale, m)
+		s.cacheSet(locale, m)
 	}
 
-	slog.Info("i18n cache refreshed", "tenant", tenantID, "locales", len(locales))
+	slog.Info("i18n cache refreshed", "tenant", "locales", len(locales))
 
 	return nil
 }
@@ -289,11 +288,11 @@ func (s *Service) RefreshCache(ctx context.Context, tenantID pgtype.UUID) error 
 // ---------------------------------------------------------------------------
 
 // cacheGet returns the cached map if present and not older than l1CacheTTL.
-func (s *Service) cacheGet(tenantID pgtype.UUID, locale string) (map[string]string, bool) {
+func (s *Service) cacheGet(locale string) (map[string]string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	entry, ok := s.cache[cacheKey{tenantID: tenantID, locale: locale}]
+	entry, ok := s.cache[cacheKey{locale: locale}]
 	if !ok {
 		return nil, false
 	}
@@ -313,9 +312,9 @@ func (s *Service) cacheGet(tenantID pgtype.UUID, locale string) (map[string]stri
 // cacheSet writes a map into the L1 in-memory cache and, if Valkey is wired,
 // into the L2 distributed cache (Section 18 / VALKEY-002). L2 write is
 // best-effort — a failure logs and continues; the L1 cache is still populated.
-func (s *Service) cacheSet(tenantID pgtype.UUID, locale string, data map[string]string) {
+func (s *Service) cacheSet(locale string, data map[string]string) {
 	s.mu.Lock()
-	s.cache[cacheKey{tenantID: tenantID, locale: locale}] = &cacheEntry{
+	s.cache[cacheKey{locale: locale}] = &cacheEntry{
 		data:     data,
 		loadedAt: time.Now(),
 	}
@@ -329,7 +328,7 @@ func (s *Service) cacheSet(tenantID pgtype.UUID, locale string, data map[string]
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
-		if err := s.vk.Set(ctx, l2Key(tenantID, locale), encoded, l2CacheTTL).Err(); err != nil {
+		if err := s.vk.Set(ctx, l2Key(locale), encoded, l2CacheTTL).Err(); err != nil {
 			slog.Warn("i18n: failed to write L2 cache", "locale", locale, "error", err)
 		}
 	}
@@ -338,9 +337,9 @@ func (s *Service) cacheSet(tenantID pgtype.UUID, locale string, data map[string]
 // cacheInvalidate removes a single locale from both the L1 in-memory cache
 // and the L2 distributed Valkey cache (Section 18 / VALKEY-002). L2 DEL is
 // best-effort — a failure logs and continues; the 1h TTL bounds staleness.
-func (s *Service) cacheInvalidate(tenantID pgtype.UUID, locale string) {
+func (s *Service) cacheInvalidate(locale string) {
 	s.mu.Lock()
-	delete(s.cache, cacheKey{tenantID: tenantID, locale: locale})
+	delete(s.cache, cacheKey{locale: locale})
 	s.mu.Unlock()
 
 	if s.vk == nil {
@@ -350,7 +349,7 @@ func (s *Service) cacheInvalidate(tenantID pgtype.UUID, locale string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := s.vk.Del(ctx, l2Key(tenantID, locale)).Err(); err != nil {
+	if err := s.vk.Del(ctx, l2Key(locale)).Err(); err != nil {
 		slog.Warn("i18n: failed to invalidate L2 cache", "locale", locale, "error", err)
 	}
 }

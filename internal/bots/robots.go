@@ -141,26 +141,26 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 
 // InvalidateRobotsCache removes the cached robots.txt for a tenant.
 // Call this after updating the bot registry.
-func InvalidateRobotsCache(ctx context.Context, rdb *valkey.Client, tenantID pgtype.UUID) {
+func InvalidateRobotsCache(ctx context.Context, rdb *valkey.Client) {
 	if rdb == nil {
 		return
 	}
 
-	cacheKey := robotsCacheKey + ":" + tenantID.String()
+	cacheKey := robotsCacheKey + ":" + ""
 	if err := rdb.Redis().Del(ctx, cacheKey).Err(); err != nil {
 		slog.Warn("robots: failed to invalidate cache", "error", err)
 	}
 }
 
 // InvalidateLLMsCache removes the cached llms.txt for a tenant.
-func InvalidateLLMsCache(ctx context.Context, rdb *valkey.Client, tenantID pgtype.UUID) {
+func InvalidateLLMsCache(ctx context.Context, rdb *valkey.Client) {
 	if rdb == nil {
 		return
 	}
 
 	keys := []string{
-		llmsCacheKey + ":" + tenantID.String(),
-		llmsFullCacheKey + ":" + tenantID.String(),
+		llmsCacheKey + ":" + "",
+		llmsFullCacheKey + ":" + "",
 	}
 	for _, key := range keys {
 		if err := rdb.Redis().Del(ctx, key).Err(); err != nil {

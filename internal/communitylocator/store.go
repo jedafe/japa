@@ -709,7 +709,7 @@ LIMIT 1
 
 // InitiateClaim sets claim_status to 'pending' on a community organisation,
 // beginning the claim flow. Only published, unclaimed orgs can be claimed.
-func (s *Store) InitiateClaim(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) InitiateClaim(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET claim_status = 'pending', updated_at = now()
@@ -717,7 +717,7 @@ WHERE id = $1 AND deleted_at IS NULL
   AND status = 'published' AND claim_status = 'unclaimed'
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("communitylocator: initiate claim: %w", err)
 	}
@@ -910,7 +910,7 @@ WHERE %s
 // (community submission) and 'ai_draft' (ADR-088 AI draft) sources so
 // the HITL gate can publish AI-generated drafts. Archived or already-
 // published orgs are not re-approvable.
-func (s *Store) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtype.UUID) error {
+func (s *Store) ApproveOrg(ctx context.Context, id, reviewedBy pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET status = 'published',
@@ -922,7 +922,7 @@ SET status = 'published',
 WHERE id = $1 AND deleted_at IS NULL AND status IN ('pending','ai_draft')
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewedBy)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewedBy)
 	if err != nil {
 		return fmt.Errorf("communitylocator: approve org: %w", err)
 	}
@@ -937,14 +937,14 @@ WHERE id = $1 AND deleted_at IS NULL AND status IN ('pending','ai_draft')
 // ArchiveOrg archives a published community organisation: sets
 // status='archived', is_active=false. Only published orgs can be
 // archived.
-func (s *Store) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) ArchiveOrg(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET status = 'archived', is_active = false, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL AND status = 'published'
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("communitylocator: archive org: %w", err)
 	}
@@ -959,14 +959,14 @@ WHERE id = $1 AND deleted_at IS NULL AND status = 'published'
 // DeleteOrg soft-deletes a community organisation: sets deleted_at=now()
 // per Rule 11 (soft deletes only for user content). The org is excluded
 // from all list/get queries via the deleted_at IS NULL filter.
-func (s *Store) DeleteOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteOrg(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET deleted_at = now(), is_active = false, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("communitylocator: delete org: %w", err)
 	}
@@ -980,14 +980,14 @@ WHERE id = $1 AND deleted_at IS NULL
 
 // VerifyOrg marks a community organisation as verified by an admin. Only
 // published orgs can be verified (prevents verifying pending/archived orgs).
-func (s *Store) VerifyOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) VerifyOrg(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET is_verified = true, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL AND status = 'published'
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("communitylocator: verify org: %w", err)
 	}
@@ -1002,7 +1002,7 @@ WHERE id = $1 AND deleted_at IS NULL AND status = 'published'
 // ResolveClaim resolves a pending claim on a community organisation.
 // Approving sets claim_status to 'claimed'; rejecting resets it to
 // 'unclaimed'. Only orgs with claim_status='pending' can be resolved.
-func (s *Store) ResolveClaim(ctx context.Context, id, tenantID pgtype.UUID, approve bool) error {
+func (s *Store) ResolveClaim(ctx context.Context, id pgtype.UUID, approve bool) error {
 	status := ClaimStatusUnclaimed
 	if approve {
 		status = ClaimStatusClaimed
@@ -1014,7 +1014,7 @@ SET claim_status = $2, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL AND claim_status = 'pending'
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, status)
 	if err != nil {
 		return fmt.Errorf("communitylocator: resolve claim: %w", err)
 	}

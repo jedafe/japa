@@ -87,7 +87,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -153,7 +153,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		RunImmediately:        runImmediately,
 	}
 
-	campaign, _, err := h.service.CreateCampaign(r.Context(), tenantID, user.UserID, in)
+	campaign, _, err := h.service.CreateCampaign(r.Context(), user.UserID, in)
 	if err != nil {
 		slog.Error("campaign: create failed", "error", err)
 		h.writeServiceError(w, err)

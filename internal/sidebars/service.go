@@ -130,7 +130,7 @@ type CreateSidebarInput struct {
 }
 
 // CreateSidebar is an exported method.
-func (s *Service) CreateSidebar(ctx context.Context, tenantID pgtype.UUID, input CreateSidebarInput) (gen.Sidebar, error) {
+func (s *Service) CreateSidebar(ctx context.Context, input CreateSidebarInput) (gen.Sidebar, error) {
 	if !ValidApp(input.App) {
 		return gen.Sidebar{}, ErrInvalidApp
 	}
@@ -175,7 +175,7 @@ func (s *Service) CreateSidebar(ctx context.Context, tenantID pgtype.UUID, input
 		return gen.Sidebar{}, err
 	}
 
-	s.invalidateResolveCache(ctx, tenantID)
+	s.invalidateResolveCache(ctx)
 
 	return sb, nil
 }
@@ -190,7 +190,7 @@ type UpdateSidebarInput struct {
 }
 
 // UpdateSidebar is an exported method.
-func (s *Service) UpdateSidebar(ctx context.Context, id, tenantID pgtype.UUID, input UpdateSidebarInput) (gen.Sidebar, error) {
+func (s *Service) UpdateSidebar(ctx context.Context, id pgtype.UUID, input UpdateSidebarInput) (gen.Sidebar, error) {
 	if !ValidVisibility(input.Visibility) {
 		return gen.Sidebar{}, ErrInvalidVisibility
 	}
@@ -224,18 +224,18 @@ func (s *Service) UpdateSidebar(ctx context.Context, id, tenantID pgtype.UUID, i
 		return gen.Sidebar{}, err
 	}
 
-	s.invalidateResolveCache(ctx, tenantID)
+	s.invalidateResolveCache(ctx)
 
 	return sb, nil
 }
 
 // DeleteSidebar is an exported method.
-func (s *Service) DeleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteSidebar(ctx context.Context, id pgtype.UUID) error {
 	if err := s.store.deleteSidebar(ctx, id); err != nil {
 		return err
 	}
 
-	s.invalidateResolveCache(ctx, tenantID)
+	s.invalidateResolveCache(ctx)
 
 	return nil
 }
@@ -267,7 +267,7 @@ type UpdateSidebarWidgetInput struct {
 }
 
 // CreateSidebarWidget is an exported method.
-func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID pgtype.UUID, input CreateSidebarWidgetInput) (gen.SidebarWidget, error) {
+func (s *Service) CreateSidebarWidget(ctx context.Context, sidebarID pgtype.UUID, input CreateSidebarWidgetInput) (gen.SidebarWidget, error) {
 	if !IsValidWidgetType(input.WidgetType) {
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
 	}
@@ -326,13 +326,13 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 		return gen.SidebarWidget{}, err
 	}
 
-	s.invalidateResolveCache(ctx, tenantID)
+	s.invalidateResolveCache(ctx)
 
 	return widget, nil
 }
 
 // UpdateSidebarWidget is an exported method.
-func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenantID pgtype.UUID, input UpdateSidebarWidgetInput) (gen.SidebarWidget, error) {
+func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID pgtype.UUID, input UpdateSidebarWidgetInput) (gen.SidebarWidget, error) {
 	if !IsValidWidgetType(input.WidgetType) {
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
 	}
@@ -399,13 +399,13 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 		return gen.SidebarWidget{}, err
 	}
 
-	s.invalidateResolveCache(ctx, tenantID)
+	s.invalidateResolveCache(ctx)
 
 	return widget, nil
 }
 
 // DeleteSidebarWidget is an exported method.
-func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID, tenantID pgtype.UUID) error {
+func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID pgtype.UUID) error {
 	// Verify the widget exists and belongs to the sidebar in the URL path.
 	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
 	existing, err := s.store.getSidebarWidget(ctx, id)
@@ -421,7 +421,7 @@ func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID, tenant
 		return err
 	}
 
-	s.invalidateResolveCache(ctx, tenantID)
+	s.invalidateResolveCache(ctx)
 
 	return nil
 }
@@ -438,7 +438,7 @@ type ReorderItem struct {
 }
 
 // ReorderSidebarWidgets is an exported method.
-func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID pgtype.UUID, items []ReorderItem) error {
+func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID pgtype.UUID, items []ReorderItem) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -474,7 +474,7 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID
 		return err
 	}
 
-	s.invalidateResolveCache(ctx, tenantID)
+	s.invalidateResolveCache(ctx)
 
 	return nil
 }
@@ -492,7 +492,7 @@ type ResolveResponse struct {
 // userID is the authenticated user's ID (zero UUID for guests); it is used to
 // resolve the user's permission set for widget-level permission_node pruning
 // (Section 59 §4 step 5). Guests skip permission pruning.
-func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, position, requestPath string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*ResolveResponse, error) {
+func (s *Service) Resolve(ctx context.Context, app, position, requestPath string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*ResolveResponse, error) {
 	if !ValidApp(app) {
 		return nil, ErrInvalidApp
 	}
@@ -531,7 +531,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 	// Check Valkey cache first. Ref: Section 59 §5. The cache key includes a
 	// perm_hash so two users with the same groups but different roles do not
 	// share a cache entry (permission-gated widgets must not leak across users).
-	cacheKey := sidebarResolveCacheKey(tenantID, app, position, requestPath, isAuthenticated, userGroupIDs, userPerms)
+	cacheKey := sidebarResolveCacheKey(app, position, requestPath, isAuthenticated, userGroupIDs, userPerms)
 	if s.vk != nil && cacheKey != "" {
 		if data, err := s.vk.Get(ctx, cacheKey).Bytes(); err == nil {
 			var cached ResolveResponse
@@ -658,7 +658,7 @@ func (s *Service) GetUserGroupIDs(ctx context.Context, userID string) ([]string,
 // Ref: Section 59 §5, valkey-keys-catalog. The perm_hash ensures two users
 // with the same groups but different roles do not share a cache entry —
 // permission-gated widgets must not leak across users with different perms.
-func sidebarResolveCacheKey(tenantID pgtype.UUID, app, position, requestPath string, isAuthenticated bool, userGroupIDs, userPerms map[string]bool) string {
+func sidebarResolveCacheKey(app, position, requestPath string, isAuthenticated bool, userGroupIDs, userPerms map[string]bool) string {
 	pathHash := fmt.Sprintf("%x", sha1.Sum([]byte(requestPath)))[:12] // #nosec
 
 	authState := "guest"
@@ -682,17 +682,17 @@ func sidebarResolveCacheKey(tenantID pgtype.UUID, app, position, requestPath str
 	sort.Strings(permKeys)
 	permHash := fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(permKeys, ","))))[:12] // #nosec
 
-	return fmt.Sprintf("%s%s:%s:%s:%s:%s:%s:%s", sidebarResolveCachePrefix, tenantID.String(), app, position, pathHash, authState, groupHash, permHash)
+	return fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", sidebarResolveCachePrefix, app, position, pathHash, authState, groupHash, permHash)
 }
 
 // invalidateResolveCache flushes all cached sidebar resolution results for a
 // tenant. Called after every sidebar/widget CRUD mutation. Ref: Section 59 §5.
-func (s *Service) invalidateResolveCache(ctx context.Context, tenantID pgtype.UUID) {
+func (s *Service) invalidateResolveCache(ctx context.Context) {
 	if s.vk == nil {
 		return
 	}
 
-	prefix := sidebarResolveCachePrefix + tenantID.String() + ":"
+	prefix := sidebarResolveCachePrefix + "" + ":"
 
 	var cursor uint64
 

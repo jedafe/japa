@@ -26,10 +26,10 @@ import (
 // IngestionService is the public interface for JCE ingestion/refresh
 // operations. It is implemented by *Service.
 type IngestionService interface {
-	RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
-	GetIngestionJob(ctx context.Context, id, tenantID pgtype.UUID) (IngestionJob, error)
-	ListIngestionJobs(ctx context.Context, contentID, tenantID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
-	ProcessRefreshValues(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error
+	RefreshComparison(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
+	GetIngestionJob(ctx context.Context, id pgtype.UUID) (IngestionJob, error)
+	ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
+	ProcessRefreshValues(ctx context.Context, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error
 	ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) (int, error)
 }
 
@@ -197,22 +197,22 @@ func (s *Service) SetDefaultTenant(id pgtype.UUID) {
 func (s *Service) Close() {}
 
 // deleteFreshnessCache removes the cached freshness summary for a comparison.
-func (s *Service) deleteFreshnessCache(ctx context.Context, tenantID, contentID pgtype.UUID) {
+func (s *Service) deleteFreshnessCache(ctx context.Context, contentID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
 
-	_ = s.vk.Del(ctx, freshnessCacheKey(tenantID, contentID)).Err()
+	_ = s.vk.Del(ctx, freshnessCacheKey(contentID)).Err()
 }
 
 // deleteAdvisorCacheForNoProfile removes advisor results where the caller did
 // not supply a profile_id, i.e. the key segment is "none".
-func (s *Service) deleteAdvisorCacheForNoProfile(ctx context.Context, tenantID pgtype.UUID) {
+func (s *Service) deleteAdvisorCacheForNoProfile(ctx context.Context) {
 	if s.vk == nil {
 		return
 	}
 
-	pattern := fmt.Sprintf("jc:jce:advisor:%s:*:none:*", tenantID.String())
+	pattern := fmt.Sprintf("jc:jce:advisor::*:none:*")
 
 	var cursor uint64
 
@@ -235,12 +235,12 @@ func (s *Service) deleteAdvisorCacheForNoProfile(ctx context.Context, tenantID p
 }
 
 // deleteAdvisorCache removes all cached advisor results for a comparison.
-func (s *Service) deleteAdvisorCache(ctx context.Context, tenantID, contentID pgtype.UUID) {
+func (s *Service) deleteAdvisorCache(ctx context.Context, contentID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
 
-	pattern := fmt.Sprintf("jc:jce:advisor:%s:%s:*", tenantID.String(), contentID.String())
+	pattern := fmt.Sprintf("jc:jce:advisor::%s:*", contentID.String())
 
 	var cursor uint64
 
@@ -264,12 +264,12 @@ func (s *Service) deleteAdvisorCache(ctx context.Context, tenantID, contentID pg
 
 // deleteAdvisorCacheForProfile removes all cached advisor results tied to a
 // comparison profile across every comparison.
-func (s *Service) deleteAdvisorCacheForProfile(ctx context.Context, tenantID, profileID pgtype.UUID) {
+func (s *Service) deleteAdvisorCacheForProfile(ctx context.Context, profileID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
 
-	pattern := fmt.Sprintf("jc:jce:advisor:%s:*:%s:*", tenantID.String(), profileID.String())
+	pattern := fmt.Sprintf("jc:jce:advisor::*:%s:*", profileID.String())
 
 	var cursor uint64
 
@@ -385,12 +385,12 @@ func (s *Service) permissionChecker(ctx context.Context, userID pgtype.UUID) fun
 }
 
 // featureEnabled is a nil-safe feature flag check.
-func (s *Service) featureEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
+func (s *Service) featureEnabled(ctx context.Context, key string) bool {
 	if s.features == nil {
 		return false
 	}
 
-	return s.features.IsEnabled(ctx, tenantID, key)
+	return s.features.IsEnabled(ctx, key)
 }
 
 // ownsProfile reports whether the caller owns a non-template profile.
@@ -628,8 +628,8 @@ func (s *Service) mergeProfileInput(existing ComparisonProfile, in ComparisonPro
 }
 
 // CreateComparisonProfile creates a new comparison profile.
-func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+func (s *Service) CreateComparisonProfile(ctx context.Context, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return ComparisonProfile{}, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -683,7 +683,7 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID 
 	s.invalidateProfileCache(ctx, p.UserID, stringToUUID(p.ID))
 
 	if in.IsDefault && !in.IsTemplate {
-		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
+		s.deleteAdvisorCacheForNoProfile(ctx)
 	}
 
 	return p, nil
@@ -692,8 +692,8 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID 
 // ListComparisonProfiles returns the caller's profiles plus tenant templates.
 // When all is true and the caller has comparison.edit_any, it returns all
 // non-deleted tenant profiles (excluding templates) plus templates.
-func (s *Service) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+func (s *Service) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
+	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -728,8 +728,8 @@ func (s *Service) ListComparisonProfiles(ctx context.Context, tenantID, userID p
 
 // GetComparisonProfile returns a profile if the caller owns it, it is a
 // template, or the caller has comparison.edit_any.
-func (s *Service) GetComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) (ComparisonProfile, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+func (s *Service) GetComparisonProfile(ctx context.Context, id, userID pgtype.UUID) (ComparisonProfile, error) {
+	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return ComparisonProfile{}, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -754,8 +754,8 @@ func (s *Service) GetComparisonProfile(ctx context.Context, id, tenantID, userID
 }
 
 // UpdateComparisonProfile updates a profile and returns the updated model.
-func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+func (s *Service) UpdateComparisonProfile(ctx context.Context, id, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return ComparisonProfile{}, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -808,18 +808,18 @@ func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, use
 	}
 
 	s.invalidateProfileCache(ctx, p.UserID, id)
-	s.deleteAdvisorCacheForProfile(ctx, tenantID, id)
+	s.deleteAdvisorCacheForProfile(ctx, id)
 
 	if !p.IsTemplate && in.IsDefault {
-		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
+		s.deleteAdvisorCacheForNoProfile(ctx)
 	}
 
 	return p, nil
 }
 
 // DeleteComparisonProfile soft-deletes a profile by id.
-func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+func (s *Service) DeleteComparisonProfile(ctx context.Context, id, userID pgtype.UUID) error {
+	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -845,10 +845,10 @@ func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, use
 	}
 
 	s.invalidateProfileCache(ctx, existing.UserID, id)
-	s.deleteAdvisorCacheForProfile(ctx, tenantID, id)
+	s.deleteAdvisorCacheForProfile(ctx, id)
 
 	if !existing.IsTemplate && existing.IsDefault {
-		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
+		s.deleteAdvisorCacheForNoProfile(ctx)
 	}
 
 	if err := s.profiles.delete(ctx, id); err != nil {
@@ -859,8 +859,8 @@ func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, use
 }
 
 // SetDefaultComparisonProfile marks a profile as the user's default.
-func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, userID pgtype.UUID) error {
+	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -894,7 +894,7 @@ func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID,
 	}
 
 	s.invalidateProfileCache(ctx, existing.UserID, id)
-	s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
+	s.deleteAdvisorCacheForNoProfile(ctx)
 
 	return nil
 }
@@ -902,8 +902,8 @@ func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID,
 // GetProfileStats returns per-source-space profile counts. When all is true
 // and the caller has comparison.edit_any, it returns aggregate anonymized
 // counts across the tenant.
-func (s *Service) GetProfileStats(ctx context.Context, tenantID, userID pgtype.UUID, all bool) ([]ProfileStat, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+func (s *Service) GetProfileStats(ctx context.Context, userID pgtype.UUID, all bool) ([]ProfileStat, error) {
+	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -926,8 +926,8 @@ func (s *Service) GetProfileStats(ctx context.Context, tenantID, userID pgtype.U
 
 // ListScoreFactors lists score factors for a comparison type, optionally
 // including global defaults. A nil/invalid comparisonTypeID means global.
-func (s *Service) ListScoreFactors(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+func (s *Service) ListScoreFactors(ctx context.Context, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error) {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return nil, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -949,10 +949,10 @@ func (s *Service) ListScoreFactors(ctx context.Context, tenantID, comparisonType
 }
 
 // CreateScoreFactor creates a new score factor for the tenant.
-func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
+func (s *Service) CreateScoreFactor(ctx context.Context, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
 	_ = userID
 
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -1007,8 +1007,8 @@ func (s *Service) validateScoreFactor(in ScoreFactorInput) error {
 }
 
 // GetScoreFactor returns a score factor by id and tenant.
-func (s *Service) GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+func (s *Service) GetScoreFactor(ctx context.Context, id pgtype.UUID) (ScoreFactor, error) {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -1030,10 +1030,10 @@ func (s *Service) GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) 
 }
 
 // UpdateScoreFactor updates a score factor.
-func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
+func (s *Service) UpdateScoreFactor(ctx context.Context, id, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
 	_ = userID
 
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -1088,10 +1088,10 @@ func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pg
 }
 
 // DeleteScoreFactor deletes a score factor. System factors cannot be deleted.
-func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+func (s *Service) DeleteScoreFactor(ctx context.Context, id, userID pgtype.UUID) error {
 	_ = userID
 
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -1120,8 +1120,8 @@ func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pg
 }
 
 // ScoreComparison recalculates the JapaScore for a comparison.
-func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, smartMode string, force bool) (ScoreResult, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+func (s *Service) ScoreComparison(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID, smartMode string, force bool) (ScoreResult, error) {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -1156,14 +1156,14 @@ func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, user
 		return ScoreResult{}, err
 	}
 
-	s.deleteAdvisorCache(ctx, tenantID, contentID)
+	s.deleteAdvisorCache(ctx, contentID)
 
 	return result, nil
 }
 
 // GetComparisonScore returns a previously calculated score for a comparison.
-func (s *Service) GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+func (s *Service) GetComparisonScore(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error) {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -1195,12 +1195,12 @@ func (s *Service) GetComparisonScore(ctx context.Context, contentID, tenantID, u
 }
 
 // PreviewScoreForItems scores a list of item refs without creating content.
-func (s *Service) PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.smart_compare") {
+func (s *Service) PreviewScoreForItems(ctx context.Context, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error) {
+	if !s.featureEnabled(ctx, "feature.jce.smart_compare") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.smart_compare disabled", errpkg.ErrFeatureDisabled)
 	}
 
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -1230,8 +1230,8 @@ func (s *Service) PreviewScoreForItems(ctx context.Context, tenantID, userID pgt
 
 // ListRecommendations returns recommendations for a comparison, falling back
 // to a score run when none are cached.
-func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error) {
-	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+func (s *Service) ListRecommendations(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error) {
+	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return nil, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 

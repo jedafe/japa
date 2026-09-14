@@ -31,7 +31,7 @@ type scholarshipSearchArgs struct {
 // by the Scholarship Finder surface (Section 73) so the agent can reuse
 // existing filtering and ranking.
 func ScholarshipSearchHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ScholarshipSearcher == nil {
 			return errorToolResult("scholarship_search_unavailable", "scholarship search is not configured"), nil
 		}

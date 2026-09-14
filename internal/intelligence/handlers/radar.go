@@ -510,9 +510,8 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = defaultIntelTenantID
+	if !false {
+
 	}
 
 	rows, err := h.intelStores.CountScholarshipsByCountry(r.Context())
@@ -694,7 +693,7 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -719,7 +718,7 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	followed, err := h.followsSvc.ToggleFollow(r.Context(), tenantID, userID, follows.EntityTypeSpace, spaceID)
+	followed, err := h.followsSvc.ToggleFollow(r.Context(), userID, follows.EntityTypeSpace, spaceID)
 	if err != nil {
 		slog.Error("intel: radar follow failed", "space_id", body.SpaceID, "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "follow_failed", "Failed to follow space")
@@ -751,7 +750,7 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -779,7 +778,7 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	followed, err := h.followsSvc.ToggleFollow(r.Context(), tenantID, userID, follows.EntityTypeSpace, spaceID)
+	followed, err := h.followsSvc.ToggleFollow(r.Context(), userID, follows.EntityTypeSpace, spaceID)
 	if err != nil {
 		slog.Error("intel: radar unfollow failed", "space_id", spaceIDStr, "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "unfollow_failed", "Failed to unfollow space")
@@ -808,9 +807,8 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = defaultIntelTenantID
+	if !false {
+
 	}
 
 	itemID, ok := scanUUIDParam(w, r, "item_id")
@@ -867,7 +865,7 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -875,7 +873,7 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	page, limit := h.parsePagination(r)
 
-	rows, total, err := h.scholarSvc.ListSavedScholarships(r.Context(), tenantID, userID, status, page, limit)
+	rows, total, err := h.scholarSvc.ListSavedScholarships(r.Context(), userID, status, page, limit)
 	if err != nil {
 		slog.Error("intel: radar saved list failed", "user_id", userID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "saved_list_failed", "Failed to load saved opportunities")
@@ -912,7 +910,7 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -952,7 +950,7 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	saved, err := h.scholarSvc.SaveScholarship(r.Context(), tenantID, userID, s.GuideID)
+	saved, err := h.scholarSvc.SaveScholarship(r.Context(), userID, s.GuideID)
 	if err != nil {
 		if errors.Is(err, scholarships.ErrGuideNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found for this opportunity")

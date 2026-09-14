@@ -286,7 +286,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -307,7 +307,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	service, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
+	service, err := h.service.Create(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCategory) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
@@ -333,7 +333,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -359,7 +359,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	// the user has at least one of edit_own/edit_any.
 	isEditAny := h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
 
-	service, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input, isEditAny)
+	service, err := h.service.EditOwn(r.Context(), contentID, user.UserID, input, isEditAny)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
@@ -394,7 +394,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -429,7 +429,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Claim(r.Context(), contentID, tenantID, user.UserID, orgID); err != nil {
+	if err := h.service.Claim(r.Context(), contentID, user.UserID, orgID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
@@ -534,7 +534,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -559,7 +559,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		verificationType = *body.VerificationType
 	}
 
-	if err := h.service.AdminVerify(r.Context(), contentID, tenantID, user.UserID, verificationType); err != nil {
+	if err := h.service.AdminVerify(r.Context(), contentID, user.UserID, verificationType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
@@ -588,7 +588,7 @@ func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -603,7 +603,7 @@ func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminUnverify(r.Context(), contentID, tenantID); err != nil {
+	if err := h.service.AdminUnverify(r.Context(), contentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
@@ -627,7 +627,7 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -661,7 +661,7 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.service.AdminResolveClaim(r.Context(), contentID, tenantID, orgID, *body.Approve); err != nil {
+	if err := h.service.AdminResolveClaim(r.Context(), contentID, orgID, *body.Approve); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return

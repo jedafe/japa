@@ -53,8 +53,8 @@ func defaultFreshnessSettings() freshnessSettings {
 }
 
 // freshnessCacheKey returns the Valkey cache key for a comparison freshness summary.
-func freshnessCacheKey(tenantID, contentID pgtype.UUID) string {
-	return fmt.Sprintf("jc:jce:freshness:%s:%s", tenantID.String(), contentID.String())
+func freshnessCacheKey(contentID pgtype.UUID) string {
+	return fmt.Sprintf("jc:jce:freshness::%s", contentID.String())
 }
 
 // cellFreshness computes a 0–100 freshness score and stale flag for a single comparison value.
@@ -159,7 +159,7 @@ func (s *Service) cellFreshness(
 // // It loads the comparison matrix, the raw comparison_values rows, and the tenant's
 // data sources, resolves a source for each cell, and aggregates per-item and overall
 // scores. The result is cached in Valkey under jc:jce:freshness:{}:{content_id}.
-func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error) {
+func (s *Service) FreshnessForComparison(ctx context.Context, contentID, userID pgtype.UUID) (FreshnessSummary, error) {
 	// Load the comparison and enforce visibility before reading cache or matrix.
 	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String())
 	if err != nil {
@@ -176,7 +176,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 
 	// Try Valkey cache next.
 	if s.vk != nil {
-		data, err := s.vk.Get(ctx, freshnessCacheKey(tenantID, contentID)).Bytes()
+		data, err := s.vk.Get(ctx, freshnessCacheKey(contentID)).Bytes()
 		if err == nil && len(data) > 0 {
 			var cached FreshnessSummary
 			if err := json.Unmarshal(data, &cached); err == nil {
@@ -326,7 +326,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 	if s.vk != nil {
 		if b, err := json.Marshal(summary); err == nil {
 			ttl := time.Duration(settings.cacheTTLMinutes) * time.Minute
-			_ = s.vk.Set(ctx, freshnessCacheKey(tenantID, contentID), b, ttl).Err()
+			_ = s.vk.Set(ctx, freshnessCacheKey(contentID), b, ttl).Err()
 		}
 	}
 

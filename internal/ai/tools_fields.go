@@ -39,7 +39,7 @@ type customFieldsListArgs struct {
 // for a custom field group. This is a read-only operation with no privacy
 // target (field definitions are schema, not user data).
 func CustomFieldsListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFields == nil {
 			return errorToolResult("custom_fields_unavailable", "custom fields service is not configured"), nil
 		}
@@ -96,7 +96,7 @@ type cfvReadArgs struct {
 // parent content/user exempt?) is handled by the executor's privacy gate
 // via the registered PrivacyTargetFunc when the entity is a content or user.
 func CFVReadHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFields == nil {
 			return errorToolResult("custom_fields_unavailable", "custom fields service is not configured"), nil
 		}
@@ -178,7 +178,7 @@ type cfvSetArgs struct {
 // checks the target entity's ai_exempt flag. The handler itself performs a
 // defense-in-depth privacy re-check before the upsert.
 func CFVSetHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFields == nil {
 			return errorToolResult("custom_fields_unavailable", "custom fields service is not configured"), nil
 		}
@@ -295,7 +295,7 @@ type cfvBulkEntry struct {
 // operation behavior: bulk operations are HITL-queued (the tool config sets
 // requires_hitl = true), and per-field errors are reported, not hidden.
 func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFields == nil {
 			return errorToolResult("custom_fields_unavailable", "custom fields service is not configured"), nil
 		}
@@ -324,7 +324,7 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 		// PrivacyTargetFunc.
 		if deps.Privacy != nil {
 			if et, ok := privacyEntityTypeFor(a.EntityType); ok {
-				exempt, err := deps.Privacy.IsExempt(ctx, et, tenantID, entityID)
+				exempt, err := deps.Privacy.IsExempt(ctx, et, entityID)
 				if err != nil {
 					return errorToolResult("privacy_check_failed", err.Error()), nil
 				}
@@ -479,7 +479,7 @@ type customFieldCreateArgs struct {
 // field definition. The executor's RBAC gate checks the required_permission
 // (custom_fields.field.create); the tool config sets requires_hitl = true.
 func CustomFieldsCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFieldDefs == nil {
 			return errorToolResult("custom_field_defs_unavailable", "custom field definition service is not configured"), nil
 		}
@@ -567,7 +567,7 @@ type customFieldUpdateArgs struct {
 // field definition. The executor's RBAC gate checks the required_permission
 // (custom_fields.field.edit); the tool config sets requires_hitl = true.
 func CustomFieldsUpdateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFieldDefs == nil {
 			return errorToolResult("custom_field_defs_unavailable", "custom field definition service is not configured"), nil
 		}
@@ -637,7 +637,7 @@ type customFieldGroupsListArgs struct {
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Custom field tools).
 func CustomFieldGroupsListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFieldDefs == nil {
 			return errorToolResult("custom_field_defs_unavailable", "custom field definition service is not configured"), nil
 		}
@@ -698,7 +698,7 @@ type customFieldGroupCreateArgs struct {
 // required_permission (custom_fields.group.create); the tool config sets
 // requires_hitl = true.
 func CustomFieldGroupsCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFieldDefs == nil {
 			return errorToolResult("custom_field_defs_unavailable", "custom field definition service is not configured"), nil
 		}

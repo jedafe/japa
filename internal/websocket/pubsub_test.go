@@ -477,18 +477,18 @@ type mockBridge struct {
 	lastSpaceID  string
 }
 
-func (m *mockBridge) Publish(event WSEvent, userID, tenantID, spaceID string) {
+func (m *mockBridge) Publish(event WSEvent, userID, spaceID string) {
 	m.lastEvent = event
 	m.lastUserID = userID
-	m.lastTenantID = tenantID
+	m.lastTenantID = ""
 	m.lastSpaceID = spaceID
 }
 
 // PublishTenant satisfies the extended Publisher interface (tenant-scoped
 // broadcast for presence). Records the call so tests can assert it fired.
-func (m *mockBridge) PublishTenant(event WSEvent, tenantID string) {
+func (m *mockBridge) PublishTenant(event WSEvent) {
 	m.lastEvent = event
-	m.lastTenantID = tenantID
+	m.lastTenantID = ""
 	m.lastUserID = ""
 	m.lastSpaceID = ""
 }

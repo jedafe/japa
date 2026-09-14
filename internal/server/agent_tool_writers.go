@@ -171,7 +171,7 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 }
 
 func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtype.UUID, map[string]any) (map[string]any, error) {
-	return func(ctx context.Context, tenantID, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
+	return func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
 		spaceID, err := getPgUUID(payload, "space_id")
 		if err != nil {
 			return nil, fmt.Errorf("invalid space_id: %w", err)
@@ -194,7 +194,7 @@ func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtyp
 
 		out := m.Call([]reflect.Value{
 			reflect.ValueOf(ctx),
-			reflect.ValueOf(tenantID),
+			reflect.ValueOf(),
 			reflect.ValueOf(spaceID),
 			reflect.ValueOf(userID),
 			reflect.ValueOf(slug),
@@ -248,7 +248,7 @@ func getOptionalString(payload map[string]any, key string) *string {
 }
 
 func newMentorshipCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtype.UUID, map[string]any) (map[string]any, error) {
-	return func(ctx context.Context, tenantID, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
+	return func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
 		mentorID, err := getPgUUID(payload, "mentor_id")
 		if err != nil {
 			return nil, fmt.Errorf("invalid mentor_id: %w", err)
@@ -268,7 +268,7 @@ func newMentorshipCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID,
 
 		out := m.Call([]reflect.Value{
 			reflect.ValueOf(ctx),
-			reflect.ValueOf(tenantID),
+			reflect.ValueOf(),
 			reflect.ValueOf(mentorID),
 			reflect.ValueOf(menteeID),
 			reflect.ValueOf(goals),
@@ -294,8 +294,8 @@ func reflectCreateFunc(svc reflect.Value, methodName string) func(context.Contex
 		name = "Create"
 	}
 
-	return func(ctx context.Context, tenantID, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
-		return reflectCallCreateOrUpdate(svc, name, ctx, tenantID, userID, "", payload)
+	return func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
+		return reflectCallCreateOrUpdate(svc, name, ctx, userID, "", payload)
 	}
 }
 
@@ -305,8 +305,8 @@ func reflectUpdateFunc(svc reflect.Value, methodName string) func(context.Contex
 		name = "Update"
 	}
 
-	return func(ctx context.Context, tenantID, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
-		return reflectCallCreateOrUpdate(svc, name, ctx, tenantID, userID, id, payload)
+	return func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
+		return reflectCallCreateOrUpdate(svc, name, ctx, userID, id, payload)
 	}
 }
 
@@ -316,7 +316,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 		name = "Delete"
 	}
 
-	return func(ctx context.Context, tenantID, userID pgtype.UUID, id string) error {
+	return func(ctx context.Context, userID pgtype.UUID, id string) error {
 		m := svc.MethodByName(name)
 		if !m.IsValid() {
 			// Try common delete-like fallbacks.
@@ -361,7 +361,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 				return fmt.Errorf("invalid tool_id: %w", err)
 			}
 
-			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID), reflect.ValueOf(userID)}
+			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(), reflect.ValueOf(userID)}
 		default:
 			return fmt.Errorf("delete method %q has %d inputs", name, mt.NumIn())
 		}
@@ -375,7 +375,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 	}
 }
 
-func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context.Context, tenantID, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
+func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
 	m := svc.MethodByName(methodName)
 	if !m.IsValid() {
 		return nil, fmt.Errorf("method %q not found", methodName)
@@ -419,7 +419,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		mergedPayload[k] = v
 	}
 
-	mergedPayload["the id"] = tenantID.String()
+	mergedPayload["the id"] = ""
 	if id != "" {
 		mergedPayload["id"] = id
 	}
@@ -450,13 +450,13 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	case update3:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID)}
 	case create3:
-		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(tenantID)}
+		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf()}
 	case create4:
-		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(tenantID), reflect.ValueOf(userID)}
+		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(), reflect.ValueOf(userID)}
 	case update4:
-		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID)}
+		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf()}
 	case update5:
-		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID), reflect.ValueOf(userID)}
+		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(), reflect.ValueOf(userID)}
 	}
 
 	args = append(args, inputVal)

@@ -581,8 +581,8 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 // InitiateClaim begins the claim flow on a community organisation, setting
 // claim_status to 'pending'. Auth required (community_locator.claim
 // permission checked at route level).
-func (s *Service) InitiateClaim(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.InitiateClaim(ctx, id, tenantID); err != nil {
+func (s *Service) InitiateClaim(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.InitiateClaim(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -636,8 +636,8 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, origin
 // reviewed_at. For AI-generated entries (ADR-088), also sets
 // hitl_reviewed_by and hitl_reviewed_at — the approve action IS the
 // HITL review gate.
-func (s *Service) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtype.UUID) (OrgDTO, error) {
-	if err := s.store.ApproveOrg(ctx, id, tenantID, reviewedBy); err != nil {
+func (s *Service) ApproveOrg(ctx context.Context, id, reviewedBy pgtype.UUID) (OrgDTO, error) {
+	if err := s.store.ApproveOrg(ctx, id, reviewedBy); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}
@@ -656,8 +656,8 @@ func (s *Service) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtyp
 // ArchiveOrg archives a published community organisation (admin,
 // community_locator.manage). Sets status='archived'. Only published
 // orgs can be archived.
-func (s *Service) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) (OrgDTO, error) {
-	if err := s.store.ArchiveOrg(ctx, id, tenantID); err != nil {
+func (s *Service) ArchiveOrg(ctx context.Context, id pgtype.UUID) (OrgDTO, error) {
+	if err := s.store.ArchiveOrg(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}
@@ -677,8 +677,8 @@ func (s *Service) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) (Org
 // community_locator.manage). Sets deleted_at=now() per Rule 11. The
 // org is excluded from all list/get queries via the deleted_at IS NULL
 // filter.
-func (s *Service) DeleteOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteOrg(ctx, id, tenantID); err != nil {
+func (s *Service) DeleteOrg(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteOrg(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -691,8 +691,8 @@ func (s *Service) DeleteOrg(ctx context.Context, id, tenantID pgtype.UUID) error
 
 // VerifyOrg marks a community organisation as verified (admin,
 // community_locator.manage).
-func (s *Service) VerifyOrg(ctx context.Context, id, tenantID pgtype.UUID) (OrgDTO, error) {
-	if err := s.store.VerifyOrg(ctx, id, tenantID); err != nil {
+func (s *Service) VerifyOrg(ctx context.Context, id pgtype.UUID) (OrgDTO, error) {
+	if err := s.store.VerifyOrg(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}
@@ -711,8 +711,8 @@ func (s *Service) VerifyOrg(ctx context.Context, id, tenantID pgtype.UUID) (OrgD
 // ResolveClaim resolves a pending claim on a community organisation
 // (admin, community_locator.manage). Approving sets claim_status to
 // 'claimed'; rejecting resets it to 'unclaimed'.
-func (s *Service) ResolveClaim(ctx context.Context, id, tenantID pgtype.UUID, approve bool) (OrgDTO, error) {
-	if err := s.store.ResolveClaim(ctx, id, tenantID, approve); err != nil {
+func (s *Service) ResolveClaim(ctx context.Context, id pgtype.UUID, approve bool) (OrgDTO, error) {
+	if err := s.store.ResolveClaim(ctx, id, approve); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}

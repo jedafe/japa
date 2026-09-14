@@ -58,7 +58,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -74,7 +74,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := h.intelSources.Create(r.Context(), tenantID, params)
+	src, err := h.intelSources.Create(r.Context(), params)
 	if err != nil {
 		slog.Error("intel: create source failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create source")
@@ -796,7 +796,7 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -806,7 +806,7 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	src, err := h.intelSources.ApproveProposed(r.Context(), tenantID, sourceID, userID)
+	src, err := h.intelSources.ApproveProposed(r.Context(), sourceID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Proposed source not found")

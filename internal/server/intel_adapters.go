@@ -30,8 +30,7 @@ import (
 // configured tenantID through. Per ADR-112 Amendment 2, all intelligence
 // queries are tenant-scoped.
 type intelSchedulerSourceAdapter struct {
-	store    *sources.Store
-	tenantID pgtype.UUID
+	store *sources.Store
 }
 
 func (a *intelSchedulerSourceAdapter) ListDue(ctx context.Context, limit int32) ([]gen.IntelSource, error) {

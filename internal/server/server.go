@@ -992,10 +992,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// can dispatch assign_user_group / send_email / send_webhook /
 	// create_ticket / notify_admin triggers after a form submission.
 	formTriggerDispatcher := customfields.NewTriggerDispatcher(cfService)
-	formTriggerDispatcher.SetRBACAssigner(func(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error {
+	formTriggerDispatcher.SetRBACAssigner(func(ctx context.Context, userID, groupID pgtype.UUID) error {
 		return rbacStore.AddUserToGroup(ctx, userID, groupID)
 	})
-	formTriggerDispatcher.SetNotifyAdmin(func(ctx context.Context, tenantID pgtype.UUID, title, body, actionURL string) error {
+	formTriggerDispatcher.SetNotifyAdmin(func(ctx context.Context, title, body, actionURL string) error {
 		// Fan out an in-app notification to every active user in the
 		// tenant's system super_admin group (Section 06 notify_admin
 		// trigger). Best-effort: a failure for one admin does not abort
@@ -1033,7 +1033,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the create_ticket trigger (Section 06 → Section 38): form
 	// submissions with a create_ticket trigger create a support ticket
 	// via the ticket service. Without this hook the trigger silently skips.
-	formTriggerDispatcher.SetTicketCreator(func(ctx context.Context, tenantID pgtype.UUID, subject, description string, submitterUserID *pgtype.UUID) error {
+	formTriggerDispatcher.SetTicketCreator(func(ctx context.Context, subject, description string, submitterUserID *pgtype.UUID) error {
 		input := tickets.CreateTicketInput{
 			Subject:     subject,
 			Description: description,
@@ -1988,7 +1988,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// break the import cycle documented in internal/worker/intelligence.go).
 	intelSourcesStore := sources.NewStore(database)
 	intelSourcesService := sources.NewService(intelSourcesStore)
-	intelSourcesService.SetMetadataQueue(func(ctx context.Context, tenantID pgtype.UUID, sourceID sources.SourceID) error {
+	intelSourcesService.SetMetadataQueue(func(ctx context.Context, sourceID sources.SourceID) error {
 		return taskEnqueuer.EnqueueSourceMetadata(sourceID.String())
 	})
 	agentDeps.IntelSourceManager = intelSourcesService
@@ -1999,8 +1999,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceService.SetSettings(settingsService)
 	authHandlers.SetSourceManager(intelSourcesService)
 	oauthHandlers.SetSourceManager(intelSourcesService)
-	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore, tenantID: defaultTenantID}, vkClient.Redis(), defaultTenantID)
-	intelDedupService := dedup.NewService(intelStores, defaultTenantID)
+	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore}, vkClient.Redis())
+	intelDedupService := dedup.NewService(intelStores)
 	intelEventPublisher := events.NewAsynqEventPublisher(asynqClient)
 
 	// Extractor port adapter: wraps *extractor.Extractor so the worker
@@ -2019,7 +2019,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	intelExtractor := extractor.NewExtractor(
 		aiDispatcher,
-		extractor.WithTenantID(defaultTenantID),
+		extractor.WithTenantID(),
 		extractor.WithModel(intelExtractionModel),
 		extractor.WithMaxRetries(intelExtractionMaxRetries),
 	)
@@ -2253,7 +2253,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
 	// "verified" posting_perm requires email_verified_at IS NOT NULL.
-	spacePostChecker.VerifiedChecker = func(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
+	spacePostChecker.VerifiedChecker = func(ctx context.Context, userID pgtype.UUID) (bool, error) {
 		verifiedAt, err := gen.New(database.Reader).GetUserEmailVerifiedStatus(ctx,
 			userID,
 		)
@@ -6950,11 +6950,11 @@ type walletCreditAdapter struct {
 
 func (a *walletCreditAdapter) SpendCredits(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	userID pgtype.UUID,
 	input payments.CreditSpendInput,
 ) (int64, error) {
-	return a.svc.SpendCredits(ctx, tenantID, userID, wallet.SpendCreditsInput{
+	return a.svc.SpendCredits(ctx, userID, wallet.SpendCreditsInput{
 		Amount:      input.Amount,
 		Source:      input.Source,
 		Reference:   input.Reference,
@@ -6972,10 +6972,10 @@ type walletPaymentAdapter struct {
 
 func (a *walletPaymentAdapter) CreatePayment(
 	ctx context.Context,
-	tenantID, userID pgtype.UUID,
+	userID pgtype.UUID,
 	input wallet.PaymentCreateInput,
 ) (wallet.PaymentCreateResult, error) {
-	createResult, err := a.svc.CreatePayment(ctx, tenantID, userID, payments.CreatePaymentInput{
+	createResult, err := a.svc.CreatePayment(ctx, userID, payments.CreatePaymentInput{
 		Provider:     input.Provider,
 		PurposeType:  input.PurposeType,
 		PurposeID:    input.PurposeID,
@@ -7209,8 +7209,8 @@ type walletCacheInvalidator struct {
 	vk valkeycompat.Cmdable
 }
 
-func (w *walletCacheInvalidator) InvalidateCurrenciesCache(ctx context.Context, tenantID pgtype.UUID) error {
-	key := valkey.MustKey("wallet:currencies:%s", tenantID.String())
+func (w *walletCacheInvalidator) InvalidateCurrenciesCache(ctx context.Context) error {
+	key := valkey.MustKey("wallet:currencies:")
 	return w.vk.Del(ctx, key).Err()
 }
 
@@ -7235,8 +7235,8 @@ func (a *achievementActivityEmitter) EmitActivityEvent(ctx context.Context, user
 	return achievement.ActivityEvent{ID: event.ID}, nil
 }
 
-func (a *achievementActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
-	return a.svc.EnqueueProcessActivityEvent(ctx, eventID, tenantID)
+func (a *achievementActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error {
+	return a.svc.EnqueueProcessActivityEvent(ctx, eventID)
 }
 
 // csrfExempt reports whether a mutating request is exempt from the
@@ -7418,8 +7418,8 @@ type assessmentRAGRetriever struct {
 	svc *rag.Service
 }
 
-func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]assessment.RAGChunk, error) {
-	chunks, err := r.svc.Retrieve(ctx, tenantID, query, language, geoSpaceID)
+func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]assessment.RAGChunk, error) {
+	chunks, err := r.svc.Retrieve(ctx, query, language, geoSpaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -7560,8 +7560,8 @@ type personaActionDispatcher struct {
 	cf       *customfields.Service
 }
 
-func (d *personaActionDispatcher) CreateComment(ctx context.Context, tenantID, personaUserID, targetContentID pgtype.UUID, body []byte) (pgtype.UUID, error) {
-	c, err := d.comments.CreateComment(ctx, tenantID, personaUserID, comments.CreateCommentInput{
+func (d *personaActionDispatcher) CreateComment(ctx context.Context, personaUserID, targetContentID pgtype.UUID, body []byte) (pgtype.UUID, error) {
+	c, err := d.comments.CreateComment(ctx, personaUserID, comments.CreateCommentInput{
 		ContentID: targetContentID,
 		Body:      body,
 	})
@@ -7602,8 +7602,8 @@ func (d *personaActionDispatcher) CreateForumReply(ctx context.Context, personaU
 	return r.ID, nil
 }
 
-func (d *personaActionDispatcher) ToggleFollow(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
-	_, err := d.follows.ToggleFollow(ctx, tenantID, personaUserID, entityType, entityID)
+func (d *personaActionDispatcher) ToggleFollow(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	_, err := d.follows.ToggleFollow(ctx, personaUserID, entityType, entityID)
 	return err
 }
 

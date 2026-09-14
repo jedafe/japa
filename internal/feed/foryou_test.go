@@ -63,8 +63,8 @@ func TestForYouCacheKey_IncludesSort(t *testing.T) {
 	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
 
 	vc := &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Africa"}
-	relevant := forYouCacheKey(tid, uid, SortRelevant, vc)
-	latest := forYouCacheKey(tid, uid, SortLatest, vc)
+	relevant := forYouCacheKey(uid, SortRelevant, vc)
+	latest := forYouCacheKey(uid, SortLatest, vc)
 
 	if relevant == latest {
 		t.Fatal("cache key must differ per sort mode")
@@ -78,8 +78,8 @@ func TestForYouCacheKey_IncludesContentCountry(t *testing.T) {
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
 
-	ng := forYouCacheKey(tid, uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Africa"})
-	gb := forYouCacheKey(tid, uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "GB", ContentRegion: "Europe"})
+	ng := forYouCacheKey(uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Africa"})
+	gb := forYouCacheKey(uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "GB", ContentRegion: "Europe"})
 
 	if ng == gb {
 		t.Fatal("cache key must differ per content country — otherwise a ?geo= override or preference change serves a stale, wrong-geo ranking (ADR-064 §32)")
@@ -93,8 +93,8 @@ func TestForYouCacheKey_IncludesContentRegion(t *testing.T) {
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
 
-	ngAfrica := forYouCacheKey(tid, uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Africa"})
-	ngEurope := forYouCacheKey(tid, uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Europe"})
+	ngAfrica := forYouCacheKey(uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Africa"})
+	ngEurope := forYouCacheKey(uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Europe"})
 
 	if ngAfrica == ngEurope {
 		t.Fatal("cache key must differ per content region")

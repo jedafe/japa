@@ -516,7 +516,7 @@ func (h *Handlers) PurchaseCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -548,7 +548,7 @@ func (h *Handlers) PurchaseCredits(w http.ResponseWriter, r *http.Request) {
 		provider = "paystack" // default provider for credit purchases
 	}
 
-	result, err := h.Service.purchaseCredits(r.Context(), tenantID, user.UserID, PurchaseCreditsInput{
+	result, err := h.Service.purchaseCredits(r.Context(), user.UserID, PurchaseCreditsInput{
 		CreditAmount:   input.CreditAmount,
 		PackID:         input.PackID,
 		Currency:       strings.ToUpper(input.Currency),

@@ -175,7 +175,7 @@ func TestCreateRedirectValidation(t *testing.T) {
 
 			svc := &Service{}
 
-			_, err := svc.CreateRedirect(t.Context(), pgtype.UUID{}, tt.sourcePath, "/new-path", tt.httpStatus, nil)
+			_, err := svc.CreateRedirect(t.Context(), tt.sourcePath, "/new-path", tt.httpStatus, nil)
 			if err == nil {
 				t.Fatal("CreateRedirect() error = nil, want error")
 			}
@@ -192,12 +192,12 @@ func TestUpdateRedirectValidation(t *testing.T) {
 
 	svc := &Service{}
 
-	_, err := svc.UpdateRedirect(t.Context(), pgtype.UUID{}, pgtype.UUID{}, validSourcePath, "/new", 418, nil, nil)
+	_, err := svc.UpdateRedirect(t.Context(), pgtype.UUID{}, validSourcePath, "/new", 418, nil, nil)
 	if !stderrors.Is(err, ErrInvalidHTTPStatus) {
 		t.Errorf("UpdateRedirect() error = %v, want ErrInvalidHTTPStatus", err)
 	}
 
-	_, err = svc.UpdateRedirect(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "old-path", "/new", 301, nil, nil)
+	_, err = svc.UpdateRedirect(t.Context(), pgtype.UUID{}, "old-path", "/new", 301, nil, nil)
 	if !stderrors.Is(err, ErrInvalidSourcePath) {
 		t.Errorf("UpdateRedirect() with relative source path error = %v, want ErrInvalidSourcePath", err)
 	}
@@ -243,7 +243,7 @@ func TestCreateRedirectRejectsInvalidTargetURL(t *testing.T) {
 
 	svc := &Service{}
 
-	_, err := svc.CreateRedirect(t.Context(), pgtype.UUID{}, validSourcePath, "javascript:alert(1)", 301, nil)
+	_, err := svc.CreateRedirect(t.Context(), validSourcePath, "javascript:alert(1)", 301, nil)
 	if !stderrors.Is(err, ErrInvalidTargetURL) {
 		t.Errorf("CreateRedirect() with javascript: URL error = %v, want ErrInvalidTargetURL", err)
 	}
@@ -267,7 +267,7 @@ func TestBulkActionRejectsBadInput(t *testing.T) {
 
 			svc := &Service{}
 
-			if err := svc.BulkAction(t.Context(), pgtype.UUID{}, tt.input); err == nil {
+			if err := svc.BulkAction(t.Context(), tt.input); err == nil {
 				t.Error("BulkAction() error = nil, want error")
 			}
 		})

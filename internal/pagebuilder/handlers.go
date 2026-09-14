@@ -626,7 +626,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 
 // UpdatePage handles PATCH /api/v1/admin/pages/{id}.
 func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -643,7 +643,7 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.UpdatePage(r.Context(), id, tenantID, input)
+	page, err := h.Service.UpdatePage(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -654,7 +654,7 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 
 // DeletePage handles DELETE /api/v1/admin/pages/{id}.
 func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -665,7 +665,7 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeletePage(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeletePage(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -675,7 +675,7 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 
 // PublishPage handles POST /api/v1/admin/pages/{id}/publish.
 func (h *Handlers) PublishPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -686,7 +686,7 @@ func (h *Handlers) PublishPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.PublishPage(r.Context(), id, tenantID)
+	page, err := h.Service.PublishPage(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -697,7 +697,7 @@ func (h *Handlers) PublishPage(w http.ResponseWriter, r *http.Request) {
 
 // ArchivePage handles POST /api/v1/admin/pages/{id}/archive.
 func (h *Handlers) ArchivePage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -708,7 +708,7 @@ func (h *Handlers) ArchivePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.ArchivePage(r.Context(), id, tenantID)
+	page, err := h.Service.ArchivePage(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -773,7 +773,7 @@ func (h *Handlers) ListPublishedPages(w http.ResponseWriter, r *http.Request) {
 // Widget blocks within the page's blocks array are server-side resolved and a
 // resolved literal map is attached to the response for the SSR resolver.
 func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -784,7 +784,7 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.GetPageBySlug(r.Context(), slug, tenantID)
+	page, err := h.Service.GetPageBySlug(r.Context(), slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -797,7 +797,7 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 		page.Blocks = h.resolveWidgetBlocks(r.Context(), page.Blocks)
 	}
 
-	literalsMap := h.resolvePageLiterals(r, tenantID)
+	literalsMap := h.resolvePageLiterals(r)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":     page,
@@ -805,7 +805,7 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handlers) resolvePageLiterals(r *http.Request, tenantID pgtype.UUID) map[string]string {
+func (h *Handlers) resolvePageLiterals(r *http.Request) map[string]string {
 	if h.Catalog == nil {
 		return map[string]string{}
 	}
@@ -814,7 +814,7 @@ func (h *Handlers) resolvePageLiterals(r *http.Request, tenantID pgtype.UUID) ma
 	// + GeoIP + Accept-Language via the shared request-context constructor.
 	rc := literals.NewRequestContext(r, "")
 
-	m, err := h.Catalog.ResolveMap(r.Context(), tenantID, rc)
+	m, err := h.Catalog.ResolveMap(r.Context(), rc)
 	if err != nil {
 		slog.Warn("pagebuilder: failed to resolve page literals", "error", err)
 

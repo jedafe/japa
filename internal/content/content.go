@@ -257,7 +257,7 @@ func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e 
 // content mutation is already settled by the time this runs. A duplicate
 // reference hits ON CONFLICT DO NOTHING and returns ErrNoRows, which is
 // treated as "already recorded" rather than an error.
-func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
 	if s.activity == nil || !userID.Valid {
 		return
 	}
@@ -275,7 +275,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
 		slog.Warn("content: enqueue activity event failed", "activity_key", key, "error", err)
 	}
 }

@@ -218,7 +218,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mediaID, err := h.svc.ImportPhoto(r.Context(), t.ID, user.UserID, body.Provider, body.ID)
+	mediaID, err := h.svc.ImportPhoto(r.Context(), user.UserID, body.Provider, body.ID)
 	if err != nil {
 		slog.Error("stock: import failed", "error", err, "provider", body.Provider, "photo_id", body.ID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_error", "Failed to import photo")

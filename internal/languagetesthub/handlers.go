@@ -586,7 +586,7 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -607,7 +607,7 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 		body = ApproveRequirementRequest{}
 	}
 
-	if err := h.service.ApproveRequirement(r.Context(), id, tenantID, user.UserID, body.ReviewNotes); err != nil {
+	if err := h.service.ApproveRequirement(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
 			return

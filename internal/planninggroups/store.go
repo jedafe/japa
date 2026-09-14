@@ -128,13 +128,13 @@ RETURNING id, name, description, destination_space_id, visa_category,
 }
 
 // GetMemberCount returns the number of members in a group.
-func (s *Store) GetMemberCount(ctx context.Context, groupID, tenantID pgtype.UUID) (int64, error) {
+func (s *Store) GetMemberCount(ctx context.Context, groupID pgtype.UUID) (int64, error) {
 	var count int64
 
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT COUNT(*) FROM planning_group_members
 WHERE group_id = $1
-`, groupID, tenantID).Scan(&count)
+`, groupID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("planninggroups: get member count: %w", err)
 	}
@@ -143,13 +143,13 @@ WHERE group_id = $1
 }
 
 // IsMember returns true if the user is a member of the planning group.
-func (s *Store) IsMember(ctx context.Context, groupID, userID, tenantID pgtype.UUID) (bool, error) {
+func (s *Store) IsMember(ctx context.Context, groupID, userID pgtype.UUID) (bool, error) {
 	var exists bool
 
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT EXISTS(SELECT 1 FROM planning_group_members
 WHERE group_id = $1 AND user_id = $2)
-`, groupID, userID, tenantID).Scan(&exists)
+`, groupID, userID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("planninggroups: is member: %w", err)
 	}
@@ -410,12 +410,12 @@ WHERE id = $1 AND deleted_at IS NULL
 
 // JoinGroup inserts a membership row for the given user in the given group.
 // departureDate is optional (may be NULL).
-func (s *Store) JoinGroup(ctx context.Context, groupID, userID, tenantID pgtype.UUID, departureDate pgtype.Date) error {
+func (s *Store) JoinGroup(ctx context.Context, groupID, userID pgtype.UUID, departureDate pgtype.Date) error {
 	_, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO planning_group_members (group_id, user_id, departure_date)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (group_id, user_id) DO NOTHING
-`, groupID, userID, tenantID, departureDate)
+`, groupID, userID, departureDate)
 	if err != nil {
 		return fmt.Errorf("planninggroups: join group: %w", err)
 	}
@@ -503,7 +503,7 @@ RETURNING id, group_id, user_id, title, completed, completed_at, created_at
 }
 
 // ListMilestones returns all milestones for a user in a group.
-func (s *Store) ListMilestones(ctx context.Context, groupID, userID, tenantID pgtype.UUID) ([]PlanningGroupMilestone, error) {
+func (s *Store) ListMilestones(ctx context.Context, groupID, userID pgtype.UUID) ([]PlanningGroupMilestone, error) {
 	const q = `
 SELECT id, group_id, user_id, title, completed, completed_at, created_at
 FROM planning_group_milestones
@@ -511,7 +511,7 @@ WHERE group_id = $1 AND user_id = $2
 ORDER BY created_at ASC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, groupID, userID, tenantID)
+	rows, err := s.pool.Reader.Query(ctx, q, groupID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: list milestones: %w", err)
 	}
@@ -574,7 +574,7 @@ WHERE id = $1 AND group_id = $2 AND user_id = $3
 // user in the given group that are not yet completed. Used by the service
 // to detect "all milestones complete" after a milestone update (§82
 // Integration with §89 Achievement Feed).
-func (s *Store) CountIncompleteMilestones(ctx context.Context, groupID, userID, tenantID pgtype.UUID) (int64, error) {
+func (s *Store) CountIncompleteMilestones(ctx context.Context, groupID, userID pgtype.UUID) (int64, error) {
 	const q = `
 SELECT count(*) FROM planning_group_milestones
 WHERE group_id = $1 AND user_id = $2 AND completed = false
@@ -582,7 +582,7 @@ WHERE group_id = $1 AND user_id = $2 AND completed = false
 
 	var count int64
 
-	err := s.pool.Reader.QueryRow(ctx, q, groupID, userID, tenantID).Scan(&count)
+	err := s.pool.Reader.QueryRow(ctx, q, groupID, userID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("planninggroups: count incomplete milestones: %w", err)
 	}
@@ -850,12 +850,12 @@ WHERE NOT EXISTS (
 
 // InviteMember inserts a membership row for an invited user. Used by the
 // POST /planning-groups/:id/invite endpoint (owner only, §82).
-func (s *Store) InviteMember(ctx context.Context, groupID, userID, tenantID pgtype.UUID) error {
+func (s *Store) InviteMember(ctx context.Context, groupID, userID pgtype.UUID) error {
 	_, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO planning_group_members (group_id, user_id)
 VALUES ($1, $2, $3)
 ON CONFLICT (group_id, user_id) DO NOTHING
-`, groupID, userID, tenantID)
+`, groupID, userID)
 	if err != nil {
 		return fmt.Errorf("planninggroups: invite member: %w", err)
 	}

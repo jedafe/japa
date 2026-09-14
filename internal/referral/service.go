@@ -706,7 +706,7 @@ type Referral struct {
 }
 
 // ListReferrals returns all referrals for the tenant (legacy direct pgx).
-func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Referral, error) {
+func (s *Service) ListReferrals(ctx context.Context, limit, offset int32) ([]Referral, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT r.id, r.referrer_id, r.referee_id, r.referral_code, r.status, r.reward_paid_at, r.created_at,
 		       ru.username, rp.display_name,
@@ -719,7 +719,7 @@ func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit
 		
 		ORDER BY r.created_at DESC
 		LIMIT $1 OFFSET $2
-	`, tenantID, limit, offset)
+	`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing referrals: %w", err)
 	}

@@ -48,10 +48,10 @@ type OAuthUserInfo struct {
 
 // OAuthStore defines the database operations for OAuth account management.
 type OAuthStore interface {
-	GetOAuthAccount(ctx context.Context, tenantID pgtype.UUID, provider, providerUserID string) (*OAuthAccount, error)
-	GetOAuthAccountByUser(ctx context.Context, tenantID, userID pgtype.UUID, provider string) (*OAuthAccount, error)
-	LinkOAuthAccount(ctx context.Context, tenantID, userID pgtype.UUID, provider, providerUserID string) error
-	GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error)
+	GetOAuthAccount(ctx context.Context, provider, providerUserID string) (*OAuthAccount, error)
+	GetOAuthAccountByUser(ctx context.Context, userID pgtype.UUID, provider string) (*OAuthAccount, error)
+	LinkOAuthAccount(ctx context.Context, userID pgtype.UUID, provider, providerUserID string) error
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
 }
 
 // OAuthAccount represents a linked OAuth provider account.

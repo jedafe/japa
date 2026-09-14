@@ -58,7 +58,7 @@ func newTestMCP(t *testing.T) (*Server, *testDeps) {
 			"required": []any{"message"},
 		},
 	}, "", pgtype.UUID{})
-	registry.RegisterHandler("test.echo", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ai.ToolResult, error) {
+	registry.RegisterHandler("test.echo", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ai.ToolResult, error) {
 		var a struct {
 			Message string `json:"message"`
 		}
@@ -81,7 +81,7 @@ func newTestMCP(t *testing.T) (*Server, *testDeps) {
 
 	reviewID := mustUUID("00000000-0000-0000-0000-000000000003")
 
-	registry.RegisterHandler("test.hitl", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ai.ToolResult, error) {
+	registry.RegisterHandler("test.hitl", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ai.ToolResult, error) {
 		return &ai.ToolResult{
 			Status:  ai.ToolCallStatusHITLQueued,
 			Content: `{"created":true}`,
@@ -466,7 +466,7 @@ func (s *stubPerms) HasPermission(ctx context.Context, userID pgtype.UUID, permK
 
 type stubPrivacy struct{}
 
-func (s *stubPrivacy) IsExempt(ctx context.Context, entityType ai.PrivacyEntityType, entityID, tenantID pgtype.UUID) (bool, error) {
+func (s *stubPrivacy) IsExempt(ctx context.Context, entityType ai.PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	return false, nil
 }
 

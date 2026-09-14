@@ -43,7 +43,6 @@ type Extractor struct {
 	maxRetries  int
 	timeout     time.Duration
 	rdb         valkeycompat.Cmdable
-	tenantID    pgtype.UUID
 }
 
 // ExtractorOption configures an Extractor.
@@ -94,8 +93,8 @@ func WithCache(rdb valkeycompat.Cmdable) ExtractorOption {
 // WithTenantID sets the tenant UUID used to scope all Valkey cache keys.
 // Required when WithCache is used so that cache entries are isolated per
 // tenant (ADR-112 Amendment 2 — tenant scoping).
-func WithTenantID(tenantID pgtype.UUID) ExtractorOption {
-	return func(e *Extractor) { e.tenantID = tenantID }
+func WithTenantID() ExtractorOption {
+	return func(e *Extractor) {}
 }
 
 // NewExtractor creates an Extractor backed by the given AI gateway.
@@ -264,7 +263,7 @@ func (e *Extractor) cachedExtraction(ctx context.Context, schema schemas.EntityS
 // the cache per tenant (ADR-112 Amendment 2).
 func (e *Extractor) extractionCacheKey(entityType, sourceText string) string {
 	h := sha256.Sum256([]byte(entityType + ":" + sourceText))
-	return "jc:intel:extraction_cache:" + e.tenantID.String() + ":" + hex.EncodeToString(h[:])
+	return "jc:intel:extraction_cache:" + pgtype.UUID{}.String() + ":" + hex.EncodeToString(h[:])
 }
 
 // stripFences removes surrounding markdown code fences (```json ... ```)

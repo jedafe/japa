@@ -107,7 +107,7 @@ type TaskEnqueuer interface {
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
 type FeatureChecker interface {
-	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // Task name constants for Asynq tasks enqueued by this service.
@@ -157,9 +157,9 @@ func (s *Service) SetRBAC(r permissionChecker) { s.rbac = r }
 // Enabled checks whether the scam_alert feature is enabled for the given
 // tenant. Delegates to the features.Checker (feature_flags table) when
 // available, falling back to system_settings for backward compatibility.
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.checker != nil {
-		return s.checker.IsEnabled(ctx, tenantID, "scam_alert.enabled")
+		return s.checker.IsEnabled(ctx, "scam_alert.enabled")
 	}
 
 	if s.settings == nil {
@@ -411,8 +411,8 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 // Update edits a scam report's content fields. Ownership is enforced unless
 // the caller holds scam_alert.edit_any. Review status, pins and moderation
 // metadata are immutable through this endpoint.
-func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error) {
-	existing, err := s.store.GetReportForUpdate(ctx, id, tenantID)
+func (s *Service) Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error) {
+	existing, err := s.store.GetReportForUpdate(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ScamReportDTO{}, pgx.ErrNoRows
@@ -431,7 +431,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 		return ScamReportDTO{}, err
 	}
 
-	row, err := s.store.UpdateReport(ctx, id, tenantID, report)
+	row, err := s.store.UpdateReport(ctx, id, report)
 	if err != nil {
 		return ScamReportDTO{}, fmt.Errorf("scamalert: update: %w", err)
 	}
@@ -446,8 +446,8 @@ func (s *Service) IsSubscribed(ctx context.Context, userID, destSpaceID pgtype.U
 }
 
 // Get returns a single confirmed scam report (public view).
-func (s *Service) Get(ctx context.Context, tenantID, id pgtype.UUID) (ScamReportDTO, error) {
-	row, err := s.store.GetReport(ctx, id, tenantID)
+func (s *Service) Get(ctx context.Context, id pgtype.UUID) (ScamReportDTO, error) {
+	row, err := s.store.GetReport(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ScamReportDTO{}, pgx.ErrNoRows
@@ -491,8 +491,8 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, scamType st
 }
 
 // Subscribe adds a scam-alert subscription for a user + destination space.
-func (s *Service) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) error {
-	if err := s.store.Subscribe(ctx, userID, tenantID, destSpaceID); err != nil {
+func (s *Service) Subscribe(ctx context.Context, userID, destSpaceID pgtype.UUID) error {
+	if err := s.store.Subscribe(ctx, userID, destSpaceID); err != nil {
 		return fmt.Errorf("scamalert: subscribe: %w", err)
 	}
 
@@ -605,7 +605,7 @@ func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note strin
 // // All steps are nil-safe: if the notifier/awarder/enqueuer is not wired,
 // the method logs a warning and continues. This makes the feature
 // gracefully degrade in tests and development.
-func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgtype.UUID) error {
+func (s *Service) NotifySubscribers(ctx context.Context, reportID pgtype.UUID) error {
 	destSpaceID, reporterID, scamType, description, err := s.store.GetReportForNotification(ctx, reportID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -660,7 +660,7 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 			if !errors.Is(err, pgx.ErrNoRows) {
 				slog.Warn("scamalert: notify: emit activity event failed", "reporter_id", reporterID.String(), "error", err)
 			}
-		} else if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+		} else if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
 			slog.Warn("scamalert: notify: enqueue activity event failed", "reporter_id", reporterID.String(), "error", err)
 		}
 	}

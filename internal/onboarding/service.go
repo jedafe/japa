@@ -21,7 +21,7 @@ import (
 // Follower is the subset of the follow-system service that onboarding needs
 // to persist tag/space/user selections from the wizard into real follow rows.
 type Follower interface {
-	EnsureFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	EnsureFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
 }
 
 // Service provides onboarding business logic with reader/writer pool separation.
@@ -81,7 +81,7 @@ const totalSteps = 5
 // When req.Skip is true, the step minimum is auto-fulfilled using the ranked
 // recommendation algorithm per Section 09 skip semantics (the user always
 // ends up meeting the platform's baseline density target).
-func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateStepRequest) error {
+func (s *Service) UpdateStep(ctx context.Context, userID pgtype.UUID, req *UpdateStepRequest) error {
 	// Read current state to merge step_data.
 	current, err := s.store.getState(ctx, userID)
 
@@ -116,23 +116,23 @@ func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, 
 	// greater than zero, auto-fulfill that minimum using the ranked
 	// algorithm rather than bypassing the requirement.
 	if req.Skip {
-		fulfilled := s.autoFulfillSkip(ctx, tenantID, userID, submitStep)
+		fulfilled := s.autoFulfillSkip(ctx, userID, submitStep)
 		if fulfilled != nil {
 			// Merge the auto-fulfilled data with any explicit data the
 			// user also provided (explicit data wins).
 			merged := mergeJSON(fulfilled, req.StepData)
-			return s.persistStep(ctx, tenantID, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed)
+			return s.persistStep(ctx, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed)
 		}
 	}
 
 	// Merge step_data: existing + new data (new keys overwrite old).
 	merged := mergeJSON(existingData, req.StepData)
 
-	return s.persistStep(ctx, tenantID, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed)
+	return s.persistStep(ctx, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed)
 }
 
 // persistStep merges, auto-joins geo spaces, and upserts the onboarding state.
-func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID, submitStep int, currentStep int32, completed bool, existingData, merged json.RawMessage, tourDismissed bool) error {
+func (s *Service) persistStep(ctx context.Context, userID pgtype.UUID, submitStep int, currentStep int32, completed bool, existingData, merged json.RawMessage, tourDismissed bool) error {
 	// Auto-join primary geo spaces when location fields are present (Section 05, ADR-005).
 	fields := parseStepData(merged)
 	if fields.CountryCode != "" {
@@ -157,7 +157,7 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 
 	// Persist tag/space/user selections as real follow rows. Failures are
 	// non-fatal — don't block onboarding on a single bad recommendation.
-	if err := s.persistFollows(ctx, tenantID, userID, fields); err != nil {
+	if err := s.persistFollows(ctx, userID, fields); err != nil {
 		slog.Warn("onboarding: failed to persist follow selections", "error", err)
 	}
 
@@ -188,7 +188,7 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 // actual follow rows using the follow-system service. It is best-effort and
 // never blocks onboarding. Recommendations are resolved to their entity type
 // from the same ranked list used by the wizard.
-func (s *Service) persistFollows(ctx context.Context, tenantID, userID pgtype.UUID, fields stepDataFields) error {
+func (s *Service) persistFollows(ctx context.Context, userID pgtype.UUID, fields stepDataFields) error {
 	if s.follower == nil {
 		return nil
 	}
@@ -208,7 +208,7 @@ func (s *Service) persistFollows(ctx context.Context, tenantID, userID pgtype.UU
 	}
 
 	for _, id := range tagIDs {
-		if _, err := s.follower.EnsureFollow(ctx, tenantID, userID, "tag", id); err != nil {
+		if _, err := s.follower.EnsureFollow(ctx, userID, "tag", id); err != nil {
 			slog.Warn("onboarding: failed to follow tag", "tag_id", id, "error", err)
 		}
 	}
@@ -220,7 +220,7 @@ func (s *Service) persistFollows(ctx context.Context, tenantID, userID pgtype.UU
 		return nil
 	}
 
-	recs, err := s.GetRecommendations(ctx, tenantID, userID)
+	recs, err := s.GetRecommendations(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("getting recommendations for follow persistence: %w", err)
 	}
@@ -244,7 +244,7 @@ func (s *Service) persistFollows(ctx context.Context, tenantID, userID pgtype.UU
 			entityType = "space"
 		}
 
-		if _, err := s.follower.EnsureFollow(ctx, tenantID, userID, entityType, id); err != nil {
+		if _, err := s.follower.EnsureFollow(ctx, userID, entityType, id); err != nil {
 			slog.Warn("onboarding: failed to follow recommendation", "entity_id", rawID, "entity_type", entityType, "error", err)
 		}
 	}
@@ -257,7 +257,7 @@ func (s *Service) persistFollows(ctx context.Context, tenantID, userID pgtype.UU
 // step has no minimum (no auto-fulfill needed). Per Section 09, the user always
 // ends up meeting the baseline density target — they just choose between manual
 // curation or accepting defaults.
-func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.UUID, step int) json.RawMessage {
+func (s *Service) autoFulfillSkip(ctx context.Context, userID pgtype.UUID, step int) json.RawMessage {
 	switch step {
 	case 3:
 		// Step 3: Interests/Tags — auto-pick min_tags_follow promoted tags.
@@ -300,7 +300,7 @@ func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.U
 			return nil
 		}
 
-		recs, err := s.GetRecommendations(ctx, tenantID, userID)
+		recs, err := s.GetRecommendations(ctx, userID)
 		if err != nil || len(recs) == 0 {
 			return nil
 		}
@@ -426,14 +426,14 @@ func (s *Service) DismissTour(ctx context.Context, userID pgtype.UUID) error {
 //
 // Results are deduplicated by (type, id) and ordered by tier. Falls back to
 // popular items only when no personalized signals are available.
-func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtype.UUID) ([]OnboardingRecommendation, error) {
+func (s *Service) GetRecommendations(ctx context.Context, userID pgtype.UUID) ([]OnboardingRecommendation, error) {
 	// Parse step_data to extract interests/tags and location for matching.
 	state, err := s.store.getState(ctx, userID)
 	if err != nil {
 		// BUG-008: only fall back to popular on "no state yet" (ErrNoRows);
 		// return real DB/infra errors instead of masking them.
 		if errors.Is(err, pgx.ErrNoRows) {
-			return s.getPopularItems(ctx, tenantID)
+			return s.getPopularItems(ctx)
 		}
 
 		return nil, fmt.Errorf("getting onboarding state for recommendations: %w", err)
@@ -464,7 +464,7 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	// Tier 3: Interest-tag overlap.
-	tagRecs, err := s.recommendSpacesByTags(ctx, tenantID, userID, userTags)
+	tagRecs, err := s.recommendSpacesByTags(ctx, userID, userTags)
 	if err != nil {
 		slog.Warn("onboarding: tag recommendation failed", "error", err)
 
@@ -476,7 +476,7 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 
 	// Tier 4: If no personalized recs at all, fall back to popular.
 	if len(merged) == 0 {
-		return s.getPopularItems(ctx, tenantID)
+		return s.getPopularItems(ctx)
 	}
 
 	return merged, nil
@@ -642,7 +642,7 @@ func mergeJSON(base, overlay json.RawMessage) json.RawMessage {
 }
 
 // recommendSpacesByTags finds spaces that overlap with the user's interests.
-func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.UUID, tags []string) ([]OnboardingRecommendation, error) {
+func (s *Service) recommendSpacesByTags(ctx context.Context, _ pgtype.UUID, tags []string) ([]OnboardingRecommendation, error) {
 	if len(tags) == 0 {
 		return nil, nil
 	}
@@ -652,7 +652,7 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 	// Build parameterized ILIKE clauses — each tag becomes its own $N placeholder.
 	// fmt.Sprintf is used only for the parenthetical OR grouping, not for values.
 	likePatterns := make([]string, 0, len(tags))
-	args := []any{tenantID}
+	args := []any{pgtype.UUID{}}
 
 	for i, tag := range tags {
 		args = append(args, "%"+strings.ToLower(tag)+"%")
@@ -773,14 +773,14 @@ func (s *Service) recommendByGeo(ctx context.Context, _ pgtype.UUID, fields step
 }
 
 // getPopularItems returns popular spaces/users as a fallback.
-func (s *Service) getPopularItems(ctx context.Context, tenantID pgtype.UUID) ([]OnboardingRecommendation, error) {
+func (s *Service) getPopularItems(ctx context.Context) ([]OnboardingRecommendation, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT s.id, s.name, s.slug
 		FROM spaces s
 		WHERE s.status = 'active'
 		ORDER BY s.follower_count DESC
 		LIMIT 6
-	`, tenantID)
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("querying popular spaces: %w", err)
 	}

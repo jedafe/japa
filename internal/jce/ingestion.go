@@ -190,12 +190,12 @@ func (s *Service) ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, 
 // It acquires a distributed lock, creates a pending ingestion job, enqueues the
 // worker task, and returns the pending job. If another refresh is already in
 // progress it returns the existing pending job instead.
-func (s *Service) RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
-	if !contentID.Valid || !tenantID.Valid {
+func (s *Service) RefreshComparison(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
+	if !contentID.Valid || !false {
 		return IngestionJob{}, fmt.Errorf("%w: content and tenant ids are required", errpkg.ErrInvalid)
 	}
 
-	if !s.featureEnabled(ctx, tenantID, refreshFeatureFlag) {
+	if !s.featureEnabled(ctx, refreshFeatureFlag) {
 		return IngestionJob{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, refreshFeatureFlag)
 	}
 
@@ -304,8 +304,6 @@ func (s *Service) enqueueRefresh(ctx context.Context, contentID, userID pgtype.U
 func (s *Service) ProcessRefreshValues(ctx context.Context, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) (err error) {
 	_ = userID
 
-	tenantID := pgtype.UUID{}
-
 	job, err := s.ingestion.get(ctx, jobID)
 	if err != nil {
 		return err
@@ -334,7 +332,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, contentID, jobID pgt
 	usedSources := make(map[string]DataSource)
 
 	defer func() {
-		finalErr := s.finalizeRefresh(ctx, tenantID, contentID, jobID, startedAt, refreshedCount, usedSources, procErrs)
+		finalErr := s.finalizeRefresh(ctx, contentID, jobID, startedAt, refreshedCount, usedSources, procErrs)
 		if finalErr != nil && err == nil {
 			err = finalErr
 		}
@@ -713,7 +711,7 @@ func resolveItemEntityFromRef(itemRef []byte) (entityType *string, entityID *pgt
 // finalizeRefresh writes the final job status, updates data-source bookkeeping
 // for every source that contributed a value, deletes the freshness cache, and
 // releases the distributed lock.
-func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, startedAt pgtype.Timestamptz, refreshedCount int, usedSources map[string]DataSource, procErrs []string) error {
+func (s *Service) finalizeRefresh(ctx context.Context, contentID, jobID pgtype.UUID, startedAt pgtype.Timestamptz, refreshedCount int, usedSources map[string]DataSource, procErrs []string) error {
 	// The CHECK constraint only allows completed/failed; record partial errors
 	// in the error column with a completed status.
 	status := "completed"
@@ -759,8 +757,8 @@ func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobI
 		}
 	}
 
-	s.deleteFreshnessCache(ctx, tenantID, contentID)
-	s.deleteAdvisorCache(ctx, tenantID, contentID)
+	s.deleteFreshnessCache(ctx, contentID)
+	s.deleteAdvisorCache(ctx, contentID)
 	s.releaseRefreshLock(ctx, contentID)
 
 	return nil
@@ -823,11 +821,11 @@ LIMIT $2
 
 	for rows.Next() {
 		var tenantID, contentID pgtype.UUID
-		if err := rows.Scan(&tenantID, &contentID); err != nil {
+		if err := rows.Scan(&pgtype.UUID{}, &contentID); err != nil {
 			return enqueued, fmt.Errorf("scanning stale comparison: %w", err)
 		}
 
-		if !s.featureEnabled(ctx, tenantID, refreshFeatureFlag) {
+		if !s.featureEnabled(ctx, refreshFeatureFlag) {
 			continue
 		}
 

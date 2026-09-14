@@ -23,7 +23,7 @@ import (
 //
 // This is called by the wallet:process_activity_event task after writing the
 // points ledger entry.
-func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) ([]BadgeWithDetails, error) {
+func (s *Service) EvaluateBadges(ctx context.Context, userID pgtype.UUID, activityKey string) ([]BadgeWithDetails, error) {
 	awarded := make([]BadgeWithDetails, 0)
 
 	// activity_count badges — gated by gamification.badges_enabled only. The
@@ -98,7 +98,7 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 	// Increment challenge progress for matching challenges — independent of
 	// the badges toggle.
 	if s.challengesEnabled(ctx) {
-		if err := s.incrementChallengeProgress(ctx, tenantID, userID, activityKey); err != nil {
+		if err := s.incrementChallengeProgress(ctx, userID, activityKey); err != nil {
 			slog.Error("gamification: evaluate: increment challenge progress",
 				"activity_key", activityKey, "error", err)
 		}
@@ -111,7 +111,7 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 // matching the activity_key by 1. On the first transition to completed it
 // grants the configured rewards — reward badge, reward points, and a
 // completion notification — and marks the reward claimed.
-func (s *Service) incrementChallengeProgress(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error {
+func (s *Service) incrementChallengeProgress(ctx context.Context, userID pgtype.UUID, activityKey string) error {
 	challenges, err := s.store.GetChallengesByActivityKey(ctx, activityKey)
 	if err != nil {
 		return fmt.Errorf("get challenges by activity key: %w", err)
@@ -140,7 +140,7 @@ func (s *Service) incrementChallengeProgress(ctx context.Context, tenantID, user
 			continue
 		}
 
-		s.grantChallengeReward(ctx, tenantID, userID, c, progress)
+		s.grantChallengeReward(ctx, userID, c, progress)
 	}
 
 	return nil
@@ -168,7 +168,7 @@ func (s *Service) notifyBadgeAwarded(ctx context.Context, userID pgtype.UUID, ba
 // The progress row's reward_claimed flag is set once a reward lands.
 // Failures are logged and skipped — a reward miss must not fail the
 // activity event that triggered it.
-func (s *Service) grantChallengeReward(ctx context.Context, tenantID, userID pgtype.UUID, c gen.ChallengeDefinition, progress gen.UserChallengeProgress) {
+func (s *Service) grantChallengeReward(ctx context.Context, userID pgtype.UUID, c gen.ChallengeDefinition, progress gen.UserChallengeProgress) {
 	rewardGranted := false
 
 	if c.RewardBadgeID.Valid {
@@ -197,7 +197,7 @@ func (s *Service) grantChallengeReward(ctx context.Context, tenantID, userID pgt
 		// The ledger idempotency key (gamification_award:{user}:{reason})
 		// makes retried or concurrent completions safe.
 		reason := "challenge_completed:" + uuidStr(c.ID)
-		if err := s.pointsAwarder.AwardPoints(ctx, tenantID, userID, int(c.RewardPoints), reason); err != nil {
+		if err := s.pointsAwarder.AwardPoints(ctx, userID, int(c.RewardPoints), reason); err != nil {
 			slog.Warn("gamification: award challenge reward points failed",
 				"challenge_id", uuidStr(c.ID), "error", err)
 		} else {

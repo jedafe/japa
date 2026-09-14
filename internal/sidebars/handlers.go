@@ -207,7 +207,7 @@ func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
 
 // CreateSidebar handles POST /api/v1/admin/sidebars.
 func (h *Handlers) CreateSidebar(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -231,7 +231,7 @@ func (h *Handlers) CreateSidebar(w http.ResponseWriter, r *http.Request) {
 		input.Status = "active"
 	}
 
-	sidebar, err := h.Service.CreateSidebar(r.Context(), tenantID, input)
+	sidebar, err := h.Service.CreateSidebar(r.Context(), input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -242,7 +242,7 @@ func (h *Handlers) CreateSidebar(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSidebar handles PATCH /api/v1/admin/sidebars/{id}.
 func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -259,7 +259,7 @@ func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sidebar, err := h.Service.UpdateSidebar(r.Context(), id, tenantID, input)
+	sidebar, err := h.Service.UpdateSidebar(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -270,7 +270,7 @@ func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSidebar handles DELETE /api/v1/admin/sidebars/{id}.
 func (h *Handlers) DeleteSidebar(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -281,7 +281,7 @@ func (h *Handlers) DeleteSidebar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteSidebar(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteSidebar(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -293,7 +293,7 @@ func (h *Handlers) DeleteSidebar(w http.ResponseWriter, r *http.Request) {
 
 // CreateSidebarWidget handles POST /api/v1/admin/sidebars/{id}/widgets.
 func (h *Handlers) CreateSidebarWidget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -323,7 +323,7 @@ func (h *Handlers) CreateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 		input.Status = "active"
 	}
 
-	widget, err := h.Service.CreateSidebarWidget(r.Context(), tenantID, sidebarID, input)
+	widget, err := h.Service.CreateSidebarWidget(r.Context(), sidebarID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -334,7 +334,7 @@ func (h *Handlers) CreateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSidebarWidget handles PATCH /api/v1/admin/sidebars/{id}/widgets/{widgetId}.
 func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -357,7 +357,7 @@ func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widget, err := h.Service.UpdateSidebarWidget(r.Context(), id, sidebarID, tenantID, input)
+	widget, err := h.Service.UpdateSidebarWidget(r.Context(), id, sidebarID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -368,7 +368,7 @@ func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSidebarWidget handles DELETE /api/v1/admin/sidebars/{id}/widgets/{widgetId}.
 func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -385,7 +385,7 @@ func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteSidebarWidget(r.Context(), id, sidebarID, tenantID); err != nil {
+	if err := h.Service.DeleteSidebarWidget(r.Context(), id, sidebarID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -395,7 +395,7 @@ func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // ReorderSidebarWidgets handles POST /api/v1/admin/sidebars/{id}/widgets/reorder.
 func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -417,7 +417,7 @@ func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.Service.ReorderSidebarWidgets(r.Context(), sidebarID, tenantID, input.Items); err != nil {
+	if err := h.Service.ReorderSidebarWidgets(r.Context(), sidebarID, input.Items); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -429,7 +429,7 @@ func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request)
 
 // Resolve handles GET /api/v1/sidebars/resolve?app=&position=&path=.
 func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -465,7 +465,7 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.Service.Resolve(r.Context(), tenantID, app, position, requestPath, userGroupIDs, isAuthenticated, userID)
+	result, err := h.Service.Resolve(r.Context(), app, position, requestPath, userGroupIDs, isAuthenticated, userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

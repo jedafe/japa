@@ -17,19 +17,19 @@ import (
 // --- test helpers ---
 
 // ctxWithUser adds an authenticated user to the request context.
-func ctxWithUser(r *http.Request, userID, tenantID string) *http.Request {
+func ctxWithUser(r *http.Request, userID string) *http.Request {
 	var uid, tid pgtype.UUID
 	_ = uid.Scan(userID)
-	_ = tid.Scan(tenantID)
+	_ = tid.Scan()
 	user := &auth.AuthenticatedUser{UserID: uid}
 
 	return r.WithContext(context.WithValue(r.Context(), auth.UserContextKey, user))
 }
 
 // ctxWithTenant adds a tenant to the request context.
-func ctxWithTenant(r *http.Request, tenantID string) *http.Request {
+func ctxWithTenant(r *http.Request) *http.Request {
 	var tid pgtype.UUID
-	_ = tid.Scan(tenantID)
+	_ = tid.Scan()
 	t := &struct {
 		ID   pgtype.UUID
 		Name string
@@ -63,8 +63,8 @@ const (
 
 func addContextMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = ctxWithTenant(r, testTenantID)
-		r = ctxWithUser(r, testUserID, testTenantID)
+		r = ctxWithTenant(r)
+		r = ctxWithUser(r, testUserID)
 		next.ServeHTTP(w, r)
 	})
 }

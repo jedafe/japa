@@ -57,8 +57,8 @@ type PermissionChecker interface {
 // based on the space's commenting_perm and replying_perm axes (Section 05
 // lines 145-154, BUG-002). Implemented by spaces.PostCheckerAdapter.
 type SpaceCommentChecker interface {
-	CanCommentInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error)
-	CanReplyInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error)
+	CanCommentInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
+	CanReplyInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 }
 
 // Handlers holds dependencies for comment HTTP handlers.
@@ -412,7 +412,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -485,9 +485,9 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 			var allowed bool
 
 			if isReply {
-				allowed, err = h.spaceChecker.CanReplyInSpace(r.Context(), spaceID, user.UserID, tenantID)
+				allowed, err = h.spaceChecker.CanReplyInSpace(r.Context(), spaceID, user.UserID)
 			} else {
-				allowed, err = h.spaceChecker.CanCommentInSpace(r.Context(), spaceID, user.UserID, tenantID)
+				allowed, err = h.spaceChecker.CanCommentInSpace(r.Context(), spaceID, user.UserID)
 			}
 
 			if err != nil {
@@ -500,7 +500,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	comment, err := h.Service.CreateComment(r.Context(), tenantID, user.UserID, createInput)
+	comment, err := h.Service.CreateComment(r.Context(), user.UserID, createInput)
 	if err != nil {
 		handleServiceError(w, err)
 		return

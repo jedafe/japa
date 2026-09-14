@@ -115,8 +115,8 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string) *conte
 
 // ogCacheKey builds the tenant-scoped Valkey cache key for an OG image.
 // Pattern: jc:og:{}:{content_id} (Section 26, valkey-keys-catalog).
-func ogCacheKey(tenantID pgtype.UUID, contentID string) string {
-	return "jc:og:" + tenantID.String() + ":" + contentID
+func ogCacheKey(contentID string) string {
+	return "jc:og:" + "" + ":" + contentID
 }
 
 // ServeOGImage generates and serves an OG image for the given content ID.
@@ -132,7 +132,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	// Try Valkey cache first (Section 26). The cache key is tenant-scoped
 	// so one tenant's OG image never bleeds to another (Rule 4).
 	if t != nil && h.vkClient != nil {
-		cacheKey := ogCacheKey(t.ID, idStr)
+		cacheKey := ogCacheKey(idStr)
 		if cached, err := h.vkClient.Redis().Get(r.Context(), cacheKey).Bytes(); err == nil && len(cached) > 0 {
 			w.Header().Set("Content-Type", "image/png")
 			w.Header().Set("Cache-Control", "public, max-age=86400")
@@ -177,7 +177,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	// content-specific images (not the brand fallback) so the fallback
 	// stays cheap and doesn't pollute the cache with generic entries.
 	if t != nil && h.vkClient != nil && !isBrandFallback {
-		cacheKey := ogCacheKey(t.ID, idStr)
+		cacheKey := ogCacheKey(idStr)
 		if err := h.vkClient.Redis().Set(r.Context(), cacheKey, buf.Bytes(), ogCacheTTL).Err(); err != nil {
 			slog.Warn("og-image: failed to cache", "content_id", idStr, "error", err)
 		}

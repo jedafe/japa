@@ -91,7 +91,7 @@ type TaskEnqueuer interface {
 // imported posts. The content.Service satisfies this via its CreateContent
 // method.
 type ContentCreator interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, input CreateContentInput) (ContentRow, error)
+	CreateContent(ctx context.Context, input CreateContentInput) (ContentRow, error)
 }
 
 // CreateContentInput holds the parameters for creating a draft content row
@@ -119,7 +119,7 @@ type ContentRow struct {
 // the external URLs with stored media URLs. The concrete implementation
 // adapts media.Service + content.Service and is wired in server.go.
 type MediaFetcher interface {
-	FetchAndReplaceMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error
+	FetchAndReplaceMedia(ctx context.Context, userID, contentID pgtype.UUID) error
 }
 
 // Service holds the business logic for the content import pipeline.
@@ -334,7 +334,7 @@ func (s *Service) UpdateImportStatus(ctx context.Context, importID pgtype.UUID, 
 // with content_type='blog_post', status='draft', and canonical_url set to
 // the original URL, enqueues import:fetch_media for each imported item,
 // and updates the content_imports record with counts.
-func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.UUID, sourceType, sourceURL string) error {
+func (s *Service) ProcessSource(ctx context.Context, importID pgtype.UUID, sourceType, sourceURL string) error {
 	// Idempotency guard: read the current import state before marking as
 	// processing. If the import is already 'processing' (concurrent task or
 	// retry overlap) or 'completed' (already finished), skip — the catalog
@@ -402,7 +402,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	var errors []ImportError
 
 	for _, item := range items {
-		if err := s.importSingleItem(ctx, tenantID, importID, imp.UserID, item); err != nil {
+		if err := s.importSingleItem(ctx, importID, imp.UserID, item); err != nil {
 			failedCount++
 
 			errors = append(errors, ImportError{
@@ -448,13 +448,13 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 // adapter (wired in server.go) to avoid a circular import on media/content.
 // // If no MediaFetcher is wired, the method logs a warning and returns nil —
 // the imported content is still usable, just with external image URLs.
-func (s *Service) FetchMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error {
+func (s *Service) FetchMedia(ctx context.Context, userID, contentID pgtype.UUID) error {
 	if s.mediaFetcher == nil {
 		slog.Warn("contentimport: fetch_media: no media fetcher configured, skipping", "content_id", contentID.String())
 		return nil
 	}
 
-	if err := s.mediaFetcher.FetchAndReplaceMedia(ctx, tenantID, userID, contentID); err != nil {
+	if err := s.mediaFetcher.FetchAndReplaceMedia(ctx, userID, contentID); err != nil {
 		return fmt.Errorf("contentimport: fetch_media: %w", err)
 	}
 
@@ -465,7 +465,7 @@ func (s *Service) FetchMedia(ctx context.Context, tenantID, userID, contentID pg
 
 // importSingleItem converts a single RSS item to a draft contents row and
 // enqueues import:fetch_media for the imported content.
-func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, userID pgtype.UUID, item RSSItem) error {
+func (s *Service) importSingleItem(ctx context.Context, importID, userID pgtype.UUID, item RSSItem) error {
 	if s.creator == nil {
 		return errors.New("no content creator configured")
 	}
@@ -492,7 +492,7 @@ func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, user
 		return errors.New("item has no canonical URL")
 	}
 
-	row, err := s.creator.CreateContent(ctx, tenantID, CreateContentInput{
+	row, err := s.creator.CreateContent(ctx, CreateContentInput{
 		AuthorID:     userID,
 		ContentType:  "blog_post",
 		Title:        item.Title,

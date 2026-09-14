@@ -32,7 +32,7 @@ func (s *Service) ResolveContentFields(ctx context.Context, v any, rc literals.R
 		return nil
 	}
 
-	tokens, err := s.loadTemplateLiterals(ctx, (pgtype.UUID{}))
+	tokens, err := s.loadTemplateLiterals(ctx)
 	if err != nil {
 		return fmt.Errorf("loading template literals: %w", err)
 	}
@@ -117,9 +117,9 @@ func (s *Service) resolveStruct(ctx context.Context, rv reflect.Value, tokens []
 	return nil
 }
 
-func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID) ([]literals.TemplateLiteral, error) {
+func (s *Service) loadTemplateLiterals(ctx context.Context) ([]literals.TemplateLiteral, error) {
 	if s.catalog != nil {
-		return s.catalog.GetActive(ctx, tenantID)
+		return s.catalog.GetActive(ctx)
 	}
 
 	active := true

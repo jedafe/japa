@@ -98,7 +98,7 @@ type TagSlugResolver interface {
 // space's posting_perm axis (Section 05 lines 145-154, BUG-003). Implemented
 // by spaces.Service.CanPostInSpace via an adapter.
 type SpacePostChecker interface {
-	CanPostInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error)
+	CanPostInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 }
 
 // SpaceKeywordMatcher finds primary+public spaces (country/state/city and
@@ -287,7 +287,7 @@ func parsePageSize(r *http.Request) int32 {
 // are logged but never block content creation. Returns the final primary space
 // ID (selected or auto-assigned) so the caller can keep its local content row
 // in sync for downstream fan-out / notifications.
-func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, selectedSpaceID pgtype.UUID, title string) pgtype.UUID {
+func (h *Handlers) autoAssignSpaces(ctx context.Context, contentID, selectedSpaceID pgtype.UUID, title string) pgtype.UUID {
 	keywords := extractTitleKeywords(title)
 	if len(keywords) == 0 {
 		return selectedSpaceID
@@ -330,7 +330,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 	// "Lagos Tech Community" surfaces in Lagos and Nigeria feeds even if the
 	// title has no geo keywords.
 	if selectedSpaceID.Valid {
-		parents, err := h.Service.GetSpacePrimaryGeoParents(ctx, tenantID)
+		parents, err := h.Service.GetSpacePrimaryGeoParents(ctx)
 		if err != nil {
 			slog.Warn("content: failed to load source space geo parents", "error", err)
 		} else {
@@ -349,7 +349,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 
 	// Auto-assignment is system-driven, so bypass the per-user membership
 	// check while keeping the tenant-level space validation.
-	if err := h.Service.UpdateContentSpaces(ctx, contentID, tenantID, pgtype.UUID{}, primarySpaceID, additionalIDs, true); err != nil {
+	if err := h.Service.UpdateContentSpaces(ctx, contentID, pgtype.UUID{}, primarySpaceID, additionalIDs, true); err != nil {
 		slog.Warn("content: auto-assign UpdateContentSpaces failed", "content_id", contentID.String(), "error", err)
 		return selectedSpaceID
 	}
@@ -836,7 +836,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -996,7 +996,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		// 145-154). The check is skipped when no space checker is wired
 		// (backward compatibility / tests).
 		if h.spaceChecker != nil {
-			allowed, err := h.spaceChecker.CanPostInSpace(r.Context(), createInput.SpaceID, user.UserID, tenantID)
+			allowed, err := h.spaceChecker.CanPostInSpace(r.Context(), createInput.SpaceID, user.UserID)
 			if err != nil {
 				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check space posting permission")
 				return
@@ -1078,7 +1078,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	content, err := h.Service.CreateContent(r.Context(), tenantID, createInput)
+	content, err := h.Service.CreateContent(r.Context(), createInput)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to post as this organization")
@@ -1103,7 +1103,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// space is already selected it stays primary and matched spaces are added
 	// as additional. The most specific match becomes the primary otherwise.
 	if h.spaceMatcher != nil {
-		content.SpaceID = h.autoAssignSpaces(r.Context(), tenantID, content.ID, content.SpaceID, input.Title)
+		content.SpaceID = h.autoAssignSpaces(r.Context(), content.ID, content.SpaceID, input.Title)
 	}
 
 	// Enqueue async embedding generation — fire-and-forget.
@@ -1558,7 +1558,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1796,7 +1796,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// clamped to in_review by the service.
 	updateInput.SkipStoryModeration = isStoryModerator(r, user.UserID)
 
-	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, bypassEditWindow)
+	content, err := h.Service.UpdateContent(r.Context(), id, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to edit as this organization")
@@ -1912,7 +1912,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 
 	_ = user // used for RBAC audit trail
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1959,7 +1959,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	// content title, preserving any previously selected primary space.
 	// Ref: sections/14-content-type-system.md (Content Auto-Assignment to Spaces)
 	if h.spaceMatcher != nil && prevContent.Status != StatusPublished {
-		updated.SpaceID = h.autoAssignSpaces(r.Context(), tenantID, updated.ID, updated.SpaceID, updated.Title)
+		updated.SpaceID = h.autoAssignSpaces(r.Context(), updated.ID, updated.SpaceID, updated.Title)
 	}
 
 	// AUDIT-BE-TASK-001: enqueue the affiliate link scan task on publish
@@ -3213,11 +3213,11 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 // new categories from the admin panel — no code change required.
 // // Ref: japaconnect-engineering/sections/14-content-type-system.md.
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
-	tenantID, _ := h.requireTenant(w, r)
+	_, _ := h.requireTenant(w, r)
 
 	guideCategories := []map[string]string{}
 
-	if h.guideCategoryLister != nil && tenantID.Valid {
+	if h.guideCategoryLister != nil && false {
 		cats, err := h.guideCategoryLister.ListGuideCategories(r.Context())
 		if err == nil {
 			for _, c := range cats {
@@ -3338,7 +3338,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3405,7 +3405,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 			resolver.HasPermission(r.Context(), user.UserID, "content.edit_any")
 	}
 
-	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, tenantID, user.UserID, primarySpaceID, additionalSpaceIDs, bypassSpaceCheck); err != nil {
+	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, user.UserID, primarySpaceID, additionalSpaceIDs, bypassSpaceCheck); err != nil {
 		slog.Error("updating content spaces", "error", err, "content_id", contentID.String(), "user_id", user.UserID.String())
 
 		switch {

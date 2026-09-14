@@ -44,7 +44,7 @@ func slugify(title string) string {
 // Store.
 type Service struct {
 	store         *Store
-	metadataQueue func(ctx context.Context, tenantID pgtype.UUID, sourceID SourceID) error
+	metadataQueue func(ctx context.Context, sourceID SourceID) error
 }
 
 // NewService creates a sources service backed by the given store.
@@ -55,25 +55,25 @@ func NewService(store *Store) *Service {
 // SetMetadataQueue wires a background task enqueue function for source
 // metadata refresh. It is called after a source becomes active so the public
 // directory can show its logo and description without live link-preview fetches.
-func (s *Service) SetMetadataQueue(q func(ctx context.Context, tenantID pgtype.UUID, sourceID SourceID) error) {
+func (s *Service) SetMetadataQueue(q func(ctx context.Context, sourceID SourceID) error) {
 	s.metadataQueue = q
 }
 
 // queueMetadataFetch enqueues a metadata fetch for active sources. Failures are
 // logged but not returned so DB writes do not fail when the queue is down.
-func (s *Service) queueMetadataFetch(ctx context.Context, tenantID pgtype.UUID, src Source) {
+func (s *Service) queueMetadataFetch(ctx context.Context, src Source) {
 	if s.metadataQueue == nil || !src.Enabled || src.Status != "active" || !src.ID.Valid {
 		return
 	}
 
-	if err := s.metadataQueue(ctx, tenantID, src.ID); err != nil {
+	if err := s.metadataQueue(ctx, src.ID); err != nil {
 		slog.Warn("sources: metadata enqueue failed", "source_id", src.ID.String(), "error", err)
 	}
 }
 
 // Create registers a new source in the registry. Defaults status to 'active'
 // when the caller did not supply a status (e.g. admin creation flow).
-func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (Source, error) {
+func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (Source, error) {
 	if arg.Status == nil || arg.Status == "" {
 		arg.Status = "active"
 	}
@@ -83,7 +83,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.Crea
 		return Source{}, err
 	}
 
-	s.queueMetadataFetch(ctx, tenantID, src)
+	s.queueMetadataFetch(ctx, src)
 	return src, nil
 }
 
@@ -143,13 +143,13 @@ func (s *Service) ListProposed(ctx context.Context, limit, offset int32) ([]Sour
 
 // ApproveProposed activates a proposed source (status='active', enabled=true)
 // and records the approver. Tenant-scoped.
-func (s *Service) ApproveProposed(ctx context.Context, tenantID, id, approvedBy pgtype.UUID) (Source, error) {
+func (s *Service) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUID) (Source, error) {
 	src, err := s.store.ApproveProposed(ctx, id, approvedBy)
 	if err != nil {
 		return Source{}, err
 	}
 
-	s.queueMetadataFetch(ctx, tenantID, src)
+	s.queueMetadataFetch(ctx, src)
 	return src, nil
 }
 
@@ -268,7 +268,7 @@ func derefString(s *string) string {
 	return *s
 }
 
-func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtype.UUID, title, sourceURL, thumbnailURL *string) (Source, error) {
+func (s *Service) CreateAutoForVideo(ctx context.Context, userID pgtype.UUID, title, sourceURL, thumbnailURL *string) (Source, error) {
 	if title == nil || *title == "" {
 		return Source{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
 	}
@@ -278,7 +278,7 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtyp
 
 	existing, err := s.store.GetByURL(ctx, *sourceURL)
 	if err == nil {
-		s.queueMetadataFetch(ctx, tenantID, existing)
+		s.queueMetadataFetch(ctx, existing)
 		return existing, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -311,10 +311,10 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtyp
 		LogoUrl:            thumbnailURL,
 	}
 
-	return s.Create(ctx, tenantID, arg)
+	return s.Create(ctx, arg)
 }
 
-func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (Source, error) {
+func (s *Service) CreateSourceFromEntity(ctx context.Context, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (Source, error) {
 	if name == "" {
 		return Source{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
 	}
@@ -325,7 +325,7 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID
 	if sourceURL != "" {
 		existing, err := s.store.GetByURL(ctx, sourceURL)
 		if err == nil {
-			s.queueMetadataFetch(ctx, tenantID, existing)
+			s.queueMetadataFetch(ctx, existing)
 			return existing, nil
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
@@ -361,17 +361,17 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID
 		Status:             "active",
 	}
 
-	return s.Create(ctx, tenantID, arg)
+	return s.Create(ctx, arg)
 }
 
-func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID pgtype.UUID, sourceName, sourceURL *string, trustLevel int32) (Source, error) {
+func (s *Service) CreateAutoForComparison(ctx context.Context, userID pgtype.UUID, sourceName, sourceURL *string, trustLevel int32) (Source, error) {
 	if sourceName == nil || *sourceName == "" {
 		return Source{}, fmt.Errorf("%w: source_name", errpkg.ErrRequired)
 	}
 
 	existing, err := s.store.GetByURL(ctx, derefString(sourceURL))
 	if err == nil {
-		s.queueMetadataFetch(ctx, tenantID, existing)
+		s.queueMetadataFetch(ctx, existing)
 		return existing, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -405,7 +405,7 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID 
 		Status:             "active",
 	}
 
-	return s.Create(ctx, tenantID, arg)
+	return s.Create(ctx, arg)
 }
 
 func (s *Service) uniqueSlug(ctx context.Context, base string) string {

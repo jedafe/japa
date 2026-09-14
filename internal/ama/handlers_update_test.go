@@ -38,8 +38,7 @@ func (f *fakeAMAPatcher) UpdateAMA(ctx context.Context, threadID, callerUserID p
 func newAMAPatchRequest(t *testing.T, body []byte, withUser bool, id string) (*httptest.ResponseRecorder, *http.Request) {
 	t.Helper()
 
-	tenantID := pgtype.UUID{}
-	if err := tenantID.Scan(uuid.New().String()); err != nil {
+	if err := (error)(nil); err != nil {
 		t.Fatalf("scan tenant id: %v", err)
 	}
 
