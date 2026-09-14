@@ -412,7 +412,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 // when the ai.content_assist_enabled system setting is false (Section 20 V1
 // Tool Catalog; conventions/system-settings-catalog.md).
 func (h *Handlers) requireContentAssistEnabled(ctx context.Context, w http.ResponseWriter) bool {
-	if h.Settings != nil && !h.Settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.content_assist_enabled", true) {
+	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), "ai.content_assist_enabled", true) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_assist_disabled", "AI content assist is currently disabled")
 		return false
 	}
@@ -557,8 +557,8 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 	cacheTTL := 0
 
 	if h.Settings != nil {
-		cacheEnabled = h.Settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.cache_enabled", false)
-		cacheTTL = h.Settings.GetIntOr(ctx, pgtype.UUID{}, "ai.cache_ttl_seconds", 300)
+		cacheEnabled = h.Settings.GetBoolOr(r.Context(), "ai.cache_enabled", false)
+		cacheTTL = h.Settings.GetIntOr(ctx, "ai.cache_ttl_seconds", 300)
 	}
 
 	cacheKey := ""
@@ -568,7 +568,7 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 			// Cache hit: log as a zero-cost, zero-token cached call so the
 			// admin dashboard can still see the volume and the savings.
 			if h.Store != nil {
-				if lerr := h.Store.RecordAIUsage(ctx, tenantID, userID, "cache", "", taskType, "", 0, 0, 0, 0); lerr != nil {
+				if lerr := h.Store.RecordAIUsage(ctx, userID, "cache", "", taskType, "", 0, 0, 0, 0); lerr != nil {
 					slog.Warn("ai: failed to record cache usage log", "task_type", taskType, "error", lerr)
 				}
 			}
@@ -614,12 +614,12 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 	// if no per-provider price is configured.
 	var costUSD float64
 	if h.costs != nil {
-		costUSD = h.costs.Estimate(ctx, tenantID, resp.ProviderName, model, int(totalTokens))
+		costUSD = h.costs.Estimate(ctx, resp.ProviderName, model, int(totalTokens))
 	}
 
 	// Fire-and-forget usage log. A failure here must not fail the request.
 	if h.Store != nil {
-		if lerr := h.Store.RecordAIUsage(ctx, tenantID, userID, resp.ProviderName, model, taskType, resp.ProviderRef, promptTokens, completionTokens, totalTokens, costUSD); lerr != nil {
+		if lerr := h.Store.RecordAIUsage(ctx, userID, resp.ProviderName, model, taskType, resp.ProviderRef, promptTokens, completionTokens, totalTokens, costUSD); lerr != nil {
 			slog.Warn("ai: failed to record usage log", "task_type", taskType, "error", lerr)
 		}
 	}
@@ -664,10 +664,6 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Category      string         `json:"category"`
@@ -909,10 +905,6 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Honor the global JapaBot toggle (system_settings 'ai.japabot_enabled',
 	// default true). A disabled toggle short-circuits before any provider call.
@@ -1116,10 +1108,6 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1189,10 +1177,6 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1262,10 +1246,6 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1336,10 +1316,6 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1397,10 +1373,6 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1521,10 +1493,6 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -2272,10 +2240,6 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -2355,10 +2319,6 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(chi.URLParam(r, "id")); err != nil {
@@ -2367,7 +2327,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Store.GetHITLReview(r.Context(), tenantID, reviewID)
+	review, err := h.Store.GetHITLReview(r.Context(), reviewID)
 	if err != nil {
 		slog.Error("fetching HITL review before approve", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
@@ -2392,7 +2352,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := ApproveReview(r.Context(), h.Store, tenantID, reviewID, user.UserID); err != nil {
+	if err := ApproveReview(r.Context(), h.Store, reviewID, user.UserID); err != nil {
 		slog.Error("approving HITL review", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 
@@ -2410,10 +2370,6 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(chi.URLParam(r, "id")); err != nil {
@@ -2432,7 +2388,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Store.GetHITLReview(r.Context(), tenantID, reviewID)
+	review, err := h.Store.GetHITLReview(r.Context(), reviewID)
 	if err != nil {
 		slog.Error("fetching HITL review before reject", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
@@ -2451,7 +2407,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := RejectReview(r.Context(), h.Store, tenantID, reviewID, user.UserID, input.Reason); err != nil {
+	if err := RejectReview(r.Context(), h.Store, reviewID, user.UserID, input.Reason); err != nil {
 		slog.Error("rejecting HITL review", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 
@@ -2478,10 +2434,6 @@ func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Claim   string `json:"claim"`
@@ -2685,10 +2637,6 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 // GET /admin/ai/usage?period=7d|30d&provider=openai|ollama.
 // Returns the Section 20 contract: { total_cost_usd, tokens_used, by_task_type }.
 func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	periodDays := 30
 
