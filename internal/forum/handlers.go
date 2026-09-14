@@ -694,7 +694,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 // GetThread handles GET /api/v1/forum/{slug}.
 func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -715,7 +715,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-021: enqueue the view-count increment to a shared background
 	// worker instead of spawning a per-request goroutine. Non-blocking.
-	h.Service.IncrementThreadView(r.Context(), thread.ID, tenantID)
+	h.Service.IncrementThreadView(r.Context(), thread.ID)
 
 	// BL-012 / Section 08: emit QAPage JSON-LD for solved threads so search
 	// engines can index the accepted answer. The accepted-answer body is the
@@ -1364,7 +1364,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1384,8 +1384,6 @@ func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-
-	_ = tenantID
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
@@ -1711,8 +1709,7 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1771,7 +1768,7 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	poll, err := h.Service.CreatePollForThread(r.Context(), threadID, tenantID, user.UserID, pollInput)
+	poll, err := h.Service.CreatePollForThread(r.Context(), threadID, user.UserID, pollInput)
 	if err != nil {
 		handleServiceError(w, err)
 		return

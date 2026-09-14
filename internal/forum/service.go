@@ -770,13 +770,13 @@ func (s *Service) GetReplyViewCount(ctx context.Context, replyID pgtype.UUID) (i
 // client is attached, the increment is buffered in the cache and flushed to the
 // database by a background worker. Without Valkey, the increment is queued to
 // the in-memory channel.
-func (s *Service) IncrementThreadView(ctx context.Context, id, tenantID pgtype.UUID) {
+func (s *Service) IncrementThreadView(ctx context.Context, id pgtype.UUID) {
 	if s.valkey != nil {
-		s.enqueueViewIncrement(ctx, id, tenantID)
+		s.enqueueViewIncrement(ctx, id)
 		return
 	}
 	select {
-	case s.viewChan <- viewIncrement{threadID: id, tenantID: tenantID}:
+	case s.viewChan <- viewIncrement{threadID: id}:
 	default:
 	}
 }

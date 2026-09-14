@@ -158,7 +158,6 @@ type jsonLDCacheEntry struct {
 // viewIncrement is a single view-count increment queued for batch processing.
 type viewIncrement struct {
 	threadID pgtype.UUID
-	tenantID pgtype.UUID
 }
 
 // folderResolver resolves a default bookmark folder for an entity/content
@@ -263,8 +262,7 @@ func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any
 
 // broadcastSpace publishes a live update to a space's WebSocket room. No-op when
 // the broadcaster is unset or the space id is empty.
-func (s *Service) broadcastSpace(tenantID, spaceID pgtype.UUID, eventType string, payload any) {
-	_ = tenantID
+func (s *Service) broadcastSpace(spaceID pgtype.UUID, eventType string, payload any) {
 	if s.broadcaster == nil || !spaceID.Valid {
 		return
 	}
@@ -302,12 +300,12 @@ func (s *Service) runViewCountFlusher() {
 
 // enqueueViewIncrement buffers a view count in Valkey and records the key so
 // the flush worker will persist it. Errors are logged but not returned.
-func (s *Service) enqueueViewIncrement(ctx context.Context, threadID, tenantID pgtype.UUID) {
+func (s *Service) enqueueViewIncrement(ctx context.Context, threadID pgtype.UUID) {
 	if s.valkey == nil {
 		return
 	}
 
-	key := valkey.MustKey("forum:views:%s:%s", tenantID.String(), threadID.String())
+	key := valkey.MustKey("forum:views:%s", threadID.String())
 	pipe := s.valkey.Pipeline()
 	pipe.Incr(ctx, key)
 	pipe.Expire(ctx, key, viewCountCacheTTL)

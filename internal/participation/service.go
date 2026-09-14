@@ -605,8 +605,7 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 // for 15 minutes (§76) to avoid re-running the candidate query on every
 // run_activity cycle within the cache window.
 func (s *Service) findEligibleContent(ctx context.Context, persona personas.PersonaDetail, policy ActivityPolicy) ([]eligibleContent, error) {
-	var tenantID, userID pgtype.UUID
-	_ = tenantID.Scan("")
+	var userID pgtype.UUID
 	_ = userID.Scan(persona.UserID)
 
 	minAge := time.Now().Add(-time.Duration(policy.MinContentAgeHours) * time.Hour)
@@ -637,8 +636,8 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	          WHERE c.status = 'published'
 	            AND c.deleted_at IS NULL
 	            AND c.created_at >= $1`
-	args := []interface{}{tenantID, minAge}
-	argIdx := 3
+	args := []interface{}{minAge}
+	argIdx := 2
 
 	if policy.AvoidOwnContent {
 		query += ` AND c.author_id != $` + strconv.Itoa(argIdx)
@@ -803,8 +802,7 @@ type actionPayload struct {
 // the action payload that was stored. status is either "pending" (queued for
 // human approval) or "approved" (autonomous dispatch).
 func (s *Service) createPersonaAction(ctx context.Context, persona personas.PersonaDetail, content eligibleContent, actionType, status string) (reviewID, contentID pgtype.UUID, payload actionPayload, err error) {
-	var tenantID, userID, profileID pgtype.UUID
-	_ = tenantID.Scan("")
+	var userID, profileID pgtype.UUID
 	_ = userID.Scan(persona.UserID)
 	_ = profileID.Scan(persona.ProfileID)
 
@@ -898,8 +896,7 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 		return err
 	}
 
-	var tenantID, userID pgtype.UUID
-	_ = tenantID.Scan("")
+	var userID pgtype.UUID
 	_ = userID.Scan(persona.UserID)
 
 	// Record a synthetic platform_event for the queued action (ADR-068 §4, P10).

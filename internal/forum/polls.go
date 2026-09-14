@@ -117,7 +117,7 @@ func (s *Service) broadcastPollResults(ctx context.Context, poll gen.ForumPoll) 
 		return
 	}
 
-	s.broadcastSpace(pgtype.UUID{}, spaceID, "poll_updated", map[string]any{
+	s.broadcastSpace(spaceID, "poll_updated", map[string]any{
 		"poll_id": poll.ID, "results": results,
 	})
 }
@@ -166,7 +166,7 @@ func (s *Service) GetUserPollVotes(ctx context.Context, pollID, userID pgtype.UU
 
 // CreatePollForThread adds a poll to an existing forum thread.
 // Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Polls).
-func (s *Service) CreatePollForThread(ctx context.Context, threadID, tenantID, userID pgtype.UUID, input PollInput) (gen.ForumPoll, error) {
+func (s *Service) CreatePollForThread(ctx context.Context, threadID, userID pgtype.UUID, input PollInput) (gen.ForumPoll, error) {
 	if input.Question == "" {
 		return gen.ForumPoll{}, errors.New("poll question is required")
 	}
@@ -235,7 +235,7 @@ func (s *Service) CreatePollForThread(ctx context.Context, threadID, tenantID, u
 		return gen.ForumPoll{}, err
 	}
 
-	s.broadcastSpace(tenantID, thread.SpaceID, "poll_created", map[string]any{
+	s.broadcastSpace(thread.SpaceID, "poll_created", map[string]any{
 		"poll_id":    poll.ID,
 		"thread_id":  thread.ID,
 		"created_by": userID,
