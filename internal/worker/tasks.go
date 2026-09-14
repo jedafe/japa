@@ -102,7 +102,6 @@ const (
 	TypeModerationAutoHide              = "moderation:auto_hide"
 	TypeReportNotifyAdmin               = "report:notify_admin"
 	TypeDMCleanupDeclinedRequests       = "dm:cleanup_declined_requests"
-	TypeTenantCleanupData               = "tenant:cleanup_data"
 	TypeCouponTrackEvents               = "coupon:track_events"
 	TypeCouponExpireCheck               = "coupon:expire_check"
 	TypeAffiliateRecordClick            = "affiliate:record_click"
@@ -231,7 +230,6 @@ var handlerRegistry = []struct {
 	{TypeAffiliateCreditAuthorCommission, HandleAffiliateCreditAuthorCommission},
 	{TypeContentScanAffiliateLinks, HandleContentScanAffiliateLinks},
 	{TypeRedirectRecordHit, HandleRedirectRecordHit},
-	{TypeTenantCleanupData, HandleTenantCleanupData},
 	{TypeWikiSeedStubPages, HandleWikiSeedStubPages},
 	// Periodic sweep handlers
 	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},

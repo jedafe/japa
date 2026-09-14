@@ -3125,73 +3125,45 @@ func sendDigestToUser(ctx context.Context, userID, email, period string) error {
 	return nil
 }
 
-// forEachTenant runs fn for each tenant: the single requested tenant when
-// the payload's is set, otherwise all active tenants. The base_url
-// is resolved per tenant from the payload or the tenant's configured
-// base_url. Shared by the sitemap and RSS regeneration sweeps.
-func forEachTenant(ctx context.Context, t *asynq.Task, taskName string, fn func(ctx context.Context, tenantID pgtype.UUID, baseURL string)) error {
-	if dbPool == nil {
-		slog.Warn("task:" + taskName + ": no database, skipping")
-		return nil
-	}
-
+func baseURLFromTask(t *asynq.Task) string {
 	var payload struct {
 		BaseURL string `json:"base_url"`
 	}
 
-	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
+	_ = parsePayload(t, &payload)
 
-	// Collect tenant IDs: single requested tenant or all active ones.
-	var tenantIDs []pgtype.UUID
-
-	if "" != "" {
-		tid, err := scanUUID("")
-		if err != nil {
-			return fmt.Errorf("task:%s: %w", taskName, err)
-		}
-
-		tenantIDs = []pgtype.UUID{tid}
-	} else {
-		var err error
-
-		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
-		if err != nil {
-			slog.Error("task:"+taskName+": list tenants failed", "error", err)
-			return err
-		}
+	if payload.BaseURL != "" {
+		return payload.BaseURL
 	}
 
-	for _, tenantID := range tenantIDs {
-		baseURL := payload.BaseURL
-		if baseURL == "" {
-			baseURL = resolveBaseURL(ctx)
-		}
-
-		if baseURL == "" {
-			slog.Warn("task:" + taskName + ": no base_url, skipping tenant")
-			continue
-		}
-
-		fn(ctx, tenantID, baseURL)
-	}
-
-	return nil
+	return resolveBaseURL(context.Background())
 }
 
-// HandleSitemapGenerate regenerates the XML sitemap for the tenant.
-// When called by the cron scheduler with an empty payload, iterates all active tenants.
+// HandleSitemapGenerate regenerates the XML sitemap for the platform.
 func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:sitemap:generate")
 
-	return forEachTenant(ctx, t, "sitemap:generate", generateSitemapForTenant)
+	if dbPool == nil {
+		slog.Warn("task:sitemap:generate: no database, skipping")
+		return nil
+	}
+
+	baseURL := baseURLFromTask(t)
+	if baseURL == "" {
+		slog.Warn("task:sitemap:generate: no base_url, skipping")
+		return nil
+	}
+
+	generateSitemapForTenant(ctx, baseURL)
+	return nil
 }
 
-// generateSitemapForTenant generates the sitemap XML for a single tenant.
+// generateSitemapForTenant generates the platform sitemap XML.
 // Content is filtered through the Section 43 sitemap quality gates
 // (bots.IsContentIndexableByType) using per-content-type thresholds
 // from system_settings.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
+func generateSitemapForTenant(ctx context.Context, baseURL string) {
 	slugs, err := gen.New(dbPool.Reader).ListPublishedSlugsForSitemap(ctx)
 	if err != nil {
 		slog.Error("task:sitemap:generate: failed to list content", "error", err)
@@ -3249,9 +3221,6 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 
 	sitemap.WriteString("</urlset>\n")
 
-	// Write to a tenant-scoped path so multi-tenant deployments don't
-	// overwrite each other. The output directory is configurable via
-	// JC_SITEMAP_DIR (default: ./sitemaps).
 	sitemapDir := getEnv("JC_SITEMAP_DIR", "./sitemaps")
 	// nolint:gosec // G301: bounded
 	if err := os.MkdirAll(sitemapDir, 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
@@ -3259,7 +3228,7 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 		return
 	}
 
-	sitemapPath := fmt.Sprintf("%s/sitemap-%s.xml", sitemapDir, tenantID.String())
+	sitemapPath := fmt.Sprintf("%s/sitemap.xml", sitemapDir)
 	if err := os.WriteFile(sitemapPath, []byte(sitemap.String()), 0o600); err != nil {
 		slog.Error("task:sitemap:generate: failed to write file", "path", sitemapPath, "error", err)
 		return
@@ -3274,11 +3243,22 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 }
 
 // HandleRSSRegenerate regenerates the RSS feed for published content.
-// When called by the cron scheduler with an empty payload, iterates all active tenants.
 func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:rss_regenerate")
 
-	return forEachTenant(ctx, t, "rss_regenerate", generateRSSForTenant)
+	if dbPool == nil {
+		slog.Warn("task:rss_regenerate: no database, skipping")
+		return nil
+	}
+
+	baseURL := baseURLFromTask(t)
+	if baseURL == "" {
+		slog.Warn("task:rss_regenerate: no base_url, skipping")
+		return nil
+	}
+
+	generateRSSForTenant(ctx, baseURL)
+	return nil
 }
 
 // rssFeedLimit is the number of items returned per feed. Matches
@@ -3293,12 +3273,12 @@ const rssFeedLimit = 20
 // every request. Writing to a local file is removed — it was not
 // multi-tenant safe.
 // // RSS-001: also generates a blog-only feed (ListPublishedPostsForRSS) into
-// jc:cache:feed:rss:blog:{} so /api/v1/blog/feed.xml doesn't serve
+// jc:cache:feed:rss:blog so /api/v1/blog/feed.xml doesn't serve
 // non-blog content from the universal cache.
 // // RSS-011: uses the shared internal/rss/model subpackage for the XML model
 // and rendering helpers — no more local copies that can drift (this drift
 // caused RSS-003: the old local formatRSSTime didn't check IsZero).
-func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
+func generateRSSForTenant(ctx context.Context, baseURL string) {
 	q := gen.New(dbPool.Reader)
 
 	rows, err := q.ListRSSFeedItems(ctx,
@@ -3320,7 +3300,7 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 
 	xmlBytes := rssmodel.Render(siteName, baseURL, siteName+" — latest content", "en", items)
 
-	cacheKey := valkey.MustKey("cache:feed:rss:%s", tenantID.String())
+	cacheKey := valkey.MustKey("cache:feed:rss")
 	if rdb != nil {
 		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
 			slog.Error("task:rss_regenerate: failed to cache feed", "error", err)
@@ -3336,12 +3316,12 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 	// universal cache. Uses ListPublishedPostsForRSS (content_type=blog_post,
 	// auto_hidden=false) — the same query the live blog handler falls back
 	// to on a cache miss.
-	generateBlogRSSForTenant(ctx, q, tenantID, baseURL)
+	generateBlogRSSForTenant(ctx, q, baseURL)
 }
 
 // generateBlogRSSForTenant generates the blog-only RSS feed and caches it
-// under jc:cache:feed:rss:blog:{} (1hr TTL).
-func generateBlogRSSForTenant(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, baseURL string) {
+// under jc:cache:feed:rss:blog (1hr TTL).
+func generateBlogRSSForTenant(ctx context.Context, q *gen.Queries, baseURL string) {
 	rows, err := q.ListPublishedPostsForRSS(ctx,
 
 		rssFeedLimit,
@@ -3381,7 +3361,7 @@ func generateBlogRSSForTenant(ctx context.Context, q *gen.Queries, tenantID pgty
 		items,
 	)
 
-	cacheKey := valkey.MustKey("cache:feed:rss:blog:%s", tenantID.String())
+	cacheKey := valkey.MustKey("cache:feed:rss:blog")
 	if rdb != nil {
 		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
 			slog.Error("task:rss_regenerate: failed to cache blog feed", "error", err)
@@ -3547,46 +3527,23 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 	// Payload is optional — scheduler sends nil. Parse without failing.
 	_ = parsePayload(t, &payload)
 
-	// If a specific tenant was provided, process only that tenant.
-	// Otherwise, iterate over all active tenants.
-	var tenantIDs []pgtype.UUID
-
-	if "" != "" {
-		tid, err := scanUUID("")
-		if err != nil {
-			return fmt.Errorf("task:maintenance:update_velocity_scores: %w", err)
-		}
-
-		tenantIDs = []pgtype.UUID{tid}
-	} else {
-		var err error
-
-		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
-		if err != nil {
-			slog.Error("task:maintenance:update_velocity_scores: failed to list tenants", "error", err)
-			return err
-		}
+	// Update velocity scores for recently active content.
+	// Velocity = (vote_score * 2 + comment_count + view_count / 100) /
+	// (hours_since_publish ^ gravity)
+	// gravity is hot-reloadable via feed.velocity.gravity (default 1.8).
+	gravity := 1.8
+	if appSettings != nil {
+		gravity = appSettings.GetFloatOr(ctx, "feed.velocity.gravity", 1.8)
 	}
 
-	for range tenantIDs {
-		// Update velocity scores for recently active content.
-		// Velocity = (vote_score * 2 + comment_count + view_count / 100) /
-		// (hours_since_publish ^ gravity)
-		// gravity is hot-reloadable via feed.velocity.gravity (default 1.8).
-		gravity := 1.8
-		if appSettings != nil {
-			gravity = appSettings.GetFloatOr(ctx, "feed.velocity.gravity", 1.8)
-		}
-
-		q := gen.New(dbPool.Writer)
-		if err := q.UpdateVelocityScores(ctx,
-			gravity,
-		); err != nil {
-			slog.Error("task:maintenance:update_velocity_scores: failed to update scores", "error", err)
-		}
+	q := gen.New(dbPool.Writer)
+	if err := q.UpdateVelocityScores(ctx,
+		gravity,
+	); err != nil {
+		slog.Error("task:maintenance:update_velocity_scores: failed to update scores", "error", err)
 	}
 
-	slog.Info("task:maintenance:update_velocity_scores: complete", "tenants", len(tenantIDs))
+	slog.Info("task:maintenance:update_velocity_scores: complete")
 
 	return nil
 }
@@ -3606,91 +3563,65 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 	// Payload is optional — scheduler sends nil. Parse without failing.
 	_ = parsePayload(t, &payload)
 
-	// If a specific tenant was provided, process only that tenant.
-	// Otherwise, iterate over all active tenants.
-	var tenantIDs []pgtype.UUID
-
-	if "" != "" {
-		tid, err := scanUUID("")
-		if err != nil {
-			return fmt.Errorf("task:maintenance:check_sla_breaches: %w", err)
-		}
-
-		tenantIDs = []pgtype.UUID{tid}
-	} else {
-		var err error
-
-		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
-		if err != nil {
-			slog.Error("task:maintenance:check_sla_breaches: failed to list tenants", "error", err)
-			return err
-		}
-	}
-
 	breachCount := 0
 	autoClosedCount := 0
 
-	for range tenantIDs {
-		// Find tickets where SLA has been breached.
-		breaches, err := gen.New(dbPool.Reader).ListSLABreachedTickets(ctx)
-		if err != nil {
-			slog.Error("task:maintenance:check_sla_breaches: query failed", "error", err)
-			continue
-		}
+	// Find tickets where SLA has been breached.
+	breaches, err := gen.New(dbPool.Reader).ListSLABreachedTickets(ctx)
+	if err != nil {
+		slog.Error("task:maintenance:check_sla_breaches: query failed", "error", err)
+		return err
+	}
 
-		for _, b := range breaches {
-			slog.Warn("task:maintenance:check_sla_breaches: SLA breach detected", "ticket_id", b.ID.String(), "subject", b.Subject, "sla_breach_at", b.SlaBreachAt.Time)
+	for _, b := range breaches {
+		slog.Warn("task:maintenance:check_sla_breaches: SLA breach detected", "ticket_id", b.ID.String(), "subject", b.Subject, "sla_breach_at", b.SlaBreachAt.Time)
 
-			breachCount++
+		breachCount++
 
-			// Create an in-app notification for the assigned agent.
-			// Ref: japaconnect-engineering/sections/38-ticket-system.md (SLA Tracking)
-			if b.AssignedTo.Valid {
-				title := "SLA breached: " + b.Subject
-				bodyStr := fmt.Sprintf("Ticket %s has breached its SLA deadline.", b.ID.String())
-				actionURL := "/admin/tickets/" + b.ID.String()
-				actorType := "system"
-				subjectType := "ticket"
+		// Create an in-app notification for the assigned agent.
+		// Ref: japaconnect-engineering/sections/38-ticket-system.md (SLA Tracking)
+		if b.AssignedTo.Valid {
+			title := "SLA breached: " + b.Subject
+			bodyStr := fmt.Sprintf("Ticket %s has breached its SLA deadline.", b.ID.String())
+			actionURL := "/admin/tickets/" + b.ID.String()
+			actorType := "system"
+			subjectType := "ticket"
 
-				if _, nErr := gen.New(dbPool.Writer).InsertNotification(ctx, gen.InsertNotificationParams{
+			if _, nErr := gen.New(dbPool.Writer).InsertNotification(ctx, gen.InsertNotificationParams{
 
-					RecipientID:      b.AssignedTo,
-					NotificationType: "ticket_sla_breached",
-					ActorType:        &actorType,
-					SubjectType:      &subjectType,
-					SubjectID:        b.ID,
-					Title:            title,
-					Body:             &bodyStr,
-					ActionUrl:        &actionURL,
-				}); nErr != nil {
-					slog.Error("task:maintenance:check_sla_breaches: failed to create notification", "ticket_id", b.ID.String(), "error", nErr)
-				}
+				RecipientID:      b.AssignedTo,
+				NotificationType: "ticket_sla_breached",
+				ActorType:        &actorType,
+				SubjectType:      &subjectType,
+				SubjectID:        b.ID,
+				Title:            title,
+				Body:             &bodyStr,
+				ActionUrl:        &actionURL,
+			}); nErr != nil {
+				slog.Error("task:maintenance:check_sla_breaches: failed to create notification", "ticket_id", b.ID.String(), "error", nErr)
 			}
 		}
+	}
 
-		// Auto-close resolved tickets older than tickets.auto_close_resolved_days
-		// (system_settings, default 7). Ref: conventions/system-settings-catalog.md.
-		autoCloseDays := 7
-		if appSettings != nil {
-			autoCloseDays = appSettings.GetIntOr(ctx, "tickets.auto_close_resolved_days", 7)
-		}
+	// Auto-close resolved tickets older than tickets.auto_close_resolved_days
+	// (system_settings, default 7). Ref: conventions/system-settings-catalog.md.
+	autoCloseDays := 7
+	if appSettings != nil {
+		autoCloseDays = appSettings.GetIntOr(ctx, "tickets.auto_close_resolved_days", 7)
+	}
 
-		daysStr := strconv.Itoa(autoCloseDays)
+	daysStr := strconv.Itoa(autoCloseDays)
 
-		closed, err := gen.New(dbPool.Writer).AutoCloseResolvedTickets(ctx,
+	closed, err := gen.New(dbPool.Writer).AutoCloseResolvedTickets(ctx,
 
-			&daysStr,
-		)
-		if err != nil {
-			slog.Error("task:maintenance:check_sla_breaches: auto-close failed", "error", err)
-			continue
-		}
+		&daysStr,
+	)
+	if err != nil {
+		slog.Error("task:maintenance:check_sla_breaches: auto-close failed", "error", err)
+	} else if closed > 0 {
+		slog.Info("task:maintenance:check_sla_breaches: auto-closed resolved tickets", "count", closed, "days_threshold", autoCloseDays)
 
-		if closed > 0 {
-			slog.Info("task:maintenance:check_sla_breaches: auto-closed resolved tickets", "count", closed, "days_threshold", autoCloseDays)
-
-			autoClosedCount += int(closed)
-		}
+		autoClosedCount += int(closed)
 	}
 
 	slog.Info("task:maintenance:check_sla_breaches: complete", "breached_count", breachCount, "auto_closed_count", autoClosedCount)
@@ -3768,10 +3699,9 @@ func HandleAnalyticsRefreshViews(ctx context.Context, _ *asynq.Task) error {
 // HandleSecurityScan runs a periodic security scan on uploaded media and
 // triggers the analytics security scan (failed-login spikes, SLA breaches,
 // stale tokens) that populates security_scan_results for the control panel.
-// // When the cron scheduler fires with an empty payload ("{}"), the handler
-// iterates over all active tenants. A specific can be passed for
-// targeted scans.
 func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
+	_ = t
+
 	slog.Info("task:security:scan")
 
 	if dbPool == nil {
@@ -3779,45 +3709,9 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	var payload struct {
-	}
+	scanTenantSecurity(ctx)
 
-	if err := parsePayload(t, &payload); err != nil {
-		// Tolerate empty/malformed payload from cron scheduler — process all tenants.
-		slog.Warn("task:security:scan: could not parse payload, processing all tenants", "error", err)
-	}
-
-	// Collect tenant IDs: either the single requested tenant or all active ones.
-	var tenantIDs []pgtype.UUID
-
-	if "" != "" {
-		var tid pgtype.UUID
-		if err := tid.Scan(""); err != nil {
-			slog.Error("task:security:scan: invalid id", "error", err)
-			return fmt.Errorf("task:security:scan: invalid id: %w", err)
-		}
-
-		tenantIDs = []pgtype.UUID{tid}
-	} else {
-		var err error
-
-		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
-		if err != nil {
-			slog.Error("task:security:scan: list tenants failed", "error", err)
-			return fmt.Errorf("task:security:scan: %w", err)
-		}
-	}
-
-	if len(tenantIDs) == 0 {
-		slog.Warn("task:security:scan: no active tenants found")
-		return nil
-	}
-
-	for range tenantIDs {
-		scanTenantSecurity(ctx)
-	}
-
-	slog.Info("task:security:scan: complete", "tenant_count", len(tenantIDs))
+	slog.Info("task:security:scan: complete")
 
 	return nil
 }
@@ -3856,67 +3750,23 @@ func scanTenantSecurity(ctx context.Context) {
 	slog.Info("task:security:scan: tenant complete", "media_scanned", scanCount)
 }
 
-// HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the tenant.
-// When called by the cron scheduler with an empty payload, iterates all active tenants.
-// The handler invalidates the Valkey cache keys (jc:llms_txt:{} and
-// jc:llms_full_txt:{}) so the next request to /llms.txt or /llms-full.txt
+// HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the platform.
+// The handler invalidates the Valkey cache keys (jc:llms_txt and
+// jc:llms_full_txt) so the next request to /llms.txt or /llms-full.txt
 // regenerates the content from the database via bots.LLMsHandler.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) error {
+func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:maintenance:regenerate_llms_txt")
 
-	if dbPool == nil {
-		slog.Warn("task:maintenance:regenerate_llms_txt: no database, skipping")
+	if rdb == nil {
+		slog.Warn("task:maintenance:regenerate_llms_txt: no redis client, skipping")
 		return nil
 	}
 
-	var payload struct {
-		BaseURL string `json:"base_url"`
-	}
-
-	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
-
-	// Collect tenant IDs: single requested tenant or all active ones.
-	var tenantIDs []pgtype.UUID
-
-	if "" != "" {
-		tid, err := scanUUID("")
-		if err != nil {
-			return fmt.Errorf("task:maintenance:regenerate_llms_txt: %w", err)
-		}
-
-		tenantIDs = []pgtype.UUID{tid}
-	} else {
-		var err error
-
-		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
-		if err != nil {
-			slog.Error("task:maintenance:regenerate_llms_txt: list tenants failed", "error", err)
-			return err
-		}
-	}
-
-	for _, tenantID := range tenantIDs {
-		invalidateLLMsCacheForTenant(ctx, tenantID)
-	}
-
-	slog.Info("task:maintenance:regenerate_llms_txt: complete", "tenant_count", len(tenantIDs))
-
-	return nil
-}
-
-// invalidateLLMsCacheForTenant deletes the cached llms.txt and llms-full.txt
-// for a tenant so the next request regenerates them from the database.
-func invalidateLLMsCacheForTenant(ctx context.Context, tenantID pgtype.UUID) {
-	if rdb == nil {
-		slog.Warn("task:maintenance:regenerate_llms_txt: no redis client, skipping")
-		return
-	}
-
 	keys := []string{
-		valkey.MustKey("llms_txt:%s", tenantID.String()),
-		valkey.MustKey("llms_full_txt:%s", tenantID.String()),
-		valkey.MustKey("robots_txt:%s", tenantID.String()),
+		valkey.MustKey("llms_txt"),
+		valkey.MustKey("llms_full_txt"),
+		valkey.MustKey("robots_txt"),
 	}
 
 	for _, key := range keys {
@@ -3926,6 +3776,7 @@ func invalidateLLMsCacheForTenant(ctx context.Context, tenantID pgtype.UUID) {
 	}
 
 	slog.Info("task:maintenance:regenerate_llms_txt: invalidated caches")
+	return nil
 }
 
 // HandleLearningIssueCertificate issues a completion certificate for a learning track.
@@ -5284,73 +5135,6 @@ func HandleAffiliateExpireCheck(ctx context.Context, _ *asynq.Task) error {
 		slog.Error("affiliate:expire_check failed", "error", err)
 		return err
 	}
-
-	return nil
-}
-
-// HandleTenantCleanupData is the handler for tenant:cleanup_data tasks.
-// It hard-deletes all data associated with a soft-deleted tenant after the
-// 30-day grace period (Section 21). The task is enqueued with a 30-day delay
-// at the time of soft-deletion.
-func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
-	if dbPool == nil {
-		return errors.New("tenant:cleanup_data: db pool not registered")
-	}
-
-	var payload struct {
-		InitiatedBy string `json:"initiated_by"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
-		return fmt.Errorf("tenant:cleanup_data: bad payload: %w", err)
-	}
-
-	if "" == "" {
-		return errors.New("tenant:cleanup_data: missing id in payload")
-	}
-
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(""); err != nil {
-		return fmt.Errorf("tenant:cleanup_data: invalid id %q: %w", "", err)
-	}
-
-	// Verify the tenant is still in 'deleted' status before cleanup.
-	// If the tenant was re-activated (unsuspended), skip hard-delete.
-	status, err := gen.New(dbPool.Reader).GetTenantStatus(ctx, tenantID)
-	if err != nil {
-		// Tenant may have been already hard-deleted or doesn't exist.
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("tenant:cleanup_data — tenant not found, skipping")
-			return nil
-		}
-
-		return fmt.Errorf("tenant:cleanup_data: %w", err)
-	}
-
-	if status != "deleted" {
-		slog.Info("tenant:cleanup_data — tenant no longer in deleted status, skipping", "status", status)
-		return nil
-	}
-
-	slog.Info("tenant:cleanup_data — starting cascade cleanup", "initiated_by", payload.InitiatedBy)
-
-	// Delete all tenant-scoped rows from tables WITHOUT ON DELETE CASCADE on
-	// tenants(id), in FK dependency order. Tables with CASCADE are auto-deleted
-	// by PostgreSQL and intentionally omitted from the query.
-	wq := gen.New(dbPool.Writer)
-
-	totalDeleted, err := wq.DeleteTenantData(ctx)
-	if err != nil {
-		slog.Error("tenant:cleanup_data — failed to delete tenant data", "error", err)
-		return fmt.Errorf("tenant:cleanup_data: delete tenant data: %w", err)
-	}
-
-	// Hard delete the tenant itself.
-	if err := wq.HardDeleteTenant(ctx, tenantID); err != nil {
-		return fmt.Errorf("tenant:cleanup_data: delete tenant: %w", err)
-	}
-
-	slog.Info("tenant:cleanup_data — cleanup complete", "child_rows_deleted", totalDeleted, "tenant_deleted", true)
 
 	return nil
 }
