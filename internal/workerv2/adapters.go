@@ -1,13 +1,13 @@
 // Package workerv2 bridges the v2 processor interfaces (defined in
-// internal/worker/v2_processors.go) to the tenant-scoped v2 services. The
-// processor interfaces are called by Asynq task handlers which receive a
-// single entity ID (or no ID for periodic tasks). The services, however, are
-// tenant-scoped — every method requires a tenantID. These adapters resolve
-// the tenant context and delegate to the appropriate service method.
-// // This package lives separate from internal/worker to avoid an import cycle:
+// internal/worker/v2_processors.go) to the v2 services. The processor
+// interfaces are called by Asynq task handlers which receive a single entity
+// ID (or no ID for periodic tasks). These adapters delegate to the
+// appropriate service method.
+//
+// This package lives separate from internal/worker to avoid an import cycle:
 // worker → assessment → auth → worker. By placing the adapters here, worker
 // never imports the service packages, and the services never import workerv2.
-// // Ref: japaconnect-engineering/sections/60-78 (v2 features), ADRs 061-086.
+// Ref: japaconnect-engineering/sections/60-78 (v2 features), ADRs 061-086.
 package workerv2
 
 import (
@@ -34,43 +34,12 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
-// tenantRow is a minimal tenant row for cross-tenant iteration.
-type tenantRow struct {
-	ID pgtype.UUID
-}
-
-// listTenantIDs returns every active tenant ID in the system. Periodic v2
-// tasks (expire listings, expire challenges, check deadlines, check alerts,
-// prune old rates) iterate over this list so each tenant gets its own sweep.
-// Suspended tenants are excluded — their background processing is paused
-// until they are reactivated (migration 000112_tenant_status).
-func listTenantIDs(ctx context.Context, database *db.DB) ([]pgtype.UUID, error) {
-	rows, err := database.Reader.Query(ctx, "SELECT id FROM tenants WHERE status = 'active' ORDER BY created_at")
-	if err != nil {
-		return nil, fmt.Errorf("listing tenants: %w", err)
-	}
-	defer rows.Close()
-
-	var ids []pgtype.UUID
-
-	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scanning tenant id: %w", err)
-		}
-
-		ids = append(ids, id)
-	}
-
-	return ids, rows.Err()
-}
-
 // ---------------------------------------------------------------------------
 // JobsAdapter — wraps jobs.Service to satisfy JobsProcessor (§63, ADR-081).
 // ---------------------------------------------------------------------------
 
-// JobsAdapter adapts the tenant-scoped jobs.Service to the cross-tenant
-// JobsProcessor interface expected by the Asynq task handlers.
+// JobsAdapter adapts the jobs.Service to the JobsProcessor interface
+// expected by the Asynq task handlers.
 type JobsAdapter struct {
 	svc   *jobs.Service
 	db    *db.DB
@@ -84,27 +53,13 @@ func NewJobsAdapter(svc *jobs.Service, database *db.DB, notifSvc *notifications.
 	return &JobsAdapter{svc: svc, db: database, notif: notifSvc}
 }
 
-// ExpireListingsPastDeadline iterates every tenant and expires job listings
-// past their deadline. Returns the total count across all tenants.
+// ExpireListingsPastDeadline expires job listings past their deadline.
 func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, error) {
-	_, err := listTenantIDs(ctx, a.db)
+	n, err := a.svc.ExpireListingsPastDeadline(ctx)
 	if err != nil {
 		return 0, err
 	}
-
-	var total int
-
-	for range []pgtype.UUID{} {
-		n, err := a.svc.ExpireListingsPastDeadline(ctx)
-		if err != nil {
-			slog.Warn("task:jobs:expire_listings: tenant sweep failed", "error", err)
-			continue
-		}
-
-		total += int(n)
-	}
-
-	return total, nil
+	return int(n), nil
 }
 
 // NotifyApplicationStatus looks up the application's tenant and notifies the
@@ -137,8 +92,8 @@ func (a *JobsAdapter) NotifyApplicationStatus(ctx context.Context, applicationID
 // GamificationAdapter — wraps gamification.Service (§64, ADR-082).
 // ---------------------------------------------------------------------------
 
-// GamificationAdapter adapts the tenant-scoped gamification.Service to the
-// cross-tenant GamificationProcessor interface.
+// GamificationAdapter adapts the gamification.Service to the
+// GamificationProcessor interface.
 type GamificationAdapter struct {
 	svc *gamification.Service
 	db  *db.DB
@@ -149,33 +104,20 @@ func NewGamificationAdapter(svc *gamification.Service, database *db.DB) *Gamific
 	return &GamificationAdapter{svc: svc, db: database}
 }
 
-// ExpireChallenges iterates every tenant and expires ended challenges.
+// ExpireChallenges expires ended challenges.
 func (a *GamificationAdapter) ExpireChallenges(ctx context.Context) (int, error) {
-	_, err := listTenantIDs(ctx, a.db)
+	n, err := a.svc.ExpireChallenges(ctx)
 	if err != nil {
 		return 0, err
 	}
-
-	var total int
-
-	for range []pgtype.UUID{} {
-		n, err := a.svc.ExpireChallenges(ctx)
-		if err != nil {
-			slog.Warn("task:gamification:expire_challenges: tenant sweep failed", "error", err)
-			continue
-		}
-
-		total += int(n)
-	}
-
-	return total, nil
+	return int(n), nil
 }
 
 // ---------------------------------------------------------------------------
 // ImportAdapter — wraps contentimport.Service (§65, ADR-083).
 // ---------------------------------------------------------------------------
 
-// ImportAdapter adapts the tenant-scoped contentimport.Service to the
+// ImportAdapter adapts the contentimport.Service to the
 // ImportProcessor interface. The Asynq payload carries only import_id; the
 // adapter resolves , source_type, and source_url from the database.
 type ImportAdapter struct {
@@ -229,7 +171,7 @@ func (a *ImportAdapter) FetchMedia(ctx context.Context, userID, contentID pgtype
 // AssessmentAdapter — wraps assessment.Service (§71, ADR-071).
 // ---------------------------------------------------------------------------
 
-// AssessmentAdapter adapts the tenant-scoped assessment.Service to the
+// AssessmentAdapter adapts the assessment.Service to the
 // AssessmentProcessor interface.
 type AssessmentAdapter struct {
 	svc   *assessment.Service
@@ -308,8 +250,8 @@ func (a *AssessmentAdapter) CleanupAnonymousResults(ctx context.Context, retenti
 // ScholarshipAdapter — wraps scholarships.Service (§73, ADR-073).
 // ---------------------------------------------------------------------------
 
-// ScholarshipAdapter adapts the tenant-scoped scholarships.Service to the
-// cross-tenant ScholarshipProcessor interface.
+// ScholarshipAdapter adapts the scholarships.Service to the
+// ScholarshipProcessor interface.
 type ScholarshipAdapter struct {
 	svc   *scholarships.Service
 	db    *db.DB
@@ -323,38 +265,30 @@ func NewScholarshipAdapter(svc *scholarships.Service, database *db.DB, notif *no
 	return &ScholarshipAdapter{svc: svc, db: database, notif: notif}
 }
 
-// CheckDeadlines iterates every tenant, finds saved scholarships whose
-// application deadline is within the user's remind_before_days window,
-// dispatches a notification per match (ADR-073 §3 step 3), and marks
-// the reminder as sent.
+// CheckDeadlines finds saved scholarships whose application deadline is
+// within the user's remind_before_days window, dispatches a notification
+// per match (ADR-073 §3 step 3), and marks the reminder as sent.
 func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
-	_, err := listTenantIDs(ctx, a.db)
+	var total int
+
+	reminders, err := a.svc.FindNeedingReminders(ctx, 100)
 	if err != nil {
+		slog.Warn("task:scholarship:check_deadlines: find reminders failed", "error", err)
 		return 0, err
 	}
 
-	var total int
-
-	for range []pgtype.UUID{} {
-		reminders, err := a.svc.FindNeedingReminders(ctx, 100)
-		if err != nil {
-			slog.Warn("task:scholarship:check_deadlines: tenant sweep failed", "error", err)
+	for _, r := range reminders {
+		if err := a.dispatchReminder(ctx, r); err != nil {
+			slog.Warn("task:scholarship:check_deadlines: dispatch reminder failed", "reminder_id", r.ID, "error", err)
 			continue
 		}
 
-		for _, r := range reminders {
-			if err := a.dispatchReminder(ctx, r); err != nil {
-				slog.Warn("task:scholarship:check_deadlines: dispatch reminder failed", "reminder_id", r.ID, "error", err)
-				continue
-			}
-
-			if err := a.svc.MarkReminderSent(ctx, r.ID); err != nil {
-				slog.Warn("task:scholarship:check_deadlines: mark reminder sent failed", "reminder_id", r.ID, "error", err)
-				continue
-			}
-
-			total++
+		if err := a.svc.MarkReminderSent(ctx, r.ID); err != nil {
+			slog.Warn("task:scholarship:check_deadlines: mark reminder sent failed", "reminder_id", r.ID, "error", err)
+			continue
 		}
+
+		total++
 	}
 
 	return total, nil
@@ -406,7 +340,7 @@ func (a *ScholarshipAdapter) dispatchReminder(ctx context.Context, r gen.FindSch
 // RemittanceAdapter — wraps remittance.Service (§74, ADR-075).
 // ---------------------------------------------------------------------------
 
-// RemittanceAdapter adapts the tenant-scoped remittance.Service to the
+// RemittanceAdapter adapts the remittance.Service to the
 // RemittanceProcessor interface.
 type RemittanceAdapter struct {
 	svc *remittance.Service
@@ -429,77 +363,48 @@ func (a *RemittanceAdapter) FetchRates(ctx context.Context, providerID pgtype.UU
 	return a.svc.FetchProviderRates(ctx, providerID)
 }
 
-// FetchAllRates iterates all active API-sourced providers across all tenants
-// and fetches their rates. Called by the scheduler sweep (empty payload).
-// Manual providers are skipped (rates are admin-entered). Returns the number
-// of providers processed. Ref: ADR-075 §2, §8.
+// FetchAllRates fetches rates for all active API-sourced providers. Called
+// by the scheduler sweep (empty payload). Manual providers are skipped
+// (rates are admin-entered). Returns the number of providers processed.
+// Ref: ADR-075 §2, §8.
 func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
-	_, err := listTenantIDs(ctx, a.db)
+	n, err := a.svc.FetchAllProviderRates(ctx)
 	if err != nil {
-		return 0, err
-	}
-
-	var total int
-
-	for range []pgtype.UUID{} {
-		n, err := a.svc.FetchAllProviderRates(ctx)
-		if err != nil {
-			slog.Warn("task:remittance:fetch_rates: tenant sweep failed", "error", err)
-			continue
-		}
-
-		total += n
-	}
-
-	return total, nil
-}
-
-// CheckAlerts iterates every tenant, evaluates all active rate alerts
-// against the current best rate for each corridor, dispatches notifications
-// for alerts whose thresholds are met, and marks them triggered (ADR-075 §4).
-// The 24-hour debounce is enforced by the SQL query (last_triggered_at is
-// null or > 24h ago).
-func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
-	_, err := listTenantIDs(ctx, a.db)
-	if err != nil {
-		return 0, err
-	}
-
-	n, err := a.svc.CheckAndDispatchAlerts(ctx)
-	if err != nil {
-		slog.Warn("task:remittance:check_alerts: tenant check failed", "error", err)
+		slog.Warn("task:remittance:fetch_rates: sweep failed", "error", err)
 		return 0, err
 	}
 
 	return n, nil
 }
 
-// PruneOldRates iterates every tenant and prunes rates beyond the configured
-// retention period (remittance.history_retention_days, default 365). The
-// SQL keeps one snapshot per provider per corridor per day for older data
-// (daily downsampling). Ref: ADR-075 §7, Rule 3 (no hardcoded config).
-func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
-	_, err := listTenantIDs(ctx, a.db)
+// CheckAlerts evaluates all active rate alerts against the current best
+// rate for each corridor, dispatches notifications for alerts whose
+// thresholds are met, and marks them triggered (ADR-075 §4). The 24-hour
+// debounce is enforced by the SQL query (last_triggered_at is null or
+// > 24h ago).
+func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
+	n, err := a.svc.CheckAndDispatchAlerts(ctx)
 	if err != nil {
+		slog.Warn("task:remittance:check_alerts: check failed", "error", err)
 		return 0, err
 	}
 
-	var total int
+	return n, nil
+}
 
-	for range []pgtype.UUID{} {
-		// Read the per-tenant retention setting (Rule 3 — never hardcode).
-		retentionDays := a.svc.HistoryRetentionDays(ctx)
-
-		cutoff := time.Now().AddDate(0, 0, -retentionDays)
-		if err := a.svc.PruneOldRates(ctx, cutoff); err != nil {
-			slog.Warn("task:remittance:prune_old_rates: tenant sweep failed", "error", err)
-			continue
-		}
-
-		total++
+// PruneOldRates prunes rates beyond the configured retention period
+// (remittance.history_retention_days, default 365). The SQL keeps one
+// snapshot per provider per corridor per day for older data (daily
+// downsampling). Ref: ADR-075 §7, Rule 3 (no hardcoded config).
+func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
+	retentionDays := a.svc.HistoryRetentionDays(ctx)
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	if err := a.svc.PruneOldRates(ctx, cutoff); err != nil {
+		slog.Warn("task:remittance:prune_old_rates: sweep failed", "error", err)
+		return 0, err
 	}
 
-	return total, nil
+	return 1, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -555,7 +460,7 @@ func (a *ReferralAdapter) ReviewFlagged(ctx context.Context, referralID pgtype.U
 // AdsSelfServeAdapter — wraps adsselfserve.Service (§61, ADR-079).
 // ---------------------------------------------------------------------------
 
-// AdsSelfServeAdapter adapts the tenant-scoped adsselfserve.Service to the
+// AdsSelfServeAdapter adapts the adsselfserve.Service to the
 // AdsSelfServeProcessor interface.
 type AdsSelfServeAdapter struct {
 	svc *adsselfserve.Service
@@ -583,7 +488,7 @@ func (a *AdsSelfServeAdapter) NotifyCampaignStatus(ctx context.Context, campaign
 // PushAdapter — wraps devices.Service (§77, ADR-074).
 // ---------------------------------------------------------------------------
 
-// PushAdapter adapts the tenant-scoped devices.Service to the PushProcessor
+// PushAdapter adapts the devices.Service to the PushProcessor
 // interface. The Asynq payload carries notification_id + device_token_id;
 // the adapter resolves the user and tenant from the device token, then
 // delegates to the service's SendPush.
