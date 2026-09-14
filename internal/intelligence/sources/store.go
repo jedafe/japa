@@ -37,7 +37,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // Create inserts a new intel_sources row. The tenantID is stamped into the
-// row regardless of any value the caller set on arg.TenantID.
+// row regardless of any value the caller set on arg.
 func (s *Store) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (Source, error) {
 
 	row, err := s.queries.CreateIntelSource(ctx, arg)
@@ -89,7 +89,7 @@ func (s *Store) GetByURL(ctx context.Context, sourceURL string) (Source, error) 
 
 // List returns a page of sources ordered by created_at descending. The
 // tenantID is stamped into the query params regardless of any value the
-// caller set on arg.TenantID.
+// caller set on arg.
 func (s *Store) List(ctx context.Context, arg gen.ListIntelSourcesParams) ([]Source, error) {
 
 	rows, err := s.queries.ListIntelSources(ctx, arg)
@@ -147,7 +147,7 @@ func (s *Store) UpdateEnabled(ctx context.Context, id SourceID, enabled bool) er
 // incremented. The LastSuccessAt field on the params is a pgtype timestamp;
 // callers pass a non-zero value to indicate success. The tenantID is stamped
 // into the query params regardless of any value the caller set on
-// arg.TenantID.
+// arg.
 func (s *Store) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSourceCrawlStatusParams) error {
 
 	if err := s.queries.UpdateIntelSourceCrawlStatus(ctx, arg); err != nil {
@@ -159,7 +159,7 @@ func (s *Store) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSource
 
 // UpdateRobotsPolicy replaces the cached robots.txt policy JSON for a source.
 // The tenantID is stamped into the query params regardless of any value the
-// caller set on arg.TenantID.
+// caller set on arg.
 func (s *Store) UpdateRobotsPolicy(ctx context.Context, arg gen.UpdateIntelSourceRobotsPolicyParams) error {
 
 	if err := s.queries.UpdateIntelSourceRobotsPolicy(ctx, arg); err != nil {
@@ -199,7 +199,7 @@ func (s *Store) Delete(ctx context.Context, id SourceID) error {
 // Update edits the configurable fields of a source (name, domain, url,
 // category, trust level, crawl settings, license, usage restriction, enabled
 // toggle). Returns the updated row. The tenantID is stamped into the params
-// regardless of any value the caller set on arg.TenantID.
+// regardless of any value the caller set on arg.
 func (s *Store) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (Source, error) {
 
 	row, err := s.queries.UpdateIntelSource(ctx, arg)
