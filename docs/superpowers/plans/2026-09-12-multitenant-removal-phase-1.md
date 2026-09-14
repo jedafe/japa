@@ -1,5 +1,7 @@
 # Multi-tenancy removal — Phase 1.0/1.1 implementation plan
 
+> **Status: COMPLETED** — folded into the final multi-tenancy removal. All phases were completed in one pass; `tenant_id` columns, the `tenants` table, and tenant-aware APIs were removed by migration `000668_final_de_tenant`. This plan is retained for historical context.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Establish the single-tenant foundation: audit the data, apply a preparation migration that makes `tenant_id` optional and rewrites all constraints, and de-tenant the `system_settings` and `feature_flags` subsystems. After this phase the backend still has `tenant_id` columns, but the two most-used tenant-scoped subsystems no longer reference them.

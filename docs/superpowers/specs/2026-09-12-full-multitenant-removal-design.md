@@ -1,7 +1,7 @@
 # Full multi-tenancy removal — design
 
 ## Status
-Design (pending implementation plan).
+**COMPLETED** — implemented and pushed to `main` on 2026-09-14. This document is retained as the historical design record; the authoritative source of truth is now `migrations/000668_final_de_tenant` and the single-tenant code in the main repo.
 
 ## Context
 JapaConnect launched with `tenant_id` baked into almost every scoped table, but in practice has only ever operated as a single tenant. `SingleTenantMiddleware` already resolves the default tenant once at boot and injects it into every request, so the active runtime cost of the scaffolding is negligible. This design covers the deliberate removal of all remaining multi-tenant scaffolding from the database, Go backend, SvelteKit frontends, workers, Valkey cache keys, and project documentation.
