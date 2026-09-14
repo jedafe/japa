@@ -1,7 +1,7 @@
 -- 000460_intelligence_source_personas.up.sql
 -- Attaches an AI persona to each intelligence source so promoted content is
 -- authored by the persona's backing bot user (ADR-068). Fixes the FK violation
--- where the promoter stamped defaultTenantID as contents.author_id.
+-- where the promoter stamped a default tenant UUID as contents.author_id.
 --
 -- 1. Adds persona_id column to intel_sources (nullable, FK → ai_personas).
 -- 2. Seeds a "contributor" professional_profile_type (required by the persona
