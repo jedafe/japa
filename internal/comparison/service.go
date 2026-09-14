@@ -1333,7 +1333,7 @@ RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at,
 		return nil, fmt.Errorf("closing upsert batch: %w", err)
 	}
 
-	s.DeleteJCEComparisonCaches(ctx, dim.ContentID, pgtype.UUID{})
+	s.DeleteJCEComparisonCaches(ctx, dim.ContentID)
 
 	return results, nil
 }
@@ -1553,14 +1553,14 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, f ListComparisonsFil
 // comparison after its values or metadata change. The deletions are best-effort;
 // a Valkey error is logged but not returned, so the primary operation always
 // succeeds.
-func (s *Service) DeleteJCEComparisonCaches(ctx context.Context, contentID, tenantID pgtype.UUID) {
+func (s *Service) DeleteJCEComparisonCaches(ctx context.Context, contentID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
 
-	_ = s.vk.Del(ctx, fmt.Sprintf("jc:jce:freshness:%s:%s", tenantID.String(), contentID.String())).Err()
+	_ = s.vk.Del(ctx, fmt.Sprintf("jc:jce:freshness:%s", contentID.String())).Err()
 
-	pattern := fmt.Sprintf("jc:jce:advisor:%s:%s:*", tenantID.String(), contentID.String())
+	pattern := fmt.Sprintf("jc:jce:advisor:%s:*", contentID.String())
 
 	var cursor uint64
 
