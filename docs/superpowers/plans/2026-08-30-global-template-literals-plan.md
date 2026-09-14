@@ -1377,7 +1377,7 @@ import (
 
 type TemplateLiteral struct {
     ID          string
-    TenantID    string
+    ID    string
     Key         string
     Kind        string
     Value       string
@@ -1397,7 +1397,7 @@ type RenderContext struct {
     DestinationCountry string
     DestinationCode    string
     TenantName         string
-    TenantID           pgtype.UUID
+    ID           pgtype.UUID
 }
 
 func (rc RenderContext) ToEnv() *expr.Env {
@@ -1623,7 +1623,7 @@ import (
 )
 
 func (s *Service) ResolveContent(ctx context.Context, c *gen.Content, rc literals.RenderContext) error {
-    tenantTokens, err := s.loadTemplateLiterals(ctx, c.TenantID)
+    tenantTokens, err := s.loadTemplateLiterals(ctx, c.ID)
     if err != nil {
         return fmt.Errorf("loading template literals: %w", err)
     }
@@ -1642,10 +1642,10 @@ func (s *Service) ResolveContent(ctx context.Context, c *gen.Content, rc literal
     return nil
 }
 
-func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID) ([]literals.TemplateLiteral, error) {
+func (s *Service) loadTemplateLiterals(ctx context.Context, ID pgtype.UUID) ([]literals.TemplateLiteral, error) {
     // Cache wiring is added in Task 11; load directly from DB here.
     rows, err := s.read.ListTemplateLiterals(ctx, gen.ListTemplateLiteralsParams{
-        TenantID: tenantID,
+        ID: ID,
         Q:        "",
         IsActive: pgtype.Bool{Bool: true, Valid: true},
         Sort:     "",
@@ -1660,7 +1660,7 @@ func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID
     for i, r := range rows {
         out[i] = literals.TemplateLiteral{
             ID:          r.ID.String(),
-            TenantID:    r.TenantID.String(),
+            ID:    r.ID.String(),
             Key:         r.Key,
             Kind:        r.Kind,
             Value:       r.Value,
@@ -1691,7 +1691,7 @@ rc := literals.RenderContext{
     DestinationCountry: user.DestinationCountry, // from auth/session
     DestinationCode:    user.DestinationCode,
     TenantName:         tenant.Name,
-    TenantID:           tenant.ID,
+    ID:           tenant.ID,
 }
 if err := contentSvc.ResolveContent(r.Context(), &c, rc); err != nil {
     slog.Warn("failed to resolve content literals", "error", err, "content_id", c.ID)
@@ -1799,7 +1799,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
     if _, ok := requireUser(w, r); !ok {
         return
     }
-    tenantID, ok := requireTenant(w, r)
+    ID, ok := requireTenant(w, r)
     if !ok {
         return
     }
@@ -1813,7 +1813,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
     if pageSize < 1 { pageSize = 25 }
 
     rows, err := h.Queries.ListTemplateLiterals(r.Context(), gen.ListTemplateLiteralsParams{
-        TenantID: tenantID,
+        ID: ID,
         Q:        q,
         IsActive: pgtype.Bool{Valid: true, Bool: true},
         Sort:     sort,
@@ -1826,7 +1826,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
         return
     }
     total, err := h.Queries.CountTemplateLiterals(r.Context(), gen.CountTemplateLiteralsParams{
-        TenantID: tenantID,
+        ID: ID,
         Q:        q,
         IsActive: pgtype.Bool{Valid: true, Bool: true},
     })
@@ -1853,7 +1853,7 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
     if _, ok := requireUser(w, r); !ok {
         return
     }
-    tenantID, ok := requireTenant(w, r)
+    ID, ok := requireTenant(w, r)
     if !ok {
         return
     }
@@ -1871,14 +1871,14 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
     }
     // validate key, check conflicts
     if _, err := h.Queries.GetTemplateLiteralByKey(r.Context(), gen.GetTemplateLiteralByKeyParams{
-        TenantID: tenantID,
+        ID: ID,
         Key:      req.Key,
     }); err == nil {
         errpkg.WriteError(w, http.StatusConflict, "duplicate_key", "A literal with this key already exists")
         return
     }
     lit, err := h.Queries.CreateTemplateLiteral(r.Context(), gen.CreateTemplateLiteralParams{
-        TenantID:    tenantID,
+        ID:    ID,
         Key:         req.Key,
         Kind:        req.Kind,
         Value:       req.Value,
@@ -2220,13 +2220,13 @@ import (
 const cacheKeyPrefix = "literals:"
 const cacheTTL = 5 * time.Minute
 
-func cacheKey(tenantID string) string { return cacheKeyPrefix + tenantID }
+func cacheKey(ID string) string { return cacheKeyPrefix + ID }
 
-func LoadCached(ctx context.Context, v valkeycompat.Cmdable, tenantID string, loader func() ([]TemplateLiteral, error)) ([]TemplateLiteral, error) {
+func LoadCached(ctx context.Context, v valkeycompat.Cmdable, ID string, loader func() ([]TemplateLiteral, error)) ([]TemplateLiteral, error) {
     if v == nil {
         return loader()
     }
-    key := cacheKey(tenantID)
+    key := cacheKey(ID)
     cached, err := v.Get(ctx, key).Result()
     if err == nil && cached != "" {
         var out []TemplateLiteral
@@ -2243,11 +2243,11 @@ func LoadCached(ctx context.Context, v valkeycompat.Cmdable, tenantID string, lo
     return out, nil
 }
 
-func InvalidateCache(ctx context.Context, v valkeycompat.Cmdable, tenantID string) {
+func InvalidateCache(ctx context.Context, v valkeycompat.Cmdable, ID string) {
     if v == nil {
         return
     }
-    v.Del(ctx, cacheKey(tenantID))
+    v.Del(ctx, cacheKey(ID))
 }
 ```
 

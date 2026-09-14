@@ -17,7 +17,7 @@
 - Every new migration has a paired `.down.sql`.
 - No new Valkey key pattern is used without updating `.jeos/conventions/valkey-keys-catalog.md` first.
 - No AI attribution in commits, PRs, or documentation.
-- The `Settings` and `FeatureChecker` public Go signatures keep their `tenantID` parameter in this phase (it is ignored). The parameter is removed in Phase 2 so the bulk of the codebase still compiles.
+- The `Settings` and `FeatureChecker` public Go signatures keep their `ID` parameter in this phase (it is ignored). The parameter is removed in Phase 2 so the bulk of the codebase still compiles.
 
 ---
 
@@ -176,8 +176,8 @@ git commit -m "chore: add Phase 1.0 tenant constraint and default rewrite"
 - Regenerate: `internal/db/gen/settings.sql.go`
 
 **Interfaces:**
-- Consumes: `gen.GetSettingValue`, `gen.GetPublicSettings`, `gen.ListSystemSettings`, `gen.UpsertSystemSetting`, `gen.UpsertSystemSettingPreservePublic`, `gen.DeleteSystemSetting` (after regeneration, these have no `TenantID` fields).
-- Produces: global settings lookups. The public `Settings` methods still accept `tenantID` but ignore it; the cache key is `jc:settings:{key}`.
+- Consumes: `gen.GetSettingValue`, `gen.GetPublicSettings`, `gen.ListSystemSettings`, `gen.UpsertSystemSetting`, `gen.UpsertSystemSettingPreservePublic`, `gen.DeleteSystemSetting` (after regeneration, these have no `ID` fields).
+- Produces: global settings lookups. The public `Settings` methods still accept `ID` but ignore it; the cache key is `jc:settings:{key}`.
 
 - [ ] **Step 1: Edit `internal/db/queries/settings.sql`**
 
@@ -211,8 +211,8 @@ DELETE FROM system_settings WHERE key = $1;
 
 - [ ] **Step 2: Update `internal/config/settings.go`**
 
-1. Remove `tenantID` from the internal cache key and the Valkey key. The cache map and `settingsCachePrefix` become global.
-2. Update `GetSetting`, `GetSettingBool`, `GetSettingInt`, `GetStringOr`, `GetIntOr`, `GetFloatOr`, `GetBoolOr` to compute `cacheKey := key` instead of `tenantID.String() + ":" + key`.
+1. Remove `ID` from the internal cache key and the Valkey key. The cache map and `settingsCachePrefix` become global.
+2. Update `GetSetting`, `GetSettingBool`, `GetSettingInt`, `GetStringOr`, `GetIntOr`, `GetFloatOr`, `GetBoolOr` to compute `cacheKey := key` instead of `ID.String() + ":" + key`.
 3. Update `loadFromDB`, `queryAndCache`, `SetSetting`, `UpdateSettingsBatch`, `UpdateSettingsBatchWithPublic`, `GetPublicSettings`, and `InvalidateSettings` to use only `key`.
 4. `InvalidateSettings` must clear the in-memory map and all `jc:settings:*` Valkey keys.
 5. `GetSettingValue` is called with `key` only: `s.q.GetSettingValue(ctx, key)`.
@@ -221,11 +221,11 @@ DELETE FROM system_settings WHERE key = $1;
 The public method signatures remain unchanged for this phase:
 
 ```go
-func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
-func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID)
+func (s *Settings) GetSetting(ctx context.Context, ID pgtype.UUID, key string) (string, error)
+func (s *Settings) InvalidateSettings(ctx context.Context, ID pgtype.UUID)
 ```
 
-The `tenantID` argument is not used inside the method.
+The `ID` argument is not used inside the method.
 
 - [ ] **Step 3: Regenerate sqlc**
 
@@ -257,8 +257,8 @@ git commit -m "refactor: make system_settings global in Phase 1.1"
 - Regenerate: `internal/db/gen/features.sql.go`
 
 **Interfaces:**
-- Consumes: new generated `GetFeatureFlag`, `ListFeatureFlags`, `UpsertFeatureFlagEnabled`, `UpsertFeatureFlagWithConfig`, `DeleteFeatureFlag` (no `TenantID` fields).
-- Produces: `Checker.IsEnabled`, `GetAllEnabled`, `SetEnabled`, `UpdateFlag`, `DeleteFlag`, `ListFlagRows`, `GetFlagConfig`, and `SetRolloutPercentage` still accept `tenantID` but ignore it; the Valkey cache key is `jc:flags:{flag_key}`.
+- Consumes: new generated `GetFeatureFlag`, `ListFeatureFlags`, `UpsertFeatureFlagEnabled`, `UpsertFeatureFlagWithConfig`, `DeleteFeatureFlag` (no `ID` fields).
+- Produces: `Checker.IsEnabled`, `GetAllEnabled`, `SetEnabled`, `UpdateFlag`, `DeleteFlag`, `ListFlagRows`, `GetFlagConfig`, and `SetRolloutPercentage` still accept `ID` but ignore it; the Valkey cache key is `jc:flags:{flag_key}`.
 
 - [ ] **Step 1: Edit `internal/db/queries/features.sql`**
 
@@ -301,13 +301,13 @@ For each function, rewrite the embedded SQL to remove `tenant_id` and adjust par
 | Function | New SQL pattern | Notes |
 |---|---|---|
 | `queryEnabled` | `SELECT enabled, config FROM feature_flags WHERE key = $1` | Single `key` parameter. |
-| `GetAllEnabled` | `SELECT key, enabled, config FROM feature_flags` | No `WHERE tenant_id = $1`. Remove the `tenantID` parameter from the SQL only. |
-| `SetEnabled` | `INSERT INTO feature_flags (key, enabled, updated_by) VALUES ($1, $2, $3) ON CONFLICT (key) DO UPDATE SET enabled = $2, updated_by = $3, updated_at = now()` | Remove `tenant_id` and `tenantID` from VALUES. |
-| `UpdateFlag` | `INSERT INTO feature_flags (key, enabled, config, updated_by) VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO UPDATE SET enabled = $2, config = $3, updated_by = $4, updated_at = now()` | Remove `tenant_id` and `tenantID`. |
+| `GetAllEnabled` | `SELECT key, enabled, config FROM feature_flags` | No `WHERE tenant_id = $1`. Remove the `ID` parameter from the SQL only. |
+| `SetEnabled` | `INSERT INTO feature_flags (key, enabled, updated_by) VALUES ($1, $2, $3) ON CONFLICT (key) DO UPDATE SET enabled = $2, updated_by = $3, updated_at = now()` | Remove `tenant_id` and `ID` from VALUES. |
+| `UpdateFlag` | `INSERT INTO feature_flags (key, enabled, config, updated_by) VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO UPDATE SET enabled = $2, config = $3, updated_by = $4, updated_at = now()` | Remove `tenant_id` and `ID`. |
 | `DeleteFlag` | `DELETE FROM feature_flags WHERE key = $1` | Single `key` parameter. |
 | `ListFlagRows` | `SELECT key, enabled, config, updated_at FROM feature_flags` | No `WHERE`. |
 | `GetFlagConfig` | `SELECT config FROM feature_flags WHERE key = $1` | Single `key` parameter. |
-| `SetRolloutPercentage` | `INSERT INTO feature_flags (key, enabled, config, updated_by) VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO UPDATE SET config = $3, updated_by = $4, updated_at = now()` | Remove `tenant_id` and `tenantID`. |
+| `SetRolloutPercentage` | `INSERT INTO feature_flags (key, enabled, config, updated_by) VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO UPDATE SET config = $3, updated_by = $4, updated_at = now()` | Remove `tenant_id` and `ID`. |
 
 Also:
 - Change the Valkey cache key to `flagCacheKeyPrefix + flagKey` (no tenant segment).
@@ -356,7 +356,7 @@ make sqlc-gen
 go build ./...
 ```
 
-This is expected to fail for packages that still reference `tenant` package methods or `TenantID` fields outside the settings/features subsystems. Those failures become the Phase 2 backlog.
+This is expected to fail for packages that still reference `tenant` package methods or `ID` fields outside the settings/features subsystems. Those failures become the Phase 2 backlog.
 
 - [ ] **Step 3: Capture the build-failure list**
 
@@ -461,5 +461,5 @@ No child plan proceeds until `go build ./...` succeeds for the packages it touch
 
 - [ ] Spec coverage: every Phase 1.0/1.1 item in the design doc has a task.
 - [ ] Placeholder scan: no "TBD", "TODO", or "implement later" remains.
-- [ ] Type consistency: settings and features generated params no longer contain `TenantID`.
+- [ ] Type consistency: settings and features generated params no longer contain `ID`.
 - [ ] Down migrations: both 000665 up and down migrations exist and are paired.

@@ -146,15 +146,15 @@
 5. Wire a Valkey client into `internal/comparison/service.go` (or `store.go`) for guest selection tokens and resolver caches if needed.
 6. Extend `internal/comparison/service.go`:
    - Define `CreateQuickComparisonInput` with `TypeSlug`, `Title` (optional), `ItemRefs []json.RawMessage` (or `[]ItemRef`), and `Dimensions []string` (optional overrides).
-   - `CreateQuickComparison(ctx, tenantID, userID, CreateQuickComparisonInput)` — always sets `depth='quick'`, `visibility='private'`, `seo_indexable=false`. `content_hash` is handled by the existing `contentSvc.CreateContentWithQueries`: empty body → `content_hash` NULL (safe under `idx_contents_tenant_content_hash` which has `WHERE content_hash IS NOT NULL`).
-   - `CreateDetailedComparison(ctx, tenantID, userID, ...)` — creates a detailed comparison draft (used by `apps/main` composer and AI agent when `depth=detailed`).
-   - `GetComparison(ctx, tenantID, userID, slug)` — enforces visibility: quick is author/edit_any only; detailed follows `visibility`/`status`. Returns `ErrNotFound` (404) for unauthorized quick.
-   - `GetComparisonMatrix(ctx, tenantID, userID, slug)` — same visibility as `GetComparison`.
-   - `ListComparisonsWithFilters(ctx, tenantID, userID, ListComparisonsInput)` — public list returns published detailed and non-deleted; `mine=true` returns the caller's own (non-deleted) comparisons.
-   - `UpdateComparison(ctx, tenantID, userID, contentID, ...)` — title, body, visibility, status, and metadata updates for quick or detailed.
-   - `UpdateQuickComparison(ctx, tenantID, userID, quickContentID, ...)` — quick-only edits; still `depth='quick'`.
-   - `CreateQuickComparisonFromToken(ctx, tenantID, userID, token)` — loads the guest selection from Valkey, deletes the key, and calls `CreateQuickComparison`.
-   - `DeleteComparison(ctx, tenantID, userID, contentID)` — soft delete (`deleted_at=now()`).
+   - `CreateQuickComparison(ctx, ID, userID, CreateQuickComparisonInput)` — always sets `depth='quick'`, `visibility='private'`, `seo_indexable=false`. `content_hash` is handled by the existing `contentSvc.CreateContentWithQueries`: empty body → `content_hash` NULL (safe under `idx_contents_tenant_content_hash` which has `WHERE content_hash IS NOT NULL`).
+   - `CreateDetailedComparison(ctx, ID, userID, ...)` — creates a detailed comparison draft (used by `apps/main` composer and AI agent when `depth=detailed`).
+   - `GetComparison(ctx, ID, userID, slug)` — enforces visibility: quick is author/edit_any only; detailed follows `visibility`/`status`. Returns `ErrNotFound` (404) for unauthorized quick.
+   - `GetComparisonMatrix(ctx, ID, userID, slug)` — same visibility as `GetComparison`.
+   - `ListComparisonsWithFilters(ctx, ID, userID, ListComparisonsInput)` — public list returns published detailed and non-deleted; `mine=true` returns the caller's own (non-deleted) comparisons.
+   - `UpdateComparison(ctx, ID, userID, contentID, ...)` — title, body, visibility, status, and metadata updates for quick or detailed.
+   - `UpdateQuickComparison(ctx, ID, userID, quickContentID, ...)` — quick-only edits; still `depth='quick'`.
+   - `CreateQuickComparisonFromToken(ctx, ID, userID, token)` — loads the guest selection from Valkey, deletes the key, and calls `CreateQuickComparison`.
+   - `DeleteComparison(ctx, ID, userID, contentID)` — soft delete (`deleted_at=now()`).
 7. Extend `internal/comparison/handlers.go` with the full canonical API:
    - Type routes:
      - `GET /api/v1/jce/comparison-types`
@@ -197,7 +197,7 @@
 **Status:** `DONE` — implemented in `internal/comparison/jce_service.go` and wired in `internal/server/server.go`.
 
 1. Extend `internal/comparison/service.go`:
-   - `PromoteToDetailed(ctx, tenantID, userID, quickContentID)`:
+   - `PromoteToDetailed(ctx, ID, userID, quickContentID)`:
      - Verify `depth='quick'` and ownership/elevated permissions.
      - Run the entire promotion inside a database transaction.
      - Create a new `contents` row with `content_type='comparison'`, `status='draft'`, `depth='detailed'`, `visibility='private'`, `seo_indexable=false`. `content_hash` is handled by `contentSvc.CreateContentWithQueries` (empty body → NULL).
@@ -259,8 +259,8 @@
    - Each wraps the existing `internal/{tool}` service/store or uses a thin SQL query where no search method exists.
    - Implement `Resolve(id)` and `Search(q, filters)`.
 3. Add JCE service methods in `internal/comparison/jce_service.go`:
-   - `SearchJCEEntities(ctx, entityType, query, filters, tenantID, limit)`.
-   - `ResolveJCEEntity(ctx, entityType, idOrSlug, tenantID)`.
+   - `SearchJCEEntities(ctx, entityType, query, filters, ID, limit)`.
+   - `ResolveJCEEntity(ctx, entityType, idOrSlug, ID)`.
 4. Add handlers:
    - `GET /api/v1/jce/entities/{type}` (search)
    - `GET /api/v1/jce/entities/{type}/{id}` (resolve one)

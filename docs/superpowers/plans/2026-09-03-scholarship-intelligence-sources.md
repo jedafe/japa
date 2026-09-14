@@ -326,7 +326,7 @@ Replace its use with `extractor.ConfidenceOverall`.
 results, extErr := intelExtractor.Extract(...)
 ...
 for i, result := range results {
-    record, err := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
+    record, err := intelStores.CreateIntelRecord(ctx, ID, gen.CreateIntelRecordParams{
         SourceID:          rawDoc.SourceID,
         RawDocumentID:     rawDocID,
         EntityType:        entityType,
@@ -342,7 +342,7 @@ for i, result := range results {
     }
     payload := marshalPayload(intelRecordPayload{Version: intelPayloadVersion,
         RecordID: record.ID.String(),
-        TenantID: p.TenantID,
+        ID: p.ID,
     })
     if payload != nil {
         enqueueIntel(TypeIntelDedup, payload)
@@ -373,40 +373,40 @@ go test ./internal/intelligence/extractor/... ./internal/worker/... ./internal/s
 ```go
 type Store interface {
     ...
-    CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-    GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Content, error)
-    UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.Content, error)
-    UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+    CreateContent(ctx context.Context, ID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+    GetContentByID(ctx context.Context, ID, id pgtype.UUID) (gen.Content, error)
+    UpdateContent(ctx context.Context, ID pgtype.UUID, arg gen.UpdateContentParams) (gen.Content, error)
+    UpdateIntelRecordPromoted(ctx context.Context, ID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
     ...
 }
 
 type TxStore interface {
     ...
-    CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-    UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.Content, error)
-    UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+    CreateContent(ctx context.Context, ID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+    UpdateContent(ctx context.Context, ID pgtype.UUID, arg gen.UpdateContentParams) (gen.Content, error)
+    UpdateIntelRecordPromoted(ctx context.Context, ID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
 }
 ```
 
 - [ ] **Step 2: Implement wrapper methods in `internal/intelligence/stores/stores.go`.**
 
 ```go
-func (s *Store) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
-    arg.TenantID = tenantID
+func (s *Store) CreateContent(ctx context.Context, ID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+    arg.ID = ID
     return s.queries.CreateContent(ctx, arg)
 }
 
-func (s *Store) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Content, error) {
-    return s.queries.GetContentByID(ctx, gen.GetContentByIDParams{TenantID: tenantID, ID: id})
+func (s *Store) GetContentByID(ctx context.Context, ID, id pgtype.UUID) (gen.Content, error) {
+    return s.queries.GetContentByID(ctx, gen.GetContentByIDParams{ID: ID, ID: id})
 }
 
-func (s *Store) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.Content, error) {
-    arg.TenantID = tenantID
+func (s *Store) UpdateContent(ctx context.Context, ID pgtype.UUID, arg gen.UpdateContentParams) (gen.Content, error) {
+    arg.ID = ID
     return s.queries.UpdateContent(ctx, arg)
 }
 
-func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
-    arg.TenantID = tenantID
+func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, ID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
+    arg.ID = ID
     return s.queries.UpdateIntelRecordPromoted(ctx, arg)
 }
 ```
@@ -459,7 +459,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
     countryCode := firstCountry(ext, "country")
     var countrySpaceID pgtype.UUID
     if countryCode != "" {
-        if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
+        if id, err := p.store.GetCountrySpace(ctx, p.ID, countryCode); err == nil && id.Valid {
             countrySpaceID = id
         }
     }
@@ -478,7 +478,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
     var result PromoteResult
     err := p.store.WithTx(ctx, func(tx TxStore) error {
         contentParams := gen.CreateContentParams{
-            TenantID:        p.tenantID,
+            ID:        p.ID,
             AuthorID:        p.authorID,
             ContentType:     "guide",
             Title:           stringField(ext, "title"),
@@ -505,7 +505,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
             contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: now, Valid: true}
         }
 
-        contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+        contentRow, err := tx.CreateContent(ctx, p.ID, contentParams)
         if err != nil {
             return fmt.Errorf("promoter: create guide content: %w", err)
         }
@@ -513,12 +513,12 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 
         scholarshipParams := buildCreateParams(record, source, guideID, ext)
         scholarshipParams.CountrySpaceID = countrySpaceID
-        scholarship, err := tx.CreateScholarship(ctx, p.tenantID, scholarshipParams)
+        scholarship, err := tx.CreateScholarship(ctx, p.ID, scholarshipParams)
         if err != nil {
             return fmt.Errorf("promoter: create scholarship: %w", err)
         }
 
-        if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
+        if err := tx.UpdateIntelRecordPromoted(ctx, p.ID, gen.UpdateIntelRecordPromotedParams{
             ID:               record.ID,
             PromotedRecordID: scholarship.ID,
         }); err != nil {
@@ -541,14 +541,14 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 If `existing.GuideID.Valid` and `title` or `description` changed and neither is in `editorial_overrides`:
 
 ```go
-contentRow, err := p.store.GetContentByID(ctx, p.tenantID, existing.GuideID)
+contentRow, err := p.store.GetContentByID(ctx, p.ID, existing.GuideID)
 if err == nil {
     newBody := buildScholarshipBody(ext)
     newHash := content.ComputeContentHash(newBody)
     newSlug := content.Slugify(title)
     updateParams := gen.UpdateContentParams{
         ID:              contentRow.ID,
-        TenantID:        p.tenantID,
+        ID:        p.ID,
         Title:           title,
         Slug:            newSlug,
         Body:            newBody,
@@ -571,7 +571,7 @@ if err == nil {
         AiGeneratedAt:   contentRow.AiGeneratedAt,
         AiModel:         contentRow.AiModel,
     }
-    if _, err := tx.UpdateContent(ctx, p.tenantID, updateParams); err != nil {
+    if _, err := tx.UpdateContent(ctx, p.ID, updateParams); err != nil {
         return fmt.Errorf("promoter: update guide content: %w", err)
     }
 }

@@ -119,13 +119,13 @@ New package `internal/campaign` with:
 Public service methods:
 
 ```go
-func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (Campaign, error)
-func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID pgtype.UUID, campaignID pgtype.UUID) (Campaign, []CampaignItem, error)
-func (s *Service) RunCampaign(ctx context.Context, tenantID, userID pgtype.UUID, campaignID pgtype.UUID) (studio.Batch, []studio.Job, error)
-func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f CampaignListFilter) ([]Campaign, int64, error)
-func (s *Service) GetCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) (Campaign, []CampaignItem, error)
-func (s *Service) RetryItem(ctx context.Context, tenantID, userID, itemID pgtype.UUID) error
-func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaignID pgtype.UUID) error
+func (s *Service) CreateCampaign(ctx context.Context, ID, userID pgtype.UUID, in CreateCampaignInput) (Campaign, error)
+func (s *Service) PlanCampaign(ctx context.Context, ID, userID pgtype.UUID, campaignID pgtype.UUID) (Campaign, []CampaignItem, error)
+func (s *Service) RunCampaign(ctx context.Context, ID, userID pgtype.UUID, campaignID pgtype.UUID) (studio.Batch, []studio.Job, error)
+func (s *Service) ListCampaigns(ctx context.Context, ID pgtype.UUID, f CampaignListFilter) ([]Campaign, int64, error)
+func (s *Service) GetCampaign(ctx context.Context, ID, campaignID pgtype.UUID) (Campaign, []CampaignItem, error)
+func (s *Service) RetryItem(ctx context.Context, ID, userID, itemID pgtype.UUID) error
+func (s *Service) CancelCampaign(ctx context.Context, ID, userID, campaignID pgtype.UUID) error
 ```
 
 Input / DTO types:
@@ -152,7 +152,7 @@ type CampaignListFilter struct {
 
 type Campaign struct {
     ID                    string
-    TenantID              string
+    ID              string
     Name                  string
     Prompt                string
     Status                string

@@ -169,7 +169,7 @@ Rules:
 
 - Update `HandleListSourceItems` to exclude blocked sources for the caller.
 - Update `HandleRadarFeed` to exclude items from blocked sources for the caller.
-- Add a helper `ListBlockedSourceIDs(ctx, tenantID, userID)` in `internal/sources/blocks.go`.
+- Add a helper `ListBlockedSourceIDs(ctx, ID, userID)` in `internal/sources/blocks.go`.
 
 - [ ] **Step 4: Add UI block button**
 
@@ -381,7 +381,7 @@ git commit -m "feat: curated source directory collections"
 In `internal/intelligence/service.go`:
 
 ```go
-func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID pgtype.UUID, entityType, name, slug, sourceURL, category string) (pgtype.UUID, error) { ... }
+func (s *Service) CreateSourceFromEntity(ctx context.Context, ID, entityID pgtype.UUID, entityType, name, slug, sourceURL, category string) (pgtype.UUID, error) { ... }
 ```
 
 Rules:

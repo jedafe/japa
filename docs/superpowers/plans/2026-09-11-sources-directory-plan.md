@@ -432,7 +432,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 ```
 
 Rules for the handler:
-- Read `tenant_id` from context; if invalid, fall back to `defaultIntelTenantID` (same as `HandleSourcesDirectory` in `moderation.go`).
+- Read `tenant_id` from context; if invalid, fall back to `defaultIntelID` (same as `HandleSourcesDirectory` in `moderation.go`).
 - Parse `?category=`, `?source_kind=`, `?q=`, `?sort=` (popular | recent | trending; default `popular`), `?limit`/`?offset`.
 - Pick the appropriate sqlc query based on `sort`.
 - For `linked_entity`, left-join `spaces`, `organizations`, and `users` on `source_id = source.id` (optional single query or in-memory join after listing).
@@ -570,7 +570,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 
 `HandleGetSource`:
 - Resolve slug to source using `GetIntelSourceBySlugWithLinkedEntity`.
-- Fall back to `defaultIntelTenantID` if the request tenant is empty.
+- Fall back to `defaultIntelID` if the request tenant is empty.
 - Compute `is_following` with `auth.OptionalUser` and `follows.IsFollowing`.
 - Build `linked_entity` from the joined `space_*`, `org_*`, or `user_*` columns.
 
@@ -630,7 +630,7 @@ In `internal/intelligence/handlers/sources_public.go`:
 func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Request) { ... }
 ```
 
-Resolve the source slug to `intel_sources.id`, call `h.follows.ToggleFollow(ctx, tenantID, userID, follows.EntityTypeSource, sourceID)`, and return `{ "data": { "is_following": bool, "follower_count": int } }`.
+Resolve the source slug to `intel_sources.id`, call `h.follows.ToggleFollow(ctx, ID, userID, follows.EntityTypeSource, sourceID)`, and return `{ "data": { "is_following": bool, "follower_count": int } }`.
 
 - [ ] **Step 2: Register routes under auth**
 

@@ -72,7 +72,7 @@ The resolver is a pure Go package with no database dependencies on the hot path 
   - `SourceCountry string` and `SourceCode string`
   - `DestinationCountry string` and `DestinationCode string`
   - `TenantName string`
-  - `TenantID pgtype.UUID`
+  - `ID pgtype.UUID`
   - The engine maps these fields to snake_case expression variables (`Source_Country`, `Destination_Code`, etc.).
 - `Resolver` struct:
   - Holds a map of built-in variable values and function evaluators.

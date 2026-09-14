@@ -27,7 +27,7 @@
 
 **Interfaces:**
 - Consumes: `gen.Queries` (via existing `Service.read` / `Service.write`).
-- Produces: `DefaultFolderResolver` struct with methods `Resolve(ctx, tenantID, userID, entityType, contentType) (FolderResponse, error)` and `CreateDefaultFoldersForUser(ctx, tenantID, userID) error`.
+- Produces: `DefaultFolderResolver` struct with methods `Resolve(ctx, ID, userID, entityType, contentType) (FolderResponse, error)` and `CreateDefaultFoldersForUser(ctx, ID, userID) error`.
 
 - [ ] **Step 1: Define mapping and resolver**
 
@@ -81,7 +81,7 @@ var defaultFolderOrder = []string{
 - [ ] **Step 2: Implement `Resolve`**
 
 ```go
-func (r *DefaultFolderResolver) Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (FolderResponse, error) {
+func (r *DefaultFolderResolver) Resolve(ctx context.Context, ID, userID pgtype.UUID, entityType, contentType string) (FolderResponse, error) {
     folderName := ""
     switch entityType {
     case "content", "blog_post":
@@ -94,7 +94,7 @@ func (r *DefaultFolderResolver) Resolve(ctx context.Context, tenantID, userID pg
     if folderName == "" {
         return FolderResponse{}, nil
     }
-    return r.findOrCreateFolder(ctx, tenantID, userID, folderName)
+    return r.findOrCreateFolder(ctx, ID, userID, folderName)
 }
 ```
 
@@ -140,7 +140,7 @@ Add a `bookmarkFolders *bookmarkfolders.Service` field to `internal/auth.Handler
 In each handler where `Queries.CreateUser` returns a `userID`, add:
 
 ```go
-if err := h.bookmarkFolders.CreateDefaultFoldersForUser(r.Context(), tenantID, userID); err != nil {
+if err := h.bookmarkFolders.CreateDefaultFoldersForUser(r.Context(), ID, userID); err != nil {
     slog.Warn("failed to create default bookmark folders", "error", err, "user_id", userID)
 }
 ```
@@ -183,7 +183,7 @@ In `internal/content/content.go` add:
 
 ```go
 type folderResolver interface {
-    Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
+    Resolve(ctx context.Context, ID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
 }
 
 type Service struct {
@@ -205,10 +205,10 @@ contentService.SetFolderResolver(bookmarkFoldersService.Resolver())
 Change the function signature to accept the content type or look it up. Prefer adding a `contentType` parameter because the handler already loads the content for permission checks in some paths; if not available, the store can call `s.read.GetContentByID`.
 
 ```go
-func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UUID, contentType string, contentID pgtype.UUID, folder string, folderID pgtype.UUID) (gen.CreateBookmarkRow, error) {
+func (s *Service) CreateBookmark(ctx context.Context, ID, userID pgtype.UUID, contentType string, contentID pgtype.UUID, folder string, folderID pgtype.UUID) (gen.CreateBookmarkRow, error) {
     if folder == "" {
         if s.folderResolver != nil {
-            f, err := s.folderResolver.Resolve(ctx, tenantID, userID, EntityContent, contentType)
+            f, err := s.folderResolver.Resolve(ctx, ID, userID, EntityContent, contentType)
             if err == nil && f.ID != "" {
                 folder = f.Name
                 var fid pgtype.UUID
@@ -229,13 +229,13 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UU
 The handler already has `contentID`. Load the content row to pass `content.ContentType` to `CreateBookmark`. `GetContent` already exists on the service.
 
 ```go
-content, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+content, err := h.Service.GetContent(r.Context(), contentID, ID)
 if err != nil {
     handleServiceError(w, err)
     return
 }
 
-bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, content.ContentType, contentID, input.Folder, folderID)
+bm, err := h.Service.CreateBookmark(r.Context(), ID, user.UserID, content.ContentType, contentID, input.Folder, folderID)
 ```
 
 - [ ] **Step 4: Update persona dispatcher in `internal/server/server.go`**
@@ -243,11 +243,11 @@ bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, content.
 At line 7243 the dispatcher calls `d.content.CreateBookmark` with a hardcoded `folder = "default"` and `zeroFolderID`. Update this call to pass `entityType` and the entity's content type if known; otherwise rely on resolver.
 
 ```go
-folder, folderID, err := d.resolveDefaultFolder(ctx, tenantID, personaUserID, entityType, entityID)
+folder, folderID, err := d.resolveDefaultFolder(ctx, ID, personaUserID, entityType, entityID)
 if err != nil {
     return err
 }
-_, err = d.content.CreateBookmark(ctx, tenantID, personaUserID, entityType, entityID, folder, folderID)
+_, err = d.content.CreateBookmark(ctx, ID, personaUserID, entityType, entityID, folder, folderID)
 ```
 
 If `entityType == "content"`, load the content type from `contents` via `GetContentByID`.
@@ -279,7 +279,7 @@ Run: `go test ./internal/content/...`
 
 ```go
 type folderResolver interface {
-    Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
+    Resolve(ctx context.Context, ID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
 }
 
 type Service struct {
@@ -299,17 +299,17 @@ usersService.SetFolderResolver(bookmarkFoldersService.Resolver())
 - [ ] **Step 2: Update `CreateBookmark` in `internal/users/service.go`**
 
 ```go
-func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID, folderID pgtype.UUID, entityType, folder string) (gen.CreateBookmarkRow, error) {
+func (s *Service) CreateBookmark(ctx context.Context, ID, userID, entityID, folderID pgtype.UUID, entityType, folder string) (gen.CreateBookmarkRow, error) {
     if folder == "" {
         contentType := ""
         if entityType == "content" || entityType == "blog_post" {
-            c, err := s.store.read.GetContentByID(ctx, gen.GetContentByIDParams{ID: entityID, TenantID: tenantID})
+            c, err := s.store.read.GetContentByID(ctx, gen.GetContentByIDParams{ID: entityID, ID: ID})
             if err == nil {
                 contentType = c.ContentType
             }
         }
         if s.folderResolver != nil {
-            f, err := s.folderResolver.Resolve(ctx, tenantID, userID, entityType, contentType)
+            f, err := s.folderResolver.Resolve(ctx, ID, userID, entityType, contentType)
             if err == nil && f.ID != "" {
                 folder = f.Name
                 var fid pgtype.UUID
@@ -411,7 +411,7 @@ Change methods to use the new query names against `bookmarks`. Keep the same met
 Add a `folderResolver folderResolver` field and setter. Update `AddBookmark` to resolve default folder when `folder` is empty and normalize `entity_type` to `forum_thread`/`forum_reply`.
 
 ```go
-func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.Bookmark, error) {
+func (s *Service) AddBookmark(ctx context.Context, ID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.Bookmark, error) {
     normalized := entityType
     if entityType == EntityTypeThread {
         normalized = EntityTypeForumThread
@@ -420,7 +420,7 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
     }
 
     if folder == "" && s.folderResolver != nil {
-        f, err := s.folderResolver.Resolve(ctx, tenantID, userID, normalized, "")
+        f, err := s.folderResolver.Resolve(ctx, ID, userID, normalized, "")
         if err == nil && f.ID != "" {
             folder = f.Name
         }
@@ -430,7 +430,7 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
     }
 
     bm, err := s.store.addBookmark(ctx, gen.AddForumBookmarkParams{
-        TenantID:   tenantID,
+        ID:   ID,
         UserID:     userID,
         EntityType: normalized,
         EntityID:   entityID,

@@ -711,7 +711,7 @@ type ProfileDemographics struct {
 
 type ComparisonProfile struct {
     ID             string
-    TenantID       string
+    ID       string
     UserID         *string
     Title          string
     SourceSpaceID  *string
@@ -752,7 +752,7 @@ type ScoreFactorConfig struct {
 
 type ScoreFactor struct {
     ID               string
-    TenantID         string
+    ID         string
     ComparisonTypeID *string
     FactorKey        string
     Label            string
@@ -820,7 +820,7 @@ type ScoreResult struct {
 
 type ScoreInput struct {
     ContentID string
-    TenantID  string
+    ID  string
     UserID    *string
     ProfileID *string
     SmartMode string
@@ -829,7 +829,7 @@ type ScoreInput struct {
 
 type GetScoreInput struct {
     ContentID string
-    TenantID  string
+    ID  string
     UserID    *string
     ProfileID *string
 }
@@ -874,14 +874,14 @@ func newProfileStore(database *db.DB) *profileStore {
     }
 }
 
-func (s *profileStore) create(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) { /* implement per the step notes */ }
-func (s *profileStore) listByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]ComparisonProfile, error) { /* implement per the step notes */ }
-func (s *profileStore) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]ComparisonProfile, error) { /* implement per the step notes */ }
-func (s *profileStore) get(ctx context.Context, id, tenantID pgtype.UUID) (ComparisonProfile, error) { /* implement per the step notes */ }
-func (s *profileStore) update(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) { /* implement per the step notes */ }
-func (s *profileStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error { /* implement per the step notes */ }
-func (s *profileStore) setDefault(ctx context.Context, id, tenantID, userID pgtype.UUID) error { /* implement per the step notes */ }
-func (s *profileStore) countBySourceSpace(ctx context.Context, tenantID, userID pgtype.UUID) ([]ProfileStat, error) { /* implement per the step notes */ }
+func (s *profileStore) create(ctx context.Context, ID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) { /* implement per the step notes */ }
+func (s *profileStore) listByUser(ctx context.Context, ID, userID pgtype.UUID) ([]ComparisonProfile, error) { /* implement per the step notes */ }
+func (s *profileStore) listTemplates(ctx context.Context, ID pgtype.UUID) ([]ComparisonProfile, error) { /* implement per the step notes */ }
+func (s *profileStore) get(ctx context.Context, id, ID pgtype.UUID) (ComparisonProfile, error) { /* implement per the step notes */ }
+func (s *profileStore) update(ctx context.Context, id, ID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) { /* implement per the step notes */ }
+func (s *profileStore) delete(ctx context.Context, id, ID pgtype.UUID) error { /* implement per the step notes */ }
+func (s *profileStore) setDefault(ctx context.Context, id, ID, userID pgtype.UUID) error { /* implement per the step notes */ }
+func (s *profileStore) countBySourceSpace(ctx context.Context, ID, userID pgtype.UUID) ([]ProfileStat, error) { /* implement per the step notes */ }
 
 func profileFromRow(row gen.ComparisonProfile) (ComparisonProfile, error) { /* implement per the step notes */ }
 func marshalProfileGoals(goals []ProfileGoal) []byte { /* implement per the step notes */ }
@@ -912,12 +912,12 @@ func newScoreFactorStore(database *db.DB) *scoreFactorStore {
     }
 }
 
-func (s *scoreFactorStore) create(ctx context.Context, tenantID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) { /* implement per the step notes */ }
-func (s *scoreFactorStore) listByType(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error) { /* implement per the step notes */ }
-func (s *scoreFactorStore) get(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error) { /* implement per the step notes */ }
-func (s *scoreFactorStore) update(ctx context.Context, id, tenantID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) { /* implement per the step notes */ }
-func (s *scoreFactorStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error { /* implement per the step notes */ }
-func (s *scoreFactorStore) getByKey(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, factorKey string) (ScoreFactor, error) { /* implement per the step notes */ }
+func (s *scoreFactorStore) create(ctx context.Context, ID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) { /* implement per the step notes */ }
+func (s *scoreFactorStore) listByType(ctx context.Context, ID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error) { /* implement per the step notes */ }
+func (s *scoreFactorStore) get(ctx context.Context, id, ID pgtype.UUID) (ScoreFactor, error) { /* implement per the step notes */ }
+func (s *scoreFactorStore) update(ctx context.Context, id, ID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) { /* implement per the step notes */ }
+func (s *scoreFactorStore) delete(ctx context.Context, id, ID pgtype.UUID) error { /* implement per the step notes */ }
+func (s *scoreFactorStore) getByKey(ctx context.Context, ID, comparisonTypeID pgtype.UUID, factorKey string) (ScoreFactor, error) { /* implement per the step notes */ }
 ```
 
 Implementation notes:
@@ -1169,28 +1169,28 @@ func NewService(
 }
 
 // Profiles
-func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
-func (s *Service) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error)
-func (s *Service) GetComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) (ComparisonProfile, error)
-func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
-func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
-func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
-func (s *Service) GetProfileStats(ctx context.Context, tenantID, userID pgtype.UUID) ([]ProfileStat, error)
+func (s *Service) CreateComparisonProfile(ctx context.Context, ID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
+func (s *Service) ListComparisonProfiles(ctx context.Context, ID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error)
+func (s *Service) GetComparisonProfile(ctx context.Context, id, ID, userID pgtype.UUID) (ComparisonProfile, error)
+func (s *Service) UpdateComparisonProfile(ctx context.Context, id, ID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
+func (s *Service) DeleteComparisonProfile(ctx context.Context, id, ID, userID pgtype.UUID) error
+func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, ID, userID pgtype.UUID) error
+func (s *Service) GetProfileStats(ctx context.Context, ID, userID pgtype.UUID) ([]ProfileStat, error)
 
 // Score factors
-func (s *Service) ListScoreFactors(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error)
-func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
-func (s *Service) GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error)
-func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
-func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID) error
+func (s *Service) ListScoreFactors(ctx context.Context, ID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error)
+func (s *Service) CreateScoreFactor(ctx context.Context, ID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
+func (s *Service) GetScoreFactor(ctx context.Context, id, ID pgtype.UUID) (ScoreFactor, error)
+func (s *Service) UpdateScoreFactor(ctx context.Context, id, ID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
+func (s *Service) DeleteScoreFactor(ctx context.Context, id, ID, userID pgtype.UUID) error
 
 // Scoring
-func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, force bool) (ScoreResult, error)
-func (s *Service) GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
-func (s *Service) PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
+func (s *Service) ScoreComparison(ctx context.Context, contentID, ID, userID pgtype.UUID, profileID *pgtype.UUID, force bool) (ScoreResult, error)
+func (s *Service) GetComparisonScore(ctx context.Context, contentID, ID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
+func (s *Service) PreviewScoreForItems(ctx context.Context, ID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
 
 // Recommendations
-func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error)
+func (s *Service) ListRecommendations(ctx context.Context, contentID, ID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error)
 ```
 
 - [ ] **Step 2: Implement profile CRUD with validation rules**
@@ -1337,7 +1337,7 @@ func hasPermission(r *http.Request, user *auth.AuthenticatedUser, perm string) b
     if resolver == nil || user == nil {
         return false
     }
-    return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, perm)
+    return resolver.HasPermission(r.Context(), user.UserID, user.ID, perm)
 }
 
 func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request)

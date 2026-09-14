@@ -358,7 +358,7 @@ Server wiring: extend `internal/server/server.go` to inject `jce.Service` as `ai
 ```go
 type DataSource struct {
     ID             string         `json:"id"`
-    TenantID       string         `json:"tenant_id"`
+    ID       string         `json:"tenant_id"`
     EntityType     *string        `json:"entity_type,omitempty"`
     EntityID       *string        `json:"entity_id,omitempty"`
     DimensionSlug  *string        `json:"dimension_slug,omitempty"`
@@ -378,12 +378,12 @@ type DataSource struct {
 
 ```go
 type DataSourceService interface {
-    ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID *pgtype.UUID) ([]DataSource, error)
-    CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
-    GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error)
-    UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
-    DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID) error
-    MatchDataSource(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID *pgtype.UUID, dimensionSlug, sourceName string) (*DataSource, error)
+    ListDataSources(ctx context.Context, ID pgtype.UUID, entityType string, entityID *pgtype.UUID) ([]DataSource, error)
+    CreateDataSource(ctx context.Context, ID pgtype.UUID, in DataSourceInput) (DataSource, error)
+    GetDataSource(ctx context.Context, id, ID pgtype.UUID) (DataSource, error)
+    UpdateDataSource(ctx context.Context, id, ID pgtype.UUID, in DataSourceInput) (DataSource, error)
+    DeleteDataSource(ctx context.Context, id, ID pgtype.UUID) error
+    MatchDataSource(ctx context.Context, ID pgtype.UUID, entityType string, entityID *pgtype.UUID, dimensionSlug, sourceName string) (*DataSource, error)
 }
 
 ### 7.4 `DataSourceInput`
@@ -412,7 +412,7 @@ type DataSourceInput struct {
 ```go
 type IngestionJob struct {
     ID             string  `json:"id"`
-    TenantID       string  `json:"tenant_id"`
+    ID       string  `json:"tenant_id"`
     ContentID      string  `json:"content_id"`
     Status         string  `json:"status"`
     SourceKind     *string `json:"source_kind,omitempty"`
@@ -586,11 +586,11 @@ Add `internal/jce/advisor.go`:
 
 ```go
 type Advisor interface {
-    Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
-    Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
-    Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
-    Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
-    StreamAdvisor(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
+    Analyze(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
+    Rank(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+    Explain(ctx context.Context, contentID, itemID, ID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
+    Recommend(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+    StreamAdvisor(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
 }
 ```
 
@@ -628,7 +628,7 @@ type NextAction struct {
 
 type AdvisorInput struct {
     ContentID  pgtype.UUID  `json:"content_id"`
-    TenantID   pgtype.UUID  `json:"tenant_id"`
+    ID   pgtype.UUID  `json:"tenant_id"`
     UserID     pgtype.UUID  `json:"user_id"`
     ProfileID  *pgtype.UUID `json:"profile_id,omitempty"`
     Question   string       `json:"question"`
@@ -677,11 +677,11 @@ type ToolDeps struct {
 }
 
 type JCEService interface {
-    AnalyzeComparison(ctx context.Context, tenantID, userID, contentID, profileID pgtype.UUID, question string) (map[string]any, error)
-    RankComparison(ctx context.Context, tenantID, userID, contentID, profileID pgtype.UUID) (map[string]any, error)
-    ExplainComparison(ctx context.Context, tenantID, userID, contentID, itemID, profileID pgtype.UUID, factorKey string) (map[string]any, error)
-    RecommendComparison(ctx context.Context, tenantID, userID, contentID, profileID pgtype.UUID) (map[string]any, error)
-    RefreshComparison(ctx context.Context, tenantID, userID, contentID pgtype.UUID, sourceKind string) (map[string]any, error)
+    AnalyzeComparison(ctx context.Context, ID, userID, contentID, profileID pgtype.UUID, question string) (map[string]any, error)
+    RankComparison(ctx context.Context, ID, userID, contentID, profileID pgtype.UUID) (map[string]any, error)
+    ExplainComparison(ctx context.Context, ID, userID, contentID, itemID, profileID pgtype.UUID, factorKey string) (map[string]any, error)
+    RecommendComparison(ctx context.Context, ID, userID, contentID, profileID pgtype.UUID) (map[string]any, error)
+    RefreshComparison(ctx context.Context, ID, userID, contentID pgtype.UUID, sourceKind string) (map[string]any, error)
 }
 ```
 

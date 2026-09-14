@@ -25,10 +25,10 @@ Examples:
 Extend the `ai.ToolsRegistryService` interface with:
 
 ```go
-type ToolCreateFunc   func(ctx context.Context, tenantID pgtype.UUID, payload map[string]any) (map[string]any, error)
-type ToolUpdateFunc   func(ctx context.Context, tenantID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
-type ToolDeleteFunc   func(ctx context.Context, tenantID pgtype.UUID, id string) error
-type ToolAssignGeoFunc func(ctx context.Context, tenantID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
+type ToolCreateFunc   func(ctx context.Context, ID pgtype.UUID, payload map[string]any) (map[string]any, error)
+type ToolUpdateFunc   func(ctx context.Context, ID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
+type ToolDeleteFunc   func(ctx context.Context, ID pgtype.UUID, id string) error
+type ToolAssignGeoFunc func(ctx context.Context, ID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
 ```
 
 These are generic `map[string]any` contracts so the `ai` package does not import every per-tool service. The concrete implementations live in `agent_tools_registry.go` and call the existing per-tool `Service` objects.
