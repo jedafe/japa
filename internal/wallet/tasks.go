@@ -44,13 +44,9 @@ func (s *Service) ProcessActivityEventTask(ctx context.Context, payload []byte) 
 		return fmt.Errorf("unmarshaling payload: %w", err)
 	}
 
-	var eventID, tenantID pgtype.UUID
+	var eventID pgtype.UUID
 	if err := eventID.Scan(p.EventID); err != nil {
 		return fmt.Errorf("invalid event_id: %w", err)
-	}
-
-	if err := (error)(nil); err != nil {
-		return fmt.Errorf("invalid id: %w", err)
 	}
 
 	return s.ProcessActivityEvent(ctx, eventID)
@@ -77,11 +73,7 @@ func (s *Service) ProcessCreditPurchaseTask(ctx context.Context, payload []byte)
 		return fmt.Errorf("unmarshaling payload: %w", err)
 	}
 
-	var tenantID, userID pgtype.UUID
-	if err := (error)(nil); err != nil {
-		return fmt.Errorf("invalid id: %w", err)
-	}
-
+	var userID pgtype.UUID
 	if err := userID.Scan(p.UserID); err != nil {
 		return fmt.Errorf("invalid user_id: %w", err)
 	}
@@ -186,11 +178,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 		return fmt.Errorf("wallet:award_points: unmarshaling payload: %w", err)
 	}
 
-	var tenantID, userID pgtype.UUID
-	if err := (error)(nil); err != nil {
-		return fmt.Errorf("wallet:award_points: invalid id: %w", err)
-	}
-
+	var userID pgtype.UUID
 	if err := userID.Scan(p.UserID); err != nil {
 		return fmt.Errorf("wallet:award_points: invalid user_id: %w", err)
 	}

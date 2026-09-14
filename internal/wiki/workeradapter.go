@@ -27,11 +27,7 @@ func NewWorkerAdapter(svc *Service) *WorkerAdapter {
 
 // SeedStubPages implements worker.WikiSeedStubPagesProcessor.
 func (a *WorkerAdapter) SeedStubPages(ctx context.Context, spaceID string) error {
-	var tid, sid pgtype.UUID
-	if err := tid.Scan(); err != nil {
-		return err
-	}
-
+	var sid pgtype.UUID
 	if err := sid.Scan(spaceID); err != nil {
 		return err
 	}

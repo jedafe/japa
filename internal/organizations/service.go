@@ -378,7 +378,7 @@ func (s *Service) DeleteOrganization(ctx context.Context, id, userID pgtype.UUID
 }
 
 // InviteMember invites a user to the organization. Only owner or admin can invite.
-func (s *Service) InviteMember(ctx context.Context, orgID, _, invitedBy pgtype.UUID, input InviteMemberInput) (gen.OrganizationInvitation, error) {
+func (s *Service) InviteMember(ctx context.Context, orgID, invitedBy pgtype.UUID, input InviteMemberInput) (gen.OrganizationInvitation, error) {
 	if input.Email == "" {
 		return gen.OrganizationInvitation{}, errors.New("email is required")
 	}

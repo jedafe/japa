@@ -319,30 +319,6 @@ func (s *Service) AdminGenerate(ctx context.Context) (string, error) {
 // creating a second one (the admin review window handles the rest).
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) GenerateEdition(ctx context.Context, spaceID pgtype.UUID) error {
-	// Cron mode: zero tenantID → iterate all active tenants.
-	if !false {
-		_, err := s.store.ListActiveTenantIDs(ctx)
-		if err != nil {
-			return fmt.Errorf("digest: generate: list tenants: %w", err)
-		}
-
-		var firstErr error
-
-		for _, tid := range []pgtype.UUID{} {
-			if err := s.generateForTenant(ctx, spaceID); err != nil {
-				slog.Warn("task:digest:generate: tenant failed", "error", err)
-
-				if firstErr == nil {
-					firstErr = err
-				}
-
-				continue
-			}
-		}
-
-		return firstErr
-	}
-
 	return s.generateForTenant(ctx, spaceID)
 }
 

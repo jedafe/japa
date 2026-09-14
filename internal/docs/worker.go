@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/worker"
 )
 

@@ -170,7 +170,7 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 	return writers
 }
 
-func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtype.UUID, map[string]any) (map[string]any, error) {
+func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, map[string]any) (map[string]any, error) {
 	return func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
 		spaceID, err := getPgUUID(payload, "space_id")
 		if err != nil {
@@ -194,7 +194,6 @@ func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtyp
 
 		out := m.Call([]reflect.Value{
 			reflect.ValueOf(ctx),
-			reflect.ValueOf(),
 			reflect.ValueOf(spaceID),
 			reflect.ValueOf(userID),
 			reflect.ValueOf(slug),
@@ -247,7 +246,7 @@ func getOptionalString(payload map[string]any, key string) *string {
 	return &s
 }
 
-func newMentorshipCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtype.UUID, map[string]any) (map[string]any, error) {
+func newMentorshipCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, map[string]any) (map[string]any, error) {
 	return func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
 		mentorID, err := getPgUUID(payload, "mentor_id")
 		if err != nil {
@@ -268,7 +267,6 @@ func newMentorshipCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID,
 
 		out := m.Call([]reflect.Value{
 			reflect.ValueOf(ctx),
-			reflect.ValueOf(),
 			reflect.ValueOf(mentorID),
 			reflect.ValueOf(menteeID),
 			reflect.ValueOf(goals),
@@ -288,7 +286,7 @@ type methodNames struct {
 	delete string
 }
 
-func reflectCreateFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, pgtype.UUID, map[string]any) (map[string]any, error) {
+func reflectCreateFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, map[string]any) (map[string]any, error) {
 	name := methodName
 	if name == "" {
 		name = "Create"
@@ -299,7 +297,7 @@ func reflectCreateFunc(svc reflect.Value, methodName string) func(context.Contex
 	}
 }
 
-func reflectUpdateFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, pgtype.UUID, string, map[string]any) (map[string]any, error) {
+func reflectUpdateFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, string, map[string]any) (map[string]any, error) {
 	name := methodName
 	if name == "" {
 		name = "Update"
@@ -310,7 +308,7 @@ func reflectUpdateFunc(svc reflect.Value, methodName string) func(context.Contex
 	}
 }
 
-func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, pgtype.UUID, string) error {
+func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, string) error {
 	name := methodName
 	if name == "" {
 		name = "Delete"
@@ -361,7 +359,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 				return fmt.Errorf("invalid tool_id: %w", err)
 			}
 
-			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(), reflect.ValueOf(userID)}
+			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(userID)}
 		default:
 			return fmt.Errorf("delete method %q has %d inputs", name, mt.NumIn())
 		}
@@ -391,24 +389,21 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		return nil, fmt.Errorf("method %q has %d outputs", methodName, nOut)
 	}
 
-	// Supported write-method signatures:
+	// Supported write-method signatures (single-tenant):
 	// Create: (ctx, input)
-	// Create: (ctx, tenantID, input)
-	// Create: (ctx, tenantID, userID, input)
-	// Update: (ctx, input) -- input contains id +
-	// Update: (ctx, id, tenantID, input)
-	// Update: (ctx, id, tenantID, userID, input)
+	// Create: (ctx, userID, input)
+	// Update: (ctx, input) -- input contains id
+	// Update: (ctx, id, input)
+	// Update: (ctx, id, userID, input)
 	var (
 		create2 = isCreate && nIn == 2
 		create3 = isCreate && nIn == 3
-		create4 = isCreate && nIn == 4
 		update2 = isUpdate && nIn == 2
 		update3 = isUpdate && nIn == 3
 		update4 = isUpdate && nIn == 4
-		update5 = isUpdate && nIn == 5
 	)
 
-	if !create2 && !create3 && !create4 && !update2 && !update3 && !update4 && !update5 {
+	if !create2 && !create3 && !update2 && !update3 && !update4 {
 		return nil, fmt.Errorf("method %q has %d inputs and %d outputs", methodName, nIn, nOut)
 	}
 
@@ -425,7 +420,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	}
 
 	var idUUID pgtype.UUID
-	if update3 || update4 || update5 {
+	if update3 || update4 {
 		if err := idUUID.Scan(id); err != nil {
 			return nil, fmt.Errorf("invalid tool_id: %w", err)
 		}
@@ -450,13 +445,9 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	case update3:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID)}
 	case create3:
-		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf()}
-	case create4:
-		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(), reflect.ValueOf(userID)}
+		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(userID)}
 	case update4:
-		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf()}
-	case update5:
-		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(), reflect.ValueOf(userID)}
+		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(userID)}
 	}
 
 	args = append(args, inputVal)

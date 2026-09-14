@@ -66,21 +66,13 @@ func RejectReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype
 // ListPendingReviews returns pending HITL reviews for a tenant. When
 // sourceFilter is non-empty, only reviews with that source are returned
 // (e.g. "studio" for the Studio tab, §75 Review Routing).
-func ListPendingReviews(ctx context.Context, store *Store, tenantID pgtype.UUID, sourceFilter string, limit, offset int32) ([]HITLReview, error) {
-	if tenantID == (pgtype.UUID{}) {
-		return nil, errors.New("id is required")
-	}
-
+func ListPendingReviews(ctx context.Context, store *Store, sourceFilter string, limit, offset int32) ([]HITLReview, error) {
 	return store.ListPendingHITLReviews(ctx, sourceFilter, limit, offset)
 }
 
 // CountPendingReviews returns the total count of pending HITL reviews for
 // pagination metadata. When sourceFilter is non-empty, only reviews with
 // that source are counted.
-func CountPendingReviews(ctx context.Context, store *Store, tenantID pgtype.UUID, sourceFilter string) (int64, error) {
-	if tenantID == (pgtype.UUID{}) {
-		return 0, errors.New("id is required")
-	}
-
-	return store.CountPendingHITLReviews(ctx, tenantID, sourceFilter)
+func CountPendingReviews(ctx context.Context, store *Store, sourceFilter string) (int64, error) {
+	return store.CountPendingHITLReviews(ctx, sourceFilter)
 }

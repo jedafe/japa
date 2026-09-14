@@ -174,7 +174,7 @@ func (h *Handlers) requireMediaAuth(w http.ResponseWriter, r *http.Request) (pgt
 		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
 	}
@@ -294,7 +294,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -968,7 +968,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}

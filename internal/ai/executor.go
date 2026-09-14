@@ -565,7 +565,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	}
 
 	// Step 5 — Dispatch (§103 step 5).
-	hres, herr := handler(ctx, call.Arguments, p.UserID, (pgtype.UUID{}))
+	hres, herr := handler(ctx, call.Arguments, p.UserID)
 	if herr != nil {
 		resultErr = fmt.Errorf("ai: tool %q failed: %w", call.Name, herr)
 		return e.errorResult(resultErr), resultErr

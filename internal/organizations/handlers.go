@@ -250,7 +250,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -348,7 +348,7 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -408,7 +408,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -566,7 +566,7 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -829,7 +829,7 @@ func (h *Handlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -873,7 +873,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -1007,7 +1007,7 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}

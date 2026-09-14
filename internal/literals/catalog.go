@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/literals/expr"
 	"github.com/jedafe/japa/internal/valkey"
@@ -189,7 +188,7 @@ func (c *Catalog) Invalidate(ctx context.Context) error {
 }
 
 func (c *Catalog) cacheKey() string {
-	return valkey.MustKey(catalogKeyTemplate, nil())
+	return valkey.MustKey(catalogKeyTemplate, "")
 }
 
 func resolveExpressionWithEnv(ctx context.Context, expression string, fallback *string, env *expr.Env) (string, bool) {

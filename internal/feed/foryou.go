@@ -256,8 +256,8 @@ func forYouCacheKey(userID pgtype.UUID, sortMode string, vc *visitor.VisitorCont
 		contentRegion = vc.ContentRegion
 	}
 
-	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s:%s:%s",
-		uuidToString(), uuidToString(userID), sortMode,
+	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s:%s",
+		uuidToString(userID), sortMode,
 		strings.ToUpper(contentCountry), strings.ToUpper(contentRegion),
 		journeyCacheToken(vc))
 }

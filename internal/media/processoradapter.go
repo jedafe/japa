@@ -20,7 +20,7 @@ func NewProcessorAdapter(svc *Service) *ProcessorAdapter {
 // The operation parameter controls the resize type: "thumbnail" generates
 // a 400x300 fill, "og" generates a 1200x630 fill, and "original" returns
 // the unscaled URL.
-func (a *ProcessorAdapter) ProcessImage(_ context.Context, mediaID, _, operation string, width, height int) error {
+func (a *ProcessorAdapter) ProcessImage(_ context.Context, mediaID, operation string, width, height int) error {
 	slog.Info("media:process_image", "media_id", mediaID, "operation", operation, "width", width, "height", height)
 
 	opts := ImageProxyOpts{}

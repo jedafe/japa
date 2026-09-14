@@ -3,8 +3,6 @@ package redirects
 import (
 	"net/http"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // maxPathLength is the maximum path length the redirect middleware will check.

@@ -34,7 +34,7 @@ func NewContentEmbedder(dispatcher *Dispatcher, writer *pgxpool.Pool) *ContentEm
 // EmbedContent generates a vector embedding for the content body and stores
 // it in content_scores.relevance_embedding. If the content does not yet have
 // a content_scores row, one is created via INSERT ... ON CONFLICT.
-func (ce *ContentEmbedder) EmbedContent(ctx context.Context, contentID, _ [16]byte, text string) error {
+func (ce *ContentEmbedder) EmbedContent(ctx context.Context, contentID [16]byte, text string) error {
 	if ce.dispatcher == nil {
 		slog.Warn("ai:embedder: no dispatcher configured, skipping")
 		return nil

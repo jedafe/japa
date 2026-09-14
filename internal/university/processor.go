@@ -25,11 +25,6 @@ func NewProcessor(service *Service) *Processor {
 // ProcessEnrollment handles university:process_enrollment.
 // Payload: { , user_id, track_id, payment_id, source, gross_kobo }.
 func (p *Processor) ProcessEnrollment(ctx context.Context, userID, trackID, paymentID, source string, grossKobo int64) error {
-	tID, err := scanUUID()
-	if err != nil {
-		return fmt.Errorf("university: process enrollment: %w", err)
-	}
-
 	uID, err := scanUUID(userID)
 	if err != nil {
 		return fmt.Errorf("university: process enrollment: %w", err)
@@ -53,11 +48,6 @@ func (p *Processor) ProcessEnrollment(ctx context.Context, userID, trackID, paym
 // CalculatePeriodPayouts handles university:calculate_period_payouts.
 // Payload: { , period_start, period_end }.
 func (p *Processor) CalculatePeriodPayouts(ctx context.Context, periodStart, periodEnd string) error {
-	tID, err := scanUUID()
-	if err != nil {
-		return fmt.Errorf("university: calculate payouts: %w", err)
-	}
-
 	start, err := time.Parse(time.DateOnly, periodStart)
 	if err != nil {
 		return fmt.Errorf("university: calculate payouts: invalid period_start: %w", err)
@@ -74,11 +64,6 @@ func (p *Processor) CalculatePeriodPayouts(ctx context.Context, periodStart, per
 // SendInstructorPayout handles university:send_instructor_payout.
 // Payload: { , payout_id }.
 func (p *Processor) SendInstructorPayout(ctx context.Context, payoutID string) error {
-	_, err := scanUUID()
-	if err != nil {
-		return fmt.Errorf("university: send payout: %w", err)
-	}
-
 	pID, err := scanUUID(payoutID)
 	if err != nil {
 		return fmt.Errorf("university: send payout: %w", err)
@@ -93,11 +78,6 @@ func (p *Processor) SendInstructorPayout(ctx context.Context, payoutID string) e
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (p *Processor) NotifyInstructorApproved(ctx context.Context, instructorID string) error {
-	_, err := scanUUID()
-	if err != nil {
-		return fmt.Errorf("university: notify instructor approved: %w", err)
-	}
-
 	iID, err := scanUUID(instructorID)
 	if err != nil {
 		return fmt.Errorf("university: notify instructor approved: bad instructor_id: %w", err)
@@ -112,11 +92,6 @@ func (p *Processor) NotifyInstructorApproved(ctx context.Context, instructorID s
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (p *Processor) NotifyCourseApproved(ctx context.Context, trackID string) error {
-	_, err := scanUUID()
-	if err != nil {
-		return fmt.Errorf("university: notify course approved: %w", err)
-	}
-
 	trID, err := scanUUID(trackID)
 	if err != nil {
 		return fmt.Errorf("university: notify course approved: bad track_id: %w", err)
@@ -133,11 +108,6 @@ func (p *Processor) NotifyCourseApproved(ctx context.Context, trackID string) er
 // generic "system user" row so an invalid/missing uploaded_by is passed
 // through as an invalid pgtype.UUID and Service.FetchLogo skips gracefully.
 func (p *Processor) FetchLogo(ctx context.Context, spaceID, logoURL, uploadedBy string) error {
-	tID, err := scanUUID()
-	if err != nil {
-		return fmt.Errorf("university: fetch logo: %w", err)
-	}
-
 	sID, err := scanUUID(spaceID)
 	if err != nil {
 		return fmt.Errorf("university: fetch logo: invalid space_id: %w", err)

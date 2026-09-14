@@ -89,7 +89,7 @@ func run() error {
 	defer database.Close()
 
 	// Parse the tenant ID once.
-	tid := parseUUID()
+	tid := parseUUID("")
 
 	// ── Check if admin already exists (idempotent) ─────────────────────
 	var existingID pgtype.UUID

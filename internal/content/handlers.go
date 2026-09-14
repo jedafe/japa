@@ -330,7 +330,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, contentID, selectedSpac
 	// "Lagos Tech Community" surfaces in Lagos and Nigeria feeds even if the
 	// title has no geo keywords.
 	if selectedSpaceID.Valid {
-		parents, err := h.Service.GetSpacePrimaryGeoParents(ctx)
+		parents, err := h.Service.GetSpacePrimaryGeoParents(ctx, selectedSpaceID)
 		if err != nil {
 			slog.Warn("content: failed to load source space geo parents", "error", err)
 		} else {
@@ -836,7 +836,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1558,7 +1558,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1912,7 +1912,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 
 	_ = user // used for RBAC audit trail
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3213,7 +3213,7 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 // new categories from the admin panel — no code change required.
 // // Ref: japaconnect-engineering/sections/14-content-type-system.md.
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
-	_, _ := h.requireTenant(w, r)
+	_, _ = h.requireTenant(w, r)
 
 	guideCategories := []map[string]string{}
 
@@ -3338,7 +3338,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
