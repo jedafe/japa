@@ -15,7 +15,7 @@ type stubIntelSourceManager struct {
 	byURL   map[string]gen.IntelSource
 }
 
-func (s *stubIntelSourceManager) Create(ctx context.Context, _ pgtype.UUID, arg gen.CreateIntelSourceParams) (gen.IntelSource, error) {
+func (s *stubIntelSourceManager) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (gen.IntelSource, error) {
 	src := gen.IntelSource{
 		ID:         pgtype.UUID{Valid: true},
 		Name:       arg.Name,
@@ -91,7 +91,7 @@ func TestSourceDiscoverHandler(t *testing.T) {
 
 	handler := SourceDiscoverHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"query":"scholarships Nigeria","category":"scholarship","limit":10}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"scholarships Nigeria","category":"scholarship","limit":10}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestSourceDiscoverHandler_Duplicate(t *testing.T) {
 
 	handler := SourceDiscoverHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"scholarships"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"scholarships"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
@@ -162,7 +162,7 @@ func TestSourceDiscoverHandler_NoDeps(t *testing.T) {
 
 	handler := SourceDiscoverHandler(&ToolDeps{})
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}

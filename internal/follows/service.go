@@ -121,7 +121,7 @@ func (s *Service) ToggleFollow(ctx context.Context, followerID pgtype.UUID, enti
 		// The cache key pattern is
 		// jc:cache:feed:foryou:{}:{user_id}:{sort_mode}:{content_country}
 		// — we SCAN + DEL all variants for this user. Ref: Section 32.
-		pattern := valkey.MustKey("cache:feed:foryou:%s:%s:*", followerID)
+		pattern := valkey.MustKey("cache:feed:foryou:%s:*", followerID)
 
 		var cursor uint64
 

@@ -4,8 +4,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // TestOCRFetcher_Available checks that Available() reflects whether
@@ -61,22 +59,10 @@ func TestOCRFetcher_ExtractTextNotAvailable(t *testing.T) {
 }
 
 // TestOCRFetcher_WithCacheStoresTenantID verifies that
-// NewOCRFetcherWithCache stores the tenantID on the struct so that the
-// OCR cache key is tenant-scoped (ADR-112 Amendment 2).
-func TestOCRFetcher_WithCacheStoresTenantID(t *testing.T) {
+func TestOCRFetcher_WithCache(t *testing.T) {
 	t.Parallel()
 
-	tid := pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
-
-	f := NewOCRFetcherWithCache(startTestValkey(t), tid)
-	if !f.tenantID.Valid {
-		t.Fatal("tenantID should be valid after NewOCRFetcherWithCache")
-	}
-
-	if f.tenantID.String() != tid.String() {
-		t.Errorf("tenantID: got %s, want %s", f.tenantID.String(), tid.String())
-	}
-
+	f := NewOCRFetcherWithCache(startTestValkey(t))
 	if f.rdb == nil {
 		t.Fatal("rdb should be set after NewOCRFetcherWithCache")
 	}

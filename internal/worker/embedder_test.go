@@ -16,7 +16,7 @@ type mockContentEmbedder struct {
 	returnErr error
 }
 
-func (m *mockContentEmbedder) EmbedContent(_ context.Context, _, _ [16]byte, text string) error {
+func (m *mockContentEmbedder) EmbedContent(_ context.Context, _ [16]byte, text string) error {
 	m.callCount++
 	m.lastText = text
 

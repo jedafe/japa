@@ -38,9 +38,7 @@ func (f *fakeAMAPatcher) UpdateAMA(ctx context.Context, threadID, callerUserID p
 func newAMAPatchRequest(t *testing.T, body []byte, withUser bool, id string) (*httptest.ResponseRecorder, *http.Request) {
 	t.Helper()
 
-	if err := (error)(nil); err != nil {
-		t.Fatalf("scan tenant id: %v", err)
-	}
+	tenantID := pgtype.UUID{}
 
 	ctx := t.Context()
 	ctx = context.WithValue(ctx, struct{}{}, &struct {

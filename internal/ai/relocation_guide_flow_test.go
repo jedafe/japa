@@ -62,7 +62,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 	// Step 3: content.bulk_create creates the rows.
 	createdRows := []ContentCreateRow{}
 	createdOrder := 0
-	contentCreator := func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+	contentCreator := func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 		createdOrder++
 		id := mustUUID(t, fmt.Sprintf("00000000-0000-0000-0000-%012d", createdOrder))
 		row := ContentCreateRow{

@@ -278,7 +278,7 @@ func (s *Service) RefreshCache(ctx context.Context) error {
 		s.cacheSet(locale, m)
 	}
 
-	slog.Info("i18n cache refreshed", "tenant", "locales", len(locales))
+	slog.Info("i18n cache refreshed", "locales", len(locales))
 
 	return nil
 }

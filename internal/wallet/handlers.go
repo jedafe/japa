@@ -293,7 +293,7 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("points conversion failed", "user_id", user.UserID, "points", input.PointsToConvert, "error", err)
-		errpkg.CaptureException(fmt.Errorf("points conversion failed (user=%s, tenant=%s, points=%d): %w", user.UserID, input.PointsToConvert, err))
+		errpkg.CaptureException(fmt.Errorf("points conversion failed (user=%s, points=%d): %w", user.UserID, input.PointsToConvert, err))
 		handleServiceError(w, err)
 
 		return
@@ -653,7 +653,7 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("admin wallet adjustment failed", "target_user_id", input.UserID, "amount", input.Amount, "error", err)
-		errpkg.CaptureException(fmt.Errorf("admin wallet adjustment failed (target_user=%s, tenant=%s, amount=%d): %w", input.UserID, input.Amount, err))
+		errpkg.CaptureException(fmt.Errorf("admin wallet adjustment failed (target_user=%s, amount=%d): %w", input.UserID, input.Amount, err))
 		handleServiceError(w, err)
 
 		return

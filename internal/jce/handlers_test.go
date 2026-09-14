@@ -22,7 +22,7 @@ type stubFeatureChecker struct {
 	enabled bool
 }
 
-func (s stubFeatureChecker) IsEnabled(ctx context.Context, _ pgtype.UUID, key string) bool {
+func (s stubFeatureChecker) IsEnabled(ctx context.Context, key string) bool {
 	return s.enabled
 }
 
@@ -31,11 +31,7 @@ var _ features.FeatureChecker = stubFeatureChecker{}
 func testTenantAndUser(t *testing.T) (pgtype.UUID, pgtype.UUID) {
 	t.Helper()
 
-	var tenantID, userID pgtype.UUID
-	if err := (error)(nil); err != nil {
-		t.Fatalf("tenantID: %v", err)
-	}
-
+	var userID pgtype.UUID
 	if err := userID.Scan(uuid.New().String()); err != nil {
 		t.Fatalf("userID: %v", err)
 	}
@@ -45,6 +41,8 @@ func testTenantAndUser(t *testing.T) (pgtype.UUID, pgtype.UUID) {
 
 func newRequest(t *testing.T, method, path, body string, userID pgtype.UUID) *http.Request {
 	t.Helper()
+
+	tenantID := pgtype.UUID{}
 
 	var r *http.Request
 	if body != "" {
@@ -285,6 +283,8 @@ func (f *fakeService) StreamAdvisor(ctx context.Context, contentID, userID, prof
 
 func newAuthenticatedRequest(t *testing.T, method, path, body string, userID pgtype.UUID) *http.Request {
 	t.Helper()
+
+	tenantID := pgtype.UUID{}
 
 	var r *http.Request
 	if body != "" {

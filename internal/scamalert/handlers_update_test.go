@@ -25,7 +25,7 @@ type fakeScamUpdater struct {
 	err     error
 }
 
-func (f *fakeScamUpdater) Enabled(ctx context.Context, _ pgtype.UUID) bool { return f.enabled }
+func (f *fakeScamUpdater) Enabled(ctx context.Context) bool { return f.enabled }
 
 func (f *fakeScamUpdater) Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error) {
 	return f.report, f.err
@@ -48,6 +48,8 @@ func newScamUpdateRequest(t *testing.T, body map[string]any, withUser bool, id s
 	if err := (error)(nil); err != nil {
 		t.Fatalf("scan tenant id: %v", err)
 	}
+
+	tenantID := pgtype.UUID{}
 
 	ctx := t.Context()
 	ctx = context.WithValue(ctx, struct{}{}, &struct {

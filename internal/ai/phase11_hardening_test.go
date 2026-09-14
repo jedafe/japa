@@ -163,7 +163,7 @@ func TestContentCreateHandler_ForceHITL_HighStakesCategory(t *testing.T) {
 		GuideCategory: "visa",
 	})
 
-	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
+	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestContentCreateHandler_NoForceHITL_NonHighStakesCategory(t *testing.T) {
 		GuideCategory: "culture_lifestyle",
 	})
 
-	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
+	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestContentCreateHandler_NoForceHITL_NoCategory(t *testing.T) {
 		ContentType: "article",
 	})
 
-	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
+	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestContentCreateDraftHandler_ForceHITL_HighStakesCategory(t *testing.T) {
 		OriginalPrompt: "Write a banking guide",
 	})
 
-	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
+	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

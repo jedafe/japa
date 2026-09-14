@@ -18,9 +18,8 @@ import (
 
 // ctxWithUser adds an authenticated user to the request context.
 func ctxWithUser(r *http.Request, userID string) *http.Request {
-	var uid, tid pgtype.UUID
+	var uid pgtype.UUID
 	_ = uid.Scan(userID)
-	_ = tid.Scan()
 	user := &auth.AuthenticatedUser{UserID: uid}
 
 	return r.WithContext(context.WithValue(r.Context(), auth.UserContextKey, user))
@@ -28,8 +27,7 @@ func ctxWithUser(r *http.Request, userID string) *http.Request {
 
 // ctxWithTenant adds a tenant to the request context.
 func ctxWithTenant(r *http.Request) *http.Request {
-	var tid pgtype.UUID
-	_ = tid.Scan()
+	tid := pgtype.UUID{}
 	t := &struct {
 		ID   pgtype.UUID
 		Name string
