@@ -226,9 +226,9 @@ ORDER BY created_at DESC, id DESC
 LIMIT $3;
 
 -- name: GetLanguageTestByName :one
--- language_tests is a global reference table (no the id), so the
--- tenantID parameter is accepted for interface consistency but not used
--- in the filter. The promoter resolves the language_tests(id) FK from a
+-- language_tests is a global reference table (no the id). The parameter
+-- is accepted for interface consistency but not used in the filter.
+-- The promoter resolves the language_tests(id) FK from a
 -- test_name extracted as free text.
 SELECT * FROM language_tests WHERE name = $1 LIMIT 1;
 
