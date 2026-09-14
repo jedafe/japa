@@ -20,11 +20,6 @@ import (
 // is returned (for the org admin dashboard). This avoids a routing conflict
 // between {slug} and {id} on the same path.
 func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	param := chi.URLParam(r, "slug")
 
 	// Detect UUID: if it parses as a UUID, treat it as an ID lookup.
@@ -94,11 +89,6 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 // ListPublicMembers handles GET /organizations/{id}/members (public). The
 // active-org gate (requireActiveOrgByID) has already 404'd non-active orgs.
 func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -120,11 +110,6 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 // verified (filter: "true"=verified only [default], "false"=unverified only,
 // "all"=all active orgs), page_size, page_offset.
 func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 	search := strings.TrimSpace(r.URL.Query().Get("q"))

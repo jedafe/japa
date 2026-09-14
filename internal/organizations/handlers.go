@@ -151,10 +151,6 @@ func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	return user, true
 }
 
-func requireTenantID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
-
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	s := chi.URLParam(r, param)
 
@@ -250,11 +246,6 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	var req createOrganizationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
@@ -324,11 +315,6 @@ func (h *Handlers) ListMyOrganizations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
@@ -344,11 +330,6 @@ func (h *Handlers) ListMyOrganizations(w http.ResponseWriter, r *http.Request) {
 // UpdateOrganization handles PATCH /organizations/{id}.
 func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
-	if !ok {
-		return
-	}
-
-	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -408,11 +389,6 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -432,11 +408,6 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 
 // ListMembers handles GET /organizations/{id}/members.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -566,11 +537,6 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -600,11 +566,6 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -686,11 +647,6 @@ func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	var req claimOwnershipRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
@@ -721,11 +677,6 @@ func (h *Handlers) ListMyClaims(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	result, err := h.service.ListMyClaims(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -737,11 +688,6 @@ func (h *Handlers) ListMyClaims(w http.ResponseWriter, r *http.Request) {
 
 // ListClaims handles GET /claim-ownership.
 func (h *Handlers) ListClaims(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	status := r.URL.Query().Get("status")
 
 	result, err := h.service.ListOwnershipClaims(r.Context(), status, parsePageSize(r), parsePageOffset(r))
@@ -762,11 +708,6 @@ func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	claimID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")
@@ -798,11 +739,6 @@ func (h *Handlers) WithdrawClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	claimID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")
@@ -825,11 +761,6 @@ type reviewClaimRequest struct {
 // ReviewClaim handles PATCH /claim-ownership/{id}.
 func (h *Handlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
-	if !ok {
-		return
-	}
-
-	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -873,11 +804,6 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	following, err := h.follows.ToggleFollow(r.Context(), user.UserID, entityTypeOrganization, orgID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle follow")
@@ -900,11 +826,6 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	// Section 07 spec: ?period=7d|30d|90d (default 30d).
 	periodDays := int32(30)
 
@@ -934,11 +855,6 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 
 // AdminListOrganizations handles GET /admin/organizations.
 func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	orgType := r.URL.Query().Get("org_type")
 	countryCode := r.URL.Query().Get("country_code")
 	search := r.URL.Query().Get("q")
@@ -974,11 +890,6 @@ func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request
 
 // AdminGetOrganization handles GET /admin/organizations/{id}.
 func (h *Handlers) AdminGetOrganization(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -1007,11 +918,6 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, ok = requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	var req createOrganizationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
@@ -1034,11 +940,6 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 
 // AdminUpdateOrganization handles PATCH /admin/organizations/{id}.
 func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -1089,11 +990,6 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 
 // AdminDeleteOrganization handles DELETE /admin/organizations/{id}.
 func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -1113,11 +1009,6 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 
 // AdminListMembers handles GET /admin/organizations/{id}/members.
 func (h *Handlers) AdminListMembers(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -1135,11 +1026,6 @@ func (h *Handlers) AdminListMembers(w http.ResponseWriter, r *http.Request) {
 
 // AdminListInvitations handles GET /admin/organizations/{id}/invitations.
 func (h *Handlers) AdminListInvitations(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
