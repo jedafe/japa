@@ -371,11 +371,6 @@ func (h *Handlers) UnsuspendTenant(w http.ResponseWriter, r *http.Request) {
 
 // ListSystemSettings is an exported method.
 func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	rows, err := h.DB.Reader.Query(r.Context(), `SELECT id, key, value, is_public, created_at, updated_at FROM system_settings  ORDER BY key`)
 	if err != nil {
 		slog.Error("control: list system settings", "error", err)
@@ -478,11 +473,6 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	var input map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -531,11 +521,6 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 
 // UpdateSystemSetting is an exported method.
 func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
@@ -588,11 +573,6 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 
 // ResetSystemSetting is an exported method.
 func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
@@ -1891,7 +1871,7 @@ func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 	if h.RBAC != nil {
 		h.RBAC.InvalidateAllCache(r.Context())
 	}
-	_, ok := requireTenant(w, r)
+	_, ok := requireUser(w, r)
 	if ok && h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context())
 	}
@@ -1907,11 +1887,6 @@ func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 
 // SecurityOverview is an exported method.
 func (h *Handlers) SecurityOverview(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	blocks, err := h.SpamStore.GetActiveIPBlocks(r.Context())
 	if err != nil {
 		slog.Error("control: security overview", "error", err)
@@ -1929,11 +1904,6 @@ func (h *Handlers) SecurityOverview(w http.ResponseWriter, r *http.Request) {
 
 // ListIPBlocks is an exported method.
 func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	blocks, err := h.SpamStore.ListIPBlocks(r.Context(), 200, pgtype.Timestamptz{})
 	if err != nil {
 		slog.Error("control: list ip blocks", "error", err)
@@ -1947,11 +1917,6 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 
 // ListSecurityScanResults is an exported method.
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 0 {
 		page = 0
@@ -2035,11 +2000,6 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 
 // TriggerSecurityScan is an exported method.
 func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	if h.Client == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
 		return
@@ -2074,11 +2034,6 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 
 // CreateIPBlock is an exported method.
 func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -2141,11 +2096,6 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 
 // DeleteIPBlock is an exported method.
 func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid IP block ID")
@@ -2199,11 +2149,6 @@ func parseBudgetUSD(v string) float64 {
 // / per-task breakdowns aggregate from the ai_usage_log table via the AI store.
 // alert_triggered is derived from threshold vs spend.
 func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	threshold := 0.0
 
 	if h.Settings != nil {
@@ -2262,11 +2207,6 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 // Persists the monthly alert threshold (ai.monthly_budget_usd) to
 // system_settings and returns the updated budget summary.
 func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	var input struct {
 		BudgetThresholdUSD *float64 `json:"budget_threshold_usd"`
 	}
@@ -3226,10 +3166,6 @@ func (h *Handlers) auditTenantAction(r *http.Request, actionType string, targetI
 	}
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
-
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -3651,11 +3587,6 @@ var knownExtensions = []extensionEntry{
 
 // ListExtensions is an exported method.
 func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	result := make([]extensionEntry, 0, len(knownExtensions))
 
 	for _, ext := range knownExtensions {
@@ -3699,11 +3630,6 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	var input struct {
 		Enabled *bool   `json:"enabled"`
 		Version *string `json:"version"`
@@ -3738,11 +3664,6 @@ func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	if err := h.setExtensionEnabled(r, ext, true); err != nil {
 		slog.Error("control: enable extension", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enable extension")
@@ -3765,11 +3686,6 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	if err := h.setExtensionEnabled(r, ext, false); err != nil {
 		slog.Error("control: disable extension", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to disable extension")
@@ -3802,11 +3718,6 @@ func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusBadRequest, "no_feature_flag", "This extension does not support rollout percentage")
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	var input struct {
 		RolloutPercentage *int `json:"rollout_percentage"`
 	}

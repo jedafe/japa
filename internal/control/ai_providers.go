@@ -41,7 +41,7 @@ func buildValidSet(items []string) map[string]bool {
 // ListAIProviders handles GET /control/ai-providers.
 // Returns all AI provider configs for the tenant. API keys are masked.
 func (h *Handlers) ListAIProviders(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	_, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -64,7 +64,7 @@ func (h *Handlers) ListAIProviders(w http.ResponseWriter, r *http.Request) {
 
 // GetAIProvider handles GET /control/ai-providers/{id}.
 func (h *Handlers) GetAIProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	_, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -91,7 +91,7 @@ func (h *Handlers) GetAIProvider(w http.ResponseWriter, r *http.Request) {
 
 // CreateAIProvider handles POST /control/ai-providers.
 func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	_, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -170,7 +170,7 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 
 // UpdateAIProvider handles PATCH /control/ai-providers/{id}.
 func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	_, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -255,7 +255,7 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 
 // DeleteAIProvider handles DELETE /control/ai-providers/{id}.
 func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	_, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -292,7 +292,7 @@ func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
 // TestAIProvider handles POST /control/ai-providers/{id}/test.
 // Sends a minimal test prompt through the provider to verify connectivity.
 func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	_, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -367,7 +367,7 @@ func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 // /v1/models endpoint. This lets the admin pick from a dropdown instead
 // of typing model names manually.
 func (h *Handlers) FetchAIModels(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	_, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
