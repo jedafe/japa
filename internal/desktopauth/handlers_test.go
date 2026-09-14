@@ -116,7 +116,6 @@ func TestExchangeKey_InsufficientScope(t *testing.T) {
 	ctx := &publicapi.APIKeyContext{
 		KeyID:    uid,
 		UserID:   uid,
-		TenantID: pgtype.UUID{Valid: true},
 
 		Scopes: []string{"api.read.content"},
 	}
@@ -139,7 +138,6 @@ func TestExchangeKey_IPNotAllowed(t *testing.T) {
 	ctx := &publicapi.APIKeyContext{
 		KeyID:    uid,
 		UserID:   uid,
-		TenantID: pgtype.UUID{Valid: true},
 
 		Scopes: []string{"api.write.content"},
 	}
@@ -163,7 +161,6 @@ func TestExchangeKey_Success(t *testing.T) {
 	ctx := &publicapi.APIKeyContext{
 		KeyID:    uid,
 		UserID:   uid,
-		TenantID: pgtype.UUID{Valid: true},
 
 		Scopes: []string{"api.write.content"},
 	}
@@ -239,8 +236,7 @@ func TestExchangeKey_WildcardScope(t *testing.T) {
 		ctx := &publicapi.APIKeyContext{
 			KeyID:    uid,
 			UserID:   uid,
-			TenantID: pgtype.UUID{Valid: true},
-
+	
 			Scopes: scopes,
 		}
 		q := &fakeRefreshCreator{}
@@ -266,7 +262,6 @@ func TestExchangeKey_BodyFallback(t *testing.T) {
 	ctx := &publicapi.APIKeyContext{
 		KeyID:    uid,
 		UserID:   uid,
-		TenantID: pgtype.UUID{Valid: true},
 
 		Scopes: []string{"api.write.content"},
 	}

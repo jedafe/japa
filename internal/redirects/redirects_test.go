@@ -289,7 +289,7 @@ func TestSetEnqueuer(t *testing.T) {
 	custom := &recordingEnqueuer{}
 
 	svc.SetEnqueuer(custom)
-	svc.enqueueRecordHit(pgtype.UUID{}, "redirect-1")
+	svc.enqueueRecordHit("redirect-1")
 
 	if custom.calls != 1 {
 		t.Errorf("enqueuer calls = %d, want 1", custom.calls)
