@@ -477,7 +477,7 @@ type mockBridge struct {
 	lastSpaceID  string
 }
 
-func (m *mockBridge) Publish(event WSEvent, userID, spaceID, tenantID string) {
+func (m *mockBridge) Publish(event WSEvent, userID, tenantID, spaceID string) {
 	m.lastEvent = event
 	m.lastUserID = userID
 	m.lastTenantID = tenantID
