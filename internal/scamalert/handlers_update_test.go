@@ -25,9 +25,9 @@ type fakeScamUpdater struct {
 	err     error
 }
 
-func (f *fakeScamUpdater) Enabled(ctx context.Context, tenantID pgtype.UUID) bool { return f.enabled }
+func (f *fakeScamUpdater) Enabled(ctx context.Context) bool { return f.enabled }
 
-func (f *fakeScamUpdater) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error) {
+func (f *fakeScamUpdater) Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error) {
 	return f.report, f.err
 }
 

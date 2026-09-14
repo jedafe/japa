@@ -24,9 +24,9 @@ type fakeJobUpdater struct {
 	err     error
 }
 
-func (f *fakeJobUpdater) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool { return f.enabled }
+func (f *fakeJobUpdater) IsEnabled(ctx context.Context) bool { return f.enabled }
 
-func (f *fakeJobUpdater) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error) {
+func (f *fakeJobUpdater) UpdateJobListing(ctx context.Context, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error) {
 	return f.detail, f.err
 }
 

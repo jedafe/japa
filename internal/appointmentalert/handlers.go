@@ -100,12 +100,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleListEmbassies handles GET /embassies — list monitored embassies
 // with an optional destination filter. Query params: ?dest=&page=&limit=.
 func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
@@ -120,7 +120,7 @@ func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	embassies, total, err := h.service.ListEmbassies(r.Context(), tenantID, destSpaceID, true, page, limit, "", "", "")
+	embassies, total, err := h.service.ListEmbassies(r.Context(), destSpaceID, true, page, limit, "", "", "")
 	if err != nil {
 		slog.Error("appointmentalert: list embassies failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list embassies")
@@ -150,13 +150,12 @@ func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
@@ -164,7 +163,7 @@ func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	page, limit := parsePageParams(r)
 
-	alerts, total, err := h.service.ListUserAlerts(r.Context(), tenantID, user.UserID, status, page, limit)
+	alerts, total, err := h.service.ListUserAlerts(r.Context(), user.UserID, status, page, limit)
 	if err != nil {
 		slog.Error("appointmentalert: list my alerts failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list alerts")
@@ -196,7 +195,7 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
@@ -257,7 +256,7 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
@@ -313,7 +312,7 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
@@ -351,8 +350,7 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -364,7 +362,7 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 
 	// Feature-flag gate: return 404 (not 403) when the feature is disabled,
 	// consistent with the public endpoints (§91, feature-flag-naming.md).
-	if !h.service.Enabled(r.Context(), tenantID) {
+	if !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
@@ -400,7 +398,7 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 		sortOrder = r.URL.Query().Get("dir") // DataTable sends ?dir=
 	}
 
-	embassies, total, err := h.service.ListEmbassies(r.Context(), tenantID, destSpaceID, activeOnly, page, limit, search, sortBy, sortOrder)
+	embassies, total, err := h.service.ListEmbassies(r.Context(), destSpaceID, activeOnly, page, limit, search, sortBy, sortOrder)
 	if err != nil {
 		slog.Error("appointmentalert: admin list embassies failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list embassies")
@@ -425,13 +423,12 @@ func (h *Handlers) HandleAdminCreateEmbassy(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
@@ -462,7 +459,7 @@ func (h *Handlers) HandleAdminCreateEmbassy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	embassy, err := h.service.CreateEmbassy(r.Context(), tenantID, input)
+	embassy, err := h.service.CreateEmbassy(r.Context(), input)
 	if err != nil {
 		slog.Error("appointmentalert: admin create embassy failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create embassy monitor")
@@ -491,7 +488,7 @@ func (h *Handlers) HandleAdminUpdateEmbassy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
@@ -538,7 +535,7 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}

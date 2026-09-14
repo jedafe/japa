@@ -188,7 +188,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 	// BUG-006: cap the batch size via system_settings (Rule 3: configurable).
 	maxBatch := 100
 	if s.settings != nil {
-		maxBatch = s.settings.GetIntOr(ctx, pgtype.UUID{}, "persona.max_batch_size", 100)
+		maxBatch = s.settings.GetIntOr(ctx, "persona.max_batch_size", 100)
 	}
 
 	if maxBatch <= 0 {
@@ -265,7 +265,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		// 1. Create the backing user (is_bot = true).
 		email := personaEmail(in.Slug, tenantID)
 
-		user, err := s.store.CreatePersonaUser(ctx, q, tenantID, email, in.Slug)
+		user, err := s.store.CreatePersonaUser(ctx, q, email, in.Slug)
 		if err != nil {
 			results[i] = ProvisionResult{Input: in, Error: err.Error()}
 			return results, fmt.Errorf("personas: input %d: create user: %w", i, err)
@@ -467,8 +467,8 @@ func validateActivityPolicy(p ActivityPolicy) error {
 // GetPersona returns a single persona by ID with joined user + profile names,
 // the decoded activity_policy, and the 5 most recent synthetic activity
 // entries (§68 spec: "persona detail + activity_policy + recent actions").
-func (s *Service) GetPersona(ctx context.Context, tenantID, id pgtype.UUID) (PersonaDetail, error) {
-	row, err := s.store.GetAIPersonaByID(ctx, tenantID, id)
+func (s *Service) GetPersona(ctx context.Context, id pgtype.UUID) (PersonaDetail, error) {
+	row, err := s.store.GetAIPersonaByID(ctx, id)
 	if err != nil {
 		return PersonaDetail{}, err
 	}
@@ -478,7 +478,7 @@ func (s *Service) GetPersona(ctx context.Context, tenantID, id pgtype.UUID) (Per
 	// Fetch the 5 most recent synthetic platform_events for the persona's
 	// backing user (§68 "recent actions" in the detail response). Use the
 	// raw UUID from the row (detail.UserID is a string for JSON output).
-	recentRows, err := s.store.ListPersonaActivity(ctx, tenantID, row.UserID, 5, 0)
+	recentRows, err := s.store.ListPersonaActivity(ctx, row.UserID, 5, 0)
 	if err != nil {
 		// Don't fail the whole request if activity fetch fails — the persona
 		// config is the primary payload. Log and return empty recent_activity.
@@ -502,13 +502,13 @@ func (s *Service) GetPersona(ctx context.Context, tenantID, id pgtype.UUID) (Per
 // ListPersonas returns a paginated list of personas for a tenant. An empty
 // status returns all statuses; an empty q matches all rows; sort/dir default
 // to created_at DESC.
-func (s *Service) ListPersonas(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, limit, offset int32) ([]PersonaListItem, int64, error) {
-	rows, err := s.store.ListAIPersonas(ctx, tenantID, status, q, sort, dir, limit, offset)
+func (s *Service) ListPersonas(ctx context.Context, status, q, sort, dir string, limit, offset int32) ([]PersonaListItem, int64, error) {
+	rows, err := s.store.ListAIPersonas(ctx, status, q, sort, dir, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountAIPersonas(ctx, tenantID, status, q)
+	total, err := s.store.CountAIPersonas(ctx, status, q)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -538,7 +538,7 @@ type UpdatePersonaInput struct {
 // // Returns a PersonaDetail (with joined user + profile names) so the response
 // shape matches HandleGet (BUG-004: previously returned the raw
 // gen.AiPersona row, inconsistent with the rest of the API).
-func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, in UpdatePersonaInput) (PersonaDetail, error) {
+func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePersonaInput) (PersonaDetail, error) {
 	if in.DisclosureMode != nil {
 		if err := validateMode(*in.DisclosureMode, "disclosure_mode",
 			DisclosureModeDisclosed, DisclosureModeUndisclosed); err != nil {
@@ -578,7 +578,7 @@ func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, i
 				return PersonaDetail{}, fmt.Errorf("personas: %w: invalid voice_id: %w", errpkg.ErrInvalid, err)
 			}
 
-			if _, err := s.store.GetPersonaVoiceByID(ctx, tenantID, voiceID); err != nil {
+			if _, err := s.store.GetPersonaVoiceByID(ctx, voiceID); err != nil {
 				return PersonaDetail{}, fmt.Errorf("personas: %w: voice not found: %w", errpkg.ErrInvalid, err)
 			}
 		} else {
@@ -613,23 +613,23 @@ func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, i
 	}
 	// Re-fetch the joined row so the response includes user + profile names
 	// (BUG-004: consistent with HandleGet's PersonaDetail shape).
-	return s.GetPersona(ctx, tenantID, id)
+	return s.GetPersona(ctx, id)
 }
 
 // GetPersonaActivity returns a paginated activity log (platform_events) for a
 // persona's backing user.
-func (s *Service) GetPersonaActivity(ctx context.Context, tenantID, personaID pgtype.UUID, limit, offset int32) ([]ActivityEntry, int64, error) {
-	detail, err := s.store.GetAIPersonaByID(ctx, tenantID, personaID)
+func (s *Service) GetPersonaActivity(ctx context.Context, personaID pgtype.UUID, limit, offset int32) ([]ActivityEntry, int64, error) {
+	detail, err := s.store.GetAIPersonaByID(ctx, personaID)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.store.ListPersonaActivity(ctx, tenantID, detail.UserID, limit, offset)
+	rows, err := s.store.ListPersonaActivity(ctx, detail.UserID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountPersonaActivity(ctx, tenantID, detail.UserID)
+	total, err := s.store.CountPersonaActivity(ctx, detail.UserID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -727,7 +727,7 @@ type UpdatePersonaVoiceInput struct {
 
 // CreatePersonaVoice creates a new shared persona voice after validating
 // required fields and slug length.
-func (s *Service) CreatePersonaVoice(ctx context.Context, tenantID, createdBy pgtype.UUID, in CreatePersonaVoiceInput) (PersonaVoice, error) {
+func (s *Service) CreatePersonaVoice(ctx context.Context, createdBy pgtype.UUID, in CreatePersonaVoiceInput) (PersonaVoice, error) {
 	if in.Name == "" || in.Slug == "" {
 		return PersonaVoice{}, fmt.Errorf("personas: %w: name and slug are required", errpkg.ErrInvalid)
 	}
@@ -894,8 +894,8 @@ func derefOrEmpty(p *string) string {
 }
 
 // GetPersonaVoice returns a single shared voice by ID.
-func (s *Service) GetPersonaVoice(ctx context.Context, tenantID, id pgtype.UUID) (PersonaVoice, error) {
-	row, err := s.store.GetPersonaVoiceByID(ctx, tenantID, id)
+func (s *Service) GetPersonaVoice(ctx context.Context, id pgtype.UUID) (PersonaVoice, error) {
+	row, err := s.store.GetPersonaVoiceByID(ctx, id)
 	if err != nil {
 		return PersonaVoice{}, err
 	}
@@ -909,8 +909,8 @@ func (s *Service) GetPersonaVoice(ctx context.Context, tenantID, id pgtype.UUID)
 // PersonaVoiceResolver without importing personas types in the ai package.
 // Invisible voices return an empty string with a nil error so the AI handler
 // treats them as a no-op override (ADR-114, BUG-009).
-func (s *Service) GetVoicePrompt(ctx context.Context, tenantID, userID, voiceID pgtype.UUID) (string, error) {
-	voice, err := s.GetPersonaVoice(ctx, tenantID, voiceID)
+func (s *Service) GetVoicePrompt(ctx context.Context, userID, voiceID pgtype.UUID) (string, error) {
+	voice, err := s.GetPersonaVoice(ctx, voiceID)
 	if err != nil {
 		return "", err
 	}
@@ -923,13 +923,13 @@ func (s *Service) GetVoicePrompt(ctx context.Context, tenantID, userID, voiceID 
 }
 
 // ListPersonaVoices returns a paginated list of shared voices for a tenant.
-func (s *Service) ListPersonaVoices(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PersonaVoice, int64, error) {
-	rows, err := s.store.ListPersonaVoices(ctx, tenantID, limit, offset)
+func (s *Service) ListPersonaVoices(ctx context.Context, limit, offset int32) ([]PersonaVoice, int64, error) {
+	rows, err := s.store.ListPersonaVoices(ctx, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountPersonaVoices(ctx, tenantID)
+	total, err := s.store.CountPersonaVoices(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -943,7 +943,7 @@ func (s *Service) ListPersonaVoices(ctx context.Context, tenantID pgtype.UUID, l
 }
 
 // UpdatePersonaVoice updates a shared voice and returns the updated record.
-func (s *Service) UpdatePersonaVoice(ctx context.Context, tenantID, id pgtype.UUID, in UpdatePersonaVoiceInput) (PersonaVoice, error) {
+func (s *Service) UpdatePersonaVoice(ctx context.Context, id pgtype.UUID, in UpdatePersonaVoiceInput) (PersonaVoice, error) {
 	if in.VoicePrompt != nil {
 		if err := validateVoicePrompt(in.VoicePrompt); err != nil {
 			return PersonaVoice{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
@@ -982,6 +982,6 @@ func (s *Service) UpdatePersonaVoice(ctx context.Context, tenantID, id pgtype.UU
 var emptyString = ""
 
 // DeletePersonaVoice deletes a shared voice by ID.
-func (s *Service) DeletePersonaVoice(ctx context.Context, tenantID, id pgtype.UUID) error {
-	return s.store.DeletePersonaVoice(ctx, tenantID, id)
+func (s *Service) DeletePersonaVoice(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeletePersonaVoice(ctx, id)
 }

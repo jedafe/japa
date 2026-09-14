@@ -14,7 +14,7 @@ import (
 // follow deletion (both directions), and pending DM request decline run in a
 // single transaction so a partial failure leaves no orphaned follow/DM.
 // Tenant-scoped per JEOS §9 (BUG-006). Ref: §41 — POST /users/:id/block.
-func (s *Service) BlockUser(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
+func (s *Service) BlockUser(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	if blockerID == blockedID {
 		return errors.New("cannot block yourself")
 	}
@@ -60,7 +60,7 @@ func (s *Service) BlockUser(ctx context.Context, tenantID, blockerID, blockedID 
 
 // UnblockUser idempotently removes a user block. Returns nil if not blocked.
 // Tenant-scoped per JEOS §9 (BUG-006). Ref: §41 — DELETE /users/:id/block.
-func (s *Service) UnblockUser(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
+func (s *Service) UnblockUser(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	if blockerID == blockedID {
 		return errors.New("cannot block yourself")
 	}
@@ -83,7 +83,7 @@ type BlockedUserInfo struct {
 // ListBlockedUsers returns users blocked by the given user, tenant-scoped
 // with profile enrichment (BUG-003, BUG-004).
 // Ref: japaconnect-engineering/sections/41-spam-content-safety.md.
-func (s *Service) ListBlockedUsers(ctx context.Context, tenantID, blockerID pgtype.UUID, limit, offset int32) ([]BlockedUserInfo, error) {
+func (s *Service) ListBlockedUsers(ctx context.Context, blockerID pgtype.UUID, limit, offset int32) ([]BlockedUserInfo, error) {
 	rows, err := s.read.ListBlockedUsers(ctx, gen.ListBlockedUsersParams{
 		BlockerID: blockerID,
 
@@ -110,7 +110,7 @@ func (s *Service) ListBlockedUsers(ctx context.Context, tenantID, blockerID pgty
 
 // IsBlocked returns true if either user has blocked the other.
 // Tenant-scoped per JEOS §9 (BUG-006).
-func (s *Service) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.UUID) (bool, error) {
+func (s *Service) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
 	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
 		BlockedID: userB,
@@ -156,7 +156,7 @@ func (s *Service) UnmuteUser(ctx context.Context, tenantID, userID, mutedUserID 
 }
 
 // IsUserMuted checks if a user is muted.
-func (s *Service) IsUserMuted(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) (bool, error) {
+func (s *Service) IsUserMuted(ctx context.Context, userID, mutedUserID pgtype.UUID) (bool, error) {
 	return s.read.IsUserMuted(ctx, gen.IsUserMutedParams{
 
 		UserID:      userID,
@@ -175,7 +175,7 @@ type MutedUserInfo struct {
 }
 
 // ListMutedUsers returns paginated muted users for the caller.
-func (s *Service) ListMutedUsers(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]MutedUserInfo, error) {
+func (s *Service) ListMutedUsers(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]MutedUserInfo, error) {
 	rows, err := s.read.ListMutedUsers(ctx, gen.ListMutedUsersParams{
 
 		UserID:     userID,
@@ -220,7 +220,7 @@ type MutedSpaceInfo struct {
 }
 
 // ListMutedSpaces returns paginated muted spaces for the caller.
-func (s *Service) ListMutedSpaces(ctx context.Context, tenantID, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]MutedSpaceInfo, error) {
+func (s *Service) ListMutedSpaces(ctx context.Context, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]MutedSpaceInfo, error) {
 	rows, err := s.read.ListMutedSpaces(ctx, gen.ListMutedSpacesParams{
 
 		UserID:      userID,

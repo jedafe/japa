@@ -35,7 +35,7 @@ func (s *DBStore) Queries() *gen.Queries {
 }
 
 // GetUserByEmail looks up a user by email within a tenant.
-func (s *DBStore) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error) {
+func (s *DBStore) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	row, err := s.read.GetUserByEmail(ctx,
 
 		email,

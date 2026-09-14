@@ -48,14 +48,14 @@ type service interface {
 	// Freshness and refresh
 	FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error)
 	RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
-	ListIngestionJobs(ctx context.Context, contentID, tenantID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
+	ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
 
 	// AI advisor
-	Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
-	Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
-	Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
-	Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
-	StreamAdvisor(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
+	Analyze(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
+	Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+	Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
+	Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+	StreamAdvisor(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
 }
 
 // Handlers exposes the JCE Sub-spec 2/3 HTTP handlers.
@@ -959,7 +959,7 @@ func (h *Handlers) HandleRefreshComparison(w http.ResponseWriter, r *http.Reques
 
 // HandleListIngestionJobs handles GET /api/v1/jce/comparisons/{id}/ingestion-jobs.
 func (h *Handlers) HandleListIngestionJobs(w http.ResponseWriter, r *http.Request) {
-	tenantID, _, ok := h.requireTenantAndUser(w, r)
+	_, _, ok := h.requireTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -979,7 +979,7 @@ func (h *Handlers) HandleListIngestionJobs(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	jobs, err := h.service.ListIngestionJobs(r.Context(), contentID, tenantID, limit, offset)
+	jobs, err := h.service.ListIngestionJobs(r.Context(), contentID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1018,7 +1018,7 @@ func advisorItemID(body advisorBody) (pgtype.UUID, error) {
 
 // HandleAnalyze handles POST /api/v1/jce/comparisons/{id}/analyze.
 func (h *Handlers) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	_, userID, ok := h.requireTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -1040,7 +1040,7 @@ func (h *Handlers) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.service.Analyze(r.Context(), contentID, tenantID, userID, profileID, body.Question)
+	res, err := h.service.Analyze(r.Context(), contentID, userID, profileID, body.Question)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1051,7 +1051,7 @@ func (h *Handlers) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 
 // HandleRank handles POST /api/v1/jce/comparisons/{id}/rank.
 func (h *Handlers) HandleRank(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	_, userID, ok := h.requireTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -1073,7 +1073,7 @@ func (h *Handlers) HandleRank(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.service.Rank(r.Context(), contentID, tenantID, userID, profileID)
+	res, err := h.service.Rank(r.Context(), contentID, userID, profileID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1084,7 +1084,7 @@ func (h *Handlers) HandleRank(w http.ResponseWriter, r *http.Request) {
 
 // HandleExplain handles POST /api/v1/jce/comparisons/{id}/explain.
 func (h *Handlers) HandleExplain(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	_, userID, ok := h.requireTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -1117,7 +1117,7 @@ func (h *Handlers) HandleExplain(w http.ResponseWriter, r *http.Request) {
 		factorKey = *body.FactorKey
 	}
 
-	res, err := h.service.Explain(r.Context(), contentID, itemID, tenantID, userID, profileID, factorKey, body.Question)
+	res, err := h.service.Explain(r.Context(), contentID, itemID, userID, profileID, factorKey, body.Question)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1128,7 +1128,7 @@ func (h *Handlers) HandleExplain(w http.ResponseWriter, r *http.Request) {
 
 // HandleRecommend handles POST /api/v1/jce/comparisons/{id}/recommend.
 func (h *Handlers) HandleRecommend(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	_, userID, ok := h.requireTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -1150,7 +1150,7 @@ func (h *Handlers) HandleRecommend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.service.Recommend(r.Context(), contentID, tenantID, userID, profileID)
+	res, err := h.service.Recommend(r.Context(), contentID, userID, profileID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1161,7 +1161,7 @@ func (h *Handlers) HandleRecommend(w http.ResponseWriter, r *http.Request) {
 
 // HandleStreamAdvisor handles POST /api/v1/jce/comparisons/{id}/advisor (SSE).
 func (h *Handlers) HandleStreamAdvisor(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	_, userID, ok := h.requireTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -1188,7 +1188,7 @@ func (h *Handlers) HandleStreamAdvisor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.StreamAdvisor(r.Context(), contentID, tenantID, userID, profileID, body.Question, w); err != nil {
+	if err := h.service.StreamAdvisor(r.Context(), contentID, userID, profileID, body.Question, w); err != nil {
 		handleServiceError(w, err)
 	}
 }

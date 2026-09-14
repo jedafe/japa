@@ -32,7 +32,7 @@ type CreateThreadInput struct {
 // forumSettingsReader is the subset of config.Settings the forum service reads
 // for hot-reloadable limits. Local interface so forum does not import config.
 type forumSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // SetSettings injects the hot-reloadable settings reader.
@@ -55,7 +55,7 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 		// compiled-in default when unset or settings not injected. See AUDIT-BE-009.
 		def := DefaultEditWindowMinutes
 		if s.settings != nil {
-			def = s.settings.GetIntOr(ctx, pgtype.UUID{}, "forum.edit_window_minutes", DefaultEditWindowMinutes)
+			def = s.settings.GetIntOr(ctx, "forum.edit_window_minutes", DefaultEditWindowMinutes)
 		}
 
 		editWindow = int32(def) //nolint:gosec // G115: bounded
@@ -122,7 +122,7 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 	}
 
 	// Fire-and-forget forum.thread.created webhook (Section 12). Rule 8.
-	s.emitWebhook(ctx, tenantID, "forum.thread.created", map[string]any{
+	s.emitWebhook(ctx, "forum.thread.created", map[string]any{
 		"thread_id": thread.ID, "author_id": authorUserID, "slug": thread.Slug,
 	})
 
@@ -149,45 +149,45 @@ func validatePollInput(p *PollInput) error {
 }
 
 // GetThread retrieves a forum thread by ID.
-func (s *Service) GetThread(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumThread, error) {
-	return s.store.getThreadByID(ctx, id, tenantID)
+func (s *Service) GetThread(ctx context.Context, id pgtype.UUID) (gen.ForumThread, error) {
+	return s.store.getThreadByID(ctx, id)
 }
 
 // GetThreadBySlug retrieves a forum thread by slug.
-func (s *Service) GetThreadBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ForumThread, error) {
-	return s.store.getThreadBySlug(ctx, slug, tenantID)
+func (s *Service) GetThreadBySlug(ctx context.Context, slug string) (gen.ForumThread, error) {
+	return s.store.getThreadBySlug(ctx, slug)
 }
 
 // ListThreadsBySpace returns paginated threads for a space.
-func (s *Service) ListThreadsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsBySpace(ctx, tenantID, spaceID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsBySpace(ctx, spaceID, cursorCreatedAt, limit)
 }
 
 // ListThreadsByAuthor returns paginated threads for an author.
-func (s *Service) ListThreadsByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsByAuthor(ctx, tenantID, authorUserID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsByAuthor(ctx, authorUserID, cursorCreatedAt, limit)
 }
 
 // ListThreadsByTenant returns all paginated threads for a tenant (public listing).
-func (s *Service) ListThreadsByTenant(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsByTenant(ctx, tenantID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsByTenant(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsByTenant(ctx, cursorCreatedAt, limit)
 }
 
 // ListThreadsByTag returns paginated threads for a tag.
-func (s *Service) ListThreadsByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsByTag(ctx, tenantID, tagID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsByTag(ctx context.Context, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsByTag(ctx, tagID, cursorCreatedAt, limit)
 }
 
 // UpdateThread updates a forum thread. The author can edit; a moderator
 // (or any holder of forum.thread.edit_any / super-admin wildcard) may also
 // edit. Ref: Section 08 + §26 RBAC CRUD.
 func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error) {
-	thread, err := s.store.getThreadByID(ctx, id, tenantID)
+	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting thread for update: %w", err)
 	}
 
-	if !s.canModerateThread(ctx, thread, userID, tenantID, "forum.thread.edit_any") {
+	if !s.canModerateThread(ctx, thread, userID, "forum.thread.edit_any") {
 		return gen.ForumThread{}, errors.New("only the author or a moderator can edit this thread")
 	}
 
@@ -210,7 +210,7 @@ func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.
 		return gen.ForumThread{}, err
 	}
 
-	s.emitWebhook(ctx, tenantID, "forum.thread.updated", map[string]any{"thread_id": id, "actor_id": userID})
+	s.emitWebhook(ctx, "forum.thread.updated", map[string]any{"thread_id": id, "actor_id": userID})
 
 	return updated, nil
 }
@@ -218,20 +218,20 @@ func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.
 // DeleteThread soft-deletes a forum thread. The author or a moderator
 // (forum.thread.delete_any / super-admin) may delete. Ref: Section 08 + §26.
 func (s *Service) DeleteThread(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	thread, err := s.store.getThreadByID(ctx, id, tenantID)
+	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting thread for delete: %w", err)
 	}
 
-	if !s.canModerateThread(ctx, thread, userID, tenantID, "forum.thread.delete_any") {
+	if !s.canModerateThread(ctx, thread, userID, "forum.thread.delete_any") {
 		return errors.New("only the author or a moderator can delete this thread")
 	}
 
-	if err := s.store.softDeleteThread(ctx, id, tenantID); err != nil {
+	if err := s.store.softDeleteThread(ctx, id); err != nil {
 		return err
 	}
 
-	s.emitWebhook(ctx, tenantID, "forum.thread.deleted", map[string]any{"thread_id": id, "actor_id": userID})
+	s.emitWebhook(ctx, "forum.thread.deleted", map[string]any{"thread_id": id, "actor_id": userID})
 
 	return nil
 }
@@ -241,30 +241,30 @@ func (s *Service) DeleteThread(ctx context.Context, id, tenantID, userID pgtype.
 // When parentReplyID is not provided, the top-voted reply is used as the
 // accepted answer (BL-012). Ref: Section 08 Solved flag.
 func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID, parentReplyID pgtype.UUID) error {
-	thread, err := s.store.getThreadByID(ctx, id, tenantID)
+	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting thread for solve: %w", err)
 	}
 
-	if !s.canSolveThread(ctx, thread, solverUserID, tenantID) {
+	if !s.canSolveThread(ctx, thread, solverUserID) {
 		return errors.New("only the author or a moderator can solve this thread")
 	}
 
 	// If the caller did not pick an accepted reply, default to the top-voted
 	// non-deleted reply so parent_reply_id is always populated.
 	if !parentReplyID.Valid {
-		if top, topErr := s.GetTopReplyForThread(ctx, id, tenantID); topErr == nil {
+		if top, topErr := s.GetTopReplyForThread(ctx, id); topErr == nil {
 			parentReplyID = top.ID
 		} else if !errors.Is(topErr, pgx.ErrNoRows) {
 			slog.Warn("forum: failed to fetch top reply when solving", "thread_id", id, "error", topErr)
 		}
 	}
 
-	if err := s.store.solveThread(ctx, id, tenantID, solverUserID, parentReplyID); err != nil {
+	if err := s.store.solveThread(ctx, id, solverUserID, parentReplyID); err != nil {
 		return err
 	}
 
-	s.emitWebhook(ctx, tenantID, "forum.thread.solved", map[string]any{"thread_id": id, "solver_id": solverUserID, "parent_reply_id": parentReplyID})
+	s.emitWebhook(ctx, "forum.thread.solved", map[string]any{"thread_id": id, "solver_id": solverUserID, "parent_reply_id": parentReplyID})
 
 	return nil
 }
@@ -272,22 +272,22 @@ func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID, p
 // UnsolveThread reverts the solved flag (DELETE /forum/{id}/solve).
 // Ref: Section 08 Solved flag + api-routes-catalog L590.
 func (s *Service) UnsolveThread(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	thread, err := s.store.getThreadByID(ctx, id, tenantID)
+	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting thread for unsolve: %w", err)
 	}
 
-	if !s.canSolveThread(ctx, thread, userID, tenantID) {
+	if !s.canSolveThread(ctx, thread, userID) {
 		return errors.New("only the author or a moderator can unsolve this thread")
 	}
 
-	return s.store.unsolveThread(ctx, id, tenantID)
+	return s.store.unsolveThread(ctx, id)
 }
 
 // canModerateThread reports whether the user may edit/delete the thread:
 // the author, a space moderator of the thread's space, or a holder of the
 // given _any node (super-admin satisfies this via the wildcard). Ref: §26.
-func (s *Service) canModerateThread(ctx context.Context, thread gen.ForumThread, userID, tenantID pgtype.UUID, anyNode string) bool {
+func (s *Service) canModerateThread(ctx context.Context, thread gen.ForumThread, userID pgtype.UUID, anyNode string) bool {
 	if thread.AuthorUserID == userID {
 		return true
 	}
@@ -296,7 +296,7 @@ func (s *Service) canModerateThread(ctx context.Context, thread gen.ForumThread,
 		return true
 	}
 
-	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, anyNode) {
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, anyNode) {
 		return true
 	}
 
@@ -306,12 +306,12 @@ func (s *Service) canModerateThread(ctx context.Context, thread gen.ForumThread,
 // canModerateAny reports whether the user has a moderator-scope grant for the
 // given permission node, without considering ownership. Used for reply edit/delete
 // so a thread author who is not a moderator does not get other users' replies.
-func (s *Service) canModerateAny(ctx context.Context, spaceID, userID, tenantID pgtype.UUID, anyNode string) bool {
+func (s *Service) canModerateAny(ctx context.Context, spaceID, userID pgtype.UUID, anyNode string) bool {
 	if s.store.isSpaceModerator(ctx, userID, spaceID) {
 		return true
 	}
 
-	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, anyNode) {
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, anyNode) {
 		return true
 	}
 
@@ -321,7 +321,7 @@ func (s *Service) canModerateAny(ctx context.Context, spaceID, userID, tenantID 
 // canSolveThread reports whether the user may solve/unsolve the thread:
 // the OP, a space moderator, or a holder of forum.thread.solve (super-admin
 // via wildcard). Ref: Section 08 "OP or moderator".
-func (s *Service) canSolveThread(ctx context.Context, thread gen.ForumThread, userID, tenantID pgtype.UUID) bool {
+func (s *Service) canSolveThread(ctx context.Context, thread gen.ForumThread, userID pgtype.UUID) bool {
 	if thread.AuthorUserID == userID {
 		return true
 	}
@@ -330,7 +330,7 @@ func (s *Service) canSolveThread(ctx context.Context, thread gen.ForumThread, us
 		return true
 	}
 
-	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, "forum.thread.solve") {
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, "forum.thread.solve") {
 		return true
 	}
 
@@ -368,7 +368,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 
 	// Load the parent thread once for both the AMA question-approval check
 	// and the reply notification (§88 / §35).
-	thread, threadErr := s.store.getThreadByID(ctx, threadID, tenantID)
+	thread, threadErr := s.store.getThreadByID(ctx, threadID)
 
 	// §88 question_approval_required: if the parent thread is an AMA with
 	// question_approval_required = true and the reply author is not the
@@ -377,7 +377,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 
 	if threadErr == nil && s.amaQuestions != nil && thread.AmaConfig != nil {
 		if thread.AuthorUserID != authorUserID && amaRequiresApproval(thread.AmaConfig) {
-			if markErr := s.amaQuestions.MarkReplyPending(ctx, reply.ID, tenantID); markErr != nil {
+			if markErr := s.amaQuestions.MarkReplyPending(ctx, reply.ID); markErr != nil {
 				slog.Warn("ama: failed to mark reply pending", "reply_id", reply.ID, "error", markErr)
 			} else {
 				amaPending = true
@@ -387,12 +387,12 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 	}
 
 	// Increment the parent thread's reply count.
-	if err := s.store.incrementReplyCount(ctx, threadID, tenantID, 1); err != nil {
+	if err := s.store.incrementReplyCount(ctx, threadID, 1); err != nil {
 		// Log but don't fail the reply creation.
 		slog.Warn("failed to increment reply count", "thread_id", threadID, "error", err)
 	}
 
-	s.emitWebhook(ctx, tenantID, "forum.reply.created", map[string]any{
+	s.emitWebhook(ctx, "forum.reply.created", map[string]any{
 		"reply_id": reply.ID, "thread_id": threadID, "author_id": authorUserID,
 	})
 
@@ -414,7 +414,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 			actorAvatar := ""
 			subjectURL := fmt.Sprintf("/forum/%s", thread.Slug)
 			_ = s.notifier.DispatchNotification(
-				notifyCtx, tenantID, thread.AuthorUserID,
+				notifyCtx, thread.AuthorUserID,
 				notifyType, subjectTitle,
 				authorUserID,
 				subjectType, subjectID,
@@ -464,24 +464,24 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 }
 
 // GetReply retrieves a reply by ID.
-func (s *Service) GetReply(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumReply, error) {
-	return s.store.getReplyByID(ctx, id, tenantID)
+func (s *Service) GetReply(ctx context.Context, id pgtype.UUID) (gen.ForumReply, error) {
+	return s.store.getReplyByID(ctx, id)
 }
 
 // ListRepliesByThread returns all replies for a thread.
-func (s *Service) ListRepliesByThread(ctx context.Context, threadID, tenantID pgtype.UUID) ([]gen.ForumReply, error) {
-	return s.store.listRepliesByThread(ctx, threadID, tenantID)
+func (s *Service) ListRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]gen.ForumReply, error) {
+	return s.store.listRepliesByThread(ctx, threadID)
 }
 
 // UpdateReply updates a reply's body. The author can edit; a moderator
 // (forum.reply.edit_any / super-admin) may also edit. Ref: §26 RBAC CRUD.
 func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.UUID, body []byte) (gen.ForumReply, error) {
-	reply, err := s.store.getReplyByID(ctx, id, tenantID)
+	reply, err := s.store.getReplyByID(ctx, id)
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("getting reply for update: %w", err)
 	}
 
-	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, tenantID, "forum.reply.edit_any") {
+	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
 		return gen.ForumReply{}, errors.New("only the author or a moderator can edit this reply")
 	}
 
@@ -498,7 +498,7 @@ func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.U
 		return gen.ForumReply{}, err
 	}
 
-	s.emitWebhook(ctx, tenantID, "forum.reply.updated", map[string]any{"reply_id": id, "actor_id": userID})
+	s.emitWebhook(ctx, "forum.reply.updated", map[string]any{"reply_id": id, "actor_id": userID})
 
 	// The reply may be the accepted answer; clear the thread's QAPage JSON-LD
 	// cache so the next GET uses the updated body.
@@ -511,25 +511,25 @@ func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.U
 // The author or a moderator (forum.reply.delete_any / super-admin) may
 // delete. Ref: §26 RBAC CRUD.
 func (s *Service) DeleteReply(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	reply, err := s.store.getReplyByID(ctx, id, tenantID)
+	reply, err := s.store.getReplyByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting reply for delete: %w", err)
 	}
 
-	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, tenantID, "forum.reply.delete_any") {
+	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.delete_any") {
 		return errors.New("only the author or a moderator can delete this reply")
 	}
 
-	if err := s.store.softDeleteReply(ctx, id, tenantID); err != nil {
+	if err := s.store.softDeleteReply(ctx, id); err != nil {
 		return err
 	}
 
 	// BUG-007: decrement the denormalized reply_count on the parent thread.
-	if err := s.store.incrementReplyCount(ctx, reply.ThreadID, tenantID, -1); err != nil {
+	if err := s.store.incrementReplyCount(ctx, reply.ThreadID, -1); err != nil {
 		slog.Warn("failed to decrement thread reply count", "error", err)
 	}
 
-	s.emitWebhook(ctx, tenantID, "forum.reply.deleted", map[string]any{"reply_id": id, "actor_id": userID})
+	s.emitWebhook(ctx, "forum.reply.deleted", map[string]any{"reply_id": id, "actor_id": userID})
 
 	// The reply may have been the accepted answer; clear QAPage JSON-LD cache.
 	s.deleteJSONLDCache(ctx, reply.ThreadID)
@@ -540,12 +540,12 @@ func (s *Service) DeleteReply(ctx context.Context, id, tenantID, userID pgtype.U
 // canModerateReply reports whether the user may edit/delete the reply via a
 // moderator-override node. Resolves the reply's thread to check space
 // moderation. Ref: §26.
-func (s *Service) canModerateReply(ctx context.Context, reply gen.ForumReply, userID, tenantID pgtype.UUID, anyNode string) bool {
-	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, anyNode) {
+func (s *Service) canModerateReply(ctx context.Context, reply gen.ForumReply, userID pgtype.UUID, anyNode string) bool {
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, anyNode) {
 		return true
 	}
 	// Resolve the thread to check space moderation.
-	thread, err := s.store.getThreadByID(ctx, reply.ThreadID, tenantID)
+	thread, err := s.store.getThreadByID(ctx, reply.ThreadID)
 	if err != nil {
 		return false
 	}
@@ -588,7 +588,7 @@ func (s *Service) Vote(ctx context.Context, tenantID, userID pgtype.UUID, input 
 	// Recalculate the entity's vote score.
 	s.recalcVoteScore(ctx, input.EntityType, input.EntityID)
 
-	s.emitWebhook(ctx, tenantID, "forum.vote.cast", map[string]any{
+	s.emitWebhook(ctx, "forum.vote.cast", map[string]any{
 		"entity_type": input.EntityType, "entity_id": input.EntityID,
 		"user_id": userID, "value": input.Value,
 	})
@@ -598,12 +598,12 @@ func (s *Service) Vote(ctx context.Context, tenantID, userID pgtype.UUID, input 
 
 // RemoveVote retracts the user's vote on a thread or reply and recalculates
 // the entity's score. Ref: api-routes-catalog L591 (DELETE /forum/{id}/vote).
-func (s *Service) RemoveVote(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if entityType != EntityTypeThread && entityType != EntityTypeReply {
 		return errors.New("entity type must be 'thread' or 'reply'")
 	}
 
-	if err := s.store.deleteVote(ctx, tenantID, userID, entityType, entityID); err != nil {
+	if err := s.store.deleteVote(ctx, userID, entityType, entityID); err != nil {
 		return fmt.Errorf("removing vote: %w", err)
 	}
 
@@ -634,8 +634,8 @@ func (s *Service) GetVoteScore(ctx context.Context, entityType string, entityID 
 // GetUserVotesForThread returns the current user's vote values for a thread
 // and all of its replies. This is used to hydrate per-entity user_vote state
 // in the detail page (BUG-006).
-func (s *Service) GetUserVotesForThread(ctx context.Context, tenantID, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
-	return s.store.getUserVotesForThread(ctx, tenantID, threadID, userID)
+func (s *Service) GetUserVotesForThread(ctx context.Context, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
+	return s.store.getUserVotesForThread(ctx, threadID, userID)
 }
 
 // ---------------------------------------------------------------------------
@@ -643,7 +643,7 @@ func (s *Service) GetUserVotesForThread(ctx context.Context, tenantID, threadID,
 // ---------------------------------------------------------------------------
 
 // AddBookmark adds a bookmark for a thread or reply.
-func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.Bookmark, error) {
+func (s *Service) AddBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.Bookmark, error) {
 	normalized := normalizeForumEntityType(entityType)
 	if normalized != EntityTypeForumThread && normalized != EntityTypeForumReply {
 		return gen.Bookmark{}, errors.New("entity type must be 'thread' or 'reply'")
@@ -652,7 +652,7 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
 	folderID := pgtype.UUID{}
 
 	if folder == "" && s.folderResolver != nil {
-		f, err := s.folderResolver.Resolve(ctx, tenantID, userID, normalized, "")
+		f, err := s.folderResolver.Resolve(ctx, userID, normalized, "")
 		if err == nil && f.ID != "" {
 			folder = f.Name
 
@@ -692,9 +692,9 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
 }
 
 // RemoveBookmark removes a bookmark.
-func (s *Service) RemoveBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	normalized := normalizeForumEntityType(entityType)
-	if err := s.store.removeBookmark(ctx, tenantID, userID, normalized, entityID); err != nil {
+	if err := s.store.removeBookmark(ctx, userID, normalized, entityID); err != nil {
 		return fmt.Errorf("removing bookmark: %w", err)
 	}
 	// Decrement the entity's bookmark count (only forum_threads carry the count).
@@ -710,13 +710,13 @@ func (s *Service) RemoveBookmark(ctx context.Context, tenantID, userID pgtype.UU
 // RemoveBookmarkByID removes a bookmark by its primary key
 // (DELETE /forum/bookmarks/{id}). Resolves the entity first so the
 // denormalized bookmark_count can be decremented. Ref: api-routes-catalog L610.
-func (s *Service) RemoveBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
-	bm, err := s.store.getBookmarkByID(ctx, id, userID, tenantID)
+func (s *Service) RemoveBookmarkByID(ctx context.Context, id, userID pgtype.UUID) error {
+	bm, err := s.store.getBookmarkByID(ctx, id, userID)
 	if err != nil {
 		return fmt.Errorf("resolving bookmark: %w", err)
 	}
 
-	if err := s.store.deleteBookmarkByID(ctx, id, userID, tenantID); err != nil {
+	if err := s.store.deleteBookmarkByID(ctx, id, userID); err != nil {
 		return fmt.Errorf("deleting bookmark: %w", err)
 	}
 
@@ -731,8 +731,8 @@ func (s *Service) RemoveBookmarkByID(ctx context.Context, id, userID, tenantID p
 }
 
 // ListBookmarksByUser returns paginated bookmarks for a user.
-func (s *Service) ListBookmarksByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Bookmark, error) {
-	return s.store.listBookmarksByUser(ctx, tenantID, userID, limit, offset)
+func (s *Service) ListBookmarksByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Bookmark, error) {
+	return s.store.listBookmarksByUser(ctx, userID, limit, offset)
 }
 
 // IsBookmarked checks if an entity is bookmarked by a user.
@@ -788,14 +788,14 @@ func (s *Service) IncrementThreadView(ctx context.Context, id, tenantID pgtype.U
 // ---------------------------------------------------------------------------
 
 // GetThreadBySlugWithDetails returns a thread plus joined author + space data.
-func (s *Service) GetThreadBySlugWithDetails(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetForumThreadBySlugWithDetailsRow, error) {
-	return s.store.getThreadBySlugWithDetails(ctx, slug, tenantID)
+func (s *Service) GetThreadBySlugWithDetails(ctx context.Context, slug string) (gen.GetForumThreadBySlugWithDetailsRow, error) {
+	return s.store.getThreadBySlugWithDetails(ctx, slug)
 }
 
 // GetTopReplyForThread returns the highest-voted non-deleted reply for a
 // thread, used as the accepted-answer candidate for QAPage JSON-LD on solved
 // threads (BL-012). Returns pgx.ErrNoRows when the thread has no replies.
-func (s *Service) GetTopReplyForThread(ctx context.Context, threadID, tenantID pgtype.UUID) (gen.GetTopReplyForThreadRow, error) {
+func (s *Service) GetTopReplyForThread(ctx context.Context, threadID pgtype.UUID) (gen.GetTopReplyForThreadRow, error) {
 	return s.store.read.GetTopReplyForThread(ctx,
 		threadID,
 	)
@@ -803,7 +803,7 @@ func (s *Service) GetTopReplyForThread(ctx context.Context, threadID, tenantID p
 
 // GetReplyByIDWithAuthor returns a single reply with author details.
 // Used for the accepted-answer in QAPage JSON-LD (BL-012).
-func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID, tenantID pgtype.UUID) (gen.GetForumReplyByIDWithAuthorRow, error) {
+func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID pgtype.UUID) (gen.GetForumReplyByIDWithAuthorRow, error) {
 	return s.store.read.GetForumReplyByIDWithAuthor(ctx,
 		replyID,
 	)
@@ -811,8 +811,8 @@ func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID, tenantID 
 
 // ListThreadsByTenantWithDetails returns paginated threads with author + space.
 // BUG-011: supports ?solved and ?sort=top|latest filters and keyset cursors.
-func (s *Service) ListThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
-	return s.store.listThreadsByTenantWithDetails(ctx, tenantID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
+func (s *Service) ListThreadsByTenantWithDetails(ctx context.Context, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
+	return s.store.listThreadsByTenantWithDetails(ctx, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // amaRequiresApproval parses an ama_config JSONB blob and returns true if
@@ -831,21 +831,21 @@ func amaRequiresApproval(amaConfig []byte) bool {
 }
 
 // ListThreadsBySpaceWithDetails returns paginated threads for a space with author + space.
-func (s *Service) ListThreadsBySpaceWithDetails(ctx context.Context, tenantID, spaceID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
-	return s.store.listThreadsBySpaceWithDetails(ctx, tenantID, spaceID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
+func (s *Service) ListThreadsBySpaceWithDetails(ctx context.Context, spaceID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
+	return s.store.listThreadsBySpaceWithDetails(ctx, spaceID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // ListThreadsByAuthorWithDetails returns paginated threads for an author with author + space.
-func (s *Service) ListThreadsByAuthorWithDetails(ctx context.Context, tenantID, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
-	return s.store.listThreadsByAuthorWithDetails(ctx, tenantID, authorUserID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
+func (s *Service) ListThreadsByAuthorWithDetails(ctx context.Context, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
+	return s.store.listThreadsByAuthorWithDetails(ctx, authorUserID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // ListThreadsByTagWithDetails returns paginated threads for a tag with author + space.
-func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, tenantID, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
-	return s.store.listThreadsByTagWithDetails(ctx, tenantID, tagID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
+func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
+	return s.store.listThreadsByTagWithDetails(ctx, tagID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // ListRepliesByThreadWithAuthor returns all replies for a thread with author data.
-func (s *Service) ListRepliesByThreadWithAuthor(ctx context.Context, threadID, tenantID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
-	return s.store.listRepliesByThreadWithAuthor(ctx, threadID, tenantID)
+func (s *Service) ListRepliesByThreadWithAuthor(ctx context.Context, threadID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
+	return s.store.listRepliesByThreadWithAuthor(ctx, threadID)
 }

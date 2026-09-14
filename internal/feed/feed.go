@@ -7,7 +7,6 @@ package feed
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/db"
@@ -45,9 +44,9 @@ type Service struct {
 // for hot-reloadable operational limits. Defined as a local interface so
 // the feed package does not import config.
 type feedSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
-	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
+	GetBoolOr(ctx context.Context, key string, fallback bool) bool
 }
 
 // feedEnqueuer is the subset of worker.Enqueuer that feed needs.

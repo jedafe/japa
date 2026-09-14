@@ -66,7 +66,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	src, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), tenantID, slug)
+	src, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
@@ -90,7 +90,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 
 	// If the caller has blocked this source, return an empty feed (v2 Task 2).
 	if authed && h.intelSources != nil {
-		blocked, err := h.intelSources.IsSourceBlocked(r.Context(), tenantID, userID, src.ID)
+		blocked, err := h.intelSources.IsSourceBlocked(r.Context(), userID, src.ID)
 		if err != nil {
 			slog.Error("intel: source items block check failed", "slug", slug, "error", err)
 		} else if blocked {
@@ -115,7 +115,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	// cost bounded, this mixed path is only used when the requested window fits
 	// inside max_page_size * mixed_fetch_page_multiplier.
 	if entityType == "" && sortMode == "latest" && h.canUseMixedFetch(r.Context(), pageOffset+limit) {
-		items, total, err := h.listMixedSourceItems(r.Context(), w, r, tenantID, src.ID, page, limit, pageOffset)
+		items, total, err := h.listMixedSourceItems(r.Context(), w, r, src.ID, page, limit, pageOffset)
 		if err != nil {
 			return
 		}
@@ -134,7 +134,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	// v2 source directory: if the source is a linked video source, the item
 	// feed is served directly from video_sources for the "video" entity type.
 	if entityType == "video" && h.videos != nil {
-		videos, total, err := h.videos.ListBySourceID(r.Context(), tenantID, src.ID, clampInt32(limit), offset)
+		videos, total, err := h.videos.ListBySourceID(r.Context(), src.ID, clampInt32(limit), offset)
 		if err != nil {
 			slog.Error("intel: source video items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -161,7 +161,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	// the item feed is served directly from contents for the "comparison"
 	// entity type.
 	if entityType == "comparison" && h.contents != nil {
-		comparisons, total, err := h.contents.ListComparisonContentsBySourceID(r.Context(), tenantID, src.ID, clampInt32(limit), offset)
+		comparisons, total, err := h.contents.ListComparisonContentsBySourceID(r.Context(), src.ID, clampInt32(limit), offset)
 		if err != nil {
 			slog.Error("intel: source comparison items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -184,14 +184,14 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	records, err := h.intelStores.ListIntelRecordsBySource(r.Context(), tenantID, src.ID, entityType, sortMode, clampInt32(limit), offset)
+	records, err := h.intelStores.ListIntelRecordsBySource(r.Context(), src.ID, entityType, sortMode, clampInt32(limit), offset)
 	if err != nil {
 		slog.Error("intel: source records list failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
 		return
 	}
 
-	total, err := h.intelStores.CountIntelRecordsBySource(r.Context(), tenantID, src.ID, entityType)
+	total, err := h.intelStores.CountIntelRecordsBySource(r.Context(), src.ID, entityType)
 	if err != nil {
 		slog.Error("intel: source records count failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -200,7 +200,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 
 	items := make([]sourceItem, 0, len(records))
 	for _, rec := range records {
-		item, ok, convErr := h.recordToSourceItem(r.Context(), tenantID, rec)
+		item, ok, convErr := h.recordToSourceItem(r.Context(), rec)
 		if convErr != nil {
 			slog.Warn("intel: source item conversion failed", "record_id", rec.ID, "entity_type", rec.EntityType, "error", convErr)
 			continue
@@ -223,30 +223,30 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 // recordToSourceItem resolves a published intel_record to a UI-ready item.
 // Returns the item, a boolean indicating success, and an error if resolution
 // failed in an unexpected way.
-func (h *Handlers) recordToSourceItem(ctx context.Context, tenantID pgtype.UUID, rec gen.IntelRecord) (sourceItem, bool, error) {
+func (h *Handlers) recordToSourceItem(ctx context.Context, rec gen.IntelRecord) (sourceItem, bool, error) {
 	switch rec.EntityType {
 	case "scholarship":
-		item, ok, err := h.scholarshipRecordToSourceItem(ctx, tenantID, rec)
+		item, ok, err := h.scholarshipRecordToSourceItem(ctx, rec)
 		return item, ok, err
 	case "job":
-		item, ok, err := h.jobRecordToSourceItem(ctx, tenantID, rec)
+		item, ok, err := h.jobRecordToSourceItem(ctx, rec)
 		return item, ok, err
 	case "remittance":
-		item, ok, err := h.remittanceRecordToSourceItem(ctx, tenantID, rec)
+		item, ok, err := h.remittanceRecordToSourceItem(ctx, rec)
 		return item, ok, err
 	case "news", "culture_lifestyle", "guide", "blog", "article":
-		item, ok, err := h.contentRecordToSourceItem(ctx, tenantID, rec)
+		item, ok, err := h.contentRecordToSourceItem(ctx, rec)
 		return item, ok, err
 	case "wiki_page":
-		item, ok, err := h.wikiRecordToSourceItem(ctx, tenantID, rec)
+		item, ok, err := h.wikiRecordToSourceItem(ctx, rec)
 		return item, ok, err
 	default:
 		return sourceItem{}, false, nil
 	}
 }
 
-func (h *Handlers) scholarshipRecordToSourceItem(ctx context.Context, tenantID pgtype.UUID, rec gen.IntelRecord) (sourceItem, bool, error) {
-	sch, err := h.intelStores.GetScholarshipByIntelRecord(ctx, tenantID, rec.ID)
+func (h *Handlers) scholarshipRecordToSourceItem(ctx context.Context, rec gen.IntelRecord) (sourceItem, bool, error) {
+	sch, err := h.intelStores.GetScholarshipByIntelRecord(ctx, rec.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return sourceItem{}, false, nil
@@ -273,8 +273,8 @@ func (h *Handlers) scholarshipRecordToSourceItem(ctx context.Context, tenantID p
 	}, true, nil
 }
 
-func (h *Handlers) jobRecordToSourceItem(ctx context.Context, tenantID pgtype.UUID, rec gen.IntelRecord) (sourceItem, bool, error) {
-	job, err := h.intelStores.GetIntelJobByIntelRecord(ctx, tenantID, rec.ID)
+func (h *Handlers) jobRecordToSourceItem(ctx context.Context, rec gen.IntelRecord) (sourceItem, bool, error) {
+	job, err := h.intelStores.GetIntelJobByIntelRecord(ctx, rec.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return sourceItem{}, false, nil
@@ -283,7 +283,7 @@ func (h *Handlers) jobRecordToSourceItem(ctx context.Context, tenantID pgtype.UU
 	}
 
 	href := "/jobs/" + pgtypeUUIDString(job.GuideID)
-	if content, err := h.intelStores.GetContentByID(ctx, tenantID, job.GuideID); err == nil && content.Slug != "" {
+	if content, err := h.intelStores.GetContentByID(ctx, job.GuideID); err == nil && content.Slug != "" {
 		href = "/jobs/" + content.Slug
 	}
 
@@ -320,8 +320,8 @@ func (h *Handlers) jobRecordToSourceItem(ctx context.Context, tenantID pgtype.UU
 	}, true, nil
 }
 
-func (h *Handlers) remittanceRecordToSourceItem(ctx context.Context, tenantID pgtype.UUID, rec gen.IntelRecord) (sourceItem, bool, error) {
-	rate, err := h.intelStores.GetRemittanceRateByIntelRecord(ctx, tenantID, rec.ID)
+func (h *Handlers) remittanceRecordToSourceItem(ctx context.Context, rec gen.IntelRecord) (sourceItem, bool, error) {
+	rate, err := h.intelStores.GetRemittanceRateByIntelRecord(ctx, rec.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return sourceItem{}, false, nil
@@ -351,8 +351,8 @@ func (h *Handlers) remittanceRecordToSourceItem(ctx context.Context, tenantID pg
 	}, true, nil
 }
 
-func (h *Handlers) contentRecordToSourceItem(ctx context.Context, tenantID pgtype.UUID, rec gen.IntelRecord) (sourceItem, bool, error) {
-	content, err := h.intelStores.GetContentByIntelRecord(ctx, tenantID, rec.ID)
+func (h *Handlers) contentRecordToSourceItem(ctx context.Context, rec gen.IntelRecord) (sourceItem, bool, error) {
+	content, err := h.intelStores.GetContentByIntelRecord(ctx, rec.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return sourceItem{}, false, nil
@@ -399,8 +399,8 @@ func (h *Handlers) contentRecordToSourceItem(ctx context.Context, tenantID pgtyp
 	}, true, nil
 }
 
-func (h *Handlers) wikiRecordToSourceItem(ctx context.Context, tenantID pgtype.UUID, rec gen.IntelRecord) (sourceItem, bool, error) {
-	page, err := h.intelStores.GetWikiPageByIntelRecordWithSpace(ctx, tenantID, rec.ID)
+func (h *Handlers) wikiRecordToSourceItem(ctx context.Context, rec gen.IntelRecord) (sourceItem, bool, error) {
+	page, err := h.intelStores.GetWikiPageByIntelRecordWithSpace(ctx, rec.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return sourceItem{}, false, nil
@@ -461,27 +461,27 @@ func sortSourceItems(items []sourceItem, sortMode string) {
 func (h *Handlers) canUseMixedFetch(ctx context.Context, needed int) bool {
 	maxSize := 100
 	if h.settings != nil {
-		maxSize = h.settings.GetIntOr(ctx, h.defaultTenant, "intel.radar.max_page_size", 100)
+		maxSize = h.settings.GetIntOr(ctx, "intel.radar.max_page_size", 100)
 	}
 	multiplier := 10
 	if h.settings != nil {
-		multiplier = h.settings.GetIntOr(ctx, h.defaultTenant, "intel.radar.mixed_fetch_page_multiplier", 10)
+		multiplier = h.settings.GetIntOr(ctx, "intel.radar.mixed_fetch_page_multiplier", 10)
 	}
 	return needed <= maxSize*multiplier
 }
 
-func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWriter, r *http.Request, tenantID, sourceID pgtype.UUID, page, limit, pageOffset int) ([]sourceItem, int64, error) {
+func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWriter, r *http.Request, sourceID pgtype.UUID, page, limit, pageOffset int) ([]sourceItem, int64, error) {
 	slug := chi.URLParam(r, "slug")
 
 	innerLimit := clampInt32(pageOffset + limit)
-	records, err := h.intelStores.ListIntelRecordsBySource(ctx, tenantID, sourceID, "", "latest", innerLimit, 0)
+	records, err := h.intelStores.ListIntelRecordsBySource(ctx, sourceID, "", "latest", innerLimit, 0)
 	if err != nil {
 		slog.Error("intel: source records list failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
 		return nil, 0, err
 	}
 
-	recordTotal, err := h.intelStores.CountIntelRecordsBySource(ctx, tenantID, sourceID, "")
+	recordTotal, err := h.intelStores.CountIntelRecordsBySource(ctx, sourceID, "")
 	if err != nil {
 		slog.Error("intel: source records count failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -490,7 +490,7 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 
 	items := make([]sourceItem, 0, len(records))
 	for _, rec := range records {
-		item, ok, convErr := h.recordToSourceItem(ctx, tenantID, rec)
+		item, ok, convErr := h.recordToSourceItem(ctx, rec)
 		if convErr != nil {
 			slog.Warn("intel: source item conversion failed", "record_id", rec.ID, "entity_type", rec.EntityType, "error", convErr)
 			continue
@@ -502,7 +502,7 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 
 	var videoTotal int64
 	if h.videos != nil {
-		videos, vTotal, err := h.videos.ListBySourceID(ctx, tenantID, sourceID, innerLimit, 0)
+		videos, vTotal, err := h.videos.ListBySourceID(ctx, sourceID, innerLimit, 0)
 		if err != nil {
 			slog.Error("intel: source video items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -516,7 +516,7 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 
 	var comparisonTotal int64
 	if h.contents != nil {
-		comparisons, cTotal, err := h.contents.ListComparisonContentsBySourceID(ctx, tenantID, sourceID, innerLimit, 0)
+		comparisons, cTotal, err := h.contents.ListComparisonContentsBySourceID(ctx, sourceID, innerLimit, 0)
 		if err != nil {
 			slog.Error("intel: source comparison items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")

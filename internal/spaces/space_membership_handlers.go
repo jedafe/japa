@@ -31,19 +31,19 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	isMember, err := h.Service.IsMember(r.Context(), space.ID, user.UserID, tenantID)
+	isMember, err := h.Service.IsMember(r.Context(), space.ID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	if isMember {
-		if err := h.Service.Leave(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+		if err := h.Service.Leave(r.Context(), space.ID, user.UserID); err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, -1); err != nil {
+		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, -1); err != nil {
 			handleServiceError(w, err)
 			return
 		}
@@ -55,7 +55,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		// - 'invite': only invited users may join; reject otherwise.
 		switch space.JoiningPerm {
 		case JoiningRequest:
-			if err := h.Service.JoinPending(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+			if err := h.Service.JoinPending(r.Context(), space.ID, user.UserID); err != nil {
 				handleServiceError(w, err)
 				return
 			}
@@ -80,14 +80,14 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 				return
 			}
 
-			if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, 1); err != nil {
+			if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, 1); err != nil {
 				handleServiceError(w, err)
 				return
 			}
 		}
 	}
 
-	memberCount, err := h.Service.CountMembers(r.Context(), space.ID, tenantID)
+	memberCount, err := h.Service.CountMembers(r.Context(), space.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -117,28 +117,27 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	// Check if the user is an approved member before removing. Pending
 	// members (status='pending') are removed but don't affect the count.
-	wasApproved, err := h.Service.IsMember(r.Context(), space.ID, user.UserID, tenantID)
+	wasApproved, err := h.Service.IsMember(r.Context(), space.ID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if err := h.Service.Leave(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+	if err := h.Service.Leave(r.Context(), space.ID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	// SPACES-016: only decrement if the user was an approved member.
 	if wasApproved {
-		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, -1); err != nil {
+		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, -1); err != nil {
 			handleServiceError(w, err)
 			return
 		}
@@ -158,8 +157,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -167,7 +165,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	members, err := h.Service.ListMembers(r.Context(), space.ID, tenantID, limit, offset)
+	members, err := h.Service.ListMembers(r.Context(), space.ID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

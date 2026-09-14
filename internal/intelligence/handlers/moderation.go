@@ -103,9 +103,9 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 	var err error
 
 	if category != "" {
-		rows, err = h.intelSources.ListByCategory(r.Context(), tenantID, sources.Category(category))
+		rows, err = h.intelSources.ListByCategory(r.Context(), sources.Category(category))
 	} else {
-		rows, err = h.intelSources.List(r.Context(), tenantID, gen.ListIntelSourcesParams{
+		rows, err = h.intelSources.List(r.Context(), gen.ListIntelSourcesParams{
 			Limit:  clampInt32(limit),
 			Offset: offset,
 		})
@@ -268,7 +268,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set the record status to 'approved'.
-	if err := h.intelStores.UpdateIntelRecordStatus(r.Context(), tenantID, gen.UpdateIntelRecordStatusParams{
+	if err := h.intelStores.UpdateIntelRecordStatus(r.Context(), gen.UpdateIntelRecordStatusParams{
 		ID:     recordID,
 		Status: "approved",
 	}); err != nil {
@@ -284,7 +284,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		note = "approved by reviewer"
 	}
 
-	if err := h.intelStores.CreateIntelReviewLog(r.Context(), tenantID, gen.CreateIntelReviewLogParams{
+	if err := h.intelStores.CreateIntelReviewLog(r.Context(), gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
 		ActorUserID:   userID,
 		Action:        "approve",
@@ -329,8 +329,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -349,7 +348,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set the record status to 'rejected'.
-	if err := h.intelStores.UpdateIntelRecordStatus(r.Context(), tenantID, gen.UpdateIntelRecordStatusParams{
+	if err := h.intelStores.UpdateIntelRecordStatus(r.Context(), gen.UpdateIntelRecordStatusParams{
 		ID:     recordID,
 		Status: "rejected",
 	}); err != nil {
@@ -365,7 +364,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 		note = "rejected by reviewer"
 	}
 
-	if err := h.intelStores.CreateIntelReviewLog(r.Context(), tenantID, gen.CreateIntelReviewLogParams{
+	if err := h.intelStores.CreateIntelReviewLog(r.Context(), gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
 		ActorUserID:   userID,
 		Action:        "reject",
@@ -495,14 +494,14 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if entityType != "" {
-		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), tenantID, gen.ListIntelRecordsByStatusParams{
+		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), gen.ListIntelRecordsByStatusParams{
 			EntityType: entityType,
 			Status:     "review_required",
 			Limit:      clampInt32(limit),
 			Offset:     offset,
 		})
 	} else {
-		rows, err = h.intelStores.ListIntelRecordsByStatusAll(r.Context(), tenantID, gen.ListIntelRecordsByStatusAllParams{
+		rows, err = h.intelStores.ListIntelRecordsByStatusAll(r.Context(), gen.ListIntelRecordsByStatusAllParams{
 			Status: "review_required",
 			Limit:  clampInt32(limit),
 			Offset: offset,
@@ -585,14 +584,14 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 
 	var err error
 	if entityType != "" {
-		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), tenantID, gen.ListIntelRecordsByStatusParams{
+		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), gen.ListIntelRecordsByStatusParams{
 			EntityType: entityType,
 			Status:     status,
 			Limit:      clampInt32(limit),
 			Offset:     offset,
 		})
 	} else {
-		rows, err = h.intelStores.ListIntelRecordsByStatusAll(r.Context(), tenantID, gen.ListIntelRecordsByStatusAllParams{
+		rows, err = h.intelStores.ListIntelRecordsByStatusAll(r.Context(), gen.ListIntelRecordsByStatusAllParams{
 			Status: status,
 			Limit:  clampInt32(limit),
 			Offset: offset,
@@ -628,7 +627,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) {
 	handleIntelGetByID(h, w, r, "Intel record not found", "intel record",
 		func(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
-			return h.intelStores.GetIntelRecord(ctx, tenantID, id)
+			return h.intelStores.GetIntelRecord(ctx, id)
 		},
 		func(rec gen.IntelRecord) interface{} { return intelRecordToResponse(rec) })
 }

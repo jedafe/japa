@@ -88,7 +88,7 @@ func parseOffset(r *http.Request) int32 {
 // ListKnownBots returns all known bots for the tenant, optionally filtered by bot_type.
 // GET /api/v1/admin/bots?bot_type=search_engine.
 func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -99,7 +99,7 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.Service.ListKnownBotsWithCount(r.Context(), tenantID, botType, parsePageSize(r), parseOffset(r))
+	result, err := h.Service.ListKnownBotsWithCount(r.Context(), botType, parsePageSize(r), parseOffset(r))
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -115,7 +115,7 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 // GetKnownBot returns a single known bot by ID.
 // GET /api/v1/admin/bots/{id}.
 func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -126,7 +126,7 @@ func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bot, err := h.Service.GetKnownBotByID(r.Context(), tenantID, id)
+	bot, err := h.Service.GetKnownBotByID(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return

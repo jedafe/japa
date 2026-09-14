@@ -77,7 +77,7 @@ func hasPermission(r *http.Request, user *auth.AuthenticatedUser, permKey string
 		return false
 	}
 
-	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
+	return resolver.HasPermission(r.Context(), user.UserID, permKey)
 }
 
 // storyVisibility derives the §14 visibility rights for story list/detail
@@ -98,10 +98,10 @@ func storyVisibility(r *http.Request) (requesterID pgtype.UUID, canSeeMembers, c
 		return requesterID, canSeeMembers, false
 	}
 
-	if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) ||
-		resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "story.verify") ||
-		resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "content.edit_any") ||
-		resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "admin.moderation") {
+	if resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+		resolver.HasPermission(r.Context(), user.UserID, "story.verify") ||
+		resolver.HasPermission(r.Context(), user.UserID, "content.edit_any") ||
+		resolver.HasPermission(r.Context(), user.UserID, "admin.moderation") {
 		canSeePrivate = true
 	}
 
@@ -170,7 +170,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	requesterID, canSeeMembers, canSeePrivate := storyVisibility(r)
 
-	stories, total, err := h.service.List(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory, profession, sort, pageSize, pageOffset, requesterID, canSeeMembers, canSeePrivate)
+	stories, total, err := h.service.List(r.Context(), originSpaceID, destSpaceID, visaCategory, profession, sort, pageSize, pageOffset, requesterID, canSeeMembers, canSeePrivate)
 	if err != nil {
 		slog.Error("story: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
@@ -206,7 +206,7 @@ func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	story, err := h.service.GetBySlug(r.Context(), slug, tenantID)
+	story, err := h.service.GetBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
@@ -540,7 +540,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		pageSize = 200
 	}
 
-	stories, total, err := h.service.AdminList(r.Context(), tenantID, status, q, verifiedPtr, sort, destSpaceID, pageSize, pageOffset)
+	stories, total, err := h.service.AdminList(r.Context(), status, q, verifiedPtr, sort, destSpaceID, pageSize, pageOffset)
 	if err != nil {
 		slog.Error("story: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list stories")

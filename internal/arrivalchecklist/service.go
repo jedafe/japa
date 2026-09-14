@@ -40,7 +40,7 @@ type AIDispatcher interface {
 // Researcher runs grounded web research for a destination and visa category.
 // *Service implements this interface, but it can be swapped in tests.
 type Researcher interface {
-	Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, visaCategory string) (string, []string, error)
+	Research(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, visaCategory string) (string, []string, error)
 }
 
 // GuideDTO is the API response shape for a single arrival checklist guide.
@@ -173,12 +173,12 @@ func (s *Service) SetHTTPClient(c *http.Client) { s.httpClient = c }
 
 // Enabled reads the arrival_checklist.enabled system_setting toggle
 // (§92 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "arrival_checklist.enabled", false)
+	return s.settings.GetBoolOr(ctx, "arrival_checklist.enabled", false)
 }
 
 // Research runs grounded web research for the given destination and visa
@@ -186,7 +186,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 // refinement and is currently ignored. It returns a formatted "GROUNDED
 // RESEARCH" section and a list of source URLs. Errors are returned so the
 // caller can log and fall back.
-func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, visaCategory string) (string, []string, error) {
+func (s *Service) Research(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, visaCategory string) (string, []string, error) {
 	_ = citySpaceID // reserved for future city-level refinement
 
 	client := s.httpClient
@@ -194,7 +194,7 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpace
 		client = http.DefaultClient
 	}
 
-	destName, err := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	destName, err := s.store.GetSpaceName(ctx, destSpaceID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -216,14 +216,14 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpace
 		fmt.Sprintf("current documents required at immigration %s 2026", dest),
 	}
 
-	return s.runWebResearch(ctx, client, tenantID, queries)
+	return s.runWebResearch(ctx, client, queries)
 }
 
 // runWebResearch executes the provided queries through the configured
 // external search provider and formats the results for the generation
 // prompt. It returns the full grounded research section and a deduplicated
 // list of citation URLs.
-func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
+func (s *Service) runWebResearch(ctx context.Context, client *http.Client, queries []string) (string, []string, error) {
 	var sections []string
 
 	seenCitations := make(map[string]bool)
@@ -231,7 +231,7 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 	var citations []string
 
 	for _, q := range queries {
-		provider, results, err := ai.SearchWeb(ctx, client, s.settings, tenantID, q, 5)
+		provider, results, err := ai.SearchWeb(ctx, client, s.settings, q, 5)
 		if err != nil {
 			return "", nil, err
 		}
@@ -318,8 +318,8 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 
 // ListSelectors returns the distinct destination + visa category
 // combinations available to the public selector endpoint.
-func (s *Service) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]SelectorDTO, error) {
-	rows, err := s.store.ListSelectors(ctx, tenantID)
+func (s *Service) ListSelectors(ctx context.Context) ([]SelectorDTO, error) {
+	rows, err := s.store.ListSelectors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: list selectors: %w", err)
 	}
@@ -333,7 +333,7 @@ func (s *Service) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]Se
 }
 
 // GetGuide returns a single published guide by id.
-func (s *Service) GetGuide(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
+func (s *Service) GetGuide(ctx context.Context, id pgtype.UUID) (GuideDTO, error) {
 	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -349,7 +349,7 @@ func (s *Service) GetGuide(ctx context.Context, id, tenantID pgtype.UUID) (Guide
 // GetGuideItems returns the ordered checklist items for a published guide.
 // The guide must exist, be published, active, and belong to the tenant.
 // Public endpoint — never exposes draft/rejected guides (§92, ADR-088).
-func (s *Service) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UUID) ([]ChecklistItemDTO, error) {
+func (s *Service) GetGuideItems(ctx context.Context, guideID pgtype.UUID) ([]ChecklistItemDTO, error) {
 	if _, err := s.store.GetPublishedGuideByID(ctx, guideID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, pgx.ErrNoRows
@@ -358,7 +358,7 @@ func (s *Service) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UU
 		return nil, fmt.Errorf("arrivalchecklist: get guide items: lookup guide: %w", err)
 	}
 
-	rows, err := s.store.GetGuideItems(ctx, guideID, tenantID)
+	rows, err := s.store.GetGuideItems(ctx, guideID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: get guide items: %w", err)
 	}
@@ -374,7 +374,7 @@ func (s *Service) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UU
 // AdminList returns guides (any status) for the admin management view.
 // The admin HITL queue must see draft/ai_draft/pending/rejected rows, so
 // PublicOnly is false (no status filter unless one is explicitly passed).
-func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory, applicantType, status, q, sort, order string, page, limit int32) ([]GuideDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, visaCategory, applicantType, status, q, sort, order string, page, limit int32) ([]GuideDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -412,7 +412,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 
 // CreateGuide creates a new guide. Auth and permission checks are done
 // at the handler layer.
-func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req CreateGuideRequest) (GuideDTO, error) {
+func (s *Service) CreateGuide(ctx context.Context, req CreateGuideRequest) (GuideDTO, error) {
 	if req.DestinationSpaceID == "" {
 		return GuideDTO{}, errors.New("destination_space_id is required")
 	}
@@ -446,7 +446,7 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: create guide: %w", err)
 	}
 
-	dto, err := s.getGuideDTOByID(ctx, row.ID, tenantID)
+	dto, err := s.getGuideDTOByID(ctx, row.ID)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: create guide: reload: %w", err)
 	}
@@ -459,7 +459,7 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 // The status field may only be set to 'draft', 'pending', or 'rejected' via
 // this endpoint — publishing MUST go through ApproveGuide to enforce the
 // ADR-088 HITL review gate (hitl_reviewed_by + hitl_reviewed_at).
-func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req UpdateGuideRequest) (GuideDTO, error) {
+func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, req UpdateGuideRequest) (GuideDTO, error) {
 	// Block status='published' via UpdateGuide — publishing must go through
 	// ApproveGuide which records the HITL reviewer and timestamp (ADR-088).
 	if req.Status != nil && *req.Status == StatusPublished {
@@ -485,7 +485,7 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 		in.DestinationSpaceID = &sid
 	}
 
-	if err := s.store.UpdateGuide(ctx, id, tenantID, in); err != nil {
+	if err := s.store.UpdateGuide(ctx, id, in); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
@@ -493,7 +493,7 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: update guide: %w", err)
 	}
 
-	dto, err := s.getGuideDTOByID(ctx, id, tenantID)
+	dto, err := s.getGuideDTOByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: update guide: reload: %w", err)
 	}
@@ -517,8 +517,8 @@ func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) err
 
 // ApproveGuide performs the human-in-the-loop approval: sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), and status = 'published'.
-func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, req ApproveGuideRequest) (GuideDTO, error) {
-	if err := s.store.ApproveGuide(ctx, id, tenantID, reviewerID, req.Notes); err != nil {
+func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, req ApproveGuideRequest) (GuideDTO, error) {
+	if err := s.store.ApproveGuide(ctx, id, reviewerID, req.Notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
@@ -526,7 +526,7 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: approve guide: %w", err)
 	}
 
-	dto, err := s.getGuideDTOByID(ctx, id, tenantID)
+	dto, err := s.getGuideDTOByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: approve guide: reload: %w", err)
 	}
@@ -569,7 +569,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 
 	// Look up the destination name so the prompt and research queries are
 	// human-readable. A missing name is non-fatal; we fall back to the ID.
-	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	destName, _ := s.store.GetSpaceName(ctx, destSpaceID)
 
 	location := destName
 	if location == "" {
@@ -599,7 +599,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	// a warning and continue with the original prompt (graceful degradation).
 	var citySpaceID pgtype.UUID // not used yet; reserved for future refinement
 	if s.researcher != nil {
-		researchText, _, researchErr := s.researcher.Research(ctx, tenantID, destSpaceID, citySpaceID, req.VisaCategory)
+		researchText, _, researchErr := s.researcher.Research(ctx, destSpaceID, citySpaceID, req.VisaCategory)
 		if researchErr != nil {
 			slog.Warn("arrivalchecklist: web research failed, continuing with original prompt", "error", researchErr)
 		} else if researchText != "" {
@@ -808,8 +808,8 @@ type TickItemRequest struct {
 
 // ListUserChecklists returns the user's saved arrival checklists with progress
 // summaries. For GET /me/arrival-checklists.
-func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtype.UUID) ([]UserChecklistDTO, error) {
-	rows, err := s.store.ListUserChecklists(ctx, tenantID, userID)
+func (s *Service) ListUserChecklists(ctx context.Context, userID pgtype.UUID) ([]UserChecklistDTO, error) {
+	rows, err := s.store.ListUserChecklists(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: list user checklists: %w", err)
 	}
@@ -846,7 +846,7 @@ func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtyp
 // GetUserChecklistItems returns the items for a single saved checklist with
 // the user's progress state merged in. For GET /me/arrival-checklists/:id.
 // Returns pgx.ErrNoRows if the guide does not exist or is not published.
-func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]UserChecklistItemDTO, error) {
+func (s *Service) GetUserChecklistItems(ctx context.Context, userID, guideID pgtype.UUID) ([]UserChecklistItemDTO, error) {
 	// Verify the guide exists and is published.
 	if _, err := s.store.GetPublishedGuideByID(ctx, guideID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -856,7 +856,7 @@ func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, g
 		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: lookup guide: %w", err)
 	}
 
-	rows, err := s.store.GetUserChecklistItems(ctx, tenantID, userID, guideID)
+	rows, err := s.store.GetUserChecklistItems(ctx, userID, guideID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: %w", err)
 	}
@@ -895,7 +895,7 @@ func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, g
 // StartChecklist starts a checklist for the user (creates an initial progress
 // row). For POST /me/arrival-checklists. Returns the guide DTO so the frontend
 // can render items immediately.
-func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UUID, req StartChecklistRequest) (GuideDTO, error) {
+func (s *Service) StartChecklist(ctx context.Context, userID pgtype.UUID, req StartChecklistRequest) (GuideDTO, error) {
 	if req.GuideID == "" {
 		return GuideDTO{}, errors.New("guide_id is required")
 	}
@@ -917,7 +917,7 @@ func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UU
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: start checklist: lookup guide: %w", err)
 	}
 
-	if err := s.store.StartChecklist(ctx, tenantID, userID, guideID); err != nil {
+	if err := s.store.StartChecklist(ctx, userID, guideID); err != nil {
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: start checklist: %w", err)
 	}
 
@@ -927,7 +927,7 @@ func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UU
 // TickItem marks a single arrival checklist item complete/incomplete with an
 // optional note. For PATCH /me/arrival-checklists/:id/items/:item_id.
 // Only published+active guides accept progress updates (§92, ADR-088).
-func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemID string, req TickItemRequest) error {
+func (s *Service) TickItem(ctx context.Context, userID, guideID pgtype.UUID, itemID string, req TickItemRequest) error {
 	// Verify the guide exists and is published.
 	if _, err := s.store.GetPublishedGuideByID(ctx, guideID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -942,7 +942,7 @@ func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype
 		completed = *req.Completed
 	}
 
-	if err := s.store.TickItem(ctx, tenantID, userID, guideID, itemID, completed, req.Notes); err != nil {
+	if err := s.store.TickItem(ctx, userID, guideID, itemID, completed, req.Notes); err != nil {
 		return fmt.Errorf("arrivalchecklist: tick item: %w", err)
 	}
 
@@ -950,7 +950,7 @@ func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype
 }
 
 // getGuideDTOByID fetches a guide by id and converts to DTO.
-func (s *Service) getGuideDTOByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
+func (s *Service) getGuideDTOByID(ctx context.Context, id pgtype.UUID) (GuideDTO, error) {
 	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, err

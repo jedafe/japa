@@ -109,7 +109,7 @@ func mustUUID(s string) pgtype.UUID {
 	return u
 }
 
-func withUser(ctx context.Context, userID, tenantID pgtype.UUID) context.Context {
+func withUser(ctx context.Context, userID pgtype.UUID) context.Context {
 	return context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
 		UserID: userID,
 	})
@@ -136,7 +136,7 @@ func postJSON(t *testing.T, handler http.Handler, ctx context.Context, body stri
 
 func TestMCP_Initialize(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -172,7 +172,7 @@ func TestMCP_Initialize(t *testing.T) {
 
 func TestMCP_InitializedNotification(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -190,7 +190,7 @@ func TestMCP_InitializedNotification(t *testing.T) {
 
 func TestMCP_ToolsList(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -223,7 +223,7 @@ func TestMCP_ToolsList(t *testing.T) {
 
 func TestMCP_ToolsCall(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -258,7 +258,7 @@ func TestMCP_ToolsCall(t *testing.T) {
 
 func TestMCP_ToolsCall_UnknownTool(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -282,7 +282,7 @@ func TestMCP_ToolsCall_UnknownTool(t *testing.T) {
 
 func TestMCP_ToolsCall_HITLQueued(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -343,7 +343,7 @@ func TestMCP_Unauthenticated(t *testing.T) {
 
 func TestMCP_UnknownMethod(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -364,7 +364,7 @@ func TestMCP_UnknownMethod(t *testing.T) {
 
 func TestMCP_InvalidJSON(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -384,7 +384,7 @@ func TestMCP_InvalidJSON(t *testing.T) {
 func TestMCP_GETStream(t *testing.T) {
 	srv, _ := newTestMCP(t)
 
-	ctx, cancel := context.WithCancel(withUser(t.Context(), testUserID, testTenantID))
+	ctx, cancel := context.WithCancel(withUser(t.Context(), testUserID))
 	defer cancel()
 
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
@@ -410,7 +410,7 @@ func TestMCP_GETStream(t *testing.T) {
 
 func TestMCP_UnsupportedMethod(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil).WithContext(ctx)
 	rr := httptest.NewRecorder()
@@ -433,7 +433,7 @@ func TestMCP_UnsupportedMethod(t *testing.T) {
 
 func TestMCP_Initialize_2025_11_25(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(t.Context(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -460,13 +460,13 @@ type stubPerms struct {
 	granted map[string]bool
 }
 
-func (s *stubPerms) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool {
+func (s *stubPerms) HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool {
 	return s.granted[permKey]
 }
 
 type stubPrivacy struct{}
 
-func (s *stubPrivacy) IsExempt(ctx context.Context, entityType ai.PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
+func (s *stubPrivacy) IsExempt(ctx context.Context, entityType ai.PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	return false, nil
 }
 

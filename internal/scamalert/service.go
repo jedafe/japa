@@ -88,7 +88,7 @@ type ReviewInput struct {
 // import cycle: notifications → worker → scamalert.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // activityEmitter records wallet activity events and enqueues processing.
@@ -166,17 +166,17 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "scam_alert.enabled", false)
+	return s.settings.GetBoolOr(ctx, "scam_alert.enabled", false)
 }
 
 // AnonymousReportsAllowed reads the scam_alert.anonymous_reports setting.
 // §81 default is true.
-func (s *Service) AnonymousReportsAllowed(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) AnonymousReportsAllowed(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "scam_alert.anonymous_reports", true)
+	return s.settings.GetBoolOr(ctx, "scam_alert.anonymous_reports", true)
 }
 
 // Option is a single selectable value exposed by the schema endpoint.
@@ -286,13 +286,13 @@ var ErrModeratorNoteRequired = errors.New("moderator note required")
 
 // permissionChecker is the subset of rbac.RBAC used for edit authorization.
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // Submit creates a new scam report in 'under_review' status. reporterID may
 // be zero-valued (invalid) for anonymous reports when anonymous reports are
 // allowed.
-func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, input SubmitReportInput) (ScamReportDTO, error) {
+func (s *Service) Submit(ctx context.Context, reporterID pgtype.UUID, input SubmitReportInput) (ScamReportDTO, error) {
 	report, err := buildScamReport(UpdateReportInput(input))
 	if err != nil {
 		return ScamReportDTO{}, err
@@ -421,7 +421,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 		return ScamReportDTO{}, fmt.Errorf("scamalert: update: %w", err)
 	}
 
-	editAny := s.rbac != nil && s.rbac.HasPermission(ctx, callerID, tenantID, "scam_alert.edit_any")
+	editAny := s.rbac != nil && s.rbac.HasPermission(ctx, callerID, "scam_alert.edit_any")
 	if !editAny && (!existing.ReporterID.Valid || existing.ReporterID != callerID) {
 		return ScamReportDTO{}, ErrEditForbidden
 	}
@@ -441,8 +441,8 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 
 // IsSubscribed reports whether a user is subscribed to scam alerts for a
 // destination space.
-func (s *Service) IsSubscribed(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) (bool, error) {
-	return s.store.IsSubscribed(ctx, userID, tenantID, destSpaceID)
+func (s *Service) IsSubscribed(ctx context.Context, userID, destSpaceID pgtype.UUID) (bool, error) {
+	return s.store.IsSubscribed(ctx, userID, destSpaceID)
 }
 
 // Get returns a single confirmed scam report (public view).
@@ -460,7 +460,7 @@ func (s *Service) Get(ctx context.Context, tenantID, id pgtype.UUID) (ScamReport
 }
 
 // List returns a paginated, filtered list of confirmed scam reports.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]ScamReportDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]ScamReportDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -500,8 +500,8 @@ func (s *Service) Subscribe(ctx context.Context, userID, tenantID, destSpaceID p
 }
 
 // Unsubscribe removes a scam-alert subscription for a user + destination space.
-func (s *Service) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) error {
-	if err := s.store.Unsubscribe(ctx, userID, tenantID, destSpaceID); err != nil {
+func (s *Service) Unsubscribe(ctx context.Context, userID, destSpaceID pgtype.UUID) error {
+	if err := s.store.Unsubscribe(ctx, userID, destSpaceID); err != nil {
 		return fmt.Errorf("scamalert: unsubscribe: %w", err)
 	}
 
@@ -511,7 +511,7 @@ func (s *Service) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID
 // AdminList returns all reports (any status) for the moderation queue.
 // Supports ?status=&dest=&scam_type=&q=&sort=&order= per the DataTable
 // contract (api-routes-catalog.md).
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status string, destSpaceID pgtype.UUID, scamType, query, sortKey, order string, page, limit int32) ([]ScamReportDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, status string, destSpaceID pgtype.UUID, scamType, query, sortKey, order string, page, limit int32) ([]ScamReportDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -553,7 +553,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status st
 // subscribers of the report's destination space, award the Community
 // Guardian badge to the reporter (§64), and enqueue wallet:award_points
 // for the reporter's contribution.
-func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, note string, reviewerID pgtype.UUID) error {
+func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note string, reviewerID pgtype.UUID) error {
 	if !validReviewStatuses[status] {
 		return ErrInvalidStatus
 	}
@@ -565,7 +565,7 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 		return ErrModeratorNoteRequired
 	}
 
-	if err := s.store.UpdateReportStatus(ctx, id, tenantID, status, note, reviewerID); err != nil {
+	if err := s.store.UpdateReportStatus(ctx, id, status, note, reviewerID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -607,7 +607,7 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 // the method logs a warning and continues. This makes the feature
 // gracefully degrade in tests and development.
 func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgtype.UUID) error {
-	destSpaceID, reporterID, scamType, description, err := s.store.GetReportForNotification(ctx, reportID, tenantID)
+	destSpaceID, reporterID, scamType, description, err := s.store.GetReportForNotification(ctx, reportID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("scamalert: notify: report not found or not confirmed", "report_id", reportID.String())
@@ -619,7 +619,7 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 
 	// 1. Fan out notifications to subscribers.
 	if s.notifier != nil {
-		subscribers, err := s.store.ListSubscribersByDestination(ctx, tenantID, destSpaceID)
+		subscribers, err := s.store.ListSubscribersByDestination(ctx, destSpaceID)
 		if err != nil {
 			slog.Error("scamalert: notify: list subscribers failed", "error", err)
 		} else {
@@ -629,7 +629,7 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 
 			for _, subID := range subscribers {
 				if err := s.notifier.CreateNotification(
-					ctx, tenantID, subID,
+					ctx, subID,
 					"scam_alert.confirmed", "system", pgtype.UUID{},
 					"scam_report", reportID,
 					title, body, actionURL,
@@ -652,7 +652,7 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 	// the activity_count trigger see this report. The reporter_id may be
 	// invalid for anonymous reports — skip in that case.
 	if s.activity != nil && reporterID.Valid {
-		event, err := s.activity.EmitActivityEvent(ctx, tenantID, reporterID, wallet.EmitActivityEventInput{
+		event, err := s.activity.EmitActivityEvent(ctx, reporterID, wallet.EmitActivityEventInput{
 			ActivityKey: wallet.ActivityKeyScamAlertConfirmed,
 			Reference:   "scam_alert:" + reportID.String(),
 			Payload:     map[string]interface{}{"scam_type": scamType},
@@ -704,8 +704,8 @@ func excerpt(s string, n int) string {
 }
 
 // Pin pins a confirmed report to a space.
-func (s *Service) Pin(ctx context.Context, id, tenantID, spaceID pgtype.UUID) error {
-	if err := s.store.PinReport(ctx, id, tenantID, spaceID); err != nil {
+func (s *Service) Pin(ctx context.Context, id, spaceID pgtype.UUID) error {
+	if err := s.store.PinReport(ctx, id, spaceID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -717,8 +717,8 @@ func (s *Service) Pin(ctx context.Context, id, tenantID, spaceID pgtype.UUID) er
 }
 
 // Unpin removes the pin from a report.
-func (s *Service) Unpin(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.UnpinReport(ctx, id, tenantID); err != nil {
+func (s *Service) Unpin(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.UnpinReport(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

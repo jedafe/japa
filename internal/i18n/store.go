@@ -27,7 +27,7 @@ func NewStore(read, write *gen.Queries) *Store {
 // ---------------------------------------------------------------------------
 
 // ListByLocale returns all translations for a given locale.
-func (s *Store) ListByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) ([]gen.Translation, error) {
+func (s *Store) ListByLocale(ctx context.Context, locale string) ([]gen.Translation, error) {
 	rows, err := s.read.ListTranslationsByLocale(ctx,
 
 		locale,
@@ -40,7 +40,7 @@ func (s *Store) ListByLocale(ctx context.Context, tenantID pgtype.UUID, locale s
 }
 
 // ListByKeyPrefix returns translations whose key starts with the given prefix.
-func (s *Store) ListByKeyPrefix(ctx context.Context, tenantID pgtype.UUID, prefix string) ([]gen.Translation, error) {
+func (s *Store) ListByKeyPrefix(ctx context.Context, prefix string) ([]gen.Translation, error) {
 	rows, err := s.read.ListTranslationsByKeyPrefix(ctx,
 
 		&prefix,
@@ -53,7 +53,7 @@ func (s *Store) ListByKeyPrefix(ctx context.Context, tenantID pgtype.UUID, prefi
 }
 
 // Get returns a single translation by locale and key.
-func (s *Store) Get(ctx context.Context, tenantID pgtype.UUID, locale, key string) (gen.Translation, error) {
+func (s *Store) Get(ctx context.Context, locale, key string) (gen.Translation, error) {
 	row, err := s.read.GetTranslation(ctx, gen.GetTranslationParams{
 
 		Locale: locale,
@@ -67,7 +67,7 @@ func (s *Store) Get(ctx context.Context, tenantID pgtype.UUID, locale, key strin
 }
 
 // ListLocales returns all distinct locales for a tenant.
-func (s *Store) ListLocales(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
+func (s *Store) ListLocales(ctx context.Context) ([]string, error) {
 	locales, err := s.read.ListTranslationLocales(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing locales: %w", err)
@@ -77,7 +77,7 @@ func (s *Store) ListLocales(ctx context.Context, tenantID pgtype.UUID) ([]string
 }
 
 // CountByLocale returns the count of translations per locale.
-func (s *Store) CountByLocale(ctx context.Context, tenantID pgtype.UUID) ([]gen.CountTranslationsByLocaleRow, error) {
+func (s *Store) CountByLocale(ctx context.Context) ([]gen.CountTranslationsByLocaleRow, error) {
 	rows, err := s.read.CountTranslationsByLocale(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("counting translations by locale: %w", err)
@@ -100,7 +100,7 @@ func (s *Store) Upsert(ctx context.Context, p gen.UpsertTranslationParams) error
 }
 
 // Delete removes a translation by ID.
-func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) Delete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteTranslation(ctx,
 
 		id,
@@ -112,7 +112,7 @@ func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) error {
 }
 
 // DeleteByLocale removes all translations for a given locale.
-func (s *Store) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) error {
+func (s *Store) DeleteByLocale(ctx context.Context, locale string) error {
 	if err := s.write.DeleteTranslationsByLocale(ctx,
 
 		locale,
@@ -124,7 +124,7 @@ func (s *Store) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, locale
 }
 
 // GetByID returns a single translation by its primary key.
-func (s *Store) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Translation, error) {
+func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (gen.Translation, error) {
 	row, err := s.read.GetTranslationByID(ctx,
 
 		id,

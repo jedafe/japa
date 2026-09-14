@@ -224,7 +224,7 @@ func (s *Service) GetProfessionBySlug(ctx context.Context, slug string) (Profess
 
 // CreateProfession creates a new credential profession. credential_professions
 // is a global table and ignores the supplied .
-func (s *Service) CreateProfession(ctx context.Context, tenantID pgtype.UUID, input CreateProfessionInput) (ProfessionDTO, error) {
+func (s *Service) CreateProfession(ctx context.Context, input CreateProfessionInput) (ProfessionDTO, error) {
 	if input.Slug == "" {
 		return ProfessionDTO{}, errors.New("slug is required")
 	}
@@ -242,7 +242,7 @@ func (s *Service) CreateProfession(ctx context.Context, tenantID pgtype.UUID, in
 }
 
 // UpdateProfession updates a credential profession by id.
-func (s *Service) UpdateProfession(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProfessionInput) (ProfessionDTO, error) {
+func (s *Service) UpdateProfession(ctx context.Context, id pgtype.UUID, input UpdateProfessionInput) (ProfessionDTO, error) {
 	if input.Slug == nil && input.Name == nil && input.Category == nil {
 		return ProfessionDTO{}, errors.New("no fields to update")
 	}
@@ -256,7 +256,7 @@ func (s *Service) UpdateProfession(ctx context.Context, id, tenantID pgtype.UUID
 }
 
 // DeleteProfession deletes a credential profession by id.
-func (s *Service) DeleteProfession(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteProfession(ctx context.Context, id pgtype.UUID) error {
 	if err := s.store.DeleteProfession(ctx, id); err != nil {
 		return fmt.Errorf("credentialchecker: delete profession: %w", err)
 	}
@@ -266,7 +266,7 @@ func (s *Service) DeleteProfession(ctx context.Context, id, tenantID pgtype.UUID
 
 // ListPathways returns a paginated, filtered list of published credential
 // pathways. The destination/profession/issuing filters are optional.
-func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID, professionID pgtype.UUID, page, limit int32) ([]PathwayDTO, int64, error) {
+func (s *Service) ListPathways(ctx context.Context, destSpaceID, issuingSpaceID, professionID pgtype.UUID, page, limit int32) ([]PathwayDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -464,7 +464,7 @@ func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, r
 		}
 	}
 
-	if err := s.store.UpdatePathway(ctx, id, tenantID, input); err != nil {
+	if err := s.store.UpdatePathway(ctx, id, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
@@ -557,7 +557,7 @@ func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pg
 // // If no AI provider is registered for the "content_generation" category,
 // the method gracefully falls back to placeholder content so the draft
 // can still be created and reviewed manually (§21 stub-degradation).
-func (s *Service) GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID, req GeneratePathwayRequest) (GeneratePathwayResponse, error) {
+func (s *Service) GeneratePathwayDraft(ctx context.Context, req GeneratePathwayRequest) (GeneratePathwayResponse, error) {
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
 		return GeneratePathwayResponse{}, fmt.Errorf("invalid issuing_space_id: %w", err)
@@ -719,7 +719,7 @@ func cleanJSONResponse(text string) string {
 // AdminListPathways returns all pathways (any status) for the admin
 // management view. Admin-only (credential_checker.manage permission
 // checked at route level).
-func (s *Service) AdminListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID, professionID pgtype.UUID, status string, page, limit int32) ([]PathwayDTO, int64, error) {
+func (s *Service) AdminListPathways(ctx context.Context, destSpaceID, issuingSpaceID, professionID pgtype.UUID, status string, page, limit int32) ([]PathwayDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}

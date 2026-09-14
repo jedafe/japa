@@ -33,7 +33,7 @@ func isAllowedCategory(category string) bool {
 // admin panel DataTable search and filter. The public member-facing endpoint
 // can pass selectable=true to hide geo (country/state/city) types.
 func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -43,7 +43,7 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 	selectableOnly := strings.TrimSpace(r.URL.Query().Get("selectable")) == "true"
 
 	if q != "" || categoryFilter != "" || selectableOnly {
-		types, err := h.Service.ListSpaceTypesFiltered(r.Context(), tenantID, q, categoryFilter, selectableOnly)
+		types, err := h.Service.ListSpaceTypesFiltered(r.Context(), q, categoryFilter, selectableOnly)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -54,7 +54,7 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	types, err := h.Service.ListSpaceTypes(r.Context(), tenantID)
+	types, err := h.Service.ListSpaceTypes(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -86,13 +86,12 @@ func (h *Handlers) GetSpaceType(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	st, err := h.Service.GetSpaceType(r.Context(), id, tenantID)
+	st, err := h.Service.GetSpaceType(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -238,13 +237,12 @@ func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.DeleteSpaceType(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteSpaceType(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}

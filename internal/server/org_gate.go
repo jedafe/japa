@@ -29,7 +29,7 @@ func requireActiveOrgByID(orgSvc *organizations.Service) func(http.Handler) http
 				return
 			}
 
-			exists, err := orgSvc.ActiveOrgExists(r.Context(), t.ID, orgID)
+			exists, err := orgSvc.ActiveOrgExists(r.Context(), orgID)
 			if err != nil {
 				writeOrgGateError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve organization")
 				return

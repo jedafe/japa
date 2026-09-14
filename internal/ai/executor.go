@@ -77,7 +77,7 @@ type ToolHandler func(ctx context.Context, args json.RawMessage, userID, tenantI
 // signals "no privacy target" and the executor skips the exemption check —
 // useful for tools like rag.search that filter exempt rows at the SQL layer
 // rather than targeting a single row.
-type PrivacyTargetFunc func(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error)
+type PrivacyTargetFunc func(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error)
 
 // ---------------------------------------------------------------------------
 // Tool config (parsed from ai_tools.config JSONB)
@@ -213,12 +213,12 @@ func (r *ToolHandlerRegistry) RegisterConfig(functionName string, cfg ToolConfig
 // *reference* string, not the function itself). Tools whose config JSONB
 // fails to parse are skipped with a warning log — a malformed row must not
 // break the whole catalog.
-func (r *ToolHandlerRegistry) LoadFromDB(ctx context.Context, registry *ToolRegistry, tenantID pgtype.UUID) error {
+func (r *ToolHandlerRegistry) LoadFromDB(ctx context.Context, registry *ToolRegistry) error {
 	if r == nil || registry == nil {
 		return errors.New("ai: registry and loader are required")
 	}
 
-	tools, err := registry.ListTools(ctx, tenantID)
+	tools, err := registry.ListTools(ctx)
 	if err != nil {
 		return fmt.Errorf("loading ai_tools for catalog: %w", err)
 	}
@@ -262,7 +262,7 @@ func (r *ToolHandlerRegistry) LoadFromDB(ctx context.Context, registry *ToolRegi
 // tool's required_permission. Tools with no required_permission are
 // available to every user who holds the agent.use node (the agent loop
 // checks agent.use at the door; the catalog filter is per-tool).
-func (r *ToolHandlerRegistry) CatalogForUser(ctx context.Context, perms PermissionChecker, userID, tenantID pgtype.UUID) []ToolConfig {
+func (r *ToolHandlerRegistry) CatalogForUser(ctx context.Context, perms PermissionChecker, userID pgtype.UUID) []ToolConfig {
 	if r == nil {
 		return nil
 	}
@@ -275,7 +275,7 @@ func (r *ToolHandlerRegistry) CatalogForUser(ctx context.Context, perms Permissi
 		}
 
 		if lt.requiredPermission != "" && perms != nil {
-			if !perms.HasPermission(ctx, userID, tenantID, lt.requiredPermission) {
+			if !perms.HasPermission(ctx, userID, lt.requiredPermission) {
 				continue
 			}
 		}
@@ -516,7 +516,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 			return e.unauthorizedResult(resultErr), resultErr
 		}
 
-		if !e.perms.HasPermission(ctx, p.UserID, p.TenantID, lt.requiredPermission) {
+		if !e.perms.HasPermission(ctx, p.UserID, lt.requiredPermission) {
 			resultStatus = ToolCallStatusUnauthorized
 			resultErr = fmt.Errorf("ai: user lacks permission %q for tool %q", lt.requiredPermission, call.Name)
 
@@ -543,7 +543,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 			return e.privacyBlockedResult(resultErr), resultErr
 		}
 
-		et, eid, err := pt(ctx, call.Arguments, p.TenantID)
+		et, eid, err := pt(ctx, call.Arguments)
 		if err != nil {
 			resultErr = fmt.Errorf("ai: resolving privacy target for %q: %w", call.Name, err)
 			return e.errorResult(resultErr), resultErr
@@ -590,7 +590,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	// entirely — the action still executes and is logged in
 	// ai_agent_tool_calls, but no ai_hitl_reviews row is created.
 	skipHITL := e.perms != nil &&
-		e.perms.HasPermission(ctx, p.UserID, p.TenantID, "agent.skip_hitl")
+		e.perms.HasPermission(ctx, p.UserID, "agent.skip_hitl")
 	if (cfg.RequiresHITL || (hres != nil && hres.ForceHITL)) && e.store != nil && !skipHITL {
 		if preID, ok := hitlReviewIDFromMeta(hres); ok {
 			hitlReviewID = preID
@@ -800,7 +800,7 @@ func (e *Executor) finalizeToolCall(ctx context.Context, p ExecuteParams, call T
 	if (status == ToolCallStatusSuccess || status == ToolCallStatusHITLQueued) && e.store != nil {
 		if lt, ok := e.registry.loadedConfig(call.Name); ok && lt.toolID.Valid {
 			userID := &p.UserID
-			if err := e.store.RecordToolUsage(logCtx, p.TenantID, lt.toolID, userID, 0, 0); err != nil {
+			if err := e.store.RecordToolUsage(logCtx, lt.toolID, userID, 0, 0); err != nil {
 				slog.Warn("ai: failed to record ai_tool_usage", "tool", call.Name, "error", err)
 			}
 		}

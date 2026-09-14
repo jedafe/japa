@@ -41,7 +41,7 @@ func NewStore(read, write *gen.Queries) *Store {
 // CreateWSTicket inserts a new WebSocket ticket with 60-second TTL and
 // returns the generated ticket row so the caller can return the ID to the
 // client and cache it in Valkey under jc:ws_ticket:{id}.
-func (s *Store) CreateWSTicket(ctx context.Context, userID, tenantID pgtype.UUID) (gen.CreateWSTicketRow, error) {
+func (s *Store) CreateWSTicket(ctx context.Context, userID pgtype.UUID) (gen.CreateWSTicketRow, error) {
 	return s.write.CreateWSTicket(ctx,
 		userID,
 	)
@@ -50,7 +50,7 @@ func (s *Store) CreateWSTicket(ctx context.Context, userID, tenantID pgtype.UUID
 // UseWSTicket marks a ticket as used and returns it if valid. The
 // is validated alongside the user_id so a ticket minted in tenant A cannot be
 // consumed in tenant B context (Rule 4: tenant-scoped validation).
-func (s *Store) UseWSTicket(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.WsTicket, error) {
+func (s *Store) UseWSTicket(ctx context.Context, id, userID pgtype.UUID) (gen.WsTicket, error) {
 	return s.write.UseWSTicket(ctx, gen.UseWSTicketParams{
 		ID:     id,
 		UserID: userID,
@@ -65,7 +65,7 @@ func (s *Store) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) (g
 }
 
 // GetOrCreateConversation gets existing or creates new DM conversation.
-func (s *DMStore) GetOrCreateConversation(ctx context.Context, tenantID, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error) {
+func (s *DMStore) GetOrCreateConversation(ctx context.Context, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error) {
 	return s.write.GetOrCreateConversation(ctx, gen.GetOrCreateConversationParams{
 
 		Participant1ID: participant1ID,
@@ -77,7 +77,7 @@ func (s *DMStore) GetOrCreateConversation(ctx context.Context, tenantID, partici
 // users without creating one. Returns pgx.ErrNoRows when no conversation
 // exists. Used by the DM privacy check (Section 48) to skip privacy
 // enforcement for already-active threads.
-func (s *DMStore) GetConversationByParticipants(ctx context.Context, tenantID, userA, userB pgtype.UUID) (gen.DmConversation, error) {
+func (s *DMStore) GetConversationByParticipants(ctx context.Context, userA, userB pgtype.UUID) (gen.DmConversation, error) {
 	return s.read.GetConversationByParticipants(ctx, gen.GetConversationByParticipantsParams{
 
 		Participant1ID: userA,
@@ -86,14 +86,14 @@ func (s *DMStore) GetConversationByParticipants(ctx context.Context, tenantID, u
 }
 
 // GetConversationByID returns a conversation by ID and tenant.
-func (s *DMStore) GetConversationByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.DmConversation, error) {
+func (s *DMStore) GetConversationByID(ctx context.Context, id pgtype.UUID) (gen.DmConversation, error) {
 	return s.read.GetConversationByID(ctx,
 		id,
 	)
 }
 
 // GetUserConversations returns paginated conversations for a user.
-func (s *DMStore) GetUserConversations(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserConversationsRow, error) {
+func (s *DMStore) GetUserConversations(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserConversationsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -111,7 +111,7 @@ func (s *DMStore) GetUserConversations(ctx context.Context, tenantID, userID pgt
 }
 
 // InsertDMMessage inserts a new message into a conversation.
-func (s *DMStore) InsertDMMessage(ctx context.Context, tenantID, conversationID, senderID pgtype.UUID, body string) error {
+func (s *DMStore) InsertDMMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error {
 	return s.write.InsertDMMessage(ctx, gen.InsertDMMessageParams{
 		ConversationID: conversationID,
 		SenderID:       senderID,
@@ -121,7 +121,7 @@ func (s *DMStore) InsertDMMessage(ctx context.Context, tenantID, conversationID,
 }
 
 // GetConversationMessages returns paginated messages for a conversation.
-func (s *DMStore) GetConversationMessages(ctx context.Context, tenantID, conversationID pgtype.UUID, limit, offset int32) ([]gen.GetConversationMessagesRow, error) {
+func (s *DMStore) GetConversationMessages(ctx context.Context, conversationID pgtype.UUID, limit, offset int32) ([]gen.GetConversationMessagesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -139,7 +139,7 @@ func (s *DMStore) GetConversationMessages(ctx context.Context, tenantID, convers
 }
 
 // MarkMessagesRead marks all unread messages from other participants as read.
-func (s *DMStore) MarkMessagesRead(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) error {
+func (s *DMStore) MarkMessagesRead(ctx context.Context, conversationID, userID pgtype.UUID) error {
 	return s.write.MarkMessagesRead(ctx, gen.MarkMessagesReadParams{
 		ConversationID: conversationID,
 
@@ -150,7 +150,7 @@ func (s *DMStore) MarkMessagesRead(ctx context.Context, tenantID, conversationID
 // UpdateConversationLastMessage updates the last message metadata. The
 // timestamp is set to now() in SQL (not passed from Go) so it is always
 // the actual current time. The scopes the update (Rule 4).
-func (s *DMStore) UpdateConversationLastMessage(ctx context.Context, tenantID, conversationID pgtype.UUID, preview *string) error {
+func (s *DMStore) UpdateConversationLastMessage(ctx context.Context, conversationID pgtype.UUID, preview *string) error {
 	return s.write.UpdateConversationLastMessage(ctx, gen.UpdateConversationLastMessageParams{
 		ConversationID: conversationID,
 
@@ -176,7 +176,7 @@ func (s *DMStore) ResetUnreadCount(ctx context.Context, conversationID, userID p
 
 // GetMessageRequest returns a message request for a conversation, scoped
 // to the tenant (Rule 4).
-func (s *DMStore) GetMessageRequest(ctx context.Context, tenantID, conversationID pgtype.UUID) (gen.DmRequest, error) {
+func (s *DMStore) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (gen.DmRequest, error) {
 	return s.read.GetMessageRequest(ctx,
 		conversationID,
 	)
@@ -185,7 +185,7 @@ func (s *DMStore) GetMessageRequest(ctx context.Context, tenantID, conversationI
 // CreateMessageRequest creates a pending message request with the actual
 // requester and recipient IDs (not derived from conversation participant
 // ordering). Tenant-scoped (Rule 4).
-func (s *DMStore) CreateMessageRequest(ctx context.Context, tenantID, requesterID, recipientID, conversationID pgtype.UUID, previewMessage string) error {
+func (s *DMStore) CreateMessageRequest(ctx context.Context, requesterID, recipientID, conversationID pgtype.UUID, previewMessage string) error {
 	return s.write.CreateMessageRequest(ctx, gen.CreateMessageRequestParams{
 
 		RequesterID:    requesterID,
@@ -197,7 +197,7 @@ func (s *DMStore) CreateMessageRequest(ctx context.Context, tenantID, requesterI
 
 // UpdateMessageRequestStatus updates the status of a message request,
 // scoped to the tenant (Rule 4).
-func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, tenantID, conversationID pgtype.UUID, status string) error {
+func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, conversationID pgtype.UUID, status string) error {
 	return s.write.UpdateMessageRequestStatus(ctx, gen.UpdateMessageRequestStatusParams{
 		ConversationID: conversationID,
 
@@ -206,7 +206,7 @@ func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, tenantID, conv
 }
 
 // GetPendingMessageRequests returns pending DM requests for a recipient.
-func (s *DMStore) GetPendingMessageRequests(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]gen.GetPendingMessageRequestsRow, error) {
+func (s *DMStore) GetPendingMessageRequests(ctx context.Context, recipientID pgtype.UUID, limit, offset int32) ([]gen.GetPendingMessageRequestsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -224,7 +224,7 @@ func (s *DMStore) GetPendingMessageRequests(ctx context.Context, tenantID, recip
 }
 
 // GetUserDMPrivacy returns the DM privacy setting for a user.
-func (s *DMStore) GetUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
+func (s *DMStore) GetUserDMPrivacy(ctx context.Context, userID pgtype.UUID) (string, error) {
 	return s.read.GetUserDMPrivacy(ctx,
 		userID,
 	)
@@ -233,7 +233,7 @@ func (s *DMStore) GetUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.
 // IsBlocked returns true if either user has blocked the other (bidirectional
 // check per Section 48). Wraps the sqlc-generated IsBlocked query.
 // Tenant-scoped per JEOS §9 (BUG-006).
-func (s *DMStore) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.UUID) (bool, error) {
+func (s *DMStore) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
 	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
 		BlockedID: userB,
@@ -243,7 +243,7 @@ func (s *DMStore) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.U
 // IsMutualFollow returns true if initiator follows recipient AND recipient
 // follows initiator. The sqlc IsMutualFollow query checks a single direction,
 // so we call it twice and AND the results.
-func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID) (bool, error) {
+func (s *DMStore) IsMutualFollow(ctx context.Context, initiatorID, recipientID pgtype.UUID) (bool, error) {
 	initiatorFollowsRecipient, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
 
 		EntityID:   recipientID,
@@ -270,7 +270,7 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, rec
 }
 
 // UpsertUserDMPrivacy creates or updates the DM privacy setting.
-func (s *DMStore) UpsertUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID, privacy string) error {
+func (s *DMStore) UpsertUserDMPrivacy(ctx context.Context, userID pgtype.UUID, privacy string) error {
 	return s.write.UpsertUserDMPrivacy(ctx, gen.UpsertUserDMPrivacyParams{
 		UserID: userID,
 
@@ -393,10 +393,10 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	// retroactively close already-active threads (Section 48: "existing ones
 	// still active"). The block check still applies: a later block must
 	// prevent further interaction even on existing conversations.
-	if existing, err := s.store.GetConversationByParticipants(ctx, tenantID, senderID, recipientID); err == nil {
+	if existing, err := s.store.GetConversationByParticipants(ctx, senderID, recipientID); err == nil {
 		// Block check (Section 48): either direction blocks → 403, even
 		// for existing conversations.
-		blocked, bErr := s.store.IsBlocked(ctx, tenantID, senderID, recipientID)
+		blocked, bErr := s.store.IsBlocked(ctx, senderID, recipientID)
 		if bErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking block status: %w", bErr)
 		}
@@ -412,7 +412,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 
 	// No existing conversation — apply privacy + block checks for new ones.
 	// Block check (Section 48): either direction blocks → 403.
-	blocked, err := s.store.IsBlocked(ctx, tenantID, senderID, recipientID)
+	blocked, err := s.store.IsBlocked(ctx, senderID, recipientID)
 	if err != nil {
 		return ConversationResult{}, fmt.Errorf("checking block status: %w", err)
 	}
@@ -422,7 +422,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	}
 
 	// Privacy check (Section 48) — only applies to NEW conversations.
-	privacy, err := s.store.GetUserDMPrivacy(ctx, tenantID, recipientID)
+	privacy, err := s.store.GetUserDMPrivacy(ctx, recipientID)
 	if err != nil {
 		return ConversationResult{}, fmt.Errorf("reading recipient dm_privacy: %w", err)
 	}
@@ -433,7 +433,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	case "nobody":
 		return ConversationResult{}, ErrDMPrivacyNobody
 	case "followers_only":
-		mutualFollow, mErr := s.store.IsMutualFollow(ctx, tenantID, senderID, recipientID)
+		mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
 		if mErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
 		}
@@ -445,7 +445,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		isMutualFollow = true
 	case "everyone", "":
 		// Allowed; check mutual follow to decide direct vs request.
-		mutualFollow, mErr := s.store.IsMutualFollow(ctx, tenantID, senderID, recipientID)
+		mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
 		if mErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
 		}
@@ -457,7 +457,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		return ConversationResult{}, ErrDMPrivacyNobody
 	}
 
-	conv, err := s.store.GetOrCreateConversation(ctx, tenantID, senderID, recipientID)
+	conv, err := s.store.GetOrCreateConversation(ctx, senderID, recipientID)
 	if err != nil {
 		return ConversationResult{}, fmt.Errorf("getting or creating conversation: %w", err)
 	}
@@ -468,7 +468,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	// preview. (BUG-002: previously skipped, creating direct conversations
 	// for all non-mutual-follow senders.)
 	if !isMutualFollow {
-		if err := s.store.CreateMessageRequest(ctx, tenantID, senderID, recipientID, conv.ID, previewMessage); err != nil {
+		if err := s.store.CreateMessageRequest(ctx, senderID, recipientID, conv.ID, previewMessage); err != nil {
 			slog.Warn("dm: failed to create message request", "conversation_id", conv.ID.String(), "error", err)
 		}
 		// Enqueue push notification for the recipient (fire-and-forget).
@@ -485,7 +485,7 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 	}
 
 	// Verify the sender is a participant in this conversation.
-	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+	conv, err := s.store.GetConversationByID(ctx, conversationID)
 	if err != nil {
 		return fmt.Errorf("verifying conversation access: %w", err)
 	}
@@ -495,7 +495,7 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 	}
 
 	// Insert the message.
-	if err := s.store.InsertDMMessage(ctx, tenantID, conversationID, senderID, body); err != nil {
+	if err := s.store.InsertDMMessage(ctx, conversationID, senderID, body); err != nil {
 		return fmt.Errorf("inserting dm message: %w", err)
 	}
 
@@ -526,7 +526,7 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 
 	// Update conversation last message. The timestamp is set to now() in
 	// SQL (BUG-001: previously passed a zero-time pgtype.Timestamptz).
-	if err := s.store.UpdateConversationLastMessage(ctx, tenantID, conversationID, previewPtr); err != nil {
+	if err := s.store.UpdateConversationLastMessage(ctx, conversationID, previewPtr); err != nil {
 		return fmt.Errorf("updating conversation last message: %w", err)
 	}
 
@@ -547,8 +547,8 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 }
 
 // GetConversations returns user's conversations with unread counts.
-func (s *DMService) GetConversations(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]ConversationInfo, error) {
-	rows, err := s.store.GetUserConversations(ctx, tenantID, userID, limit, offset)
+func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]ConversationInfo, error) {
+	rows, err := s.store.GetUserConversations(ctx, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting user conversations: %w", err)
 	}
@@ -588,9 +588,9 @@ func (s *DMService) GetConversations(ctx context.Context, tenantID, userID pgtyp
 }
 
 // GetMessages returns messages in a conversation.
-func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, userID pgtype.UUID, limit, offset int32) ([]MessageInfo, error) {
+func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgtype.UUID, limit, offset int32) ([]MessageInfo, error) {
 	// Verify the user is a participant.
-	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+	conv, err := s.store.GetConversationByID(ctx, conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("verifying conversation access: %w", err)
 	}
@@ -599,7 +599,7 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 		return nil, errors.New("user is not a participant in this conversation")
 	}
 
-	rows, err := s.store.GetConversationMessages(ctx, tenantID, conversationID, limit, offset)
+	rows, err := s.store.GetConversationMessages(ctx, conversationID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting conversation messages: %w", err)
 	}
@@ -638,8 +638,8 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 // (BUG-009, Rule 4: tenant-scoped). After resetting the DB column, the
 // Valkey badge counter jc:dm_total_unread:{user_id} is recalculated from
 // the sum of all conversation unread counts (Section 48).
-func (s *DMService) MarkAsRead(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) error {
-	if err := s.store.MarkMessagesRead(ctx, tenantID, conversationID, userID); err != nil {
+func (s *DMService) MarkAsRead(ctx context.Context, conversationID, userID pgtype.UUID) error {
+	if err := s.store.MarkMessagesRead(ctx, conversationID, userID); err != nil {
 		return fmt.Errorf("marking messages read: %w", err)
 	}
 
@@ -648,7 +648,7 @@ func (s *DMService) MarkAsRead(ctx context.Context, tenantID, conversationID, us
 	}
 
 	// Recalculate and re-set the Valkey badge counter (Section 48).
-	s.recalcTotalUnread(ctx, tenantID, userID)
+	s.recalcTotalUnread(ctx, userID)
 
 	return nil
 }
@@ -656,9 +656,9 @@ func (s *DMService) MarkAsRead(ctx context.Context, tenantID, conversationID, us
 // HandleMessageRequest accepts, declines, or blocks a message request.
 // Only the RECIPIENT of the request may take action — the requester cannot
 // accept their own outgoing request (BUG-005).
-func (s *DMService) HandleMessageRequest(ctx context.Context, tenantID, conversationID, userID pgtype.UUID, action string) error {
+func (s *DMService) HandleMessageRequest(ctx context.Context, conversationID, userID pgtype.UUID, action string) error {
 	// Look up the message request, scoped to the tenant (Rule 4).
-	dmReq, err := s.store.GetMessageRequest(ctx, tenantID, conversationID)
+	dmReq, err := s.store.GetMessageRequest(ctx, conversationID)
 	if err != nil {
 		return fmt.Errorf("looking up message request: %w", err)
 	}
@@ -670,11 +670,11 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, tenantID, conversa
 
 	switch action {
 	case MessageRequestAccepted:
-		return s.store.UpdateMessageRequestStatus(ctx, tenantID, conversationID, MessageRequestAccepted)
+		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestAccepted)
 	case MessageRequestDeclined:
-		return s.store.UpdateMessageRequestStatus(ctx, tenantID, conversationID, MessageRequestDeclined)
+		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestDeclined)
 	case MessageRequestBlocked:
-		return s.store.UpdateMessageRequestStatus(ctx, tenantID, conversationID, MessageRequestBlocked)
+		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestBlocked)
 	default:
 		return fmt.Errorf("invalid action: %s", action)
 	}
@@ -697,8 +697,8 @@ type MessageRequestInfo struct {
 // (BUG-003). Filters by recipient_id and status = 'pending' so only
 // actionable requests are returned. Wraps the raw sqlc rows in an API
 // response struct (BUG-014: previously leaked internal gen struct names).
-func (s *DMService) GetPendingMessageRequests(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]MessageRequestInfo, error) {
-	rows, err := s.store.GetPendingMessageRequests(ctx, tenantID, recipientID, limit, offset)
+func (s *DMService) GetPendingMessageRequests(ctx context.Context, recipientID pgtype.UUID, limit, offset int32) ([]MessageRequestInfo, error) {
+	rows, err := s.store.GetPendingMessageRequests(ctx, recipientID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting pending message requests: %w", err)
 	}
@@ -731,18 +731,18 @@ func (s *DMService) GetPendingMessageRequests(ctx context.Context, tenantID, rec
 }
 
 // UpdateDMPrivacy updates user's DM privacy setting.
-func (s *DMService) UpdateDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID, privacy string) error {
+func (s *DMService) UpdateDMPrivacy(ctx context.Context, userID pgtype.UUID, privacy string) error {
 	switch privacy {
 	case DMPrivacyEveryone, DMPrivacyFollowersOnly, DMPrivacyNobody:
-		return s.store.UpsertUserDMPrivacy(ctx, tenantID, userID, privacy)
+		return s.store.UpsertUserDMPrivacy(ctx, userID, privacy)
 	default:
 		return fmt.Errorf("invalid privacy setting: %s", privacy)
 	}
 }
 
 // GetDMPrivacy returns user's DM privacy setting.
-func (s *DMService) GetDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
-	privacy, err := s.store.GetUserDMPrivacy(ctx, tenantID, userID)
+func (s *DMService) GetDMPrivacy(ctx context.Context, userID pgtype.UUID) (string, error) {
+	privacy, err := s.store.GetUserDMPrivacy(ctx, userID)
 	if err != nil {
 		return DMPrivacyEveryone, nil //nolint:nilerr // intentional: default privacy
 	}
@@ -754,12 +754,12 @@ func (s *DMService) GetDMPrivacy(ctx context.Context, tenantID, userID pgtype.UU
 // sender of the message may edit it; a participant who is not the sender
 // gets ErrDMNotSender so the handler can return 403 instead of 500
 // (Rule 5: structured error envelope with correct status code).
-func (s *DMService) EditMessage(ctx context.Context, tenantID, conversationID, messageID, senderID pgtype.UUID, body string) error {
+func (s *DMService) EditMessage(ctx context.Context, conversationID, messageID, senderID pgtype.UUID, body string) error {
 	if body == "" {
 		return errors.New("message body cannot be empty")
 	}
 
-	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+	conv, err := s.store.GetConversationByID(ctx, conversationID)
 	if err != nil {
 		return fmt.Errorf("verifying conversation access: %w", err)
 	}
@@ -791,8 +791,8 @@ func (s *DMService) EditMessage(ctx context.Context, tenantID, conversationID, m
 // DeleteMessage soft-deletes a message owned by the sender. Only the
 // sender may delete; a non-sender participant gets ErrDMNotSender so the
 // handler returns 403, not 500 (Rule 5).
-func (s *DMService) DeleteMessage(ctx context.Context, tenantID, conversationID, messageID, senderID pgtype.UUID) error {
-	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+func (s *DMService) DeleteMessage(ctx context.Context, conversationID, messageID, senderID pgtype.UUID) error {
+	conv, err := s.store.GetConversationByID(ctx, conversationID)
 	if err != nil {
 		return fmt.Errorf("verifying conversation access: %w", err)
 	}
@@ -832,8 +832,8 @@ func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, ten
 // doesn't exist or the given user is not a participant. Used by the typing
 // indicator path (Section 10) to route typing events to the correct
 // recipient without exposing conversation membership to non-participants.
-func (s *DMService) GetOtherParticipant(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
-	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+func (s *DMService) GetOtherParticipant(ctx context.Context, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
+	conv, err := s.store.GetConversationByID(ctx, conversationID)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("looking up conversation: %w", err)
 	}
@@ -950,12 +950,12 @@ func (s *DMService) incrTotalUnread(ctx context.Context, userID pgtype.UUID) {
 // (Section 48). Fetches up to MaxPageSize conversations; for users with
 // more, the badge may be slightly off until the next recalculation —
 // acceptable for a cache backed by the DB source of truth.
-func (s *DMService) recalcTotalUnread(ctx context.Context, tenantID, userID pgtype.UUID) {
+func (s *DMService) recalcTotalUnread(ctx context.Context, userID pgtype.UUID) {
 	if s.vkClient == nil {
 		return
 	}
 
-	convs, err := s.store.GetUserConversations(ctx, tenantID, userID, MaxPageSize, 0)
+	convs, err := s.store.GetUserConversations(ctx, userID, MaxPageSize, 0)
 	if err != nil {
 		slog.Warn("dm: failed to fetch conversations for unread recalc", "error", err)
 		return

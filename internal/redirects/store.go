@@ -21,7 +21,7 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
-func (s *Store) listRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search, sort, dir string, limit, offset int32) ([]gen.Redirect, error) {
+func (s *Store) listRedirects(ctx context.Context, isActive *bool, search, sort, dir string, limit, offset int32) ([]gen.Redirect, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -38,7 +38,7 @@ func (s *Store) listRedirects(ctx context.Context, tenantID pgtype.UUID, isActiv
 	return rows, nil
 }
 
-func (s *Store) countRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search string) (int32, error) {
+func (s *Store) countRedirects(ctx context.Context, isActive *bool, search string) (int32, error) {
 	count, err := s.read.CountRedirects(ctx, gen.CountRedirectsParams{
 		IsActive: isActive, Search: search,
 	})
@@ -49,7 +49,7 @@ func (s *Store) countRedirects(ctx context.Context, tenantID pgtype.UUID, isActi
 	return count, nil
 }
 
-func (s *Store) getRedirect(ctx context.Context, id, tenantID pgtype.UUID) (gen.Redirect, error) {
+func (s *Store) getRedirect(ctx context.Context, id pgtype.UUID) (gen.Redirect, error) {
 	row, err := s.read.GetRedirect(ctx, id)
 	if err != nil {
 		return gen.Redirect{}, fmt.Errorf("getting redirect: %w", err)
@@ -58,7 +58,7 @@ func (s *Store) getRedirect(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 	return row, nil
 }
 
-func (s *Store) getRedirectByPath(ctx context.Context, tenantID pgtype.UUID, sourcePath string) (gen.Redirect, error) {
+func (s *Store) getRedirectByPath(ctx context.Context, sourcePath string) (gen.Redirect, error) {
 	row, err := s.read.GetRedirectByPath(ctx,
 		sourcePath,
 	)
@@ -97,7 +97,7 @@ func (s *Store) updateRedirect(ctx context.Context, p gen.UpdateRedirectParams) 
 	return row, nil
 }
 
-func (s *Store) deleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteRedirect(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteRedirect(ctx, id); err != nil {
 		return fmt.Errorf("deleting redirect: %w", err)
 	}
@@ -105,7 +105,7 @@ func (s *Store) deleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) er
 	return nil
 }
 
-func (s *Store) bulkUpdateRedirectStatus(ctx context.Context, tenantID pgtype.UUID, isActive bool, ids []pgtype.UUID) error {
+func (s *Store) bulkUpdateRedirectStatus(ctx context.Context, isActive bool, ids []pgtype.UUID) error {
 	if err := s.write.BulkUpdateRedirectStatus(ctx, gen.BulkUpdateRedirectStatusParams{
 		IsActive: isActive, Ids: ids,
 	}); err != nil {
@@ -115,7 +115,7 @@ func (s *Store) bulkUpdateRedirectStatus(ctx context.Context, tenantID pgtype.UU
 	return nil
 }
 
-func (s *Store) bulkDeleteRedirects(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) error {
+func (s *Store) bulkDeleteRedirects(ctx context.Context, ids []pgtype.UUID) error {
 	if err := s.write.BulkDeleteRedirects(ctx,
 		ids,
 	); err != nil {
@@ -125,7 +125,7 @@ func (s *Store) bulkDeleteRedirects(ctx context.Context, tenantID pgtype.UUID, i
 	return nil
 }
 
-func (s *Store) getRedirectsByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.Redirect, error) {
+func (s *Store) getRedirectsByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.Redirect, error) {
 	rows, err := s.read.GetRedirectsByIDs(ctx,
 		ids,
 	)

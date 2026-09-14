@@ -23,8 +23,7 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -35,7 +34,7 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		offset := parsePageSizeOffset(r)
 
-		items, err := h.content.SearchContentsBySpace(r.Context(), tenantID, space.ID, q, limit, offset, filter)
+		items, err := h.content.SearchContentsBySpace(r.Context(), space.ID, q, limit, offset, filter)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to search space content")
 			return
@@ -58,7 +57,7 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := h.content.ListContentsBySpace(r.Context(), tenantID, space.ID, cursor, limit, filter)
+	items, err := h.content.ListContentsBySpace(r.Context(), space.ID, cursor, limit, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
 		return
@@ -94,8 +93,7 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -127,7 +125,7 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pin, err := h.content.PinContent(r.Context(), tenantID, space.ID, contentID, user.UserID, input.Position)
+	pin, err := h.content.PinContent(r.Context(), space.ID, contentID, user.UserID, input.Position)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
 		return

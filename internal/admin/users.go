@@ -27,8 +27,7 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -79,7 +78,7 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// §unified-tiers: admin-created users start on the regular tier.
 	if h.TierManager != nil {
-		if err := h.TierManager.SetUserTier(r.Context(), tenantID, userID, "regular"); err != nil {
+		if err := h.TierManager.SetUserTier(r.Context(), userID, "regular"); err != nil {
 			slog.Error("admin create user: failed to set regular tier", "error", err, "user_id", userID.String())
 			errpkg.WriteError(w, http.StatusInternalServerError, "tier_assignment_failed", "Failed to initialize user tier")
 
@@ -96,7 +95,7 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// §50 Pre-seed default bookmark folders. Non-fatal: logged on failure.
 	if h.DefaultFolderSetter != nil {
-		if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(r.Context(), tenantID, userID); err != nil {
+		if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(r.Context(), userID); err != nil {
 			slog.Warn("admin create user: failed to create default bookmark folders", "error", err)
 		}
 	}

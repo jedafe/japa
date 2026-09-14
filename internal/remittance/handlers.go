@@ -180,7 +180,7 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 // HandleGetHistory handles GET /api/v1/remittance/history — rate history
 // time-series. Query: send, receive, days (default 30, max 365).
 func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -206,7 +206,7 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	points, err := h.service.GetHistory(r.Context(), tenantID, send, receive, days)
+	points, err := h.service.GetHistory(r.Context(), send, receive, days)
 	if err != nil {
 		slog.Error("remittance: get history failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
@@ -222,7 +222,7 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 // HandleGetProviders handles GET /api/v1/remittance/providers — list active
 // providers.
 func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -232,7 +232,7 @@ func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	providers, err := h.service.GetProviders(r.Context(), tenantID, true)
+	providers, err := h.service.GetProviders(r.Context(), true)
 	if err != nil {
 		slog.Error("remittance: get providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to get providers")
@@ -248,7 +248,7 @@ func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
 // HandleGetCorridors handles GET /api/v1/remittance/corridors — supported
 // currency pairs.
 func (h *Handlers) HandleGetCorridors(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -258,7 +258,7 @@ func (h *Handlers) HandleGetCorridors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	corridors, err := h.service.GetCorridors(r.Context(), tenantID)
+	corridors, err := h.service.GetCorridors(r.Context())
 	if err != nil {
 		slog.Error("remittance: get corridors failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "corridors_failed", "Failed to get corridors")
@@ -281,8 +281,7 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -292,7 +291,7 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	alerts, err := h.service.ListUserAlerts(r.Context(), tenantID, user.UserID)
+	alerts, err := h.service.ListUserAlerts(r.Context(), user.UserID)
 	if err != nil {
 		slog.Error("remittance: list alerts failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "alerts_failed", "Failed to list alerts")
@@ -312,8 +311,7 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -340,7 +338,7 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	alert, err := h.service.CreateAlert(r.Context(), tenantID, user.UserID, body.Send, body.Receive, body.Direction, body.TargetRate)
+	alert, err := h.service.CreateAlert(r.Context(), user.UserID, body.Send, body.Receive, body.Direction, body.TargetRate)
 	if err != nil {
 		slog.Error("remittance: create alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_alert_failed", "Failed to create alert")
@@ -360,8 +358,7 @@ func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -387,7 +384,7 @@ func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	alert, err := h.service.UpdateAlert(r.Context(), tenantID, user.UserID, alertID, body.TargetRate, body.Direction, body.IsActive)
+	alert, err := h.service.UpdateAlert(r.Context(), user.UserID, alertID, body.TargetRate, body.Direction, body.IsActive)
 	if err != nil {
 		slog.Error("remittance: update alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_alert_failed", "Failed to update alert")
@@ -439,8 +436,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -471,7 +467,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	providers, total, err := h.service.ListProvidersPaginated(r.Context(), tenantID, activeOnly, limit, offset)
+	providers, total, err := h.service.ListProvidersPaginated(r.Context(), activeOnly, limit, offset)
 	if err != nil {
 		slog.Error("remittance: admin list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")
@@ -641,8 +637,7 @@ func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Re
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -677,7 +672,7 @@ func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	rate, err := h.service.InsertManualRate(r.Context(), tenantID, providerID, body.SendCurrency, body.ReceiveCurrency, body.Rate, body.FeeFlat, body.FeePct, body.TransferTime, body.SourceURL)
+	rate, err := h.service.InsertManualRate(r.Context(), providerID, body.SendCurrency, body.ReceiveCurrency, body.Rate, body.FeeFlat, body.FeePct, body.TransferTime, body.SourceURL)
 	if err != nil {
 		slog.Error("remittance: admin insert manual rate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "insert_rate_failed", "Failed to insert manual rate")

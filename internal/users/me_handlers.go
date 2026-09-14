@@ -38,8 +38,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -59,7 +58,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	// Falls back to defaults when settings are unavailable.
 	policy := auth.DefaultPasswordPolicy()
 	if h.authSettings != nil {
-		policy = auth.PasswordPolicyFromSettings(r.Context(), h.authSettings, tenantID)
+		policy = auth.PasswordPolicyFromSettings(r.Context(), h.authSettings)
 	}
 
 	// Validate the new password against the full policy (length, complexity,
@@ -82,7 +81,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get current password hash.
-	hashRow, err := h.Service.store.getUserPasswordHash(r.Context(), user.UserID, tenantID)
+	hashRow, err := h.Service.store.getUserPasswordHash(r.Context(), user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
@@ -124,19 +123,19 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.store.updateUserPassword(r.Context(), tenantID, user.UserID, &newHash); err != nil {
+	if err := h.Service.store.updateUserPassword(r.Context(), user.UserID, &newHash); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	// Record the new password in history so it cannot be reused later.
-	if err := h.Service.store.insertPasswordHistory(r.Context(), tenantID, user.UserID, newHash); err != nil {
+	if err := h.Service.store.insertPasswordHistory(r.Context(), user.UserID, newHash); err != nil {
 		slog.Warn("change-password: failed to record password history", "error", err)
 	}
 
 	// Invalidate all sessions for this user — force re-login on all devices.
 	// Ref: §02 "Session invalidation on password change"
-	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), tenantID, user.UserID); err != nil {
+	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), user.UserID); err != nil {
 		slog.Error("change-password: failed to invalidate sessions",
 			"user_id", user.UserID.String(), "error", err)
 	}
@@ -186,13 +185,12 @@ func (h *Handlers) GetPrivacy(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	settings, err := h.Service.GetPrivacySettings(r.Context(), tenantID, user.UserID)
+	settings, err := h.Service.GetPrivacySettings(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -255,8 +253,7 @@ func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -264,9 +261,9 @@ func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
 	// Resolve the current session from the jc_refresh cookie so the frontend
 	// can flag it. Best-effort: a missing/unmatched cookie yields a zero UUID,
 	// which means no session is marked current (graceful degradation).
-	currentID := h.resolveCurrentSessionID(r.Context(), tenantID, user.UserID, r)
+	currentID := h.resolveCurrentSessionID(r.Context(), user.UserID, r)
 
-	sessions, err := h.Service.ListSessions(r.Context(), tenantID, user.UserID, currentID)
+	sessions, err := h.Service.ListSessions(r.Context(), user.UserID, currentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -281,8 +278,7 @@ func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -296,7 +292,7 @@ func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RevokeSession(r.Context(), tenantID, user.UserID, id); err != nil {
+	if err := h.Service.RevokeSession(r.Context(), user.UserID, id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -317,15 +313,14 @@ func (h *Handlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	currentID := h.resolveCurrentSessionID(r.Context(), tenantID, user.UserID, r)
+	currentID := h.resolveCurrentSessionID(r.Context(), user.UserID, r)
 
-	if err := h.Service.RevokeAllSessions(r.Context(), tenantID, user.UserID, currentID); err != nil {
+	if err := h.Service.RevokeAllSessions(r.Context(), user.UserID, currentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -337,7 +332,7 @@ func (h *Handlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 // the corresponding refresh_tokens.id. Returns a zero UUID when the cookie is
 // missing or the token is not found — callers degrade gracefully (no session
 // marked current / all sessions revoked).
-func (h *Handlers) resolveCurrentSessionID(ctx context.Context, tenantID, userID pgtype.UUID, r *http.Request) pgtype.UUID {
+func (h *Handlers) resolveCurrentSessionID(ctx context.Context, userID pgtype.UUID, r *http.Request) pgtype.UUID {
 	cookie, err := r.Cookie("jc_refresh")
 	if err != nil || cookie.Value == "" {
 		return pgtype.UUID{}
@@ -345,7 +340,7 @@ func (h *Handlers) resolveCurrentSessionID(ctx context.Context, tenantID, userID
 
 	tokenHash := auth.HashRefreshToken(cookie.Value)
 
-	id, err := h.Service.store.getSessionIDByHash(ctx, tenantID, userID, tokenHash)
+	id, err := h.Service.store.getSessionIDByHash(ctx, userID, tokenHash)
 	if err != nil {
 		return pgtype.UUID{}
 	}
@@ -365,13 +360,12 @@ func (h *Handlers) ListConnectedAccounts(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	accounts, err := h.Service.ListConnectedAccounts(r.Context(), tenantID, user.UserID)
+	accounts, err := h.Service.ListConnectedAccounts(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -386,8 +380,7 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -399,7 +392,7 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check user has a password set (prevent lockout).
-	hasPassword, err := h.Service.store.userHasPassword(r.Context(), tenantID, user.UserID)
+	hasPassword, err := h.Service.store.userHasPassword(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -410,7 +403,7 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DisconnectAccount(r.Context(), tenantID, user.UserID, provider); err != nil {
+	if err := h.Service.DisconnectAccount(r.Context(), user.UserID, provider); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -439,8 +432,7 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -455,7 +447,7 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
 
-	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "published", contentType, q, sort, limit, offset)
+	content, err := h.Service.ListUserContentByStatus(r.Context(), user.UserID, "published", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -470,8 +462,7 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -483,7 +474,7 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
 
-	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "draft", contentType, q, sort, limit, offset)
+	content, err := h.Service.ListUserContentByStatus(r.Context(), user.UserID, "draft", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -502,8 +493,7 @@ func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -517,7 +507,7 @@ func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	draft, err := h.Service.GetUserDraft(r.Context(), tenantID, user.UserID, contentID)
+	draft, err := h.Service.GetUserDraft(r.Context(), user.UserID, contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -540,8 +530,7 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -558,7 +547,7 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 	// Try the author-scoped fetch first — the common case (owner editing
 	// their own content). pgx.ErrNoRows means the content is missing, not
 	// owned by the caller, or soft-deleted.
-	content, err := h.Service.GetUserContent(r.Context(), tenantID, user.UserID, contentID)
+	content, err := h.Service.GetUserContent(r.Context(), user.UserID, contentID)
 	if err == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 		return
@@ -577,20 +566,20 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	editorContent, err := h.Service.GetContentForEditor(r.Context(), tenantID, contentID)
+	editorContent, err := h.Service.GetContentForEditor(r.Context(), contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	canEditAny := h.permResolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
-		h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
+	canEditAny := h.permResolver.IsSuperAdmin(r.Context(), user.UserID) ||
+		h.permResolver.HasPermission(r.Context(), user.UserID, "content.edit_any")
 	if !canEditAny {
 		switch editorContent.ContentType {
 		case "story":
-			canEditAny = h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "story.edit_any")
+			canEditAny = h.permResolver.HasPermission(r.Context(), user.UserID, "story.edit_any")
 		case "comparison":
-			canEditAny = h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "comparison.edit_any")
+			canEditAny = h.permResolver.HasPermission(r.Context(), user.UserID, "comparison.edit_any")
 		}
 	}
 	if !canEditAny {
@@ -607,8 +596,7 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -620,7 +608,7 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
 
-	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "scheduled", contentType, q, sort, limit, offset)
+	content, err := h.Service.ListUserContentByStatus(r.Context(), user.UserID, "scheduled", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -651,8 +639,7 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -680,7 +667,7 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 		entityTypes = strings.Split(entityType, ",")
 	}
 
-	bookmarks, err := h.Service.ListUserBookmarks(r.Context(), tenantID, user.UserID, folderID, entityTypes, limit, offset)
+	bookmarks, err := h.Service.ListUserBookmarks(r.Context(), user.UserID, folderID, entityTypes, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -697,8 +684,7 @@ func (h *Handlers) CreateMyBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -734,7 +720,7 @@ func (h *Handlers) CreateMyBookmark(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, entityID, folderID, input.EntityType, input.Folder)
+	bm, err := h.Service.CreateBookmark(r.Context(), user.UserID, entityID, folderID, input.EntityType, input.Folder)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -753,8 +739,7 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -768,7 +753,7 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteBookmarkByID(r.Context(), bookmarkID, tenantID, user.UserID); err != nil {
+	if err := h.Service.DeleteBookmarkByID(r.Context(), bookmarkID, user.UserID); err != nil {
 		if errors.Is(err, errpkg.ErrNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Bookmark not found")
 			return
@@ -791,8 +776,7 @@ func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -837,7 +821,7 @@ func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 		toPtr = &to
 	}
 
-	analytics, err := h.Service.GetUserAnalytics(r.Context(), tenantID, user.UserID, fromPtr, toPtr)
+	analytics, err := h.Service.GetUserAnalytics(r.Context(), user.UserID, fromPtr, toPtr)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -897,8 +881,7 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -915,7 +898,7 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify password.
-	hashRow, err := h.Service.store.getUserPasswordHash(r.Context(), user.UserID, tenantID)
+	hashRow, err := h.Service.store.getUserPasswordHash(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -934,7 +917,7 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeactivateAccount(r.Context(), tenantID, user.UserID); err != nil {
+	if err := h.Service.DeactivateAccount(r.Context(), user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -942,7 +925,7 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 	// Invalidate all sessions for this user — a deactivated user must not
 	// continue to use the platform on existing tokens. Ref: §02 (Session
 	// invalidation), Rule 6 (perm cache invalidation).
-	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), tenantID, user.UserID); err != nil {
+	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), user.UserID); err != nil {
 		slog.Error("deactivate: failed to invalidate sessions",
 			"user_id", user.UserID.String(), "error", err)
 	}
@@ -984,8 +967,7 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1036,7 +1018,7 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 		toTs = pgtype.Timestamptz{Time: to, Valid: true}
 	}
 
-	items, err := h.Service.GetUserContentByPeriod(r.Context(), tenantID, user.UserID, fromTs, toTs, limit, offset)
+	items, err := h.Service.GetUserContentByPeriod(r.Context(), user.UserID, fromTs, toTs, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1057,8 +1039,7 @@ func (h *Handlers) GetMyFollowerGrowth(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1071,7 +1052,7 @@ func (h *Handlers) GetMyFollowerGrowth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	growth, err := h.Service.GetUserFollowerGrowth(r.Context(), tenantID, user.UserID, days)
+	growth, err := h.Service.GetUserFollowerGrowth(r.Context(), user.UserID, days)
 	if err != nil {
 		handleServiceError(w, err)
 		return

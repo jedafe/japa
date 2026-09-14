@@ -28,7 +28,7 @@ func newRecommendationStore(database *db.DB) *recommendationStore {
 
 // listByContent returns recommendations for a comparison and optional profile,
 // ordered by priority desc then created_at asc, and truncated to the requested limit.
-func (s *recommendationStore) listByContent(ctx context.Context, tenantID, contentID, profileID pgtype.UUID, limit int32) ([]ComparisonRecommendation, error) {
+func (s *recommendationStore) listByContent(ctx context.Context, contentID, profileID pgtype.UUID, limit int32) ([]ComparisonRecommendation, error) {
 	rows, err := s.read.ListComparisonRecommendationsByContent(ctx, gen.ListComparisonRecommendationsByContentParams{
 
 		ContentID: contentID,
@@ -53,7 +53,7 @@ func (s *recommendationStore) listByContent(ctx context.Context, tenantID, conte
 }
 
 // create inserts a comparison recommendation.
-func (s *recommendationStore) create(ctx context.Context, tenantID, contentID, itemID, profileID, factorID pgtype.UUID, text, actionType, actionURL string, priority int32) (ComparisonRecommendation, error) {
+func (s *recommendationStore) create(ctx context.Context, contentID, itemID, profileID, factorID pgtype.UUID, text, actionType, actionURL string, priority int32) (ComparisonRecommendation, error) {
 	row, err := s.write.CreateComparisonRecommendation(ctx, gen.CreateComparisonRecommendationParams{
 
 		ContentID:  contentID,
@@ -73,7 +73,7 @@ func (s *recommendationStore) create(ctx context.Context, tenantID, contentID, i
 }
 
 // deleteByContent removes recommendations for a comparison and optional profile.
-func (s *recommendationStore) deleteByContent(ctx context.Context, tenantID, contentID, profileID pgtype.UUID) error {
+func (s *recommendationStore) deleteByContent(ctx context.Context, contentID, profileID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonRecommendationsByContent(ctx, gen.DeleteComparisonRecommendationsByContentParams{
 
 		ContentID: contentID,

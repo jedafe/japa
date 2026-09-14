@@ -189,7 +189,7 @@ type agentSettingsReader struct {
 	strings map[string]string
 }
 
-func (s *agentSettingsReader) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
+func (s *agentSettingsReader) GetStringOr(ctx context.Context, key, fallback string) string {
 	if v, ok := s.strings[key]; ok {
 		return v
 	}
@@ -197,7 +197,7 @@ func (s *agentSettingsReader) GetStringOr(ctx context.Context, tenantID pgtype.U
 	return fallback
 }
 
-func (s *agentSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+func (s *agentSettingsReader) GetIntOr(ctx context.Context, key string, fallback int) int {
 	if v, ok := s.ints[key]; ok {
 		return v
 	}
@@ -205,7 +205,7 @@ func (s *agentSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID
 	return fallback
 }
 
-func (s *agentSettingsReader) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
+func (s *agentSettingsReader) GetFloatOr(ctx context.Context, key string, fallback float64) float64 {
 	if v, ok := s.floats[key]; ok {
 		return v
 	}
@@ -213,7 +213,7 @@ func (s *agentSettingsReader) GetFloatOr(ctx context.Context, tenantID pgtype.UU
 	return fallback
 }
 
-func (s *agentSettingsReader) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+func (s *agentSettingsReader) GetBoolOr(ctx context.Context, key string, fallback bool) bool {
 	if v, ok := s.bools[key]; ok {
 		return v
 	}

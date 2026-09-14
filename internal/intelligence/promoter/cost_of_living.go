@@ -30,18 +30,18 @@ import (
 // updatePath perform their multi-table writes atomically (BUG-01/02 fix,
 // §6.2 transaction boundary).
 type CostOfLivingStore interface {
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	GetComparisonItemByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.ComparisonItem, error)
-	CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error)
-	UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateComparisonItemIntelParams) error
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetComparisonItemByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.ComparisonItem, error)
+	CreateComparisonItemIntel(ctx context.Context, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error)
+	UpdateComparisonItemIntel(ctx context.Context, arg gen.UpdateComparisonItemIntelParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 	// GetCountrySpace resolves the country-level geo space (§05) id for an
 	// ISO-3 country code, so the promoter can stamp comparison_items.geo_space_id.
 	// Returns (pgtype.UUID{}, nil) when no country space exists yet; the
 	// promoter treats that as a nullable geo_space_id (spec §455). BUG-005 fix.
-	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
+	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
 	WithTx(ctx context.Context, fn func(CostOfLivingTxStore) error) error
 }
 
@@ -51,10 +51,10 @@ type CostOfLivingStore interface {
 // *stores.Store satisfies this interface (via WithTx's callback), and the
 // test mock satisfies it directly.
 type CostOfLivingTxStore interface {
-	CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateComparisonItemIntelParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	CreateComparisonItemIntel(ctx context.Context, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateComparisonItemIntel(ctx context.Context, arg gen.UpdateComparisonItemIntelParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // CostOfLivingPromoter promotes cost_of_living intel_records into the
@@ -72,7 +72,6 @@ type CostOfLivingTxStore interface {
 // UpdateComparisonItemIntel query.
 type CostOfLivingPromoter struct {
 	store    CostOfLivingStore
-	tenantID pgtype.UUID // tenant the projection rows are stamped with
 	authorID pgtype.UUID // system/automation user for review-log actor
 	now      func() time.Time
 }
@@ -88,10 +87,9 @@ func WithCostOfLivingClock(fn func() time.Time) CostOfLivingPromoterOption {
 // NewCostOfLivingPromoter creates a promoter backed by the given store. The
 // tenantID identifies the tenant stamped onto the comparison_items rows
 // created by the create path.
-func NewCostOfLivingPromoter(store CostOfLivingStore, tenantID, authorID pgtype.UUID, opts ...CostOfLivingPromoterOption) *CostOfLivingPromoter {
+func NewCostOfLivingPromoter(store CostOfLivingStore, authorID pgtype.UUID, opts ...CostOfLivingPromoterOption) *CostOfLivingPromoter {
 	p := &CostOfLivingPromoter{
 		store:    store,
-		tenantID: tenantID,
 		authorID: authorID,
 		now:      time.Now,
 	}
@@ -116,12 +114,12 @@ var ErrNotCostOfLiving = errors.New("promoter: intel record is not a cost_of_liv
 // the intel record status='extracted'. Studio generates the editorial
 // comparison article when the admin promotes the record.
 func (p *CostOfLivingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.ComparisonItem]{
+	return promoteDomain(ctx, p.store, recordID, domainPromoteOps[gen.ComparisonItem]{
 		entityType: p.Entity(),
 		notErr:     ErrNotCostOfLiving,
 		loadLabel:  "comparison item",
-		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.ComparisonItem, error) {
-			return p.store.GetComparisonItemByIntelRecord(ctx, tenantID, pgID)
+		getExisting: func(ctx context.Context, pgID pgtype.UUID) (gen.ComparisonItem, error) {
+			return p.store.GetComparisonItemByIntelRecord(ctx, pgID)
 		},
 		createPath: p.costOfLivingCreatePath,
 		updatePath: p.costOfLivingUpdatePath,
@@ -142,23 +140,23 @@ func (p *CostOfLivingPromoter) costOfLivingCreatePath(ctx context.Context, recor
 	var geoSpaceID pgtype.UUID
 
 	if countryCode != "" {
-		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
+		if id, err := p.store.GetCountrySpace(ctx, countryCode); err == nil && id.Valid {
 			geoSpaceID = id
 		}
 	}
 
-	params := buildCostOfLivingCreateParams(record, source, ext, p.tenantID)
+	params := buildCostOfLivingCreateParams(record, source, ext)
 	params.GeoSpaceID = geoSpaceID
 
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx CostOfLivingTxStore) error {
-		item, err := tx.CreateComparisonItemIntel(ctx, p.tenantID, params)
+		item, err := tx.CreateComparisonItemIntel(ctx, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create comparison item: %w", err)
 		}
 
-		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 
 			ID:     record.ID,
 			Status: "extracted",
@@ -196,7 +194,7 @@ func (p *CostOfLivingPromoter) costOfLivingUpdatePath(ctx context.Context, recor
 		return PromoteResult{}, fmt.Errorf("promoter: parse editorial overrides: %w", err)
 	}
 
-	params, changed := buildCostOfLivingUpdateParams(existing, ext, overrides, p.tenantID)
+	params, changed := buildCostOfLivingUpdateParams(existing, ext, overrides)
 	params.FreshnessScore = freshScore
 
 	var changesJSON []byte
@@ -207,7 +205,7 @@ func (p *CostOfLivingPromoter) costOfLivingUpdatePath(ctx context.Context, recor
 		}
 	}
 
-	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "comparison item",
+	return domainUpdateTx(ctx, record, p.authorID, "comparison item",
 		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
 		func(ctx context.Context, fn func(CostOfLivingTxStore) error) error { return p.store.WithTx(ctx, fn) },
 		CostOfLivingTxStore.UpdateComparisonItemIntel)
@@ -225,7 +223,7 @@ func (p *CostOfLivingPromoter) costOfLivingUpdatePath(ctx context.Context, recor
 // comparison_type_definitions table. For now type_id is a placeholder
 // pgtype.UUID{}; a follow-up will query the table and stamp the resolved
 // id so the comparison feed can filter by type.
-func buildCostOfLivingCreateParams(record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction, tenantID pgtype.UUID) gen.CreateComparisonItemIntelParams {
+func buildCostOfLivingCreateParams(record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) gen.CreateComparisonItemIntelParams {
 	title := stringField(ext, "city")
 	if title == "" {
 		title = source.Name
@@ -263,7 +261,7 @@ func buildCostOfLivingCreateParams(record gen.IntelRecord, source gen.IntelSourc
 // override_source, editorial_overrides) are re-stamped from the existing
 // row so the UPDATE refreshes last_updated_at. freshness_score is set by
 // the caller before the write.
-func buildCostOfLivingUpdateParams(existing gen.ComparisonItem, ext extractor.Extraction, overrides map[string]struct{}, tenantID pgtype.UUID) (gen.UpdateComparisonItemIntelParams, []string) {
+func buildCostOfLivingUpdateParams(existing gen.ComparisonItem, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateComparisonItemIntelParams, []string) {
 	params := gen.UpdateComparisonItemIntelParams{
 
 		ID:                 existing.ID,

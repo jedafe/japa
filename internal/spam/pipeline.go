@@ -100,8 +100,8 @@ type SpamPipeline struct { //nolint:revive // stuttering type name preserved for
 // spamSettingsReader is the subset of config.Settings the spam pipeline uses
 // for hot-reloadable moderation thresholds. Local interface to avoid import cycles.
 type spamSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
 }
 
 // SetSettings injects the hot-reloadable settings reader for spam thresholds.
@@ -120,7 +120,7 @@ func NewPipeline(store *Store, rdb *valkey.Client, database *db.DB) *SpamPipelin
 // Check runs every detection layer, collects reasons, computes the weighted
 // score, and returns the final result. All layers execute even if an early
 // layer would block — this ensures moderators see every contributing factor.
-func (p *SpamPipeline) Check(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (SpamCheckResult, error) {
+func (p *SpamPipeline) Check(ctx context.Context, req SpamCheckRequest) (SpamCheckResult, error) {
 	// Guard: nil pipeline
 	if p == nil {
 		return SpamCheckResult{}, nil
@@ -132,22 +132,32 @@ func (p *SpamPipeline) Check(ctx context.Context, tenantID pgtype.UUID, req Spam
 		reasons []string
 	}
 
-	layers := []func(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string){
+	layers := []func(ctx context.Context, req SpamCheckRequest) (string, float64, []string){
 		p.checkIPReputation,
 		p.checkRateLimit,
 		p.checkContentHash,
-		p.checkCensoredWords,
-		p.checkLinkAnalysis,
-		p.checkUserAge,
-		p.checkNewUserLinks,
-		p.checkContentLength,
+		func(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
+			return p.checkCensoredWords(ctx, req)
+		},
+		func(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
+			return p.checkLinkAnalysis(ctx, req)
+		},
+		func(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
+			return p.checkUserAge(ctx, req)
+		},
+		func(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
+			return p.checkNewUserLinks(ctx, req)
+		},
+		func(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
+			return p.checkContentLength(ctx, req)
+		},
 		p.checkAIClassification,
 	}
 
 	var results []layerResult
 
 	for _, layer := range layers {
-		name, score, reasons := layer(ctx, tenantID, req)
+		name, score, reasons := layer(ctx, req)
 		results = append(results, layerResult{name: name, score: score, reasons: reasons})
 	}
 
@@ -179,14 +189,14 @@ func (p *SpamPipeline) Check(ctx context.Context, tenantID pgtype.UUID, req Spam
 // --- Individual layers ---
 
 // checkIPReputation checks whether the IP falls within a blocked CIDR range.
-func (p *SpamPipeline) checkIPReputation(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkIPReputation(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "ip_reputation"
 
 	if req.IP == "" {
 		return name, 0.0, nil
 	}
 
-	blocked, err := p.store.IsIPBlocked(ctx, tenantID, req.IP)
+	blocked, err := p.store.IsIPBlocked(ctx, req.IP)
 	if err != nil {
 		slog.Warn("ip reputation check failed", "ip", req.IP, "error", err)
 		// Degrade: treat unknown as low risk, not zero.
@@ -201,20 +211,20 @@ func (p *SpamPipeline) checkIPReputation(ctx context.Context, tenantID pgtype.UU
 }
 
 // rateLimitKey builds the Valkey key for a user's content creation rate.
-func rateLimitKey(tenantID, userID pgtype.UUID) string {
-	return valkey.MustKey("spam:rate:%s:%s", tenantID.String(), userID.String())
+func rateLimitKey(userID pgtype.UUID) string {
+	return valkey.MustKey("spam:rate:%s", userID.String())
 }
 
 // checkRateLimit counts recent content creations via a Valkey sorted set.
 // Users with more than the threshold in the window receive a higher score.
-func (p *SpamPipeline) checkRateLimit(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkRateLimit(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "rate_limit"
 
 	if req.UserID == (pgtype.UUID{}) || p.rdb == nil {
 		return name, 0.0, nil
 	}
 
-	key := rateLimitKey(tenantID, req.UserID)
+	key := rateLimitKey(req.UserID)
 	now := time.Now()
 	windowStart := now.Add(-10 * time.Minute)
 
@@ -241,12 +251,12 @@ func (p *SpamPipeline) checkRateLimit(ctx context.Context, tenantID pgtype.UUID,
 
 // RecordContentCreation adds a timestamp to the user's rate-limit sorted set.
 // Call this after a content item is successfully persisted.
-func RecordContentCreation(ctx context.Context, rdb *valkey.Client, tenantID, userID pgtype.UUID) error {
+func RecordContentCreation(ctx context.Context, rdb *valkey.Client, userID pgtype.UUID) error {
 	if rdb == nil {
 		return nil
 	}
 
-	key := rateLimitKey(tenantID, userID)
+	key := rateLimitKey(userID)
 	member := time.Now().Format(time.RFC3339Nano)
 	score := float64(time.Now().UnixMilli())
 
@@ -270,12 +280,12 @@ func RecordContentCreation(ctx context.Context, rdb *valkey.Client, tenantID, us
 // *SpamPipeline reference — it uses the pipeline's rdb so the caller does not
 // need a separate Valkey client. BUG-004: without this call the rate_limit
 // layer's sorted set is never populated and the layer always returns 0.
-func (p *SpamPipeline) RecordContentCreation(ctx context.Context, tenantID, userID pgtype.UUID) {
+func (p *SpamPipeline) RecordContentCreation(ctx context.Context, userID pgtype.UUID) {
 	if p == nil || p.rdb == nil {
 		return
 	}
 
-	if err := RecordContentCreation(ctx, p.rdb, tenantID, userID); err != nil {
+	if err := RecordContentCreation(ctx, p.rdb, userID); err != nil {
 		slog.Warn("spam: failed to record content creation for rate limiting",
 			"user_id", userID, "error", err)
 	}
@@ -283,7 +293,7 @@ func (p *SpamPipeline) RecordContentCreation(ctx context.Context, tenantID, user
 
 // checkContentHash looks for duplicate content by comparing the SHA-256 hash
 // against previously stored hashes in the contents table.
-func (p *SpamPipeline) checkContentHash(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkContentHash(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "content_hash"
 
 	if req.Content == "" {
@@ -292,7 +302,7 @@ func (p *SpamPipeline) checkContentHash(ctx context.Context, tenantID pgtype.UUI
 
 	hash := ComputeContentHash(req.Content)
 
-	duplicate, err := p.store.CheckDuplicateHash(ctx, tenantID, hash)
+	duplicate, err := p.store.CheckDuplicateHash(ctx, hash)
 	if err != nil {
 		slog.Warn("content hash check failed", "error", err)
 		return name, 0.0, nil
@@ -306,7 +316,7 @@ func (p *SpamPipeline) checkContentHash(ctx context.Context, tenantID pgtype.UUI
 }
 
 // checkCensoredWords runs the content against the tenant's censored word list.
-func (p *SpamPipeline) checkCensoredWords(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkCensoredWords(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "censored_words"
 
 	if req.Content == "" {
@@ -336,7 +346,7 @@ const maxLinksPerPost = 3
 
 // checkLinkAnalysis counts HTTP(S) URLs in the content. Posts with many
 // links relative to their length are a strong spam signal.
-func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "link_analysis"
 
 	if req.Content == "" {
@@ -345,7 +355,7 @@ func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, tenantID pgtype.UU
 
 	maxLinks := maxLinksPerPost
 	if p.settings != nil {
-		maxLinks = p.settings.GetIntOr(ctx, pgtype.UUID{}, "moderation.max_links_per_post", maxLinksPerPost)
+		maxLinks = p.settings.GetIntOr(ctx, "moderation.max_links_per_post", maxLinksPerPost)
 	}
 
 	linkCount := countLinks(req.Content)
@@ -386,7 +396,7 @@ const newAccountThreshold = 7 * 24 * time.Hour // 7 days
 
 // checkUserAge returns a score for new accounts. New accounts (< 7 days old)
 // are more likely to be spam bots.
-func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkUserAge(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "user_age"
 
 	if req.UserID == (pgtype.UUID{}) {
@@ -421,7 +431,7 @@ func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, r
 	threshold := newAccountThreshold
 
 	if p.settings != nil {
-		days := p.settings.GetIntOr(ctx, pgtype.UUID{}, "moderation.new_account_threshold_days", 7)
+		days := p.settings.GetIntOr(ctx, "moderation.new_account_threshold_days", 7)
 		threshold = time.Duration(days) * 24 * time.Hour
 	}
 
@@ -444,7 +454,7 @@ const newUserMinPostsForLinks = 3
 // posts. The layer returns a near-block score (0.95) when violated, so the
 // pipeline's blockThreshold (default 0.6) rejects the post.
 // Ref: japaconnect-engineering/sections/41-spam-content-safety.md (Layer 3).
-func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "new_user_links"
 
 	if req.UserID == (pgtype.UUID{}) || req.Content == "" {
@@ -465,7 +475,7 @@ func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UU
 	// 1. Is the account "new"? Use the same threshold as checkUserAge.
 	days := 7
 	if p.settings != nil {
-		days = p.settings.GetIntOr(ctx, pgtype.UUID{}, "moderation.new_account_threshold_days", days)
+		days = p.settings.GetIntOr(ctx, "moderation.new_account_threshold_days", days)
 	}
 
 	threshold := time.Duration(days) * 24 * time.Hour
@@ -486,7 +496,7 @@ func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UU
 	// 2. How many published posts does the user already have?
 	minPosts := newUserMinPostsForLinks
 	if p.settings != nil {
-		minPosts = p.settings.GetIntOr(ctx, pgtype.UUID{}, "moderation.new_user_min_posts_for_links", minPosts)
+		minPosts = p.settings.GetIntOr(ctx, "moderation.new_user_min_posts_for_links", minPosts)
 	}
 
 	count, err := queries.CountPostsByAuthor(ctx,
@@ -513,7 +523,7 @@ const minContentLength = 10
 
 // checkContentLength flags very short content. Single-word or near-empty
 // posts are a common spam signal (especially combined with other layers).
-func (p *SpamPipeline) checkContentLength(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkContentLength(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "content_length"
 
 	length := len(strings.TrimSpace(req.Content))
@@ -523,7 +533,7 @@ func (p *SpamPipeline) checkContentLength(ctx context.Context, tenantID pgtype.U
 
 	minLen := minContentLength
 	if p.settings != nil {
-		minLen = p.settings.GetIntOr(ctx, pgtype.UUID{}, "content.min_length", minContentLength)
+		minLen = p.settings.GetIntOr(ctx, "content.min_length", minContentLength)
 	}
 
 	if length < minLen {
@@ -546,7 +556,7 @@ const aiFlagThreshold = 0.85
 // returns 0.0 — the pipeline degrades to rule-only mode. When the AI
 // gateway is unavailable or returns an error, the layer also returns 0.0
 // rather than blocking content publication on an infrastructure failure.
-func (p *SpamPipeline) checkAIClassification(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkAIClassification(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "ai_classification"
 
 	if p.classifier == nil {
@@ -573,7 +583,7 @@ func (p *SpamPipeline) checkAIClassification(ctx context.Context, tenantID pgtyp
 		// a float (0.85). Read it as a float directly; the previous GetIntOr
 		// call returned 0 for a float-stored value, which collapsed the
 		// threshold to 0.0 and flagged all content with any AI score.
-		threshold = p.settings.GetFloatOr(ctx, tenantID, "moderation.ai_auto_flag_threshold", aiFlagThreshold)
+		threshold = p.settings.GetFloatOr(ctx, "moderation.ai_auto_flag_threshold", aiFlagThreshold)
 	}
 
 	var reasons []string

@@ -19,12 +19,12 @@ import (
 // need — countries/states/cities are seeded as spaces (catalog: "from seeded
 // country spaces"), not a separate table.
 type SpacesService interface {
-	ListSpacesByLevel(ctx context.Context, tenantID, viewerUserID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error)
-	ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.ListStatesByCountryGeoCodeRow, error)
-	ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error)
-	GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) (gen.GetSpaceByGeoCodeRow, error)
-	FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID, cityName string) (gen.FindCitySpaceByNameRow, error)
-	CreateCity(ctx context.Context, tenantID, stateID pgtype.UUID, name string) (gen.CreateSpaceRow, error)
+	ListSpacesByLevel(ctx context.Context, viewerUserID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error)
+	ListStatesByCountryCode(ctx context.Context, countryCode string) ([]gen.ListStatesByCountryGeoCodeRow, error)
+	ListCitiesByState(ctx context.Context, stateID pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error)
+	GetSpaceByGeoCode(ctx context.Context, countryCode string) (gen.GetSpaceByGeoCodeRow, error)
+	FindCitySpaceByName(ctx context.Context, cityName string) (gen.FindCitySpaceByNameRow, error)
+	CreateCity(ctx context.Context, stateID pgtype.UUID, name string) (gen.CreateSpaceRow, error)
 }
 
 // SuggestedSpace is the public projection of a seeded geo Space returned in
@@ -178,7 +178,7 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	countries, err := h.spaces.ListSpacesByLevel(r.Context(), t.ID, pgtype.UUID{}, "country")
+	countries, err := h.spaces.ListSpacesByLevel(r.Context(), pgtype.UUID{}, "country")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list countries")
 		return
@@ -208,7 +208,7 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	states, err := h.spaces.ListStatesByCountryCode(r.Context(), t.ID, code)
+	states, err := h.spaces.ListStatesByCountryCode(r.Context(), code)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list states")
 		return
@@ -239,7 +239,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cities, err := h.spaces.ListCitiesByState(r.Context(), t.ID, stateID)
+	cities, err := h.spaces.ListCitiesByState(r.Context(), stateID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list cities")
 		return
@@ -294,7 +294,7 @@ func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	city, err := h.spaces.CreateCity(r.Context(), t.ID, stateID, name)
+	city, err := h.spaces.CreateCity(r.Context(), stateID, name)
 	if err != nil {
 		slog.Warn("create city failed", "user_id", user.UserID.String(), "state_id", stateIDStr, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Could not create city")
@@ -330,7 +330,7 @@ func (h *Handlers) suggestedSpaces(r *http.Request, geo GeoContext) []SuggestedS
 
 	// 1. Country space by geo_code.
 	if geo.CountryCode != "" {
-		country, err := h.spaces.GetSpaceByGeoCode(ctx, t.ID, geo.CountryCode)
+		country, err := h.spaces.GetSpaceByGeoCode(ctx, geo.CountryCode)
 		if err == nil {
 			out = append(out, SuggestedSpace{
 				ID:          country.ID.String(),
@@ -349,7 +349,7 @@ func (h *Handlers) suggestedSpaces(r *http.Request, geo GeoContext) []SuggestedS
 
 	// 2. City space by name (case-insensitive, tenant-scoped).
 	if geo.City != "" {
-		city, err := h.spaces.FindCitySpaceByName(ctx, t.ID, geo.City)
+		city, err := h.spaces.FindCitySpaceByName(ctx, geo.City)
 		if err == nil {
 			out = append(out, SuggestedSpace{
 				ID:          city.ID.String(),

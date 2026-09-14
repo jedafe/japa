@@ -73,13 +73,11 @@ type contentDocument struct {
 // upserts it into the posts index. UpsertDocuments is primary-key replace —
 // a document with the same id is overwritten — so this handles both create
 // and update without a separate code path.
-func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byte) error {
+func (ix *Indexer) IndexContent(ctx context.Context, contentID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
-
-	tID := pgtype.UUID{Bytes: tenantID, Valid: true}
 
 	row, err := ix.read.GetContentByID(ctx,
 		pgtype.UUID{Bytes: contentID, Valid: true},
@@ -109,7 +107,7 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 		Status:            row.Status,
 		SpaceID:           spaceID,
 		TagSlugs:          tagSlugs,
-		RelevantCountries: ix.resolveRelevantCountries(ctx, tID, row.GeoSpaceID),
+		RelevantCountries: ix.resolveRelevantCountries(ctx, row.GeoSpaceID),
 		CreatedAt:         row.CreatedAt.Time.Unix(),
 		EngagementScore:   int64(row.ViewCount) + int64(row.CommentCount)*3 + int64(row.ShareCount)*5 + int64(row.ReshareCount)*2,
 	}
@@ -127,7 +125,7 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 // geo_space_id to find the country-level space's geo_code (ISO 3166-1
 // alpha-2). Returns an empty slice (globally relevant) when the content has
 // no geo_space_id or the country cannot be resolved. ADR-064.
-func (ix *Indexer) resolveRelevantCountries(ctx context.Context, tenantID, geoSpaceID pgtype.UUID) []string {
+func (ix *Indexer) resolveRelevantCountries(ctx context.Context, geoSpaceID pgtype.UUID) []string {
 	if !geoSpaceID.Valid {
 		return []string{}
 	}
@@ -348,7 +346,7 @@ type forumThreadDocument struct {
 
 // IndexForumThread fetches a forum thread and upserts it into the
 // forum_threads index.
-func (ix *Indexer) IndexForumThread(ctx context.Context, threadID, tenantID [16]byte) error {
+func (ix *Indexer) IndexForumThread(ctx context.Context, threadID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
@@ -404,7 +402,7 @@ type spaceDocument struct {
 }
 
 // IndexSpace fetches a space and upserts it into the spaces index.
-func (ix *Indexer) IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) error {
+func (ix *Indexer) IndexSpace(ctx context.Context, spaceID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
@@ -466,7 +464,7 @@ type userDocument struct {
 // Respects the search_indexable privacy opt-out (§13, §19): if the user has
 // opted out of discoverability, their document is deleted from the index
 // instead of upserted.
-func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) error {
+func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
@@ -551,7 +549,7 @@ type tagDocument struct {
 }
 
 // IndexTag fetches a forum tag and upserts it into the tags index.
-func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error {
+func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
@@ -594,7 +592,7 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 // Distinct from IndexTag, which indexes forum tags (/forum/tags/{slug}) —
 // both live in the shared tags index so ?type=tag returns every tag entity.
 // Ref: Section 54 (?type=tag), api-routes-catalog.md (GET /tags).
-func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]byte) error {
+func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
@@ -657,7 +655,7 @@ type organizationDocument struct {
 // IndexOrganization fetches an organization and upserts it into the
 // organizations index. Soft-deleted orgs (deleted_at IS NOT NULL) are removed
 // from the index so they never surface in search.
-func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]byte) error {
+func (ix *Indexer) IndexOrganization(ctx context.Context, orgID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
@@ -737,7 +735,7 @@ type languageTestRequirementDocument struct {
 // index so stale drafts/rejected rows do not surface in RAG retrieval.
 // Ref: japaconnect-engineering/sections/99-language-test-hub.md
 // //	japaconnect-engineering/adr/ADR-107-language-test-hub.md
-func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tenantID [16]byte) error {
+func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
@@ -747,7 +745,7 @@ func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tena
 		return errors.New("search:index: no database pool for language_test_requirements fetch")
 	}
 
-	row, err := ix.fetchLanguageTestRequirement(ctx, reqID, tenantID)
+	row, err := ix.fetchLanguageTestRequirement(ctx, reqID)
 	if err != nil {
 		return fmt.Errorf("fetching language_test_requirement for index: %w", err)
 	}
@@ -787,7 +785,6 @@ func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tena
 // languageTestReqRow is the scanned shape for the direct pgx query.
 type languageTestReqRow struct {
 	id                 string
-	tenantID           string
 	testSlug           string
 	testName           string
 	minimumScore       string
@@ -800,7 +797,7 @@ type languageTestReqRow struct {
 // fetchLanguageTestRequirement reads a single requirement row joined with
 // its language_tests parent. Uses the pool directly because the
 // languagetesthub feature has no sqlc-generated queries.
-func (ix *Indexer) fetchLanguageTestRequirement(ctx context.Context, reqID, tenantID [16]byte) (*languageTestReqRow, error) {
+func (ix *Indexer) fetchLanguageTestRequirement(ctx context.Context, reqID [16]byte) (*languageTestReqRow, error) {
 	conn, err := ix.pool.Reader.Acquire(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquiring connection: %w", err)
@@ -818,8 +815,8 @@ func (ix *Indexer) fetchLanguageTestRequirement(ctx context.Context, reqID, tena
 		FROM language_test_requirements r
 		JOIN language_tests lt ON lt.id = r.test_id
 		WHERE r.id = $1
-	`, reqID, tenantID).Scan(
-		&r.id, &r.tenantID, &r.testSlug, &r.testName,
+	`, reqID).Scan(
+		&r.id, &r.testSlug, &r.testName,
 		&r.minimumScore, &r.destinationSpaceID,
 		&visaCategory, &r.status, &r.isJapabotIndexed,
 	)
@@ -892,13 +889,11 @@ type learningTrackDocument struct {
 // IndexLearningTrack fetches a published marketplace track and upserts it
 // into the learning_tracks index. Only tracks with is_published_to_university
 // = true are indexed; unpublished tracks are deleted from the index.
-func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16]byte) error {
+func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
-
-	tID := pgtype.UUID{Bytes: tenantID, Valid: true}
 	trID := pgtype.UUID{Bytes: trackID, Valid: true}
 
 	row, err := ix.read.GetUniversityTrackByID(ctx,
@@ -940,7 +935,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 		URL:           "/learn/university/catalog/" + row.Slug,
 		// relevant_countries is resolved from the track's geo_space_id by
 		// walking the space hierarchy to the country level (ADR-064).
-		RelevantCountries: ix.resolveRelevantCountries(ctx, tID, row.GeoSpaceID),
+		RelevantCountries: ix.resolveRelevantCountries(ctx, row.GeoSpaceID),
 		CreatedAt:         row.CreatedAt.Time.Unix(),
 	}
 
@@ -973,7 +968,7 @@ type docPageDocument struct {
 // IndexDocPage fetches a doc page and upserts it into the doc_pages index
 // (SEARCH-001). UpsertDocuments is primary-key replace so this handles both
 // create and update.
-func (ix *Indexer) IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) error {
+func (ix *Indexer) IndexDocPage(ctx context.Context, pageID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
@@ -1039,7 +1034,7 @@ type ReindexSummary struct {
 // // Each entity type is fetched in offset/cursor batches and delegated to the
 // existing per-entity IndexXxx method, which reuses the document-shaping
 // logic (excerpt, URL, relevant_countries, etc.).
-func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*ReindexSummary, error) {
+func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	if ix.engine == nil {
 		return nil, errors.New("search:reindex: no search engine")
 	}
@@ -1069,7 +1064,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexContent(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexContent(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: content failed", "id", row.ID, "error", err)
 
 				summary.Errors++
@@ -1105,7 +1100,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexForumThread(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexForumThread(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: forum thread failed", "id", row.ID, "error", err)
 
 				summary.Errors++
@@ -1138,7 +1133,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexTag(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexTag(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: tag failed", "id", row.ID, "error", err)
 
 				summary.Errors++
@@ -1171,7 +1166,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexDirectoryTag(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexDirectoryTag(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: directory tag failed", "id", row.ID, "error", err)
 
 				summary.Errors++
@@ -1204,7 +1199,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexSpace(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexSpace(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: space failed", "id", row.ID, "error", err)
 
 				summary.Errors++
@@ -1237,7 +1232,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexUser(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexUser(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: user failed", "id", row.ID, "error", err)
 
 				summary.Errors++
@@ -1272,7 +1267,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexLearningTrack(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexLearningTrack(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: learning track failed", "id", row.ID, "error", err)
 
 				summary.Errors++
@@ -1294,7 +1289,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		summary.Errors++
 	} else {
 		for _, row := range docRows {
-			if err := ix.IndexDocPage(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexDocPage(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: doc page failed", "id", row.ID, "error", err)
 
 				summary.Errors++
@@ -1322,7 +1317,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexOrganization(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+			if err := ix.IndexOrganization(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: organization failed", "id", row.ID, "error", err)
 
 				summary.Errors++

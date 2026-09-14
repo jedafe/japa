@@ -104,7 +104,7 @@ func (s *TOTPStoreImpl) DisableTOTP(ctx context.Context, userID pgtype.UUID) err
 // enrollment. Implements auth.TOTPEnrollmentChecker for the
 // RequireTOTPForAdmin middleware (Section 02 — auth.totp.required_for_admin).
 // Returns false when no credential row exists or when enabled_at IS NULL.
-func (s *TOTPStoreImpl) HasTOTPEnrolled(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
+func (s *TOTPStoreImpl) HasTOTPEnrolled(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	var enabled bool
 
 	err := s.db.Reader.QueryRow(ctx, `SELECT (enabled_at IS NOT NULL) FROM totp_credentials

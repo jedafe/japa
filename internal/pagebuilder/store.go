@@ -32,7 +32,7 @@ func NewStore(database *db.DB) *Store {
 // ListBlocks returns a paginated list of blocks for a tenant, ordered by name.
 // page is 1-based; limit is the page size. Returns the items and the total row
 // count (before pagination) so the handler can compute total_pages.
-func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Block, int64, error) {
+func (s *Store) ListBlocks(ctx context.Context, q string, page, limit int32) ([]Block, int64, error) {
 	offset := (page - 1) * limit
 	if offset < 0 {
 		offset = 0
@@ -87,7 +87,7 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string, 
 }
 
 // GetBlock returns a single block by ID, scoped to the tenant.
-func (s *Store) GetBlock(ctx context.Context, id, tenantID pgtype.UUID) (Block, error) {
+func (s *Store) GetBlock(ctx context.Context, id pgtype.UUID) (Block, error) {
 	var b Block
 
 	err := s.reader.QueryRow(ctx, `
@@ -110,7 +110,7 @@ func (s *Store) GetBlock(ctx context.Context, id, tenantID pgtype.UUID) (Block, 
 }
 
 // CreateBlock inserts a new block row.
-func (s *Store) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input CreateBlockInput) (Block, error) {
+func (s *Store) CreateBlock(ctx context.Context, input CreateBlockInput) (Block, error) {
 	defaultConfig := input.DefaultConfig
 	if defaultConfig == nil {
 		defaultConfig = json.RawMessage(`{}`)
@@ -142,7 +142,7 @@ func (s *Store) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input Cre
 }
 
 // UpdateBlock updates an existing block row.
-func (s *Store) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input UpdateBlockInput) (Block, error) {
+func (s *Store) UpdateBlock(ctx context.Context, id pgtype.UUID, input UpdateBlockInput) (Block, error) {
 	defaultConfig := input.DefaultConfig
 	if defaultConfig == nil {
 		defaultConfig = json.RawMessage(`{}`)
@@ -178,7 +178,7 @@ func (s *Store) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input
 }
 
 // DeleteBlock removes a block row. System blocks cannot be deleted.
-func (s *Store) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteBlock(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `
 		DELETE FROM pagebuilder_blocks
 		WHERE id = $1 AND is_system = false
@@ -200,7 +200,7 @@ func (s *Store) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) error
 
 // ListTemplates returns a paginated list of templates for a tenant, optionally
 // filtered by q and category. page is 1-based; limit is the page size.
-func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, category string, page, limit int32) ([]Template, int64, error) {
+func (s *Store) ListTemplates(ctx context.Context, q, category string, page, limit int32) ([]Template, int64, error) {
 	offset := (page - 1) * limit
 	if offset < 0 {
 		offset = 0
@@ -255,7 +255,7 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, cate
 }
 
 // GetTemplate returns a single template by ID, scoped to the tenant.
-func (s *Store) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Template, error) {
+func (s *Store) GetTemplate(ctx context.Context, id pgtype.UUID) (Template, error) {
 	var t Template
 
 	err := s.reader.QueryRow(ctx, `
@@ -276,7 +276,7 @@ func (s *Store) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Temp
 }
 
 // CreateTemplate inserts a new template row.
-func (s *Store) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input CreateTemplateInput) (Template, error) {
+func (s *Store) CreateTemplate(ctx context.Context, input CreateTemplateInput) (Template, error) {
 	blocks := input.Blocks
 	if blocks == nil {
 		blocks = json.RawMessage(`[]`)
@@ -301,7 +301,7 @@ func (s *Store) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input 
 }
 
 // UpdateTemplate updates an existing template row.
-func (s *Store) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTemplateInput) (Template, error) {
+func (s *Store) UpdateTemplate(ctx context.Context, id pgtype.UUID, input UpdateTemplateInput) (Template, error) {
 	blocks := input.Blocks
 	if blocks == nil {
 		blocks = json.RawMessage(`[]`)
@@ -332,7 +332,7 @@ func (s *Store) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, in
 }
 
 // DeleteTemplate removes a template row. System templates cannot be deleted.
-func (s *Store) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `
 		DELETE FROM pagebuilder_templates
 		WHERE id = $1 AND is_system = false
@@ -353,7 +353,7 @@ func (s *Store) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) er
 // ---------------------------------------------------------------------------
 
 // ListThemes returns a paginated list of themes for a tenant, ordered by name.
-func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Theme, int64, error) {
+func (s *Store) ListThemes(ctx context.Context, q string, page, limit int32) ([]Theme, int64, error) {
 	offset := (page - 1) * limit
 	if offset < 0 {
 		offset = 0
@@ -409,7 +409,7 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string, 
 }
 
 // GetTheme returns a single theme by ID, scoped to the tenant.
-func (s *Store) GetTheme(ctx context.Context, id, tenantID pgtype.UUID) (Theme, error) {
+func (s *Store) GetTheme(ctx context.Context, id pgtype.UUID) (Theme, error) {
 	var t Theme
 
 	err := s.reader.QueryRow(ctx, `
@@ -433,7 +433,7 @@ func (s *Store) GetTheme(ctx context.Context, id, tenantID pgtype.UUID) (Theme, 
 }
 
 // CreateTheme inserts a new theme row.
-func (s *Store) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input CreateThemeInput) (Theme, error) {
+func (s *Store) CreateTheme(ctx context.Context, input CreateThemeInput) (Theme, error) {
 	colors := input.Colors
 	if colors == nil {
 		colors = json.RawMessage(`{}`)
@@ -471,7 +471,7 @@ func (s *Store) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input Cre
 }
 
 // UpdateTheme updates an existing theme row.
-func (s *Store) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input UpdateThemeInput) (Theme, error) {
+func (s *Store) UpdateTheme(ctx context.Context, id pgtype.UUID, input UpdateThemeInput) (Theme, error) {
 	colors := input.Colors
 	if colors == nil {
 		colors = json.RawMessage(`{}`)
@@ -512,7 +512,7 @@ func (s *Store) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input
 }
 
 // DeleteTheme removes a theme row.
-func (s *Store) DeleteTheme(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteTheme(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `
 		DELETE FROM pagebuilder_themes
 		WHERE id = $1
@@ -530,7 +530,7 @@ func (s *Store) DeleteTheme(ctx context.Context, id, tenantID pgtype.UUID) error
 
 // SetDefaultTheme clears the default flag for all themes in the tenant,
 // then sets the given theme as default.
-func (s *Store) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) SetDefaultTheme(ctx context.Context, id pgtype.UUID) error {
 	tx, err := s.writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -573,7 +573,7 @@ type PageListFilter struct {
 
 // ListPages returns a paginated list of pages for a tenant, ordered by
 // created_at DESC, optionally narrowed by the supplied filter.
-func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListFilter, page, limit int32) ([]Page, int64, error) {
+func (s *Store) ListPages(ctx context.Context, f PageListFilter, page, limit int32) ([]Page, int64, error) {
 	offset := (page - 1) * limit
 	if offset < 0 {
 		offset = 0
@@ -634,7 +634,7 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListF
 }
 
 // ListPublishedPages returns published pages for public consumption.
-func (s *Store) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, error) {
+func (s *Store) ListPublishedPages(ctx context.Context) ([]Page, error) {
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
@@ -669,7 +669,7 @@ func (s *Store) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([
 }
 
 // GetPage returns a single page by ID, scoped to the tenant.
-func (s *Store) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
+func (s *Store) GetPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 	var p Page
 
 	err := s.reader.QueryRow(ctx, `
@@ -692,7 +692,7 @@ func (s *Store) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, er
 }
 
 // GetPageBySlug returns a published page by slug for public consumption.
-func (s *Store) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (Page, error) {
+func (s *Store) GetPageBySlug(ctx context.Context, slug string) (Page, error) {
 	var p Page
 
 	err := s.reader.QueryRow(ctx, `
@@ -716,7 +716,7 @@ func (s *Store) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.
 
 // SlugExists reports whether any page (any status) already uses slug for this
 // tenant. Used by DuplicatePage to derive a unique slug for the copy.
-func (s *Store) SlugExists(ctx context.Context, slug string, tenantID pgtype.UUID) (bool, error) {
+func (s *Store) SlugExists(ctx context.Context, slug string) (bool, error) {
 	var exists bool
 
 	err := s.reader.QueryRow(ctx, `
@@ -730,7 +730,7 @@ func (s *Store) SlugExists(ctx context.Context, slug string, tenantID pgtype.UUI
 }
 
 // CreatePage inserts a new page row.
-func (s *Store) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
+func (s *Store) CreatePage(ctx context.Context, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
 	blocks := input.Blocks
 	if blocks == nil {
 		blocks = json.RawMessage(`[]`)
@@ -777,7 +777,7 @@ func (s *Store) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID,
 // intact via COALESCE. A nil json.RawMessage is passed as SQL NULL so COALESCE
 // falls back to the existing column value; a non-nil RawMessage (including `[]`
 // or `{}`) overwrites. Ref: §16; §1.3 data-loss fix.
-func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePageInput) (Page, error) {
+func (s *Store) UpdatePage(ctx context.Context, id pgtype.UUID, input UpdatePageInput) (Page, error) {
 	var blocks any
 	if input.Blocks != nil {
 		blocks = input.Blocks
@@ -820,7 +820,7 @@ func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input 
 }
 
 // DeletePage removes a page row.
-func (s *Store) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeletePage(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `
 		DELETE FROM pages WHERE id = $1
 	`, id)
@@ -836,7 +836,7 @@ func (s *Store) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) error 
 }
 
 // PublishPage sets the page status to 'published' and stamps published_at.
-func (s *Store) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
+func (s *Store) PublishPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 	var p Page
 
 	err := s.writer.QueryRow(ctx, `
@@ -860,7 +860,7 @@ func (s *Store) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 }
 
 // ArchivePage sets the page status to 'archived'.
-func (s *Store) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
+func (s *Store) ArchivePage(ctx context.Context, id pgtype.UUID) (Page, error) {
 	var p Page
 
 	err := s.writer.QueryRow(ctx, `

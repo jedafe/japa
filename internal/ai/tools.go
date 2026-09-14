@@ -50,7 +50,7 @@ func NewToolRegistry(database *db.DB) *ToolRegistry {
 }
 
 // ListTools returns all AI tools for the given tenant.
-func (r *ToolRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID) ([]AITool, error) {
+func (r *ToolRegistry) ListTools(ctx context.Context) ([]AITool, error) {
 	rows, err := r.db.Reader.Query(ctx, `
 		SELECT id, name, description, category, config, is_enabled,
 		       required_permission, created_at, updated_at
@@ -82,7 +82,7 @@ func (r *ToolRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID) ([]A
 }
 
 // GetTool returns a single AI tool by ID.
-func (r *ToolRegistry) GetTool(ctx context.Context, tenantID, id pgtype.UUID) (AITool, error) {
+func (r *ToolRegistry) GetTool(ctx context.Context, id pgtype.UUID) (AITool, error) {
 	var t AITool
 
 	err := r.db.Reader.QueryRow(ctx, `
@@ -103,7 +103,7 @@ func (r *ToolRegistry) GetTool(ctx context.Context, tenantID, id pgtype.UUID) (A
 }
 
 // GetToolByName returns a single AI tool by name.
-func (r *ToolRegistry) GetToolByName(ctx context.Context, tenantID pgtype.UUID, name string) (AITool, error) {
+func (r *ToolRegistry) GetToolByName(ctx context.Context, name string) (AITool, error) {
 	var t AITool
 
 	err := r.db.Reader.QueryRow(ctx, `
@@ -124,9 +124,9 @@ func (r *ToolRegistry) GetToolByName(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // UpdateTool updates an existing AI tool's configuration, enablement, or description.
-func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID, input UpdateToolInput) (AITool, error) {
+func (r *ToolRegistry) UpdateTool(ctx context.Context, id pgtype.UUID, input UpdateToolInput) (AITool, error) {
 	// Fetch current values for merge.
-	current, err := r.GetTool(ctx, tenantID, id)
+	current, err := r.GetTool(ctx, id)
 	if err != nil {
 		return AITool{}, err
 	}
@@ -172,7 +172,7 @@ func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID,
 }
 
 // DeleteTool removes an AI tool by ID.
-func (r *ToolRegistry) DeleteTool(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (r *ToolRegistry) DeleteTool(ctx context.Context, id pgtype.UUID) error {
 	tag, err := r.db.Writer.Exec(ctx, `
 		DELETE FROM ai_tools
 		WHERE id = $1
@@ -197,7 +197,7 @@ type UpdateToolInput struct {
 }
 
 // GetToolUsageStats returns aggregated usage statistics for a tool.
-func (r *ToolRegistry) GetToolUsageStats(ctx context.Context, tenantID, toolID pgtype.UUID, since time.Time) (ToolUsageStats, error) {
+func (r *ToolRegistry) GetToolUsageStats(ctx context.Context, toolID pgtype.UUID, since time.Time) (ToolUsageStats, error) {
 	var stats ToolUsageStats
 
 	err := r.db.Reader.QueryRow(ctx, `
@@ -228,7 +228,7 @@ type ToolUsageStats struct {
 }
 
 // ListToolUsage returns recent usage records for a tool.
-func (r *ToolRegistry) ListToolUsage(ctx context.Context, tenantID, toolID pgtype.UUID, limit, offset int32) ([]AIToolUsage, error) {
+func (r *ToolRegistry) ListToolUsage(ctx context.Context, toolID pgtype.UUID, limit, offset int32) ([]AIToolUsage, error) {
 	rows, err := r.db.Reader.Query(ctx, `
 		SELECT id, tool_id, user_id, tokens_used, cost_cents, created_at
 		FROM ai_tool_usage
@@ -307,7 +307,7 @@ func (r *ToolRegistry) GetAllToolUsageStats(ctx context.Context, tenantID pgtype
 }
 
 // RecordUsage records a single usage event for an AI tool.
-func (r *ToolRegistry) RecordUsage(ctx context.Context, tenantID, toolID pgtype.UUID, userID *pgtype.UUID, tokensUsed, costCents int32) (pgtype.UUID, error) {
+func (r *ToolRegistry) RecordUsage(ctx context.Context, toolID pgtype.UUID, userID *pgtype.UUID, tokensUsed, costCents int32) (pgtype.UUID, error) {
 	var id pgtype.UUID
 
 	err := r.db.Writer.QueryRow(ctx, `
@@ -323,7 +323,7 @@ func (r *ToolRegistry) RecordUsage(ctx context.Context, tenantID, toolID pgtype.
 
 // EnsureTool registers a tool if it doesn't already exist for the tenant.
 // Returns the tool ID (newly created or existing).
-func (r *ToolRegistry) EnsureTool(ctx context.Context, tenantID pgtype.UUID, tool ToolDefinition) (pgtype.UUID, error) {
+func (r *ToolRegistry) EnsureTool(ctx context.Context, tool ToolDefinition) (pgtype.UUID, error) {
 	var id pgtype.UUID
 
 	err := r.db.Writer.QueryRow(ctx, `

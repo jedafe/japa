@@ -153,14 +153,14 @@ func (h *Handlers) ListPageTypes(w http.ResponseWriter, r *http.Request) {
 
 // ListBlocks handles GET /api/v1/admin/pagebuilder/blocks.
 func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	page, limit := parsePageParams(r)
 
-	blocks, total, err := h.Service.ListBlocks(r.Context(), tenantID, r.URL.Query().Get("q"), page, limit)
+	blocks, total, err := h.Service.ListBlocks(r.Context(), r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -177,7 +177,7 @@ func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
 
 // GetBlock handles GET /api/v1/admin/pagebuilder/blocks/{id}.
 func (h *Handlers) GetBlock(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -188,7 +188,7 @@ func (h *Handlers) GetBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	block, err := h.Service.GetBlock(r.Context(), id, tenantID)
+	block, err := h.Service.GetBlock(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -199,7 +199,7 @@ func (h *Handlers) GetBlock(w http.ResponseWriter, r *http.Request) {
 
 // CreateBlock handles POST /api/v1/admin/pagebuilder/blocks.
 func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -210,7 +210,7 @@ func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	block, err := h.Service.CreateBlock(r.Context(), tenantID, input)
+	block, err := h.Service.CreateBlock(r.Context(), input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -221,7 +221,7 @@ func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
 
 // UpdateBlock handles PATCH /api/v1/admin/pagebuilder/blocks/{id}.
 func (h *Handlers) UpdateBlock(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -238,7 +238,7 @@ func (h *Handlers) UpdateBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	block, err := h.Service.UpdateBlock(r.Context(), id, tenantID, input)
+	block, err := h.Service.UpdateBlock(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -249,7 +249,7 @@ func (h *Handlers) UpdateBlock(w http.ResponseWriter, r *http.Request) {
 
 // DeleteBlock handles DELETE /api/v1/admin/pagebuilder/blocks/{id}.
 func (h *Handlers) DeleteBlock(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -260,7 +260,7 @@ func (h *Handlers) DeleteBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteBlock(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteBlock(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -274,7 +274,7 @@ func (h *Handlers) DeleteBlock(w http.ResponseWriter, r *http.Request) {
 
 // ListTemplates handles GET /api/v1/admin/pagebuilder/templates.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -284,7 +284,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	templates, total, err := h.Service.ListTemplates(r.Context(), tenantID, q, category, page, limit)
+	templates, total, err := h.Service.ListTemplates(r.Context(), q, category, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -301,7 +301,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
 // GetTemplate handles GET /api/v1/admin/pagebuilder/templates/{id}.
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -312,7 +312,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := h.Service.GetTemplate(r.Context(), id, tenantID)
+	tmpl, err := h.Service.GetTemplate(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -323,7 +323,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 // CreateTemplate handles POST /api/v1/admin/pagebuilder/templates.
 func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -334,7 +334,7 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := h.Service.CreateTemplate(r.Context(), tenantID, input)
+	tmpl, err := h.Service.CreateTemplate(r.Context(), input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -345,7 +345,7 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTemplate handles PATCH /api/v1/admin/pagebuilder/templates/{id}.
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -362,7 +362,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := h.Service.UpdateTemplate(r.Context(), id, tenantID, input)
+	tmpl, err := h.Service.UpdateTemplate(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -373,7 +373,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTemplate handles DELETE /api/v1/admin/pagebuilder/templates/{id}.
 func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -384,7 +384,7 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteTemplate(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteTemplate(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -398,14 +398,14 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 
 // ListThemes handles GET /api/v1/admin/pagebuilder/themes.
 func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	page, limit := parsePageParams(r)
 
-	themes, total, err := h.Service.ListThemes(r.Context(), tenantID, r.URL.Query().Get("q"), page, limit)
+	themes, total, err := h.Service.ListThemes(r.Context(), r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -422,7 +422,7 @@ func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
 
 // GetTheme handles GET /api/v1/admin/pagebuilder/themes/{id}.
 func (h *Handlers) GetTheme(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -433,7 +433,7 @@ func (h *Handlers) GetTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	theme, err := h.Service.GetTheme(r.Context(), id, tenantID)
+	theme, err := h.Service.GetTheme(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -444,7 +444,7 @@ func (h *Handlers) GetTheme(w http.ResponseWriter, r *http.Request) {
 
 // CreateTheme handles POST /api/v1/admin/pagebuilder/themes.
 func (h *Handlers) CreateTheme(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -455,7 +455,7 @@ func (h *Handlers) CreateTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	theme, err := h.Service.CreateTheme(r.Context(), tenantID, input)
+	theme, err := h.Service.CreateTheme(r.Context(), input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -466,7 +466,7 @@ func (h *Handlers) CreateTheme(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTheme handles PATCH /api/v1/admin/pagebuilder/themes/{id}.
 func (h *Handlers) UpdateTheme(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -483,7 +483,7 @@ func (h *Handlers) UpdateTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	theme, err := h.Service.UpdateTheme(r.Context(), id, tenantID, input)
+	theme, err := h.Service.UpdateTheme(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -494,7 +494,7 @@ func (h *Handlers) UpdateTheme(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTheme handles DELETE /api/v1/admin/pagebuilder/themes/{id}.
 func (h *Handlers) DeleteTheme(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -505,7 +505,7 @@ func (h *Handlers) DeleteTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteTheme(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteTheme(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -515,7 +515,7 @@ func (h *Handlers) DeleteTheme(w http.ResponseWriter, r *http.Request) {
 
 // SetDefaultTheme handles POST /api/v1/admin/pagebuilder/themes/{id}/default.
 func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -526,14 +526,14 @@ func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.SetDefaultTheme(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.SetDefaultTheme(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	// Return the updated theme so the client receives the standard {"data": ...}
 	// envelope (Rule 5). The service only toggles is_default, so re-fetch.
-	theme, err := h.Service.GetTheme(r.Context(), id, tenantID)
+	theme, err := h.Service.GetTheme(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -548,7 +548,7 @@ func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
 
 // ListPages handles GET /api/v1/admin/pages.
 func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -556,7 +556,7 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page, limit := parsePageParams(r)
 
-	pages, total, err := h.Service.ListPages(r.Context(), tenantID, PageListFilter{
+	pages, total, err := h.Service.ListPages(r.Context(), PageListFilter{
 		Q:        q.Get("q"),
 		PageType: q.Get("page_type"),
 		Slug:     q.Get("slug"),
@@ -578,7 +578,7 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 
 // GetPage handles GET /api/v1/admin/pages/{id}.
 func (h *Handlers) GetPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -589,7 +589,7 @@ func (h *Handlers) GetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.GetPage(r.Context(), id, tenantID)
+	page, err := h.Service.GetPage(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -604,8 +604,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -616,7 +615,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.CreatePage(r.Context(), tenantID, user.UserID, input)
+	page, err := h.Service.CreatePage(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -724,8 +723,7 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -745,7 +743,7 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.ReorderBlocks(r.Context(), id, tenantID, input.Blocks)
+	page, err := h.Service.ReorderBlocks(r.Context(), id, input.Blocks)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -757,12 +755,12 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 // ListPublishedPages handles GET /pages — public endpoint, no auth required.
 // Returns only pages with status='published', ordered by created_at DESC.
 func (h *Handlers) ListPublishedPages(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	pages, err := h.Service.ListPublishedPages(r.Context(), tenantID)
+	pages, err := h.Service.ListPublishedPages(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -814,7 +812,7 @@ func (h *Handlers) resolvePageLiterals(r *http.Request, tenantID pgtype.UUID) ma
 
 	// ADR-064: geo/locale/tenant fields come from the request's VisitorContext
 	// + GeoIP + Accept-Language via the shared request-context constructor.
-	rc := literals.NewRequestContext(r, tenantID, "")
+	rc := literals.NewRequestContext(r, "")
 
 	m, err := h.Catalog.ResolveMap(r.Context(), tenantID, rc)
 	if err != nil {
@@ -890,7 +888,7 @@ func (h *Handlers) resolveWidgetBlocks(ctx context.Context, blocksJSON json.RawM
 // It snapshots the page's current block array into a new page template
 // (Section 16: "save-as-template" preserves the page's blocks).
 func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -919,7 +917,7 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 	// Fetch the source page so its block array is copied into the template.
 	// The prior implementation discarded pageID and saved an empty block
 	// array (§21 stub) — that lost all page content on save-as-template.
-	page, err := h.Service.GetPage(r.Context(), pageID, tenantID)
+	page, err := h.Service.GetPage(r.Context(), pageID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -930,7 +928,7 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 		description = &input.Description
 	}
 
-	template, err := h.Service.CreateTemplate(r.Context(), tenantID, CreateTemplateInput{
+	template, err := h.Service.CreateTemplate(r.Context(), CreateTemplateInput{
 		Name:        input.Name,
 		Slug:        slugify(input.Name),
 		Description: description,
@@ -954,8 +952,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -966,7 +963,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.DuplicatePage(r.Context(), pageID, tenantID, user.UserID)
+	page, err := h.Service.DuplicatePage(r.Context(), pageID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

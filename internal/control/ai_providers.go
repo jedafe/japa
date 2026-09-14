@@ -41,7 +41,7 @@ func buildValidSet(items []string) map[string]bool {
 // ListAIProviders handles GET /control/ai-providers.
 // Returns all AI provider configs for the tenant. API keys are masked.
 func (h *Handlers) ListAIProviders(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -51,7 +51,7 @@ func (h *Handlers) ListAIProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	providers, err := h.ProviderStore.ListProviders(r.Context(), tenantID)
+	providers, err := h.ProviderStore.ListProviders(r.Context())
 	if err != nil {
 		slog.Error("control: list ai providers", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list AI providers")
@@ -64,7 +64,7 @@ func (h *Handlers) ListAIProviders(w http.ResponseWriter, r *http.Request) {
 
 // GetAIProvider handles GET /control/ai-providers/{id}.
 func (h *Handlers) GetAIProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -80,7 +80,7 @@ func (h *Handlers) GetAIProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, err := h.ProviderStore.GetProvider(r.Context(), tenantID, id)
+	provider, err := h.ProviderStore.GetProvider(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 		return
@@ -91,7 +91,7 @@ func (h *Handlers) GetAIProvider(w http.ResponseWriter, r *http.Request) {
 
 // CreateAIProvider handles POST /control/ai-providers.
 func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -163,14 +163,14 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the new provider is immediately available.
-	h.reloadAIProviders(r.Context(), tenantID)
+	h.reloadAIProviders(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": provider})
 }
 
 // UpdateAIProvider handles PATCH /control/ai-providers/{id}.
 func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -248,14 +248,14 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the updated config takes effect immediately.
-	h.reloadAIProviders(r.Context(), tenantID)
+	h.reloadAIProviders(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": provider})
 }
 
 // DeleteAIProvider handles DELETE /control/ai-providers/{id}.
 func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -271,7 +271,7 @@ func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.ProviderStore.DeleteProvider(r.Context(), tenantID, id); err != nil {
+	if err := h.ProviderStore.DeleteProvider(r.Context(), id); err != nil {
 		if strings.Contains(err.Error(), "not_found") {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 			return
@@ -284,7 +284,7 @@ func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the removed provider is unregistered.
-	h.reloadAIProviders(r.Context(), tenantID)
+	h.reloadAIProviders(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
@@ -292,7 +292,7 @@ func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
 // TestAIProvider handles POST /control/ai-providers/{id}/test.
 // Sends a minimal test prompt through the provider to verify connectivity.
 func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -308,13 +308,13 @@ func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, err := h.ProviderStore.GetProvider(r.Context(), tenantID, id)
+	provider, err := h.ProviderStore.GetProvider(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 		return
 	}
 
-	apiKey, err := h.ProviderStore.GetDecryptedAPIKey(r.Context(), tenantID, id)
+	apiKey, err := h.ProviderStore.GetDecryptedAPIKey(r.Context(), id)
 	if err != nil {
 		slog.Error("control: test ai provider: decrypt key", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decrypt API key")
@@ -449,12 +449,12 @@ func (h *Handlers) GetAIProviderTypes(w http.ResponseWriter, _ *http.Request) {
 
 // create/update/delete operations so changes take effect immediately without
 // a server restart.
-func (h *Handlers) reloadAIProviders(ctx context.Context, tenantID pgtype.UUID) {
+func (h *Handlers) reloadAIProviders(ctx context.Context) {
 	if h.ProviderStore == nil || h.AIDispatcher == nil {
 		return
 	}
 
-	if err := ai.LoadAndRegisterProviders(ctx, h.ProviderStore, h.AIDispatcher, tenantID); err != nil {
+	if err := ai.LoadAndRegisterProviders(ctx, h.ProviderStore, h.AIDispatcher); err != nil {
 		slog.Error("control: hot-reload ai providers", "error", err)
 	}
 }

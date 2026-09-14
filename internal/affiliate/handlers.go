@@ -185,8 +185,7 @@ func (h *Handlers) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -196,7 +195,7 @@ func (h *Handlers) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 	// layer enrollment check here returns 403 for non-enrolled members, which
 	// the settings loader uses to show the enrollment CTA instead of the link
 	// list (BUG-002).
-	if _, err := h.Service.GetMember(r.Context(), user.UserID, tenantID); err != nil {
+	if _, err := h.Service.GetMember(r.Context(), user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -204,7 +203,7 @@ func (h *Handlers) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
 
-	links, err := h.Service.ListUserLinks(r.Context(), user.UserID, tenantID, page, pageSize)
+	links, err := h.Service.ListUserLinks(r.Context(), user.UserID, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -219,8 +218,7 @@ func (h *Handlers) CreateMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -241,7 +239,7 @@ func (h *Handlers) CreateMyLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	link, err := h.Service.CreateLink(r.Context(), tenantID, user.UserID, input)
+	link, err := h.Service.CreateLink(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -256,8 +254,7 @@ func (h *Handlers) GetMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -268,7 +265,7 @@ func (h *Handlers) GetMyLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	link, err := h.Service.GetLink(r.Context(), id, tenantID)
+	link, err := h.Service.GetLink(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -288,8 +285,7 @@ func (h *Handlers) UpdateMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -306,7 +302,7 @@ func (h *Handlers) UpdateMyLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	link, err := h.Service.UpdateLink(r.Context(), id, user.UserID, tenantID, input)
+	link, err := h.Service.UpdateLink(r.Context(), id, user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -321,8 +317,7 @@ func (h *Handlers) DeleteMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -333,7 +328,7 @@ func (h *Handlers) DeleteMyLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteLink(r.Context(), id, user.UserID, tenantID); err != nil {
+	if err := h.Service.DeleteLink(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -347,18 +342,17 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 	// Enrollment check — same rationale as ListMyLinks (BUG-002).
-	if _, err := h.Service.GetMember(r.Context(), user.UserID, tenantID); err != nil {
+	if _, err := h.Service.GetMember(r.Context(), user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	earnings, err := h.Service.GetEarnings(r.Context(), user.UserID, tenantID)
+	earnings, err := h.Service.GetEarnings(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -459,7 +453,7 @@ func sanitizeRedirectURL(dest string) string {
 // the sqlc ListAffiliateMembersFiltered query (no raw SQL, no hardcoded
 // limit). Money is rendered via pgtype.Numeric → string (never float).
 func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -473,7 +467,7 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 		statusFilter = &s
 	}
 
-	members, err := h.Service.store.listMembersFiltered(r.Context(), tenantID, statusFilter, limit, offset)
+	members, err := h.Service.store.listMembersFiltered(r.Context(), statusFilter, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_error", "Failed to query members")
 		return
@@ -482,7 +476,7 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 	results := make([]map[string]any, 0, len(members))
 
 	for _, m := range members {
-		username, _ := h.Service.lookupUsername(r.Context(), m.UserID, tenantID)
+		username, _ := h.Service.lookupUsername(r.Context(), m.UserID)
 		results = append(results, map[string]any{
 			"id": m.UserID.String(), "user_id": m.UserID.String(), "username": username,
 			"status": m.Status, "total_clicks": m.TotalClicks,
@@ -497,7 +491,7 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMemberStatusAdmin handles PATCH /api/v1/admin/affiliate-program/members/:user_id.
 func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -519,7 +513,7 @@ func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	member, err := h.Service.UpdateMemberStatus(r.Context(), userID, tenantID, input)
+	member, err := h.Service.UpdateMemberStatus(r.Context(), userID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -591,7 +585,7 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 // management). Admin-scoped soft-delete (deactivate) — the row is retained for
 // audit. Guarded by affiliate.admin.manage.
 func (h *Handlers) DeleteLinkAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -602,7 +596,7 @@ func (h *Handlers) DeleteLinkAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.store.deactivateLinkAdmin(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.store.deactivateLinkAdmin(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -632,12 +626,12 @@ var (
 // total links, total clicks, total conversions, total commissions.
 // Tenant-scoped, guarded by affiliate.admin.view.
 func (h *Handlers) GetProgramStatsAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	stats, err := h.Service.GetProgramStats(r.Context(), tenantID)
+	stats, err := h.Service.GetProgramStats(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_error", "Failed to query program stats")
 		return
@@ -663,7 +657,7 @@ func (h *Handlers) GetCommissionRates(w http.ResponseWriter, r *http.Request) {
 // GetProgramInfo never read, so admin changes never reached users and the
 // worker credited at a different rate than displayed (BUG-004).
 func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -686,21 +680,21 @@ func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 	if input.ProMonthly != nil {
-		if err := h.Service.settings.SetSetting(ctx, tenantID, "affiliate.commission.pro_monthly", strconv.FormatFloat(*input.ProMonthly, 'f', -1, 64)); err != nil {
+		if err := h.Service.settings.SetSetting(ctx, "affiliate.commission.pro_monthly", strconv.FormatFloat(*input.ProMonthly, 'f', -1, 64)); err != nil {
 			handleServiceError(w, err)
 			return
 		}
 	}
 
 	if input.ProAnnual != nil {
-		if err := h.Service.settings.SetSetting(ctx, tenantID, "affiliate.commission.pro_annual", strconv.FormatFloat(*input.ProAnnual, 'f', -1, 64)); err != nil {
+		if err := h.Service.settings.SetSetting(ctx, "affiliate.commission.pro_annual", strconv.FormatFloat(*input.ProAnnual, 'f', -1, 64)); err != nil {
 			handleServiceError(w, err)
 			return
 		}
 	}
 
 	if input.Course != nil {
-		if err := h.Service.settings.SetSetting(ctx, tenantID, "affiliate.commission.course", strconv.FormatFloat(*input.Course, 'f', -1, 64)); err != nil {
+		if err := h.Service.settings.SetSetting(ctx, "affiliate.commission.course", strconv.FormatFloat(*input.Course, 'f', -1, 64)); err != nil {
 			handleServiceError(w, err)
 			return
 		}

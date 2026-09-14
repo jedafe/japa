@@ -26,7 +26,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // List returns a paginated list of widget configurations for a tenant.
-func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Widget, int64, error) {
+func (s *Store) List(ctx context.Context, q string, page, limit int32) ([]Widget, int64, error) {
 	offset := (page - 1) * limit
 	if offset < 0 {
 		offset = 0
@@ -78,7 +78,7 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, q string, page, 
 }
 
 // Get returns a single widget by ID, scoped to the tenant.
-func (s *Store) Get(ctx context.Context, id, tenantID pgtype.UUID) (Widget, error) {
+func (s *Store) Get(ctx context.Context, id pgtype.UUID) (Widget, error) {
 	var w Widget
 
 	err := s.reader.QueryRow(ctx, `
@@ -121,7 +121,7 @@ func (s *Store) GetPublic(ctx context.Context, id pgtype.UUID) (Widget, error) {
 }
 
 // Create inserts a new widget configuration.
-func (s *Store) Create(ctx context.Context, tenantID pgtype.UUID, input CreateWidgetInput) (Widget, error) {
+func (s *Store) Create(ctx context.Context, input CreateWidgetInput) (Widget, error) {
 	config := input.Config
 	if len(config) == 0 {
 		config = json.RawMessage(`{}`)
@@ -156,7 +156,7 @@ func (s *Store) Create(ctx context.Context, tenantID pgtype.UUID, input CreateWi
 }
 
 // Update modifies an existing widget configuration. Nil fields are preserved.
-func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input UpdateWidgetInput) (Widget, error) {
+func (s *Store) Update(ctx context.Context, id pgtype.UUID, input UpdateWidgetInput) (Widget, error) {
 	var configArg any
 	if input.Config != nil {
 		configArg = *input.Config
@@ -188,7 +188,7 @@ func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input Upda
 }
 
 // Delete removes a widget configuration.
-func (s *Store) Delete(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) Delete(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `DELETE FROM widget_configurations WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("deleting widget: %w", err)

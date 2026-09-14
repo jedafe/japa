@@ -76,7 +76,7 @@ type RespondRequest struct {
 // directly) to avoid an import cycle: notifications → worker → mutualaid.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // Service holds the business logic for the Mutual Aid Board.
@@ -223,7 +223,7 @@ func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (PostDTO, e
 }
 
 // List returns a paginated, filtered list of active posts.
-func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, postType, category string, destSpaceID, citySpaceID pgtype.UUID, page, limit int32) ([]PostDTO, int64, error) {
+func (s *Service) List(ctx context.Context, postType, category string, destSpaceID, citySpaceID pgtype.UUID, page, limit int32) ([]PostDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -374,7 +374,7 @@ func (s *Service) Renew(ctx context.Context, id, tenantID, userID pgtype.UUID) (
 }
 
 // AdminList returns all posts (any status) for the moderation queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, postType, status, q string, destSpaceID, citySpaceID pgtype.UUID, page, limit int32) ([]PostDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, postType, status, q string, destSpaceID, citySpaceID pgtype.UUID, page, limit int32) ([]PostDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -427,12 +427,12 @@ func (s *Service) AdminModerate(ctx context.Context, id, tenantID pgtype.UUID, s
 // NeedReputationThreshold returns the minimum reputation (lifetime points)
 // required to create a need post. Reads the mutual_aid.need_reputation_threshold
 // system_setting (§85: create_need is reputation-gated).
-func (s *Service) NeedReputationThreshold(ctx context.Context, tenantID pgtype.UUID) int64 {
+func (s *Service) NeedReputationThreshold(ctx context.Context) int64 {
 	if s.settings == nil {
 		return 0
 	}
 
-	return int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "mutual_aid.need_reputation_threshold", 0))
+	return int64(s.settings.GetIntOr(ctx, "mutual_aid.need_reputation_threshold", 0))
 }
 
 // ExpirePosts marks all active posts past their expires_at as 'expired'
@@ -468,7 +468,7 @@ func (s *Service) ExpirePosts(ctx context.Context) (int64, error) {
 
 				if err := s.notifier.CreateNotification(
 					ctx,
-					p.TenantID,
+
 					p.UserID,
 					"mutual_aid_expiring",
 					"system",

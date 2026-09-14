@@ -151,10 +151,10 @@ func RegisterRedis(client redisCache) {
 // worker package does not import config (avoids an import cycle); *config.Settings
 // satisfies it structurally.
 type settingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
-	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
+	GetStringOr(ctx context.Context, key, fallback string) string
+	GetBoolOr(ctx context.Context, key string, fallback bool) bool
 }
 
 // appSettings holds the injected settings reader. Nil until RegisterSettings is
@@ -172,7 +172,7 @@ func RegisterSettings(s settingsReader) {
 // worker for task constants, worker uses the adapter for §73 guide-to-scholarship
 // sync).
 type ScholarshipSyncer interface {
-	SyncFromContentGuide(ctx context.Context, tenantID, contentID pgtype.UUID) error
+	SyncFromContentGuide(ctx context.Context, contentID pgtype.UUID) error
 }
 
 // scholarshipSyncer is the registered implementation. Nil until wired by server.go.
@@ -386,7 +386,7 @@ func requireDB() (*gen.Queries, error) {
 
 // resolveBaseURL returns the site base URL for a tenant by checking
 // system_settings first, then falling back to the JC_SITE_URL env var.
-func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
+func resolveBaseURL(ctx context.Context) string {
 	if dbPool == nil {
 		return os.Getenv("JC_SITE_URL")
 	}
@@ -410,7 +410,7 @@ func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
 // rather than dropped, but the failure is visible in logs.
 // // Ref: japaconnect-engineering/sections/62-newsletter-digest.md
 // //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
-func newsletterUnsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipient string) (string, map[string]string) {
+func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, map[string]string) {
 	if dbPool == nil {
 		return "", nil
 	}
@@ -439,7 +439,7 @@ func newsletterUnsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipi
 		return "", nil
 	}
 
-	base := resolveBaseURL(ctx, tenantID)
+	base := resolveBaseURL(ctx)
 	if base == "" {
 		base = os.Getenv("JC_SITE_URL")
 	}
@@ -557,7 +557,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Match the payment by provider_ref (BUG-002/BUG-019).
-	p, proceed, err := resolveWebhookPayment(ctx, queries, tenantID, payload.ProviderRef, payload.EventID, payload.Status)
+	p, proceed, err := resolveWebhookPayment(ctx, queries, payload.ProviderRef, payload.EventID, payload.Status)
 	if err != nil {
 		return err
 	}
@@ -616,7 +616,7 @@ func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, tenantID pgty
 	enqueueReferralConversion(tenantID, p)
 
 	if p.PurposeType == "form_submission" {
-		processPaidFormSubmission(ctx, queries, tenantID, p)
+		processPaidFormSubmission(ctx, queries, p)
 	}
 }
 
@@ -628,7 +628,7 @@ func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, tenantID pgty
 // proceed=false for the soft-skip cases: empty provider_ref, no matching
 // payment, or a status-transition guard (never downgrade from succeeded
 // unless the new status is "refunded").
-func resolveWebhookPayment(ctx context.Context, queries *gen.Queries, tenantID pgtype.UUID, providerRef, eventID, newStatus string) (gen.Payment, bool, error) {
+func resolveWebhookPayment(ctx context.Context, queries *gen.Queries, providerRef, eventID, newStatus string) (gen.Payment, bool, error) {
 	if providerRef == "" {
 		slog.Warn("task:payment:process_webhook: no provider_ref in payload, cannot match", "event_id", eventID)
 		return gen.Payment{}, false, nil
@@ -794,7 +794,7 @@ func pgUUIDString(id pgtype.UUID) string {
 // processPaidFormSubmission transitions the linked form_submission from
 // 'pending_payment' to 'new' and enqueues form triggers (emails, webhooks,
 // tickets) once a form_submission payment succeeds.
-func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, tenantID pgtype.UUID, p gen.Payment) {
+func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, p gen.Payment) {
 	submission, sErr := queries.GetFormSubmissionByPaymentID(ctx,
 		p.ID,
 	)
@@ -1294,7 +1294,7 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if indexFn, ok := entityIndexers(searchIndexer)[entityType]; ok {
-		return indexFn(ctx, entityID.Bytes, tenantID.Bytes)
+		return indexFn(ctx, entityID.Bytes)
 	}
 
 	slog.Warn("task:search:index_entity: unknown entity type, skipping", "entity_type", entityType)
@@ -1320,8 +1320,8 @@ var entityTypeIndexNames = map[string]string{
 // entityIndexers maps an entity_type to the matching index method on the
 // given indexer. Built per call because searchIndexer is a package global
 // registered at startup.
-func entityIndexers(ix SearchIndexer) map[string]func(context.Context, [16]byte, [16]byte) error {
-	return map[string]func(context.Context, [16]byte, [16]byte) error{
+func entityIndexers(ix SearchIndexer) map[string]func(context.Context, [16]byte) error {
+	return map[string]func(context.Context, [16]byte) error{
 		entityTypeContent:           ix.IndexContent,
 		"forum_thread":              ix.IndexForumThread,
 		entityTypeSpace:             ix.IndexSpace,
@@ -1402,7 +1402,7 @@ func HandleSearchReindexEngagementScores(ctx context.Context, _ *asynq.Task) err
 	var newest time.Time
 
 	for _, row := range rows {
-		if iErr := searchIndexer.IndexContent(ctx, row.Bytes, [16]byte{}); iErr != nil {
+		if iErr := searchIndexer.IndexContent(ctx, row.Bytes); iErr != nil {
 			slog.Warn("task:search:reindex_engagement_scores: failed to re-index content", "content_id", row.String(), "error", iErr)
 			continue
 		}
@@ -1699,7 +1699,7 @@ func HandleModerationScan(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if err := moderationProcessor.ScanContent(ctx, payload.EntityType, payload.EntityID, payload.TenantID); err != nil {
+	if err := moderationProcessor.ScanContent(ctx, payload.EntityType, payload.EntityID); err != nil {
 		slog.Error("task:content:scan_moderation: scan failed", "entity_type", payload.EntityType, "entity_id", payload.EntityID, "error", err)
 		return err
 	}
@@ -1940,8 +1940,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
 	}
-
-	tenantID, err := scanUUID(payload.TenantID)
+	_, err = scanUUID(payload.TenantID)
 	if err != nil {
 		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
 	}
@@ -1963,7 +1962,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 	// 5000 when unset or when settings are not injected. See AUDIT-BE-009.
 	maxFanOut := 5000
 	if appSettings != nil {
-		maxFanOut = appSettings.GetIntOr(ctx, pgtype.UUID{}, "feed.fanout_threshold", 5000)
+		maxFanOut = appSettings.GetIntOr(ctx, "feed.fanout_threshold", 5000)
 	}
 
 	switch payload.FanOutType {
@@ -1973,7 +1972,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 			return nil
 		}
 
-		return fanOutToFollowers(ctx, queries, tenantID, contentID, authorID, spaceID, payload.ContentType, maxFanOut)
+		return fanOutToFollowers(ctx, queries, contentID, authorID, spaceID, payload.ContentType, maxFanOut)
 
 	case fanOutSpace:
 		if !spaceID.Valid {
@@ -1981,10 +1980,10 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 			return nil
 		}
 
-		return fanOutToSpace(ctx, queries, tenantID, contentID, spaceID, payload.ContentType, payload.SpaceID, payload.ContentID, maxFanOut)
+		return fanOutToSpace(ctx, queries, contentID, spaceID, payload.ContentType, payload.SpaceID, payload.ContentID, maxFanOut)
 
 	case "bubble":
-		return fanOutToBubble(ctx, queries, tenantID, contentID, spaceID, payload.ContentType, payload.ContentID, maxFanOut)
+		return fanOutToBubble(ctx, queries, contentID, spaceID, payload.ContentType, payload.ContentID, maxFanOut)
 	}
 
 	return nil
@@ -1992,7 +1991,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 // fanOutToFollowers writes a feed row for each follower of the author, up to
 // the maxFanOut threshold. The author is skipped.
-func fanOutToFollowers(ctx context.Context, queries *gen.Queries, tenantID, contentID, authorID, spaceID pgtype.UUID, contentType string, maxFanOut int) error {
+func fanOutToFollowers(ctx context.Context, queries *gen.Queries, contentID, authorID, spaceID pgtype.UUID, contentType string, maxFanOut int) error {
 	followers, err := queries.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
 
 		EntityType: "user",
@@ -2017,7 +2016,7 @@ func fanOutToFollowers(ctx context.Context, queries *gen.Queries, tenantID, cont
 			continue
 		}
 
-		if err := insertFeedItem(ctx, queries, tenantID, f.FollowerID, contentID, spaceID, contentType); err != nil {
+		if err := insertFeedItem(ctx, queries, f.FollowerID, contentID, spaceID, contentType); err != nil {
 			slog.Error("task:content:fan_out_to_feeds: failed to insert feed item", "user_id", f.FollowerID, "error", err)
 			continue
 		}
@@ -2035,7 +2034,7 @@ func fanOutToFollowers(ctx context.Context, queries *gen.Queries, tenantID, cont
 // — members discover the post via the space feed query (GetSpaceFeed), which
 // pulls by space_id at read time. This prevents unbounded feed row writes
 // for very large spaces.
-func fanOutToSpace(ctx context.Context, queries *gen.Queries, tenantID, contentID, spaceID pgtype.UUID, contentType, spaceIDStr, contentIDStr string, maxFanOut int) error {
+func fanOutToSpace(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType, spaceIDStr, contentIDStr string, maxFanOut int) error {
 	memberCount, err := gen.New(dbPool.Reader).CountSpaceMembers(ctx,
 		spaceID,
 	)
@@ -2068,7 +2067,7 @@ func fanOutToSpace(ctx context.Context, queries *gen.Queries, tenantID, contentI
 	fedCount := 0
 
 	for _, userID := range memberIDs {
-		if err := insertFeedItem(ctx, queries, tenantID, userID, contentID, spaceID, contentType); err != nil {
+		if err := insertFeedItem(ctx, queries, userID, contentID, spaceID, contentType); err != nil {
 			slog.Error("task:content:fan_out_to_feeds: failed to insert feed item", "user_id", userID, "error", err)
 			continue
 		}
@@ -2085,10 +2084,10 @@ func fanOutToSpace(ctx context.Context, queries *gen.Queries, tenantID, contentI
 // label). Per Section 05, posts bubble up the space hierarchy based on
 // spaces.bubble_depth (default 2). Spaces can have multiple parents via
 // space_parent_spaces, so we BFS up the hierarchy.
-func fanOutToBubble(ctx context.Context, queries *gen.Queries, tenantID, contentID, spaceID pgtype.UUID, contentType, contentIDStr string, maxFanOut int) error {
+func fanOutToBubble(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType, contentIDStr string, maxFanOut int) error {
 	maxDepth := 2
 	if appSettings != nil {
-		maxDepth = appSettings.GetIntOr(ctx, pgtype.UUID{}, "spaces.bubble_depth", 2)
+		maxDepth = appSettings.GetIntOr(ctx, "spaces.bubble_depth", 2)
 	}
 
 	fedCount := 0
@@ -2116,7 +2115,7 @@ func fanOutToBubble(ctx context.Context, queries *gen.Queries, tenantID, content
 				visited[p.ParentSpaceID] = true
 
 				nextLevel = append(nextLevel, p.ParentSpaceID)
-				fedCount += fanOutToSpaceMembers(ctx, queries, tenantID, contentID, p.ParentSpaceID, contentType, maxFanOut)
+				fedCount += fanOutToSpaceMembers(ctx, queries, contentID, p.ParentSpaceID, contentType, maxFanOut)
 			}
 		}
 
@@ -2130,7 +2129,7 @@ func fanOutToBubble(ctx context.Context, queries *gen.Queries, tenantID, content
 
 // fanOutToSpaceMembers writes a feed row for every member of a space.
 // Individual insert failures are skipped (best-effort bubble fan-out).
-func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, tenantID, contentID, spaceID pgtype.UUID, contentType string, maxFanOut int) int {
+func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType string, maxFanOut int) int {
 	memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
 		SpaceID: spaceID, LimitVal: int32(maxFanOut), // #nosec
 	})
@@ -2141,7 +2140,7 @@ func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, tenantID, c
 	fed := 0
 
 	for _, userID := range memberIDs {
-		if err := insertFeedItem(ctx, queries, tenantID, userID, contentID, spaceID, contentType); err != nil {
+		if err := insertFeedItem(ctx, queries, userID, contentID, spaceID, contentType); err != nil {
 			continue
 		}
 
@@ -2152,7 +2151,7 @@ func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, tenantID, c
 }
 
 // insertFeedItem inserts a single feeds row with a default score.
-func insertFeedItem(ctx context.Context, queries *gen.Queries, tenantID, userID, contentID, spaceID pgtype.UUID, contentType string) error {
+func insertFeedItem(ctx context.Context, queries *gen.Queries, userID, contentID, spaceID pgtype.UUID, contentType string) error {
 	return queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
 
 		UserID:      userID,
@@ -2431,8 +2430,7 @@ func ragIndexAfterEmbed(ctx context.Context, tenantID, contentID [16]byte, text 
 	if ragIndexer == nil {
 		return
 	}
-
-	tenantUUID := pgtype.UUID{Bytes: tenantID, Valid: true}
+	_ = pgtype.UUID{Bytes: tenantID, Valid: true}
 	contentUUID := pgtype.UUID{Bytes: contentID, Valid: true}
 
 	// BUG-004 fix: resolve the indexing language from the i18n.default_language
@@ -2444,10 +2442,10 @@ func ragIndexAfterEmbed(ctx context.Context, tenantID, contentID [16]byte, text 
 	// japaconnect-engineering/conventions/system-settings-catalog.md
 	language := "en"
 	if appSettings != nil {
-		language = appSettings.GetStringOr(ctx, tenantUUID, "i18n.default_language", "en")
+		language = appSettings.GetStringOr(ctx, "i18n.default_language", "en")
 	}
 
-	if err := ragIndexer.IndexEntity(ctx, tenantUUID, entityTypeContent, contentUUID, text, language); err != nil {
+	if err := ragIndexer.IndexEntity(ctx, entityTypeContent, contentUUID, text, language); err != nil {
 		slog.Warn("task:content:generate_embedding: RAG index failed", "content_id", contentUUID.String(), "error", err)
 	}
 }
@@ -2610,7 +2608,7 @@ func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) err
 		return err
 	}
 
-	if err := learningProcessor.UpdateTrackCompletion(ctx, payload.UserID, payload.TrackID, payload.TenantID); err != nil {
+	if err := learningProcessor.UpdateTrackCompletion(ctx, payload.UserID, payload.TrackID); err != nil {
 		slog.Error("task:learning:update_track_completion: failed", "user_id", payload.UserID, "track_id", payload.TrackID, "error", err)
 		return err
 	}
@@ -2650,8 +2648,7 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:content:process_video: %w", err)
 	}
-
-	tenantID, err := scanUUID(payload.TenantID)
+	_, err = scanUUID(payload.TenantID)
 	if err != nil {
 		return fmt.Errorf("task:content:process_video: %w", err)
 	}
@@ -2667,7 +2664,7 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 
 	inputPath := media.StoragePath
 
-	outputPath, err := processVideoOperation(ctx, tenantID, inputPath, payload.Operation, payload.MediaID)
+	outputPath, err := processVideoOperation(ctx, inputPath, payload.Operation, payload.MediaID)
 	if err != nil {
 		return err
 	}
@@ -2687,7 +2684,7 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 
 // processVideoOperation routes a media file to the requested video
 // processing operation and returns the resulting output path.
-func processVideoOperation(ctx context.Context, tenantID pgtype.UUID, inputPath, operation, mediaIDStr string) (string, error) {
+func processVideoOperation(ctx context.Context, inputPath, operation, mediaIDStr string) (string, error) {
 	switch operation {
 	case "transcode":
 		outputPath := inputPath + ".transcoded.mp4"
@@ -2704,7 +2701,7 @@ func processVideoOperation(ctx context.Context, tenantID pgtype.UUID, inputPath,
 		// (media.video_thumbnail_time, default "00:00:01").
 		thumbTime := "00:00:01"
 		if appSettings != nil {
-			thumbTime = appSettings.GetStringOr(ctx, pgtype.UUID{}, "media.video_thumbnail_time", "00:00:01")
+			thumbTime = appSettings.GetStringOr(ctx, "media.video_thumbnail_time", "00:00:01")
 		}
 
 		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, thumbTime); err != nil {
@@ -2806,8 +2803,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: %w", err)
 	}
-
-	tenantID, err := scanUUID(payload.TenantID)
+	_, err = scanUUID(payload.TenantID)
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: %w", err)
 	}
@@ -2825,7 +2821,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	subject, htmlBody := campaign.Subject, campaign.Html
 
 	// Resolve the batch size from system_settings (§62, default 500).
-	batchSize := newsletterBatchSize(ctx, pgtype.UUID{})
+	batchSize := newsletterBatchSize(ctx)
 
 	// Resolve recipients page-by-page according to the campaign segment,
 	// upserting send-state rows and dispatching in batches. Paging keeps
@@ -2836,7 +2832,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	page := int32(0)
 
 	for {
-		recipients, err := newsletterRecipientsForSegment(ctx, reader, tenantID, campaign.Segment, campaign.SegmentID, page, batchSize)
+		recipients, err := newsletterRecipientsForSegment(ctx, reader, campaign.Segment, campaign.SegmentID, page, batchSize)
 		if err != nil {
 			return fmt.Errorf("task:newsletter:send: resolve recipients (segment=%s page=%d): %w", campaign.Segment, page, err)
 		}
@@ -2856,7 +2852,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:newsletter:send: upsert send state failed", "error", err)
 		}
 
-		s, f := sendNewsletterPage(ctx, writer, campaignID, tenantID, subject, htmlBody, recipients)
+		s, f := sendNewsletterPage(ctx, writer, campaignID, subject, htmlBody, recipients)
 		sent += s
 		failed += f
 		total += len(recipients)
@@ -2905,13 +2901,12 @@ func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:scholarship:sync_from_guide: %w", err)
 	}
-
-	tenantID, err := scanUUID(payload.TenantID)
+	_, err = scanUUID(payload.TenantID)
 	if err != nil {
 		return fmt.Errorf("task:scholarship:sync_from_guide: %w", err)
 	}
 
-	if err := scholarshipSyncer.SyncFromContentGuide(ctx, tenantID, contentID); err != nil {
+	if err := scholarshipSyncer.SyncFromContentGuide(ctx, contentID); err != nil {
 		return fmt.Errorf("task:scholarship:sync_from_guide: %w", err)
 	}
 
@@ -2920,10 +2915,10 @@ func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
 
 // sendNewsletterPage sends the campaign to one page of recipients, marking
 // each recipient sent/failed for resumability. Returns (sent, failed).
-func sendNewsletterPage(ctx context.Context, writer *gen.Queries, campaignID, tenantID pgtype.UUID, subject, htmlBody string, recipients []string) (sent, failed int) {
+func sendNewsletterPage(ctx context.Context, writer *gen.Queries, campaignID pgtype.UUID, subject, htmlBody string, recipients []string) (sent, failed int) {
 	for _, r := range recipients {
 		// Generate a per-recipient one-click unsubscribe token + headers.
-		unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, r)
+		unsubURL, headers := newsletterUnsubscribeLink(ctx, r)
 		body := htmlBody
 
 		if unsubURL != "" {
@@ -2954,7 +2949,7 @@ func sendNewsletterPage(ctx context.Context, writer *gen.Queries, campaignID, te
 // page of the campaign's segment. Falls back to 'all' for unknown segments
 // or when a space/tag segment yields no followers (so a misconfigured
 // segment never silently drops every recipient).
-func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, segment string, segmentID pgtype.UUID, page, limit int32) ([]string, error) {
+func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, segment string, segmentID pgtype.UUID, page, limit int32) ([]string, error) {
 	offset := page * limit
 
 	switch segment {
@@ -2997,7 +2992,7 @@ func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, tenantI
 
 // newsletterBatchSize reads the newsletter.batch_size system_setting
 // (§62, default 500). Falls back to 500 on any error.
-func newsletterBatchSize(ctx context.Context, tenantID pgtype.UUID) int32 {
+func newsletterBatchSize(ctx context.Context) int32 {
 	if dbPool == nil {
 		return 500
 	}
@@ -3197,7 +3192,7 @@ func forEachTenant(ctx context.Context, t *asynq.Task, taskName string, fn func(
 	for _, tenantID := range tenantIDs {
 		baseURL := payload.BaseURL
 		if baseURL == "" {
-			baseURL = resolveBaseURL(ctx, tenantID)
+			baseURL = resolveBaseURL(ctx)
 		}
 
 		if baseURL == "" {
@@ -3235,16 +3230,16 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 	// Falls back to spec defaults when unset or settings unavailable.
 	cfg := bots.DefaultSitemapQualityConfig()
 	if appSettings != nil {
-		cfg.MinWords = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.content_min_words", cfg.MinWords)
-		cfg.BlogMinWords = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
-		cfg.ForumMinWords = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
-		cfg.DiscussionMinWords = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
-		cfg.GuideMinWords = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
-		cfg.ComparisonMinWords = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
-		cfg.BlogMinEngagement = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
-		cfg.ForumMinReplies = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
-		cfg.QuestionMinAnswers = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
-		cfg.DiscussionMinComments = appSettings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
+		cfg.MinWords = appSettings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
+		cfg.BlogMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
+		cfg.ForumMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
+		cfg.DiscussionMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
+		cfg.GuideMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
+		cfg.ComparisonMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
+		cfg.BlogMinEngagement = appSettings.GetIntOr(ctx, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
+		cfg.ForumMinReplies = appSettings.GetIntOr(ctx, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
+		cfg.QuestionMinAnswers = appSettings.GetIntOr(ctx, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
+		cfg.DiscussionMinComments = appSettings.GetIntOr(ctx, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
 	}
 
 	var sitemap strings.Builder
@@ -3603,14 +3598,14 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 		}
 	}
 
-	for _, tenantID := range tenantIDs {
+	for range tenantIDs {
 		// Update velocity scores for recently active content.
 		// Velocity = (vote_score * 2 + comment_count + view_count / 100) /
 		// (hours_since_publish ^ gravity)
 		// gravity is hot-reloadable via feed.velocity.gravity (default 1.8).
 		gravity := 1.8
 		if appSettings != nil {
-			gravity = appSettings.GetFloatOr(ctx, tenantID, "feed.velocity.gravity", 1.8)
+			gravity = appSettings.GetFloatOr(ctx, "feed.velocity.gravity", 1.8)
 		}
 
 		q := gen.New(dbPool.Writer)
@@ -3708,7 +3703,7 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 		// (system_settings, default 7). Ref: conventions/system-settings-catalog.md.
 		autoCloseDays := 7
 		if appSettings != nil {
-			autoCloseDays = appSettings.GetIntOr(ctx, pgtype.UUID{}, "tickets.auto_close_resolved_days", 7)
+			autoCloseDays = appSettings.GetIntOr(ctx, "tickets.auto_close_resolved_days", 7)
 		}
 
 		daysStr := strconv.Itoa(autoCloseDays)
@@ -3883,7 +3878,7 @@ func scanTenantSecurity(ctx context.Context, tid pgtype.UUID) {
 
 	for _, mr := range mediaRows {
 		if moderationProcessor != nil {
-			if err := moderationProcessor.ScanContent(ctx, "media", mr.ID.String(), tid.String()); err != nil {
+			if err := moderationProcessor.ScanContent(ctx, "media", mr.ID.String()); err != nil {
 				slog.Error("task:security:scan: media scan enqueue failed", "media_id", mr.ID.String(), "error", err)
 			} else {
 				scanCount++
@@ -3973,7 +3968,7 @@ func HandleLearningIssueCertificate(ctx context.Context, t *asynq.Task) error {
 
 	return procTask(ctx, t, "learning:issue_certificate", learningProcessor != nil, nil,
 		func(ctx context.Context, _ []pgtype.UUID, p map[string]string) error {
-			if err := learningProcessor.IssueCertificate(ctx, p["user_id"], p["track_id"], p["tenant_id"], p["course_name"]); err != nil {
+			if err := learningProcessor.IssueCertificate(ctx, p["user_id"], p["track_id"], p["course_name"]); err != nil {
 				slog.Error("task:learning:issue_certificate: failed", "user_id", p["user_id"], "track_id", p["track_id"], "error", err)
 				return err
 			}
@@ -4036,8 +4031,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		slog.Error("task:newsletter:digest: invalid payload", "error", err)
 		return err
 	}
-
-	tenantID, err := scanUUID(payload.TenantID)
+	_, err := scanUUID(payload.TenantID)
 	if err != nil {
 		return fmt.Errorf("task:newsletter:digest: %w", err)
 	}
@@ -4055,7 +4049,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Fetch newsletter subscribers with digest enabled for this tenant.
-	subscribers, err := listDigestSubscribers(ctx, tenantID)
+	subscribers, err := listDigestSubscribers(ctx)
 	if err != nil {
 		slog.Error("task:newsletter:digest: failed to list subscribers", "error", err)
 		return err
@@ -4073,7 +4067,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	subject := "Weekly Digest — " + name
-	body := buildDigestBody(ctx, subject, tenantID, digestItems)
+	body := buildDigestBody(ctx, subject, digestItems)
 
 	sent := 0
 	failed := 0
@@ -4082,7 +4076,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		// Generate a per-recipient one-click unsubscribe token + headers
 		// (§62 Compliance, ADR-080 §4) and send via the marketing-category
 		// provider (ADR-015/ADR-080).
-		unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, recipient)
+		unsubURL, headers := newsletterUnsubscribeLink(ctx, recipient)
 		htmlBody := body
 
 		if unsubURL != "" {
@@ -4107,7 +4101,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 
 // listDigestSubscribers returns the email addresses of this tenant's
 // subscribers with digest_enabled = true.
-func listDigestSubscribers(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
+func listDigestSubscribers(ctx context.Context) ([]string, error) {
 	rows, err := dbPool.Reader.Query(ctx, `SELECT email FROM newsletter_subscribers WHERE status = 'subscribed' AND digest_enabled = true`)
 	if err != nil {
 		return nil, err
@@ -4131,7 +4125,7 @@ func listDigestSubscribers(ctx context.Context, tenantID pgtype.UUID) ([]string,
 
 // buildDigestBody renders the HTML weekly-digest body listing each recent
 // content item as a link.
-func buildDigestBody(ctx context.Context, subject string, tenantID pgtype.UUID, digestItems []gen.ListPublishedContentForDigestRow) string {
+func buildDigestBody(ctx context.Context, subject string, digestItems []gen.ListPublishedContentForDigestRow) string {
 	var body strings.Builder
 
 	body.WriteString("<div style=\"font-family: sans-serif; max-width: 600px; margin: 0 auto;\">\n")
@@ -4140,7 +4134,7 @@ func buildDigestBody(ctx context.Context, subject string, tenantID pgtype.UUID, 
 
 	for _, item := range digestItems {
 		body.WriteString(fmt.Sprintf("<li><a href=\"%s/%s\">%s</a></li>\n",
-			resolveBaseURL(ctx, tenantID), item.Slug, item.Title))
+			resolveBaseURL(ctx), item.Slug, item.Title))
 	}
 
 	body.WriteString("</ul>\n</div>\n")
@@ -4757,8 +4751,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 		slog.Error("task:moderation:auto_hide: invalid payload", "error", err)
 		return err
 	}
-
-	tenantID, err := scanUUID(payload.TenantID)
+	_, err := scanUUID(payload.TenantID)
 	if err != nil {
 		return fmt.Errorf("task:moderation:auto_hide: %w", err)
 	}
@@ -4772,7 +4765,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 	// Default: 5 reports per system-settings-catalog.md.
 	threshold := 5
 	if appSettings != nil {
-		threshold = appSettings.GetIntOr(ctx, pgtype.UUID{}, "moderation.auto_hide_report_count", 5)
+		threshold = appSettings.GetIntOr(ctx, "moderation.auto_hide_report_count", 5)
 	}
 
 	// Count pending reports for this entity.
@@ -4791,13 +4784,13 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Archive the entity based on its type.
-	return archiveReportedEntity(ctx, payload.EntityType, payload.EntityID, tenantID, entityID, reportCount)
+	return archiveReportedEntity(ctx, payload.EntityType, payload.EntityID, entityID, reportCount)
 }
 
 // archiveReportedEntity auto-hides a reported entity once it crosses the
 // report threshold. content is archived, comments and DM messages are
 // soft-deleted; user/space reports require human review and are only logged.
-func archiveReportedEntity(ctx context.Context, entityType, entityIDStr string, tenantID, entityID pgtype.UUID, reportCount int64) error {
+func archiveReportedEntity(ctx context.Context, entityType, entityIDStr string, entityID pgtype.UUID, reportCount int64) error {
 	switch entityType {
 	case "content":
 		n, err := gen.New(dbPool.Writer).ArchiveContent(ctx,

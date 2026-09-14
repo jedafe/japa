@@ -120,7 +120,7 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 
 // GetCoupon handles GET /api/v1/coupons/:id.
 func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -131,7 +131,7 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coupon, err := h.Service.GetCoupon(r.Context(), id, tenantID)
+	coupon, err := h.Service.GetCoupon(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -142,7 +142,7 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 
 // RecordCouponClick handles POST /api/v1/coupons/:id/click.
 func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -154,7 +154,7 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 	}
 	// Verify the coupon exists (tenant-scoped) before recording the event so
 	// a missing coupon returns 404 instead of an FK-violation 500 (BUG-013).
-	if _, err := h.Service.GetCoupon(r.Context(), id, tenantID); err != nil {
+	if _, err := h.Service.GetCoupon(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -191,7 +191,7 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 
 // ListProviders handles GET /api/v1/admin/affiliate-providers.
 func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -199,7 +199,7 @@ func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
 
-	providers, err := h.Service.ListProviders(r.Context(), tenantID, page, pageSize)
+	providers, err := h.Service.ListProviders(r.Context(), page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -210,7 +210,7 @@ func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 
 // CreateProvider handles POST /api/v1/admin/affiliate-providers.
 func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -237,7 +237,7 @@ func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
 
 	input.IsActive = true
 
-	provider, err := h.Service.CreateProvider(r.Context(), tenantID, input)
+	provider, err := h.Service.CreateProvider(r.Context(), input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -248,7 +248,7 @@ func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
 
 // GetProvider handles GET /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -259,7 +259,7 @@ func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, err := h.Service.GetProvider(r.Context(), id, tenantID)
+	provider, err := h.Service.GetProvider(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -270,7 +270,7 @@ func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProvider handles PATCH /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -292,7 +292,7 @@ func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, err := h.Service.UpdateProvider(r.Context(), id, tenantID, input)
+	provider, err := h.Service.UpdateProvider(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -303,7 +303,7 @@ func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 
 // DeleteProvider handles DELETE /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) DeleteProvider(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -314,7 +314,7 @@ func (h *Handlers) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteProvider(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteProvider(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -326,7 +326,7 @@ func (h *Handlers) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 
 // ListCouponsAdmin handles GET /api/v1/admin/coupons.
 func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -342,7 +342,7 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
 
-	coupons, err := h.Service.ListCoupons(r.Context(), tenantID, status, couponType, search, page, pageSize)
+	coupons, err := h.Service.ListCoupons(r.Context(), status, couponType, search, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -398,7 +398,7 @@ func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // GetCouponAdmin handles GET /api/v1/admin/coupons/:id.
 func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -409,7 +409,7 @@ func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coupon, err := h.Service.GetCoupon(r.Context(), id, tenantID)
+	coupon, err := h.Service.GetCoupon(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -483,7 +483,7 @@ func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
 // BE-LOW-001: tenant-scoped — the tenant context from the request ensures
 // a render request cannot resolve a coupon from another tenant.
 func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -494,7 +494,7 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rendered, err := h.Service.ResolveCouponForRender(r.Context(), tenantID, id)
+	rendered, err := h.Service.ResolveCouponForRender(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -507,7 +507,7 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 // BE-LOW-001: tenant-scoped — the tenant context from the request ensures
 // a render request cannot resolve a provider from another tenant.
 func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -526,7 +526,7 @@ func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rendered, err := h.Service.ResolveAffiliateLinkForRender(r.Context(), tenantID, providerID, originalURL)
+	rendered, err := h.Service.ResolveAffiliateLinkForRender(r.Context(), providerID, originalURL)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -758,7 +758,7 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 // affiliate_content_commissions and the enqueue trigger for the
 // affiliate:credit_author_commission task.
 func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -792,7 +792,7 @@ func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	commission, err := h.Service.RecordAffiliateCommission(r.Context(), tenantID, RecordAffiliateCommissionInput{
+	commission, err := h.Service.RecordAffiliateCommission(r.Context(), RecordAffiliateCommissionInput{
 		ProviderID:         providerID,
 		ContentID:          contentID,
 		ExternalCommission: input.ExternalCommission,

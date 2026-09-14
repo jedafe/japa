@@ -41,7 +41,7 @@ type (
 // Ad Slot Types
 // ---------------------------------------------------------------------------
 
-func (s *Store) listAdSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]AdSlotType, error) {
+func (s *Store) listAdSlotTypes(ctx context.Context, limit, offset int32) ([]AdSlotType, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -53,7 +53,7 @@ func (s *Store) listAdSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 	})
 }
 
-func (s *Store) updateAdSlotType(ctx context.Context, id, tenantID pgtype.UUID, name, description string) (AdSlotType, error) {
+func (s *Store) updateAdSlotType(ctx context.Context, id pgtype.UUID, name, description string) (AdSlotType, error) {
 	return s.queries.UpdateAdSlotTypeDetails(ctx, gen.UpdateAdSlotTypeDetailsParams{
 		ID: id,
 
@@ -62,19 +62,19 @@ func (s *Store) updateAdSlotType(ctx context.Context, id, tenantID pgtype.UUID, 
 	})
 }
 
-func (s *Store) deleteAdSlotType(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteAdSlotType(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.DeleteAdSlotType(ctx,
 		id,
 	)
 }
 
-func (s *Store) deleteAdCampaign(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteAdCampaign(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.DeleteAdCampaign(ctx,
 		id,
 	)
 }
 
-func (s *Store) getCampaignStats(ctx context.Context, campaignID, tenantID pgtype.UUID) (map[string]any, error) {
+func (s *Store) getCampaignStats(ctx context.Context, campaignID pgtype.UUID) (map[string]any, error) {
 	row, err := s.queries.GetCampaignStats(ctx,
 		campaignID,
 	)
@@ -119,7 +119,7 @@ func (s *Store) getCampaignStats(ctx context.Context, campaignID, tenantID pgtyp
 // Ad Campaigns
 // ---------------------------------------------------------------------------
 
-func (s *Store) listAdCampaignsByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]AdCampaign, error) {
+func (s *Store) listAdCampaignsByTenant(ctx context.Context, limit, offset int32) ([]AdCampaign, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -131,7 +131,7 @@ func (s *Store) listAdCampaignsByTenant(ctx context.Context, tenantID pgtype.UUI
 	})
 }
 
-func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTypeID pgtype.UUID, limit, offset int32) ([]AdCampaign, error) {
+func (s *Store) listActiveCampaignsBySlot(ctx context.Context, slotTypeID pgtype.UUID, limit, offset int32) ([]AdCampaign, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -159,19 +159,19 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTyp
 // AdNetwork is an exported type.
 type AdNetwork = gen.AdNetwork
 
-func (s *Store) createAdNetwork(ctx context.Context, tenantID pgtype.UUID, input gen.CreateAdNetworkParams) (AdNetwork, error) {
+func (s *Store) createAdNetwork(ctx context.Context, input gen.CreateAdNetworkParams) (AdNetwork, error) {
 	return s.queries.CreateAdNetwork(ctx, input)
 }
 
-func (s *Store) getAdNetworkByID(ctx context.Context, id, tenantID pgtype.UUID) (AdNetwork, error) {
+func (s *Store) getAdNetworkByID(ctx context.Context, id pgtype.UUID) (AdNetwork, error) {
 	return s.queries.GetAdNetworkByID(ctx, id)
 }
 
-func (s *Store) getAdNetworkByProvider(ctx context.Context, tenantID pgtype.UUID, provider string) (AdNetwork, error) {
+func (s *Store) getAdNetworkByProvider(ctx context.Context, provider string) (AdNetwork, error) {
 	return s.queries.GetAdNetworkByProvider(ctx, provider)
 }
 
-func (s *Store) listAdNetworks(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]AdNetwork, error) {
+func (s *Store) listAdNetworks(ctx context.Context, limit, offset int32) ([]AdNetwork, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -183,18 +183,18 @@ func (s *Store) listAdNetworks(ctx context.Context, tenantID pgtype.UUID, limit,
 	})
 }
 
-func (s *Store) listActiveAdNetworks(ctx context.Context, tenantID pgtype.UUID) ([]AdNetwork, error) {
+func (s *Store) listActiveAdNetworks(ctx context.Context) ([]AdNetwork, error) {
 	return s.queries.ListActiveAdNetworks(ctx)
 }
 
-func (s *Store) updateAdNetwork(ctx context.Context, id, tenantID pgtype.UUID, input gen.UpdateAdNetworkParams) (AdNetwork, error) {
+func (s *Store) updateAdNetwork(ctx context.Context, id pgtype.UUID, input gen.UpdateAdNetworkParams) (AdNetwork, error) {
 	return s.queries.UpdateAdNetwork(ctx, input)
 }
 
-func (s *Store) deleteAdNetwork(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteAdNetwork(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.DeleteAdNetwork(ctx, id)
 }
 
-func (s *Store) countAdNetworks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+func (s *Store) countAdNetworks(ctx context.Context) (int32, error) {
 	return s.queries.CountAdNetworks(ctx)
 }

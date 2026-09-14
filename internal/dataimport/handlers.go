@@ -144,8 +144,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -153,7 +152,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
 
-	imports, total, err := h.service.ListImports(r.Context(), tenantID, status, page, limit)
+	imports, total, err := h.service.ListImports(r.Context(), status, page, limit)
 	if err != nil {
 		slog.Error("dataimport: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
@@ -178,8 +177,7 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -189,7 +187,7 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	imp, err := h.service.GetImport(r.Context(), id, tenantID)
+	imp, err := h.service.GetImport(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "import_not_found", "Import not found")
 		return
@@ -204,8 +202,7 @@ func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -215,7 +212,7 @@ func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteImport(r.Context(), id, tenantID); err != nil {
+	if err := h.service.DeleteImport(r.Context(), id); err != nil {
 		slog.Error("dataimport: delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_delete_failed", "Failed to delete import")
 

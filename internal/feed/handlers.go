@@ -48,7 +48,7 @@ func toInt32(v int) int32 {
 // type is *internal/customfields.Service; the interface keeps the feed package
 // from importing a large dependency tree.
 type customFieldProvider interface {
-	GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error)
+	GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error)
 }
 
 // contentFieldResolver resolves {{...}} template literals in content-like
@@ -101,12 +101,12 @@ func (h *Handlers) SetContentResolver(r contentFieldResolver) {
 // own source/target country fields scope {{Source_*}}/{{Destination_*}}.
 // Best-effort: failures are logged, never fatal. Called after the explore
 // cache read so request-scoped literals ({{Current_Year}}, geo) stay fresh.
-func (h *Handlers) resolveFeedLiterals(r *http.Request, tenantID pgtype.UUID, items []FeedItem) {
+func (h *Handlers) resolveFeedLiterals(r *http.Request, items []FeedItem) {
 	if h.contentResolver == nil || len(items) == 0 {
 		return
 	}
 
-	rc := literals.NewRequestContext(r, tenantID, "")
+	rc := literals.NewRequestContext(r, "")
 
 	if err := h.contentResolver.ResolveContentFields(r.Context(), items, rc); err != nil {
 		slog.Warn("feed: failed to resolve item literals", "error", err)
@@ -134,7 +134,7 @@ func (h *Handlers) parsePageSize(r *http.Request) int32 {
 
 	if h.settings != nil {
 		if t := &struct{ ID pgtype.UUID }{}; t != nil {
-			if v := h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "content.posts_per_page", int(defaultPageSize)); v > 0 {
+			if v := h.settings.GetIntOr(r.Context(), "content.posts_per_page", int(defaultPageSize)); v > 0 {
 				if v > int(MaxPageSize) {
 					v = int(MaxPageSize)
 				}
@@ -223,7 +223,7 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	vc := visitor.FromContext(r.Context())
 
 	items, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, exploreCacheTTL, func(ctx context.Context) ([]FeedItem, error) {
-		return h.service.GetFeed(ctx, tenantID, "explore", nil, nil, nil, sort, limit, offset, vc.ContentCountry, vc.ContentRegion)
+		return h.service.GetFeed(ctx, "explore", nil, nil, nil, sort, limit, offset, vc.ContentCountry, vc.ContentRegion)
 	})
 	if err != nil {
 		slog.Error("feed: get explore feed failed", "sort", sort, "geo", geoCode, "error", err)
@@ -232,7 +232,7 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveFeedLiterals(r, tenantID, items)
+	h.resolveFeedLiterals(r, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -243,8 +243,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -253,7 +252,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
-	items, err := h.service.GetFeed(r.Context(), tenantID, "primary", &user.UserID, nil, nil, sort, limit, offset, "", "")
+	items, err := h.service.GetFeed(r.Context(), "primary", &user.UserID, nil, nil, sort, limit, offset, "", "")
 	if err != nil {
 		slog.Error("feed: get primary feed failed", "user_id", user.UserID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get primary feed")
@@ -261,7 +260,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveFeedLiterals(r, tenantID, items)
+	h.resolveFeedLiterals(r, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -292,7 +291,7 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveFeedLiterals(r, tenantID, items)
+	h.resolveFeedLiterals(r, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -309,8 +308,7 @@ func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -320,7 +318,7 @@ func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 	vc := visitor.FromContext(r.Context())
 	offset := parsePageOffset(r)
 
-	items, err := h.service.GetRoadmapFeedWithContext(r.Context(), tenantID, user.UserID, vc.RoadmapSlugs, limit, offset, &vc)
+	items, err := h.service.GetRoadmapFeedWithContext(r.Context(), user.UserID, vc.RoadmapSlugs, limit, offset, &vc)
 	if err != nil {
 		slog.Error("feed: get roadmap feed failed", "user_id", user.UserID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get roadmap feed")
@@ -328,7 +326,7 @@ func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveFeedLiterals(r, tenantID, items)
+	h.resolveFeedLiterals(r, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -339,8 +337,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -358,7 +355,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
-	items, err := h.service.GetFeed(r.Context(), tenantID, "space", &user.UserID, &spaceID, nil, sort, limit, offset, "", "")
+	items, err := h.service.GetFeed(r.Context(), "space", &user.UserID, &spaceID, nil, sort, limit, offset, "", "")
 	if err != nil {
 		slog.Error("feed: get space feed failed", "space_id", spaceID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get space feed")
@@ -366,7 +363,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveFeedLiterals(r, tenantID, items)
+	h.resolveFeedLiterals(r, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -375,7 +372,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 // optional — guests see all public rows. When the viewer is authenticated,
 // mutual user_blocks are excluded per §41 (BUG-002).
 func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -400,7 +397,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 		viewerID = &user.UserID
 	}
 
-	items, err := h.service.GetFeed(r.Context(), tenantID, "profile", viewerID, nil, &authorID, sort, limit, offset, "", "")
+	items, err := h.service.GetFeed(r.Context(), "profile", viewerID, nil, &authorID, sort, limit, offset, "", "")
 	if err != nil {
 		slog.Error("feed: get profile feed failed", "author_id", authorID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get profile feed")
@@ -408,7 +405,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveFeedLiterals(r, tenantID, items)
+	h.resolveFeedLiterals(r, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -553,7 +550,7 @@ func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
 	raw := ""
 
 	if h.settings != nil {
-		if val, err := h.settings.GetSetting(r.Context(), pgtype.UUID{}, "feed.card_style"); err == nil {
+		if val, err := h.settings.GetSetting(r.Context(), "feed.card_style"); err == nil {
 			raw = val
 		}
 	}
@@ -620,8 +617,8 @@ func (h *Handlers) GetJourneyOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	purpose, _ := h.customFields.GetCustomFieldByKey(ctx, journeyPurposeCustomFieldKey, pgtype.UUID{})
-	visa, _ := h.customFields.GetCustomFieldByKey(ctx, journeyVisaRouteCustomFieldKey, pgtype.UUID{})
+	purpose, _ := h.customFields.GetCustomFieldByKey(ctx, journeyPurposeCustomFieldKey)
+	visa, _ := h.customFields.GetCustomFieldByKey(ctx, journeyVisaRouteCustomFieldKey)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{

@@ -205,8 +205,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,7 +217,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePagination(r)
 
-	imports, total, err := h.service.ListUserImports(r.Context(), tenantID, user.UserID, page, limit)
+	imports, total, err := h.service.ListUserImports(r.Context(), user.UserID, page, limit)
 	if err != nil {
 		slog.Error("contentimport: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
@@ -275,8 +274,7 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -291,7 +289,7 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	imp, err := h.service.GetImport(r.Context(), tenantID, importID)
+	imp, err := h.service.GetImport(r.Context(), importID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "import_not_found", "Import not found")
 		return
@@ -381,8 +379,7 @@ func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -395,7 +392,7 @@ func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
 
-	imports, total, err := h.service.AdminListImports(r.Context(), tenantID, status, page, limit)
+	imports, total, err := h.service.AdminListImports(r.Context(), status, page, limit)
 	if err != nil {
 		slog.Error("contentimport: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")

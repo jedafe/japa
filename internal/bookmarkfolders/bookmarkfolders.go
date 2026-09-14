@@ -38,7 +38,7 @@ func NewService(database *db.DB) *Service {
 // CreateFolder creates a new named bookmark folder for the user.
 // Returns ErrDuplicate when a folder with the same name already exists for
 // this user (UNIQUE(user_id, name) violation — BE-01).
-func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
+func (s *Service) CreateFolder(ctx context.Context, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
 	folder, err := s.write.CreateBookmarkFolder(ctx, gen.CreateBookmarkFolderParams{
 
 		UserID:   userID,
@@ -100,7 +100,7 @@ func folderResponseFromModel(f gen.BookmarkFolder) FolderResponse {
 
 // ListFolders returns every bookmark folder for the user, ordered by position
 // then name, with a bookmark_count per folder (BL-011).
-func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID) ([]FolderResponse, error) {
+func (s *Service) ListFolders(ctx context.Context, userID pgtype.UUID) ([]FolderResponse, error) {
 	rows, err := s.read.ListBookmarkFoldersByUser(ctx,
 
 		userID,
@@ -119,7 +119,7 @@ func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID)
 
 // GetFolder retrieves a single folder, validating ownership (BL-013).
 // Returns ErrNotFound if the folder doesn't exist or belongs to another user.
-func (s *Service) GetFolder(ctx context.Context, id, tenantID, userID pgtype.UUID) (gen.BookmarkFolder, error) {
+func (s *Service) GetFolder(ctx context.Context, id, userID pgtype.UUID) (gen.BookmarkFolder, error) {
 	folder, err := s.read.GetBookmarkFolder(ctx, gen.GetBookmarkFolderParams{
 		ID: id,
 
@@ -139,7 +139,7 @@ func (s *Service) GetFolder(ctx context.Context, id, tenantID, userID pgtype.UUI
 // UpdateFolder renames a bookmark folder. Returns ErrNotFound if it doesn't
 // exist or doesn't belong to the caller; ErrDuplicate if the new name is
 // already used by another folder owned by this user (BE-02).
-func (s *Service) UpdateFolder(ctx context.Context, id, tenantID, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
+func (s *Service) UpdateFolder(ctx context.Context, id, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
 	folder, err := s.write.UpdateBookmarkFolder(ctx, gen.UpdateBookmarkFolderParams{
 		Name: name,
 		ID:   id,
@@ -164,7 +164,7 @@ func (s *Service) UpdateFolder(ctx context.Context, id, tenantID, userID pgtype.
 
 // DeleteFolder removes a bookmark folder. Returns ErrNotFound if it doesn't
 // exist or doesn't belong to the caller.
-func (s *Service) DeleteFolder(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+func (s *Service) DeleteFolder(ctx context.Context, id, userID pgtype.UUID) error {
 	affected, err := s.write.DeleteBookmarkFolder(ctx, gen.DeleteBookmarkFolderParams{
 		ID: id,
 
@@ -186,7 +186,7 @@ func (s *Service) DeleteFolder(ctx context.Context, id, tenantID, userID pgtype.
 // the position column). All folderIDs must belong to the caller + tenant;
 // an unknown ID is silently skipped (defense-in-depth — the UPDATE is
 // tenant+owner scoped). Positions are 0-indexed.
-func (s *Service) ReorderFolders(ctx context.Context, tenantID, userID pgtype.UUID, folderIDs []pgtype.UUID) error {
+func (s *Service) ReorderFolders(ctx context.Context, userID pgtype.UUID, folderIDs []pgtype.UUID) error {
 	for i, fid := range folderIDs {
 		if err := s.write.UpdateBookmarkFolderPosition(ctx, gen.UpdateBookmarkFolderPositionParams{
 			Position: int32(i), // #nosec

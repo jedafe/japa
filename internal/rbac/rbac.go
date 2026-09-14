@@ -116,8 +116,8 @@ func New(database *db.DB, vkClient valkeycompat.Cmdable) *RBAC {
 // //	if rbac.HasPermission(ctx, userID, tenantID, "blog.publish") {
 // allowPublish()
 // }
-func (r *RBAC) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool {
-	uc, err := r.GetUserContext(ctx, userID, tenantID)
+func (r *RBAC) HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool {
+	uc, err := r.GetUserContext(ctx, userID)
 	if err != nil || uc == nil {
 		return false
 	}
@@ -138,14 +138,14 @@ func (r *RBAC) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, 
 // were assigned to without holding the static "spaces.moderate.any" node.
 // The assignment record in space_moderators IS the grant.
 // For all other permission nodes, this falls back to HasPermission.
-func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID pgtype.UUID, permKey string) bool {
+func (r *RBAC) HasSpacePermission(ctx context.Context, userID, spaceID pgtype.UUID, permKey string) bool {
 	// Only "spaces.moderate" gets dynamic per-space resolution.
 	if permKey != "spaces.moderate" {
-		return r.HasPermission(ctx, userID, tenantID, permKey)
+		return r.HasPermission(ctx, userID, permKey)
 	}
 
 	// Wildcard / super-admin short-circuit.
-	uc, err := r.GetUserContext(ctx, userID, tenantID)
+	uc, err := r.GetUserContext(ctx, userID)
 	if err != nil || uc == nil {
 		return false
 	}
@@ -179,7 +179,7 @@ func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID
 
 // IsSuperAdmin checks if a user belongs to the super_admin group.
 // Super admins bypass all permission checks.
-func (r *RBAC) IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool {
+func (r *RBAC) IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool {
 	inGroup, err := r.read.IsUserInGroup(ctx, gen.IsUserInGroupParams{
 
 		UserID:    userID,
@@ -245,8 +245,8 @@ var adminCapabilityNodes = []string{
 // to enforce the no-admin-on-admin-impersonation safety rule, and available
 // for any other code path that needs to detect privileged users.
 // // Ref: japaconnect-engineering/sections/46-impersonation.md.
-func (r *RBAC) HasAdminCapability(ctx context.Context, userID, tenantID pgtype.UUID) bool {
-	uc, err := r.GetUserContext(ctx, userID, tenantID)
+func (r *RBAC) HasAdminCapability(ctx context.Context, userID pgtype.UUID) bool {
+	uc, err := r.GetUserContext(ctx, userID)
 	if err != nil || uc == nil {
 		return false
 	}
@@ -275,7 +275,7 @@ func (r *RBAC) HasAdminCapability(ctx context.Context, userID, tenantID pgtype.U
 // GetUserContext loads a user's groups and resolved permissions.
 // Lookup order: L1 (in-memory) → L2 (Valkey) → DB.
 // Results are cached at both layers to avoid repeated DB queries.
-func (r *RBAC) GetUserContext(ctx context.Context, userID, tenantID pgtype.UUID) (*UserContext, error) {
+func (r *RBAC) GetUserContext(ctx context.Context, userID pgtype.UUID) (*UserContext, error) {
 	cacheKey := userID.String()
 
 	// L1 — in-memory (fastest, per-process)
@@ -291,7 +291,7 @@ func (r *RBAC) GetUserContext(ctx context.Context, userID, tenantID pgtype.UUID)
 	}
 
 	// Cache miss — query DB, then populate both layers.
-	uc, err := r.loadUserContext(ctx, userID, tenantID)
+	uc, err := r.loadUserContext(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -306,8 +306,8 @@ func (r *RBAC) GetUserContext(ctx context.Context, userID, tenantID pgtype.UUID)
 // the "*" wildcard for super-admin) in a single cached call. It is the
 // PermissionResolver contract used by the menus package to prune
 // permission_node-gated menu items for authenticated users (ADR-054).
-func (r *RBAC) UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error) {
-	uc, err := r.GetUserContext(ctx, userID, tenantID)
+func (r *RBAC) UserPermissions(ctx context.Context, userID pgtype.UUID) (map[string]bool, error) {
+	uc, err := r.GetUserContext(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +320,7 @@ func (r *RBAC) UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID
 }
 
 // loadUserContext queries the database for the user's groups and permissions.
-func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID) (*UserContext, error) {
+func (r *RBAC) loadUserContext(ctx context.Context, userID pgtype.UUID) (*UserContext, error) {
 	permRows, err := r.read.ResolveUserPermissions(ctx,
 
 		userID,

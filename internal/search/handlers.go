@@ -80,7 +80,7 @@ func hasRelevantCountries(indexUID string) bool {
 
 // searchSettingsReader is the subset of config.Settings the search handlers need.
 type searchSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // Handlers holds dependencies for search HTTP handlers.
@@ -257,7 +257,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 			effectiveFilter = "all_no_users"
 		}
 
-		return h.runMultiSearchFiltered(ctx, query, limit, offset, sortExprs, t.ID, effectiveFilter, geoCountry, extraPostFilter)
+		return h.runMultiSearchFiltered(ctx, query, limit, offset, sortExprs, effectiveFilter, geoCountry, extraPostFilter)
 	})
 	if err != nil {
 		slog.Warn("search query failed", "query", query, "error", err)
@@ -293,7 +293,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		userID = user.UserID
 	}
 
-	h.logSearchAsync(r.Context(), t.ID, query, len(results), userID, typeFilter)
+	h.logSearchAsync(r.Context(), query, len(results), userID, typeFilter)
 }
 
 // SearchSpaces handles GET /api/v1/spaces/search — the same multi-search
@@ -329,7 +329,7 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, t.ID, "space", "", nil)
+	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, "space", "", nil)
 	if err != nil {
 		slog.Warn("space search query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -341,15 +341,15 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 
 	// Analytics logging — skip for guests (nil or zero UUID).
 	if user != nil && user.UserID != (pgtype.UUID{}) {
-		h.logSearchAsync(r.Context(), t.ID, query, len(results), user.UserID, "space")
+		h.logSearchAsync(r.Context(), query, len(results), user.UserID, "space")
 	}
 }
 
 // runMultiSearch queries the posts, spaces, users, forum_threads, and tags
 // indexes in a single engine multi-search call, scoped to the given
 // tenant. It returns the flattened, type-tagged results.
-func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int, tenantID pgtype.UUID) ([]SearchResult, error) {
-	return h.runMultiSearchFiltered(ctx, query, limit, 0, nil, tenantID, "", "", nil)
+func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	return h.runMultiSearchFiltered(ctx, query, limit, 0, nil, "", "", nil)
 }
 
 // buildPostFilter builds the extra posts-index filter for the §54
@@ -381,7 +381,7 @@ func buildPostFilter(contentType, spaceID, tagSlug string) FilterExpr {
 // (supports §54 ?content_type, ?space_id, ?tag_slug params). offset is the
 // zero-based pagination offset (§54 ?page=). sortExprs, when non-nil, is
 // passed to the engine as the sort expression (§54 ?sort=).
-func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, tenantID pgtype.UUID, typeFilter, geoCountry string, extraPostFilter FilterExpr) ([]SearchResult, error) {
+func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, typeFilter, geoCountry string, extraPostFilter FilterExpr) ([]SearchResult, error) {
 	indexes := searchTypeIndexes(typeFilter)
 
 	// A type filter with no backing index (e.g. "organization" before its
@@ -713,7 +713,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 
 	cap := maxAutocompleteLimit
 	if h.settings != nil {
-		cap = h.settings.GetIntOr(r.Context(), t.ID, "search.autocomplete_max", maxAutocompleteLimit)
+		cap = h.settings.GetIntOr(r.Context(), "search.autocomplete_max", maxAutocompleteLimit)
 	}
 
 	if limit > cap {
@@ -733,7 +733,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	suggestions, err := h.runAutocomplete(r.Context(), query, limit, t.ID, typeFilter)
+	suggestions, err := h.runAutocomplete(r.Context(), query, limit, typeFilter)
 	if err != nil {
 		slog.Warn("autocomplete query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -746,7 +746,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	// who has blocked them or whom they have blocked. Best-effort: a
 	// database error degrades to unfiltered results.
 	if user := auth.FromContext(r.Context()); user != nil && h.queries != nil {
-		suggestions = h.filterBlockedUsers(r.Context(), t.ID, user.UserID, suggestions)
+		suggestions = h.filterBlockedUsers(r.Context(), user.UserID, suggestions)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -758,7 +758,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 // exists between the current user and the suggested user (either direction).
 // Non-user suggestions are passed through unchanged. Best-effort: on database
 // error the suggestion is kept (fail-open for visibility).
-func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUserID pgtype.UUID, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
+func (h *Handlers) filterBlockedUsers(ctx context.Context, currentUserID pgtype.UUID, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
 	filtered := suggestions[:0]
 
 	for _, s := range suggestions {
@@ -796,7 +796,7 @@ func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUser
 // runAutocomplete queries the users, spaces, tags, and posts indexes with
 // a small limit for typeahead suggestions. typeFilter (§54: user|space|tag|
 // content) restricts which indexes are queried; empty means all four.
-func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int, tenantID pgtype.UUID, typeFilter string) ([]AutocompleteSuggestion, error) {
+func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int, typeFilter string) ([]AutocompleteSuggestion, error) {
 	// Build the index list from the type filter. Default: all four
 	// autocomplete indexes (users, spaces, tags, posts).
 	var indexes []string
@@ -1141,7 +1141,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 
 // logSearchAsync logs a search query to search_analytics asynchronously.
 // Fire-and-forget — failures are logged but never block the response.
-func (h *Handlers) logSearchAsync(ctx context.Context, tenantID pgtype.UUID, query string, resultsCount int, userID pgtype.UUID, contentType string) {
+func (h *Handlers) logSearchAsync(ctx context.Context, query string, resultsCount int, userID pgtype.UUID, contentType string) {
 	if h.queries == nil {
 		return
 	}

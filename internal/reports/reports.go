@@ -98,7 +98,7 @@ func NewService(database *db.DB, settings *config.Settings, vk valkeycompat.Cmda
 // DeleteReport removes a report (admin moderation action). It is a hard
 // delete from content_reports because reports are audit-adjacent queue items,
 // not user content, so Rule 11 (soft-delete user content) does not apply.
-func (s *Service) DeleteReport(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteReport(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteReport(ctx, id); err != nil {
 		return fmt.Errorf("delete report: %w", err)
 	}
@@ -110,7 +110,7 @@ func (s *Service) DeleteReport(ctx context.Context, id, tenantID pgtype.UUID) er
 // already reported the same entity (enforced by a partial unique index).
 // For content entities, checks the auto-hide threshold and hides the content
 // when the pending report count reaches it.
-func (s *Service) CreateReport(ctx context.Context, tenantID, reporterUserID pgtype.UUID, input CreateReportInput) (gen.ContentReport, error) {
+func (s *Service) CreateReport(ctx context.Context, reporterUserID pgtype.UUID, input CreateReportInput) (gen.ContentReport, error) {
 	if !validEntityTypes[input.EntityType] {
 		return gen.ContentReport{}, fmt.Errorf("%w: %s", ErrInvalidEntityType, input.EntityType)
 	}
@@ -146,7 +146,7 @@ func (s *Service) CreateReport(ctx context.Context, tenantID, reporterUserID pgt
 }
 
 // ListMyReports returns the caller's own submitted reports, newest first.
-func (s *Service) ListMyReports(ctx context.Context, tenantID, reporterUserID pgtype.UUID, limit, offset int32) ([]gen.ContentReport, error) {
+func (s *Service) ListMyReports(ctx context.Context, reporterUserID pgtype.UUID, limit, offset int32) ([]gen.ContentReport, error) {
 	reports, err := s.read.ListReportsByReporter(ctx, gen.ListReportsByReporterParams{
 
 		ReporterUserID: reporterUserID,
@@ -195,7 +195,7 @@ func (s *Service) CountReports(ctx context.Context, tenantID pgtype.UUID, status
 
 // ListReports returns all reports for the tenant (admin), optionally
 // filtered by status and/or entity_type.
-func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status, entityType, q *string, limit, offset int32) ([]gen.ListReportsRow, error) {
+func (s *Service) ListReports(ctx context.Context, status, entityType, q *string, limit, offset int32) ([]gen.ListReportsRow, error) {
 	reports, err := s.read.ListReports(ctx, gen.ListReportsParams{
 
 		Status:     status,
@@ -212,7 +212,7 @@ func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status,
 }
 
 // GetReport returns a single report by ID (admin detail view).
-func (s *Service) GetReport(ctx context.Context, id, tenantID pgtype.UUID) (gen.ContentReport, error) {
+func (s *Service) GetReport(ctx context.Context, id pgtype.UUID) (gen.ContentReport, error) {
 	report, err := s.read.GetReport(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return gen.ContentReport{}, errpkg.ErrNotFound
@@ -226,7 +226,7 @@ func (s *Service) GetReport(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 }
 
 // UpdateReportStatus actions or dismisses a report (admin).
-func (s *Service) UpdateReportStatus(ctx context.Context, id, tenantID, reviewedBy pgtype.UUID, status string, resolutionNote *string) (gen.ContentReport, error) {
+func (s *Service) UpdateReportStatus(ctx context.Context, id, reviewedBy pgtype.UUID, status string, resolutionNote *string) (gen.ContentReport, error) {
 	if !validStatuses[status] {
 		return gen.ContentReport{}, fmt.Errorf("%w: %s", ErrInvalidStatus, status)
 	}

@@ -261,7 +261,7 @@ func (s *Service) SetCache(rdb valkeycompat.Cmdable) {
 // GetCustomFieldByKey looks up a custom field definition by its key within
 // a tenant. Used by the organizations handler to read the org_type select
 // field's options from the custom field system (Section 07 + 08).
-func (s *Service) GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error) {
+func (s *Service) GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error) {
 	return s.read.GetCustomFieldByKey(ctx,
 		key,
 	)
@@ -272,7 +272,7 @@ func (s *Service) GetCustomFieldByKey(ctx context.Context, key string, tenantID 
 // 'guide_category:'. The slug is the part after the prefix. Also enriches
 // each category with its field group ID so the admin panel can link to the
 // field editor.
-func (s *Service) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error) {
+func (s *Service) ListGuideCategories(ctx context.Context) ([]GuideCategory, error) {
 	rows, err := s.read.ListCustomFieldEntityTypesByPrefix(ctx,
 
 		"guide_category:%",
@@ -316,7 +316,7 @@ type CreateGuideCategoryInput struct {
 // custom_field_groups row for the category's fields, and assigns the group to
 // the "content_type:guide:{slug}" entity_class so the composer can load
 // category-specific fields. All three inserts run in a single transaction.
-func (s *Service) CreateGuideCategory(ctx context.Context, tenantID pgtype.UUID, input CreateGuideCategoryInput) (GuideCategory, error) {
+func (s *Service) CreateGuideCategory(ctx context.Context, input CreateGuideCategoryInput) (GuideCategory, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return GuideCategory{}, fmt.Errorf("beginning tx: %w", err)
@@ -370,7 +370,7 @@ func (s *Service) CreateGuideCategory(ctx context.Context, tenantID pgtype.UUID,
 // DeleteGuideCategory removes a guide category and its associated custom field
 // group. The entity_type, field group, and assignment are all deleted. System
 // categories (is_system = true) cannot be deleted.
-func (s *Service) DeleteGuideCategory(ctx context.Context, tenantID pgtype.UUID, slug string) error {
+func (s *Service) DeleteGuideCategory(ctx context.Context, slug string) error {
 	value := "guide_category:" + slug
 
 	// Find the entity type to get its ID and check is_system.

@@ -21,7 +21,7 @@ func NewDBCheckers(database *db.DB) *DBCheckers {
 
 // IsBlocked checks whether a user block exists between two users in either direction.
 // Tenant-scoped per JEOS §9 (BUG-006).
-func (c *DBCheckers) IsBlocked(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) (bool, error) {
+func (c *DBCheckers) IsBlocked(ctx context.Context, blockerID, blockedID pgtype.UUID) (bool, error) {
 	blocked, err := c.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
@@ -32,7 +32,7 @@ func (c *DBCheckers) IsBlocked(ctx context.Context, tenantID, blockerID, blocked
 
 // IsMember checks whether a user is a member of a space.
 // Tenant-scoped per Section 04 (BUG-005).
-func (c *DBCheckers) IsMember(ctx context.Context, tenantID, spaceID, userID pgtype.UUID) (bool, error) {
+func (c *DBCheckers) IsMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
 	isMember, err := c.read.CheckSpaceMembership(ctx, gen.CheckSpaceMembershipParams{
 		SpaceID: spaceID,
 		UserID:  userID,
@@ -43,7 +43,7 @@ func (c *DBCheckers) IsMember(ctx context.Context, tenantID, spaceID, userID pgt
 
 // IsErased checks whether a user's account has been deleted/erased.
 // Tenant-scoped per Section 04 (BUG-009).
-func (c *DBCheckers) IsErased(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
+func (c *DBCheckers) IsErased(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	status, err := c.read.GetUserStatus(ctx,
 		userID,
 	)
@@ -58,7 +58,7 @@ func (c *DBCheckers) IsErased(ctx context.Context, tenantID, userID pgtype.UUID)
 // Returns false when the space is public, not found, or on error (fail-open
 // for visibility — a missing space is treated as public so mentions are not
 // accidentally suppressed). Tenant-scoped per Section 04.
-func (c *DBCheckers) IsPrivateSpace(ctx context.Context, tenantID, spaceID pgtype.UUID) (bool, error) {
+func (c *DBCheckers) IsPrivateSpace(ctx context.Context, spaceID pgtype.UUID) (bool, error) {
 	if !spaceID.Valid {
 		return false, nil
 	}

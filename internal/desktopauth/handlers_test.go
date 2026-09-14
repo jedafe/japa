@@ -52,15 +52,15 @@ func (f *fakeRefreshCreator) CreateRefreshToken(ctx context.Context, arg gen.Cre
 
 type fakeSettingsReader struct{}
 
-func (f *fakeSettingsReader) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error) {
+func (f *fakeSettingsReader) GetSettingInt(ctx context.Context, key string) (int, error) {
 	return 0, nil
 }
 
-func (f *fakeSettingsReader) GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error) {
+func (f *fakeSettingsReader) GetSettingBool(ctx context.Context, key string) (bool, error) {
 	return false, nil
 }
 
-func (f *fakeSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+func (f *fakeSettingsReader) GetIntOr(ctx context.Context, key string, fallback int) int {
 	return fallback
 }
 

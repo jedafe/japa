@@ -62,7 +62,7 @@ type Service struct {
 // Notifier dispatches in-app notifications for university events. Implemented
 // by the notifications service; nil = the notify_* tasks log only (V1 stub).
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // NewService creates a university service.
@@ -97,12 +97,12 @@ func (s *Service) SetSpaceLogoUpdater(u SpaceLogoUpdater) { s.spaceLogoUpdater =
 // ---------------------------------------------------------------------------
 
 // Apply submits an instructor application.
-func (s *Service) Apply(ctx context.Context, tenantID, userID pgtype.UUID, in ApplyInput) (InstructorProfile, error) {
+func (s *Service) Apply(ctx context.Context, userID pgtype.UUID, in ApplyInput) (InstructorProfile, error) {
 	if in.DisplayName == "" {
 		return InstructorProfile{}, errors.New("display_name is required")
 	}
 
-	row, err := s.store.Apply(ctx, tenantID, userID, in)
+	row, err := s.store.Apply(ctx, userID, in)
 	if err != nil {
 		return InstructorProfile{}, err
 	}
@@ -118,7 +118,7 @@ func (s *Service) GetMyProfile(ctx context.Context, tenantID, userID pgtype.UUID
 
 // UpdateMyProfile updates creator-editable fields.
 func (s *Service) UpdateMyProfile(ctx context.Context, tenantID, userID pgtype.UUID, in UpdateSelfInput) (InstructorProfile, error) {
-	row, err := s.store.UpdateSelf(ctx, tenantID, userID, in)
+	row, err := s.store.UpdateSelf(ctx, userID, in)
 	if err != nil {
 		return InstructorProfile{}, err
 	}
@@ -135,7 +135,7 @@ func (s *Service) ApproveInstructor(ctx context.Context, tenantID, instructorID,
 		tier = "standard"
 	}
 
-	row, err := s.store.Approve(ctx, tenantID, instructorID, reviewer, tier, commissionOverride)
+	row, err := s.store.Approve(ctx, instructorID, reviewer, tier, commissionOverride)
 	if err != nil {
 		return InstructorProfile{}, err
 	}
@@ -151,7 +151,7 @@ func (s *Service) ApproveInstructor(ctx context.Context, tenantID, instructorID,
 
 // RejectInstructor transitions a pending application to rejected.
 func (s *Service) RejectInstructor(ctx context.Context, tenantID, instructorID, reviewer pgtype.UUID) (InstructorProfile, error) {
-	row, err := s.store.Reject(ctx, tenantID, instructorID, reviewer)
+	row, err := s.store.Reject(ctx, instructorID, reviewer)
 	if err != nil {
 		return InstructorProfile{}, err
 	}
@@ -165,7 +165,7 @@ func (s *Service) RejectInstructor(ctx context.Context, tenantID, instructorID, 
 
 // SuspendInstructor transitions an approved instructor to suspended.
 func (s *Service) SuspendInstructor(ctx context.Context, tenantID, instructorID, reviewer pgtype.UUID) (InstructorProfile, error) {
-	row, err := s.store.Suspend(ctx, tenantID, instructorID, reviewer)
+	row, err := s.store.Suspend(ctx, instructorID, reviewer)
 	if err != nil {
 		return InstructorProfile{}, err
 	}
@@ -179,7 +179,7 @@ func (s *Service) SuspendInstructor(ctx context.Context, tenantID, instructorID,
 
 // ReinstateInstructor transitions a suspended instructor back to approved.
 func (s *Service) ReinstateInstructor(ctx context.Context, tenantID, instructorID, reviewer pgtype.UUID) (InstructorProfile, error) {
-	row, err := s.store.Reinstate(ctx, tenantID, instructorID, reviewer)
+	row, err := s.store.Reinstate(ctx, instructorID, reviewer)
 	if err != nil {
 		return InstructorProfile{}, err
 	}
@@ -197,7 +197,7 @@ func (s *Service) ReinstateInstructor(ctx context.Context, tenantID, instructorI
 // their live marketplace courses. Returns pgx.ErrNoRows if the profile
 // does not exist or is currently approved.
 func (s *Service) DeleteInstructor(ctx context.Context, tenantID, instructorID pgtype.UUID) error {
-	row, err := s.store.Delete(ctx, tenantID, instructorID)
+	row, err := s.store.Delete(ctx, instructorID)
 	if err != nil {
 		return err
 	}
@@ -214,7 +214,7 @@ func (s *Service) DeleteInstructor(ctx context.Context, tenantID, instructorID p
 // ---------------------------------------------------------------------------
 
 // CreateTrack creates a marketplace track owned by an approved instructor.
-func (s *Service) CreateTrack(ctx context.Context, tenantID, instructorID pgtype.UUID, in CreateTrackInput) (gen.CreateUniversityTrackRow, error) {
+func (s *Service) CreateTrack(ctx context.Context, instructorID pgtype.UUID, in CreateTrackInput) (gen.CreateUniversityTrackRow, error) {
 	if in.Title == "" || in.Slug == "" {
 		return gen.CreateUniversityTrackRow{}, errors.New("title and slug are required")
 	}
@@ -225,23 +225,23 @@ func (s *Service) CreateTrack(ctx context.Context, tenantID, instructorID pgtype
 
 	in.InstructorID = &instructorID
 
-	return s.store.CreateTrack(ctx, tenantID, in)
+	return s.store.CreateTrack(ctx, in)
 }
 
 // UpdateTrack updates a creator's own track.
-func (s *Service) UpdateTrack(ctx context.Context, tenantID, trackID, instructorID pgtype.UUID, in UpdateTrackInput) (gen.UpdateUniversityTrackRow, error) {
-	return s.store.UpdateTrack(ctx, tenantID, trackID, instructorID, in)
+func (s *Service) UpdateTrack(ctx context.Context, trackID, instructorID pgtype.UUID, in UpdateTrackInput) (gen.UpdateUniversityTrackRow, error) {
+	return s.store.UpdateTrack(ctx, trackID, instructorID, in)
 }
 
 // SubmitTrack submits a track for marketplace approval.
-func (s *Service) SubmitTrack(ctx context.Context, tenantID, trackID, instructorID pgtype.UUID) (gen.SubmitUniversityTrackRow, error) {
-	return s.store.SubmitTrack(ctx, tenantID, trackID, instructorID)
+func (s *Service) SubmitTrack(ctx context.Context, trackID, instructorID pgtype.UUID) (gen.SubmitUniversityTrackRow, error) {
+	return s.store.SubmitTrack(ctx, trackID, instructorID)
 }
 
 // ApproveTrack publishes a submitted track to the marketplace and enqueues
 // the course-approved notification + search index sync.
 func (s *Service) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUID) (gen.ApproveUniversityTrackRow, error) {
-	row, err := s.store.ApproveTrack(ctx, tenantID, trackID)
+	row, err := s.store.ApproveTrack(ctx, trackID)
 	if err != nil {
 		return gen.ApproveUniversityTrackRow{}, err
 	}
@@ -274,7 +274,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 		source = "purchase"
 	}
 
-	track, err := s.store.GetTrackByID(ctx, tenantID, trackID)
+	track, err := s.store.GetTrackByID(ctx, trackID)
 	if err != nil {
 		return fmt.Errorf("university: process enrollment: track lookup: %w", err)
 	}
@@ -288,7 +288,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 	// Pro-stream enrollments have no payment_id, so they are keyed on
 	// (instructor_id, track_id, user_id, source='pro_stream') (BUG-008).
 	if source == "purchase" && paymentID.Valid {
-		already, err := s.store.HasSplitForPayment(ctx, tenantID, paymentID)
+		already, err := s.store.HasSplitForPayment(ctx, paymentID)
 		if err != nil {
 			return fmt.Errorf("university: idempotency check: %w", err)
 		}
@@ -298,7 +298,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 			return nil
 		}
 	} else if source == "pro_stream" {
-		already, err := s.store.HasProStreamSplit(ctx, tenantID, track.InstructorID, trackID, userID)
+		already, err := s.store.HasProStreamSplit(ctx, track.InstructorID, trackID, userID)
 		if err != nil {
 			return fmt.Errorf("university: pro_stream idempotency check: %w", err)
 		}
@@ -311,7 +311,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 		// Setting key: university.pro_stream_rate_kobo (default 5000 = 50.00 NGN,
 		// matching system-settings-catalog.md and migration 000169).
 		if s.settings != nil {
-			grossKobo = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "university.pro_stream_rate_kobo", 5000))
+			grossKobo = int64(s.settings.GetIntOr(ctx, "university.pro_stream_rate_kobo", 5000))
 		}
 	}
 
@@ -326,20 +326,20 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 		accessType = "subscription"
 	}
 
-	enrollment, err := s.store.UpsertEnrollment(ctx, tenantID, userID, trackID, accessType, payRef)
+	enrollment, err := s.store.UpsertEnrollment(ctx, userID, trackID, accessType, payRef)
 	if err != nil {
 		return fmt.Errorf("university: upsert enrollment: %w", err)
 	}
 
 	// Increment the cached counter (best-effort; non-fatal).
-	if err := s.store.IncrementTotalEnrolled(ctx, tenantID, trackID); err != nil {
+	if err := s.store.IncrementTotalEnrolled(ctx, trackID); err != nil {
 		slog.Warn("university: increment total_enrolled", "track_id", trackID.String(), "error", err)
 	}
 	// AUDIT-BE-VALKEY-008: increment the Valkey enrollment counter too.
 	s.incrementTrackEnrolledCache(ctx, tenantID, trackID)
 
 	// Resolve the creator/platform split percentages.
-	creatorPct, platformPct := s.resolveSplit(ctx, tenantID, track.InstructorID)
+	creatorPct, platformPct := s.resolveSplit(ctx, track.InstructorID)
 	creatorKobo, platformKobo := splitAmount(grossKobo, creatorPct, platformPct)
 
 	var enrollRef pgtype.UUID
@@ -383,19 +383,19 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 // Order: instructor override → system default. (Tier-based defaults are a
 // future extension; today tier only affects override eligibility, not the
 // percentage, per ADR-063 §6.)
-func (s *Service) resolveSplit(ctx context.Context, tenantID, instructorID pgtype.UUID) (creatorPct, platformPct float64) {
+func (s *Service) resolveSplit(ctx context.Context, instructorID pgtype.UUID) (creatorPct, platformPct float64) {
 	creatorDefault := 75.0
 	platformDefault := 25.0
 
 	if s.settings != nil {
-		creatorDefault = float64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "university.creator_percentage_default", 75))
-		platformDefault = float64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "university.platform_percentage_default", 25))
+		creatorDefault = float64(s.settings.GetIntOr(ctx, "university.creator_percentage_default", 75))
+		platformDefault = float64(s.settings.GetIntOr(ctx, "university.platform_percentage_default", 25))
 	}
 
 	creatorPct = creatorDefault
 	platformPct = platformDefault
 
-	prof, err := s.store.GetByID(ctx, tenantID, instructorID)
+	prof, err := s.store.GetByID(ctx, instructorID)
 	if err == nil && prof.CommissionPctOverride.Valid {
 		if f, e := prof.CommissionPctOverride.Float64Value(); e == nil && f.Valid {
 			creatorPct = f.Float64
@@ -447,12 +447,12 @@ func numericFromFloat(f float64) pgtype.Numeric {
 func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UUID, periodStart, periodEnd time.Time) error {
 	minPayout := int64(500000)
 	if s.settings != nil {
-		minPayout = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "university.min_payout_kobo", 500000))
+		minPayout = int64(s.settings.GetIntOr(ctx, "university.min_payout_kobo", 500000))
 	}
 
 	// List all approved instructors via the status filter (no space scope —
 	// the periodic payout run is tenant-wide, not per-university).
-	profiles, err := s.store.ListByStatus(ctx, tenantID, "approved", pgtype.UUID{}, 1000, 0)
+	profiles, err := s.store.ListByStatus(ctx, "approved", pgtype.UUID{}, 1000, 0)
 	if err != nil {
 		return fmt.Errorf("university: list instructors for payout: %w", err)
 	}
@@ -460,7 +460,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 	// Batch-fetch open split totals for ALL instructors in one query to avoid
 	// an N+1 (AUDIT-BE-DB-005). Per-instructor cache lookups still happen
 	// below; on a cache hit the batch row is simply unused for that instructor.
-	batchSums, err := s.store.SumOpenSplitsByAllInstructors(ctx, tenantID)
+	batchSums, err := s.store.SumOpenSplitsByAllInstructors(ctx)
 	if err != nil {
 		return fmt.Errorf("university: batch sum open splits: %w", err)
 	}
@@ -514,7 +514,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 			continue
 		}
 
-		if _, err := s.store.StampSplitsWithPayout(ctx, tenantID, p.ID, payout.ID, ps, pe); err != nil {
+		if _, err := s.store.StampSplitsWithPayout(ctx, p.ID, payout.ID, ps, pe); err != nil {
 			slog.Error("university: stamp splits with payout", "payout_id", payout.ID.String(), "error", err)
 			continue
 		}
@@ -531,8 +531,8 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 // provider abstraction (via the worker), and stamps the final status. The
 // actual provider call is intentionally minimal here — the provider layer
 // (Section 17) executes the transfer; this method records the outcome.
-func (s *Service) SendInstructorPayout(ctx context.Context, tenantID, payoutID pgtype.UUID) error {
-	payout, err := s.store.GetPayout(ctx, tenantID, payoutID)
+func (s *Service) SendInstructorPayout(ctx context.Context, payoutID pgtype.UUID) error {
+	payout, err := s.store.GetPayout(ctx, payoutID)
 	if err != nil {
 		return fmt.Errorf("university: get payout: %w", err)
 	}
@@ -542,7 +542,7 @@ func (s *Service) SendInstructorPayout(ctx context.Context, tenantID, payoutID p
 	}
 
 	// Mark processing.
-	if _, err := s.store.UpdatePayoutStatus(ctx, tenantID, payoutID, "processing", nil, nil); err != nil {
+	if _, err := s.store.UpdatePayoutStatus(ctx, payoutID, "processing", nil, nil); err != nil {
 		return fmt.Errorf("university: mark payout processing: %w", err)
 	}
 
@@ -550,7 +550,7 @@ func (s *Service) SendInstructorPayout(ctx context.Context, tenantID, payoutID p
 	// In V1 this is a manual/recorded transfer: we mark paid with a generated
 	// reference. A future integration calls provider.InitiatePayout here.
 	ref := fmt.Sprintf("JC-PAYOUT-%s-%d", payout.ID.String()[:8], time.Now().Unix())
-	if _, err := s.store.UpdatePayoutStatus(ctx, tenantID, payoutID, "paid", &ref, nil); err != nil {
+	if _, err := s.store.UpdatePayoutStatus(ctx, payoutID, "paid", &ref, nil); err != nil {
 		return fmt.Errorf("university: mark payout paid: %w", err)
 	}
 
@@ -653,7 +653,7 @@ func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID
 	}
 
 	// Load the instructor profile to get the user_id (notification recipient).
-	profile, err := s.store.GetByID(ctx, tenantID, instructorID)
+	profile, err := s.store.GetByID(ctx, instructorID)
 	if err != nil {
 		return fmt.Errorf("university: notify instructor approved: load profile: %w", err)
 	}
@@ -665,7 +665,7 @@ func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID
 
 	return s.notifier.CreateNotification(
 		ctx,
-		tenantID, profile.UserID,
+		profile.UserID,
 		"university_instructor_approved", // notification type key
 		"system",                         // actor type
 		pgtype.UUID{},                    // actor ID (system)
@@ -688,13 +688,13 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, tr
 	}
 
 	// Load the track to get the instructor (and thus the user_id).
-	track, err := s.store.GetTrackByID(ctx, tenantID, trackID)
+	track, err := s.store.GetTrackByID(ctx, trackID)
 	if err != nil {
 		return fmt.Errorf("university: notify course approved: load track: %w", err)
 	}
 
 	// Load the instructor profile to get the user_id (notification recipient).
-	profile, err := s.store.GetByID(ctx, tenantID, track.InstructorID)
+	profile, err := s.store.GetByID(ctx, track.InstructorID)
 	if err != nil {
 		return fmt.Errorf("university: notify course approved: load instructor: %w", err)
 	}
@@ -706,7 +706,7 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, tr
 
 	return s.notifier.CreateNotification(
 		ctx,
-		tenantID, profile.UserID,
+		profile.UserID,
 		"university_course_approved", // notification type key
 		"system",                     // actor type
 		pgtype.UUID{},                // actor ID (system)
@@ -753,7 +753,7 @@ func (s *Service) cachedInstructorProfile(ctx context.Context, tenantID, userID 
 		}
 	}
 
-	row, err := s.store.GetByUser(ctx, tenantID, userID)
+	row, err := s.store.GetByUser(ctx, userID)
 	if err != nil {
 		return InstructorProfile{}, err
 	}
@@ -796,7 +796,7 @@ func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgt
 		}
 	}
 
-	track, err := s.store.GetTrackByID(ctx, tenantID, trackID)
+	track, err := s.store.GetTrackByID(ctx, trackID)
 	if err != nil {
 		return 0, err
 	}

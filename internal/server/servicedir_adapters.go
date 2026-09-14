@@ -30,7 +30,7 @@ type serviceReviewAdapter struct {
 // service_listing content_id, ordered by created_at DESC (latest first).
 // The `sort` param is accepted for interface compatibility; the underlying
 // query always returns latest-first (matching the §29 default sort).
-func (a serviceReviewAdapter) ListByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]servicedir.ReviewItem, error) {
+func (a serviceReviewAdapter) ListByEntity(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]servicedir.ReviewItem, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -69,7 +69,7 @@ func (a serviceReviewAdapter) ListByEntity(ctx context.Context, tenantID pgtype.
 // Aggregate returns the review count + average rating for the given
 // service_listing content_id from the review_aggregates rollup table (§29).
 // Returns zeros when no aggregate row exists yet (no reviews posted).
-func (a serviceReviewAdapter) Aggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (servicedir.ReviewAggregate, error) {
+func (a serviceReviewAdapter) Aggregate(ctx context.Context, entityType string, entityID pgtype.UUID) (servicedir.ReviewAggregate, error) {
 	agg, err := a.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
 
 		EntityType: entityType,

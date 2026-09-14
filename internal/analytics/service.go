@@ -78,7 +78,7 @@ type TrackEventInput struct {
 // TrackEvent records a platform event in the write-optimised append-only table.
 // BUG-004 fix: validate event_type against the ValidEventTypes allowlist so
 // arbitrary strings cannot pollute platform_events.
-func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input TrackEventInput) (gen.CreatePlatformEventRow, error) {
+func (s *Service) TrackEvent(ctx context.Context, input TrackEventInput) (gen.CreatePlatformEventRow, error) {
 	if input.EventType == "" {
 		return gen.CreatePlatformEventRow{}, fmt.Errorf("%w: event_type is required", errpkg.ErrRequired)
 	}
@@ -137,8 +137,8 @@ func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input Tr
 // is recorded here so the persona activity log (WHERE is_synthetic = true)
 // works and real-metric materialized views (WHERE NOT is_synthetic) exclude
 // synthetic activity.
-func (s *Service) TrackSyntheticEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error {
-	_, err := s.TrackEvent(ctx, tenantID, TrackEventInput{
+func (s *Service) TrackSyntheticEvent(ctx context.Context, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error {
+	_, err := s.TrackEvent(ctx, TrackEventInput{
 		EventType:   EventType(eventType),
 		UserID:      userID,
 		EntityType:  entityType,
@@ -151,7 +151,7 @@ func (s *Service) TrackSyntheticEvent(ctx context.Context, tenantID, userID pgty
 }
 
 // ListEvents returns platform events matching the given filters.
-func (s *Service) ListEvents(ctx context.Context, tenantID pgtype.UUID, filter EventFilter) ([]gen.ListPlatformEventsRow, error) {
+func (s *Service) ListEvents(ctx context.Context, filter EventFilter) ([]gen.ListPlatformEventsRow, error) {
 	if filter.Limit <= 0 || filter.Limit > MaxPageSize {
 		filter.Limit = DefaultPageSize
 	}
@@ -163,12 +163,12 @@ func (s *Service) ListEvents(ctx context.Context, tenantID pgtype.UUID, filter E
 		}
 	}
 
-	return s.store.ListPlatformEvents(ctx, tenantID, filter)
+	return s.store.ListPlatformEvents(ctx, filter)
 }
 
 // GetEventCountsByType aggregates event counts by type within a time range.
-func (s *Service) GetEventCountsByType(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *time.Time) ([]gen.GetEventCountsByTypeRow, error) {
-	return s.store.GetEventCountsByType(ctx, tenantID, startDate, endDate)
+func (s *Service) GetEventCountsByType(ctx context.Context, startDate, endDate *time.Time) ([]gen.GetEventCountsByTypeRow, error) {
+	return s.store.GetEventCountsByType(ctx, startDate, endDate)
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ type UserDashboard struct {
 
 // GetUserDashboardData returns the user's personal analytics dashboard data.
 // from/to define the query window; a nil to means open-ended (up to now).
-func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgtype.UUID, from, to *time.Time) (UserDashboard, error) {
+func (s *Service) GetUserDashboardData(ctx context.Context, userID pgtype.UUID, from, to *time.Time) (UserDashboard, error) {
 	if from == nil || from.IsZero() {
 		defaultStart := time.Now().AddDate(0, 0, -30)
 		from = &defaultStart
@@ -287,7 +287,7 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 
 	g.Go(func() error {
 		var err error
-		topContent, err = s.store.GetTopContentByViews(ctx, tenantID, startDate, endDate, 10)
+		topContent, err = s.store.GetTopContentByViews(ctx, startDate, endDate, 10)
 
 		return err
 	})
@@ -299,19 +299,19 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 	})
 	g.Go(func() error {
 		var err error
-		contentOverTime, err = s.store.GetContentVolumeOverTime(ctx, tenantID, startTZ, endTZ)
+		contentOverTime, err = s.store.GetContentVolumeOverTime(ctx, startTZ, endTZ)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		trafficSources, err = s.store.GetUserTrafficSources(ctx, tenantID, userID, startTZ, endTZ, 10)
+		trafficSources, err = s.store.GetUserTrafficSources(ctx, userID, startTZ, endTZ, 10)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		adPerformance, err = s.store.GetUserAdPerformance(ctx, tenantID, userID, startDate, endDate, 10)
+		adPerformance, err = s.store.GetUserAdPerformance(ctx, userID, startDate, endDate, 10)
 
 		return err
 	})
@@ -377,7 +377,7 @@ type UserAnalytics struct {
 // GetAdminDashboardData returns the admin analytics dashboard data for the
 // window [from, to]. When to is nil the window is left-open (up to now),
 // preserving the historical days-based behavior.
-func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUID, from time.Time, to *time.Time) (AdminDashboard, error) {
+func (s *Service) GetAdminDashboardData(ctx context.Context, from time.Time, to *time.Time) (AdminDashboard, error) {
 	start := from
 	startTZ := pgtype.Timestamptz{Time: start, Valid: true}
 	startDate := pgtype.Date{Time: start, Valid: true}
@@ -395,72 +395,72 @@ func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUI
 		endDate = &pgtype.Date{Time: end, Valid: true}
 	}
 
-	dau, err := s.store.GetDailyActiveUsers(ctx, tenantID, &startTZ, endTZ)
+	dau, err := s.store.GetDailyActiveUsers(ctx, &startTZ, endTZ)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching DAU: %w", err)
 	}
 
-	mau, err := s.store.GetMonthlyActiveUsers(ctx, tenantID, &startTZ, endTZ)
+	mau, err := s.store.GetMonthlyActiveUsers(ctx, &startTZ, endTZ)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching MAU: %w", err)
 	}
 
-	eventCounts, err := s.store.GetEventCountsByType(ctx, tenantID, &start, endTime)
+	eventCounts, err := s.store.GetEventCountsByType(ctx, &start, endTime)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching event counts: %w", err)
 	}
 
-	contentVolume, err := s.store.GetContentVolumeOverTime(ctx, tenantID, &startTZ, endTZ)
+	contentVolume, err := s.store.GetContentVolumeOverTime(ctx, &startTZ, endTZ)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching content volume: %w", err)
 	}
 
-	userGrowth, err := s.store.GetUserGrowthOverTime(ctx, tenantID, &startDate, endDate)
+	userGrowth, err := s.store.GetUserGrowthOverTime(ctx, &startDate, endDate)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching user growth: %w", err)
 	}
 
-	traffic, err := s.store.GetTrafficSources(ctx, tenantID, &startTZ, endTZ, 20)
+	traffic, err := s.store.GetTrafficSources(ctx, &startTZ, endTZ, 20)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching traffic sources: %w", err)
 	}
 
-	topContent, err := s.store.GetTopContentByViews(ctx, tenantID, &startDate, endDate, 20)
+	topContent, err := s.store.GetTopContentByViews(ctx, &startDate, endDate, 20)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching top content: %w", err)
 	}
 
-	contentStats, err := s.store.GetDailyContentStats(ctx, tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
+	contentStats, err := s.store.GetDailyContentStats(ctx, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching content stats: %w", err)
 	}
 
-	spaceStats, err := s.store.GetDailySpaceStats(ctx, tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
+	spaceStats, err := s.store.GetDailySpaceStats(ctx, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching space stats: %w", err)
 	}
 
-	pendingReports, err := s.store.CountPendingReports(ctx, tenantID)
+	pendingReports, err := s.store.CountPendingReports(ctx)
 	if err != nil {
 		slog.Error("fetching pending reports count", "error", err)
 	}
 
-	pendingTickets, err := s.store.CountOpenTickets(ctx, tenantID)
+	pendingTickets, err := s.store.CountOpenTickets(ctx)
 	if err != nil {
 		slog.Error("fetching open tickets count", "error", err)
 	}
 
-	spamQueue, err := s.store.CountSpamQueue(ctx, tenantID)
+	spamQueue, err := s.store.CountSpamQueue(ctx)
 	if err != nil {
 		slog.Error("fetching spam queue count", "error", err)
 	}
 
-	generationsToday, err := s.store.CountGenerationsToday(ctx, tenantID)
+	generationsToday, err := s.store.CountGenerationsToday(ctx)
 	if err != nil {
 		slog.Error("fetching generations today count", "error", err)
 	}
 
-	hitlPending, err := s.store.CountPendingReviews(ctx, tenantID)
+	hitlPending, err := s.store.CountPendingReviews(ctx)
 	if err != nil {
 		slog.Error("fetching pending reviews count", "error", err)
 	}
@@ -484,18 +484,18 @@ func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUI
 }
 
 // GetUserAnalytics returns aggregate user counts for the admin dashboard.
-func (s *Service) GetUserAnalytics(ctx context.Context, tenantID pgtype.UUID) (UserAnalytics, error) {
-	total, err := s.store.GetTotalUsers(ctx, tenantID)
+func (s *Service) GetUserAnalytics(ctx context.Context) (UserAnalytics, error) {
+	total, err := s.store.GetTotalUsers(ctx)
 	if err != nil {
 		return UserAnalytics{}, fmt.Errorf("fetching total users: %w", err)
 	}
 
-	active, err := s.store.GetActiveUsers(ctx, tenantID)
+	active, err := s.store.GetActiveUsers(ctx)
 	if err != nil {
 		return UserAnalytics{}, fmt.Errorf("fetching active users: %w", err)
 	}
 
-	newToday, err := s.store.GetNewUsersToday(ctx, tenantID)
+	newToday, err := s.store.GetNewUsersToday(ctx)
 	if err != nil {
 		return UserAnalytics{}, fmt.Errorf("fetching new users today: %w", err)
 	}
@@ -508,34 +508,34 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID pgtype.UUID) (U
 // ---------------------------------------------------------------------------
 
 // RunSecurityScan executes all security checks and records findings.
-func (s *Service) RunSecurityScan(ctx context.Context, tenantID pgtype.UUID) error {
+func (s *Service) RunSecurityScan(ctx context.Context) error {
 	// 1. Check for failed login spikes.
-	if err := s.scanFailedLoginSpike(ctx, tenantID); err != nil {
+	if err := s.scanFailedLoginSpike(ctx); err != nil {
 		slog.Error("security scan: failed login spike", "error", err)
 	}
 
 	// 2. Check SLA breach count.
-	if err := s.scanSLABreachCount(ctx, tenantID); err != nil {
+	if err := s.scanSLABreachCount(ctx); err != nil {
 		slog.Error("security scan: SLA breach count", "error", err)
 	}
 
 	// 3. Check for stale tokens.
-	if err := s.scanStaleTokens(ctx, tenantID); err != nil {
+	if err := s.scanStaleTokens(ctx); err != nil {
 		slog.Error("security scan: stale tokens", "error", err)
 	}
 
 	// 4. Check for unverified users.
-	if err := s.scanUnverifiedUsers(ctx, tenantID); err != nil {
+	if err := s.scanUnverifiedUsers(ctx); err != nil {
 		slog.Error("security scan: unverified users", "error", err)
 	}
 
 	// 5. Check for weak password settings.
-	if err := s.scanWeakPasswordSettings(ctx, tenantID); err != nil {
+	if err := s.scanWeakPasswordSettings(ctx); err != nil {
 		slog.Error("security scan: weak password settings", "error", err)
 	}
 
 	// 6. Check for excessive API keys without expiration.
-	if err := s.scanExcessiveAPIKeys(ctx, tenantID); err != nil {
+	if err := s.scanExcessiveAPIKeys(ctx); err != nil {
 		slog.Error("security scan: excessive API keys", "error", err)
 	}
 
@@ -557,28 +557,28 @@ func (s *Service) EnqueueSecurityScan(_ context.Context, tenantID pgtype.UUID) e
 }
 
 // ListSecurityScanResults returns scan results matching filters.
-func (s *Service) ListSecurityScanResults(ctx context.Context, tenantID pgtype.UUID, filter SecurityScanFilter) ([]gen.SecurityScanResult, error) {
+func (s *Service) ListSecurityScanResults(ctx context.Context, filter SecurityScanFilter) ([]gen.SecurityScanResult, error) {
 	if filter.Limit <= 0 || filter.Limit > MaxPageSize {
 		filter.Limit = DefaultPageSize
 	}
 
-	return s.store.ListSecurityScanResults(ctx, tenantID, filter)
+	return s.store.ListSecurityScanResults(ctx, filter)
 }
 
 // ResolveScanResult marks a security finding as resolved.
-func (s *Service) ResolveScanResult(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.ResolveSecurityScanResult(ctx, id, tenantID)
+func (s *Service) ResolveScanResult(ctx context.Context, id pgtype.UUID) error {
+	return s.store.ResolveSecurityScanResult(ctx, id)
 }
 
 // DeleteScanResult permanently deletes a security finding. Used to clear
 // resolved findings from the control panel audit view.
-func (s *Service) DeleteScanResult(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.DeleteSecurityScanResult(ctx, id, tenantID)
+func (s *Service) DeleteScanResult(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteSecurityScanResult(ctx, id)
 }
 
 // GetUnresolvedCriticalFindings returns unresolved critical findings.
-func (s *Service) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetUnresolvedCriticalFindingsRow, error) {
-	return s.store.GetUnresolvedCriticalFindings(ctx, tenantID)
+func (s *Service) GetUnresolvedCriticalFindings(ctx context.Context) ([]gen.GetUnresolvedCriticalFindingsRow, error) {
+	return s.store.GetUnresolvedCriticalFindings(ctx)
 }
 
 // RevenueAnalytics holds the admin revenue analytics response.
@@ -590,13 +590,13 @@ type RevenueAnalytics struct {
 }
 
 // GetRevenueAnalytics returns aggregated revenue data for the admin dashboard.
-func (s *Service) GetRevenueAnalytics(ctx context.Context, tenantID pgtype.UUID, from time.Time, to *time.Time) (RevenueAnalytics, error) {
-	summary, err := s.store.GetRevenueSummary(ctx, tenantID)
+func (s *Service) GetRevenueAnalytics(ctx context.Context, from time.Time, to *time.Time) (RevenueAnalytics, error) {
+	summary, err := s.store.GetRevenueSummary(ctx)
 	if err != nil {
 		return RevenueAnalytics{}, fmt.Errorf("fetching revenue summary: %w", err)
 	}
 
-	periods, err := s.store.GetRevenueByPeriod(ctx, tenantID, &from, to)
+	periods, err := s.store.GetRevenueByPeriod(ctx, &from, to)
 	if err != nil {
 		return RevenueAnalytics{}, fmt.Errorf("fetching revenue by period: %w", err)
 	}

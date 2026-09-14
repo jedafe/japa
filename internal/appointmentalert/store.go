@@ -215,7 +215,7 @@ WHERE %s
 
 // GetEmbassyBySlug returns a single monitored embassy by its slug within
 // the tenant.
-func (s *Store) GetEmbassyBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (EmbassyRow, error) {
+func (s *Store) GetEmbassyBySlug(ctx context.Context, slug string) (EmbassyRow, error) {
 	const q = `
 SELECT e.id, e.destination_space_id, sp.name AS dest_space_name,
        e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
@@ -703,7 +703,7 @@ WHERE deleted_at IS NULL
 // Used by DispatchAlerts to notify users when availability is detected
 // (§91, ADR-099). Only alerts whose date range covers the current date
 // are returned.
-func (s *Store) ListActiveAlertsByEmbassySlug(ctx context.Context, embassySlug string, tenantID pgtype.UUID) ([]AlertRow, error) {
+func (s *Store) ListActiveAlertsByEmbassySlug(ctx context.Context, embassySlug string) ([]AlertRow, error) {
 	const q = `
 SELECT a.id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
        a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,

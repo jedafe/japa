@@ -100,7 +100,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // ListByLocale returns all translations for a given locale.
 // GET /admin/translations?locale=en.
 func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -111,7 +111,7 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.Service.store.ListByLocale(r.Context(), tenantID, locale)
+	rows, err := h.Service.store.ListByLocale(r.Context(), locale)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -146,12 +146,12 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 // ListLocales returns distinct locales with counts.
 // GET /admin/translations/locales.
 func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	counts, err := h.Service.Counts(r.Context(), tenantID)
+	counts, err := h.Service.Counts(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -342,7 +342,7 @@ func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch the source string by ID.
-	src, err := h.Service.GetByID(r.Context(), tenantID, id)
+	src, err := h.Service.GetByID(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -498,12 +498,12 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 // HandleListPublicLocales returns the list of enabled locales for the tenant.
 // GET /api/v1/i18n/locales — public, no auth required.
 func (h *Handlers) HandleListPublicLocales(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	locales, err := h.Service.ListLocales(r.Context(), tenantID)
+	locales, err := h.Service.ListLocales(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return

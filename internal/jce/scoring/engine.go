@@ -137,7 +137,7 @@ type scoreRunResult struct {
 // Score computes and persists JapaScores and recommendations for a comparison.
 // // Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5.
 func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResult, error) {
-	tenantID := stringToUUID(input.TenantID)
+	_ = stringToUUID(input.TenantID)
 
 	contentID, err := parseUUID(input.ContentID)
 	if err != nil {
@@ -198,7 +198,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		}
 	}
 
-	profile, profileID, err := e.resolveProfile(ctx, tenantID, input.UserID, input.ProfileID, typeCfg, input.PermissionChecker)
+	profile, profileID, err := e.resolveProfile(ctx, input.UserID, input.ProfileID, typeCfg, input.PermissionChecker)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("resolving comparison profile: %w", err)
 	}
@@ -260,7 +260,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		}
 	}
 
-	factors, err := e.listScoreFactors(ctx, tenantID, typeID)
+	factors, err := e.listScoreFactors(ctx, typeID)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading score factors: %w", err)
 	}
@@ -294,7 +294,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		}
 	}
 
-	if err := e.resolveItems(ctx, scoredItems, tenantID); err != nil {
+	if err := e.resolveItems(ctx, scoredItems); err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("resolving item refs: %w", err)
 	}
 
@@ -338,7 +338,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 		// Recompute inside the transaction so the scoredFactor metadata is
 		// available for persistence (dimension_id, eligible_status, etc.).
-		txResult, err := e.scoreRun(ctx, tenantID, runCfg, factors, profile, scoredItems, smartMode)
+		txResult, err := e.scoreRun(ctx, runCfg, factors, profile, scoredItems, smartMode)
 		if err != nil {
 			return fmt.Errorf("recomputing scores in transaction: %w", err)
 		}
@@ -473,7 +473,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 		ttl := 15 * time.Minute
 		if e.settings != nil {
-			ttl = time.Duration(e.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.score_cache_ttl_minutes", 15)) * time.Minute
+			ttl = time.Duration(e.settings.GetIntOr(ctx, "jce.score_cache_ttl_minutes", 15)) * time.Minute
 		}
 
 		_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
@@ -487,7 +487,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 // GetScore returns a previously computed ScoreResult from cache or DB.
 func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.ScoreResult, error) {
-	tenantID := stringToUUID(input.TenantID)
+	_ = stringToUUID(input.TenantID)
 
 	contentID, err := parseUUID(input.ContentID)
 	if err != nil {
@@ -515,7 +515,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	// Resolve the profile ID to use for the query and enforce ownership
 	// before reading any cached or persisted data.
 	profileID := e.profileIDFromMetadata(input, cmpRow.MetadataConfig)
-	if err := e.ensureProfileAccess(ctx, tenantID, input.UserID, profileID, input.PermissionChecker); err != nil {
+	if err := e.ensureProfileAccess(ctx, input.UserID, profileID, input.PermissionChecker); err != nil {
 		return jce.ScoreResult{}, err
 	}
 
@@ -578,7 +578,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		}
 	}
 
-	factors, err := e.listScoreFactors(ctx, tenantID, typeID)
+	factors, err := e.listScoreFactors(ctx, typeID)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading score factors: %w", err)
 	}
@@ -729,7 +729,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 
 // PreviewScoreForItems scores a list of item refs without creating content.
 func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePreviewInput) (jce.ScoreResult, error) {
-	tenantID := stringToUUID(input.TenantID)
+	_ = stringToUUID(input.TenantID)
 
 	typeID, err := parseUUID(input.TypeID)
 	if err != nil {
@@ -775,7 +775,7 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 		scoredItems[i] = scoredItem{ref: ref}
 	}
 
-	if err := e.resolveItems(ctx, scoredItems, tenantID); err != nil {
+	if err := e.resolveItems(ctx, scoredItems); err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("resolving item refs: %w", err)
 	}
 
@@ -796,7 +796,7 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 		}
 	}
 
-	factors, err := e.listScoreFactors(ctx, tenantID, typeID)
+	factors, err := e.listScoreFactors(ctx, typeID)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading score factors: %w", err)
 	}
@@ -813,7 +813,7 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 		runCfg.DefaultWeights[k] = v
 	}
 
-	runResult, err := e.scoreRun(ctx, tenantID, runCfg, factors, profile, scoredItems, input.SmartMode)
+	runResult, err := e.scoreRun(ctx, runCfg, factors, profile, scoredItems, input.SmartMode)
 	if err != nil {
 		return jce.ScoreResult{}, err
 	}
@@ -829,7 +829,7 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 
 // scoreRun is the core scoring pipeline. It is split out so tests and the
 // preview path can drive it with in-memory data.
-func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeConfig, factors []jce.ScoreFactor, profile jce.ComparisonProfile, items []scoredItem, smartMode string) (scoreRunResult, error) {
+func (e *Engine) scoreRun(ctx context.Context, cfg typeConfig, factors []jce.ScoreFactor, profile jce.ComparisonProfile, items []scoredItem, smartMode string) (scoreRunResult, error) {
 	weights := buildWeightMap(cfg, profile, smartMode)
 
 	factorByKey := make(map[string]jce.ScoreFactor)
@@ -1091,7 +1091,7 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 }
 
 // resolveItems resolves item_ref maps through the resolver registry.
-func (e *Engine) resolveItems(ctx context.Context, items []scoredItem, tenantID pgtype.UUID) error {
+func (e *Engine) resolveItems(ctx context.Context, items []scoredItem) error {
 	if e.r == nil {
 		for i := range items {
 			if items[i].resolved.Metadata == nil {
@@ -1108,7 +1108,7 @@ func (e *Engine) resolveItems(ctx context.Context, items []scoredItem, tenantID 
 			continue
 		}
 
-		resolved, err := e.r.Resolve(ctx, items[i].ref, tenantID)
+		resolved, err := e.r.Resolve(ctx, items[i].ref)
 		if err != nil {
 			resolved = resolver.ResolvedItem{Metadata: map[string]any{}}
 		} else if resolved.Metadata == nil {
@@ -1123,7 +1123,7 @@ func (e *Engine) resolveItems(ctx context.Context, items []scoredItem, tenantID 
 
 // listScoreFactors loads type-specific and global score factors, preferring
 // type-specific overrides for the same factor_key.
-func (e *Engine) listScoreFactors(ctx context.Context, tenantID, typeID pgtype.UUID) ([]jce.ScoreFactor, error) {
+func (e *Engine) listScoreFactors(ctx context.Context, typeID pgtype.UUID) ([]jce.ScoreFactor, error) {
 	includeGlobal := true
 
 	rows, err := e.read.ListScoreFactorsByType(ctx, gen.ListScoreFactorsByTypeParams{
@@ -1167,7 +1167,7 @@ func (e *Engine) listScoreFactors(ctx context.Context, tenantID, typeID pgtype.U
 }
 
 // resolveProfile loads the requested profile or builds one from type defaults.
-func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userID, profileID *string, cfg typeConfig, check func(string) bool) (jce.ComparisonProfile, pgtype.UUID, error) {
+func (e *Engine) resolveProfile(ctx context.Context, userID, profileID *string, cfg typeConfig, check func(string) bool) (jce.ComparisonProfile, pgtype.UUID, error) {
 	if profileID == nil || *profileID == "" {
 		return defaultProfileFromTypeConfig(cfg), pgtype.UUID{}, nil
 	}
@@ -1223,7 +1223,7 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 
 			ttl := 5 * time.Minute
 			if e.settings != nil {
-				ttl = time.Duration(e.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.profile_cache_ttl_minutes", 5)) * time.Minute
+				ttl = time.Duration(e.settings.GetIntOr(ctx, "jce.profile_cache_ttl_minutes", 5)) * time.Minute
 			}
 
 			_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
@@ -1293,7 +1293,7 @@ func (e *Engine) canUseProfile(profile jce.ComparisonProfile, userID *string, ch
 }
 
 // ensureProfileAccess loads a profile and verifies the caller may use it.
-func (e *Engine) ensureProfileAccess(ctx context.Context, tenantID pgtype.UUID, userID *string, profileID pgtype.UUID, check func(string) bool) error {
+func (e *Engine) ensureProfileAccess(ctx context.Context, userID *string, profileID pgtype.UUID, check func(string) bool) error {
 	if !profileID.Valid {
 		return nil
 	}

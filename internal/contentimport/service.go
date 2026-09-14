@@ -162,12 +162,12 @@ func (s *Service) SetHTTPClient(c *http.Client) { s.httpClient = c }
 // maxItemsPerRun reads import.max_items_per_run from system_settings,
 // falling back to DefaultMaxItemsPerRun when unset or no settings reader
 // is wired.
-func (s *Service) maxItemsPerRun(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) maxItemsPerRun(ctx context.Context) int {
 	if s.settings == nil {
 		return DefaultMaxItemsPerRun
 	}
 
-	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "import.max_items_per_run", DefaultMaxItemsPerRun)
+	return s.settings.GetIntOr(ctx, "import.max_items_per_run", DefaultMaxItemsPerRun)
 }
 
 // safeInt32 converts an int to int32 clamped to [0, math.MaxInt32]. The
@@ -200,7 +200,7 @@ func (s *Service) StartImport(ctx context.Context, tenantID, userID pgtype.UUID,
 		urlPtr = &sourceURL
 	}
 
-	imp, err := s.store.Create(ctx, tenantID, userID, sourceType, urlPtr)
+	imp, err := s.store.Create(ctx, userID, sourceType, urlPtr)
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: start: create record: %w", err)
 	}
@@ -225,13 +225,13 @@ func (s *Service) StartImport(ctx context.Context, tenantID, userID pgtype.UUID,
 }
 
 // GetImport returns a single import with its details, scoped to the tenant.
-func (s *Service) GetImport(ctx context.Context, tenantID, importID pgtype.UUID) (gen.ContentImport, error) {
-	return s.store.GetByID(ctx, tenantID, importID)
+func (s *Service) GetImport(ctx context.Context, importID pgtype.UUID) (gen.ContentImport, error) {
+	return s.store.GetByID(ctx, importID)
 }
 
 // ListUserImports returns a user's import history with pagination.
 // Page is 1-based; limit is clamped to a reasonable maximum.
-func (s *Service) ListUserImports(ctx context.Context, tenantID, userID pgtype.UUID, page, limit int) ([]gen.ContentImport, int64, error) {
+func (s *Service) ListUserImports(ctx context.Context, userID pgtype.UUID, page, limit int) ([]gen.ContentImport, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -246,12 +246,12 @@ func (s *Service) ListUserImports(ctx context.Context, tenantID, userID pgtype.U
 
 	offset := safeInt32((page - 1) * limit)
 
-	rows, err := s.store.ListUserImports(ctx, tenantID, userID, offset, safeInt32(limit))
+	rows, err := s.store.ListUserImports(ctx, userID, offset, safeInt32(limit))
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountUserImports(ctx, tenantID, userID)
+	total, err := s.store.CountUserImports(ctx, userID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -261,7 +261,7 @@ func (s *Service) ListUserImports(ctx context.Context, tenantID, userID pgtype.U
 
 // AdminListImports returns all imports for a tenant, optionally filtered
 // by status, with pagination. An empty status returns all statuses.
-func (s *Service) AdminListImports(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]gen.AdminListContentImportsRow, int64, error) {
+func (s *Service) AdminListImports(ctx context.Context, status string, page, limit int) ([]gen.AdminListContentImportsRow, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -276,12 +276,12 @@ func (s *Service) AdminListImports(ctx context.Context, tenantID pgtype.UUID, st
 
 	offset := safeInt32((page - 1) * limit)
 
-	rows, err := s.store.AdminListImports(ctx, tenantID, status, offset, safeInt32(limit))
+	rows, err := s.store.AdminListImports(ctx, status, offset, safeInt32(limit))
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.AdminCountImports(ctx, tenantID, status)
+	total, err := s.store.AdminCountImports(ctx, status)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -293,7 +293,7 @@ func (s *Service) AdminListImports(ctx context.Context, tenantID pgtype.UUID, st
 // re-enqueues the import:process_source task. Only imports with status
 // 'failed' or 'partial' can be retried — the SQL query enforces this.
 func (s *Service) RetryImport(ctx context.Context, tenantID, importID pgtype.UUID) (gen.ContentImport, error) {
-	imp, err := s.store.ResetForRetry(ctx, tenantID, importID)
+	imp, err := s.store.ResetForRetry(ctx, importID)
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: retry: reset: %w", err)
 	}
@@ -325,8 +325,8 @@ func (s *Service) RetryImport(ctx context.Context, tenantID, importID pgtype.UUI
 // UpdateImportStatus updates the status, counts, error log, and completed_at
 // timestamp for an import. Called by the import:process_source task handler
 // after processing completes (or fails).
-func (s *Service) UpdateImportStatus(ctx context.Context, tenantID, importID pgtype.UUID, status string, totalItems, importedCount, failedCount *int32, errorLog []byte, completedAt pgtype.Timestamptz) (gen.ContentImport, error) {
-	return s.store.UpdateStatus(ctx, tenantID, importID, status, totalItems, importedCount, failedCount, errorLog, completedAt)
+func (s *Service) UpdateImportStatus(ctx context.Context, importID pgtype.UUID, status string, totalItems, importedCount, failedCount *int32, errorLog []byte, completedAt pgtype.Timestamptz) (gen.ContentImport, error) {
+	return s.store.UpdateStatus(ctx, importID, status, totalItems, importedCount, failedCount, errorLog, completedAt)
 }
 
 // ProcessSource is the import:process_source task handler. It parses the
@@ -339,7 +339,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	// processing. If the import is already 'processing' (concurrent task or
 	// retry overlap) or 'completed' (already finished), skip — the catalog
 	// declares import:process_source idempotent on import ID.
-	existing, err := s.store.GetByID(ctx, tenantID, importID)
+	existing, err := s.store.GetByID(ctx, importID)
 	if err != nil {
 		return fmt.Errorf("contentimport: process: lookup import: %w", err)
 	}
@@ -355,14 +355,14 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	}
 
 	// Mark as processing.
-	if _, err := s.store.UpdateStatus(ctx, tenantID, importID, StatusProcessing, nil, nil, nil, []byte("[]"), pgtype.Timestamptz{}); err != nil {
+	if _, err := s.store.UpdateStatus(ctx, importID, StatusProcessing, nil, nil, nil, []byte("[]"), pgtype.Timestamptz{}); err != nil {
 		return fmt.Errorf("contentimport: process: mark processing: %w", err)
 	}
 
 	// Use the user_id from the pre-check lookup (avoids a second read).
 	imp := existing
 
-	maxItems := s.maxItemsPerRun(ctx, tenantID)
+	maxItems := s.maxItemsPerRun(ctx)
 
 	var items []RSSItem
 
@@ -385,7 +385,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 			Error:     parseErr.Error(),
 		}})
 		now := nowTimestamptz()
-		_, _ = s.store.UpdateStatus(ctx, tenantID, importID, StatusFailed, nil, nil, nil, errLog, now)
+		_, _ = s.store.UpdateStatus(ctx, importID, StatusFailed, nil, nil, nil, errLog, now)
 
 		return fmt.Errorf("contentimport: process: parse source: %w", parseErr)
 	}
@@ -429,7 +429,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 
 	now := nowTimestamptz()
 
-	_, err = s.store.UpdateStatus(ctx, tenantID, importID, finalStatus,
+	_, err = s.store.UpdateStatus(ctx, importID, finalStatus,
 		&totalItems, &importedCount, &failedCount,
 		marshalErrorLog(errors), now)
 	if err != nil {

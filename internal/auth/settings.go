@@ -22,12 +22,12 @@ const DefaultAccessTokenTTL = 15 * time.Minute
 // GetRefreshTokenTTL reads the refresh token TTL from system_settings with a
 // fallback to the 30-day default. The setting key is 'auth.session.refresh_days'
 // and the value is an integer number of days.
-func GetRefreshTokenTTL(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) time.Duration {
+func GetRefreshTokenTTL(ctx context.Context, settings SettingsReader) time.Duration {
 	if settings == nil {
 		return DefaultRefreshTokenTTL
 	}
 
-	days := settings.GetIntOr(ctx, pgtype.UUID{}, "auth.session.refresh_days", 30)
+	days := settings.GetIntOr(ctx, "auth.session.refresh_days", 30)
 	if days <= 0 {
 		return DefaultRefreshTokenTTL
 	}
@@ -39,12 +39,12 @@ func GetRefreshTokenTTL(ctx context.Context, settings SettingsReader, tenantID p
 // fallback to the 15-minute default. The setting key is
 // 'auth.session.access_token_ttl_minutes' and the value is an integer number
 // of minutes.
-func GetAccessTokenTTL(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) time.Duration {
+func GetAccessTokenTTL(ctx context.Context, settings SettingsReader) time.Duration {
 	if settings == nil {
 		return DefaultAccessTokenTTL
 	}
 
-	minutes := settings.GetIntOr(ctx, pgtype.UUID{}, "auth.session.access_token_ttl_minutes", 15)
+	minutes := settings.GetIntOr(ctx, "auth.session.access_token_ttl_minutes", 15)
 	if minutes <= 0 {
 		return DefaultAccessTokenTTL
 	}
@@ -54,12 +54,12 @@ func GetAccessTokenTTL(ctx context.Context, settings SettingsReader, tenantID pg
 
 // TOTPRequiredForAdmin reads the 'auth.totp.required_for_admin' setting.
 // When true, admin/control panel access requires TOTP enrollment.
-func TOTPRequiredForAdmin(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) bool {
+func TOTPRequiredForAdmin(ctx context.Context, settings SettingsReader) bool {
 	if settings == nil {
 		return false
 	}
 
-	val, err := settings.GetSettingBool(ctx, tenantID, "auth.totp.required_for_admin")
+	val, err := settings.GetSettingBool(ctx, "auth.totp.required_for_admin")
 	if err != nil {
 		return false
 	}
@@ -69,12 +69,12 @@ func TOTPRequiredForAdmin(ctx context.Context, settings SettingsReader, tenantID
 
 // EmailVerifyRequired reads the 'auth.email.verify_required' setting.
 // When true, users whose email_verified_at is NULL are blocked at login.
-func EmailVerifyRequired(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) bool {
+func EmailVerifyRequired(ctx context.Context, settings SettingsReader) bool {
 	if settings == nil {
 		return false
 	}
 
-	val, err := settings.GetSettingBool(ctx, tenantID, "auth.email.verify_required")
+	val, err := settings.GetSettingBool(ctx, "auth.email.verify_required")
 	if err != nil {
 		return false
 	}
@@ -86,14 +86,14 @@ func EmailVerifyRequired(ctx context.Context, settings SettingsReader, tenantID 
 // Implemented by *rbac.RBAC.HasAdminCapability. Used by RequireTOTPForAdmin
 // to decide whether the TOTP enrollment requirement applies.
 type AdminCapabilityChecker interface {
-	HasAdminCapability(ctx context.Context, userID, tenantID pgtype.UUID) bool
+	HasAdminCapability(ctx context.Context, userID pgtype.UUID) bool
 }
 
 // TOTPEnrollmentChecker reports whether a user has an active TOTP enrollment
 // (enabled_at IS NOT NULL in totp_credentials). Implemented by a closure
 // over the DB reader pool to avoid importing gen.Queries here.
 type TOTPEnrollmentChecker interface {
-	HasTOTPEnrolled(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error)
+	HasTOTPEnrolled(ctx context.Context, userID pgtype.UUID) (bool, error)
 }
 
 // RequireTOTPForAdmin is middleware that enforces the 'auth.totp.required_for_admin'
@@ -118,7 +118,7 @@ func RequireTOTPForAdmin(
 			}
 
 			// If the setting is disabled, no enforcement.
-			if !TOTPRequiredForAdmin(r.Context(), settings, tenantIDFromRequest(r)) {
+			if !TOTPRequiredForAdmin(r.Context(), settings) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -131,7 +131,7 @@ func RequireTOTPForAdmin(
 			}
 
 			// Only enforce for admin-level users.
-			if rbac == nil || !rbac.HasAdminCapability(r.Context(), user.UserID, user.TenantID) {
+			if rbac == nil || !rbac.HasAdminCapability(r.Context(), user.UserID) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -142,7 +142,7 @@ func RequireTOTPForAdmin(
 				return
 			}
 
-			enrolled, err := totp.HasTOTPEnrolled(r.Context(), user.UserID, user.TenantID)
+			enrolled, err := totp.HasTOTPEnrolled(r.Context(), user.UserID)
 			if err != nil {
 				// DB error — fail open (let the request through) but log.
 				next.ServeHTTP(w, r)

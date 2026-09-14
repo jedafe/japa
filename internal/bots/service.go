@@ -132,8 +132,8 @@ func (s *Service) CreateKnownBot(ctx context.Context, tenantID pgtype.UUID, inpu
 }
 
 // GetKnownBotByID returns a single bot by ID for the given tenant.
-func (s *Service) GetKnownBotByID(ctx context.Context, tenantID, botID pgtype.UUID) (BotResponse, error) {
-	bot, err := s.store.getKnownBotByID(ctx, botID, tenantID)
+func (s *Service) GetKnownBotByID(ctx context.Context, botID pgtype.UUID) (BotResponse, error) {
+	bot, err := s.store.getKnownBotByID(ctx, botID)
 	if err != nil {
 		return BotResponse{}, fmt.Errorf("get known bot: %w", err)
 	}
@@ -143,8 +143,8 @@ func (s *Service) GetKnownBotByID(ctx context.Context, tenantID, botID pgtype.UU
 
 // ListKnownBots returns bots for the tenant, optionally filtered by bot_type,
 // with offset pagination (page_size/page_offset).
-func (s *Service) ListKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string, pageSize, offset int32) ([]BotResponse, error) {
-	bots, err := s.store.listKnownBots(ctx, tenantID, botType, pageSize, offset)
+func (s *Service) ListKnownBots(ctx context.Context, botType string, pageSize, offset int32) ([]BotResponse, error) {
+	bots, err := s.store.listKnownBots(ctx, botType, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list known bots: %w", err)
 	}
@@ -168,13 +168,13 @@ type ListKnownBotsResult struct {
 // (total count and total_pages). The frontend DataTable uses these for
 // server-side pagination.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func (s *Service) ListKnownBotsWithCount(ctx context.Context, tenantID pgtype.UUID, botType string, pageSize, offset int32) (ListKnownBotsResult, error) {
-	bots, err := s.store.listKnownBots(ctx, tenantID, botType, pageSize, offset)
+func (s *Service) ListKnownBotsWithCount(ctx context.Context, botType string, pageSize, offset int32) (ListKnownBotsResult, error) {
+	bots, err := s.store.listKnownBots(ctx, botType, pageSize, offset)
 	if err != nil {
 		return ListKnownBotsResult{}, fmt.Errorf("list known bots: %w", err)
 	}
 
-	total, err := s.store.countKnownBots(ctx, tenantID, botType)
+	total, err := s.store.countKnownBots(ctx, botType)
 	if err != nil {
 		return ListKnownBotsResult{}, fmt.Errorf("count known bots: %w", err)
 	}
@@ -229,7 +229,7 @@ func (s *Service) UpdateKnownBot(ctx context.Context, tenantID, botID pgtype.UUI
 // protected from deletion to preserve pre-seeded crawler configuration.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (s *Service) DeleteKnownBot(ctx context.Context, tenantID, botID pgtype.UUID) error {
-	existing, err := s.store.getKnownBotByID(ctx, botID, tenantID)
+	existing, err := s.store.getKnownBotByID(ctx, botID)
 	if err != nil {
 		return fmt.Errorf("delete known bot (lookup): %w", err)
 	}
@@ -238,7 +238,7 @@ func (s *Service) DeleteKnownBot(ctx context.Context, tenantID, botID pgtype.UUI
 		return errpkg.ErrForbidden
 	}
 
-	if err := s.store.deleteKnownBot(ctx, botID, tenantID); err != nil {
+	if err := s.store.deleteKnownBot(ctx, botID); err != nil {
 		return fmt.Errorf("delete known bot: %w", err)
 	}
 

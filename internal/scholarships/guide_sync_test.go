@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/jedafe/japa/internal/content"
-	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/testdb"
 )
 

@@ -30,17 +30,17 @@ func (s *Service) SetRedis(r valkeycompat.Cmdable) {
 }
 
 // List returns a paginated list of widgets for a tenant.
-func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Widget, int64, error) {
-	return s.store.List(ctx, tenantID, q, page, limit)
+func (s *Service) List(ctx context.Context, q string, page, limit int32) ([]Widget, int64, error) {
+	return s.store.List(ctx, q, page, limit)
 }
 
 // Get returns a single widget by ID, scoped to the tenant.
-func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (Widget, error) {
-	return s.store.Get(ctx, id, tenantID)
+func (s *Service) Get(ctx context.Context, id pgtype.UUID) (Widget, error) {
+	return s.store.Get(ctx, id)
 }
 
 // Create creates a new widget configuration.
-func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input CreateWidgetInput) (Widget, error) {
+func (s *Service) Create(ctx context.Context, input CreateWidgetInput) (Widget, error) {
 	if input.Name == "" {
 		return Widget{}, fmt.Errorf("%w: name is required", errpkg.ErrInvalid)
 	}
@@ -53,11 +53,11 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 		return Widget{}, fmt.Errorf("%w: widget_type must be one of: %v", errpkg.ErrInvalid, ValidWidgetTypes)
 	}
 
-	return s.store.Create(ctx, tenantID, input)
+	return s.store.Create(ctx, input)
 }
 
 // Update modifies a widget and invalidates its Valkey cache.
-func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input UpdateWidgetInput) (Widget, error) {
+func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateWidgetInput) (Widget, error) {
 	if input.Name != nil && *input.Name == "" {
 		return Widget{}, fmt.Errorf("%w: name must not be empty", errpkg.ErrInvalid)
 	}
@@ -66,7 +66,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 		return Widget{}, fmt.Errorf("%w: widget_type must be one of: %v", errpkg.ErrInvalid, ValidWidgetTypes)
 	}
 
-	w, err := s.store.Update(ctx, id, tenantID, input)
+	w, err := s.store.Update(ctx, id, input)
 	if err != nil {
 		return Widget{}, err
 	}
@@ -77,8 +77,8 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 }
 
 // Delete removes a widget and invalidates its Valkey cache.
-func (s *Service) Delete(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.Delete(ctx, id, tenantID); err != nil {
+func (s *Service) Delete(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.Delete(ctx, id); err != nil {
 		return err
 	}
 

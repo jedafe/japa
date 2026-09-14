@@ -28,13 +28,13 @@ import (
 // needed inside the transaction — so createPath and updatePath perform their
 // multi-table writes atomically (BUG-01/02 fix, §6.2 transaction boundary).
 type RemittanceStore interface {
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	GetRemittanceRateByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.RemittanceRate, error)
-	CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error)
-	UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateRemittanceRateIntelParams) error
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetRemittanceRateByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.RemittanceRate, error)
+	CreateRemittanceRateIntel(ctx context.Context, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error)
+	UpdateRemittanceRateIntel(ctx context.Context, arg gen.UpdateRemittanceRateIntelParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 	WithTx(ctx context.Context, fn func(RemittanceTxStore) error) error
 }
 
@@ -44,10 +44,10 @@ type RemittanceStore interface {
 // *stores.Store satisfies this interface (via WithTx's callback), and the
 // test mock satisfies it directly.
 type RemittanceTxStore interface {
-	CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateRemittanceRateIntelParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	CreateRemittanceRateIntel(ctx context.Context, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateRemittanceRateIntel(ctx context.Context, arg gen.UpdateRemittanceRateIntelParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // RemittancePromoter promotes remittance intel_records into the
@@ -71,7 +71,6 @@ type RemittanceTxStore interface {
 // provider-resolution follow-up.
 type RemittancePromoter struct {
 	store    RemittanceStore
-	tenantID pgtype.UUID // tenant the projection rows are stamped with
 	authorID pgtype.UUID // system/automation user for review-log actor
 	now      func() time.Time
 }
@@ -88,8 +87,8 @@ func WithRemittanceClock(fn func() time.Time) RemittancePromoterOption {
 // tenantID identifies the tenant stamped onto the remittance_rates rows
 // created by the create path. No authorID is needed because remittance does
 // not create a contents guide row.
-func NewRemittancePromoter(store RemittanceStore, tenantID, authorID pgtype.UUID, opts ...RemittancePromoterOption) *RemittancePromoter {
-	p := &RemittancePromoter{store: store, tenantID: tenantID, authorID: authorID, now: time.Now}
+func NewRemittancePromoter(store RemittanceStore, authorID pgtype.UUID, opts ...RemittancePromoterOption) *RemittancePromoter {
+	p := &RemittancePromoter{store: store, authorID: authorID, now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -111,12 +110,12 @@ var ErrNotRemittance = errors.New("promoter: intel record is not a remittance")
 // the intel record status='extracted'. Studio generates the editorial
 // remittance guide when the admin promotes the record.
 func (p *RemittancePromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.RemittanceRate]{
+	return promoteDomain(ctx, p.store, recordID, domainPromoteOps[gen.RemittanceRate]{
 		entityType: p.Entity(),
 		notErr:     ErrNotRemittance,
 		loadLabel:  "remittance rate",
-		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.RemittanceRate, error) {
-			return p.store.GetRemittanceRateByIntelRecord(ctx, tenantID, pgID)
+		getExisting: func(ctx context.Context, pgID pgtype.UUID) (gen.RemittanceRate, error) {
+			return p.store.GetRemittanceRateByIntelRecord(ctx, pgID)
 		},
 		createPath: p.remittanceCreatePath,
 		updatePath: p.remittanceUpdatePath,
@@ -138,12 +137,12 @@ func (p *RemittancePromoter) remittanceCreatePath(ctx context.Context, record ge
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx RemittanceTxStore) error {
-		rate, err := tx.CreateRemittanceRateIntel(ctx, p.tenantID, params)
+		rate, err := tx.CreateRemittanceRateIntel(ctx, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create remittance rate: %w", err)
 		}
 
-		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 
 			ID:     record.ID,
 			Status: "extracted",
@@ -187,7 +186,7 @@ func (p *RemittancePromoter) remittanceUpdatePath(ctx context.Context, record ge
 		}
 	}
 
-	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "remittance rate",
+	return domainUpdateTx(ctx, record, p.authorID, "remittance rate",
 		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
 		func(ctx context.Context, fn func(RemittanceTxStore) error) error { return p.store.WithTx(ctx, fn) },
 		RemittanceTxStore.UpdateRemittanceRateIntel)

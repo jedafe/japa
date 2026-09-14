@@ -228,7 +228,7 @@ func (c *Checker) ClearCache() {
 
 // ClearCacheForTenant clears all cached flag values.
 // The tenantID parameter is kept for Phase 1 compatibility and is ignored.
-func (c *Checker) ClearCacheForTenant(tenantID string) {
+func (c *Checker) ClearCacheForTenant() {
 	c.ClearCache()
 	c.valkeyFlushAll(context.Background())
 }
@@ -381,7 +381,7 @@ func (c *Checker) GetAllEnabled(ctx context.Context, tenantID pgtype.UUID) map[s
 }
 
 // SetEnabled updates a feature flag in the database.
-func (c *Checker) SetEnabled(ctx context.Context, tenantID pgtype.UUID, key string, enabled bool, updatedBy pgtype.UUID) error {
+func (c *Checker) SetEnabled(ctx context.Context, key string, enabled bool, updatedBy pgtype.UUID) error {
 	_, err := c.db.Writer.Exec(ctx, `
 		INSERT INTO feature_flags (key, enabled, updated_by)
 		VALUES ($1, $2, $3)
@@ -410,7 +410,7 @@ type FlagConfig struct {
 // UpdateFlag upserts a feature flag row, persisting both its enabled state and
 // the richer admin metadata. Unlike SetEnabled, it accepts the full config so
 // the admin UI can edit name/description/environment/rollout in one call.
-func (c *Checker) UpdateFlag(ctx context.Context, tenantID pgtype.UUID, key string, enabled bool, cfg FlagConfig, updatedBy pgtype.UUID) error {
+func (c *Checker) UpdateFlag(ctx context.Context, key string, enabled bool, cfg FlagConfig, updatedBy pgtype.UUID) error {
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshaling feature flag config %s: %w", key, err)
@@ -432,7 +432,7 @@ func (c *Checker) UpdateFlag(ctx context.Context, tenantID pgtype.UUID, key stri
 // DeleteFlag removes a feature flag row. After deletion the
 // flag falls back to its registry Default, exactly as if it had never been
 // set. The registry key itself is never removed.
-func (c *Checker) DeleteFlag(ctx context.Context, tenantID pgtype.UUID, key string) error {
+func (c *Checker) DeleteFlag(ctx context.Context, key string) error {
 	_, err := c.db.Writer.Exec(ctx, `
 		DELETE FROM feature_flags
 		WHERE key = $1
@@ -447,7 +447,7 @@ func (c *Checker) DeleteFlag(ctx context.Context, tenantID pgtype.UUID, key stri
 // ListFlagRows returns every feature_flags row, registry key or not. Used by
 // ListFeatureFlags so admin-created keys (not in the static Registry) still
 // appear in the admin UI.
-func (c *Checker) ListFlagRows(ctx context.Context, tenantID pgtype.UUID) ([]FlagRow, error) {
+func (c *Checker) ListFlagRows(ctx context.Context) ([]FlagRow, error) {
 	rows, err := c.db.Reader.Query(ctx, `
 		SELECT key, enabled, config, updated_at
 		FROM feature_flags
@@ -481,7 +481,7 @@ type FlagRow struct {
 
 // GetFlagConfig returns the stored FlagConfig for a feature flag, or a
 // zero-value FlagConfig when the flag has no row or no config blob.
-func (c *Checker) GetFlagConfig(ctx context.Context, tenantID pgtype.UUID, key string) (FlagConfig, error) {
+func (c *Checker) GetFlagConfig(ctx context.Context, key string) (FlagConfig, error) {
 	var configBytes []byte
 
 	err := c.db.Reader.QueryRow(ctx, `
@@ -512,8 +512,8 @@ func (c *Checker) GetFlagConfig(ctx context.Context, tenantID pgtype.UUID, key s
 // config blob without changing its enabled state. Used by the Control Panel
 // extensions page to manage gradual rollout. A percentage of 0 or 100 means
 // "off" or "fully on" (no hash bucketing).
-func (c *Checker) SetRolloutPercentage(ctx context.Context, tenantID pgtype.UUID, key string, percentage int, updatedBy pgtype.UUID) error {
-	cfg, err := c.GetFlagConfig(ctx, tenantID, key)
+func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percentage int, updatedBy pgtype.UUID) error {
+	cfg, err := c.GetFlagConfig(ctx, key)
 	if err != nil {
 		return fmt.Errorf("reading config for rollout update %s: %w", key, err)
 	}
@@ -541,7 +541,7 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, tenantID pgtype.UUID
 		return fmt.Errorf("updating rollout for %s: %w", key, err)
 	}
 
-	c.ClearCacheForTenant(tenantID.String())
+	c.ClearCacheForTenant()
 
 	return nil
 }

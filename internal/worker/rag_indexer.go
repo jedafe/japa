@@ -25,10 +25,10 @@ type RAGIndexer interface {
 	// IndexEntity chunks the source text, generates embeddings via the AI
 	// gateway, and upserts each chunk into content_embeddings. If the text
 	// is empty, existing chunks for the entity are purged.
-	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
 
 	// PurgeEntity deletes all chunks for an entity. Used on unpublish/delete.
-	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 }
 
 var ragIndexer RAGIndexer
@@ -46,12 +46,12 @@ func RegisterRAGIndexer(r RAGIndexer) {
 // "Content is unpublished or deleted — deletes its content_embeddings rows").
 // Fire-and-forget: errors are logged but never propagated to the caller.
 // If no RAG indexer is registered, the call is a no-op (graceful degradation).
-func PurgeRAGEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) {
+func PurgeRAGEntity(ctx context.Context, entityType string, entityID pgtype.UUID) {
 	if ragIndexer == nil {
 		return
 	}
 
-	if err := ragIndexer.PurgeEntity(ctx, tenantID, entityType, entityID); err != nil {
+	if err := ragIndexer.PurgeEntity(ctx, entityType, entityID); err != nil {
 		slog.Warn("worker: RAG purge failed",
 			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
 	}

@@ -135,7 +135,7 @@ func parsePageLimit(r *http.Request) (int, int) {
 // route (col_calculator.use — all users including anonymous).
 // Query params: search, country_code, page, limit.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -149,7 +149,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	countryCode := strings.TrimSpace(r.URL.Query().Get("country_code"))
 	page, limit := parsePageLimit(r)
 
-	resp, err := h.service.ListCities(r.Context(), tenantID, search, countryCode, page, limit)
+	resp, err := h.service.ListCities(r.Context(), search, countryCode, page, limit)
 	if err != nil {
 		if errors.Is(err, ErrCalculatorDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
@@ -169,7 +169,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 // returns the comparison matrix with raw values + ratios vs the baseline.
 // Public route. Query param: city_ids (comma-separated UUIDs).
 func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -184,7 +184,7 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matrix, err := h.service.CompareCities(r.Context(), tenantID, cityIDs)
+	matrix, err := h.service.CompareCities(r.Context(), cityIDs)
 	if err != nil {
 		if errors.Is(err, ErrCalculatorDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
@@ -213,8 +213,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -226,7 +225,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageLimit(r)
 
-	resp, err := h.service.AdminStats(r.Context(), tenantID, page, limit)
+	resp, err := h.service.AdminStats(r.Context(), page, limit)
 	if err != nil {
 		slog.Error("costofliving: admin stats failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get admin stats")

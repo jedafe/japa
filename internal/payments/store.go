@@ -35,7 +35,7 @@ func (s *Store) createPayment(ctx context.Context, p gen.CreatePaymentParams) (g
 	return row, nil
 }
 
-func (s *Store) getPaymentByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Payment, error) {
+func (s *Store) getPaymentByID(ctx context.Context, id pgtype.UUID) (gen.Payment, error) {
 	row, err := s.read.GetPaymentByID(ctx, id)
 	if err != nil {
 		return gen.Payment{}, fmt.Errorf("getting payment by ID: %w", err)
@@ -44,7 +44,7 @@ func (s *Store) getPaymentByID(ctx context.Context, id, tenantID pgtype.UUID) (g
 	return row, nil
 }
 
-func (s *Store) listPaymentsByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Payment, error) {
+func (s *Store) listPaymentsByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Payment, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -62,7 +62,7 @@ func (s *Store) listPaymentsByUser(ctx context.Context, tenantID, userID pgtype.
 	return rows, nil
 }
 
-func (s *Store) listPaymentsByStatus(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.Payment, error) {
+func (s *Store) listPaymentsByStatus(ctx context.Context, status string, limit, offset int32) ([]gen.Payment, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -80,7 +80,7 @@ func (s *Store) listPaymentsByStatus(ctx context.Context, tenantID pgtype.UUID, 
 	return rows, nil
 }
 
-func (s *Store) updatePaymentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Payment, error) {
+func (s *Store) updatePaymentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.Payment, error) {
 	row, err := s.write.UpdatePaymentStatus(ctx, gen.UpdatePaymentStatusParams{
 		ID: id,
 
@@ -128,7 +128,7 @@ func (s *Store) insertWebhookEventIfNew(ctx context.Context, p gen.InsertWebhook
 	return true, nil
 }
 
-func (s *Store) isWebhookEventProcessed(ctx context.Context, tenantID pgtype.UUID, provider, eventID string) (bool, error) {
+func (s *Store) isWebhookEventProcessed(ctx context.Context, provider, eventID string) (bool, error) {
 	processed, err := s.read.IsWebhookEventProcessed(ctx, gen.IsWebhookEventProcessedParams{
 
 		Provider: provider,
@@ -141,7 +141,7 @@ func (s *Store) isWebhookEventProcessed(ctx context.Context, tenantID pgtype.UUI
 	return processed, nil
 }
 
-func (s *Store) markWebhookEventProcessed(ctx context.Context, tenantID pgtype.UUID, provider, eventID string) error {
+func (s *Store) markWebhookEventProcessed(ctx context.Context, provider, eventID string) error {
 	if err := s.write.MarkWebhookEventProcessed(ctx, gen.MarkWebhookEventProcessedParams{
 
 		Provider: provider,
@@ -157,7 +157,7 @@ func (s *Store) markWebhookEventProcessed(ctx context.Context, tenantID pgtype.U
 // (Stripe pi_.../cs_..., Paystack reference, NOWPayments order_id) using
 // idx_payments_provider_ref. Replaces the full-scan match in the webhook
 // worker (BUG-019).
-func (s *Store) getPaymentByProviderRef(ctx context.Context, tenantID pgtype.UUID, providerRef string) (gen.Payment, error) {
+func (s *Store) getPaymentByProviderRef(ctx context.Context, providerRef string) (gen.Payment, error) {
 	row, err := s.read.GetPaymentByProviderRef(ctx,
 
 		&providerRef,
@@ -191,7 +191,7 @@ func (s *Store) listAdminPayments(ctx context.Context, p gen.ListAdminPaymentsPa
 }
 
 // getAdminPaymentByID retrieves a payment for admin detail view (JEOS §17).
-func (s *Store) getAdminPaymentByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Payment, error) {
+func (s *Store) getAdminPaymentByID(ctx context.Context, id pgtype.UUID) (gen.Payment, error) {
 	row, err := s.read.GetAdminPaymentByID(ctx,
 		id,
 	)
@@ -216,7 +216,7 @@ func (s *Store) createSubscription(ctx context.Context, p gen.CreateSubscription
 	return row, nil
 }
 
-func (s *Store) getSubscriptionByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Subscription, error) {
+func (s *Store) getSubscriptionByID(ctx context.Context, id pgtype.UUID) (gen.Subscription, error) {
 	row, err := s.read.GetSubscriptionByID(ctx, id)
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("getting subscription by ID: %w", err)
@@ -225,7 +225,7 @@ func (s *Store) getSubscriptionByID(ctx context.Context, id, tenantID pgtype.UUI
 	return row, nil
 }
 
-func (s *Store) getActiveSubscriptionByUser(ctx context.Context, tenantID, userID pgtype.UUID) (gen.Subscription, error) {
+func (s *Store) getActiveSubscriptionByUser(ctx context.Context, userID pgtype.UUID) (gen.Subscription, error) {
 	row, err := s.read.GetActiveSubscriptionByUser(ctx,
 
 		userID,
@@ -237,7 +237,7 @@ func (s *Store) getActiveSubscriptionByUser(ctx context.Context, tenantID, userI
 	return row, nil
 }
 
-func (s *Store) listSubscriptionsByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Subscription, error) {
+func (s *Store) listSubscriptionsByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Subscription, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -256,7 +256,7 @@ func (s *Store) listSubscriptionsByUser(ctx context.Context, tenantID, userID pg
 }
 
 // nolint:unused // reserved for future features
-func (s *Store) listActiveSubscriptions(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.Subscription, error) {
+func (s *Store) listActiveSubscriptions(ctx context.Context, limit, offset int32) ([]gen.Subscription, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -274,7 +274,7 @@ func (s *Store) listActiveSubscriptions(ctx context.Context, tenantID pgtype.UUI
 }
 
 // nolint:unused // reserved for future features
-func (s *Store) updateSubscriptionStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Subscription, error) {
+func (s *Store) updateSubscriptionStatus(ctx context.Context, id pgtype.UUID, status string) (gen.Subscription, error) {
 	row, err := s.write.UpdateSubscriptionStatus(ctx, gen.UpdateSubscriptionStatusParams{
 		ID: id,
 
@@ -287,7 +287,7 @@ func (s *Store) updateSubscriptionStatus(ctx context.Context, id, tenantID pgtyp
 	return row, nil
 }
 
-func (s *Store) cancelSubscription(ctx context.Context, id, tenantID pgtype.UUID) (gen.Subscription, error) {
+func (s *Store) cancelSubscription(ctx context.Context, id pgtype.UUID) (gen.Subscription, error) {
 	row, err := s.write.CancelSubscription(ctx,
 		id,
 	)
@@ -301,7 +301,7 @@ func (s *Store) cancelSubscription(ctx context.Context, id, tenantID pgtype.UUID
 // reactivateSubscription reactivates the caller's most recently canceled
 // subscription for the tenant. The subquery in the sqlc query already scopes
 // by (user_id, , status='canceled'), so we only forward the params.
-func (s *Store) reactivateSubscription(ctx context.Context, userID, tenantID pgtype.UUID) (gen.Subscription, error) {
+func (s *Store) reactivateSubscription(ctx context.Context, userID pgtype.UUID) (gen.Subscription, error) {
 	row, err := s.write.ReactivateSubscription(ctx,
 		userID,
 	)
@@ -325,7 +325,7 @@ func (s *Store) createDiscountCode(ctx context.Context, p gen.CreateDiscountCode
 	return row, nil
 }
 
-func (s *Store) getDiscountCodeByCode(ctx context.Context, tenantID pgtype.UUID, code string) (gen.DiscountCode, error) {
+func (s *Store) getDiscountCodeByCode(ctx context.Context, code string) (gen.DiscountCode, error) {
 	row, err := s.read.GetDiscountCodeByCode(ctx,
 
 		code,
@@ -337,7 +337,7 @@ func (s *Store) getDiscountCodeByCode(ctx context.Context, tenantID pgtype.UUID,
 	return row, nil
 }
 
-func (s *Store) getDiscountCodeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.DiscountCode, error) {
+func (s *Store) getDiscountCodeByID(ctx context.Context, id pgtype.UUID) (gen.DiscountCode, error) {
 	row, err := s.read.GetDiscountCodeByID(ctx,
 		id,
 	)
@@ -348,7 +348,7 @@ func (s *Store) getDiscountCodeByID(ctx context.Context, id, tenantID pgtype.UUI
 	return row, nil
 }
 
-func (s *Store) listDiscountCodes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.DiscountCode, error) {
+func (s *Store) listDiscountCodes(ctx context.Context, limit, offset int32) ([]gen.DiscountCode, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -365,7 +365,7 @@ func (s *Store) listDiscountCodes(ctx context.Context, tenantID pgtype.UUID, lim
 	return rows, nil
 }
 
-func (s *Store) deleteDiscountCode(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteDiscountCode(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteDiscountCode(ctx,
 		id,
 	); err != nil {

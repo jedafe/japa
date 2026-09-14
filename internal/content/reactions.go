@@ -10,12 +10,12 @@ import (
 
 // ListReactionTypes handles GET /api/v1/reaction-types.
 func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	types, err := h.Service.ListReactionTypes(r.Context(), tenantID)
+	types, err := h.Service.ListReactionTypes(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -26,7 +26,7 @@ func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
 
 // CreateReactionType handles POST /api/v1/reaction-types.
 func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -59,7 +59,7 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rt, err := h.Service.CreateReactionType(r.Context(), tenantID, input.Key, input.Emoji, input.Label, input.Enabled, input.Position)
+	rt, err := h.Service.CreateReactionType(r.Context(), input.Key, input.Emoji, input.Label, input.Enabled, input.Position)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -70,7 +70,7 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 
 // UpdateReactionType handles PATCH /api/v1/reaction-types/{key}.
 func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -103,7 +103,7 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rt, err := h.Service.UpdateReactionType(r.Context(), tenantID, key, input.Emoji, input.Label, input.Enabled, input.Position)
+	rt, err := h.Service.UpdateReactionType(r.Context(), key, input.Emoji, input.Label, input.Enabled, input.Position)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -114,7 +114,7 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReactionType handles DELETE /api/v1/reaction-types/{key}.
 func (h *Handlers) DeleteReactionType(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -125,7 +125,7 @@ func (h *Handlers) DeleteReactionType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteReactionType(r.Context(), tenantID, key); err != nil {
+	if err := h.Service.DeleteReactionType(r.Context(), key); err != nil {
 		handleServiceError(w, err)
 		return
 	}

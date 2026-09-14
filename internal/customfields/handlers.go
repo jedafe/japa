@@ -37,7 +37,7 @@ import (
 // SuperAdminChecker reports whether a user is a super-admin (bypasses
 // field-level RBAC). Implemented by *rbac.RBAC.
 type SuperAdminChecker interface {
-	IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool
+	IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool
 }
 
 // Handlers holds dependencies for custom field HTTP handlers. The Service
@@ -92,8 +92,8 @@ type PaymentCreator interface {
 
 // SettingsReader reads system_settings values.
 type SettingsReader interface {
-	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetSetting(ctx context.Context, key string) (string, error)
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // NewHandlers creates Handlers with the given Service and EmbedResolver.
@@ -277,12 +277,12 @@ func toFieldSummaryFromGroup(f gen.ListCustomFieldsByGroupRow) fieldSummary {
 // Uses bulk queries to avoid N+1 per-group lookups.
 func (h *Handlers) enrichFieldGroups(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	groups []gen.CustomFieldGroup,
 ) []fieldGroupEnriched {
 	// Bulk-fetch all assignments and fields for the tenant's groups.
-	assignments, _ := h.Service.ListAllAssignmentsByTenant(ctx, tenantID)
-	allFields, _ := h.Service.ListAllFieldsByTenant(ctx, tenantID)
+	assignments, _ := h.Service.ListAllAssignmentsByTenant(ctx)
+	allFields, _ := h.Service.ListAllFieldsByTenant(ctx)
 
 	// Build lookup maps: group_id → entity_type (from first assignment),
 	// group_id → fields[].
@@ -339,7 +339,7 @@ func (h *Handlers) enrichFieldGroups(
 // applied post-enrichment so they work with the derived/simplified values
 // the frontend uses (Section 06).
 func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -370,9 +370,9 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if entityClass != "" {
-		groups, err = h.Service.ListFieldGroupsByEntityClass(r.Context(), tenantID, entityClass)
+		groups, err = h.Service.ListFieldGroupsByEntityClass(r.Context(), entityClass)
 	} else {
-		groups, err = h.Service.ListFieldGroups(r.Context(), tenantID)
+		groups, err = h.Service.ListFieldGroups(r.Context())
 	}
 
 	if err != nil {
@@ -380,7 +380,7 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enriched := h.enrichFieldGroups(r.Context(), tenantID, groups)
+	enriched := h.enrichFieldGroups(r.Context(), groups)
 
 	// Post-filter by simplified entity_type token when requested.
 	if entityType != "" {
@@ -493,19 +493,18 @@ func (h *Handlers) GetFieldGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	group, err := h.Service.GetFieldGroup(r.Context(), id, tenantID)
+	group, err := h.Service.GetFieldGroup(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	fields, err := h.Service.ListFieldsByGroup(r.Context(), group.ID, tenantID)
+	fields, err := h.Service.ListFieldsByGroup(r.Context(), group.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -541,13 +540,12 @@ func (h *Handlers) CreateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	group, err := h.Service.CreateFieldGroup(r.Context(), tenantID, req.Name, req.Slug, req.Description, false)
+	group, err := h.Service.CreateFieldGroup(r.Context(), req.Name, req.Slug, req.Description, false)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -584,13 +582,12 @@ func (h *Handlers) CreateFieldGroupAdmin(w http.ResponseWriter, r *http.Request)
 	if slug == "" {
 		slug = slugify(req.Name)
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	group, err := h.Service.CreateFieldGroup(r.Context(), tenantID, req.Name, slug, req.Description, false)
+	group, err := h.Service.CreateFieldGroup(r.Context(), req.Name, slug, req.Description, false)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -671,13 +668,12 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	group, err := h.Service.UpdateFieldGroup(r.Context(), id, tenantID, req.Name, req.Description)
+	group, err := h.Service.UpdateFieldGroup(r.Context(), id, req.Name, req.Description)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -693,13 +689,12 @@ func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.DeleteFieldGroup(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteFieldGroup(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -746,13 +741,12 @@ func (h *Handlers) ListFieldsByGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	fields, err := h.Service.ListFieldsByGroup(r.Context(), groupID, tenantID)
+	fields, err := h.Service.ListFieldsByGroup(r.Context(), groupID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -941,13 +935,12 @@ func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, id
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.DeleteField(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteField(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -983,8 +976,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -999,7 +991,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// nolint:gosec // G115: bounded
-			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, tenantID, int32(i)); err != nil { // #nosec //nolint:gosec // G115: bounded
+			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, int32(i)); err != nil { // #nosec //nolint:gosec // G115: bounded
 				handleServiceError(w, err)
 				return
 			}
@@ -1018,7 +1010,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, tenantID, f.Position); err != nil {
+		if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, f.Position); err != nil {
 			handleServiceError(w, err)
 			return
 		}
@@ -1042,8 +1034,7 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1052,14 +1043,14 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 	// only see fields their user group has can_view=true on.
 	user := auth.FromContext(r.Context())
 	if h.rbac != nil && user != nil && user.UserID.Valid {
-		if !h.rbac.IsSuperAdmin(r.Context(), user.UserID, tenantID) {
+		if !h.rbac.IsSuperAdmin(r.Context(), user.UserID) {
 			visibleIDs, err := h.Service.ListVisibleFieldIDsForUser(r.Context(), user.UserID)
 			if err != nil {
 				handleServiceError(w, err)
 				return
 			}
 
-			values, err := h.Service.ListFieldValuesByEntityForUser(r.Context(), tenantID, entityType, entityID, visibleIDs)
+			values, err := h.Service.ListFieldValuesByEntityForUser(r.Context(), entityType, entityID, visibleIDs)
 			if err != nil {
 				handleServiceError(w, err)
 				return
@@ -1071,7 +1062,7 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	values, err := h.Service.ListFieldValuesByEntity(r.Context(), tenantID, entityType, entityID)
+	values, err := h.Service.ListFieldValuesByEntity(r.Context(), entityType, entityID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1111,8 +1102,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1152,7 +1142,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	// Fetch the field definition so we can validate the value column matches
 	// the field type (e.g., text fields must write to value_text, not value_number).
 	// Also used to validate platform_embed URLs against allowed platforms.
-	field, err := h.Service.GetField(r.Context(), fieldID, tenantID)
+	field, err := h.Service.GetField(r.Context(), fieldID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1163,7 +1153,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	if h.rbac != nil {
 		user := auth.FromContext(r.Context())
 		if user != nil && user.UserID.Valid {
-			if !h.rbac.IsSuperAdmin(r.Context(), user.UserID, tenantID) {
+			if !h.rbac.IsSuperAdmin(r.Context(), user.UserID) {
 				_, canEdit, pErr := h.Service.CheckFieldPermissionForUser(r.Context(), fieldID, user.UserID)
 				if pErr != nil {
 					handleServiceError(w, pErr)
@@ -1379,7 +1369,7 @@ func (h *Handlers) DeleteFieldPermission(w http.ResponseWriter, r *http.Request)
 
 // ListForms handles GET /api/v1/forms.
 func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1393,7 +1383,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		forms, err := h.Service.ListFormsBySpace(r.Context(), tenantID, spaceID)
+		forms, err := h.Service.ListFormsBySpace(r.Context(), spaceID)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -1404,7 +1394,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	forms, err := h.Service.ListForms(r.Context(), tenantID)
+	forms, err := h.Service.ListForms(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1439,20 +1429,19 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	form, err := h.Service.GetForm(r.Context(), id, tenantID)
+	form, err := h.Service.GetForm(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	// Fetch fields attached via the custom field group assignment.
-	fields, err := h.Service.GetFormFields(r.Context(), id, tenantID)
+	fields, err := h.Service.GetFormFields(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1534,7 +1523,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 				var stepFields []stepFieldJSON
 
 				if fgid != nil {
-					rawFields, _ := h.Service.GetStepFields(r.Context(), st.ID, tenantID)
+					rawFields, _ := h.Service.GetStepFields(r.Context(), st.ID)
 					stepFields = make([]stepFieldJSON, 0, len(rawFields))
 
 					for _, f := range rawFields {
@@ -1624,8 +1613,7 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	if status == "" {
 		status = "draft"
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1647,7 +1635,7 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Auto-create a backing field group so the admin UI can manage fields.
-	_ = h.Service.EnsureFormGroup(r.Context(), tenantID, form.ID, req.Name, req.Slug)
+	_ = h.Service.EnsureFormGroup(r.Context(), form.ID, req.Name, req.Slug)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": form})
 }
@@ -1661,8 +1649,7 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1767,7 +1754,7 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 		desc = &d
 	}
 
-	form, err := h.Service.CreateFormWithFields(r.Context(), tenantID, spaceID, req.Name, slug, desc, fieldDefs)
+	form, err := h.Service.CreateFormWithFields(r.Context(), spaceID, req.Name, slug, desc, fieldDefs)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1806,8 +1793,7 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1817,7 +1803,7 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 	// reset paid forms to free on every PATCH call.
 	feeCredits := int32(0)
 
-	existing, err := h.Service.GetForm(r.Context(), id, tenantID)
+	existing, err := h.Service.GetForm(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1854,13 +1840,12 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.DeleteForm(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteForm(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1877,21 +1862,20 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	// Get the form to find its name/slug
-	form, err := h.Service.GetForm(r.Context(), id, tenantID)
+	form, err := h.Service.GetForm(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	// Ensure the form has a backing field group
-	err = h.Service.EnsureFormGroup(r.Context(), tenantID, id, form.Name, form.Slug)
+	err = h.Service.EnsureFormGroup(r.Context(), id, form.Name, form.Slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1916,7 +1900,7 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 // fields) for backward compatibility with embeds that don't yet understand
 // steps.
 func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1927,7 +1911,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	form, err := h.Service.GetFormBySlug(r.Context(), slug, tenantID)
+	form, err := h.Service.GetFormBySlug(r.Context(), slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1935,7 +1919,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch fields attached via the custom field group assignment so the
 	// public embed can render the full form without authentication.
-	fields, err := h.Service.GetFormFields(r.Context(), form.ID, tenantID)
+	fields, err := h.Service.GetFormFields(r.Context(), form.ID)
 	if err != nil {
 		slog.Warn("get form embed fields", "slug", slug, "error", err)
 
@@ -2007,7 +1991,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 				var stepFields []fieldJSON
 
 				if fgid != nil {
-					rawFields, sfErr := h.Service.GetStepFields(r.Context(), st.ID, tenantID)
+					rawFields, sfErr := h.Service.GetStepFields(r.Context(), st.ID)
 					if sfErr != nil {
 						slog.Warn("get form embed step fields", "slug", slug, "step_id", st.ID, "error", sfErr)
 					}
@@ -2111,7 +2095,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up the form to check submission_fee_credits.
-	form, err := h.Service.GetForm(r.Context(), formID, tenantID)
+	form, err := h.Service.GetForm(r.Context(), formID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2122,7 +2106,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	// rich_text HTML (BUG-001) in-place. When the form has no field
 	// definitions, validation is skipped (lenient posture for legacy forms).
 	if req.FieldValues != nil {
-		if msg, ok := h.validateFormSubmission(r.Context(), formID, tenantID, req.FieldValues); !ok {
+		if msg, ok := h.validateFormSubmission(r.Context(), formID, req.FieldValues); !ok {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_values", msg)
 			return
 		}
@@ -2140,7 +2124,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	feeCredits := int64(form.SubmissionFeeCredits)
 
 	if h.settings != nil && form.Slug == "claim-ownership" {
-		override := h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "claim_ownership.fee_credits", 0)
+		override := h.settings.GetIntOr(r.Context(), "claim_ownership.fee_credits", 0)
 		if override > 0 {
 			feeCredits = int64(override)
 		}
@@ -2339,8 +2323,8 @@ func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pg
 // when it passes. When the form has no field definitions (e.g. a legacy
 // form with no assigned field group), validation is skipped — all values
 // are accepted — to avoid breaking existing flows.
-func (h *Handlers) validateFormSubmission(ctx context.Context, formID, tenantID pgtype.UUID, fieldValues map[string]any) (string, bool) {
-	fields, err := h.Service.GetFormFields(ctx, formID, tenantID)
+func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUID, fieldValues map[string]any) (string, bool) {
+	fields, err := h.Service.GetFormFields(ctx, formID)
 	if err != nil {
 		// If we can't load fields, don't block the submission — log and
 		// proceed. This matches the lenient posture for forms with no
@@ -2703,13 +2687,12 @@ func (h *Handlers) GetFormSubmission(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	submission, err := h.Service.GetFormSubmission(r.Context(), id, tenantID)
+	submission, err := h.Service.GetFormSubmission(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2752,13 +2735,12 @@ func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Status is required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	submission, err := h.Service.GetFormSubmission(r.Context(), id, tenantID)
+	submission, err := h.Service.GetFormSubmission(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2769,7 +2751,7 @@ func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.Service.UpdateFormSubmissionStatus(r.Context(), id, tenantID, req.Status); err != nil {
+	if err := h.Service.UpdateFormSubmissionStatus(r.Context(), id, req.Status); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2791,13 +2773,12 @@ func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	submission, err := h.Service.GetFormSubmission(r.Context(), id, tenantID)
+	submission, err := h.Service.GetFormSubmission(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2808,7 +2789,7 @@ func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.Service.DeleteFormSubmission(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteFormSubmission(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -3054,14 +3035,13 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	// Fetch the form to get its slug for the field group naming.
-	form, err := h.Service.GetForm(r.Context(), formID, tenantID)
+	form, err := h.Service.GetForm(r.Context(), formID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3082,7 +3062,7 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	step, err := h.Service.CreateFormStep(r.Context(), tenantID, form.Slug, gen.CreateFormStepParams{
+	step, err := h.Service.CreateFormStep(r.Context(), form.Slug, gen.CreateFormStepParams{
 		FormID:   formID,
 		Title:    req.Title,
 		Position: req.Position,
@@ -3221,12 +3201,12 @@ func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 // table (tenant-scoped). Falls back to a hardcoded list if the table is
 // empty (e.g. before the seed migration runs).
 func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	types, err := h.Service.ListEntityTypes(r.Context(), tenantID)
+	types, err := h.Service.ListEntityTypes(r.Context())
 	if err != nil || len(types) == 0 {
 		// Fallback to the hardcoded list if the table is empty or the
 		// query fails (e.g. migration not yet applied).
@@ -3268,7 +3248,7 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 // - page: 1-based page number (default 1)
 // - page_size: page size (default 25, max 100)
 func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3292,7 +3272,7 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	types, err := h.Service.ListEntityTypes(r.Context(), tenantID)
+	types, err := h.Service.ListEntityTypes(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3473,13 +3453,12 @@ func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.DeleteEntityType(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteEntityType(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -3493,12 +3472,12 @@ func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
 
 // ListGuideCategoriesAdmin handles GET /admin/guide-categories.
 func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	cats, err := h.Service.ListGuideCategories(r.Context(), tenantID)
+	cats, err := h.Service.ListGuideCategories(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3512,7 +3491,7 @@ func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Reque
 // transaction. After creation, the admin can add fields to the group via the
 // existing custom field group editor (/custom-fields/{groupId}).
 func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3532,7 +3511,7 @@ func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	cat, err := h.Service.CreateGuideCategory(r.Context(), tenantID, CreateGuideCategoryInput{
+	cat, err := h.Service.CreateGuideCategory(r.Context(), CreateGuideCategoryInput{
 		Slug:  req.Slug,
 		Label: req.Label,
 	})
@@ -3547,7 +3526,7 @@ func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 // DeleteGuideCategoryAdmin handles DELETE /admin/guide-categories/{slug}.
 // System categories (seeded) cannot be deleted.
 func (h *Handlers) DeleteGuideCategoryAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3558,7 +3537,7 @@ func (h *Handlers) DeleteGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.Service.DeleteGuideCategory(r.Context(), tenantID, slug); err != nil {
+	if err := h.Service.DeleteGuideCategory(r.Context(), slug); err != nil {
 		handleServiceError(w, err)
 		return
 	}

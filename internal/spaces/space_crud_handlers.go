@@ -27,7 +27,7 @@ import (
 // SPACES-009/011: the default (no type/parent filter) branch uses SQL-level
 // pagination, search, geo, and sort for performance and spec conformance.
 func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -71,13 +71,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rows, err := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, sort, spaceTypeID, joinedOnly, int32(limit), int32(offset))
+		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, spaceTypeID, joinedOnly, int32(limit), int32(offset))
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		count, err := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, spaceTypeID, joinedOnly)
+		count, err := h.Service.CountSpaces(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, spaceTypeID, joinedOnly)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -95,13 +95,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rows, err := h.Service.ListSpacesByParentPaginated(r.Context(), tenantID, viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, sort, joinedOnly, int32(limit), int32(offset))
+		rows, err := h.Service.ListSpacesByParentPaginated(r.Context(), viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, sort, joinedOnly, int32(limit), int32(offset))
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		count, err := h.Service.CountSpacesByParent(r.Context(), tenantID, viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, joinedOnly)
+		count, err := h.Service.CountSpacesByParent(r.Context(), viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, joinedOnly)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -112,13 +112,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	default:
 		// SPACES-009/011: SQL-level pagination, search, geo, level, region,
 		// subregion, and sort for the default branch.
-		rows, err := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, sort, pgtype.UUID{}, joinedOnly, int32(limit), int32(offset))
+		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, pgtype.UUID{}, joinedOnly, int32(limit), int32(offset))
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		count, err := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, pgtype.UUID{}, joinedOnly)
+		count, err := h.Service.CountSpaces(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, pgtype.UUID{}, joinedOnly)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -137,7 +137,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	// /spaces index can render space logos. Mirrors GetSpace's logo resolution.
 	// Best-effort: spaces without a logo (or when the media resolver is not
 	// wired) get an empty logo_url and the frontend renders a fallback icon.
-	items := h.spacesWithDetails(r.Context(), tenantID, viewerUserID, spaces)
+	items := h.spacesWithDetails(r.Context(), viewerUserID, spaces)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
@@ -163,12 +163,12 @@ func ptrStringsToStrings(in []*string) []string {
 
 // ListDistinctRegions handles GET /api/v1/spaces/regions.
 func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	regions, err := h.Service.ListDistinctRegions(r.Context(), tenantID)
+	regions, err := h.Service.ListDistinctRegions(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -179,7 +179,7 @@ func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
 
 // ListSubregionsByRegion handles GET /api/v1/spaces/subregions.
 func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -190,7 +190,7 @@ func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	subregions, err := h.Service.ListDistinctSubregions(r.Context(), tenantID, region)
+	subregions, err := h.Service.ListDistinctSubregions(r.Context(), region)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -206,7 +206,7 @@ func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request
 // row structs share the "ID" and "LogoMediaID" fields. Counts are computed from
 // the authoritative tables so negative/stale denormalised columns do not leak
 // to the /spaces index.
-func (h *Handlers) spacesWithDetails(ctx context.Context, tenantID, viewerUserID pgtype.UUID, spaces any) []map[string]any {
+func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UUID, spaces any) []map[string]any {
 	if spaces == nil {
 		return nil
 	}
@@ -239,14 +239,14 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, tenantID, viewerUserID
 
 		if logoField := elem.FieldByName("LogoMediaID"); logoField.IsValid() {
 			if logoID, ok := logoField.Interface().(pgtype.UUID); ok {
-				m["logo_url"] = h.resolveLogoURL(ctx, tenantID, logoID)
+				m["logo_url"] = h.resolveLogoURL(ctx, logoID)
 			}
 		}
 
 		out = append(out, m)
 	}
 
-	stats, err := h.Service.CountSpaceStats(ctx, tenantID, ids)
+	stats, err := h.Service.CountSpaceStats(ctx, ids)
 	if err != nil {
 		slog.Warn("spaces: failed to load space stats", "error", err)
 
@@ -257,7 +257,7 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, tenantID, viewerUserID
 	// /spaces cards render the correct Join/Pending/Joined and Follow state
 	// without relying on the capped /me/spaces list (audit fix). Guests get
 	// all-false flags.
-	relations, relErr := h.Service.ListViewerSpaceRelations(ctx, tenantID, viewerUserID, ids)
+	relations, relErr := h.Service.ListViewerSpaceRelations(ctx, viewerUserID, ids)
 	if relErr != nil {
 		slog.Warn("spaces: failed to load viewer relations", "error", relErr)
 
@@ -313,7 +313,7 @@ func rowToMap[T any](row T) map[string]any {
 // admin panel with owner and space_type name resolved via JOINs. Supports
 // q (name/slug search), status, and visibility filter params.
 func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -324,13 +324,13 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	visibility := r.URL.Query().Get("visibility")
 
-	spaces, err := h.Service.AdminListSpaces(r.Context(), tenantID, search, status, visibility, limit, offset)
+	spaces, err := h.Service.AdminListSpaces(r.Context(), search, status, visibility, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.AdminListSpacesCount(r.Context(), tenantID, search, status, visibility)
+	total, err := h.Service.AdminListSpacesCount(r.Context(), search, status, visibility)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -354,7 +354,7 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 // to. Super admins see every active space in the tenant so they can post to
 // any space without joining it first (Section 03 — admin override).
 func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -392,13 +392,13 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	// arbitrary first page of every space in the tenant.
 	memberOnly := r.URL.Query().Get("member_only") == "1"
 
-	isSuperAdmin, err := h.Service.IsSuperAdmin(r.Context(), tenantID, user.UserID)
+	isSuperAdmin, err := h.Service.IsSuperAdmin(r.Context(), user.UserID)
 	if err != nil {
 		slog.Warn("check super admin group", "error", err, "user_id", user.UserID)
 	}
 
 	if isSuperAdmin && !memberOnly {
-		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, user.UserID, q, level, spaceTypeID, limit, offset)
+		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), user.UserID, q, level, spaceTypeID, limit, offset)
 		if lerr != nil {
 			handleServiceError(w, lerr)
 			return
@@ -413,7 +413,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID, q, level, spaceTypeID, limit, offset)
+	spaces, err := h.Service.ListSpacesByMember(r.Context(), user.UserID, q, level, spaceTypeID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -430,7 +430,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 // tab. Public-safe: only public+active spaces of the {id} user. Non-active
 // users are already 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -444,7 +444,7 @@ func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	spaces, err := h.Service.ListPublicByMemberUser(r.Context(), tenantID, userID, limit, offset)
+	spaces, err := h.Service.ListPublicByMemberUser(r.Context(), userID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -496,7 +496,7 @@ func toSpaceCards(spaces []gen.ListPublicSpacesByMemberUserRow) []SpaceCard {
 // ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space
 // the caller moderates. Supports optional ?q, ?page_size and ?page_offset.
 func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -511,7 +511,7 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 	limit := parseMeSpacesLimit(r)
 	offset := parseMeSpacesOffset(r)
 
-	spaces, err := h.Service.ListSpacesByModerator(r.Context(), tenantID, user.UserID, q, limit, offset)
+	spaces, err := h.Service.ListSpacesByModerator(r.Context(), user.UserID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -529,7 +529,7 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 // returns every space the caller belongs to as a member. Supports optional ?q,
 // ?page_size and ?page_offset.
 func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -544,7 +544,7 @@ func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
 	limit := parseMeSpacesLimit(r)
 	offset := parseMeSpacesOffset(r)
 
-	spaces, err := h.Service.ListSpacesByOwner(r.Context(), tenantID, user.UserID, q, limit, offset)
+	spaces, err := h.Service.ListSpacesByOwner(r.Context(), user.UserID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -565,13 +565,12 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	space, err := h.Service.GetSpaceBySlug(r.Context(), slug, tenantID)
+	space, err := h.Service.GetSpaceBySlug(r.Context(), slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -588,7 +587,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Include keywords in the space response for the settings page.
-	keywords, err := h.Service.GetSpaceKeywords(r.Context(), space.ID, tenantID)
+	keywords, err := h.Service.GetSpaceKeywords(r.Context(), space.ID)
 	if err != nil {
 		slog.Warn("spaces: failed to fetch keywords", "space_id", space.ID.String(), "error", err)
 
@@ -596,12 +595,12 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve logo_media_id to an imgproxy-signed logo_url.
-	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
+	logoURL := h.resolveLogoURL(r.Context(), space.LogoMediaID)
 	// Resolve header_image_id to an imgproxy-signed header_url.
-	headerURL := h.resolveHeaderURL(r.Context(), tenantID, space.HeaderImageID)
+	headerURL := h.resolveHeaderURL(r.Context(), space.HeaderImageID)
 
 	// Replace drifted/negative denormalised counts with live computed values.
-	if stats, err := h.Service.CountSpaceStats(r.Context(), tenantID, []pgtype.UUID{space.ID}); err == nil {
+	if stats, err := h.Service.CountSpaceStats(r.Context(), []pgtype.UUID{space.ID}); err == nil {
 		if st, ok := stats[space.ID.String()]; ok {
 			space.MemberCount = st.MemberCount
 			space.PostCount = st.PostCount
@@ -624,14 +623,14 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	isFollowing := false
 
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
-		isOwner, err = h.Service.IsOwner(r.Context(), space.ID, user.UserID, tenantID)
+		isOwner, err = h.Service.IsOwner(r.Context(), space.ID, user.UserID)
 		if err != nil {
 			slog.Warn("spaces: IsOwner check failed", "space_id", space.ID.String(), "error", err)
 
 			isOwner = false
 		}
 
-		isModerator, err = h.Service.IsModerator(r.Context(), space.ID, user.UserID, tenantID)
+		isModerator, err = h.Service.IsModerator(r.Context(), space.ID, user.UserID)
 		if err != nil {
 			slog.Warn("spaces: IsModerator check failed", "space_id", space.ID.String(), "error", err)
 
@@ -642,7 +641,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		// the hub renders the correct Join/Pending/Joined and Follow state for
 		// any viewer, including super-admins for whom /me/spaces lists every
 		// space regardless of actual membership (audit fix).
-		if rels, relErr := h.Service.ListViewerSpaceRelations(r.Context(), tenantID, user.UserID, []pgtype.UUID{space.ID}); relErr != nil {
+		if rels, relErr := h.Service.ListViewerSpaceRelations(r.Context(), user.UserID, []pgtype.UUID{space.ID}); relErr != nil {
 			slog.Warn("spaces: viewer relation check failed", "space_id", space.ID.String(), "error", relErr)
 		} else if rel, ok := rels[space.ID.String()]; ok {
 			isMember = rel.IsMember
@@ -675,13 +674,12 @@ func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	space, err := h.Service.GetSpace(r.Context(), id, tenantID)
+	space, err := h.Service.GetSpace(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -752,7 +750,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 
 	// §26 / Section 03: enforce max_spaces_creatable quota from the caller's
 	// user group. -1 = unlimited, 0 = none, N = capped at N spaces.
-	maxSpaces, err := h.Service.GetUserMaxSpacesCreatable(r.Context(), tenantID, user.UserID)
+	maxSpaces, err := h.Service.GetUserMaxSpacesCreatable(r.Context(), user.UserID)
 	if err != nil {
 		slog.Warn("create space: failed to load max_spaces_creatable quota",
 			"user_id", user.UserID.String(), "error", err)
@@ -762,7 +760,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 			"Your account is not allowed to create spaces")
 		return
 	} else if maxSpaces > 0 {
-		currentCount, err := h.Service.CountSpacesByOwner(r.Context(), tenantID, user.UserID)
+		currentCount, err := h.Service.CountSpacesByOwner(r.Context(), user.UserID)
 		if err != nil {
 			slog.Warn("create space: failed to count owned spaces",
 				"user_id", user.UserID.String(), "error", err)
@@ -799,7 +797,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		parent, err := h.Service.GetSpace(r.Context(), psid, tenantID)
+		parent, err := h.Service.GetSpace(r.Context(), psid)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -824,7 +822,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// If the creator did not provide an explicit parent, keyword-match the name
 	// against primary geo spaces before creating. Reject creation if no match.
 	if req.Level == LevelCustom && !parentID.Valid && len(parentSpaceUUIDs) == 0 {
-		matchedParentID, matchedParentIDs, err := h.Service.LinkSpaceToPrimarySpaces(r.Context(), pgtype.UUID{}, tenantID, req.Name)
+		matchedParentID, matchedParentIDs, err := h.Service.LinkSpaceToPrimarySpaces(r.Context(), pgtype.UUID{}, req.Name)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -844,7 +842,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	axes := DefaultPermAxes()
 
 	if req.PresetName != "" {
-		preset, err := h.Service.GetPermissionPreset(r.Context(), req.PresetName, tenantID)
+		preset, err := h.Service.GetPermissionPreset(r.Context(), req.PresetName)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_preset", "Preset not found")
 			return
@@ -896,7 +894,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		desc = *req.Description
 	}
 
-	h.indexSpaceRAG(r.Context(), tenantID, space.ID, req.Name, desc, nil)
+	h.indexSpaceRAG(r.Context(), space.ID, req.Name, desc, nil)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
@@ -916,7 +914,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.Service.GetSpace(r.Context(), id, tenantID)
+	existing, err := h.Service.GetSpace(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1048,7 +1046,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	// Update keywords separately if provided (nil = no change, [] = clear,
 	// ["a","b"] = set). Uses a dedicated query to avoid NULL on NOT NULL column.
 	if req.Keywords != nil {
-		if err := h.Service.UpdateSpaceKeywords(r.Context(), id, tenantID, req.Keywords); err != nil {
+		if err := h.Service.UpdateSpaceKeywords(r.Context(), id, req.Keywords); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "keywords_update_failed", "Failed to update keywords")
 			return
 		}
@@ -1109,7 +1107,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		updDesc = *description
 	}
 
-	h.indexSpaceRAG(r.Context(), tenantID, spaceID, name, updDesc, req.Keywords)
+	h.indexSpaceRAG(r.Context(), spaceID, name, updDesc, req.Keywords)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
@@ -1138,7 +1136,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// SPACES-002: only the space owner (creator) may delete the space.
-	isOwner, err := h.Service.IsOwner(r.Context(), id, user.UserID, tenantID)
+	isOwner, err := h.Service.IsOwner(r.Context(), id, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1153,7 +1151,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	// SPACES-002: the space must have 0 approved members (excluding the
 	// owner themselves, who is always a member). A space with other members
 	// cannot be deleted because it would orphan their membership.
-	memberCount, err := h.Service.CountMembers(r.Context(), id, tenantID)
+	memberCount, err := h.Service.CountMembers(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1165,7 +1163,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteSpace(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteSpace(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1175,7 +1173,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 
 	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted spaces
 	// must not be retrievable in RAG).
-	h.purgeSpaceRAG(r.Context(), tenantID, id)
+	h.purgeSpaceRAG(r.Context(), id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

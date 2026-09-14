@@ -56,12 +56,12 @@ type bulkCreateResult struct {
 // agent.bulk_publish_max_items.
 //
 // Ref: japaconnect-engineering/conventions/system-settings-catalog.md.
-func bulkMaxItems(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID, key string) int {
+func bulkMaxItems(ctx context.Context, settings SettingsReader, key string) int {
 	if settings == nil {
 		return 50
 	}
 
-	return settings.GetIntOr(ctx, pgtype.UUID{}, key, 50)
+	return settings.GetIntOr(ctx, key, 50)
 }
 
 // ContentBulkCreateHandler returns a ToolHandler that creates multiple content
@@ -89,12 +89,12 @@ func ContentBulkCreateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("missing_items", "items array is required"), nil
 		}
 
-		maxItems := bulkMaxItems(ctx, deps.Settings, tenantID, "agent.bulk_create_max_items")
+		maxItems := bulkMaxItems(ctx, deps.Settings, "agent.bulk_create_max_items")
 		if len(a.Items) > maxItems {
 			return errorToolResult("too_many_items", fmt.Sprintf("bulk_create supports at most %d items", maxItems)), nil
 		}
 
-		permittedTypes, err := allowedContentTypes(ctx, deps, userID, tenantID)
+		permittedTypes, err := allowedContentTypes(ctx, deps, userID)
 		if err != nil {
 			return errorToolResult("content_type_check_failed", err.Error()), nil
 		}
@@ -154,7 +154,7 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgt
 		authorID = userID
 	}
 
-	if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID, tenantID) {
+	if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID) {
 		res.ErrorCode = "unauthorized_author"
 		res.Error = "setting author_id to another user requires content.assign_author permission"
 
@@ -278,7 +278,7 @@ func ContentBulkPublishHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("missing_content_ids", "content_ids array is required"), nil
 		}
 
-		maxItems := bulkMaxItems(ctx, deps.Settings, tenantID, "agent.bulk_publish_max_items")
+		maxItems := bulkMaxItems(ctx, deps.Settings, "agent.bulk_publish_max_items")
 		if len(a.ContentIDs) > maxItems {
 			return errorToolResult("too_many_items", fmt.Sprintf("bulk_publish supports at most %d items", maxItems)), nil
 		}
@@ -361,7 +361,7 @@ func publishOneBulkItem(ctx context.Context, deps *ToolDeps, tenantID pgtype.UUI
 // ContentBulkPublishPrivacyTarget extracts the content_ids from
 // content.bulk_publish arguments for the executor's privacy gate. The privacy
 // check is applied to every item in the array.
-func ContentBulkPublishPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func ContentBulkPublishPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a bulkPublishArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.bulk_publish args: %w", err)

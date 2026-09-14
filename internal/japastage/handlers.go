@@ -132,12 +132,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleStages handles GET /japa-stage/stages — returns the canonical stage
 // option list (Rule 16).
 func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}
@@ -155,7 +155,7 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}
@@ -186,12 +186,12 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 // members filtered by stage. Query params: ?stage=&dest=&page=&page_size=
 // (dest is the destination space id, geo-aware ?dest= filter per §87).
 func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}
@@ -205,7 +205,7 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	dest := r.URL.Query().Get("dest")
 	page, limit := parsePageParams(r)
 
-	members, total, err := h.service.ListByStage(r.Context(), tenantID, stage, dest, page, limit)
+	members, total, err := h.service.ListByStage(r.Context(), stage, dest, page, limit)
 	if err != nil {
 		slog.Error("japastage: list by stage failed", "stage", stage, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list members by stage")
@@ -248,7 +248,7 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}
@@ -285,7 +285,7 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}

@@ -25,7 +25,7 @@ import (
 // SettingsReader is the subset of the settings provider used to read
 // per-tier limits and feature configuration.
 type SettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // Service resolves and manages user tiers.
@@ -73,7 +73,7 @@ func (s *Service) ResolveUserTier(ctx context.Context, userID pgtype.UUID) (stri
 // SetUserTier assigns the user to the tier group matching the requested tier
 // and syncs users.profile_type. The user always remains in the base members
 // group so they keep the member role and permissions.
-func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID, tier string) error {
+func (s *Service) SetUserTier(ctx context.Context, userID pgtype.UUID, tier string) error {
 	if _, ok := tierRanks[tier]; !ok {
 		return fmt.Errorf("invalid tier: %s", tier)
 	}
@@ -153,7 +153,7 @@ func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID,
 
 // GetTierSetting resolves the user's tier and reads keyPrefix + "." + tier
 // from the settings reader, returning fallback when the per-tier key is unset.
-func (s *Service) GetTierSetting(ctx context.Context, tenantID, userID pgtype.UUID, keyPrefix string, fallback int, sr SettingsReader) (int, error) {
+func (s *Service) GetTierSetting(ctx context.Context, userID pgtype.UUID, keyPrefix string, fallback int, sr SettingsReader) (int, error) {
 	tier, err := s.ResolveUserTier(ctx, userID)
 	if err != nil {
 		return 0, err
@@ -163,5 +163,5 @@ func (s *Service) GetTierSetting(ctx context.Context, tenantID, userID pgtype.UU
 		return 0, errors.New("settings reader not configured")
 	}
 
-	return sr.GetIntOr(ctx, pgtype.UUID{}, fmt.Sprintf("%s.%s", keyPrefix, tier), fallback), nil
+	return sr.GetIntOr(ctx, fmt.Sprintf("%s.%s", keyPrefix, tier), fallback), nil
 }

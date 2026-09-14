@@ -78,7 +78,7 @@ type CreateTicketTypeInput struct {
 }
 
 // CreateTicketType creates a new admin-defined ticket type.
-func (s *Service) CreateTicketType(ctx context.Context, tenantID pgtype.UUID, input CreateTicketTypeInput) (gen.TicketType, error) {
+func (s *Service) CreateTicketType(ctx context.Context, input CreateTicketTypeInput) (gen.TicketType, error) {
 	if input.Name == "" {
 		return gen.TicketType{}, errors.New("name is required")
 	}
@@ -111,18 +111,18 @@ func (s *Service) CreateTicketType(ctx context.Context, tenantID pgtype.UUID, in
 }
 
 // GetTicketType retrieves a ticket type by ID.
-func (s *Service) GetTicketType(ctx context.Context, id, tenantID pgtype.UUID) (gen.TicketType, error) {
-	return s.store.getTicketTypeByID(ctx, id, tenantID)
+func (s *Service) GetTicketType(ctx context.Context, id pgtype.UUID) (gen.TicketType, error) {
+	return s.store.getTicketTypeByID(ctx, id)
 }
 
 // GetTicketTypeBySlug retrieves a ticket type by slug.
-func (s *Service) GetTicketTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.TicketType, error) {
-	return s.store.getTicketTypeBySlug(ctx, slug, tenantID)
+func (s *Service) GetTicketTypeBySlug(ctx context.Context, slug string) (gen.TicketType, error) {
+	return s.store.getTicketTypeBySlug(ctx, slug)
 }
 
 // ListTicketTypes returns all ticket types for a tenant.
-func (s *Service) ListTicketTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
-	return s.store.listTicketTypesByTenant(ctx, tenantID, limit, offset, isPublic)
+func (s *Service) ListTicketTypes(ctx context.Context, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
+	return s.store.listTicketTypesByTenant(ctx, limit, offset, isPublic)
 }
 
 // UpdateTicketTypeInput holds parameters for updating a ticket type.
@@ -137,7 +137,7 @@ type UpdateTicketTypeInput struct {
 }
 
 // UpdateTicketType updates an existing ticket type.
-func (s *Service) UpdateTicketType(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTicketTypeInput) (gen.TicketType, error) {
+func (s *Service) UpdateTicketType(ctx context.Context, id pgtype.UUID, input UpdateTicketTypeInput) (gen.TicketType, error) {
 	if input.Name == "" {
 		return gen.TicketType{}, errors.New("name is required")
 	}
@@ -163,8 +163,8 @@ func (s *Service) UpdateTicketType(ctx context.Context, id, tenantID pgtype.UUID
 // DeleteTicketType removes a ticket type and its cascaded children.
 // DeleteTicketType deletes a ticket type only if no tickets reference it.
 // Ref: japaconnect-engineering/sections/38-ticket-system.md (delete only if no tickets).
-func (s *Service) DeleteTicketType(ctx context.Context, id, tenantID pgtype.UUID) error {
-	count, err := s.store.countTicketsByType(ctx, id, tenantID)
+func (s *Service) DeleteTicketType(ctx context.Context, id pgtype.UUID) error {
+	count, err := s.store.countTicketsByType(ctx, id)
 	if err != nil {
 		return fmt.Errorf("checking ticket type usage: %w", err)
 	}
@@ -173,7 +173,7 @@ func (s *Service) DeleteTicketType(ctx context.Context, id, tenantID pgtype.UUID
 		return fmt.Errorf("%w: ticket type has %d existing tickets", errpkg.ErrInUse, count)
 	}
 
-	return s.store.deleteTicketType(ctx, id, tenantID)
+	return s.store.deleteTicketType(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ type CreateTicketInput struct {
 }
 
 // CreateTicket creates a new ticket with auto-assignment if configured.
-func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input CreateTicketInput) (gen.Ticket, error) {
+func (s *Service) CreateTicket(ctx context.Context, input CreateTicketInput) (gen.Ticket, error) {
 	if input.Subject == "" {
 		return gen.Ticket{}, errors.New("subject is required")
 	}
@@ -204,7 +204,7 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	}
 
 	// Resolve ticket type for default priority and SLA.
-	ticketType, err := s.store.getTicketTypeByID(ctx, input.TypeID, tenantID)
+	ticketType, err := s.store.getTicketTypeByID(ctx, input.TypeID)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("resolving ticket type: %w", err)
 	}
@@ -226,7 +226,7 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	if ticketType.SlaHours != nil && *ticketType.SlaHours > 0 {
 		slaHours = *ticketType.SlaHours
 	} else if s.settings != nil {
-		slaHours = int32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "tickets.default_sla_hours", 48)) // #nosec
+		slaHours = int32(s.settings.GetIntOr(ctx, "tickets.default_sla_hours", 48)) // #nosec
 	}
 
 	if slaHours > 0 {
@@ -240,7 +240,7 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 
 	if (!assignedTo.Valid || !assignedGroupID.Valid) && ticketType.AutoAssignGroupID.Valid {
 		// Try auto-assignment when neither is explicitly set.
-		leastLoaded, assignErr := s.store.getLeastLoadedStaffInGroup(ctx, ticketType.AutoAssignGroupID, tenantID)
+		leastLoaded, assignErr := s.store.getLeastLoadedStaffInGroup(ctx, ticketType.AutoAssignGroupID)
 		if assignErr == nil && leastLoaded.Valid {
 			assignedTo = leastLoaded
 			assignedGroupID = ticketType.AutoAssignGroupID
@@ -301,12 +301,12 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 }
 
 // GetTicket retrieves a ticket by ID.
-func (s *Service) GetTicket(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetTicketByIDRow, error) {
-	return s.store.getTicketByID(ctx, id, tenantID)
+func (s *Service) GetTicket(ctx context.Context, id pgtype.UUID) (gen.GetTicketByIDRow, error) {
+	return s.store.getTicketByID(ctx, id)
 }
 
 // ListTickets returns tickets for admin view with filters.
-func (s *Service) ListTickets(ctx context.Context, tenantID pgtype.UUID, status, priority string, typeID, assignedTo pgtype.UUID, search string, limit, offset int32) (ListTicketsResponse, error) {
+func (s *Service) ListTickets(ctx context.Context, status, priority string, typeID, assignedTo pgtype.UUID, search string, limit, offset int32) (ListTicketsResponse, error) {
 	return s.store.listTicketsByTenant(ctx, gen.ListTicketsByTenantParams{
 
 		Status:     status,
@@ -322,7 +322,7 @@ func (s *Service) ListTickets(ctx context.Context, tenantID pgtype.UUID, status,
 // ListTicketsBySubmitter returns tickets submitted by a specific user.
 // Ref: japaconnect-engineering/sections/38-ticket-system.md (GET /me/tickets ?status=)
 // An empty status string returns all tickets; a non-empty status filters by it.
-func (s *Service) ListTicketsBySubmitter(ctx context.Context, tenantID, submitterUserID pgtype.UUID, status string, limit, offset int32) ([]gen.ListTicketsBySubmitterRow, error) {
+func (s *Service) ListTicketsBySubmitter(ctx context.Context, submitterUserID pgtype.UUID, status string, limit, offset int32) ([]gen.ListTicketsBySubmitterRow, error) {
 	var statusPtr *string
 
 	if status != "" {
@@ -347,9 +347,9 @@ type UpdateTicketStatusInput struct {
 }
 
 // UpdateTicketStatus changes the ticket status with state machine validation.
-func (s *Service) UpdateTicketStatus(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTicketStatusInput) (gen.Ticket, error) {
+func (s *Service) UpdateTicketStatus(ctx context.Context, id pgtype.UUID, input UpdateTicketStatusInput) (gen.Ticket, error) {
 	// Fetch current ticket for state machine validation.
-	current, err := s.store.getTicketByID(ctx, id, tenantID)
+	current, err := s.store.getTicketByID(ctx, id)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("fetching current ticket: %w", err)
 	}
@@ -401,12 +401,12 @@ type UpdateTicketPriorityInput struct {
 }
 
 // UpdateTicketPriority changes the ticket priority.
-func (s *Service) UpdateTicketPriority(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTicketPriorityInput) (gen.Ticket, error) {
+func (s *Service) UpdateTicketPriority(ctx context.Context, id pgtype.UUID, input UpdateTicketPriorityInput) (gen.Ticket, error) {
 	if !ValidPriority(input.Priority) {
 		return gen.Ticket{}, fmt.Errorf("invalid priority %q: must be one of low, normal, high, urgent", input.Priority)
 	}
 
-	current, err := s.store.getTicketByID(ctx, id, tenantID)
+	current, err := s.store.getTicketByID(ctx, id)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("fetching current ticket: %w", err)
 	}
@@ -442,7 +442,7 @@ type AssignTicketInput struct {
 }
 
 // AssignTicket assigns a ticket to a staff member.
-func (s *Service) AssignTicket(ctx context.Context, id, tenantID pgtype.UUID, input AssignTicketInput) (gen.Ticket, error) {
+func (s *Service) AssignTicket(ctx context.Context, id pgtype.UUID, input AssignTicketInput) (gen.Ticket, error) {
 	ticket, err := s.store.assignTicket(ctx, gen.AssignTicketParams{
 		ID: id,
 
@@ -474,9 +474,9 @@ type ResolveTicketInput struct {
 }
 
 // ResolveTicket marks a ticket as resolved.
-func (s *Service) ResolveTicket(ctx context.Context, id, tenantID pgtype.UUID, input ResolveTicketInput) (gen.Ticket, error) {
+func (s *Service) ResolveTicket(ctx context.Context, id pgtype.UUID, input ResolveTicketInput) (gen.Ticket, error) {
 	// Validate current status allows resolution.
-	current, err := s.store.getTicketByID(ctx, id, tenantID)
+	current, err := s.store.getTicketByID(ctx, id)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("fetching current ticket: %w", err)
 	}
@@ -517,13 +517,13 @@ func (s *Service) ResolveTicket(ctx context.Context, id, tenantID pgtype.UUID, i
 }
 
 // CloseTicket closes a ticket (admin action from any state).
-func (s *Service) CloseTicket(ctx context.Context, id, tenantID, userID pgtype.UUID) (gen.Ticket, error) {
-	current, err := s.store.getTicketByID(ctx, id, tenantID)
+func (s *Service) CloseTicket(ctx context.Context, id, userID pgtype.UUID) (gen.Ticket, error) {
+	current, err := s.store.getTicketByID(ctx, id)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("fetching current ticket: %w", err)
 	}
 
-	ticket, err := s.store.closeTicket(ctx, id, tenantID)
+	ticket, err := s.store.closeTicket(ctx, id)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("closing ticket: %w", err)
 	}
@@ -549,7 +549,7 @@ type UpdateTicketSubjectInput struct {
 }
 
 // UpdateTicketSubject changes the ticket subject.
-func (s *Service) UpdateTicketSubject(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTicketSubjectInput) (gen.Ticket, error) {
+func (s *Service) UpdateTicketSubject(ctx context.Context, id pgtype.UUID, input UpdateTicketSubjectInput) (gen.Ticket, error) {
 	if input.Subject == "" {
 		return gen.Ticket{}, errors.New("subject is required")
 	}
@@ -568,8 +568,8 @@ func (s *Service) UpdateTicketSubject(ctx context.Context, id, tenantID pgtype.U
 
 // DeleteTicket permanently removes a ticket (admin action, spam/test only).
 // Ref: japaconnect-engineering/sections/38-ticket-system.md.
-func (s *Service) DeleteTicket(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.deleteTicket(ctx, id, tenantID); err != nil {
+func (s *Service) DeleteTicket(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.deleteTicket(ctx, id); err != nil {
 		return fmt.Errorf("deleting ticket: %w", err)
 	}
 

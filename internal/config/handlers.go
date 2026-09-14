@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -21,7 +20,7 @@ func NewHandlers(settings *Settings) *Handlers {
 // GetPublicSettings handles GET /site/settings/public.
 // Returns all settings marked as public for the current tenant.
 func (h *Handlers) GetPublicSettings(w http.ResponseWriter, r *http.Request) {
-	settings, err := h.Settings.GetPublicSettings(r.Context(), pgtype.UUID{})
+	settings, err := h.Settings.GetPublicSettings(r.Context())
 	if err != nil {
 		slog.Error("config: get public settings", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch public settings")

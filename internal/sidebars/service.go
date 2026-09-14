@@ -32,7 +32,7 @@ const sidebarResolveCachePrefix = "jc:sidebar:resolve:"
 // one HasPermission call per widget. Ref: Section 59 §4 step 5 (widget
 // permission_node filtering); mirrors internal/menus.PermissionResolver.
 type PermissionResolver interface {
-	UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error)
+	UserPermissions(ctx context.Context, userID pgtype.UUID) (map[string]bool, error)
 }
 
 // Service provides business logic for managing sidebars and resolving them
@@ -75,13 +75,13 @@ type ListSidebarsResponse struct {
 }
 
 // ListSidebars is an exported method.
-func (s *Service) ListSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, status, q, sort string, limit, offset int32) (*ListSidebarsResponse, error) {
-	rows, err := s.store.listSidebars(ctx, tenantID, app, position, status, q, sort, limit, offset)
+func (s *Service) ListSidebars(ctx context.Context, app, position, status, q, sort string, limit, offset int32) (*ListSidebarsResponse, error) {
+	rows, err := s.store.listSidebars(ctx, app, position, status, q, sort, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebars: %w", err)
 	}
 
-	total, err := s.store.countSidebars(ctx, tenantID, app, position, status, q)
+	total, err := s.store.countSidebars(ctx, app, position, status, q)
 	if err != nil {
 		return nil, fmt.Errorf("counting sidebars: %w", err)
 	}
@@ -100,13 +100,13 @@ func (s *Service) ListSidebars(ctx context.Context, tenantID pgtype.UUID, app, p
 }
 
 // GetSidebar is an exported method.
-func (s *Service) GetSidebar(ctx context.Context, id, tenantID pgtype.UUID) (*SidebarJSON, error) {
-	sidebar, err := s.store.getSidebarByID(ctx, id, tenantID)
+func (s *Service) GetSidebar(ctx context.Context, id pgtype.UUID) (*SidebarJSON, error) {
+	sidebar, err := s.store.getSidebarByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("getting sidebar: %w", err)
 	}
 
-	widgets, err := s.store.listSidebarWidgets(ctx, tenantID, sidebar.ID)
+	widgets, err := s.store.listSidebarWidgets(ctx, sidebar.ID)
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebar widgets: %w", err)
 	}
@@ -231,7 +231,7 @@ func (s *Service) UpdateSidebar(ctx context.Context, id, tenantID pgtype.UUID, i
 
 // DeleteSidebar is an exported method.
 func (s *Service) DeleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.deleteSidebar(ctx, id, tenantID); err != nil {
+	if err := s.store.deleteSidebar(ctx, id); err != nil {
 		return err
 	}
 
@@ -277,7 +277,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 	// The sidebar's app also scopes which widget types may be added: a type
 	// with no renderer implementation on that app would render as a dead
 	// stub on the public surface (audit fix, Section 59 ADR-066).
-	sidebar, err := s.store.getSidebarByID(ctx, sidebarID, tenantID)
+	sidebar, err := s.store.getSidebarByID(ctx, sidebarID)
 	if err != nil {
 		return gen.SidebarWidget{}, ErrSidebarNotFound
 	}
@@ -348,7 +348,7 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 	// preventing a within-tenant IDOR where a widget from sidebar B could be
 	// mutated via /admin/sidebars/{sidebarA_id}/widgets/{widgetB_id}.
 	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
-	existing, err := s.store.getSidebarWidget(ctx, id, tenantID)
+	existing, err := s.store.getSidebarWidget(ctx, id)
 	if err != nil {
 		return gen.SidebarWidget{}, err
 	}
@@ -359,7 +359,7 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 
 	// Widget type must be renderable by the sidebar's app — reject a type
 	// change to one the target surface cannot render (audit fix).
-	sidebar, err := s.store.getSidebarByID(ctx, sidebarID, tenantID)
+	sidebar, err := s.store.getSidebarByID(ctx, sidebarID)
 	if err != nil {
 		return gen.SidebarWidget{}, ErrSidebarNotFound
 	}
@@ -408,7 +408,7 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID, tenantID pgtype.UUID) error {
 	// Verify the widget exists and belongs to the sidebar in the URL path.
 	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
-	existing, err := s.store.getSidebarWidget(ctx, id, tenantID)
+	existing, err := s.store.getSidebarWidget(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -417,7 +417,7 @@ func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID, tenant
 		return ErrSidebarWidgetNotFound
 	}
 
-	if err := s.store.deleteSidebarWidget(ctx, id, tenantID); err != nil {
+	if err := s.store.deleteSidebarWidget(ctx, id); err != nil {
 		return err
 	}
 
@@ -459,7 +459,7 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID
 	// reordered via /admin/sidebars/{sidebarA_id}/widgets/reorder.
 	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
 	for i := range ids {
-		w, err := s.store.getSidebarWidget(ctx, ids[i], tenantID)
+		w, err := s.store.getSidebarWidget(ctx, ids[i])
 		if err != nil {
 			return err
 		}
@@ -469,7 +469,7 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID
 		}
 	}
 
-	if err := s.store.bulkUpdateSidebarWidgetSortOrder(ctx, tenantID, ids, sortOrders); err != nil {
+	if err := s.store.bulkUpdateSidebarWidgetSortOrder(ctx, ids, sortOrders); err != nil {
 		slog.Error("reorder sidebar widgets failed", "error", err)
 		return err
 	}
@@ -518,7 +518,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 	var userPerms map[string]bool
 
 	if isAuthenticated && userID.Valid && s.perms != nil {
-		perms, err := s.perms.UserPermissions(ctx, userID, tenantID)
+		perms, err := s.perms.UserPermissions(ctx, userID)
 		if err == nil {
 			userPerms = perms
 		} else {
@@ -541,7 +541,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 		}
 	}
 
-	candidates, err := s.store.listActiveSidebarsForResolve(ctx, tenantID, app, position)
+	candidates, err := s.store.listActiveSidebarsForResolve(ctx, app, position)
 	if err != nil {
 		return nil, fmt.Errorf("listing active sidebars: %w", err)
 	}
@@ -606,7 +606,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 	}
 
 	// Load widgets for the winning sidebar.
-	widgets, err := s.store.listActiveSidebarWidgets(ctx, tenantID, bestSidebar.ID)
+	widgets, err := s.store.listActiveSidebarWidgets(ctx, bestSidebar.ID)
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebar widgets: %w", err)
 	}
@@ -644,13 +644,13 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 }
 
 // GetUserGroupIDs returns the set of user group IDs the user belongs to.
-func (s *Service) GetUserGroupIDs(ctx context.Context, tenantID pgtype.UUID, userID string) ([]string, error) {
+func (s *Service) GetUserGroupIDs(ctx context.Context, userID string) ([]string, error) {
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		return nil, fmt.Errorf("invalid user_id: %w", err)
 	}
 
-	return s.store.getUserGroupIDs(ctx, tenantID, uid)
+	return s.store.getUserGroupIDs(ctx, uid)
 }
 
 // sidebarResolveCacheKey builds the Valkey cache key for a resolve request.

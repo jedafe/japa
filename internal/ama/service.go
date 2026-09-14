@@ -72,13 +72,13 @@ type CreateAMAInput struct {
 // resolve host-vs-moderator close authorization. Local interface so ama does
 // not import rbac.
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // webhookEmitter fans an ama.* event out to subscribed webhook endpoints
 // (fire-and-forget, Rule 8). Mirrors the forum webhookEmitter pattern.
 type webhookEmitter interface {
-	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
+	EmitEvent(ctx context.Context, eventType string, payload any)
 }
 
 // Service holds the business logic for AMA threads.
@@ -109,19 +109,19 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // CooldownDays returns the AMA cooldown period in days (§88 system_setting
 // ama_cooldown_days, default 30).
-func (s *Service) CooldownDays(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) CooldownDays(ctx context.Context) int {
 	if s.settings == nil {
 		return 30
 	}
 
-	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "ama_cooldown_days", 30)
+	return s.settings.GetIntOr(ctx, "ama_cooldown_days", 30)
 }
 
 // ListActive returns active AMA sessions (not yet closed), filtered by
 // destination country and host profession (geo-aware tool pattern) and
 // cursor-paginated by created_at.
-func (s *Service) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThreadDTO, error) {
-	threads, err := s.store.ListActive(ctx, tenantID, dest, profession, pageSize, cursorCreatedAt)
+func (s *Service) ListActive(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThreadDTO, error) {
+	threads, err := s.store.ListActive(ctx, dest, profession, pageSize, cursorCreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("ama: list active: %w", err)
 	}
@@ -135,8 +135,8 @@ func (s *Service) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, pr
 }
 
 // GetByID returns a single AMA thread by ID.
-func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThreadDTO, error) {
-	thread, err := s.store.GetByID(ctx, id, tenantID)
+func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (AMAThreadDTO, error) {
+	thread, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AMAThreadDTO{}, pgx.ErrNoRows
@@ -151,7 +151,7 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThr
 // CreateAMA validates rate limits, persists the AMA thread, sets the
 // jc:ama_active Valkey lock, and emits forum.ama.opened fire-and-forget.
 // Ref: §88 (creation, rate limiting, notifications).
-func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.UUID, in CreateAMAInput) (AMAThreadDTO, error) {
+func (s *Service) CreateAMA(ctx context.Context, authorUserID pgtype.UUID, in CreateAMAInput) (AMAThreadDTO, error) {
 	if in.Title == "" {
 		return AMAThreadDTO{}, errors.New("title is required")
 	}
@@ -161,7 +161,7 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 	}
 
 	// Rate limit 1: one active AMA per host (§88).
-	active, err := s.store.HasActiveAMA(ctx, authorUserID, tenantID)
+	active, err := s.store.HasActiveAMA(ctx, authorUserID)
 	if err != nil {
 		return AMAThreadDTO{}, fmt.Errorf("ama: check active: %w", err)
 	}
@@ -171,9 +171,9 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 	}
 
 	// Rate limit 2: cooldown between sessions (§88, ama_cooldown_days).
-	cooldown := s.CooldownDays(ctx, tenantID)
+	cooldown := s.CooldownDays(ctx)
 
-	inCooldown, err := s.store.CheckCooldown(ctx, authorUserID, tenantID, cooldown)
+	inCooldown, err := s.store.CheckCooldown(ctx, authorUserID, cooldown)
 	if err != nil {
 		return AMAThreadDTO{}, fmt.Errorf("ama: check cooldown: %w", err)
 	}
@@ -207,7 +207,7 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 
 	editWindow := int32(30)
 	if s.settings != nil {
-		editWindow = int32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "forum.edit_window_minutes", 30)) // #nosec
+		editWindow = int32(s.settings.GetIntOr(ctx, "forum.edit_window_minutes", 30)) // #nosec
 	}
 
 	body := in.Body
@@ -236,7 +236,7 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 	// Fire-and-forget forum.ama.opened event for follower notifications (§88 /
 	// §35). Rule 8: never block the request on fan-out.
 	if s.webhooks != nil {
-		s.webhooks.EmitEvent(ctx, tenantID, "forum.ama.opened", map[string]any{
+		s.webhooks.EmitEvent(ctx, "forum.ama.opened", map[string]any{
 			"thread_id": thread.ID.String(), "host_id": authorUserID.String(),
 			"slug": thread.Slug, "closes_at": closesIso,
 		})
@@ -250,7 +250,7 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 // question_approval_required). Returns pgx.ErrNoRows if the question is not
 // found or not pending.
 func (s *Service) ApproveQuestion(ctx context.Context, threadID, replyID, tenantID, callerUserID pgtype.UUID) error {
-	allowed, err := s.CanClose(ctx, threadID, tenantID, callerUserID)
+	allowed, err := s.CanClose(ctx, threadID, callerUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -263,7 +263,7 @@ func (s *Service) ApproveQuestion(ctx context.Context, threadID, replyID, tenant
 		return ErrCloseForbidden
 	}
 
-	if err := s.store.ApproveQuestion(ctx, threadID, replyID, tenantID); err != nil {
+	if err := s.store.ApproveQuestion(ctx, threadID, replyID); err != nil {
 		return fmt.Errorf("ama: approve question: %w", err)
 	}
 
@@ -273,21 +273,21 @@ func (s *Service) ApproveQuestion(ctx context.Context, threadID, replyID, tenant
 // SetReplyPending marks a reply as pending AMA host approval. Called by the
 // forum service after CreateReply when the parent thread is an AMA with
 // question_approval_required = true and the reply author is not the host.
-func (s *Service) SetReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error {
-	return s.store.SetReplyPending(ctx, replyID, tenantID)
+func (s *Service) SetReplyPending(ctx context.Context, replyID pgtype.UUID) error {
+	return s.store.SetReplyPending(ctx, replyID)
 }
 
 // MarkReplyPending implements forum.AMAQuestionHandler. It is the same as
 // SetReplyPending but named to match the interface the forum service expects.
-func (s *Service) MarkReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error {
-	return s.store.SetReplyPending(ctx, replyID, tenantID)
+func (s *Service) MarkReplyPending(ctx context.Context, replyID pgtype.UUID) error {
+	return s.store.SetReplyPending(ctx, replyID)
 }
 
 // CanClose reports whether the caller may close the AMA: the thread author
 // (host) always may, otherwise the caller must hold forum.ama.moderate
 // (§88 "host or moderator").
-func (s *Service) CanClose(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID) (bool, error) {
-	authorID, err := s.store.GetAuthorID(ctx, threadID, tenantID)
+func (s *Service) CanClose(ctx context.Context, threadID, callerUserID pgtype.UUID) (bool, error) {
+	authorID, err := s.store.GetAuthorID(ctx, threadID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, pgx.ErrNoRows
@@ -300,7 +300,7 @@ func (s *Service) CanClose(ctx context.Context, threadID, tenantID, callerUserID
 		return true, nil
 	}
 
-	if s.rbac != nil && s.rbac.HasPermission(ctx, callerUserID, tenantID, "forum.ama.moderate") {
+	if s.rbac != nil && s.rbac.HasPermission(ctx, callerUserID, "forum.ama.moderate") {
 		return true, nil
 	}
 
@@ -309,7 +309,7 @@ func (s *Service) CanClose(ctx context.Context, threadID, tenantID, callerUserID
 
 // CloseAMA closes an AMA session (host or moderator only, per CanClose).
 func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID) error {
-	allowed, err := s.CanClose(ctx, threadID, tenantID, callerUserID)
+	allowed, err := s.CanClose(ctx, threadID, callerUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -322,14 +322,14 @@ func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID
 		return ErrCloseForbidden
 	}
 
-	if err := s.store.CloseAMA(ctx, threadID, tenantID); err != nil {
+	if err := s.store.CloseAMA(ctx, threadID); err != nil {
 		return fmt.Errorf("ama: close: %w", err)
 	}
 	// Release the active-AMA lock for the HOST (the thread author), not the
 	// caller. A moderator closing the AMA must release the host's lock so
 	// the host can create a new session (BUG-002: previously used
 	// callerUserID, which left the host's jc:ama_active lock stranded).
-	authorID, err := s.store.GetAuthorID(ctx, threadID, tenantID)
+	authorID, err := s.store.GetAuthorID(ctx, threadID)
 	if err != nil {
 		// Thread was closed successfully; a failed lock cleanup is
 		// non-fatal (the lock has a TTL matching closes_at).
@@ -345,7 +345,7 @@ func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID
 // must be the host or hold forum.ama.moderate. closes_at and other ama_config
 // metadata are not modified.
 func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error) {
-	allowed, err := s.CanClose(ctx, threadID, tenantID, callerUserID)
+	allowed, err := s.CanClose(ctx, threadID, callerUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AMAThreadDTO{}, pgx.ErrNoRows
@@ -358,7 +358,7 @@ func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserI
 		return AMAThreadDTO{}, ErrEditForbidden
 	}
 
-	existing, err := s.store.GetByID(ctx, threadID, tenantID)
+	existing, err := s.store.GetByID(ctx, threadID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AMAThreadDTO{}, pgx.ErrNoRows
@@ -379,7 +379,7 @@ func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserI
 		body = existing.Body
 	}
 
-	thread, err := s.store.UpdateAMA(ctx, threadID, tenantID, title, body, in.IsAnonymous)
+	thread, err := s.store.UpdateAMA(ctx, threadID, title, body, in.IsAnonymous)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AMAThreadDTO{}, pgx.ErrNoRows

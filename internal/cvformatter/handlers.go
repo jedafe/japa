@@ -102,12 +102,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // when the feature flag is off. Accepts ?dest= to filter by destination
 // space ID (geo-aware tool pattern: ?dest= is the primary filter).
 func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
@@ -147,12 +147,12 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 // HandleGetStandard handles GET /cv-formatter/standards/:dest — single
 // destination CV standard. Public; :dest is the destination_space_id.
 func (h *Handlers) HandleGetStandard(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
@@ -197,13 +197,12 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
@@ -304,7 +303,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.CheckQuota(r.Context(), user.UserID, tenantID); err != nil {
+	if err := h.service.CheckQuota(r.Context(), user.UserID); err != nil {
 		if errors.Is(err, ErrQuotaExceeded) {
 			errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Monthly CV formatting quota reached")
 			return
@@ -316,7 +315,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.service.CreateSession(r.Context(), tenantID, user.UserID, input)
+	session, err := h.service.CreateSession(r.Context(), user.UserID, input)
 	if err != nil {
 		slog.Error("cvformatter: create session failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create format session")
@@ -338,8 +337,7 @@ func (h *Handlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -349,7 +347,7 @@ func (h *Handlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
@@ -385,8 +383,7 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -396,7 +393,7 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}

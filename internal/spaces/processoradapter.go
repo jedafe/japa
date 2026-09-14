@@ -157,7 +157,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 	}
 
 	// Fetch the space to determine its type.
-	space, err := a.svc.GetSpace(ctx, sid, tid)
+	space, err := a.svc.GetSpace(ctx, sid)
 	if err != nil {
 		slog.Error("space:auto_populate — failed to fetch space", "error", err, "space_id", spaceID)
 		return err
@@ -165,13 +165,13 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 
 	// Auto-populate based on space type.
 	spaceType := ""
-	if st, err := a.svc.GetSpaceType(ctx, space.SpaceTypeID, tid); err == nil {
+	if st, err := a.svc.GetSpaceType(ctx, space.SpaceTypeID); err == nil {
 		spaceType = st.Slug
 	}
 
 	switch spaceType {
 	case "country", "state", "city":
-		return a.populateGeoSpace(ctx, &space, spaceType, tid)
+		return a.populateGeoSpace(ctx, &space, spaceType)
 	case "university":
 		return a.populateUniversitySpace(ctx, &space, tid)
 	default:
@@ -184,7 +184,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 // populateGeoSpace fetches a Wikipedia summary for the space and stores it
 // as WikiContent. For countries, the geo_code (ISO 3166-1 alpha-2) is used
 // to construct the Wikipedia article title.
-func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetSpaceByIDRow, spaceType string, tenantID pgtype.UUID) error {
+func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetSpaceByIDRow, spaceType string) error {
 	// Build the Wikipedia article title from the space name.
 	// For countries, use the country name directly (e.g. "Nigeria").
 	// For states/cities, use "{name}, {parent}" pattern if available.
@@ -213,7 +213,7 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 		return nil
 	}
 
-	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
+	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, wikiJSON); err != nil {
 		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err)
 
 		return nil
@@ -256,7 +256,7 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 		return nil
 	}
 
-	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
+	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, wikiJSON); err != nil {
 		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err)
 
 		return nil
@@ -304,7 +304,7 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 		return nil
 	}
 
-	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
+	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, wikiJSON); err != nil {
 		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err)
 
 		return nil

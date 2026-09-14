@@ -26,9 +26,9 @@ import (
 // ContentService is the subset of content.Service the space content/pinned
 // handlers need.
 type ContentService interface {
-	ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error)
-	SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error)
-	PinContent(ctx context.Context, tenantID, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error)
+	ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error)
+	SearchContentsBySpace(ctx context.Context, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error)
+	PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error)
 	UnpinContent(ctx context.Context, spaceID, contentID pgtype.UUID) error
 	ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]gen.SpacePinnedPost, error)
 }
@@ -46,7 +46,7 @@ type PermCacheInvalidator interface {
 // MediaResolver resolves a media ID to an imgproxy-signed URL for the space
 // logo. The media.Service satisfies this. Nil = logo_url omitted from responses.
 type MediaResolver interface {
-	GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error)
+	GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error)
 	GetMediaURL(m *gen.Medium, opts media.ImageProxyOpts) string
 }
 
@@ -54,15 +54,15 @@ type MediaResolver interface {
 // index space content into content_embeddings (§69/ADR-069). Implemented
 // by rag.Service; nil disables RAG indexing (graceful degradation).
 type RAGEntityIndexer interface {
-	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
-	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
+	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 }
 
 // settingsReader is the subset of config.Settings needed by the spaces
 // handlers to resolve hot-reloadable system_settings (e.g.
 // i18n.default_language for RAG indexing). Nil falls back to defaults.
 type settingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // Handlers is an exported type.
@@ -114,7 +114,7 @@ func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
 // indexSpaceRAG fires-and-forgets a RAG indexing call for a space. The body
 // is the space name + description + keywords concatenated for embedding.
 // Errors are logged, never propagated (Rule 8).
-func (h *Handlers) indexSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.UUID, name, description string, keywords []string) {
+func (h *Handlers) indexSpaceRAG(ctx context.Context, spaceID pgtype.UUID, name, description string, keywords []string) {
 	if h.ragIndexer == nil {
 		return
 	}
@@ -144,12 +144,12 @@ func (h *Handlers) indexSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.U
 	// to "en" when settings are not injected or the key is unset.
 	language := "en"
 	if h.settings != nil {
-		language = h.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
+		language = h.settings.GetStringOr(ctx, "i18n.default_language", "en")
 	}
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "space", spaceID, text, language); err != nil {
+		if err := h.ragIndexer.IndexEntity(bgCtx, "space", spaceID, text, language); err != nil {
 			slog.Warn("spaces: RAG index failed for space",
 				"space_id", spaceID.String(), "error", err)
 		}
@@ -157,14 +157,14 @@ func (h *Handlers) indexSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.U
 }
 
 // purgeSpaceRAG fires-and-forgets a RAG purge for a deleted space.
-func (h *Handlers) purgeSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.UUID) {
+func (h *Handlers) purgeSpaceRAG(ctx context.Context, spaceID pgtype.UUID) {
 	if h.ragIndexer == nil {
 		return
 	}
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "space", spaceID); err != nil {
+		if err := h.ragIndexer.PurgeEntity(bgCtx, "space", spaceID); err != nil {
 			slog.Warn("spaces: RAG purge failed for space",
 				"space_id", spaceID.String(), "error", err)
 		}
@@ -174,12 +174,12 @@ func (h *Handlers) purgeSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.U
 // resolveLogoURL resolves a space's logo_media_id to an imgproxy-signed URL
 // via the media service. Returns empty when no logo is set, the media
 // resolver is not wired, or the media item cannot be loaded. Best-effort.
-func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID, logoMediaID pgtype.UUID) string {
+func (h *Handlers) resolveLogoURL(ctx context.Context, logoMediaID pgtype.UUID) string {
 	if !logoMediaID.Valid || h.media == nil {
 		return ""
 	}
 
-	m, err := h.media.GetMedia(ctx, tenantID, logoMediaID)
+	m, err := h.media.GetMedia(ctx, logoMediaID)
 	if err != nil {
 		return ""
 	}
@@ -190,12 +190,12 @@ func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID, logoMediaID pgt
 // resolveHeaderURL resolves a space's header_image_id to an imgproxy-signed
 // URL via the media service. Returns empty when no header is set, the media
 // resolver is not wired, or the media item cannot be loaded. Best-effort.
-func (h *Handlers) resolveHeaderURL(ctx context.Context, tenantID, headerMediaID pgtype.UUID) string {
+func (h *Handlers) resolveHeaderURL(ctx context.Context, headerMediaID pgtype.UUID) string {
 	if !headerMediaID.Valid || h.media == nil {
 		return ""
 	}
 
-	m, err := h.media.GetMedia(ctx, tenantID, headerMediaID)
+	m, err := h.media.GetMedia(ctx, headerMediaID)
 	if err != nil {
 		return ""
 	}

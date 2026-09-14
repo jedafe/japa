@@ -23,13 +23,13 @@ type Enqueuer interface {
 // feature flag). *config.Settings satisfies this structurally. When nil, the
 // service falls back to compiled-in defaults (Rule 3 / SETTING-002/003).
 type SettingsProvider interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
 	// SetSetting upserts a setting (system_settings is the single source of
 	// truth for affiliate.commission.* per Section 56).
-	SetSetting(ctx context.Context, tenantID pgtype.UUID, key, value string) error
+	SetSetting(ctx context.Context, key, value string) error
 	// GetSettingBool reads a boolean setting (feature.affiliate_program flag).
-	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
+	GetSettingBool(ctx context.Context, key string) (bool, error)
 }
 
 // Service is an exported type.
@@ -96,11 +96,11 @@ func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 	if s.settings != nil {
 		// tenantID is zero-valued — affiliate settings are global (
 		// is required by the interface but affiliate config is not per-tenant).
-		proMonthly = s.settings.GetFloatOr(ctx, pgtype.UUID{}, "affiliate.commission.pro_monthly", 15)
-		proAnnual = s.settings.GetFloatOr(ctx, pgtype.UUID{}, "affiliate.commission.pro_annual", 20)
-		course = s.settings.GetFloatOr(ctx, pgtype.UUID{}, "affiliate.commission.course", 10)
-		minAccountDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.min_account_days", 30)
-		maxLinksPerUser = s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.max_links_per_user", 10)
+		proMonthly = s.settings.GetFloatOr(ctx, "affiliate.commission.pro_monthly", 15)
+		proAnnual = s.settings.GetFloatOr(ctx, "affiliate.commission.pro_annual", 20)
+		course = s.settings.GetFloatOr(ctx, "affiliate.commission.course", 10)
+		minAccountDays = s.settings.GetIntOr(ctx, "affiliate.min_account_days", 30)
+		maxLinksPerUser = s.settings.GetIntOr(ctx, "affiliate.max_links_per_user", 10)
 	}
 
 	return &ProgramInfo{
@@ -117,7 +117,7 @@ func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 // redirect handler to TTL the jc:aff_click attribution key (Section 56).
 func (s *Service) AttributionWindowDays(ctx context.Context) int {
 	if s.settings != nil {
-		return s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.attribution_window_days", 30)
+		return s.settings.GetIntOr(ctx, "affiliate.attribution_window_days", 30)
 	}
 
 	return 30
@@ -127,7 +127,7 @@ func (s *Service) AttributionWindowDays(ctx context.Context) int {
 // from system_settings affiliate.min_account_days (default 30).
 func (s *Service) MinAccountDays(ctx context.Context) int {
 	if s.settings != nil {
-		return s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.min_account_days", 30)
+		return s.settings.GetIntOr(ctx, "affiliate.min_account_days", 30)
 	}
 
 	return 30
@@ -136,8 +136,8 @@ func (s *Service) MinAccountDays(ctx context.Context) int {
 // lookupUsername returns the username for a user id (tenant-scoped), best
 // effort: returns nil when the user is gone (anonymized) so the admin UI can
 // fall back to the id.
-func (s *Service) lookupUsername(ctx context.Context, userID, tenantID pgtype.UUID) (*string, error) {
-	return s.store.lookupUsername(ctx, userID, tenantID)
+func (s *Service) lookupUsername(ctx context.Context, userID pgtype.UUID) (*string, error) {
+	return s.store.lookupUsername(ctx, userID)
 }
 
 // FeatureEnabled reports whether the affiliate program feature flag is on.
@@ -150,7 +150,7 @@ func (s *Service) FeatureEnabled(ctx context.Context) bool {
 		return true
 	}
 
-	v, err := s.settings.GetSettingBool(ctx, pgtype.UUID{}, "feature.affiliate_program")
+	v, err := s.settings.GetSettingBool(ctx, "feature.affiliate_program")
 	if err != nil {
 		return false
 	}
@@ -173,13 +173,13 @@ func (s *Service) Enroll(ctx context.Context, input EnrollInput) (gen.AffiliateP
 		return gen.AffiliateProgramMember{}, ErrFeatureDisabled
 	}
 
-	existing, err := s.store.getMember(ctx, input.UserID, input.TenantID)
+	existing, err := s.store.getMember(ctx, input.UserID)
 	if err == nil && existing.UserID.Valid {
 		return gen.AffiliateProgramMember{}, ErrAlreadyEnrolled
 	}
 	// Minimum account age eligibility (Section 56): account age must be ≥
 	// affiliate.min_account_days (default 30).
-	createdAt, cerr := s.store.getUserCreatedAt(ctx, input.UserID, input.TenantID)
+	createdAt, cerr := s.store.getUserCreatedAt(ctx, input.UserID)
 	if cerr != nil {
 		return gen.AffiliateProgramMember{}, fmt.Errorf("checking account age: %w", cerr)
 	}
@@ -197,8 +197,8 @@ func (s *Service) Enroll(ctx context.Context, input EnrollInput) (gen.AffiliateP
 }
 
 // GetMember is an exported method.
-func (s *Service) GetMember(ctx context.Context, userID, tenantID pgtype.UUID) (gen.AffiliateProgramMember, error) {
-	m, err := s.store.getMember(ctx, userID, tenantID)
+func (s *Service) GetMember(ctx context.Context, userID pgtype.UUID) (gen.AffiliateProgramMember, error) {
+	m, err := s.store.getMember(ctx, userID)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.AffiliateProgramMember{}, ErrMemberNotFound
@@ -211,7 +211,7 @@ func (s *Service) GetMember(ctx context.Context, userID, tenantID pgtype.UUID) (
 }
 
 // ListMembers is an exported method.
-func (s *Service) ListMembers(ctx context.Context, tenantID pgtype.UUID, status *string, page, pageSize int32) ([]gen.AffiliateProgramMember, error) {
+func (s *Service) ListMembers(ctx context.Context, status *string, page, pageSize int32) ([]gen.AffiliateProgramMember, error) {
 	limit, offset := paginate(page, pageSize)
 
 	st := ""
@@ -219,7 +219,7 @@ func (s *Service) ListMembers(ctx context.Context, tenantID pgtype.UUID, status 
 		st = *status
 	}
 
-	return s.store.listMembers(ctx, tenantID, st, limit, offset)
+	return s.store.listMembers(ctx, st, limit, offset)
 }
 
 // UpdateMemberStatusInput is an exported type.
@@ -229,8 +229,8 @@ type UpdateMemberStatusInput struct {
 }
 
 // UpdateMemberStatus is an exported method.
-func (s *Service) UpdateMemberStatus(ctx context.Context, userID, tenantID pgtype.UUID, input UpdateMemberStatusInput) (gen.AffiliateProgramMember, error) {
-	member, err := s.store.updateMemberStatus(ctx, userID, tenantID, input.Status, input.Notes)
+func (s *Service) UpdateMemberStatus(ctx context.Context, userID pgtype.UUID, input UpdateMemberStatusInput) (gen.AffiliateProgramMember, error) {
+	member, err := s.store.updateMemberStatus(ctx, userID, input.Status, input.Notes)
 	if err != nil {
 		return gen.AffiliateProgramMember{}, fmt.Errorf("updating member status: %w", err)
 	}
@@ -255,8 +255,8 @@ type CreateLinkInput struct {
 }
 
 // CreateLink is an exported method.
-func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, input CreateLinkInput) (gen.UserAffiliateLink, error) {
-	member, err := s.store.getMember(ctx, userID, tenantID)
+func (s *Service) CreateLink(ctx context.Context, userID pgtype.UUID, input CreateLinkInput) (gen.UserAffiliateLink, error) {
+	member, err := s.store.getMember(ctx, userID)
 	if err != nil || !member.UserID.Valid {
 		return gen.UserAffiliateLink{}, ErrNotEnrolled
 	}
@@ -273,7 +273,7 @@ func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, 
 	// (affiliate.max_links_per_user, default 10) — SETTING-002.
 	maxLinks := 10
 	if s.settings != nil {
-		maxLinks = s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.max_links_per_user", 10)
+		maxLinks = s.settings.GetIntOr(ctx, "affiliate.max_links_per_user", 10)
 	}
 
 	if count >= int64(maxLinks) {
@@ -306,8 +306,8 @@ func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, 
 }
 
 // GetLink is an exported method.
-func (s *Service) GetLink(ctx context.Context, id, tenantID pgtype.UUID) (gen.UserAffiliateLink, error) {
-	l, err := s.store.getLinkByID(ctx, id, tenantID)
+func (s *Service) GetLink(ctx context.Context, id pgtype.UUID) (gen.UserAffiliateLink, error) {
+	l, err := s.store.getLinkByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.UserAffiliateLink{}, ErrLinkNotFound
@@ -338,15 +338,15 @@ func (s *Service) GetLinkByCode(ctx context.Context, code string) (gen.UserAffil
 }
 
 // ListUserLinks is an exported method.
-func (s *Service) ListUserLinks(ctx context.Context, userID, tenantID pgtype.UUID, page, pageSize int32) ([]gen.UserAffiliateLink, error) {
+func (s *Service) ListUserLinks(ctx context.Context, userID pgtype.UUID, page, pageSize int32) ([]gen.UserAffiliateLink, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listLinksByUser(ctx, userID, tenantID, true, limit, offset)
+	return s.store.listLinksByUser(ctx, userID, true, limit, offset)
 }
 
 // ListAllLinks is an exported method.
-func (s *Service) ListAllLinks(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]gen.UserAffiliateLink, error) {
+func (s *Service) ListAllLinks(ctx context.Context, page, pageSize int32) ([]gen.UserAffiliateLink, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listAllLinks(ctx, tenantID, limit, offset)
+	return s.store.listAllLinks(ctx, limit, offset)
 }
 
 // UpdateLinkInput is an exported type.
@@ -356,8 +356,8 @@ type UpdateLinkInput struct {
 }
 
 // UpdateLink is an exported method.
-func (s *Service) UpdateLink(ctx context.Context, id, userID, tenantID pgtype.UUID, input UpdateLinkInput) (gen.UserAffiliateLink, error) {
-	l, err := s.store.getLinkByID(ctx, id, tenantID)
+func (s *Service) UpdateLink(ctx context.Context, id, userID pgtype.UUID, input UpdateLinkInput) (gen.UserAffiliateLink, error) {
+	l, err := s.store.getLinkByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.UserAffiliateLink{}, ErrLinkNotFound
@@ -370,12 +370,12 @@ func (s *Service) UpdateLink(ctx context.Context, id, userID, tenantID pgtype.UU
 		return gen.UserAffiliateLink{}, ErrLinkNotFound
 	}
 
-	return s.store.updateLink(ctx, id, userID, tenantID, input.Description, input.IsActive)
+	return s.store.updateLink(ctx, id, userID, input.Description, input.IsActive)
 }
 
 // DeleteLink is an exported method.
-func (s *Service) DeleteLink(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
-	l, err := s.store.getLinkByID(ctx, id, tenantID)
+func (s *Service) DeleteLink(ctx context.Context, id, userID pgtype.UUID) error {
+	l, err := s.store.getLinkByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return ErrLinkNotFound
@@ -388,7 +388,7 @@ func (s *Service) DeleteLink(ctx context.Context, id, userID, tenantID pgtype.UU
 		return ErrLinkNotFound
 	}
 
-	return s.store.deactivateLink(ctx, id, userID, tenantID)
+	return s.store.deactivateLink(ctx, id, userID)
 }
 
 // ── Click Recording ─────────────────────────────────────────────────
@@ -419,7 +419,7 @@ func (s *Service) RecordClick(ctx context.Context, input RecordClickInput) error
 		slog.Error("failed to increment link clicks", "link_id", input.LinkID, "error", err)
 	}
 
-	link, err := s.store.getLinkByID(ctx, input.LinkID, input.TenantID)
+	link, err := s.store.getLinkByID(ctx, input.LinkID)
 	if err != nil {
 		slog.Error("failed to load link for member click increment", "link_id", input.LinkID, "error", err)
 	} else if err := s.store.incrementMemberClicks(ctx, link.UserID); err != nil {
@@ -459,18 +459,18 @@ type RecentEvent struct {
 }
 
 // GetEarnings is an exported method.
-func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID) (*EarningsSummary, error) {
-	earnings, err := s.store.getUserEarnings(ctx, userID, tenantID)
+func (s *Service) GetEarnings(ctx context.Context, userID pgtype.UUID) (*EarningsSummary, error) {
+	earnings, err := s.store.getUserEarnings(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("getting earnings: %w", err)
 	}
 
-	byProduct, err := s.store.getUserEarningsByProduct(ctx, userID, tenantID)
+	byProduct, err := s.store.getUserEarningsByProduct(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("getting earnings by product: %w", err)
 	}
 
-	recent, err := s.store.getRecentEvents(ctx, userID, tenantID, 20)
+	recent, err := s.store.getRecentEvents(ctx, userID, 20)
 	if err != nil {
 		return nil, fmt.Errorf("getting recent events: %w", err)
 	}
@@ -517,8 +517,8 @@ type ProgramStats struct {
 // GetProgramStats returns tenant-scoped program-wide totals for the admin
 // overview endpoint (Section 56). Money is rendered as a string via
 // formatNumeric to avoid float serialization of pgtype.Numeric.
-func (s *Service) GetProgramStats(ctx context.Context, tenantID pgtype.UUID) (*ProgramStats, error) {
-	row, err := s.store.getProgramStats(ctx, tenantID)
+func (s *Service) GetProgramStats(ctx context.Context) (*ProgramStats, error) {
+	row, err := s.store.getProgramStats(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting program stats: %w", err)
 	}

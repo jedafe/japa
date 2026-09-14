@@ -37,7 +37,7 @@ type ResolveResult struct {
 
 // UserManager creates or returns the synthetic user for a video channel.
 type UserManager interface {
-	EnsureSyntheticUser(ctx context.Context, tenantID pgtype.UUID, input users.SyntheticUserInput) (pgtype.UUID, error)
+	EnsureSyntheticUser(ctx context.Context, input users.SyntheticUserInput) (pgtype.UUID, error)
 }
 
 // MediaManager downloads and stores remote thumbnails (URL imports) and
@@ -49,9 +49,9 @@ type MediaManager interface {
 	StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtype.UUID, data []byte, filename string, attribution *media.MediaAttribution) (pgtype.UUID, error)
 	// GetMedia returns the stored media record so the caller can derive the
 	// serve URL from its storage bucket/path.
-	GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error)
+	GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error)
 	// MaxUploadBytes returns the tenant's configured upload size cap.
-	MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64
+	MaxUploadBytes(ctx context.Context) int64
 }
 
 // TaskEnqueuer is the minimal interface needed to enqueue the
@@ -63,9 +63,9 @@ type TaskEnqueuer interface {
 // settingsReader is the subset of the settings service used to read
 // hot-reloadable configuration like video.import.youtube_api_key (Rule 3).
 type settingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
-	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
+	GetBoolOr(ctx context.Context, key string, fallback bool) bool
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // AIDispatcher is the subset of the AI Gateway the video service needs to
@@ -146,22 +146,22 @@ const (
 )
 
 // IsEnabled returns true when the video feature is enabled for the tenant.
-func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) IsEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "video.enabled", true)
+	return s.settings.GetBoolOr(ctx, "video.enabled", true)
 }
 
 // isPlatformAllowed checks the tenant's video.import.allowed_platforms setting.
 // An unparseable value is treated as the default allowlist.
-func (s *Service) isPlatformAllowed(ctx context.Context, tenantID pgtype.UUID, platform string) bool {
+func (s *Service) isPlatformAllowed(ctx context.Context, platform string) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "video.import.allowed_platforms", "")
+	raw := s.settings.GetStringOr(ctx, "video.import.allowed_platforms", "")
 	if raw == "" {
 		return true
 	}
@@ -177,12 +177,12 @@ func (s *Service) isPlatformAllowed(ctx context.Context, tenantID pgtype.UUID, p
 // ResolveURL resolves a public video URL, ensures a synthetic channel user,
 // stores the thumbnail, and persists the canonical video source.
 func (s *Service) ResolveURL(ctx context.Context, tenantID pgtype.UUID, rawURL string) (ResolveResult, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+	if !s.IsEnabled(ctx) {
 		return ResolveResult{}, errpkg.ErrFeatureDisabled
 	}
 
 	if s.settings != nil {
-		if token := s.settings.GetStringOr(ctx, pgtype.UUID{}, "video.import.instagram_access_token", ""); token != "" {
+		if token := s.settings.GetStringOr(ctx, "video.import.instagram_access_token", ""); token != "" {
 			ctx = withInstagramToken(ctx, token)
 		}
 	}
@@ -192,7 +192,7 @@ func (s *Service) ResolveURL(ctx context.Context, tenantID pgtype.UUID, rawURL s
 		return ResolveResult{}, err
 	}
 
-	if !s.isPlatformAllowed(ctx, tenantID, metadata.SourceType) {
+	if !s.isPlatformAllowed(ctx, metadata.SourceType) {
 		return ResolveResult{}, ErrUnsupportedPlatform
 	}
 
@@ -205,7 +205,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 	channelKey := metadata.ChannelKey()
 	email := fmt.Sprintf("synthetic-%s@synthetic.local", channelKey)
 
-	authorID, err := s.userManager.EnsureSyntheticUser(ctx, tenantID, users.SyntheticUserInput{
+	authorID, err := s.userManager.EnsureSyntheticUser(ctx, users.SyntheticUserInput{
 		SourceType:  metadata.SourceType,
 		Username:    channelKey,
 		Email:       email,
@@ -300,7 +300,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 // TipTap `video` node document. Unlike ResolveURL, the author is the real
 // (non-synthetic) uploading user.
 func (s *Service) UploadVideo(ctx context.Context, tenantID, uploaderID pgtype.UUID, filename string, data []byte, title, description string) (ResolveResult, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+	if !s.IsEnabled(ctx) {
 		return ResolveResult{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -309,7 +309,7 @@ func (s *Service) UploadVideo(ctx context.Context, tenantID, uploaderID pgtype.U
 		return ResolveResult{}, fmt.Errorf("storing uploaded video: %w", err)
 	}
 
-	m, err := s.media.GetMedia(ctx, tenantID, mediaID)
+	m, err := s.media.GetMedia(ctx, mediaID)
 	if err != nil {
 		return ResolveResult{}, fmt.Errorf("loading uploaded media: %w", err)
 	}
@@ -370,13 +370,13 @@ func (s *Service) GetSourceByID(ctx context.Context, id pgtype.UUID) (gen.VideoS
 }
 
 // MaxUploadBytes returns the tenant's configured upload size cap in bytes.
-func (s *Service) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64 {
-	return s.media.MaxUploadBytes(ctx, tenantID)
+func (s *Service) MaxUploadBytes(ctx context.Context) int64 {
+	return s.media.MaxUploadBytes(ctx)
 }
 
 // ListChannelVideosByUsername lists active video sources for a channel username.
-func (s *Service) ListChannelVideosByUsername(ctx context.Context, tenantID pgtype.UUID, username string, limit, offset int32) ([]gen.VideoSource, error) {
-	return s.store.ListSourcesByUsername(ctx, tenantID, username, limit, offset)
+func (s *Service) ListChannelVideosByUsername(ctx context.Context, username string, limit, offset int32) ([]gen.VideoSource, error) {
+	return s.store.ListSourcesByUsername(ctx, username, limit, offset)
 }
 
 // CreateImportJob creates a bulk import job.
@@ -385,20 +385,20 @@ func (s *Service) CreateImportJob(ctx context.Context, arg gen.CreateVideoImport
 }
 
 // ListImportJobsByUser lists a user's bulk import jobs.
-func (s *Service) ListImportJobsByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.VideoImportJob, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+func (s *Service) ListImportJobsByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.VideoImportJob, error) {
+	if !s.IsEnabled(ctx) {
 		return nil, errpkg.ErrFeatureDisabled
 	}
 
-	return s.store.ListImportJobsByUser(ctx, tenantID, userID, limit, offset)
+	return s.store.ListImportJobsByUser(ctx, userID, limit, offset)
 }
 
 // SubmitClaim creates a channel ownership claim or a takedown request.
 // For claim_type='claim' the target username must identify a synthetic user.
 // For claim_type='takedown' a video_source_id must identify the offending source;
 // its author becomes the video_author_user_id of the claim.
-func (s *Service) SubmitClaim(ctx context.Context, tenantID, claimantUserID pgtype.UUID, username, claimType, evidenceURL, notes, videoSourceID string) (gen.VideoChannelClaim, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+func (s *Service) SubmitClaim(ctx context.Context, claimantUserID pgtype.UUID, username, claimType, evidenceURL, notes, videoSourceID string) (gen.VideoChannelClaim, error) {
+	if !s.IsEnabled(ctx) {
 		return gen.VideoChannelClaim{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -407,13 +407,13 @@ func (s *Service) SubmitClaim(ctx context.Context, tenantID, claimantUserID pgty
 		return gen.VideoChannelClaim{}, err
 	}
 
-	if err := s.validateClaimant(ctx, tenantID, claimantUserID); err != nil {
+	if err := s.validateClaimant(ctx, claimantUserID); err != nil {
 		return gen.VideoChannelClaim{}, err
 	}
 
 	evidence, notesPtr := optionalStrings(evidenceURL, notes)
 
-	videoAuthorUserID, targetSourceID, err := s.resolveClaimTarget(ctx, tenantID, username, claimType, videoSourceID)
+	videoAuthorUserID, targetSourceID, err := s.resolveClaimTarget(ctx, username, claimType, videoSourceID)
 	if err != nil {
 		return gen.VideoChannelClaim{}, err
 	}
@@ -441,8 +441,8 @@ func validateClaimType(claimType string) (string, error) {
 }
 
 // validateClaimant ensures the claimant is a real user.
-func (s *Service) validateClaimant(ctx context.Context, tenantID, claimantUserID pgtype.UUID) error {
-	claimantIsSynthetic, err := s.store.GetUserSyntheticStatusByID(ctx, tenantID, claimantUserID)
+func (s *Service) validateClaimant(ctx context.Context, claimantUserID pgtype.UUID) error {
+	claimantIsSynthetic, err := s.store.GetUserSyntheticStatusByID(ctx, claimantUserID)
 	if err != nil {
 		return fmt.Errorf("resolving claimant: %w", err)
 	}
@@ -470,10 +470,10 @@ func optionalStrings(evidenceURL, notes string) (evidence, notesPtr *string) {
 }
 
 // resolveClaimTarget resolves the synthetic channel or offending source for a claim.
-func (s *Service) resolveClaimTarget(ctx context.Context, tenantID pgtype.UUID, username, claimType, videoSourceID string) (videoAuthorUserID, targetSourceID pgtype.UUID, err error) {
+func (s *Service) resolveClaimTarget(ctx context.Context, username, claimType, videoSourceID string) (videoAuthorUserID, targetSourceID pgtype.UUID, err error) {
 	switch claimType {
 	case "claim":
-		target, err := s.store.GetUserForClaimByUsername(ctx, tenantID, username)
+		target, err := s.store.GetUserForClaimByUsername(ctx, username)
 		if err != nil {
 			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("resolving channel user: %w", err)
 		}
@@ -482,7 +482,7 @@ func (s *Service) resolveClaimTarget(ctx context.Context, tenantID pgtype.UUID, 
 			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("%w: channel is not synthetic", errpkg.ErrInvalid)
 		}
 
-		openCount, err := s.store.CountOpenClaimsByAuthor(ctx, tenantID, target.ID)
+		openCount, err := s.store.CountOpenClaimsByAuthor(ctx, target.ID)
 		if err != nil {
 			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("checking existing claims: %w", err)
 		}
@@ -517,7 +517,7 @@ func (s *Service) resolveClaimTarget(ctx context.Context, tenantID pgtype.UUID, 
 // ReviewClaim transitions a pending or rejected claim to approved, rejected,
 // or withdrawn. On approval, ownership is transferred (claim) or the source
 // is marked removed (takedown).
-func (s *Service) ReviewClaim(ctx context.Context, tenantID, reviewerUserID, claimID pgtype.UUID, status, resolutionNote string) (gen.VideoChannelClaim, error) {
+func (s *Service) ReviewClaim(ctx context.Context, reviewerUserID, claimID pgtype.UUID, status, resolutionNote string) (gen.VideoChannelClaim, error) {
 	status, err := s.validateReviewStatus(status)
 	if err != nil {
 		return gen.VideoChannelClaim{}, err
@@ -527,7 +527,7 @@ func (s *Service) ReviewClaim(ctx context.Context, tenantID, reviewerUserID, cla
 	notePtr := strPtrOrNil(resolutionNote)
 
 	claim, err := db.WithTxResult(ctx, s.store.db.Writer, func(q *gen.Queries) (gen.VideoChannelClaim, error) {
-		return s.reviewClaimTx(ctx, q, tenantID, reviewerUserID, claimID, status, notePtr)
+		return s.reviewClaimTx(ctx, q, reviewerUserID, claimID, status, notePtr)
 	})
 	if err != nil {
 		return gen.VideoChannelClaim{}, err
@@ -558,7 +558,7 @@ func strPtrOrNil(s string) *string {
 }
 
 // reviewClaimTx performs the claim review inside the passed queries (transaction).
-func (s *Service) reviewClaimTx(ctx context.Context, q *gen.Queries, tenantID, reviewerUserID, claimID pgtype.UUID, status string, notePtr *string) (gen.VideoChannelClaim, error) {
+func (s *Service) reviewClaimTx(ctx context.Context, q *gen.Queries, reviewerUserID, claimID pgtype.UUID, status string, notePtr *string) (gen.VideoChannelClaim, error) {
 	existing, err := q.GetVideoChannelClaimByID(ctx,
 		claimID,
 	)
@@ -575,7 +575,7 @@ func (s *Service) reviewClaimTx(ctx context.Context, q *gen.Queries, tenantID, r
 	}
 
 	if status == claimStatusApproved && existing.Status != claimStatusApproved {
-		if err := executeApprovedClaimSideEffects(ctx, q, tenantID, existing); err != nil {
+		if err := executeApprovedClaimSideEffects(ctx, q, existing); err != nil {
 			return gen.VideoChannelClaim{}, err
 		}
 	}
@@ -609,7 +609,7 @@ func validateClaimStatusTransition(from, to string) error {
 }
 
 // executeApprovedClaimSideEffects runs the ownership transfer or takedown removal.
-func executeApprovedClaimSideEffects(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, existing gen.VideoChannelClaim) error {
+func executeApprovedClaimSideEffects(ctx context.Context, q *gen.Queries, existing gen.VideoChannelClaim) error {
 	switch existing.ClaimType {
 	case "claim":
 		if err := q.ReassignVideoSourcesAuthor(ctx, gen.ReassignVideoSourcesAuthorParams{
@@ -642,16 +642,16 @@ func executeApprovedClaimSideEffects(ctx context.Context, q *gen.Queries, tenant
 }
 
 // ListClaimsByUser lists the current user's submitted claims.
-func (s *Service) ListClaimsByUser(ctx context.Context, tenantID, claimantUserID pgtype.UUID, limit, offset int32) ([]gen.VideoChannelClaim, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+func (s *Service) ListClaimsByUser(ctx context.Context, claimantUserID pgtype.UUID, limit, offset int32) ([]gen.VideoChannelClaim, error) {
+	if !s.IsEnabled(ctx) {
 		return nil, errpkg.ErrFeatureDisabled
 	}
 
-	return s.store.ListClaimsByClaimant(ctx, tenantID, claimantUserID, limit, offset)
+	return s.store.ListClaimsByClaimant(ctx, claimantUserID, limit, offset)
 }
 
 // ListClaimsForAdmin returns the admin review queue with pagination.
-func (s *Service) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, int32, error) {
+func (s *Service) ListClaimsForAdmin(ctx context.Context, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, int32, error) {
 	status = strings.TrimSpace(strings.ToLower(status))
 	claimType = strings.TrimSpace(strings.ToLower(claimType))
 	q = strings.TrimSpace(q)
@@ -666,12 +666,12 @@ func (s *Service) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, 
 		dir = sortDirectionDesc
 	}
 
-	rows, err := s.store.ListClaimsForAdmin(ctx, tenantID, status, claimType, q, sort, dir, limit, offset)
+	rows, err := s.store.ListClaimsForAdmin(ctx, status, claimType, q, sort, dir, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountClaimsForAdmin(ctx, tenantID, status, claimType, q)
+	total, err := s.store.CountClaimsForAdmin(ctx, status, claimType, q)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -680,7 +680,7 @@ func (s *Service) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // ListSourcesForAdmin returns the video source admin queue with pagination.
-func (s *Service) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoSourcesForAdminRow, int32, error) {
+func (s *Service) ListSourcesForAdmin(ctx context.Context, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoSourcesForAdminRow, int32, error) {
 	status = strings.TrimSpace(strings.ToLower(status))
 	sourceType = strings.TrimSpace(strings.ToLower(sourceType))
 	q = strings.TrimSpace(q)
@@ -695,12 +695,12 @@ func (s *Service) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID,
 		dir = sortDirectionDesc
 	}
 
-	rows, err := s.store.ListSourcesForAdmin(ctx, tenantID, status, sourceType, q, sort, dir, limit, offset)
+	rows, err := s.store.ListSourcesForAdmin(ctx, status, sourceType, q, sort, dir, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountSourcesForAdmin(ctx, tenantID, status, sourceType, q)
+	total, err := s.store.CountSourcesForAdmin(ctx, status, sourceType, q)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -709,28 +709,28 @@ func (s *Service) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // GetSourceForAdmin returns a single video source for admin review.
-func (s *Service) GetSourceForAdmin(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoSource, error) {
+func (s *Service) GetSourceForAdmin(ctx context.Context, id pgtype.UUID) (gen.VideoSource, error) {
 	return s.store.GetSourceByID(ctx, id)
 }
 
 // UpdateSourceStatus sets a video source status (active/removed). Used by
 // admin removal / takedown flows.
-func (s *Service) UpdateSourceStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) (gen.VideoSource, error) {
+func (s *Service) UpdateSourceStatus(ctx context.Context, id pgtype.UUID, status string) (gen.VideoSource, error) {
 	status = strings.TrimSpace(strings.ToLower(status))
 	if status != "active" && status != "removed" {
 		return gen.VideoSource{}, fmt.Errorf("%w: invalid status", errpkg.ErrInvalid)
 	}
 
-	return s.store.UpdateVideoSourceStatus(ctx, tenantID, id, status)
+	return s.store.UpdateVideoSourceStatus(ctx, id, status)
 }
 
 // GetImportJobForAdmin returns a single video import job by id without user scoping.
-func (s *Service) GetImportJobForAdmin(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoImportJob, error) {
+func (s *Service) GetImportJobForAdmin(ctx context.Context, id pgtype.UUID) (gen.VideoImportJob, error) {
 	return s.store.GetImportJobByID(ctx, id)
 }
 
 // ListImportJobsForAdmin returns the video import job admin queue with pagination.
-func (s *Service) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoImportJobsForAdminRow, int32, error) {
+func (s *Service) ListImportJobsForAdmin(ctx context.Context, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoImportJobsForAdminRow, int32, error) {
 	status = strings.TrimSpace(strings.ToLower(status))
 	sourceType = strings.TrimSpace(strings.ToLower(sourceType))
 	q = strings.TrimSpace(q)
@@ -745,12 +745,12 @@ func (s *Service) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UU
 		dir = sortDirectionDesc
 	}
 
-	rows, err := s.store.ListImportJobsForAdmin(ctx, tenantID, status, sourceType, q, sort, dir, limit, offset)
+	rows, err := s.store.ListImportJobsForAdmin(ctx, status, sourceType, q, sort, dir, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountImportJobsForAdmin(ctx, tenantID, status, sourceType, q)
+	total, err := s.store.CountImportJobsForAdmin(ctx, status, sourceType, q)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -759,7 +759,7 @@ func (s *Service) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UU
 }
 
 // RetryImportJob re-enqueues a failed or completed video import job from the admin queue.
-func (s *Service) RetryImportJob(ctx context.Context, tenantID, id, userID pgtype.UUID) (gen.VideoImportJob, error) {
+func (s *Service) RetryImportJob(ctx context.Context, id, userID pgtype.UUID) (gen.VideoImportJob, error) {
 	job, err := s.store.GetImportJobByID(ctx, id)
 	if err != nil {
 		return gen.VideoImportJob{}, err
@@ -907,16 +907,16 @@ func (s *Service) GenerateDraft(ctx context.Context, userID, videoSourceID pgtyp
 // EnqueueGenerateSummary enqueues a video:generate_summary Asynq task for
 // background AI draft generation. It is gated by the video.ai_summary.enabled
 // system setting (§106, ADR-117).
-func (s *Service) EnqueueGenerateSummary(ctx context.Context, tenantID, userID, videoSourceID pgtype.UUID) error {
+func (s *Service) EnqueueGenerateSummary(ctx context.Context, userID, videoSourceID pgtype.UUID) error {
 	if !videoSourceID.Valid {
 		return fmt.Errorf("%w: video_source_id is required", errpkg.ErrRequired)
 	}
 
-	if !s.IsEnabled(ctx, tenantID) {
+	if !s.IsEnabled(ctx) {
 		return errpkg.ErrFeatureDisabled
 	}
 
-	if s.settings != nil && !s.settings.GetBoolOr(ctx, pgtype.UUID{}, "video.ai_summary.enabled", false) {
+	if s.settings != nil && !s.settings.GetBoolOr(ctx, "video.ai_summary.enabled", false) {
 		return fmt.Errorf("%w: video AI summary is disabled", errpkg.ErrFeatureDisabled)
 	}
 

@@ -25,7 +25,7 @@ func NewStore(read, write *gen.Queries) *Store {
 
 // ── Menus ─────────────────────────────────────────────────────────────
 
-func (s *Store) listMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) ([]gen.ListMenusRow, error) {
+func (s *Store) listMenus(ctx context.Context, q, placement, status, sort, sortDir string, limit, offset int32) ([]gen.ListMenusRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -41,7 +41,7 @@ func (s *Store) listMenus(ctx context.Context, tenantID pgtype.UUID, q, placemen
 	return rows, nil
 }
 
-func (s *Store) countMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status string) (int32, error) {
+func (s *Store) countMenus(ctx context.Context, q, placement, status string) (int32, error) {
 	count, err := s.read.CountMenus(ctx, gen.CountMenusParams{
 		Q: q, Placement: placement, Status: status,
 	})
@@ -52,7 +52,7 @@ func (s *Store) countMenus(ctx context.Context, tenantID pgtype.UUID, q, placeme
 	return count, nil
 }
 
-func (s *Store) getMenuByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Menu, error) {
+func (s *Store) getMenuByID(ctx context.Context, id pgtype.UUID) (gen.Menu, error) {
 	row, err := s.read.GetMenuByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -65,7 +65,7 @@ func (s *Store) getMenuByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 	return row, nil
 }
 
-func (s *Store) getMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.Menu, error) {
+func (s *Store) getMenuBySlug(ctx context.Context, slug string) (gen.Menu, error) {
 	row, err := s.read.GetMenuBySlugForTenant(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -108,7 +108,7 @@ func (s *Store) updateMenu(ctx context.Context, p gen.UpdateMenuParams) (gen.Men
 	return row, nil
 }
 
-func (s *Store) deleteMenu(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteMenu(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteMenu(ctx, id); err != nil {
 		return fmt.Errorf("deleting menu: %w", err)
 	}
@@ -118,7 +118,7 @@ func (s *Store) deleteMenu(ctx context.Context, id, tenantID pgtype.UUID) error 
 
 // ── Menu Items ────────────────────────────────────────────────────────
 
-func (s *Store) listMenuItems(ctx context.Context, tenantID, menuID pgtype.UUID) ([]gen.ListMenuItemsRow, error) {
+func (s *Store) listMenuItems(ctx context.Context, menuID pgtype.UUID) ([]gen.ListMenuItemsRow, error) {
 	rows, err := s.read.ListMenuItems(ctx, menuID)
 	if err != nil {
 		return nil, fmt.Errorf("listing menu items: %w", err)
@@ -127,7 +127,7 @@ func (s *Store) listMenuItems(ctx context.Context, tenantID, menuID pgtype.UUID)
 	return rows, nil
 }
 
-func (s *Store) getMenuItem(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetMenuItemRow, error) {
+func (s *Store) getMenuItem(ctx context.Context, id pgtype.UUID) (gen.GetMenuItemRow, error) {
 	row, err := s.read.GetMenuItem(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -158,7 +158,7 @@ func (s *Store) updateMenuItem(ctx context.Context, p gen.UpdateMenuItemParams) 
 	return row, nil
 }
 
-func (s *Store) deleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteMenuItem(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteMenuItem(ctx, id); err != nil {
 		return fmt.Errorf("deleting menu item: %w", err)
 	}
@@ -166,7 +166,7 @@ func (s *Store) deleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) er
 	return nil
 }
 
-func (s *Store) bulkUpdateMenuItemSortOrder(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID, sortOrders []int32) error {
+func (s *Store) bulkUpdateMenuItemSortOrder(ctx context.Context, ids []pgtype.UUID, sortOrders []int32) error {
 	if err := s.write.BulkUpdateMenuItemSortOrder(ctx, gen.BulkUpdateMenuItemSortOrderParams{
 		Ids: ids, SortOrders: sortOrders,
 	}); err != nil {
@@ -178,7 +178,7 @@ func (s *Store) bulkUpdateMenuItemSortOrder(ctx context.Context, tenantID pgtype
 
 // ── User group resolution ──────────────────────────────────────────────
 
-func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUID) ([]string, error) {
+func (s *Store) getUserGroupIDs(ctx context.Context, userID pgtype.UUID) ([]string, error) {
 	rows, err := s.read.GetUserGroupIDs(ctx,
 		userID,
 	)

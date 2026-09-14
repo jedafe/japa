@@ -9,7 +9,7 @@ import (
 )
 
 // ToggleFollowSpace is an exported method.
-func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
+func (s *Service) ToggleFollowSpace(ctx context.Context, userID, spaceID pgtype.UUID) (bool, error) {
 	isFollowing, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
 
 		FollowerID: userID,
@@ -94,7 +94,7 @@ func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgt
 }
 
 // IsSpaceMuted is an exported method.
-func (s *Service) IsSpaceMuted(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
+func (s *Service) IsSpaceMuted(ctx context.Context, userID, spaceID pgtype.UUID) (bool, error) {
 	return s.read.IsSpaceMuted(ctx, gen.IsSpaceMutedParams{
 
 		UserID:  userID,

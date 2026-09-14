@@ -16,7 +16,7 @@ import (
 // ListContentLikedByUser returns published+public content the given user has
 // reacted to (any reaction key), newest reaction first, paginated. Powers the
 // public profile Likes tab — draft/private content is excluded by the query.
-func (s *Service) ListContentLikedByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListContentLikedByUserRow, error) {
+func (s *Service) ListContentLikedByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListContentLikedByUserRow, error) {
 	rows, err := s.read.ListContentLikedByUser(ctx, gen.ListContentLikedByUserParams{
 
 		UserID:     userID,
@@ -34,7 +34,7 @@ func (s *Service) ListContentLikedByUser(ctx context.Context, tenantID, userID p
 // Public-safe: only published+public content; non-active users are already
 // 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -55,7 +55,7 @@ func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := h.Service.ListContentLikedByUser(r.Context(), tenantID, userID, limit, offset)
+	rows, err := h.Service.ListContentLikedByUser(r.Context(), userID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list liked content")
 		return

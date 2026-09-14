@@ -100,12 +100,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // organisations with filters. Query params:
 // ?dest=&city=&origin=&type=&lat=&lng=&radius=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
@@ -151,7 +151,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	orgs, total, err := h.service.List(r.Context(), tenantID, destSpaceID, citySpaceID, originCommunity, orgType, lat, lng, radiusKm, page, limit)
+	orgs, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, originCommunity, orgType, lat, lng, radiusKm, page, limit)
 	if err != nil {
 		slog.Error("communitylocator: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list community organisations")
@@ -175,12 +175,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // of hardcoding the options. Public/anonymous (the list itself is not
 // sensitive); feature-flagged with the rest of the routes.
 func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
@@ -191,12 +191,12 @@ func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /community-locator/:slug — single published
 // community organisation.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
@@ -207,7 +207,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	org, err := h.service.GetBySlug(r.Context(), slug, tenantID)
+	org, err := h.service.GetBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
@@ -235,13 +235,12 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
@@ -281,7 +280,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		input.Slug = slugify(input.Name)
 	}
 
-	org, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
+	org, err := h.service.Submit(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateSlug) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
@@ -316,7 +315,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
@@ -348,8 +347,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -380,7 +378,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	orgs, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, originCommunity, orgType, status, q, sort, dir, page, limit)
+	orgs, total, err := h.service.AdminList(r.Context(), destSpaceID, originCommunity, orgType, status, q, sort, dir, page, limit)
 	if err != nil {
 		slog.Error("communitylocator: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list community organisations")

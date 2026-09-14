@@ -111,7 +111,7 @@ func parseOffset(r *http.Request) int32 {
 // ListPrograms returns all mentorship programs for the tenant.
 // GET /admin/mentorship/programs.
 func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -119,7 +119,7 @@ func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 
-	programs, err := h.Service.ListPrograms(r.Context(), tenantID, limit, offset)
+	programs, err := h.Service.ListPrograms(r.Context(), limit, offset)
 	if err != nil {
 		slog.Error("listing mentorship programs", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list programs")
@@ -133,7 +133,7 @@ func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 // GetProgram returns a single mentorship program by ID.
 // GET /admin/mentorship/programs/{id}.
 func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -144,7 +144,7 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	program, err := h.Service.GetProgram(r.Context(), tenantID, id)
+	program, err := h.Service.GetProgram(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Program not found")
 		return
@@ -156,7 +156,7 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 // CreateProgram creates a new mentorship program.
 // POST /admin/mentorship/programs.
 func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -182,7 +182,7 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 		isActive = *input.IsActive
 	}
 
-	program, err := h.Service.CreateProgram(r.Context(), tenantID, input.Name, input.Description, isActive)
+	program, err := h.Service.CreateProgram(r.Context(), input.Name, input.Description, isActive)
 	if err != nil {
 		slog.Error("creating mentorship program", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create program")
@@ -196,7 +196,7 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 // UpdateProgram updates an existing mentorship program.
 // PATCH /admin/mentorship/programs/{id}.
 func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,7 +218,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	program, err := h.Service.UpdateProgram(r.Context(), tenantID, id, input.Name, input.Description, input.IsActive)
+	program, err := h.Service.UpdateProgram(r.Context(), id, input.Name, input.Description, input.IsActive)
 	if err != nil {
 		slog.Error("updating mentorship program", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
@@ -236,7 +236,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 // ListMatches returns all mentor-mentee matches for the tenant.
 // GET /admin/mentorship/matches.
 func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -244,7 +244,7 @@ func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 
-	matches, err := h.Service.ListMatches(r.Context(), tenantID, limit, offset)
+	matches, err := h.Service.ListMatches(r.Context(), limit, offset)
 	if err != nil {
 		slog.Error("listing mentorship matches", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list matches")
@@ -258,7 +258,7 @@ func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 // UpdateMatch updates a mentor-mentee match status.
 // PATCH /admin/mentorship/matches/{id}.
 func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -283,7 +283,7 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	match, err := h.Service.UpdateMatch(r.Context(), tenantID, id, *input.Status)
+	match, err := h.Service.UpdateMatch(r.Context(), id, *input.Status)
 	if err != nil {
 		slog.Error("updating mentorship match", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update match")
@@ -297,7 +297,7 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 // DeleteProgram deletes a mentorship program.
 // DELETE /admin/mentorship/programs/{id}.
 func (h *Handlers) DeleteProgram(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -308,7 +308,7 @@ func (h *Handlers) DeleteProgram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteProgram(r.Context(), tenantID, id); err != nil {
+	if err := h.Service.DeleteProgram(r.Context(), id); err != nil {
 		if errors.Is(err, ErrProgramNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Program not found")
 			return
@@ -366,7 +366,7 @@ func parsePage(r *http.Request) (int32, int32) {
 // When dest is empty and the user is authenticated, injects the user's
 // profile destination as the default filter (§102 Geo Awareness).
 func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -395,7 +395,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 	// inject the user's profile destination as the default filter.
 	if !destSpaceID.Valid {
 		if u := auth.FromContext(r.Context()); u != nil {
-			if defaultDest, _ := h.Service.GetMenteeDestinationSpaceID(r.Context(), tenantID, u.UserID); defaultDest.Valid {
+			if defaultDest, _ := h.Service.GetMenteeDestinationSpaceID(r.Context(), u.UserID); defaultDest.Valid {
 				destSpaceID = defaultDest
 			}
 		}
@@ -408,11 +408,11 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 
 	if sort == "match" {
 		if u := auth.FromContext(r.Context()); u != nil {
-			menteeEmbedding, _ = h.Service.GetMenteeEmbedding(r.Context(), tenantID, u.UserID)
+			menteeEmbedding, _ = h.Service.GetMenteeEmbedding(r.Context(), u.UserID)
 		}
 	}
 
-	mentors, total, err := h.Service.ListMentors(r.Context(), tenantID, destSpaceID, areas, sort, menteeEmbedding, limit, offset)
+	mentors, total, err := h.Service.ListMentors(r.Context(), destSpaceID, areas, sort, menteeEmbedding, limit, offset)
 	if err != nil {
 		slog.Error("listing mentors", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list mentors")
@@ -445,7 +445,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 // GetMentorByUsername returns a mentor's public profile.
 // GET /api/v1/mentors/{username}.
 func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -456,7 +456,7 @@ func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mentor, err := h.Service.GetMentorByUsername(r.Context(), tenantID, username)
+	mentor, err := h.Service.GetMentorByUsername(r.Context(), username)
 	if err != nil {
 		if errors.Is(err, ErrMentorNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "mentor_not_found", "Mentor not found")
@@ -475,7 +475,7 @@ func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 // CompareMentors returns up to 4 mentors for the comparison endpoint.
 // GET /api/v1/compare/mentors?ids=a,b,c,d.
 func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -504,7 +504,7 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 		userIDs = append(userIDs, id)
 	}
 
-	mentors, err := h.Service.GetMentorsByIDs(r.Context(), tenantID, userIDs)
+	mentors, err := h.Service.GetMentorsByIDs(r.Context(), userIDs)
 	if err != nil {
 		slog.Error("comparing mentors", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to compare mentors")
@@ -518,7 +518,7 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 // GetMyMentorProfile returns the current user's mentor profile settings.
 // GET /api/v1/me/mentor-profile.
 func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -528,7 +528,7 @@ func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.Service.GetMentorProfile(r.Context(), tenantID, userID)
+	profile, err := h.Service.GetMentorProfile(r.Context(), userID)
 	if err != nil {
 		slog.Error("getting mentor profile", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor profile")
@@ -585,7 +585,7 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 // RequestMentorship creates a new mentorship request.
 // POST /api/v1/mentorship/request.
 func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -625,7 +625,7 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	conn, err := h.Service.CreateConnection(r.Context(), tenantID, mentorID, userID, input.Goals, destSpaceID)
+	conn, err := h.Service.CreateConnection(r.Context(), mentorID, userID, input.Goals, destSpaceID)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrCannotSelfMentor):
@@ -647,7 +647,7 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 // ListOutgoingConnections lists requests sent by the current user (as mentee).
 // GET /api/v1/me/mentorship/outgoing.
 func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -660,7 +660,7 @@ func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Reques
 	limit, offset := parsePage(r)
 	status := r.URL.Query().Get("status")
 
-	conns, err := h.Service.ListOutgoingConnections(r.Context(), tenantID, userID, status, limit, offset)
+	conns, err := h.Service.ListOutgoingConnections(r.Context(), userID, status, limit, offset)
 	if err != nil {
 		slog.Error("listing outgoing connections", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list outgoing connections")
@@ -674,7 +674,7 @@ func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Reques
 // CancelOutgoingConnection cancels a pending request by the mentee.
 // DELETE /api/v1/me/mentorship/outgoing/{id}.
 func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -690,7 +690,7 @@ func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.Service.CancelOutgoingConnection(r.Context(), tenantID, userID, connID); err != nil {
+	if err := h.Service.CancelOutgoingConnection(r.Context(), userID, connID); err != nil {
 		if errors.Is(err, ErrConnectionNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
 			return
@@ -708,7 +708,7 @@ func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Reque
 // ListIncomingConnections lists requests received by the current user (as mentor).
 // GET /api/v1/me/mentorship/incoming.
 func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -721,7 +721,7 @@ func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Reques
 	limit, offset := parsePage(r)
 	status := r.URL.Query().Get("status")
 
-	conns, err := h.Service.ListIncomingConnections(r.Context(), tenantID, userID, status, limit, offset)
+	conns, err := h.Service.ListIncomingConnections(r.Context(), userID, status, limit, offset)
 	if err != nil {
 		slog.Error("listing incoming connections", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list incoming connections")
@@ -774,7 +774,7 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 // Only the mentor of the connection can decline.
 // PATCH /api/v1/me/mentorship/incoming/{id}/decline.
 func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -790,7 +790,7 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := h.Service.DeclineConnection(r.Context(), tenantID, userID, connID)
+	conn, err := h.Service.DeclineConnection(r.Context(), userID, connID)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrConnectionNotFound):
@@ -899,7 +899,7 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 // ListAllConnections lists all connections for admin.
 // GET /api/v1/admin/mentorship/connections.
 func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -916,7 +916,7 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 		_ = menteeID.Scan(v)
 	}
 
-	conns, err := h.Service.ListAllConnections(r.Context(), tenantID, status, mentorID, menteeID, limit, offset)
+	conns, err := h.Service.ListAllConnections(r.Context(), status, mentorID, menteeID, limit, offset)
 	if err != nil {
 		slog.Error("listing all connections", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list connections")
@@ -930,7 +930,7 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 // AdminUpdateConnection allows an admin to override a connection's status.
 // PATCH /api/v1/admin/mentorship/connections/{id}.
 func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -955,7 +955,7 @@ func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	conn, err := h.Service.AdminUpdateConnection(r.Context(), tenantID, connID, *input.Status)
+	conn, err := h.Service.AdminUpdateConnection(r.Context(), connID, *input.Status)
 	if err != nil {
 		if errors.Is(err, ErrConnectionNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found")

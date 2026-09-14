@@ -23,7 +23,7 @@ func NewCityResolver(store *costofliving.Store) Resolver {
 	return &cityResolver{store: store}
 }
 
-func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	idStr, ok := ref["id"].(string)
 	if !ok || idStr == "" {
 		return ResolvedItem{}, false, errors.New("col_city item_ref missing id")
@@ -34,7 +34,7 @@ func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any, tenantID
 		return ResolvedItem{}, false, err
 	}
 
-	row, err := r.store.GetCityByID(ctx, tenantID, id)
+	row, err := r.store.GetCityByID(ctx, id)
 	if err != nil {
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil
@@ -46,7 +46,7 @@ func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any, tenantID
 	return cityRowToResolvedItem(row), true, nil
 }
 
-func (r *cityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *cityResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -59,7 +59,7 @@ func (r *cityResolver) Search(ctx context.Context, query string, filters map[str
 		offset = 0
 	}
 
-	typeDef, err := r.store.GetCostOfLivingType(ctx, tenantID)
+	typeDef, err := r.store.GetCostOfLivingType(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching cost_of_living type: %w", err)
 	}
@@ -76,7 +76,7 @@ func (r *cityResolver) Search(ctx context.Context, query string, filters map[str
 	stateID = parseUUIDFilter(filters, "state_id")
 	cityID = parseUUIDFilter(filters, "city_id")
 
-	rows, err := r.store.ListCities(ctx, tenantID, typeDef.ID, query, countryCode, countryID, stateID, cityID, offset, limit)
+	rows, err := r.store.ListCities(ctx, typeDef.ID, query, countryCode, countryID, stateID, cityID, offset, limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching cities: %w", err)
 	}

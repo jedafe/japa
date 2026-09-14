@@ -19,7 +19,7 @@ type CreateSeriesInput struct {
 }
 
 // CreateSeries creates a new blog series.
-func (s *Service) CreateSeries(ctx context.Context, tenantID, authorUserID pgtype.UUID, input CreateSeriesInput) (gen.BlogSeries, error) {
+func (s *Service) CreateSeries(ctx context.Context, authorUserID pgtype.UUID, input CreateSeriesInput) (gen.BlogSeries, error) {
 	if input.Title == "" {
 		return gen.BlogSeries{}, errors.New("title is required")
 	}
@@ -44,14 +44,14 @@ func (s *Service) CreateSeries(ctx context.Context, tenantID, authorUserID pgtyp
 }
 
 // GetSeries retrieves a blog series by ID.
-func (s *Service) GetSeries(ctx context.Context, id, tenantID pgtype.UUID) (gen.BlogSeries, error) {
-	return s.store.getBlogSeriesByID(ctx, id, tenantID)
+func (s *Service) GetSeries(ctx context.Context, id pgtype.UUID) (gen.BlogSeries, error) {
+	return s.store.getBlogSeriesByID(ctx, id)
 }
 
 // GetSeriesBySlug retrieves a blog series by slug and returns a public DTO
 // with a computed cover_image_url.
-func (s *Service) GetSeriesBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (Series, error) {
-	row, err := s.store.getBlogSeriesBySlug(ctx, slug, tenantID)
+func (s *Service) GetSeriesBySlug(ctx context.Context, slug string) (Series, error) {
+	row, err := s.store.getBlogSeriesBySlug(ctx, slug)
 	if err != nil {
 		return Series{}, err
 	}
@@ -61,8 +61,8 @@ func (s *Service) GetSeriesBySlug(ctx context.Context, slug string, tenantID pgt
 
 // ListSeriesByTenant returns paginated public series DTOs for a tenant,
 // optionally filtered by the autocomplete query `q` (L2 — filter now in SQL).
-func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string, limit, offset int32) ([]Series, error) {
-	rows, err := s.store.listBlogSeriesByTenant(ctx, tenantID, q, contentType, limit, offset)
+func (s *Service) ListSeriesByTenant(ctx context.Context, q, contentType string, limit, offset int32) ([]Series, error) {
+	rows, err := s.store.listBlogSeriesByTenant(ctx, q, contentType, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -77,13 +77,13 @@ func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, 
 
 // CountSeriesByTenant returns the total number of tenant-scoped series,
 // respecting the same `q` filter as ListSeriesByTenant.
-func (s *Service) CountSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string) (int64, error) {
-	return s.store.countBlogSeriesByTenant(ctx, tenantID, q, contentType)
+func (s *Service) CountSeriesByTenant(ctx context.Context, q, contentType string) (int64, error) {
+	return s.store.countBlogSeriesByTenant(ctx, q, contentType)
 }
 
 // ListSeriesByAuthor returns paginated public series DTOs for an author.
-func (s *Service) ListSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID, limit, offset int32) ([]Series, error) {
-	rows, err := s.store.listBlogSeriesByAuthor(ctx, tenantID, authorUserID, limit, offset)
+func (s *Service) ListSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, limit, offset int32) ([]Series, error) {
+	rows, err := s.store.listBlogSeriesByAuthor(ctx, authorUserID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -97,12 +97,12 @@ func (s *Service) ListSeriesByAuthor(ctx context.Context, tenantID, authorUserID
 }
 
 // CountSeriesByAuthor returns the total number of blog series for an author.
-func (s *Service) CountSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID) (int64, error) {
-	return s.store.countBlogSeriesByAuthor(ctx, tenantID, authorUserID)
+func (s *Service) CountSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID) (int64, error) {
+	return s.store.countBlogSeriesByAuthor(ctx, authorUserID)
 }
 
 // UpdateSeries updates a blog series. M2: slug is now updatable.
-func (s *Service) UpdateSeries(ctx context.Context, id, tenantID pgtype.UUID, title, slug, description string, coverImageID pgtype.UUID, status string) (gen.BlogSeries, error) {
+func (s *Service) UpdateSeries(ctx context.Context, id pgtype.UUID, title, slug, description string, coverImageID pgtype.UUID, status string) (gen.BlogSeries, error) {
 	if title == "" {
 		return gen.BlogSeries{}, errors.New("title is required")
 	}
@@ -133,8 +133,8 @@ func (s *Service) UpdateSeries(ctx context.Context, id, tenantID pgtype.UUID, ti
 }
 
 // DeleteSeries deletes a blog series.
-func (s *Service) DeleteSeries(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.deleteBlogSeries(ctx, id, tenantID)
+func (s *Service) DeleteSeries(ctx context.Context, id pgtype.UUID) error {
+	return s.store.deleteBlogSeries(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -166,8 +166,8 @@ func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID, tena
 // BUG-003: verifies the series belongs to the caller's tenant before
 // deleting, otherwise an attacker with blog.series.edit in tenant A could
 // remove posts from a series in tenant B by knowing its series_id.
-func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID, tenantID pgtype.UUID) error {
-	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
+func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID pgtype.UUID) error {
+	if _, err := s.store.getBlogSeriesByID(ctx, seriesID); err != nil {
 		return fmt.Errorf("verifying series tenant: %w", err)
 	}
 
@@ -176,22 +176,22 @@ func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID,
 
 // ListPostsInSeries returns all posts in a series ordered by position.
 // H5: now tenant-scoped and filters soft-deleted contents.
-func (s *Service) ListPostsInSeries(ctx context.Context, seriesID, tenantID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
-	return s.store.listPostsInSeries(ctx, seriesID, tenantID)
+func (s *Service) ListPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
+	return s.store.listPostsInSeries(ctx, seriesID)
 }
 
 // GetSeriesForContent returns the series_id for a given content_id, or
 // pgx.ErrNoRows if the content is not part of any series. Used by the
 // editor load to restore the series selector. BUG-009: tenant-scoped.
-func (s *Service) GetSeriesForContent(ctx context.Context, contentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
-	return s.store.getSeriesForContent(ctx, contentID, tenantID)
+func (s *Service) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
+	return s.store.getSeriesForContent(ctx, contentID)
 }
 
 // ReorderPostsInSeries updates the position of a post within a series.
 // BUG-004: verifies the series belongs to the caller's tenant before
 // mutating (same cross-tenant risk as BulkReorderSeriesPosts).
-func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID, tenantID pgtype.UUID, position int32) error {
-	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
+func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
+	if _, err := s.store.getBlogSeriesByID(ctx, seriesID); err != nil {
 		return fmt.Errorf("verifying series tenant: %w", err)
 	}
 
@@ -203,12 +203,12 @@ func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID,
 // BUG-004: verifies the series belongs to the caller's tenant before
 // mutating, otherwise an attacker with blog.series.edit in tenant A could
 // wipe and rewrite the post order of a series in tenant B.
-func (s *Service) BulkReorderSeriesPosts(ctx context.Context, seriesID, tenantID pgtype.UUID, posts []struct {
+func (s *Service) BulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID, posts []struct {
 	ContentID pgtype.UUID
 	Position  int32
 },
 ) error {
-	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
+	if _, err := s.store.getBlogSeriesByID(ctx, seriesID); err != nil {
 		return fmt.Errorf("verifying series tenant: %w", err)
 	}
 
@@ -229,7 +229,7 @@ type CreateReviewInput struct {
 // CreateReview creates a new content review.
 // BUG-003: reviewer_user_id is now nullable — pass pgtype.UUID{} (zero value,
 // Valid=false → NULL) when no reviewer is assigned yet (e.g. SubmitForReview).
-func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.ContentReview, error) {
+func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.ContentReview, error) {
 	if input.ContentID == (pgtype.UUID{}) {
 		return gen.ContentReview{}, errors.New("content_id is required")
 	}
@@ -254,23 +254,23 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 }
 
 // GetReview retrieves a content review by ID.
-func (s *Service) GetReview(ctx context.Context, id, tenantID pgtype.UUID) (gen.ContentReview, error) {
-	return s.store.getContentReviewByID(ctx, id, tenantID)
+func (s *Service) GetReview(ctx context.Context, id pgtype.UUID) (gen.ContentReview, error) {
+	return s.store.getContentReviewByID(ctx, id)
 }
 
 // ListReviewsByContent returns all reviews for a content item.
-func (s *Service) ListReviewsByContent(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ContentReview, error) {
-	return s.store.listContentReviewsByContent(ctx, contentID, tenantID)
+func (s *Service) ListReviewsByContent(ctx context.Context, contentID pgtype.UUID) ([]gen.ContentReview, error) {
+	return s.store.listContentReviewsByContent(ctx, contentID)
 }
 
 // ListPendingReviews returns paginated pending reviews for a tenant.
-func (s *Service) ListPendingReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ContentReview, error) {
-	return s.store.listPendingContentReviews(ctx, tenantID, limit, offset)
+func (s *Service) ListPendingReviews(ctx context.Context, limit, offset int32) ([]gen.ContentReview, error) {
+	return s.store.listPendingContentReviews(ctx, limit, offset)
 }
 
 // UpdateReviewStatus updates a review's status and feedback.
 // BUG-003: also records the actual reviewer's user ID on approve/reject.
-func (s *Service) UpdateReviewStatus(ctx context.Context, id, tenantID, reviewerUserID pgtype.UUID, status, feedback string) (gen.ContentReview, error) {
+func (s *Service) UpdateReviewStatus(ctx context.Context, id, reviewerUserID pgtype.UUID, status, feedback string) (gen.ContentReview, error) {
 	if status == "" {
 		return gen.ContentReview{}, errors.New("status is required")
 	}
@@ -290,8 +290,8 @@ func (s *Service) UpdateReviewStatus(ctx context.Context, id, tenantID, reviewer
 }
 
 // DeleteReview removes a content review by ID.
-func (s *Service) DeleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.deleteContentReview(ctx, id, tenantID)
+func (s *Service) DeleteReview(ctx context.Context, id pgtype.UUID) error {
+	return s.store.deleteContentReview(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ type FeaturePostInput struct {
 }
 
 // FeaturePost marks a post as featured.
-func (s *Service) FeaturePost(ctx context.Context, tenantID pgtype.UUID, input FeaturePostInput) (gen.ContentFeatured, error) {
+func (s *Service) FeaturePost(ctx context.Context, input FeaturePostInput) (gen.ContentFeatured, error) {
 	if input.ContentID == (pgtype.UUID{}) {
 		return gen.ContentFeatured{}, errors.New("content_id is required")
 	}
@@ -320,40 +320,40 @@ func (s *Service) FeaturePost(ctx context.Context, tenantID pgtype.UUID, input F
 }
 
 // UnfeaturePost removes a post from featured.
-func (s *Service) UnfeaturePost(ctx context.Context, tenantID, contentID pgtype.UUID) error {
-	return s.store.unfeatureContent(ctx, tenantID, contentID)
+func (s *Service) UnfeaturePost(ctx context.Context, contentID pgtype.UUID) error {
+	return s.store.unfeatureContent(ctx, contentID)
 }
 
 // ListFeaturedPosts returns paginated featured posts.
-func (s *Service) ListFeaturedPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ContentFeatured, error) {
-	return s.store.listFeaturedPosts(ctx, tenantID, limit, offset)
+func (s *Service) ListFeaturedPosts(ctx context.Context, limit, offset int32) ([]gen.ContentFeatured, error) {
+	return s.store.listFeaturedPosts(ctx, limit, offset)
 }
 
 // UpdateFeaturedPostOrder updates the display order of a featured post.
-func (s *Service) UpdateFeaturedPostOrder(ctx context.Context, id, tenantID pgtype.UUID, order int32) error {
-	return s.store.updateFeaturedOrder(ctx, id, tenantID, order)
+func (s *Service) UpdateFeaturedPostOrder(ctx context.Context, id pgtype.UUID, order int32) error {
+	return s.store.updateFeaturedOrder(ctx, id, order)
 }
 
 // BulkUpdateFeaturedOrder transactionally updates all featured post orders
 // (M3 — all-or-nothing on failure).
-func (s *Service) BulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUID, items []struct {
+func (s *Service) BulkUpdateFeaturedOrder(ctx context.Context, items []struct {
 	ID    pgtype.UUID
 	Order int32
 },
 ) error {
-	return s.store.bulkUpdateFeaturedOrder(ctx, tenantID, items)
+	return s.store.bulkUpdateFeaturedOrder(ctx, items)
 }
 
 // ListFeaturedBlogPostCards returns enriched featured post cards with JOINs
 // to contents, users, and media (H6).
-func (s *Service) ListFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListFeaturedBlogPostCardsRow, error) {
-	return s.store.listFeaturedBlogPostCards(ctx, tenantID, limit, offset)
+func (s *Service) ListFeaturedBlogPostCards(ctx context.Context, limit, offset int32) ([]gen.ListFeaturedBlogPostCardsRow, error) {
+	return s.store.listFeaturedBlogPostCards(ctx, limit, offset)
 }
 
 // CountFeaturedBlogPostCards returns the total number of active featured blog
 // posts for pagination meta.
-func (s *Service) CountFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	return s.store.countFeaturedBlogPostCards(ctx, tenantID)
+func (s *Service) CountFeaturedBlogPostCards(ctx context.Context) (int64, error) {
+	return s.store.countFeaturedBlogPostCards(ctx)
 }
 
 // ExpireFeaturedPosts marks all past-due featured posts as expired.
@@ -368,8 +368,8 @@ func (s *Service) ExpireFeaturedPosts(ctx context.Context) error {
 // GetBlogPostDetail returns a single blog post with author, avatar, featured
 // image, space name, tags, and series navigation (C4).
 // Authors can view their own drafts; super-admins can view any post.
-func (s *Service) GetBlogPostDetail(ctx context.Context, slug string, tenantID, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
-	return s.store.getBlogPostDetail(ctx, slug, tenantID, viewerUserID, isSuperAdmin)
+func (s *Service) GetBlogPostDetail(ctx context.Context, slug string, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
+	return s.store.getBlogPostDetail(ctx, slug, viewerUserID, isSuperAdmin)
 }
 
 // ListPublishedBlogPosts returns published blog post cards with author and
@@ -389,14 +389,14 @@ func (s *Service) CountPublishedBlogPosts(ctx context.Context, f BlogListFilter)
 
 // ListPendingReviewSummaries returns joined review-queue rows with post
 // title/slug/author/excerpt for the admin review-queue (C3).
-func (s *Service) ListPendingReviewSummaries(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPendingReviewSummariesRow, error) {
-	return s.store.listPendingReviewSummaries(ctx, tenantID, limit, offset)
+func (s *Service) ListPendingReviewSummaries(ctx context.Context, limit, offset int32) ([]gen.ListPendingReviewSummariesRow, error) {
+	return s.store.listPendingReviewSummaries(ctx, limit, offset)
 }
 
 // ListAdminBlogPosts returns all-status blog post cards with author name
 // for the admin /blog table (BUG-B). Offset-paginated per Rule 5.
-func (s *Service) ListAdminBlogPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAdminBlogPostsRow, error) {
-	return s.store.listAdminBlogPosts(ctx, tenantID, limit, offset)
+func (s *Service) ListAdminBlogPosts(ctx context.Context, limit, offset int32) ([]gen.ListAdminBlogPostsRow, error) {
+	return s.store.listAdminBlogPosts(ctx, limit, offset)
 }
 
 // ---------------------------------------------------------------------------
@@ -416,6 +416,6 @@ type RSSPost struct {
 }
 
 // ListPublishedPostsForRSS returns published blog posts for RSS feed generation.
-func (s *Service) ListPublishedPostsForRSS(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListPublishedPostsForRSSRow, error) {
-	return s.store.listPublishedPostsForRSS(ctx, tenantID, limit)
+func (s *Service) ListPublishedPostsForRSS(ctx context.Context, limit int32) ([]gen.ListPublishedPostsForRSSRow, error) {
+	return s.store.listPublishedPostsForRSS(ctx, limit)
 }

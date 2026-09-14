@@ -32,7 +32,7 @@ func NewService(database *db.DB) *Service {
 }
 
 // ListTags returns every tag for the tenant, alphabetically.
-func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListTagsByTenantRow, error) {
+func (s *Service) ListTags(ctx context.Context) ([]gen.ListTagsByTenantRow, error) {
 	tags, err := s.read.ListTagsByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing tags: %w", err)
@@ -82,7 +82,7 @@ func (s *Service) AdminCountTags(ctx context.Context, params gen.AdminCountTagsP
 }
 
 // GetTagBySlug returns a single tag by its slug.
-func (s *Service) GetTagBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetTagBySlugRow, error) {
+func (s *Service) GetTagBySlug(ctx context.Context, slug string) (gen.GetTagBySlugRow, error) {
 	tag, err := s.read.GetTagBySlug(ctx, slug)
 	if err != nil {
 		return gen.GetTagBySlugRow{}, fmt.Errorf("getting tag by slug: %w", err)
@@ -92,7 +92,7 @@ func (s *Service) GetTagBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 }
 
 // GetTagByID returns a single tag by its ID (used by DeleteTag guard).
-func (s *Service) GetTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetTagByIDRow, error) {
+func (s *Service) GetTagByID(ctx context.Context, id pgtype.UUID) (gen.GetTagByIDRow, error) {
 	tag, err := s.read.GetTagByID(ctx, id)
 	if err != nil {
 		return gen.GetTagByIDRow{}, fmt.Errorf("getting tag by id: %w", err)
@@ -102,7 +102,7 @@ func (s *Service) GetTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen
 }
 
 // ResolveTagSlugs resolves multiple tag slugs to their IDs in one query (Section 14).
-func (s *Service) ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) ([]gen.GetTagsBySlugsRow, error) {
+func (s *Service) ResolveTagSlugs(ctx context.Context, slugs []string) ([]gen.GetTagsBySlugsRow, error) {
 	rows, err := s.read.GetTagsBySlugs(ctx, slugs)
 	if err != nil {
 		return nil, fmt.Errorf("resolving tag slugs: %w", err)
@@ -112,8 +112,8 @@ func (s *Service) ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slu
 }
 
 // ResolveTagSlugMap resolves tag slugs to a slug→userID map (content.TagSlugResolver adapter).
-func (s *Service) ResolveTagSlugMap(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
-	rows, err := s.ResolveTagSlugs(ctx, tenantID, slugs)
+func (s *Service) ResolveTagSlugMap(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error) {
+	rows, err := s.ResolveTagSlugs(ctx, slugs)
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +134,8 @@ func (s *Service) ResolveTagSlugMap(ctx context.Context, tenantID pgtype.UUID, s
 // // Concurrent calls for the same slug are safe: if CreateTag fails with a
 // unique-violation (the tag was just created by a parallel request), the
 // slug is re-resolved instead of returning an error.
-func (s *Service) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
-	rows, err := s.ResolveTagSlugs(ctx, tenantID, slugs)
+func (s *Service) GetOrCreateTagSlugs(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error) {
+	rows, err := s.ResolveTagSlugs(ctx, slugs)
 	if err != nil {
 		return nil, fmt.Errorf("resolving tag slugs: %w", err)
 	}
@@ -150,7 +150,7 @@ func (s *Service) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID,
 			continue
 		}
 
-		tag, cerr := s.CreateTag(ctx, tenantID, CreateTagInput{
+		tag, cerr := s.CreateTag(ctx, CreateTagInput{
 			Name:     slug,
 			Slug:     slug,
 			IsSystem: false,
@@ -158,7 +158,7 @@ func (s *Service) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID,
 		if cerr != nil {
 			// A concurrent call may have just created this tag. Re-resolve
 			// the single slug; if it now exists, use it. Otherwise propagate.
-			retry, rerr := s.ResolveTagSlugs(ctx, tenantID, []string{slug})
+			retry, rerr := s.ResolveTagSlugs(ctx, []string{slug})
 			if rerr == nil && len(retry) > 0 {
 				m[slug] = retry[0].ID
 				continue
@@ -197,7 +197,7 @@ type CreateTagInput struct {
 }
 
 // CreateTag creates a new tag.
-func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input CreateTagInput) (gen.CreateTagRow, error) {
+func (s *Service) CreateTag(ctx context.Context, input CreateTagInput) (gen.CreateTagRow, error) {
 	fieldValues := input.FieldValues
 	if len(fieldValues) == 0 {
 		fieldValues = []byte("{}")
@@ -236,7 +236,7 @@ type UpdateTagInput struct {
 }
 
 // UpdateTag updates an existing tag's name/slug/description/rules/cover/color/logo/is_system/fields.
-func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTagInput) (gen.UpdateTagRow, error) {
+func (s *Service) UpdateTag(ctx context.Context, id pgtype.UUID, input UpdateTagInput) (gen.UpdateTagRow, error) {
 	fieldValues := input.FieldValues
 	if len(fieldValues) == 0 {
 		fieldValues = []byte("{}")
@@ -263,7 +263,7 @@ func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input
 }
 
 // DeleteTag deletes a tag (catalog: DELETE /admin/tags/:id).
-func (s *Service) DeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteTag(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteTag(ctx, id); err != nil {
 		return fmt.Errorf("deleting tag: %w", err)
 	}
@@ -272,7 +272,7 @@ func (s *Service) DeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error
 }
 
 // ListTagModerators returns the moderators of a tag (Section 49).
-func (s *Service) ListTagModerators(ctx context.Context, tagID, tenantID pgtype.UUID) ([]gen.ListTagModeratorsRow, error) {
+func (s *Service) ListTagModerators(ctx context.Context, tagID pgtype.UUID) ([]gen.ListTagModeratorsRow, error) {
 	rows, err := s.read.ListTagModerators(ctx, tagID)
 	if err != nil {
 		return nil, fmt.Errorf("listing tag moderators: %w", err)
@@ -308,7 +308,7 @@ func (s *Service) AddTagModerator(ctx context.Context, input AddTagModeratorInpu
 }
 
 // RemoveTagModerator removes a user as a moderator of a tag (Section 49).
-func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID, tenantID pgtype.UUID) error {
+func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID pgtype.UUID) error {
 	if err := s.write.RemoveTagModerator(ctx, gen.RemoveTagModeratorParams{
 
 		TagID:  tagID,
@@ -321,7 +321,7 @@ func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID, tenantI
 }
 
 // GetUserIDByUsername resolves a username to a user ID within the tenant.
-func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (pgtype.UUID, error) {
+func (s *Service) GetUserIDByUsername(ctx context.Context, username string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 
 	row, err := s.read.GetUserByUsername(ctx,

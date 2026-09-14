@@ -425,7 +425,7 @@ func (s *Store) gdprExportUserComparisonDataSources(ctx context.Context, userID 
 	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataSources, userID)
 }
 
-func (s *Store) deleteComparisonProfilesByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+func (s *Store) deleteComparisonProfilesByUser(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonProfilesByUser(ctx, userID); err != nil {
 		return fmt.Errorf("deleting comparison profiles: %w", err)
 	}
@@ -433,7 +433,7 @@ func (s *Store) deleteComparisonProfilesByUser(ctx context.Context, userID, tena
 	return nil
 }
 
-func (s *Store) deleteComparisonScoresByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+func (s *Store) deleteComparisonScoresByUser(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonScoresByUser(ctx, userID); err != nil {
 		return fmt.Errorf("deleting comparison scores: %w", err)
 	}
@@ -441,7 +441,7 @@ func (s *Store) deleteComparisonScoresByUser(ctx context.Context, userID, tenant
 	return nil
 }
 
-func (s *Store) deleteComparisonRecommendationsByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+func (s *Store) deleteComparisonRecommendationsByUser(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonRecommendationsByUser(ctx, userID); err != nil {
 		return fmt.Errorf("deleting comparison recommendations: %w", err)
 	}
@@ -449,7 +449,7 @@ func (s *Store) deleteComparisonRecommendationsByUser(ctx context.Context, userI
 	return nil
 }
 
-func (s *Store) deleteComparisonDataIngestionJobsByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+func (s *Store) deleteComparisonDataIngestionJobsByUser(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonDataIngestionJobsByUser(ctx, userID); err != nil {
 		return fmt.Errorf("deleting comparison data ingestion jobs: %w", err)
 	}
@@ -457,7 +457,7 @@ func (s *Store) deleteComparisonDataIngestionJobsByUser(ctx context.Context, use
 	return nil
 }
 
-func (s *Store) deleteComparisonDataSourcesByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+func (s *Store) deleteComparisonDataSourcesByUser(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonDataSourcesByUser(ctx, userID); err != nil {
 		return fmt.Errorf("deleting comparison data sources: %w", err)
 	}
@@ -546,7 +546,7 @@ func (s *Store) revokeConsent(ctx context.Context, p gen.RevokeConsentParams) er
 	return nil
 }
 
-func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, consentType string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
+func (s *Store) listConsentsByTenant(ctx context.Context, consentType string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -565,7 +565,7 @@ func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, 
 	return rows, nil
 }
 
-func (s *Store) listConsentsByTenantFiltered(ctx context.Context, tenantID pgtype.UUID, consentType, q string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
+func (s *Store) listConsentsByTenantFiltered(ctx context.Context, consentType, q string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -584,7 +584,7 @@ func (s *Store) listConsentsByTenantFiltered(ctx context.Context, tenantID pgtyp
 	return rows, nil
 }
 
-func (s *Store) deleteConsent(ctx context.Context, id, tenantID pgtype.UUID) (gen.ConsentRecord, error) {
+func (s *Store) deleteConsent(ctx context.Context, id pgtype.UUID) (gen.ConsentRecord, error) {
 	row, err := s.write.DeleteConsent(ctx, id)
 	if err != nil {
 		return gen.ConsentRecord{}, fmt.Errorf("deleting consent: %w", err)
@@ -635,7 +635,7 @@ func (s *Store) createDataExportRequest(ctx context.Context, userID pgtype.UUID)
 	return row, nil
 }
 
-func (s *Store) getDataExportRequest(ctx context.Context, id, tenantID pgtype.UUID) (gen.DataExportRequest, error) {
+func (s *Store) getDataExportRequest(ctx context.Context, id pgtype.UUID) (gen.DataExportRequest, error) {
 	row, err := s.read.GetDataExportRequest(ctx, id)
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("getting data export request: %w", err)
@@ -647,7 +647,7 @@ func (s *Store) getDataExportRequest(ctx context.Context, id, tenantID pgtype.UU
 // getLatestDataExportRequestByUser returns the caller's most recent export
 // request, or (zero value, nil) if they have never requested one — "no
 // pending export" is a valid state, not an error.
-func (s *Store) getLatestDataExportRequestByUser(ctx context.Context, userID, tenantID pgtype.UUID) (gen.DataExportRequest, bool, error) {
+func (s *Store) getLatestDataExportRequestByUser(ctx context.Context, userID pgtype.UUID) (gen.DataExportRequest, bool, error) {
 	row, err := s.read.GetLatestDataExportRequestByUser(ctx,
 		userID,
 	)
@@ -671,7 +671,7 @@ func (s *Store) updateDataExportRequestStatus(ctx context.Context, p gen.UpdateD
 	return row, nil
 }
 
-func (s *Store) listPendingDataExportRequests(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.DataExportRequest, error) {
+func (s *Store) listPendingDataExportRequests(ctx context.Context, limit int32) ([]gen.DataExportRequest, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
@@ -700,7 +700,7 @@ func (s *Store) createAccountDeletionRequest(ctx context.Context, p gen.CreateAc
 	return row, nil
 }
 
-func (s *Store) getAccountDeletionRequest(ctx context.Context, id, tenantID pgtype.UUID) (gen.AccountDeletionRequest, error) {
+func (s *Store) getAccountDeletionRequest(ctx context.Context, id pgtype.UUID) (gen.AccountDeletionRequest, error) {
 	row, err := s.read.GetAccountDeletionRequest(ctx, id)
 	if err != nil {
 		return gen.AccountDeletionRequest{}, fmt.Errorf("getting account deletion request: %w", err)
@@ -720,7 +720,7 @@ func (s *Store) updateAccountDeletionRequestStatus(ctx context.Context, p gen.Up
 
 // updateAccountDeletionRequestProgress checkpoints the erasure flow step
 // (AUDIT-FRESH-GDPR-003) so a retried job resumes from the last success.
-func (s *Store) updateAccountDeletionRequestProgress(ctx context.Context, id, tenantID pgtype.UUID, step int32) error {
+func (s *Store) updateAccountDeletionRequestProgress(ctx context.Context, id pgtype.UUID, step int32) error {
 	if err := s.write.UpdateAccountDeletionRequestProgress(ctx, gen.UpdateAccountDeletionRequestProgressParams{
 		ID: id, ProgressStep: step,
 	}); err != nil {
@@ -730,7 +730,7 @@ func (s *Store) updateAccountDeletionRequestProgress(ctx context.Context, id, te
 	return nil
 }
 
-func (s *Store) listPendingDeletionRequests(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
+func (s *Store) listPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}

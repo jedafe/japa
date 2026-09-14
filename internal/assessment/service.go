@@ -254,7 +254,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
 		ActivityKey: key,
 		Reference:   reference,
 		Payload:     payload,
@@ -285,13 +285,13 @@ func (s *Service) SetRAGRetriever(r RAGRetriever) { s.rag = r }
 // GetActiveAssessment returns the active assessment form with its scoring_config
 // and fields. Returns an error if no active assessment form exists for the
 // tenant.
-func (s *Service) GetActiveAssessment(ctx context.Context, tenantID pgtype.UUID) (*AssessmentFormDTO, error) {
-	form, err := s.store.GetActiveAssessmentForm(ctx, tenantID)
+func (s *Service) GetActiveAssessment(ctx context.Context) (*AssessmentFormDTO, error) {
+	form, err := s.store.GetActiveAssessmentForm(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("assessment: get active: %w", err)
 	}
 
-	fields, err := s.store.GetAssessmentFormFields(ctx, tenantID, form.ID)
+	fields, err := s.store.GetAssessmentFormFields(ctx, form.ID)
 	if err != nil {
 		return nil, fmt.Errorf("assessment: get fields: %w", err)
 	}
@@ -309,7 +309,7 @@ func (s *Service) SubmitAssessment(ctx context.Context, tenantID pgtype.UUID, us
 		userIDVal = pgtype.UUID{Bytes: *userID, Valid: true}
 	}
 
-	sub, err := s.store.CreateAssessmentSubmission(ctx, formID, tenantID, userIDVal, []byte(fieldValues))
+	sub, err := s.store.CreateAssessmentSubmission(ctx, formID, userIDVal, []byte(fieldValues))
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: submit: %w", err)
 	}
@@ -350,19 +350,19 @@ type ScoreSubmissionInput struct {
 // ScoreSubmissionInput. The worker handler fetches the submission row from
 // the shared form_submissions store and passes its field_values here.
 func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, input ScoreSubmissionInput) (pgtype.UUID, error) {
-	form, err := s.store.GetActiveAssessmentForm(ctx, tenantID)
+	form, err := s.store.GetActiveAssessmentForm(ctx)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: get form: %w", err)
 	}
 
 	// Load the submitted form ID so we can scope the completion-point award
 	// to one per user per form (Section 28).
-	submission, err := s.store.GetSubmissionByID(ctx, tenantID, input.SubmissionID)
+	submission, err := s.store.GetSubmissionByID(ctx, input.SubmissionID)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: get submission: %w", err)
 	}
 
-	fields, err := s.store.GetAssessmentFormFields(ctx, tenantID, form.ID)
+	fields, err := s.store.GetAssessmentFormFields(ctx, form.ID)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: get fields: %w", err)
 	}
@@ -378,7 +378,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	// geo-filtering. This is best-effort; a missing Space leaves GeoSpaceID
 	// invalid and RAG falls back to unfiltered retrieval (§103, ADR-069).
 	if result.JourneyContext.DestinationCountry != "" {
-		if space, err := s.store.GetSpaceByGeoCode(ctx, tenantID, result.JourneyContext.DestinationCountry); err == nil {
+		if space, err := s.store.GetSpaceByGeoCode(ctx, result.JourneyContext.DestinationCountry); err == nil {
 			result.JourneyContext.GeoSpaceID = space.ID
 		} else if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			slog.Warn("assessment: score: destination space lookup failed", "destination", result.JourneyContext.DestinationCountry, "error", err)
@@ -391,7 +391,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	if s.ai != nil && s.ai.HasCategory("content_generation") {
 		aiEnabled := true
 		if s.settings != nil {
-			aiEnabled = s.settings.GetBoolOr(ctx, pgtype.UUID{}, "assessment.ai_roadmap_enabled", true)
+			aiEnabled = s.settings.GetBoolOr(ctx, "assessment.ai_roadmap_enabled", true)
 		}
 
 		if aiEnabled {
@@ -429,7 +429,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 
 	// Resolve each curated step to the most specific published content for the
 	// visitor's journey context. Gated by assessment.geo_content_resolution_enabled.
-	result.Roadmap = s.resolveRoadmapContent(ctx, tenantID, result.Roadmap, result.JourneyContext)
+	result.Roadmap = s.resolveRoadmapContent(ctx, result.Roadmap, result.JourneyContext)
 
 	dimensionScoresJSON, err := json.Marshal(result.DimensionScores)
 	if err != nil {
@@ -445,7 +445,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	// Count prior results before creating the new one.
 	var priorResults int64
 	if input.UserID.Valid {
-		priorResults, err = s.store.CountAssessmentResultsByUserAndForm(ctx, tenantID, input.UserID, submission.FormID)
+		priorResults, err = s.store.CountAssessmentResultsByUserAndForm(ctx, input.UserID, submission.FormID)
 		if err != nil {
 			slog.Warn("assessment: score: count prior results failed", "error", err)
 
@@ -453,7 +453,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		}
 	}
 
-	ar, err := s.store.CreateAssessmentResult(ctx, tenantID, input.UserID, input.SubmissionID, int32(result.TotalScore), dimensionScoresJSON, result.ThresholdLabel, roadmapJSON) // #nosec
+	ar, err := s.store.CreateAssessmentResult(ctx, input.UserID, input.SubmissionID, int32(result.TotalScore), dimensionScoresJSON, result.ThresholdLabel, roadmapJSON) // #nosec
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: create result: %w", err)
 	}
@@ -470,7 +470,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	// A deterministic per-form idempotency key in the wallet ledger makes
 	// concurrent first-submission races safe (Rule 9).
 	if s.settings != nil && input.UserID.Valid && priorResults == 0 {
-		points := s.settings.GetIntOr(ctx, pgtype.UUID{}, "assessment.completion_points", 50)
+		points := s.settings.GetIntOr(ctx, "assessment.completion_points", 50)
 		if points > 0 && s.enqueuer != nil {
 			idempotencyKey := fmt.Sprintf("assessment:completion:%s:%s:%s", tenantID.String(), input.UserID.String(), submission.FormID.String())
 
@@ -496,15 +496,15 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 }
 
 // GetResult returns a single assessment result with its roadmap.
-func (s *Service) GetResult(ctx context.Context, tenantID, resultID pgtype.UUID) (gen.AssessmentResult, error) {
-	return s.store.GetAssessmentResultByID(ctx, tenantID, resultID)
+func (s *Service) GetResult(ctx context.Context, resultID pgtype.UUID) (gen.AssessmentResult, error) {
+	return s.store.GetAssessmentResultByID(ctx, resultID)
 }
 
 // GetSubmissionFieldValues returns the raw field_values snapshot for the
 // submission linked to an assessment result. Used by the public result roadmap
 // endpoint to rebuild the visitor's journey context at read time.
-func (s *Service) GetSubmissionFieldValues(ctx context.Context, tenantID, submissionID pgtype.UUID) (json.RawMessage, error) {
-	sub, err := s.store.GetSubmissionByID(ctx, tenantID, submissionID)
+func (s *Service) GetSubmissionFieldValues(ctx context.Context, submissionID pgtype.UUID) (json.RawMessage, error) {
+	sub, err := s.store.GetSubmissionByID(ctx, submissionID)
 	if err != nil {
 		return nil, err
 	}
@@ -515,12 +515,12 @@ func (s *Service) GetSubmissionFieldValues(ctx context.Context, tenantID, submis
 // GetResultBySubmission returns the assessment result linked to a submission.
 // Callers use this to poll for the result after the async scoring task is
 // enqueued. Returns pgx.ErrNoRows when the result is not yet written.
-func (s *Service) GetResultBySubmission(ctx context.Context, tenantID, submissionID pgtype.UUID) (gen.AssessmentResult, error) {
-	return s.store.GetAssessmentResultBySubmission(ctx, tenantID, submissionID)
+func (s *Service) GetResultBySubmission(ctx context.Context, submissionID pgtype.UUID) (gen.AssessmentResult, error) {
+	return s.store.GetAssessmentResultBySubmission(ctx, submissionID)
 }
 
 // ListHistory returns a user's past assessment results, paginated.
-func (s *Service) ListHistory(ctx context.Context, tenantID, userID pgtype.UUID, page, limit int32) ([]gen.AssessmentResult, int64, error) {
+func (s *Service) ListHistory(ctx context.Context, userID pgtype.UUID, page, limit int32) ([]gen.AssessmentResult, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -531,12 +531,12 @@ func (s *Service) ListHistory(ctx context.Context, tenantID, userID pgtype.UUID,
 
 	offset := (page - 1) * limit
 
-	results, err := s.store.ListUserAssessmentResults(ctx, tenantID, userID, offset, limit)
+	results, err := s.store.ListUserAssessmentResults(ctx, userID, offset, limit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("assessment: list history: %w", err)
 	}
 
-	total, err := s.store.CountUserAssessmentResults(ctx, tenantID, userID)
+	total, err := s.store.CountUserAssessmentResults(ctx, userID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("assessment: count history: %w", err)
 	}
@@ -548,7 +548,7 @@ func (s *Service) ListHistory(ctx context.Context, tenantID, userID pgtype.UUID,
 // optionally filtered by score range, and sorted by a whitelisted column.
 // minScore/maxScore of 0 means no filter. sort is a whitelisted key
 // (total_score, threshold_label, created_at, username); order is "asc"/"desc".
-func (s *Service) AdminListResults(ctx context.Context, tenantID pgtype.UUID, minScore, maxScore, page, limit int32, sort, order string) ([]AdminListAssessmentResultsRow, int64, error) {
+func (s *Service) AdminListResults(ctx context.Context, minScore, maxScore, page, limit int32, sort, order string) ([]AdminListAssessmentResultsRow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -577,26 +577,26 @@ func (s *Service) AdminListResults(ctx context.Context, tenantID pgtype.UUID, mi
 
 // AdminScoreDistribution returns the count and average score of results
 // grouped by threshold label.
-func (s *Service) AdminScoreDistribution(ctx context.Context, tenantID pgtype.UUID) ([]AdminScoreDistributionRow, error) {
-	return s.store.AdminScoreDistribution(ctx, tenantID)
+func (s *Service) AdminScoreDistribution(ctx context.Context) ([]AdminScoreDistributionRow, error) {
+	return s.store.AdminScoreDistribution(ctx)
 }
 
 // AdminCompletionStats returns total submissions, total scored results, and
 // the average score across all assessment submissions.
-func (s *Service) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID) (AdminCompletionStatsRow, error) {
-	return s.store.AdminCompletionStats(ctx, tenantID)
+func (s *Service) AdminCompletionStats(ctx context.Context) (AdminCompletionStatsRow, error) {
+	return s.store.AdminCompletionStats(ctx)
 }
 
 // UpdateFormScoring updates the scoring_config JSONB on the assessment form.
 // Admin-only.
-func (s *Service) UpdateFormScoring(ctx context.Context, tenantID, formID pgtype.UUID, scoringConfig json.RawMessage) (gen.Form, error) {
+func (s *Service) UpdateFormScoring(ctx context.Context, formID pgtype.UUID, scoringConfig json.RawMessage) (gen.Form, error) {
 	// Validate the JSONB is a well-formed ScoringConfig before persisting.
 	var cfg ScoringConfig
 	if err := json.Unmarshal(scoringConfig, &cfg); err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: update scoring: invalid config: %w", err)
 	}
 
-	return s.store.UpdateAssessmentFormScoring(ctx, tenantID, formID, []byte(scoringConfig))
+	return s.store.UpdateAssessmentFormScoring(ctx, formID, []byte(scoringConfig))
 }
 
 // CreateAssessment creates a new readiness assessment form (form_type='assessment').
@@ -618,7 +618,7 @@ func (s *Service) CreateAssessment(ctx context.Context, input CreateAssessmentIn
 }
 
 // UpdateAssessment updates an existing readiness assessment form.
-func (s *Service) UpdateAssessment(ctx context.Context, id, tenantID pgtype.UUID, input UpdateAssessmentInput) (*AssessmentFormDTO, error) {
+func (s *Service) UpdateAssessment(ctx context.Context, id pgtype.UUID, input UpdateAssessmentInput) (*AssessmentFormDTO, error) {
 	if input.Name != nil && *input.Name == "" {
 		return nil, errors.New("name cannot be empty")
 	}
@@ -632,7 +632,7 @@ func (s *Service) UpdateAssessment(ctx context.Context, id, tenantID pgtype.UUID
 		return nil, fmt.Errorf("assessment: update assessment: %w", err)
 	}
 
-	fields, err := s.store.GetAssessmentFormFields(ctx, id, pgtype.UUID{})
+	fields, err := s.store.GetAssessmentFormFields(ctx, pgtype.UUID{})
 	if err != nil {
 		return nil, fmt.Errorf("assessment: get form fields after update: %w", err)
 	}
@@ -641,8 +641,8 @@ func (s *Service) UpdateAssessment(ctx context.Context, id, tenantID pgtype.UUID
 }
 
 // DeleteAssessment deletes a readiness assessment form by id.
-func (s *Service) DeleteAssessment(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteAssessmentForm(ctx, tenantID, id); err != nil {
+func (s *Service) DeleteAssessment(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteAssessmentForm(ctx, id); err != nil {
 		return fmt.Errorf("assessment: delete assessment: %w", err)
 	}
 
@@ -1118,12 +1118,12 @@ func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base st
 // steps in place and returns the same slice.
 // // A step whose content_slug is empty (e.g. AI-generated prose without a link)
 // is skipped. The original curated step is kept when no candidate is specific.
-func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUID, steps []RoadmapStep, journeyCtx JourneyContext) []RoadmapStep {
+func (s *Service) resolveRoadmapContent(ctx context.Context, steps []RoadmapStep, journeyCtx JourneyContext) []RoadmapStep {
 	if s.store == nil || s.settings == nil {
 		return steps
 	}
 
-	enabled := s.settings.GetBoolOr(ctx, pgtype.UUID{}, "assessment.geo_content_resolution_enabled", true)
+	enabled := s.settings.GetBoolOr(ctx, "assessment.geo_content_resolution_enabled", true)
 	if !enabled {
 		return steps
 	}
@@ -1144,7 +1144,7 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 		}
 
 		rows, err := s.store.FindRoadmapContentByDimension(
-			ctx, tenantID,
+			ctx,
 			steps[i].Dimension,
 			journeyCtx.DestinationCountry,
 			journeyCtx.JourneyStage,

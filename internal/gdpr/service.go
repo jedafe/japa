@@ -57,11 +57,11 @@ type Service struct {
 
 // SettingsProvider abstracts system settings access for hard-delete configuration.
 type SettingsProvider interface {
-	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
-	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
-	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetSetting(ctx context.Context, key string) (string, error)
+	GetSettingBool(ctx context.Context, key string) (bool, error)
+	GetSettingInt(ctx context.Context, key string) (int, error)
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -138,7 +138,7 @@ type RecordConsentInput struct {
 }
 
 // RecordConsent records a user's consent decision.
-func (s *Service) RecordConsent(ctx context.Context, tenantID, userID pgtype.UUID, input RecordConsentInput) (gen.ConsentRecord, error) {
+func (s *Service) RecordConsent(ctx context.Context, userID pgtype.UUID, input RecordConsentInput) (gen.ConsentRecord, error) {
 	if input.ConsentType == "" {
 		return gen.ConsentRecord{}, errors.New("consent_type is required")
 	}
@@ -194,13 +194,13 @@ var validConsentTypes = []string{
 // system_settings key "gdpr.policy_version" (default "1.0") so admins can
 // bump it without a code change (BUG-016).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
-func (s *Service) GetConsentConfig(ctx context.Context, tenantID pgtype.UUID) (*ConsentConfigResponse, error) {
+func (s *Service) GetConsentConfig(ctx context.Context) (*ConsentConfigResponse, error) {
 	policyVersion := "1.0"
 	if s.settings != nil {
 		// Use GetStringOr — system_settings values are stored as JSON-encoded
 		// strings (e.g. '"1.0"'), so GetSetting returns the raw quoted value.
 		// GetStringOr unquotes it to '1.0'. Ref: §6.2 nil/quote handling.
-		policyVersion = s.settings.GetStringOr(ctx, pgtype.UUID{}, "gdpr.policy_version", "1.0")
+		policyVersion = s.settings.GetStringOr(ctx, "gdpr.policy_version", "1.0")
 	}
 
 	return &ConsentConfigResponse{
@@ -215,7 +215,7 @@ func (s *Service) HasConsent(ctx context.Context, userID pgtype.UUID, consentTyp
 }
 
 // RevokeConsent records a consent revocation.
-func (s *Service) RevokeConsent(ctx context.Context, tenantID, userID pgtype.UUID, consentType, policyVersion string) error {
+func (s *Service) RevokeConsent(ctx context.Context, userID pgtype.UUID, consentType, policyVersion string) error {
 	if consentType == "" {
 		return errors.New("consent_type is required")
 	}
@@ -233,8 +233,8 @@ func (s *Service) RevokeConsent(ctx context.Context, tenantID, userID pgtype.UUI
 }
 
 // ListConsentsByTenant returns consent records for admin compliance reports.
-func (s *Service) ListConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, consentType string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
-	return s.store.listConsentsByTenant(ctx, tenantID, consentType, limit, offset)
+func (s *Service) ListConsentsByTenant(ctx context.Context, consentType string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
+	return s.store.listConsentsByTenant(ctx, consentType, limit, offset)
 }
 
 // ---------------------------------------------------------------------------
@@ -264,23 +264,23 @@ func (s *Service) RequestDataExport(ctx context.Context, tenantID, userID pgtype
 }
 
 // GetDataExportRequest retrieves a data export request by ID.
-func (s *Service) GetDataExportRequest(ctx context.Context, id, tenantID pgtype.UUID) (gen.DataExportRequest, error) {
-	return s.store.getDataExportRequest(ctx, id, tenantID)
+func (s *Service) GetDataExportRequest(ctx context.Context, id pgtype.UUID) (gen.DataExportRequest, error) {
+	return s.store.getDataExportRequest(ctx, id)
 }
 
 // GetLatestDataExportRequest returns the caller's most recent export request.
 // The bool is false if they have never requested one (catalog: GET
 // /me/data-export/status).
-func (s *Service) GetLatestDataExportRequest(ctx context.Context, userID, tenantID pgtype.UUID) (gen.DataExportRequest, bool, error) {
-	return s.store.getLatestDataExportRequestByUser(ctx, userID, tenantID)
+func (s *Service) GetLatestDataExportRequest(ctx context.Context, userID pgtype.UUID) (gen.DataExportRequest, bool, error) {
+	return s.store.getLatestDataExportRequestByUser(ctx, userID)
 }
 
 // CancelDataExportRequest cancels a pending data export request. Only
 // requests with status "pending" or "processing" can be cancelled; once
 // completed the data has already been generated and the download link
 // should be allowed to expire naturally.
-func (s *Service) CancelDataExportRequest(ctx context.Context, userID, tenantID pgtype.UUID) (gen.DataExportRequest, error) {
-	request, found, err := s.store.getLatestDataExportRequestByUser(ctx, userID, tenantID)
+func (s *Service) CancelDataExportRequest(ctx context.Context, userID pgtype.UUID) (gen.DataExportRequest, error) {
+	request, found, err := s.store.getLatestDataExportRequestByUser(ctx, userID)
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("getting data export request: %w", err)
 	}
@@ -311,7 +311,7 @@ func (s *Service) CancelDataExportRequest(ctx context.Context, userID, tenantID 
 // This is called by the Asynq worker.
 func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) error {
 	// Mark as processing.
-	request, err := s.store.getDataExportRequest(ctx, requestID, pgtype.UUID{})
+	request, err := s.store.getDataExportRequest(ctx, requestID)
 	if err != nil {
 		return fmt.Errorf("fetching export request: %w", err)
 	}
@@ -355,7 +355,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	// AUDIT-FRESH-SETTING-008: export expiry is configurable via system_settings.
 	exportExpiryDays := 1
 	if s.settings != nil {
-		exportExpiryDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "gdpr.export_expiry_days", exportExpiryDays)
+		exportExpiryDays = s.settings.GetIntOr(ctx, "gdpr.export_expiry_days", exportExpiryDays)
 	}
 
 	expiresAt := time.Now().Add(time.Duration(exportExpiryDays) * 24 * time.Hour)
@@ -399,8 +399,8 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 // ListPendingDataExportRequests returns pending export requests for the
 // caller's tenant (BUG-GDPR-002: tenant-scoped so an admin in tenant A
 // cannot see tenant B's pending export requests, §5.3 cross-tenant bleed).
-func (s *Service) ListPendingDataExportRequests(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.DataExportRequest, error) {
-	return s.store.listPendingDataExportRequests(ctx, tenantID, limit)
+func (s *Service) ListPendingDataExportRequests(ctx context.Context, limit int32) ([]gen.DataExportRequest, error) {
+	return s.store.listPendingDataExportRequests(ctx, limit)
 }
 
 // CleanupExpiredExports deletes files and nulls download URLs for completed
@@ -493,8 +493,8 @@ func (s *Service) RequestAccountDeletion(ctx context.Context, tenantID, userID p
 }
 
 // GetAccountDeletionRequest retrieves a deletion request by ID.
-func (s *Service) GetAccountDeletionRequest(ctx context.Context, id, tenantID pgtype.UUID) (gen.AccountDeletionRequest, error) {
-	return s.store.getAccountDeletionRequest(ctx, id, tenantID)
+func (s *Service) GetAccountDeletionRequest(ctx context.Context, id pgtype.UUID) (gen.AccountDeletionRequest, error) {
+	return s.store.getAccountDeletionRequest(ctx, id)
 }
 
 // ProcessAccountDeletion performs the full account deletion workflow.
@@ -514,7 +514,7 @@ func (s *Service) GetAccountDeletionRequest(ctx context.Context, id, tenantID pg
 // this handler once the window elapses, at which point step 5 performs the
 // hard delete and step 6 marks the request completed.
 func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.UUID) error {
-	request, err := s.store.getAccountDeletionRequest(ctx, requestID, pgtype.UUID{})
+	request, err := s.store.getAccountDeletionRequest(ctx, requestID)
 	if err != nil {
 		return fmt.Errorf("fetching deletion request: %w", err)
 	}
@@ -638,7 +638,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to revoke api keys during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 
-		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepAnonymized); err != nil {
+		if err := s.checkpoint(ctx, requestID, deletionStepAnonymized); err != nil {
 			return err
 		}
 
@@ -732,7 +732,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to revoke user tokens during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 
-		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepTokensRevoked); err != nil {
+		if err := s.checkpoint(ctx, requestID, deletionStepTokensRevoked); err != nil {
 			return err
 		}
 
@@ -747,7 +747,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			}
 		}
 
-		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepSessionsDeleted); err != nil {
+		if err := s.checkpoint(ctx, requestID, deletionStepSessionsDeleted); err != nil {
 			return err
 		}
 
@@ -773,7 +773,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("honcho eraser not configured, skipping AI context deletion", "request_id", requestID, "user_id", request.UserID)
 		}
 
-		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepHonchoDeleted); err != nil {
+		if err := s.checkpoint(ctx, requestID, deletionStepHonchoDeleted); err != nil {
 			return err
 		}
 
@@ -786,9 +786,9 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 
 	if step < deletionStepHardDeleted {
 		if s.settings != nil {
-			hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, pgtype.UUID{}, "gdpr.hard_delete_enabled")
+			hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, "gdpr.hard_delete_enabled")
 			if settingsErr == nil && hardDeleteEnabled {
-				retentionDays, _ := s.settings.GetSettingInt(ctx, pgtype.UUID{}, "gdpr.retention_days")
+				retentionDays, _ := s.settings.GetSettingInt(ctx, "gdpr.retention_days")
 
 				retentionDeadline := request.CreatedAt.Time.Add(time.Duration(retentionDays) * 24 * time.Hour)
 				if time.Now().After(retentionDeadline) {
@@ -806,7 +806,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			}
 		}
 
-		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepHardDeleted); err != nil {
+		if err := s.checkpoint(ctx, requestID, deletionStepHardDeleted); err != nil {
 			return err
 		}
 	}
@@ -851,8 +851,8 @@ const (
 )
 
 // checkpoint persists the completed step so a retried job resumes after it.
-func (s *Service) checkpoint(ctx context.Context, requestID, tenantID pgtype.UUID, step int32) error {
-	if err := s.store.updateAccountDeletionRequestProgress(ctx, requestID, tenantID, step); err != nil {
+func (s *Service) checkpoint(ctx context.Context, requestID pgtype.UUID, step int32) error {
+	if err := s.store.updateAccountDeletionRequestProgress(ctx, requestID, step); err != nil {
 		return fmt.Errorf("checkpointing deletion step %d: %w", step, err)
 	}
 
@@ -877,7 +877,7 @@ func (s *Service) logDeletionAudit(ctx context.Context, request gen.AccountDelet
 		action = "gdpr.account_retention_wait"
 	}
 
-	if err := logAuditEvent(ctx, s.store, pgtype.UUID{}, LogAuditParams{
+	if err := logAuditEvent(ctx, s.store, LogAuditParams{
 		ActorUserID: request.UserID,
 		ActionType:  action,
 		TargetType:  "user",
@@ -900,7 +900,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 	_ = deletedUserPlaceholder.Scan("00000000-0000-0000-0000-000000000000")
 
 	if s.settings != nil {
-		if placeholderStr, err := s.settings.GetSetting(ctx, pgtype.UUID{}, "gdpr.deleted_user_placeholder_uuid"); err == nil && placeholderStr != "" {
+		if placeholderStr, err := s.settings.GetSetting(ctx, "gdpr.deleted_user_placeholder_uuid"); err == nil && placeholderStr != "" {
 			var p pgtype.UUID
 			if scanErr := p.Scan(placeholderStr); scanErr == nil {
 				deletedUserPlaceholder = p
@@ -1984,8 +1984,8 @@ func (s *Service) HardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 // ListPendingDeletionRequests returns pending deletion requests for the
 // caller's tenant (BUG-GDPR-001: tenant-scoped so an admin in tenant A
 // cannot see tenant B's pending deletion requests, §5.3 cross-tenant bleed).
-func (s *Service) ListPendingDeletionRequests(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
-	return s.store.listPendingDeletionRequests(ctx, tenantID, limit)
+func (s *Service) ListPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
+	return s.store.listPendingDeletionRequests(ctx, limit)
 }
 
 // ---------------------------------------------------------------------------
@@ -2004,7 +2004,7 @@ type LogAuditParams struct {
 }
 
 // LogAuditEvent creates an audit log entry.
-func (s *Service) LogAuditEvent(ctx context.Context, tenantID pgtype.UUID, params LogAuditParams) error {
+func (s *Service) LogAuditEvent(ctx context.Context, params LogAuditParams) error {
 	if params.ActionType == "" {
 		return errors.New("action_type is required")
 	}
@@ -2042,7 +2042,7 @@ func (s *Service) LogAuditEvent(ctx context.Context, tenantID pgtype.UUID, param
 }
 
 // ListAuditLogs returns audit logs with filters for admin access.
-func (s *Service) ListAuditLogs(ctx context.Context, tenantID, actorUserID pgtype.UUID, actionType, targetType string, startDate, endDate *time.Time, limit, offset int32) ([]gen.AuditLog, error) {
+func (s *Service) ListAuditLogs(ctx context.Context, actorUserID pgtype.UUID, actionType, targetType string, startDate, endDate *time.Time, limit, offset int32) ([]gen.AuditLog, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}

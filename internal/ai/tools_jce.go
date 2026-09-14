@@ -64,7 +64,7 @@ func JCEAnalyzeHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_profile_id", "profile_id is not a valid UUID"), nil
 		}
 
-		result, err := deps.JCE.Analyze(ctx, contentID, tenantID, userID, profileID, a.Question)
+		result, err := deps.JCE.Analyze(ctx, contentID, userID, profileID, a.Question)
 		if err != nil {
 			return errorToolResult("advisor_failed", err.Error()), nil
 		}
@@ -75,7 +75,7 @@ func JCEAnalyzeHandler(deps *ToolDeps) ToolHandler {
 
 // JCEAnalyzePrivacyTarget extracts the content target for the executor's
 // privacy gate.
-func JCEAnalyzePrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func JCEAnalyzePrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	return jcePrivacyTarget(args)
 }
 
@@ -110,7 +110,7 @@ func JCERankHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_profile_id", "profile_id is not a valid UUID"), nil
 		}
 
-		result, err := deps.JCE.Rank(ctx, contentID, tenantID, userID, profileID)
+		result, err := deps.JCE.Rank(ctx, contentID, userID, profileID)
 		if err != nil {
 			return errorToolResult("advisor_failed", err.Error()), nil
 		}
@@ -121,7 +121,7 @@ func JCERankHandler(deps *ToolDeps) ToolHandler {
 
 // JCERankPrivacyTarget extracts the content target for the executor's
 // privacy gate.
-func JCERankPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func JCERankPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	return jcePrivacyTarget(args)
 }
 
@@ -165,7 +165,7 @@ func JCEExplainHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_profile_id", "profile_id is not a valid UUID"), nil
 		}
 
-		result, err := deps.JCE.Explain(ctx, contentID, itemID, tenantID, userID, profileID, a.FactorKey, a.Question)
+		result, err := deps.JCE.Explain(ctx, contentID, itemID, userID, profileID, a.FactorKey, a.Question)
 		if err != nil {
 			return errorToolResult("advisor_failed", err.Error()), nil
 		}
@@ -176,7 +176,7 @@ func JCEExplainHandler(deps *ToolDeps) ToolHandler {
 
 // JCEExplainPrivacyTarget extracts the content target for the executor's
 // privacy gate.
-func JCEExplainPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func JCEExplainPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	return jcePrivacyTarget(args)
 }
 
@@ -211,7 +211,7 @@ func JCERecommendHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_profile_id", "profile_id is not a valid UUID"), nil
 		}
 
-		result, err := deps.JCE.Recommend(ctx, contentID, tenantID, userID, profileID)
+		result, err := deps.JCE.Recommend(ctx, contentID, userID, profileID)
 		if err != nil {
 			return errorToolResult("advisor_failed", err.Error()), nil
 		}
@@ -222,7 +222,7 @@ func JCERecommendHandler(deps *ToolDeps) ToolHandler {
 
 // JCERecommendPrivacyTarget extracts the content target for the executor's
 // privacy gate.
-func JCERecommendPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func JCERecommendPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	return jcePrivacyTarget(args)
 }
 
@@ -255,7 +255,7 @@ func JCERefreshHandler(deps *ToolDeps) ToolHandler {
 		// The refresh tool writes an ingestion job and enqueues a worker
 		// task, so it requires the jce.refresh.trigger permission in
 		// addition to the tool's top-level required_permission.
-		if deps.Permission != nil && !deps.Permission.HasPermission(ctx, userID, tenantID, "jce.refresh.trigger") {
+		if deps.Permission != nil && !deps.Permission.HasPermission(ctx, userID, "jce.refresh.trigger") {
 			b, _ := json.Marshal(map[string]string{"error": "you don't have permission to trigger a refresh", "code": "unauthorized"})
 			return &ToolResult{Status: ToolCallStatusUnauthorized, Content: string(b)}, nil
 		}
@@ -276,7 +276,7 @@ func JCERefreshHandler(deps *ToolDeps) ToolHandler {
 
 // JCERefreshPrivacyTarget extracts the content target for the executor's
 // privacy gate.
-func JCERefreshPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func JCERefreshPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	return jcePrivacyTarget(args)
 }
 

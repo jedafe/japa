@@ -143,18 +143,18 @@ func getTierLimit(tier string) int {
 // falling back to the compiled-in getTierLimit defaults otherwise. The
 // settings keys are `api.rate_limit.basic`, `api.rate_limit.standard`,
 // `api.rate_limit.premium` (see system-settings-catalog).
-func resolveTierLimit(ctx context.Context, tier string, tenantID pgtype.UUID, sr rateLimitSettingsReader) int {
+func resolveTierLimit(ctx context.Context, tier string, sr rateLimitSettingsReader) int {
 	if sr == nil {
 		return getTierLimit(tier)
 	}
 
 	switch tier {
 	case "standard":
-		return sr.GetIntOr(ctx, pgtype.UUID{}, "api.rate_limit.standard", 1000)
+		return sr.GetIntOr(ctx, "api.rate_limit.standard", 1000)
 	case "premium":
-		return sr.GetIntOr(ctx, pgtype.UUID{}, "api.rate_limit.premium", 10000)
+		return sr.GetIntOr(ctx, "api.rate_limit.premium", 10000)
 	default:
-		return sr.GetIntOr(ctx, pgtype.UUID{}, "api.rate_limit.basic", 100)
+		return sr.GetIntOr(ctx, "api.rate_limit.basic", 100)
 	}
 }
 

@@ -48,7 +48,7 @@ func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateRemittanceProv
 }
 
 // GetProviderByID fetches a single provider by ID within a tenant.
-func (s *Store) GetProviderByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.RemittanceProvider, error) {
+func (s *Store) GetProviderByID(ctx context.Context, id pgtype.UUID) (gen.RemittanceProvider, error) {
 	return s.queries.GetRemittanceProviderByID(ctx,
 
 		id,
@@ -114,7 +114,7 @@ func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 }
 
 // ListProviders lists providers for a tenant, optionally filtering to active only.
-func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, activeOnly bool) ([]gen.RemittanceProvider, error) {
+func (s *Store) ListProviders(ctx context.Context, activeOnly bool) ([]gen.RemittanceProvider, error) {
 	return s.queries.ListRemittanceProviders(ctx,
 
 		activeOnly,
@@ -122,7 +122,7 @@ func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, activeO
 }
 
 // ListProvidersPaginated returns a page of providers and the total count.
-func (s *Store) ListProvidersPaginated(ctx context.Context, tenantID pgtype.UUID, activeOnly bool, limit, offset int32) ([]gen.RemittanceProvider, int64, error) {
+func (s *Store) ListProvidersPaginated(ctx context.Context, activeOnly bool, limit, offset int32) ([]gen.RemittanceProvider, int64, error) {
 	rows, err := s.queries.ListRemittanceProvidersPaginated(ctx, gen.ListRemittanceProvidersPaginatedParams{
 
 		ActiveOnly: activeOnly,
@@ -150,7 +150,7 @@ func (s *Store) InsertRate(ctx context.Context, arg gen.InsertRemittanceRatePara
 }
 
 // GetLatestRates returns the latest rate per active provider for a corridor.
-func (s *Store) GetLatestRates(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]gen.GetLatestRatesForCorridorRow, error) {
+func (s *Store) GetLatestRates(ctx context.Context, sendCurrency, receiveCurrency string) ([]gen.GetLatestRatesForCorridorRow, error) {
 	return s.queries.GetLatestRatesForCorridor(ctx, gen.GetLatestRatesForCorridorParams{
 
 		SendCurrency:    sendCurrency,
@@ -159,7 +159,7 @@ func (s *Store) GetLatestRates(ctx context.Context, tenantID pgtype.UUID, sendCu
 }
 
 // GetHistory returns daily best-rate aggregates for a corridor over a date range.
-func (s *Store) GetHistory(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string, fromDate time.Time) ([]gen.GetRateHistoryRow, error) {
+func (s *Store) GetHistory(ctx context.Context, sendCurrency, receiveCurrency string, fromDate time.Time) ([]gen.GetRateHistoryRow, error) {
 	return s.queries.GetRateHistory(ctx, gen.GetRateHistoryParams{
 
 		SendCurrency:    sendCurrency,
@@ -169,7 +169,7 @@ func (s *Store) GetHistory(ctx context.Context, tenantID pgtype.UUID, sendCurren
 }
 
 // GetCorridors returns the distinct send/receive currency pairs with rate data.
-func (s *Store) GetCorridors(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetCorridorsRow, error) {
+func (s *Store) GetCorridors(ctx context.Context) ([]gen.GetCorridorsRow, error) {
 	return s.queries.GetCorridors(ctx)
 }
 
@@ -200,7 +200,7 @@ func (s *Store) GetAlertByID(ctx context.Context, id, userID pgtype.UUID) (gen.R
 }
 
 // ListUserAlerts lists a user's rate alerts, optionally filtering to active only.
-func (s *Store) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UUID, activeOnly bool) ([]gen.RemittanceRateAlert, error) {
+func (s *Store) ListUserAlerts(ctx context.Context, userID pgtype.UUID, activeOnly bool) ([]gen.RemittanceRateAlert, error) {
 	return s.queries.ListUserRateAlerts(ctx, gen.ListUserRateAlertsParams{
 
 		UserID:     userID,
@@ -210,7 +210,7 @@ func (s *Store) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UUID
 
 // ListActiveAlertsForCorridor returns active alerts for a corridor that are
 // eligible for notification (last_triggered_at is null or > 24h ago).
-func (s *Store) ListActiveAlertsForCorridor(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]gen.RemittanceRateAlert, error) {
+func (s *Store) ListActiveAlertsForCorridor(ctx context.Context, sendCurrency, receiveCurrency string) ([]gen.RemittanceRateAlert, error) {
 	return s.queries.ListActiveAlertsForCorridor(ctx, gen.ListActiveAlertsForCorridorParams{
 
 		SendCurrency:    sendCurrency,
@@ -221,7 +221,7 @@ func (s *Store) ListActiveAlertsForCorridor(ctx context.Context, tenantID pgtype
 // ListAllActiveAlertsForTenant returns all active alerts for a tenant that are
 // eligible for notification (last_triggered_at is null or > 24h ago). Used by
 // the remittance:check_alerts task to evaluate every corridor in one pass.
-func (s *Store) ListAllActiveAlertsForTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.RemittanceRateAlert, error) {
+func (s *Store) ListAllActiveAlertsForTenant(ctx context.Context) ([]gen.RemittanceRateAlert, error) {
 	return s.queries.ListAllActiveAlertsForTenant(ctx)
 }
 
@@ -232,7 +232,7 @@ func (s *Store) MarkAlertTriggered(ctx context.Context, id pgtype.UUID) error {
 
 // PruneOldRates deletes rate rows older than the cutoff, keeping one snapshot
 // per provider per corridor per day for older data (daily downsampling).
-func (s *Store) PruneOldRates(ctx context.Context, tenantID pgtype.UUID, cutoffDate time.Time) error {
+func (s *Store) PruneOldRates(ctx context.Context, cutoffDate time.Time) error {
 	return s.queries.PruneOldRates(ctx,
 
 		pgtype.Timestamptz{Time: cutoffDate, Valid: true},

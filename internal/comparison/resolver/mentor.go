@@ -20,14 +20,14 @@ func NewMentorResolver(svc *mentorship.Service) Resolver {
 	return &mentorResolver{svc: svc}
 }
 
-func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	if idStr, ok := ref["id"].(string); ok && idStr != "" {
 		id, err := ParseUUID(idStr)
 		if err != nil {
 			return ResolvedItem{}, false, err
 		}
 
-		mentors, err := r.svc.GetMentorsByIDs(ctx, tenantID, []pgtype.UUID{id})
+		mentors, err := r.svc.GetMentorsByIDs(ctx, []pgtype.UUID{id})
 		if err != nil {
 			return ResolvedItem{}, false, fmt.Errorf("fetching mentor by id: %w", err)
 		}
@@ -40,7 +40,7 @@ func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 	}
 
 	if username, ok := ref["username"].(string); ok && username != "" {
-		m, err := r.svc.GetMentorByUsername(ctx, tenantID, username)
+		m, err := r.svc.GetMentorByUsername(ctx, username)
 		if err != nil {
 			if errors.Is(err, mentorship.ErrMentorNotFound) {
 				return ResolvedItem{}, false, nil
@@ -55,7 +55,7 @@ func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 	return ResolvedItem{}, false, errors.New("mentor item_ref missing id or username")
 }
 
-func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -68,7 +68,7 @@ func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]
 		offset = 0
 	}
 
-	mentors, err := r.svc.SearchMentors(ctx, tenantID, query, limit+offset)
+	mentors, err := r.svc.SearchMentors(ctx, query, limit+offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching mentors: %w", err)
 	}

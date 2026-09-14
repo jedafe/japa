@@ -65,7 +65,7 @@ type fieldMap map[string]string
 // SyncFromContentGuide derives a scholarships projection row from a published
 // scholarship guide. It is idempotent by guide_id: it creates a row when one
 // does not exist and updates the existing row otherwise.
-func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pgtype.UUID) error {
+func (s *Store) SyncFromContentGuide(ctx context.Context, contentID pgtype.UUID) error {
 	content, err := s.queries.GetContentByID(ctx,
 		contentID,
 	)
@@ -73,7 +73,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The guide was deleted before the sync task ran; remove any
 			// projection row that may still reference it.
-			return s.deleteProjectionIfExists(ctx, tenantID, contentID)
+			return s.deleteProjectionIfExists(ctx, contentID)
 		}
 		return fmt.Errorf("scholarships: sync from guide: get content: %w", err)
 	}
@@ -98,7 +98,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 		return nil
 	}
 
-	fields, err := s.loadGuideFields(ctx, tenantID, content.ID, content.FieldValues)
+	fields, err := s.loadGuideFields(ctx, content.ID, content.FieldValues)
 	if err != nil {
 		return fmt.Errorf("scholarships: sync from guide: load fields: %w", err)
 	}
@@ -127,7 +127,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 
 	create := buildCreateParams(params)
 
-	_, err = s.AdminCreateScholarship(ctx, tenantID, create)
+	_, err = s.AdminCreateScholarship(ctx, create)
 	if err != nil {
 		return fmt.Errorf("scholarships: sync from guide: create: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 // deleteProjectionIfExists removes the scholarships row for a guide that no
 // longer exists. It is safe to call when the content row was deleted before the
 // sync task processed.
-func (s *Store) deleteProjectionIfExists(ctx context.Context, tenantID, guideID pgtype.UUID) error {
+func (s *Store) deleteProjectionIfExists(ctx context.Context, guideID pgtype.UUID) error {
 	existing, err := s.queries.GetScholarshipByGuide(ctx,
 
 		guideID,
@@ -182,7 +182,7 @@ func isSyncEligible(content gen.GetContentByIDRow) bool {
 // loadGuideFields merges custom_field_values with contents.field_values JSONB.
 // contents.field_values takes precedence (right-hand side of the merge) to match
 // the precedence used by FindScholarshipsQuery.
-func (s *Store) loadGuideFields(ctx context.Context, tenantID, contentID pgtype.UUID, fieldValues []byte) (fieldMap, error) {
+func (s *Store) loadGuideFields(ctx context.Context, contentID pgtype.UUID, fieldValues []byte) (fieldMap, error) {
 	fields := make(fieldMap)
 
 	customRows, err := s.queries.ListCustomFieldValuesWithDefsByEntity(ctx, gen.ListCustomFieldValuesWithDefsByEntityParams{
@@ -344,7 +344,7 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 		p.Country = firstFromList(fields["countries_eligible"])
 	}
 
-	countrySpaceID, err := s.resolveCountrySpaceID(ctx, pgtype.UUID{}, p.Country)
+	countrySpaceID, err := s.resolveCountrySpaceID(ctx, p.Country)
 	if err == nil {
 		p.CountrySpaceID = countrySpaceID
 	}
@@ -405,7 +405,7 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 
 // resolveCountrySpaceID resolves a country-level space by geo_code. The user
 // may supply either a 3-letter ISO code or a country name; best-effort only.
-func (s *Store) resolveCountrySpaceID(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+func (s *Store) resolveCountrySpaceID(ctx context.Context, countryCode string) (pgtype.UUID, error) {
 	if countryCode == "" {
 		return pgtype.UUID{}, nil
 	}

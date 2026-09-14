@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -200,7 +199,7 @@ func (s *Settings) setValkeyCache(ctx context.Context, cacheKey string, entry ca
 // GetSetting returns the raw stored value for a tenant-scoped system setting.
 // Missing settings are cached with a sentinel so repeated lookups do not hit
 // the database. The cache is invalidated by Set/Update calls and by the TTL.
-func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error) {
+func (s *Settings) GetSetting(ctx context.Context, key string) (string, error) {
 	// Ref: .jeos/sections/04-multi-tenancy.md (removal in progress).
 	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
 	cacheKey := key
@@ -217,8 +216,8 @@ func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key str
 }
 
 // GetSettingBool returns the boolean value for a system setting.
-func (s *Settings) GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error) {
-	val, err := s.GetSetting(ctx, pgtype.UUID{}, key)
+func (s *Settings) GetSettingBool(ctx context.Context, key string) (bool, error) {
+	val, err := s.GetSetting(ctx, key)
 	if err != nil {
 		return false, err
 	}
@@ -247,8 +246,8 @@ func parseBool(sv string) bool {
 }
 
 // GetSettingInt returns the integer value for a system setting.
-func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error) {
-	val, err := s.GetSetting(ctx, pgtype.UUID{}, key)
+func (s *Settings) GetSettingInt(ctx context.Context, key string) (int, error) {
+	val, err := s.GetSetting(ctx, key)
 	if err != nil {
 		return 0, err
 	}
@@ -283,7 +282,7 @@ func parseInt(sv string) (int, error) {
 
 // InvalidateSettings clears the L1 and L2 cache for all settings.
 // Callers should invoke this after any system_settings write.
-func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID) {
+func (s *Settings) InvalidateSettings(ctx context.Context) {
 	// Ref: .jeos/sections/04-multi-tenancy.md (removal in progress).
 	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
 
@@ -317,8 +316,8 @@ func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID)
 // unset, missing, or not parseable as an integer. It never returns an error,
 // so call sites read a hot-reloadable operational limit with a safe default
 // and unchanged behaviour when the setting has not been configured.
-func (s *Settings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
-	v, err := s.GetSettingInt(ctx, pgtype.UUID{}, key)
+func (s *Settings) GetIntOr(ctx context.Context, key string, fallback int) int {
+	v, err := s.GetSettingInt(ctx, key)
 	if err != nil {
 		return fallback
 	}
@@ -329,8 +328,8 @@ func (s *Settings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key strin
 // GetStringOr returns the string value for key, or fallback when the key is
 // unset or missing. It never returns an error. The value is unquoted if it
 // is a JSON-encoded string (e.g. "\"https://...\"" → "https://...").
-func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
-	val, err := s.GetSetting(ctx, pgtype.UUID{}, key)
+func (s *Settings) GetStringOr(ctx context.Context, key, fallback string) string {
+	val, err := s.GetSetting(ctx, key)
 	if err != nil || val == "" {
 		return fallback
 	}
@@ -349,8 +348,8 @@ func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, f
 
 // GetFloatOr returns the float64 value for key, or fallback when the key is
 // unset, missing, or not parseable as a float. It never returns an error.
-func (s *Settings) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
-	val, err := s.GetSetting(ctx, pgtype.UUID{}, key)
+func (s *Settings) GetFloatOr(ctx context.Context, key string, fallback float64) float64 {
+	val, err := s.GetSetting(ctx, key)
 	if err != nil {
 		return fallback
 	}
@@ -390,8 +389,8 @@ func parseFloat(sv string) (float64, error) {
 
 // GetBoolOr returns the boolean value for key, or fallback when the key is
 // unset or missing. It never returns an error.
-func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
-	v, err := s.GetSettingBool(ctx, tenantID, key)
+func (s *Settings) GetBoolOr(ctx context.Context, key string, fallback bool) bool {
+	v, err := s.GetSettingBool(ctx, key)
 	if err != nil {
 		return fallback
 	}
@@ -401,7 +400,7 @@ func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key stri
 
 // SetSetting upserts a setting value for the given key.
 // The is_public flag is preserved on conflict (not reset to false).
-func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, value string) error {
+func (s *Settings) SetSetting(ctx context.Context, key, value string) error {
 	if err := s.qWriter.UpsertSystemSettingPreservePublic(ctx, gen.UpsertSystemSettingPreservePublicParams{
 		Key:   key,
 		Value: []byte(value),
@@ -409,7 +408,7 @@ func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, va
 		return fmt.Errorf("upserting setting %q: %w", key, err)
 	}
 
-	s.InvalidateSettings(ctx, tenantID)
+	s.InvalidateSettings(ctx)
 
 	return nil
 }
@@ -419,7 +418,7 @@ func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, va
 // (e.g. "site.name") to its already-serialized JSON value. The cache is
 // invalidated once after commit so callers do not need to invalidate per key.
 // is_public is preserved on conflict (not overwritten).
-func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID, settings map[string][]byte) error {
+func (s *Settings) UpdateSettingsBatch(ctx context.Context, settings map[string][]byte) error {
 	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		for key, valueJSON := range settings {
 			if err := q.UpsertSystemSettingPreservePublic(ctx, gen.UpsertSystemSettingPreservePublicParams{
@@ -436,7 +435,7 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID
 		return err
 	}
 
-	s.InvalidateSettings(ctx, tenantID)
+	s.InvalidateSettings(ctx)
 
 	return nil
 }
@@ -445,7 +444,7 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID
 // is_public flag on each upserted row (used by the admin handler so appearance
 // settings are exposed via GET /site/settings/public). On conflict, is_public
 // is updated to the new value so toggling publicity takes effect immediately.
-func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID pgtype.UUID, settings map[string][]byte, isPublic map[string]bool) error {
+func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, settings map[string][]byte, isPublic map[string]bool) error {
 	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		for key, valueJSON := range settings {
 			pub := isPublic[key]
@@ -464,13 +463,13 @@ func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID p
 		return err
 	}
 
-	s.InvalidateSettings(ctx, tenantID)
+	s.InvalidateSettings(ctx)
 
 	return nil
 }
 
 // GetPublicSettings returns all settings marked as public.
-func (s *Settings) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) (map[string]any, error) {
+func (s *Settings) GetPublicSettings(ctx context.Context) (map[string]any, error) {
 	rows, err := s.q.GetPublicSettings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying public settings: %w", err)

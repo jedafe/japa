@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/testdb"
 	"github.com/jedafe/japa/internal/users"
 )

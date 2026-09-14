@@ -109,7 +109,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	// INTEL-016 fix: max page size from system_settings (intel.scholarships.max_page_size).
 	maxScholarships := 50
 	if h.settings != nil {
-		maxScholarships = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.scholarships.max_page_size", 50)
+		maxScholarships = h.settings.GetIntOr(r.Context(), "intel.scholarships.max_page_size", 50)
 	}
 
 	if limit > maxScholarships {
@@ -125,7 +125,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 
 	params, fieldsOfStudy := buildSearchScholarshipsParams(q, limit, offset)
 
-	rows, err := h.intelStores.SearchScholarships(r.Context(), tenantID, params)
+	rows, err := h.intelStores.SearchScholarships(r.Context(), params)
 	if err != nil {
 		slog.Error("intel: scholarship search failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "Failed to search scholarships")
@@ -311,7 +311,7 @@ func buildScholarshipFacets(items []radarItem) map[string]interface{} {
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
 	handleIntelGetByID(h, w, r, "Scholarship not found", "scholarship",
 		func(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {
-			return h.intelStores.GetScholarship(ctx, tenantID, id)
+			return h.intelStores.GetScholarship(ctx, id)
 		},
 		func(s gen.Scholarship) interface{} { return scholarshipToDetail(s) })
 }

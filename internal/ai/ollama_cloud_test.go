@@ -83,7 +83,7 @@ func (defaultCostSettings) GetStringOr(context.Context, pgtype.UUID, string, str
 	return "{}"
 }
 func (defaultCostSettings) GetIntOr(context.Context, pgtype.UUID, string, int) int { return 0 }
-func (s defaultCostSettings) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
+func (s defaultCostSettings) GetFloatOr(ctx context.Context, key string, fallback float64) float64 {
 	if key == "ai.cost_per_1k_tokens_usd" {
 		return 0.002
 	}

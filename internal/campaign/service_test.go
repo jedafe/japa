@@ -206,15 +206,15 @@ func TestValidateTargetSpace(t *testing.T) {
 	store := &fakeSpaceStore{exists: map[string]bool{validSpace.String(): true}}
 	s := &Service{store: store}
 
-	if err := s.validateTargetSpace(t.Context(), pgtype.UUID{Valid: true}, validSpace.String()); err != nil {
+	if err := s.validateTargetSpace(t.Context(), validSpace.String()); err != nil {
 		t.Fatalf("expected valid space, got: %v", err)
 	}
 
-	if err := s.validateTargetSpace(t.Context(), pgtype.UUID{Valid: true}, "not-a-uuid"); err == nil {
+	if err := s.validateTargetSpace(t.Context(), "not-a-uuid"); err == nil {
 		t.Fatalf("expected error for invalid UUID")
 	}
 
-	if err := s.validateTargetSpace(t.Context(), pgtype.UUID{Valid: true}, "11111111-1111-1111-1111-111111111111"); err == nil {
+	if err := s.validateTargetSpace(t.Context(), "11111111-1111-1111-1111-111111111111"); err == nil {
 		t.Fatalf("expected error for missing space")
 	}
 }
@@ -229,17 +229,17 @@ func TestValidatePlanTargetSpaces(t *testing.T) {
 	}
 	items := []CampaignItemPlan{{TargetSpaceID: validSpace.String()}}
 
-	if err := s.validatePlanTargetSpaces(t.Context(), pgtype.UUID{Valid: true}, campaign, items); err != nil {
+	if err := s.validatePlanTargetSpaces(t.Context(), campaign, items); err != nil {
 		t.Fatalf("expected valid target spaces, got: %v", err)
 	}
 
 	items = []CampaignItemPlan{{TargetSpaceID: "not-a-uuid"}}
-	if err := s.validatePlanTargetSpaces(t.Context(), pgtype.UUID{Valid: true}, gen.ContentCampaign{}, items); err == nil {
+	if err := s.validatePlanTargetSpaces(t.Context(), gen.ContentCampaign{}, items); err == nil {
 		t.Fatalf("expected error for invalid item target space")
 	}
 
 	items = []CampaignItemPlan{{TargetSpaceID: "11111111-1111-1111-1111-111111111111"}}
-	if err := s.validatePlanTargetSpaces(t.Context(), pgtype.UUID{Valid: true}, gen.ContentCampaign{}, items); err == nil {
+	if err := s.validatePlanTargetSpaces(t.Context(), gen.ContentCampaign{}, items); err == nil {
 		t.Fatalf("expected error for missing item target space")
 	}
 }
@@ -269,7 +269,7 @@ type fakeSpaceStore struct {
 	exists map[string]bool
 }
 
-func (f *fakeSpaceStore) SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
+func (f *fakeSpaceStore) SpaceExists(ctx context.Context, id pgtype.UUID) (bool, error) {
 	return f.exists[id.String()], nil
 }
 
@@ -280,7 +280,7 @@ type fakeReviewSyncStore struct {
 	lastStatus string
 }
 
-func (f *fakeReviewSyncStore) GetCampaignItemByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (gen.ContentCampaignItem, error) {
+func (f *fakeReviewSyncStore) GetCampaignItemByReviewID(ctx context.Context, reviewID pgtype.UUID) (gen.ContentCampaignItem, error) {
 	if f.item.ReviewID == reviewID {
 		return f.item, nil
 	}
@@ -295,11 +295,11 @@ func (f *fakeReviewSyncStore) UpdateCampaignItem(ctx context.Context, params gen
 	return f.item, nil
 }
 
-func (f *fakeReviewSyncStore) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaign, error) {
+func (f *fakeReviewSyncStore) GetCampaign(ctx context.Context, id pgtype.UUID) (gen.ContentCampaign, error) {
 	return gen.ContentCampaign{ID: id, Status: CampaignStatusGenerating}, nil
 }
 
-func (f *fakeReviewSyncStore) ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error) {
+func (f *fakeReviewSyncStore) ListCampaignItemsByCampaign(ctx context.Context, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error) {
 	return []gen.ContentCampaignItem{f.item}, nil
 }
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -27,8 +26,8 @@ const nominatimDefaultTimeoutMs = 5000
 
 // geoSettingsReader is the subset of config.Settings the geocoder needs.
 type geoSettingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // reverseGeocode calls the Nominatim reverse-geocoding API to resolve
@@ -42,7 +41,7 @@ type geoSettingsReader interface {
 // per Rule 3 — no hardcoded URLs or limits.
 //
 // Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md.
-func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pgtype.UUID, lat, lng float64) (city, state, countryCode string, err error) {
+func reverseGeocode(ctx context.Context, settings geoSettingsReader, lat, lng float64) (city, state, countryCode string, err error) {
 	// Validate coordinate ranges before making any external call.
 	if lat < -90 || lat > 90 {
 		return "", "", "", fmt.Errorf("latitude %.6f out of range [-90, 90]", lat)
@@ -56,8 +55,8 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	timeoutMs := nominatimDefaultTimeoutMs
 
 	if settings != nil {
-		url = settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.nominatim_url", nominatimDefaultURL)
-		timeoutMs = settings.GetIntOr(ctx, pgtype.UUID{}, "geo_personalization.nominatim_timeout_ms", nominatimDefaultTimeoutMs)
+		url = settings.GetStringOr(ctx, "geo_personalization.nominatim_url", nominatimDefaultURL)
+		timeoutMs = settings.GetIntOr(ctx, "geo_personalization.nominatim_timeout_ms", nominatimDefaultTimeoutMs)
 	}
 
 	fullURL := fmt.Sprintf("%s?format=json&lat=%f&lon=%f&zoom=10&addressdetails=1", url, lat, lng)

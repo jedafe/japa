@@ -140,7 +140,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxBytes := h.Service.MaxUploadBytes(r.Context(), tenantID)
+	maxBytes := h.Service.MaxUploadBytes(r.Context())
 	if maxBytes <= 0 || maxBytes > hardMaxUploadBytes {
 		maxBytes = hardMaxUploadBytes
 	}
@@ -241,8 +241,7 @@ func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -253,7 +252,7 @@ func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.EnqueueGenerateSummary(r.Context(), tenantID, user.UserID, id); err != nil {
+	if err := h.Service.EnqueueGenerateSummary(r.Context(), user.UserID, id); err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
@@ -267,7 +266,7 @@ func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
 
 // ListChannelVideos handles GET /api/v1/u/{username}/videos.
 func (h *Handlers) ListChannelVideos(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -280,7 +279,7 @@ func (h *Handlers) ListChannelVideos(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parsePage(r, "limit", "offset")
 
-	sources, err := h.Service.ListChannelVideosByUsername(r.Context(), tenantID, username, limit, offset)
+	sources, err := h.Service.ListChannelVideosByUsername(r.Context(), username, limit, offset)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -295,8 +294,7 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -319,7 +317,7 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.Service.StartBulkImport(r.Context(), tenantID, user.UserID, BulkImportRequest{
+	job, err := h.Service.StartBulkImport(r.Context(), user.UserID, BulkImportRequest{
 		SourceType:     input.SourceType,
 		SourceURL:      input.SourceURL,
 		Query:          input.Query,
@@ -340,8 +338,7 @@ func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -355,7 +352,7 @@ func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.Service.GetImportJob(r.Context(), tenantID, user.UserID, id)
+	job, err := h.Service.GetImportJob(r.Context(), user.UserID, id)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -393,7 +390,7 @@ func (h *Handlers) runUserList(w http.ResponseWriter, r *http.Request, fetch use
 // ListImportJobs handles GET /api/v1/me/video-imports.
 func (h *Handlers) ListImportJobs(w http.ResponseWriter, r *http.Request) {
 	h.runUserList(w, r, func(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) (any, error) {
-		return h.Service.ListImportJobsByUser(ctx, tenantID, userID, limit, offset)
+		return h.Service.ListImportJobsByUser(ctx, userID, limit, offset)
 	})
 }
 
@@ -404,8 +401,7 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -448,7 +444,7 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 		videoSourceID = *input.VideoSourceID
 	}
 
-	claim, err := h.Service.SubmitClaim(r.Context(), tenantID, user.UserID, username, input.ClaimType, evidenceURL, notes, videoSourceID)
+	claim, err := h.Service.SubmitClaim(r.Context(), user.UserID, username, input.ClaimType, evidenceURL, notes, videoSourceID)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -463,8 +459,7 @@ func (h *Handlers) PreviewBulkImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -475,7 +470,7 @@ func (h *Handlers) PreviewBulkImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	preview, err := h.Service.PreviewBulkImport(r.Context(), tenantID, user.UserID, req)
+	preview, err := h.Service.PreviewBulkImport(r.Context(), user.UserID, req)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -490,8 +485,7 @@ func (h *Handlers) RetryMyImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -502,7 +496,7 @@ func (h *Handlers) RetryMyImportJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.Service.RetryMyImportJob(r.Context(), tenantID, user.UserID, id)
+	job, err := h.Service.RetryMyImportJob(r.Context(), user.UserID, id)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -514,7 +508,7 @@ func (h *Handlers) RetryMyImportJob(w http.ResponseWriter, r *http.Request) {
 // ListMyVideoClaims handles GET /api/v1/me/video-claims.
 func (h *Handlers) ListMyVideoClaims(w http.ResponseWriter, r *http.Request) {
 	h.runUserList(w, r, func(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) (any, error) {
-		return h.Service.ListClaimsByUser(ctx, tenantID, userID, limit, offset)
+		return h.Service.ListClaimsByUser(ctx, userID, limit, offset)
 	})
 }
 

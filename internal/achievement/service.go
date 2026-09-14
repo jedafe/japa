@@ -30,7 +30,7 @@ import (
 // narrow contract, not the full content service.
 type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
-	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
@@ -98,7 +98,7 @@ type EditInput struct {
 // Satisfied by *wallet.Service; declared here to avoid an import cycle
 // (wallet → worker → ... → achievement). Ref: §64 Gamification.
 type ActivityEmitter interface {
-	EmitActivityEvent(ctx context.Context, tenantID, userID pgtype.UUID, input ActivityEventInput) (ActivityEvent, error)
+	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input ActivityEventInput) (ActivityEvent, error)
 	EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error
 }
 
@@ -138,12 +138,12 @@ func (s *Service) WithActivityEmitter(e ActivityEmitter) *Service { s.emitter = 
 
 // Enabled reads the achievement.enabled system_setting toggle (§89 feature
 // flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "achievement.enabled", false)
+	return s.settings.GetBoolOr(ctx, "achievement.enabled", false)
 }
 
 // defaultReactions is the spec-defined curated reaction set (§89 Reaction
@@ -158,12 +158,12 @@ var defaultReactions = []ReactionItem{
 // system_settings.achievement_reactions (JSONB array of {emoji, label}
 // pairs). Falls back to the spec defaults (🎉 🔥 💪) when the setting is
 // empty or unparseable. Ref: §89 Reaction Set.
-func (s *Service) allowedReactions(ctx context.Context, tenantID pgtype.UUID) []ReactionItem {
+func (s *Service) allowedReactions(ctx context.Context) []ReactionItem {
 	if s.settings == nil {
 		return defaultReactions
 	}
 
-	raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "achievement_reactions", "")
+	raw := s.settings.GetStringOr(ctx, "achievement_reactions", "")
 	if raw == "" || raw == "[]" {
 		return defaultReactions
 	}
@@ -289,7 +289,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	// 5). Best-effort — a failure logs a warning but does not abort the
 	// submission (Rule 8: fan-out is fire-and-forget).
 	if s.emitter != nil {
-		event, err := s.emitter.EmitActivityEvent(ctx, tenantID, authorID, ActivityEventInput{
+		event, err := s.emitter.EmitActivityEvent(ctx, authorID, ActivityEventInput{
 			ActivityKey: "achievement.created",
 			Reference:   contentRow.ID.String(),
 			Payload:     map[string]interface{}{"milestone_type": input.MilestoneType},
@@ -329,13 +329,13 @@ func (s *Service) GetBySlugWithReactions(ctx context.Context, slug string, tenan
 		return AchievementDTO{}, err
 	}
 
-	dto.AllowedReactions = s.allowedReactions(ctx, tenantID)
+	dto.AllowedReactions = s.allowedReactions(ctx)
 
 	return dto, nil
 }
 
 // List returns a paginated, filtered list of published achievements.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, milestoneType, sort string, page, limit int32) ([]AchievementDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, milestoneType, sort string, page, limit int32) ([]AchievementDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -369,8 +369,8 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, m
 
 // ListBySpace returns published achievements filed in the Space identified by
 // its slug, for the Space widget.
-func (s *Service) ListBySpace(ctx context.Context, spaceSlug string, tenantID pgtype.UUID, limit int32) ([]AchievementDTO, error) {
-	rows, err := s.store.ListBySpace(ctx, spaceSlug, tenantID, limit)
+func (s *Service) ListBySpace(ctx context.Context, spaceSlug string, limit int32) ([]AchievementDTO, error) {
+	rows, err := s.store.ListBySpace(ctx, spaceSlug, limit)
 	if err != nil {
 		return nil, fmt.Errorf("achievement: list by space: %w", err)
 	}
@@ -388,7 +388,7 @@ func (s *Service) ListBySpace(ctx context.Context, spaceSlug string, tenantID pg
 // provided (non-nil) fields are updated.
 func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditInput) (AchievementDTO, error) {
 	// Fetch existing content to verify ownership.
-	existing, err := s.content.GetContent(ctx, contentID, tenantID)
+	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, pgx.ErrNoRows
@@ -493,7 +493,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 // DeleteOwn soft-deletes the author's own achievement. The caller must verify
 // ownership (achievement.delete_own permission + author_id match).
 func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID) error {
-	existing, err := s.content.GetContent(ctx, contentID, tenantID)
+	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -514,7 +514,7 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgt
 }
 
 // AdminList returns all achievements (any status) for the moderation queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, milestoneType, q string, page, limit int32) ([]AchievementDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, status, milestoneType, q string, page, limit int32) ([]AchievementDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -557,7 +557,7 @@ func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype
 		return AchievementDTO{}, fmt.Errorf("achievement: admin set status: %w", err)
 	}
 
-	return s.getAchievementDTOByIDAdmin(ctx, contentID, tenantID)
+	return s.getAchievementDTOByIDAdmin(ctx, contentID)
 }
 
 // AdminDelete soft-deletes an achievement from the moderation queue. Caller
@@ -591,8 +591,8 @@ func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, tenantID
 // getAchievementDTOByIDAdmin fetches an achievement by content_id regardless
 // of publication status, for admin/moderation response paths. The caller
 // must hold the achievement.moderate permission (enforced at route level).
-func (s *Service) getAchievementDTOByIDAdmin(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementDTO, error) {
-	row, err := s.store.GetByIDAnyStatus(ctx, contentID, tenantID)
+func (s *Service) getAchievementDTOByIDAdmin(ctx context.Context, contentID pgtype.UUID) (AchievementDTO, error) {
+	row, err := s.store.GetByIDAnyStatus(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, pgx.ErrNoRows

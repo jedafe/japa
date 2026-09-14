@@ -33,7 +33,7 @@ func (s *Store) insertNotification(ctx context.Context, params gen.InsertNotific
 
 // getNotificationsByRecipient returns paginated notifications for a user.
 // BUG-007: supports the unread_only filter (§35 L107).
-func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32, unreadOnly bool) ([]gen.GetNotificationsByRecipientRow, error) {
+func (s *Store) getNotificationsByRecipient(ctx context.Context, recipientID pgtype.UUID, limit, offset int32, unreadOnly bool) ([]gen.GetNotificationsByRecipientRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -53,7 +53,7 @@ func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recip
 }
 
 // getUnreadCount returns the number of unread notifications.
-func (s *Store) getUnreadCount(ctx context.Context, tenantID, recipientID pgtype.UUID) (int32, error) {
+func (s *Store) getUnreadCount(ctx context.Context, recipientID pgtype.UUID) (int32, error) {
 	count, err := s.read.GetUnreadNotificationCount(ctx,
 
 		recipientID,
@@ -78,7 +78,7 @@ func (s *Store) markNotificationRead(ctx context.Context, notificationID, recipi
 }
 
 // markAllNotificationsRead marks all notifications as read for a user.
-func (s *Store) markAllNotificationsRead(ctx context.Context, tenantID, recipientID pgtype.UUID) error {
+func (s *Store) markAllNotificationsRead(ctx context.Context, recipientID pgtype.UUID) error {
 	if err := s.write.MarkAllNotificationsRead(ctx,
 
 		recipientID,
@@ -254,7 +254,7 @@ func (s *Store) deleteNotificationType(ctx context.Context, key string) error {
 // BUG-003: previously passed a zero UUID as , which caused
 // GetUserProfile to return ErrNoRows for every user. Now requires the
 // correct so the tenant-scoped WHERE clause matches.
-func (s *Store) getUserDisplayName(ctx context.Context, tenantID, userID pgtype.UUID) (*string, error) {
+func (s *Store) getUserDisplayName(ctx context.Context, userID pgtype.UUID) (*string, error) {
 	user, err := s.read.GetUserProfile(ctx,
 
 		userID,
@@ -268,7 +268,7 @@ func (s *Store) getUserDisplayName(ctx context.Context, tenantID, userID pgtype.
 
 // getUserEmail returns the user's email address for notification email
 // delivery (§35, BUG-003). Tenant-scoped per §04.
-func (s *Store) getUserEmail(ctx context.Context, tenantID, userID pgtype.UUID) (*string, error) {
+func (s *Store) getUserEmail(ctx context.Context, userID pgtype.UUID) (*string, error) {
 	email, err := s.read.GetUserEmail(ctx,
 
 		userID,

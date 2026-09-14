@@ -55,7 +55,7 @@ func MenuListHandler(deps *ToolDeps) ToolHandler {
 			a.Limit = 20
 		}
 
-		resp, err := deps.Menus.ListMenus(ctx, tenantID, a.Query, a.Placement, a.Status, "created_at", "asc", a.Limit, a.Offset)
+		resp, err := deps.Menus.ListMenus(ctx, a.Query, a.Placement, a.Status, "created_at", "asc", a.Limit, a.Offset)
 		if err != nil {
 			return errorToolResult("menu_list_failed", err.Error()), nil
 		}
@@ -136,7 +136,7 @@ func MenuCreateHandler(deps *ToolDeps) ToolHandler {
 			target = "_self"
 		}
 
-		item, err := deps.Menus.CreateMenuItem(ctx, tenantID, MenusCreateMenuItemInput{
+		item, err := deps.Menus.CreateMenuItem(ctx, MenusCreateMenuItemInput{
 			MenuID:           a.MenuID,
 			ParentID:         a.ParentID,
 			Label:            a.Label,
@@ -227,7 +227,7 @@ func MenuUpdateHandler(deps *ToolDeps) ToolHandler {
 			status = "active"
 		}
 
-		item, err := deps.Menus.UpdateMenuItem(ctx, itemID, tenantID, MenusUpdateMenuItemInput{
+		item, err := deps.Menus.UpdateMenuItem(ctx, itemID, MenusUpdateMenuItemInput{
 			Label:            a.Label,
 			URL:              a.URL,
 			Icon:             a.Icon,
@@ -282,7 +282,7 @@ func MenuDeleteHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_item_id", "item_id is not a valid UUID"), nil
 		}
 
-		if err := deps.Menus.DeleteMenuItem(ctx, itemID, tenantID); err != nil {
+		if err := deps.Menus.DeleteMenuItem(ctx, itemID); err != nil {
 			return errorToolResult("menu_delete_failed", err.Error()), nil
 		}
 

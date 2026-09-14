@@ -268,7 +268,7 @@ var toolCatalog = []toolCatalogDef{
 }
 
 // ListTools returns the catalog of available Japa tools with record counts.
-func (r *agentToolsRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID) ([]ai.ToolCatalogEntry, error) {
+func (r *agentToolsRegistry) ListTools(ctx context.Context) ([]ai.ToolCatalogEntry, error) {
 
 	entries := make([]ai.ToolCatalogEntry, 0, len(toolCatalog))
 
@@ -293,7 +293,7 @@ func (r *agentToolsRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID
 }
 
 // ReadTool reads a single record from a tool table by type + ID.
-func (r *agentToolsRegistry) ReadTool(ctx context.Context, tenantID pgtype.UUID, toolType, id string) (map[string]any, error) {
+func (r *agentToolsRegistry) ReadTool(ctx context.Context, toolType, id string) (map[string]any, error) {
 
 	var idUUID pgtype.UUID
 	if err := idUUID.Scan(id); err != nil {

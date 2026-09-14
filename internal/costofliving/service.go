@@ -121,10 +121,10 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // IsStale reports whether the given last_updated_at timestamp is older than
 // the col_calculator.stale_days threshold. Section 72: default 180 days.
-func (s *Service) IsStale(ctx context.Context, tenantID pgtype.UUID, lastUpdatedAt time.Time) bool {
+func (s *Service) IsStale(ctx context.Context, lastUpdatedAt time.Time) bool {
 	staleDays := defaultStaleDays
 	if s.settings != nil {
-		staleDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "col_calculator.stale_days", defaultStaleDays)
+		staleDays = s.settings.GetIntOr(ctx, "col_calculator.stale_days", defaultStaleDays)
 	}
 
 	cutoff := time.Now().AddDate(0, 0, -staleDays)
@@ -140,21 +140,21 @@ func IsStaleAt(lastUpdatedAt, now time.Time, staleDays int) bool {
 }
 
 // maxCities returns the configured col_calculator.max_cities limit.
-func (s *Service) maxCities(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) maxCities(ctx context.Context) int {
 	if s.settings == nil {
 		return defaultMaxCities
 	}
 
-	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "col_calculator.max_cities", defaultMaxCities)
+	return s.settings.GetIntOr(ctx, "col_calculator.max_cities", defaultMaxCities)
 }
 
 // ListCities returns a paginated list of cities with cost_of_living data.
 // Public route (col_calculator.use — all users including anonymous).
 // The optional countryCode is an ISO 3166-1 alpha-2 country code used to
 // filter cities to those in the selected primary geo space.
-func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, countryCode string, page, limit int) (CitiesListResponse, error) {
+func (s *Service) ListCities(ctx context.Context, search, countryCode string, page, limit int) (CitiesListResponse, error) {
 	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, pgtype.UUID{}, "col_calculator.enabled", defaultEnabled); !enabled {
+		if enabled := s.settings.GetBoolOr(ctx, "col_calculator.enabled", defaultEnabled); !enabled {
 			return CitiesListResponse{}, ErrCalculatorDisabled
 		}
 	}
@@ -169,17 +169,17 @@ func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, 
 
 	offset := int32((page - 1) * limit) // #nosec
 
-	typeDef, err := s.store.GetCostOfLivingType(ctx, tenantID)
+	typeDef, err := s.store.GetCostOfLivingType(ctx)
 	if err != nil {
 		return CitiesListResponse{}, fmt.Errorf("costofliving: list cities: %w", err)
 	}
 
-	rows, err := s.store.ListCities(ctx, tenantID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, offset, int32(limit)) // #nosec
+	rows, err := s.store.ListCities(ctx, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, offset, int32(limit)) // #nosec
 	if err != nil {
 		return CitiesListResponse{}, err
 	}
 
-	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{})
+	total, err := s.store.CountCities(ctx, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		return CitiesListResponse{}, err
 	}
@@ -237,14 +237,14 @@ func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, 
 //  6. Compute weighted Overall Cost Index using config weights.
 //
 // The baseline city is always included in the result even if not in cityIDs.
-func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityIDs []pgtype.UUID) (ComparisonMatrix, error) {
+func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (ComparisonMatrix, error) {
 	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, pgtype.UUID{}, "col_calculator.enabled", defaultEnabled); !enabled {
+		if enabled := s.settings.GetBoolOr(ctx, "col_calculator.enabled", defaultEnabled); !enabled {
 			return ComparisonMatrix{}, ErrCalculatorDisabled
 		}
 	}
 
-	maxCities := s.maxCities(ctx, tenantID)
+	maxCities := s.maxCities(ctx)
 
 	// Deduplicate city IDs before the max_cities check so that duplicate
 	// IDs in the query string don't trigger a false rejection or produce
@@ -267,7 +267,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 	cityIDs = uniqueIDs
 
 	// Step 1: get the cost_of_living type definition (config holds weights).
-	typeDef, err := s.store.GetCostOfLivingType(ctx, tenantID)
+	typeDef, err := s.store.GetCostOfLivingType(ctx)
 	if err != nil {
 		return ComparisonMatrix{}, fmt.Errorf("costofliving: compare: get type: %w", err)
 	}
@@ -275,7 +275,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 	weights := parseWeights(typeDef.Config)
 
 	// Step 2: get the baseline city.
-	baseline, err := s.store.GetBaselineCity(ctx, tenantID, typeDef.ID)
+	baseline, err := s.store.GetBaselineCity(ctx, typeDef.ID)
 	if err != nil {
 		return ComparisonMatrix{}, fmt.Errorf("costofliving: compare: get baseline: %w", err)
 	}
@@ -298,7 +298,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		allIDs = append(allIDs, id)
 	}
 
-	values, err := s.store.GetValuesForCities(ctx, tenantID, allIDs)
+	values, err := s.store.GetValuesForCities(ctx, allIDs)
 	if err != nil {
 		return ComparisonMatrix{}, fmt.Errorf("costofliving: compare: get values: %w", err)
 	}
@@ -373,7 +373,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 	cityRows := make(map[pgtype.UUID]gen.GetCOLCitiesByIDsRow, len(nonBaselineIDs))
 
 	if len(nonBaselineIDs) > 0 {
-		rows, err := s.store.GetCitiesByIDs(ctx, tenantID, nonBaselineIDs)
+		rows, err := s.store.GetCitiesByIDs(ctx, nonBaselineIDs)
 		if err != nil {
 			slog.Warn("costofliving: compare: batch get cities", "error", err)
 		} else {
@@ -500,7 +500,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 
 // AdminStats returns the data completeness + staleness report for admin.
 // Gated by col_calculator.manage.
-func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID, page, limit int) (AdminStatsResponse, error) {
+func (s *Service) AdminStats(ctx context.Context, page, limit int) (AdminStatsResponse, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -511,12 +511,12 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID, page, li
 
 	offset := int32((page - 1) * limit) // #nosec
 
-	typeDef, err := s.store.GetCostOfLivingType(ctx, tenantID)
+	typeDef, err := s.store.GetCostOfLivingType(ctx)
 	if err != nil {
 		return AdminStatsResponse{}, fmt.Errorf("costofliving: admin stats: %w", err)
 	}
 
-	rows, err := s.store.AdminStats(ctx, tenantID, typeDef.ID, offset, int32(limit)) // #nosec
+	rows, err := s.store.AdminStats(ctx, typeDef.ID, offset, int32(limit)) // #nosec
 	if err != nil {
 		return AdminStatsResponse{}, err
 	}
@@ -534,7 +534,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID, page, li
 
 		stale := false
 		if !lastUpdatedT.IsZero() {
-			stale = s.IsStale(ctx, tenantID, lastUpdatedT)
+			stale = s.IsStale(ctx, lastUpdatedT)
 		}
 
 		pct := 0.0
@@ -555,7 +555,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID, page, li
 	}
 
 	// Total count of cities for pagination metadata.
-	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, "", "", pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{})
+	total, err := s.store.CountCities(ctx, typeDef.ID, "", "", pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		return AdminStatsResponse{}, err
 	}

@@ -89,7 +89,7 @@ func (s *Service) buildAdvisorPrompt(
 	recCount int,
 ) (string, string) {
 	title := input.ContentID.String()
-	if cmp, err := s.compSvc.GetJCEComparison(ctx, input.ContentID.String(), input.TenantID); err == nil {
+	if cmp, err := s.compSvc.GetJCEComparison(ctx, input.ContentID.String()); err == nil {
 		title = cmp.Content.Title
 	}
 
@@ -334,7 +334,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		return AdvisorResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 	}
 
-	if !s.permissionChecker(ctx, input.UserID, input.TenantID)(advisorUsePerm) {
+	if !s.permissionChecker(ctx, input.UserID)(advisorUsePerm) {
 		return AdvisorResult{}, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, advisorUsePerm)
 	}
 
@@ -342,7 +342,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		return AdvisorResult{}, fmt.Errorf("%w: AI dispatcher not configured", errpkg.ErrNotImplemented)
 	}
 
-	cmp, err := s.compSvc.GetJCEComparison(ctx, input.ContentID.String(), input.TenantID)
+	cmp, err := s.compSvc.GetJCEComparison(ctx, input.ContentID.String())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AdvisorResult{}, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
@@ -351,7 +351,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		return AdvisorResult{}, fmt.Errorf("loading comparison: %w", err)
 	}
 
-	check := s.permissionChecker(ctx, input.UserID, input.TenantID)
+	check := s.permissionChecker(ctx, input.UserID)
 	if !s.canAccessComparison(cmp, input.UserID, check, advisorUsePerm) {
 		return AdvisorResult{}, fmt.Errorf("%w: cannot access comparison", errpkg.ErrForbidden)
 	}
@@ -381,9 +381,9 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	recCount := defaultAdvisorRecommendations
 
 	if s.settings != nil {
-		model = s.settings.GetStringOr(ctx, input.TenantID, "jce.advisor_model", advisorDefaultModel)
-		maxTokens = s.settings.GetIntOr(ctx, input.TenantID, "jce.advisor_max_tokens", advisorDefaultMaxTokens)
-		recCount = s.settings.GetIntOr(ctx, input.TenantID, "jce.advisor_recommendation_count", defaultAdvisorRecommendations)
+		model = s.settings.GetStringOr(ctx, "jce.advisor_model", advisorDefaultModel)
+		maxTokens = s.settings.GetIntOr(ctx, "jce.advisor_max_tokens", advisorDefaultMaxTokens)
+		recCount = s.settings.GetIntOr(ctx, "jce.advisor_recommendation_count", defaultAdvisorRecommendations)
 	}
 
 	if s.engine == nil {
@@ -451,7 +451,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		recommendations = scoreResult.Recommendations
 	}
 
-	matrix, err := s.compSvc.GetJCEComparisonMatrix(ctx, input.ContentID, input.TenantID)
+	matrix, err := s.compSvc.GetJCEComparisonMatrix(ctx, input.ContentID)
 	if err != nil {
 		return AdvisorResult{}, fmt.Errorf("loading comparison matrix: %w", err)
 	}
@@ -506,7 +506,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	if s.vk != nil {
 		ttl := 15 * time.Minute
 		if s.settings != nil {
-			ttl = time.Duration(s.settings.GetIntOr(ctx, input.TenantID, "jce.advisor_cache_ttl_minutes", 15)) * time.Minute
+			ttl = time.Duration(s.settings.GetIntOr(ctx, "jce.advisor_cache_ttl_minutes", 15)) * time.Minute
 		}
 
 		b, _ := json.Marshal(result)
@@ -517,7 +517,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 }
 
 // Analyze answers a natural-language question about a comparison and profile.
-func (s *Service) Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error) {
+func (s *Service) Analyze(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error) {
 	input := AdvisorInput{
 		ContentID: contentID,
 
@@ -532,7 +532,7 @@ func (s *Service) Analyze(ctx context.Context, contentID, tenantID, userID, prof
 }
 
 // Rank returns a ranked list of comparison items with reasoning.
-func (s *Service) Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
+func (s *Service) Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
 	input := AdvisorInput{
 		ContentID: contentID,
 
@@ -546,7 +546,7 @@ func (s *Service) Rank(ctx context.Context, contentID, tenantID, userID, profile
 }
 
 // Explain provides an explanation for a single item and factor.
-func (s *Service) Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error) {
+func (s *Service) Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error) {
 	input := AdvisorInput{
 		ContentID: contentID,
 
@@ -563,7 +563,7 @@ func (s *Service) Explain(ctx context.Context, contentID, itemID, tenantID, user
 }
 
 // Recommend returns the top next actions and recommendations for a comparison.
-func (s *Service) Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
+func (s *Service) Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
 	input := AdvisorInput{
 		ContentID: contentID,
 
@@ -580,18 +580,18 @@ func (s *Service) Recommend(ctx context.Context, contentID, tenantID, userID, pr
 // message events. It sets the text/event-stream headers, checks ctx.Err()
 // between chunks, and flushes after each event. The stream ends with a
 // "done" event and an "error" event if the advisor fails.
-func (s *Service) StreamAdvisor(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error {
+func (s *Service) StreamAdvisor(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error {
 	// Apply an upper-bound timeout so a hanging dispatcher call cannot keep the
 	// response open indefinitely. The caller's context is still respected.
 	timeout := time.Duration(60) * time.Second
 	if s.settings != nil {
-		timeout = time.Duration(s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.advisor_stream_timeout_seconds", 60)) * time.Second
+		timeout = time.Duration(s.settings.GetIntOr(ctx, "jce.advisor_stream_timeout_seconds", 60)) * time.Second
 	}
 
 	streamCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	res, err := s.Analyze(streamCtx, contentID, tenantID, userID, profileID, question)
+	res, err := s.Analyze(streamCtx, contentID, userID, profileID, question)
 	if err != nil {
 		return err
 	}

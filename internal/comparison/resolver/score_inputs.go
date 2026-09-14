@@ -131,7 +131,7 @@ func spaceBaseFromRow(row any) (spaceBase, bool) {
 	return b, true
 }
 
-func resolveSpaceBase(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps, entityType string, base spaceBase) ResolvedItem {
+func resolveSpaceBase(ctx context.Context, deps *scoreDeps, entityType string, base spaceBase) ResolvedItem {
 	desc := ""
 	if base.Description != nil {
 		desc = *base.Description
@@ -151,7 +151,7 @@ func resolveSpaceBase(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 		"geo_code":     deref(base.GeoCode),
 		"image_id":     imageID,
 		"member_count": base.MemberCount,
-		"score_inputs": spaceScoreInputs(ctx, tenantID, deps, entityType, base),
+		"score_inputs": spaceScoreInputs(ctx, deps, entityType, base),
 	}
 
 	if entityType != "space" {
@@ -171,9 +171,9 @@ func resolveSpaceBase(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 	}
 }
 
-func spaceScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps, entityType string, base spaceBase) map[string]any {
+func spaceScoreInputs(ctx context.Context, deps *scoreDeps, entityType string, base spaceBase) map[string]any {
 	if entityType == "university" {
-		return universityScoreInputs(ctx, tenantID, deps, base)
+		return universityScoreInputs(ctx, deps, base)
 	}
 
 	lang := languagesForGeoCode(deref(base.GeoCode))
@@ -189,7 +189,7 @@ func spaceScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 	}
 
 	if deps != nil && deps.colStore != nil {
-		row, err := deps.colStore.GetCityByGeoSpaceID(ctx, tenantID, base.ID)
+		row, err := deps.colStore.GetCityByGeoSpaceID(ctx, base.ID)
 		if err == nil && row.ID.Valid {
 			cost, income, safety, healthcare := colScoreInputs(row.IntelCostData)
 			inputs["cost"] = cost
@@ -202,18 +202,18 @@ func spaceScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 	if deps != nil && deps.visaSvc != nil {
 		country := base
 		if base.Level != "country" {
-			country = findCountrySpace(ctx, tenantID, deps, base)
+			country = findCountrySpace(ctx, deps, base)
 		}
 
 		if country.ID.Valid {
-			inputs["pr_path_ease"] = avgPRPathEase(ctx, tenantID, deps.visaSvc, country.ID)
+			inputs["pr_path_ease"] = avgPRPathEase(ctx, deps.visaSvc, country.ID)
 		}
 	}
 
 	return inputs
 }
 
-func universityScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps, base spaceBase) map[string]any {
+func universityScoreInputs(ctx context.Context, deps *scoreDeps, base spaceBase) map[string]any {
 	lang := languagesForGeoCode(deref(base.GeoCode))
 	inputs := map[string]any{
 		"cost":                   nil,
@@ -231,7 +231,7 @@ func universityScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scor
 
 	var values map[string]any
 	if deps != nil && deps.queries != nil {
-		values = customFieldValues(ctx, tenantID, deps.queries, base.ID)
+		values = customFieldValues(ctx, deps.queries, base.ID)
 	}
 
 	if values != nil {
@@ -247,18 +247,18 @@ func universityScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scor
 	if deps != nil && deps.visaSvc != nil {
 		country := base
 		if base.Level != "country" {
-			country = findCountrySpace(ctx, tenantID, deps, base)
+			country = findCountrySpace(ctx, deps, base)
 		}
 
 		if country.ID.Valid {
-			inputs["pr_path_ease"] = avgPRPathEase(ctx, tenantID, deps.visaSvc, country.ID)
+			inputs["pr_path_ease"] = avgPRPathEase(ctx, deps.visaSvc, country.ID)
 		}
 	}
 
 	return inputs
 }
 
-func customFieldValues(ctx context.Context, tenantID pgtype.UUID, q *gen.Queries, entityID pgtype.UUID) map[string]any {
+func customFieldValues(ctx context.Context, q *gen.Queries, entityID pgtype.UUID) map[string]any {
 	rows, err := q.ListCustomFieldValuesWithDefsByEntity(ctx, gen.ListCustomFieldValuesWithDefsByEntityParams{
 		EntityType: "space",
 		EntityID:   entityID,
@@ -503,7 +503,7 @@ func colCostFromParsed(parsed map[string]any) any {
 	return nil
 }
 
-func findCountrySpace(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps, base spaceBase) spaceBase {
+func findCountrySpace(ctx context.Context, deps *scoreDeps, base spaceBase) spaceBase {
 	if base.Level == "country" {
 		return base
 	}
@@ -559,7 +559,7 @@ func findCountrySpace(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 	return spaceBase{}
 }
 
-func avgPRPathEase(ctx context.Context, tenantID pgtype.UUID, svc *visaroutes.Service, countryID pgtype.UUID) any {
+func avgPRPathEase(ctx context.Context, svc *visaroutes.Service, countryID pgtype.UUID) any {
 	if svc == nil || !countryID.Valid {
 		return nil
 	}
@@ -574,7 +574,7 @@ func avgPRPathEase(ctx context.Context, tenantID pgtype.UUID, svc *visaroutes.Se
 	)
 
 	for {
-		routes, t, err := svc.List(ctx, tenantID, countryID, "", "", 0, page, pageSize)
+		routes, t, err := svc.List(ctx, countryID, "", "", 0, page, pageSize)
 		if err != nil {
 			return nil
 		}

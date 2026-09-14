@@ -305,7 +305,7 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	// Resolve geo context for the response. The agent handler's
 	// resolveGeoContext returns (geoSpaceID, summary); we surface the
 	// summary as geo_context.
-	_, geoSummary := h.agent.resolveGeoContext(r.Context(), user.UserID, tenantID)
+	_, geoSummary := h.agent.resolveGeoContext(r.Context(), user.UserID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -672,7 +672,7 @@ func mergeAuthorProvenance(fieldValues []byte, assignedBy pgtype.UUID, reason st
 // - other entity types → false (conservative deny)
 // // The content store is optional; if it's nil and the entity is content, the
 // function returns false (deny by default when ownership can't be verified).
-func cfvEntityOwnedByUser(entity gen.GetCustomFieldValueEntityRow, userID, tenantID pgtype.UUID, content ContentAuthorQueries, ctx context.Context) bool {
+func cfvEntityOwnedByUser(entity gen.GetCustomFieldValueEntityRow, userID pgtype.UUID, content ContentAuthorQueries, ctx context.Context) bool {
 	switch entity.EntityType {
 	case "user", "user_profile":
 		return entity.EntityID == userID
@@ -749,8 +749,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -876,7 +875,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		if !cfvEntityOwnedByUser(entity, user.UserID, tenantID, h.content, r.Context()) {
+		if !cfvEntityOwnedByUser(entity, user.UserID, h.content, r.Context()) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner",
 				"You can only set AI privacy on your own data")
 			return
@@ -1123,7 +1122,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 
 	// Classify the request into a tier.
 	tier, typeRow, existingDims, missing, err := h.engine.ClassifyRequest(
-		r.Context(), tenantID, input.EntityType, input.ComparisonFields,
+		r.Context(), input.EntityType, input.ComparisonFields,
 	)
 	if err != nil {
 		slog.Warn("ai: classifying comparison request", "error", err)
@@ -1217,7 +1216,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 
 		// Read back the comparison object so the caller gets the full
 		// structure (§103 response: { comparison: {...}, content_id?: uuid }).
-		comp, readErr := h.engine.ReadComparison(r.Context(), res.ContentID, tenantID)
+		comp, readErr := h.engine.ReadComparison(r.Context(), res.ContentID)
 		if readErr != nil {
 			slog.Warn("ai: reading back comparison for compare-entities response",
 				"content_id", res.ContentID, "error", readErr)

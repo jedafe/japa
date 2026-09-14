@@ -523,7 +523,7 @@ type mockCouponResolver struct {
 	err    error
 }
 
-func (m *mockCouponResolver) ResolveCouponForRender(ctx context.Context, tenantID, id pgtype.UUID) (*CouponRenderResult, error) {
+func (m *mockCouponResolver) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*CouponRenderResult, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -536,7 +536,7 @@ type mockAffiliateResolver struct {
 	err    error
 }
 
-func (m *mockAffiliateResolver) ResolveAffiliateLinkForRender(ctx context.Context, tenantID, providerID pgtype.UUID, originalURL string) (*AffiliateLinkRenderResult, error) {
+func (m *mockAffiliateResolver) ResolveAffiliateLinkForRender(ctx context.Context, providerID pgtype.UUID, originalURL string) (*AffiliateLinkRenderResult, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

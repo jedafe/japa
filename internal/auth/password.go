@@ -57,42 +57,42 @@ func DefaultPasswordPolicy() PasswordPolicy {
 
 // SettingsReader defines the interface for reading settings from the database.
 type SettingsReader interface {
-	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
-	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetSettingInt(ctx context.Context, key string) (int, error)
+	GetSettingBool(ctx context.Context, key string) (bool, error)
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // PasswordPolicyFromSettings returns a password policy configured from
 // system_settings. Falls back to defaults for any unset values. All seven
 // policy knobs are now settings-driven (AUDIT-BE2-SETTING-005).
-func PasswordPolicyFromSettings(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) PasswordPolicy {
+func PasswordPolicyFromSettings(ctx context.Context, reader SettingsReader) PasswordPolicy {
 	policy := DefaultPasswordPolicy()
 
-	if val := reader.GetIntOr(ctx, pgtype.UUID{}, "auth.password.min_length", policy.MinLength); val > 0 {
+	if val := reader.GetIntOr(ctx, "auth.password.min_length", policy.MinLength); val > 0 {
 		policy.MinLength = val
 	}
 
-	if val := reader.GetIntOr(ctx, pgtype.UUID{}, "auth.password.max_length", policy.MaxLength); val > 0 {
+	if val := reader.GetIntOr(ctx, "auth.password.max_length", policy.MaxLength); val > 0 {
 		policy.MaxLength = val
 	}
 
-	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_uppercase"); err == nil {
+	if val, err := reader.GetSettingBool(ctx, "auth.password.require_uppercase"); err == nil {
 		policy.RequireUpper = val
 	}
 
-	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_number"); err == nil {
+	if val, err := reader.GetSettingBool(ctx, "auth.password.require_number"); err == nil {
 		policy.RequireNumber = val
 	}
 
-	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_symbol"); err == nil {
+	if val, err := reader.GetSettingBool(ctx, "auth.password.require_symbol"); err == nil {
 		policy.RequireSymbol = val
 	}
 
-	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.check_breach"); err == nil {
+	if val, err := reader.GetSettingBool(ctx, "auth.password.check_breach"); err == nil {
 		policy.CheckBreach = val
 	}
 
-	if val := reader.GetIntOr(ctx, pgtype.UUID{}, "auth.password.history_count", policy.HistoryCount); val >= 0 {
+	if val := reader.GetIntOr(ctx, "auth.password.history_count", policy.HistoryCount); val >= 0 {
 		policy.HistoryCount = val
 	}
 

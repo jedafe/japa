@@ -492,7 +492,7 @@ WHERE %s
 // contents + story_meta + spaces + users. Status and visibility gating are
 // enforced by the caller (HandleGetBySlug): published stories are gated by
 // §14 visibility; non-published stories are author- or moderator-only (§79).
-func (s *Store) GetStoryBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (StoryRow, error) {
+func (s *Store) GetStoryBySlug(ctx context.Context, slug string) (StoryRow, error) {
 	const q = `
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
@@ -553,7 +553,7 @@ LIMIT 1
 // GetStoryByID returns a single story by its content_id (any status), joining
 // contents + story_meta + spaces + users. Used by Submit/EditOwn to return a
 // fully-populated DTO with origin/destination space names and author info.
-func (s *Store) GetStoryByID(ctx context.Context, contentID, tenantID pgtype.UUID) (StoryRow, error) {
+func (s *Store) GetStoryByID(ctx context.Context, contentID pgtype.UUID) (StoryRow, error) {
 	const q = `
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,

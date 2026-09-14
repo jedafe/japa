@@ -218,7 +218,7 @@ WHERE %s
 }
 
 // GetGuideByID returns a single tax obligation guide by its primary key.
-func (s *Store) GetGuideByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideRow, error) {
+func (s *Store) GetGuideByID(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
 	const q = `
 SELECT g.id, g.origin_space_id, os.name AS origin_space_name,
        g.destination_space_id, ds.name AS destination_space_name,
@@ -258,7 +258,7 @@ LIMIT 1
 
 // GetTreatyByPair returns the tax_treaty_pairs row for a given
 // origin/destination space pair within a tenant.
-func (s *Store) GetTreatyByPair(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID) (TreatyRow, error) {
+func (s *Store) GetTreatyByPair(ctx context.Context, originSpaceID, destSpaceID pgtype.UUID) (TreatyRow, error) {
 	const q = `
 SELECT t.id, t.origin_space_id, os.name AS origin_space_name,
        t.destination_space_id, ds.name AS destination_space_name,
@@ -342,7 +342,7 @@ RETURNING id
 		return GuideRow{}, fmt.Errorf("taxcalculator: create guide: %w", err)
 	}
 
-	row, err := s.GetGuideByID(ctx, id, in.TenantID)
+	row, err := s.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideRow{}, fmt.Errorf("taxcalculator: create guide: reload: %w", err)
 	}
@@ -362,7 +362,7 @@ type UpdateGuideInput struct {
 }
 
 // UpdateGuide updates the mutable fields on a tax_obligation_guides row.
-func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in UpdateGuideInput) error {
+func (s *Store) UpdateGuide(ctx context.Context, id pgtype.UUID, in UpdateGuideInput) error {
 	var (
 		sets   []string
 		args   []any
@@ -523,7 +523,7 @@ RETURNING id
 		return TreatyRow{}, fmt.Errorf("taxcalculator: upsert treaty: %w", err)
 	}
 
-	row, err := s.GetTreatyByPair(ctx, in.TenantID, in.OriginSpaceID, in.DestinationSpaceID)
+	row, err := s.GetTreatyByPair(ctx, in.OriginSpaceID, in.DestinationSpaceID)
 	if err != nil {
 		return TreatyRow{}, fmt.Errorf("taxcalculator: upsert treaty: reload: %w", err)
 	}
@@ -575,7 +575,7 @@ LIMIT 1
 
 // UpdateTreaty updates the mutable fields on a tax_treaty_pairs row
 // identified by id and , returning the updated row.
-func (s *Store) UpdateTreaty(ctx context.Context, id, tenantID pgtype.UUID, in UpdateTreatyInput) (TreatyRow, error) {
+func (s *Store) UpdateTreaty(ctx context.Context, id pgtype.UUID, in UpdateTreatyInput) (TreatyRow, error) {
 	var (
 		sets   []string
 		args   []any

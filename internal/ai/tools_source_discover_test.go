@@ -15,7 +15,7 @@ type stubIntelSourceManager struct {
 	byURL   map[string]gen.IntelSource
 }
 
-func (s *stubIntelSourceManager) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (gen.IntelSource, error) {
+func (s *stubIntelSourceManager) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (gen.IntelSource, error) {
 	src := gen.IntelSource{
 		ID:         pgtype.UUID{Valid: true},
 		Name:       arg.Name,
@@ -35,7 +35,7 @@ func (s *stubIntelSourceManager) Create(ctx context.Context, tenantID pgtype.UUI
 	return src, nil
 }
 
-func (s *stubIntelSourceManager) GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (gen.IntelSource, error) {
+func (s *stubIntelSourceManager) GetByURL(ctx context.Context, sourceURL string) (gen.IntelSource, error) {
 	if src, ok := s.byURL[sourceURL]; ok {
 		return src, nil
 	}
@@ -51,23 +51,23 @@ func (s stubWebSearcher) Search(ctx context.Context, client *http.Client, settin
 
 type stubSettingsForDiscover struct{}
 
-func (stubSettingsForDiscover) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, defaultValue string) string {
+func (stubSettingsForDiscover) GetStringOr(ctx context.Context, key, defaultValue string) string {
 	return defaultValue
 }
 
-func (stubSettingsForDiscover) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, defaultValue bool) bool {
+func (stubSettingsForDiscover) GetBoolOr(ctx context.Context, key string, defaultValue bool) bool {
 	return defaultValue
 }
 
-func (stubSettingsForDiscover) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, defaultValue int) int {
+func (stubSettingsForDiscover) GetIntOr(ctx context.Context, key string, defaultValue int) int {
 	return defaultValue
 }
 
-func (stubSettingsForDiscover) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, defaultValue float64) float64 {
+func (stubSettingsForDiscover) GetFloatOr(ctx context.Context, key string, defaultValue float64) float64 {
 	return defaultValue
 }
 
-func (stubSettingsForDiscover) GetJSON(ctx context.Context, tenantID pgtype.UUID, key string, defaultValue []byte) []byte {
+func (stubSettingsForDiscover) GetJSON(ctx context.Context, key string, defaultValue []byte) []byte {
 	return defaultValue
 }
 

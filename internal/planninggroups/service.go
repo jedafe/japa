@@ -117,7 +117,7 @@ var ErrAlreadyMember = errors.New("already a member of this planning group")
 // Satisfied by *notifications.Service; declared here to avoid an import
 // cycle. Ref: §82 Notifications & Gamification, §35 Notification System.
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // Service holds the business logic for Japa Planning Groups.
@@ -137,12 +137,12 @@ func NewService(store *Store, settings *config.Settings) *Service {
 func (s *Service) WithNotifier(n Notifier) *Service { s.notifier = n; return s }
 
 // Enabled reads the planning_group.enabled system_setting toggle (§82).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "planning_group.enabled", false)
+	return s.settings.GetBoolOr(ctx, "planning_group.enabled", false)
 }
 
 // Create creates a new planning group owned by the requesting user. The
@@ -231,8 +231,8 @@ func (s *Service) Create(ctx context.Context, tenantID, ownerID pgtype.UUID, inp
 }
 
 // Get returns a single planning group by id.
-func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (PlanningGroupDTO, error) {
-	group, err := s.store.GetGroup(ctx, id, tenantID)
+func (s *Service) Get(ctx context.Context, id pgtype.UUID) (PlanningGroupDTO, error) {
+	group, err := s.store.GetGroup(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PlanningGroupDTO{}, pgx.ErrNoRows
@@ -246,7 +246,7 @@ func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (PlanningGr
 
 // List returns a paginated list of planning groups, optionally filtered by
 // destination space and visa category.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory string, page, limit int32) ([]PlanningGroupDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, visaCategory string, page, limit int32) ([]PlanningGroupDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -279,8 +279,8 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, v
 // UpdateOwn updates a planning group owned by the requesting user. The
 // caller must verify ownership (planning_group.manage_own permission +
 // owner_id match).
-func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateGroupInput) (PlanningGroupDTO, error) {
-	existing, err := s.store.GetGroup(ctx, id, tenantID)
+func (s *Service) UpdateOwn(ctx context.Context, id, userID pgtype.UUID, input UpdateGroupInput) (PlanningGroupDTO, error) {
+	existing, err := s.store.GetGroup(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PlanningGroupDTO{}, pgx.ErrNoRows
@@ -330,7 +330,7 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 		storeInput.ExpiresAt = &ts
 	}
 
-	if err := s.store.UpdateGroup(ctx, id, tenantID, storeInput); err != nil {
+	if err := s.store.UpdateGroup(ctx, id, storeInput); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PlanningGroupDTO{}, pgx.ErrNoRows
 		}
@@ -338,14 +338,14 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 		return PlanningGroupDTO{}, fmt.Errorf("planninggroups: update: %w", err)
 	}
 
-	return s.Get(ctx, id, tenantID)
+	return s.Get(ctx, id)
 }
 
 // DeleteOwn soft-deletes a planning group owned by the requesting user.
 // The caller must verify ownership (planning_group.manage_own permission +
 // owner_id match).
-func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	existing, err := s.store.GetGroup(ctx, id, tenantID)
+func (s *Service) DeleteOwn(ctx context.Context, id, userID pgtype.UUID) error {
+	existing, err := s.store.GetGroup(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -358,7 +358,7 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 		return ErrNotOwner
 	}
 
-	if err := s.store.DeleteGroup(ctx, id, tenantID); err != nil {
+	if err := s.store.DeleteGroup(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -374,7 +374,7 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 // registration). departureDate is optional (RFC 3339 or YYYY-MM-DD).
 // Checks is_open_join and max_members capacity per §82.
 func (s *Service) Join(ctx context.Context, groupID, userID, tenantID pgtype.UUID, departureDate string) error {
-	group, err := s.store.GetGroup(ctx, groupID, tenantID)
+	group, err := s.store.GetGroup(ctx, groupID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -422,8 +422,8 @@ func (s *Service) Join(ctx context.Context, groupID, userID, tenantID pgtype.UUI
 }
 
 // Leave removes the requesting user from a planning group.
-func (s *Service) Leave(ctx context.Context, groupID, userID, tenantID pgtype.UUID) error {
-	if err := s.store.LeaveGroup(ctx, groupID, userID, tenantID); err != nil {
+func (s *Service) Leave(ctx context.Context, groupID, userID pgtype.UUID) error {
+	if err := s.store.LeaveGroup(ctx, groupID, userID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -435,8 +435,8 @@ func (s *Service) Leave(ctx context.Context, groupID, userID, tenantID pgtype.UU
 }
 
 // GetMembers returns all members of a planning group.
-func (s *Service) GetMembers(ctx context.Context, groupID, tenantID pgtype.UUID) ([]MemberDTO, error) {
-	members, err := s.store.GetMembers(ctx, groupID, tenantID)
+func (s *Service) GetMembers(ctx context.Context, groupID pgtype.UUID) ([]MemberDTO, error) {
+	members, err := s.store.GetMembers(ctx, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: get members: %w", err)
 	}
@@ -450,12 +450,12 @@ func (s *Service) GetMembers(ctx context.Context, groupID, tenantID pgtype.UUID)
 }
 
 // CreateMilestone adds a milestone for the requesting user in a group.
-func (s *Service) CreateMilestone(ctx context.Context, groupID, userID, tenantID pgtype.UUID, title string) (MilestoneDTO, error) {
+func (s *Service) CreateMilestone(ctx context.Context, groupID, userID pgtype.UUID, title string) (MilestoneDTO, error) {
 	if title == "" {
 		return MilestoneDTO{}, errors.New("title is required")
 	}
 
-	m, err := s.store.CreateMilestone(ctx, groupID, userID, tenantID, title)
+	m, err := s.store.CreateMilestone(ctx, groupID, userID, title)
 	if err != nil {
 		return MilestoneDTO{}, fmt.Errorf("planninggroups: create milestone: %w", err)
 	}
@@ -485,7 +485,7 @@ func (s *Service) ListMilestones(ctx context.Context, groupID, userID, tenantID 
 // a "Mission Complete" celebration notification with a prompt to share in
 // the Achievement Feed (§82 Integration with §89).
 func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, userID, tenantID pgtype.UUID, completed bool) error {
-	if err := s.store.UpdateMilestone(ctx, milestoneID, groupID, userID, tenantID, completed); err != nil {
+	if err := s.store.UpdateMilestone(ctx, milestoneID, groupID, userID, completed); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -497,7 +497,7 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, use
 	// to share in Achievement Feed (§89). Only fires when the milestone was
 	// just marked complete and the achievement feature is enabled.
 	if completed && s.notifier != nil &&
-		s.settings.GetBoolOr(ctx, pgtype.UUID{}, "achievement.enabled", false) {
+		s.settings.GetBoolOr(ctx, "achievement.enabled", false) {
 		remaining, err := s.store.CountIncompleteMilestones(ctx, groupID, userID, tenantID)
 		if err != nil {
 			slog.Warn("planninggroups: count incomplete milestones failed", "error", err)
@@ -506,7 +506,7 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, use
 			title := "Mission Complete! Share your win in the Achievement Feed"
 			body := "You've completed all your milestones in this planning group. Celebrate by sharing your achievement with the community."
 
-			if err := s.notifier.CreateNotification(ctx, tenantID, userID, "planning_group.mission_complete", "system", zero, "planning_group", groupID, title, body, "/achievements/new"); err != nil {
+			if err := s.notifier.CreateNotification(ctx, userID, "planning_group.mission_complete", "system", zero, "planning_group", groupID, title, body, "/achievements/new"); err != nil {
 				slog.Warn("planninggroups: mission complete notification failed", "error", err)
 			}
 		}
@@ -525,7 +525,7 @@ func (s *Service) IsMember(ctx context.Context, groupID, userID, tenantID pgtype
 // planning_group.manage_own). The invited user is added directly as a
 // member (§82: "invite user (owner only)").
 func (s *Service) InviteMember(ctx context.Context, groupID, inviteeUserID, tenantID pgtype.UUID) error {
-	group, err := s.store.GetGroup(ctx, groupID, tenantID)
+	group, err := s.store.GetGroup(ctx, groupID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -603,7 +603,7 @@ func (s *Service) SendCheckinReminders(ctx context.Context) (int64, error) {
 		}
 
 		if err := s.notifier.CreateNotification(
-			ctx, pgtype.UUID{}, m.UserID,
+			ctx, m.UserID,
 			"planning_group.checkin_reminder", "system", zero,
 			"planning_group", m.GroupID,
 			title, body,
@@ -629,7 +629,7 @@ var ErrCheckinTooLong = errors.New("check-in note exceeds 200 characters")
 
 // CreateCheckin adds a weekly check-in for the requesting user in a group.
 // Returns ErrAlreadyCheckedIn if the user has already checked in this week.
-func (s *Service) CreateCheckin(ctx context.Context, groupID, userID, tenantID pgtype.UUID, note string) (CheckinDTO, error) {
+func (s *Service) CreateCheckin(ctx context.Context, groupID, userID pgtype.UUID, note string) (CheckinDTO, error) {
 	if note == "" {
 		return CheckinDTO{}, errors.New("note is required")
 	}
@@ -638,7 +638,7 @@ func (s *Service) CreateCheckin(ctx context.Context, groupID, userID, tenantID p
 		return CheckinDTO{}, ErrCheckinTooLong
 	}
 
-	c, err := s.store.CreateCheckin(ctx, groupID, userID, tenantID, note)
+	c, err := s.store.CreateCheckin(ctx, groupID, userID, note)
 	if err != nil {
 		if errors.Is(err, ErrAlreadyCheckedIn) {
 			return CheckinDTO{}, ErrAlreadyCheckedIn
@@ -651,8 +651,8 @@ func (s *Service) CreateCheckin(ctx context.Context, groupID, userID, tenantID p
 }
 
 // ListCheckins returns this week's check-ins for a group.
-func (s *Service) ListCheckins(ctx context.Context, groupID, tenantID pgtype.UUID) ([]CheckinDTO, error) {
-	checkins, err := s.store.ListCheckins(ctx, groupID, tenantID)
+func (s *Service) ListCheckins(ctx context.Context, groupID pgtype.UUID) ([]CheckinDTO, error) {
+	checkins, err := s.store.ListCheckins(ctx, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: list checkins: %w", err)
 	}
@@ -668,7 +668,7 @@ func (s *Service) ListCheckins(ctx context.Context, groupID, tenantID pgtype.UUI
 // AdminExtendExpiry extends the expires_at timestamp on a planning group.
 // Admin-only (planning_group.manage_any permission checked at route
 // registration). newExpiry is RFC 3339 or YYYY-MM-DD.
-func (s *Service) AdminExtendExpiry(ctx context.Context, id, tenantID pgtype.UUID, newExpiry string) error {
+func (s *Service) AdminExtendExpiry(ctx context.Context, id pgtype.UUID, newExpiry string) error {
 	if newExpiry == "" {
 		return errors.New("expires_at is required")
 	}
@@ -680,7 +680,7 @@ func (s *Service) AdminExtendExpiry(ctx context.Context, id, tenantID pgtype.UUI
 
 	exp := pgtype.Timestamptz{Time: t, Valid: true}
 
-	if err := s.store.ExtendExpiry(ctx, id, tenantID, exp); err != nil {
+	if err := s.store.ExtendExpiry(ctx, id, exp); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -695,12 +695,12 @@ func (s *Service) AdminExtendExpiry(ctx context.Context, id, tenantID pgtype.UUI
 // the given number of days, computed from the later of the current
 // expires_at or now(). If the group has no expires_at, the new expiry is
 // now + days. Admin-only.
-func (s *Service) AdminExtendExpiryByDays(ctx context.Context, id, tenantID pgtype.UUID, days int) error {
+func (s *Service) AdminExtendExpiryByDays(ctx context.Context, id pgtype.UUID, days int) error {
 	if days <= 0 {
 		return errors.New("days must be a positive integer")
 	}
 
-	group, err := s.store.GetGroup(ctx, id, tenantID)
+	group, err := s.store.GetGroup(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -717,7 +717,7 @@ func (s *Service) AdminExtendExpiryByDays(ctx context.Context, id, tenantID pgty
 	newExpiry := base.AddDate(0, 0, days)
 
 	exp := pgtype.Timestamptz{Time: newExpiry, Valid: true}
-	if err := s.store.ExtendExpiry(ctx, id, tenantID, exp); err != nil {
+	if err := s.store.ExtendExpiry(ctx, id, exp); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

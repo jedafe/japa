@@ -141,7 +141,7 @@ type sourceManager interface {
 
 // spaceSettingsReader is the subset of config.Settings used by the space service.
 type spaceSettingsReader interface {
-	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
+	GetSettingBool(ctx context.Context, key string) (bool, error)
 }
 
 // Service provides space operations with reader/writer pool separation.
@@ -191,7 +191,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
 		ActivityKey: key,
 		Reference:   reference,
 		Payload:     payload,
@@ -332,7 +332,7 @@ func extractSpaceKeywords(name string) []string {
 // initials overlap with the given keyword list. Used by the content
 // auto-assign feature to link content to spaces based on title matching.
 // Ref: sections/05-geo-first-space-system.md, sections/14-content-type-system.md.
-func (s *Service) FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error) {
+func (s *Service) FindSpacesByKeywords(ctx context.Context, keywords []string) ([]gen.FindSpacesByKeywordsRow, error) {
 	return s.read.FindSpacesByKeywords(ctx,
 
 		keywords,

@@ -33,7 +33,7 @@ func (s *Store) InsertMedia(ctx context.Context, params gen.InsertMediaParams) (
 }
 
 // GetMediaByID returns a media item by ID (excludes soft-deleted).
-func (s *Store) GetMediaByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Medium, error) {
+func (s *Store) GetMediaByID(ctx context.Context, id pgtype.UUID) (gen.Medium, error) {
 	m, err := s.read.GetMediaByID(ctx,
 		id,
 	)
@@ -45,7 +45,7 @@ func (s *Store) GetMediaByID(ctx context.Context, id, tenantID pgtype.UUID) (gen
 }
 
 // GetMediaByStoragePath returns a media item by its storage path.
-func (s *Store) GetMediaByStoragePath(ctx context.Context, storagePath string, tenantID pgtype.UUID) (gen.Medium, error) {
+func (s *Store) GetMediaByStoragePath(ctx context.Context, storagePath string) (gen.Medium, error) {
 	m, err := s.read.GetMediaByStoragePath(ctx,
 		storagePath,
 	)
@@ -57,7 +57,7 @@ func (s *Store) GetMediaByStoragePath(ctx context.Context, storagePath string, t
 }
 
 // ConfirmMedia marks a media item as confirmed.
-func (s *Store) ConfirmMedia(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) ConfirmMedia(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.ConfirmMedia(ctx,
 		id,
 	); err != nil {
@@ -86,7 +86,7 @@ func (s *Store) UpdateMediaMetadataOwn(ctx context.Context, params gen.UpdateMed
 }
 
 // SoftDeleteMedia soft-deletes a media item (admin — no ownership check).
-func (s *Store) SoftDeleteMedia(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) SoftDeleteMedia(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.SoftDeleteMedia(ctx,
 		id,
 	); err != nil {
@@ -99,7 +99,7 @@ func (s *Store) SoftDeleteMedia(ctx context.Context, id, tenantID pgtype.UUID) e
 // SoftDeleteMediaOwn soft-deletes a media item scoped to the uploader.
 // Returns ErrMediaNotFound if the media belongs to a different user or
 // does not exist, so the caller can return a 404 without leaking existence.
-func (s *Store) SoftDeleteMediaOwn(ctx context.Context, id, tenantID, uploaderID pgtype.UUID) error {
+func (s *Store) SoftDeleteMediaOwn(ctx context.Context, id, uploaderID pgtype.UUID) error {
 	if err := s.write.SoftDeleteMediaOwn(ctx, gen.SoftDeleteMediaOwnParams{
 		ID: id,
 
@@ -112,7 +112,7 @@ func (s *Store) SoftDeleteMediaOwn(ctx context.Context, id, tenantID, uploaderID
 }
 
 // ListMediaByUploader returns paginated media for a specific uploader.
-func (s *Store) ListMediaByUploader(ctx context.Context, tenantID, uploaderID pgtype.UUID, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) ListMediaByUploader(ctx context.Context, uploaderID pgtype.UUID, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -131,7 +131,7 @@ func (s *Store) ListMediaByUploader(ctx context.Context, tenantID, uploaderID pg
 }
 
 // ListMediaByTenant returns all non-deleted media for a tenant.
-func (s *Store) ListMediaByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) ListMediaByTenant(ctx context.Context, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -149,7 +149,7 @@ func (s *Store) ListMediaByTenant(ctx context.Context, tenantID pgtype.UUID, lim
 }
 
 // ListMediaByType returns paginated media matching a MIME type prefix.
-func (s *Store) ListMediaByType(ctx context.Context, tenantID pgtype.UUID, mimePattern string, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) ListMediaByType(ctx context.Context, mimePattern string, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -168,7 +168,7 @@ func (s *Store) ListMediaByType(ctx context.Context, tenantID pgtype.UUID, mimeP
 }
 
 // SearchMedia searches media by filename, alt_text, and caption.
-func (s *Store) SearchMedia(ctx context.Context, tenantID pgtype.UUID, query string, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) SearchMedia(ctx context.Context, query string, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -187,7 +187,7 @@ func (s *Store) SearchMedia(ctx context.Context, tenantID pgtype.UUID, query str
 }
 
 // CountMediaByUploader returns the count of non-deleted media for an uploader.
-func (s *Store) CountMediaByUploader(ctx context.Context, tenantID, uploaderID pgtype.UUID) (int32, error) {
+func (s *Store) CountMediaByUploader(ctx context.Context, uploaderID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountMediaByUploader(ctx,
 
 		uploaderID,
@@ -200,7 +200,7 @@ func (s *Store) CountMediaByUploader(ctx context.Context, tenantID, uploaderID p
 }
 
 // CountMediaByTenant returns the count of all non-deleted media for a tenant.
-func (s *Store) CountMediaByTenant(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+func (s *Store) CountMediaByTenant(ctx context.Context) (int32, error) {
 	count, err := s.read.CountMediaByTenant(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("counting media by tenant: %w", err)
@@ -210,7 +210,7 @@ func (s *Store) CountMediaByTenant(ctx context.Context, tenantID pgtype.UUID) (i
 }
 
 // CountMediaByType returns the count of non-deleted media matching a MIME type prefix.
-func (s *Store) CountMediaByType(ctx context.Context, tenantID pgtype.UUID, mimePattern string) (int32, error) {
+func (s *Store) CountMediaByType(ctx context.Context, mimePattern string) (int32, error) {
 	count, err := s.read.CountMediaByType(ctx,
 
 		&mimePattern,
@@ -223,7 +223,7 @@ func (s *Store) CountMediaByType(ctx context.Context, tenantID pgtype.UUID, mime
 }
 
 // CountSearchMedia returns the count of non-deleted media matching a search query.
-func (s *Store) CountSearchMedia(ctx context.Context, tenantID pgtype.UUID, query string) (int32, error) {
+func (s *Store) CountSearchMedia(ctx context.Context, query string) (int32, error) {
 	count, err := s.read.CountSearchMedia(ctx,
 
 		&query,
@@ -238,7 +238,7 @@ func (s *Store) CountSearchMedia(ctx context.Context, tenantID pgtype.UUID, quer
 // ListMediaFiltered returns paginated media matching the given filters
 // (uploader, mime type, search query, status, flagged). Empty/zero values mean
 // "no filter on this field". Used by the admin media list endpoint.
-func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgtype.UUID, mimePattern, query, status, flagged string, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged string, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -262,7 +262,7 @@ func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgty
 
 // CountMediaFiltered returns the count of media matching the given filters,
 // ignoring limit/offset. Used to compute total_pages for the admin list.
-func (s *Store) CountMediaFiltered(ctx context.Context, tenantID, uploaderID pgtype.UUID, mimePattern, query, status, flagged string) (int32, error) {
+func (s *Store) CountMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged string) (int32, error) {
 	count, err := s.read.CountMediaFiltered(ctx, gen.CountMediaFilteredParams{
 
 		UploaderUserID: uploaderID,
@@ -282,7 +282,7 @@ func (s *Store) CountMediaFiltered(ctx context.Context, tenantID, uploaderID pgt
 // featured/header image of the user's published, public posts. Public-safe:
 // excludes unconfirmed media, group-restricted media, and draft/private-post
 // media. Powers the public profile Media tab.
-func (s *Store) ListMediaFromPublicPostsByUser(ctx context.Context, tenantID, authorID pgtype.UUID, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) ListMediaFromPublicPostsByUser(ctx context.Context, authorID pgtype.UUID, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -302,7 +302,7 @@ func (s *Store) ListMediaFromPublicPostsByUser(ctx context.Context, tenantID, au
 
 // CountMediaFromPublicPostsByUser returns the count of media that is the
 // featured/header image of the user's published, public posts.
-func (s *Store) CountMediaFromPublicPostsByUser(ctx context.Context, tenantID, authorID pgtype.UUID) (int32, error) {
+func (s *Store) CountMediaFromPublicPostsByUser(ctx context.Context, authorID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountMediaFromPublicPostsByUser(ctx,
 
 		authorID,
@@ -316,7 +316,7 @@ func (s *Store) CountMediaFromPublicPostsByUser(ctx context.Context, tenantID, a
 
 // ListMediaFromOrgPublicPosts returns media used as featured/header images by
 // the org's published-public posts, paginated. Powers the org Media tab.
-func (s *Store) ListMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgID pgtype.UUID, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) ListMediaFromOrgPublicPosts(ctx context.Context, orgID pgtype.UUID, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -336,7 +336,7 @@ func (s *Store) ListMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgID
 
 // CountMediaFromOrgPublicPosts returns the count of media that is the
 // featured/header image of the org's published, public posts.
-func (s *Store) CountMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgID pgtype.UUID) (int32, error) {
+func (s *Store) CountMediaFromOrgPublicPosts(ctx context.Context, orgID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountMediaFromOrgPublicPosts(ctx,
 
 		orgID,
@@ -349,7 +349,7 @@ func (s *Store) CountMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgI
 }
 
 // BulkSoftDeleteMedia soft-deletes multiple media items (admin — no ownership check).
-func (s *Store) BulkSoftDeleteMedia(ctx context.Context, tenantID pgtype.UUID, mediaIDs []pgtype.UUID) error {
+func (s *Store) BulkSoftDeleteMedia(ctx context.Context, mediaIDs []pgtype.UUID) error {
 	if len(mediaIDs) == 0 {
 		return nil
 	}
@@ -365,7 +365,7 @@ func (s *Store) BulkSoftDeleteMedia(ctx context.Context, tenantID pgtype.UUID, m
 }
 
 // BulkSoftDeleteMediaOwn soft-deletes multiple media items scoped to the uploader.
-func (s *Store) BulkSoftDeleteMediaOwn(ctx context.Context, tenantID, uploaderID pgtype.UUID, mediaIDs []pgtype.UUID) error {
+func (s *Store) BulkSoftDeleteMediaOwn(ctx context.Context, uploaderID pgtype.UUID, mediaIDs []pgtype.UUID) error {
 	if len(mediaIDs) == 0 {
 		return nil
 	}
@@ -417,7 +417,7 @@ type ScanMediaRow struct {
 
 // UpdateMediaStoragePath updates the storage path for a media item.
 // Used after video processing to point to the new file location.
-func (s *Store) UpdateMediaStoragePath(ctx context.Context, id, tenantID pgtype.UUID, storagePath string) error {
+func (s *Store) UpdateMediaStoragePath(ctx context.Context, id pgtype.UUID, storagePath string) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media SET storage_path = $1 WHERE id = $2 AND deleted_at IS NULL
 	`, storagePath, id)
@@ -449,7 +449,7 @@ func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaR
 
 // ConfirmMediaByID marks a media item as confirmed, scoped to tenant.
 // Used by the background scan processor after a clean virus scan.
-func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte, tenantID string) error {
+func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media SET confirmed = true WHERE id = $1 AND deleted_at IS NULL
 	`, mediaID)
@@ -462,7 +462,7 @@ func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte, tenantID s
 
 // RejectMediaByID soft-deletes a media item and logs the virus name.
 // Used by the background scan processor when ClamAV detects malware.
-func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, tenantID, virusName string) error {
+func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, virusName string) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media
 		SET deleted_at = now(),
@@ -478,7 +478,7 @@ func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, tenantID, v
 
 // QuarantineMedia marks a media item as quarantined, scoped to tenant.
 // This allows admins to review false positives before permanent removal.
-func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, tenantID, reason string) error {
+func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, reason string) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media
 		SET quarantine_reason = $2,
@@ -493,7 +493,7 @@ func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, tenantID, r
 }
 
 // ApproveQuarantined clears quarantine fields and confirms the media item.
-func (s *Store) ApproveQuarantined(ctx context.Context, mediaID, tenantID, reviewerID pgtype.UUID) error {
+func (s *Store) ApproveQuarantined(ctx context.Context, mediaID, reviewerID pgtype.UUID) error {
 	if err := s.write.ApproveQuarantinedMedia(ctx, gen.ApproveQuarantinedMediaParams{
 		ReviewedBy: reviewerID,
 		ID:         mediaID,
@@ -505,7 +505,7 @@ func (s *Store) ApproveQuarantined(ctx context.Context, mediaID, tenantID, revie
 }
 
 // RejectQuarantined soft-deletes a quarantined media item after admin review.
-func (s *Store) RejectQuarantined(ctx context.Context, mediaID, tenantID, reviewerID pgtype.UUID) error {
+func (s *Store) RejectQuarantined(ctx context.Context, mediaID, reviewerID pgtype.UUID) error {
 	if err := s.write.RejectQuarantinedMedia(ctx, gen.RejectQuarantinedMediaParams{
 		ReviewedBy: reviewerID,
 		ID:         mediaID,
@@ -526,7 +526,7 @@ func (s *Store) AdminUpdateStatus(ctx context.Context, params gen.AdminUpdateMed
 }
 
 // ListQuarantined returns all quarantined media items for a tenant.
-func (s *Store) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]QuarantinedMedia, error) {
+func (s *Store) ListQuarantined(ctx context.Context, limit, offset int32) ([]QuarantinedMedia, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -570,7 +570,7 @@ func (s *Store) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit
 }
 
 // GetQuarantinedMedia returns a single quarantined media item by ID.
-func (s *Store) GetQuarantinedMedia(ctx context.Context, mediaID, tenantID pgtype.UUID) (QuarantinedMedia, error) {
+func (s *Store) GetQuarantinedMedia(ctx context.Context, mediaID pgtype.UUID) (QuarantinedMedia, error) {
 	var m QuarantinedMedia
 
 	err := s.readPool.QueryRow(ctx, `

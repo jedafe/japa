@@ -185,7 +185,7 @@ func TestExtractMentions_SkipsNonUser(t *testing.T) {
 
 func TestFilterMentions_SkipsAuthor(t *testing.T) {
 	t.Parallel()
-	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	_ = mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 
@@ -196,7 +196,7 @@ func TestFilterMentions_SkipsAuthor(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
-		tenantID,
+
 		authorID,
 		spaceID,
 		false,
@@ -213,7 +213,7 @@ func TestFilterMentions_SkipsAuthor(t *testing.T) {
 
 func TestFilterMentions_SkipsBlocked(t *testing.T) {
 	t.Parallel()
-	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	_ = mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	mentionedID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -228,7 +228,7 @@ func TestFilterMentions_SkipsBlocked(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
-		tenantID,
+
 		authorID,
 		spaceID,
 		false,
@@ -245,7 +245,7 @@ func TestFilterMentions_SkipsBlocked(t *testing.T) {
 
 func TestFilterMentions_SkipsNonMemberInPrivateSpace(t *testing.T) {
 	t.Parallel()
-	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	_ = mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	mentionedID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -260,7 +260,7 @@ func TestFilterMentions_SkipsNonMemberInPrivateSpace(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
-		tenantID,
+
 		authorID,
 		spaceID,
 		true, // private space
@@ -305,7 +305,7 @@ func (m *mockUserStatusChecker) IsErased(_ context.Context, _, userID pgtype.UUI
 // UserStatusChecker is provided.
 func TestFilterMentions_SkipsErased(t *testing.T) {
 	t.Parallel()
-	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	_ = mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	erasedUserID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	activeUserID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -323,7 +323,7 @@ func TestFilterMentions_SkipsErased(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
-		tenantID,
+
 		authorID,
 		spaceID,
 		false,
@@ -346,7 +346,7 @@ func TestFilterMentions_SkipsErased(t *testing.T) {
 // all checkers are nil (the production fallback when checkers aren't wired).
 func TestFilterMentions_NilCheckers(t *testing.T) {
 	t.Parallel()
-	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	_ = mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	user1 := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	user2 := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -361,7 +361,7 @@ func TestFilterMentions_NilCheckers(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
-		tenantID,
+
 		authorID,
 		spaceID,
 		false,
@@ -379,7 +379,7 @@ func TestFilterMentions_NilCheckers(t *testing.T) {
 // BUG-004: Test that FilterMentions deduplicates mentions of the same user.
 func TestFilterMentions_Deduplicates(t *testing.T) {
 	t.Parallel()
-	tenantID := mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
+	_ = mustUUID(t, "110e8400-e29b-41d4-a716-446655440000")
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	user1 := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -393,7 +393,7 @@ func TestFilterMentions_Deduplicates(t *testing.T) {
 	filtered, err := FilterMentions(
 		t.Context(),
 		mentions,
-		tenantID,
+
 		authorID,
 		spaceID,
 		false,

@@ -99,12 +99,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /tax-calculator — list published tax obligation
 // guides with filters. Query params: ?dest=&origin=&employment=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
@@ -129,7 +129,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	guides, total, err := h.service.List(r.Context(), tenantID, destSpaceID, originSpaceID, employmentStatus, page, limit)
+	guides, total, err := h.service.List(r.Context(), destSpaceID, originSpaceID, employmentStatus, page, limit)
 	if err != nil {
 		slog.Error("taxcalculator: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list tax guides")
@@ -162,12 +162,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleTreaty handles GET /tax-calculator/treaty — treaty status for an
 // origin/destination pair. Query params: ?dest=&origin=.
 func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
@@ -192,7 +192,7 @@ func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	treaty, err := h.service.GetTreaty(r.Context(), tenantID, originSpaceID, destSpaceID)
+	treaty, err := h.service.GetTreaty(r.Context(), originSpaceID, destSpaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -228,8 +228,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -258,7 +257,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	guides, treaties, total, err := h.service.AdminList(r.Context(), tenantID, status, employmentStatus, q, destSpaceID, originSpaceID, page, limit)
+	guides, treaties, total, err := h.service.AdminList(r.Context(), status, employmentStatus, q, destSpaceID, originSpaceID, page, limit)
 	if err != nil {
 		slog.Error("taxcalculator: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list tax guides")
@@ -298,13 +297,12 @@ func (h *Handlers) HandleCreateGuide(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
@@ -315,7 +313,7 @@ func (h *Handlers) HandleCreateGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.CreateGuide(r.Context(), tenantID, input)
+	guide, err := h.service.CreateGuide(r.Context(), input)
 	if err != nil {
 		slog.Error("taxcalculator: create guide failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create tax guide")
@@ -333,13 +331,12 @@ func (h *Handlers) HandleGenerateGuide(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
@@ -350,7 +347,7 @@ func (h *Handlers) HandleGenerateGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.GenerateGuide(r.Context(), tenantID, input)
+	result, err := h.service.GenerateGuide(r.Context(), input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
 		return
@@ -378,7 +375,7 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
@@ -410,13 +407,12 @@ func (h *Handlers) HandleUpsertTreaty(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
@@ -427,7 +423,7 @@ func (h *Handlers) HandleUpsertTreaty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	treaty, err := h.service.UpsertTreaty(r.Context(), tenantID, input)
+	treaty, err := h.service.UpsertTreaty(r.Context(), input)
 	if err != nil {
 		slog.Error("taxcalculator: upsert treaty failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "upsert_treaty_failed", "Failed to create or update treaty")

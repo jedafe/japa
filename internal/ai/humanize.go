@@ -21,8 +21,6 @@ package ai
 import (
 	"context"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // HumanizeLevel controls the intensity of humanization instructions.
@@ -131,14 +129,14 @@ func ResolveHumanize(globalEnabled bool, globalLevel HumanizeLevel, reqHumanize 
 // is off unless the request explicitly enables it.
 //
 // reqHumanize is nil when the request did not specify humanization.
-func (h *Handlers) resolveHandlerHumanize(ctx context.Context, tenantID pgtype.UUID, reqHumanize *bool, reqLevel string) (bool, HumanizeLevel) {
+func (h *Handlers) resolveHandlerHumanize(ctx context.Context, reqHumanize *bool, reqLevel string) (bool, HumanizeLevel) {
 	globalEnabled := false
 	globalLevel := HumanizeMedium
 
 	if h.Settings != nil {
-		globalEnabled = h.Settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.humanize.enabled", false)
+		globalEnabled = h.Settings.GetBoolOr(ctx, "ai.humanize.enabled", false)
 
-		if lvl := h.Settings.GetStringOr(ctx, pgtype.UUID{}, "ai.humanize.level", "medium"); lvl != "" {
+		if lvl := h.Settings.GetStringOr(ctx, "ai.humanize.level", "medium"); lvl != "" {
 			globalLevel = HumanizeLevel(lvl)
 		}
 	}

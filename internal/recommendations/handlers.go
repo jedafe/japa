@@ -48,8 +48,8 @@ const defaultTrendingWindow = "7d"
 
 // settingsReader is the subset of config.Settings the recommendation engine needs.
 type settingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // TrendingReader is the subset of the trending store the recommendation
@@ -57,9 +57,9 @@ type settingsReader interface {
 // A nil trending reader disables content/spaces population (graceful
 // degradation — the response still returns tools and features).
 type TrendingReader interface {
-	GetTrendingContent(ctx context.Context, tenantID pgtype.UUID, window, geoCode string, limit int32) ([]gen.GetTrendingContentRow, error)
-	GetTrendingSpaces(ctx context.Context, tenantID pgtype.UUID, window, geoCode string, limit int32) ([]gen.GetTrendingSpacesRow, error)
-	GetSpaceLevels(ctx context.Context, tenantID pgtype.UUID, spaceIDs []pgtype.UUID) (map[[16]byte]string, error)
+	GetTrendingContent(ctx context.Context, window, geoCode string, limit int32) ([]gen.GetTrendingContentRow, error)
+	GetTrendingSpaces(ctx context.Context, window, geoCode string, limit int32) ([]gen.GetTrendingSpacesRow, error)
+	GetSpaceLevels(ctx context.Context, spaceIDs []pgtype.UUID) (map[[16]byte]string, error)
 }
 
 // Handlers holds dependencies for recommendation HTTP handlers.
@@ -227,7 +227,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 
 	vc := visitor.FromContext(r.Context())
 
-	limit := h.resolveLimit(r.Context(), t.ID, r.URL.Query().Get("limit"))
+	limit := h.resolveLimit(r.Context(), r.URL.Query().Get("limit"))
 
 	// Build cache key. The key does NOT include the limit — the full result
 	// set is cached and sliced to the requested limit after a cache hit. This
@@ -260,11 +260,11 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load config-driven tool labels and URLs (Rule 3).
-	labels := h.loadToolMap(r.Context(), t.ID, "geo_personalization.tool_labels")
-	urls := h.loadToolMap(r.Context(), t.ID, "geo_personalization.tool_urls")
+	labels := h.loadToolMap(r.Context(), "geo_personalization.tool_labels")
+	urls := h.loadToolMap(r.Context(), "geo_personalization.tool_urls")
 
 	// Resolve tool/feature recommendations from the stage_tool_matrix config.
-	toolSlugs := h.resolveToolSlugs(r.Context(), t.ID, vc)
+	toolSlugs := h.resolveToolSlugs(r.Context(), vc)
 	toolSlugs, featureSlugsList := classifySlugs(toolSlugs)
 	tools := buildItems(toolSlugs, labels, urls, vc, h)
 	features := buildItems(featureSlugsList, labels, urls, vc, h)
@@ -272,8 +272,8 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	// Source content and space recommendations from the trending store
 	// (ADR-064a §5, Section 53). Skipped when no trending reader is wired
 	// (graceful degradation — empty arrays, never null).
-	content := h.buildContentItems(r.Context(), t.ID, vc, toInt32(limit))
-	spaces := h.buildSpaceItems(r.Context(), t.ID, vc, toInt32(limit))
+	content := h.buildContentItems(r.Context(), vc, toInt32(limit))
+	spaces := h.buildSpaceItems(r.Context(), vc, toInt32(limit))
 
 	// Build response.
 	resp := RecommendationResponse{
@@ -297,7 +297,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	// every limit value.
 	if h.cache != nil {
 		if b, err := json.Marshal(resp); err == nil {
-			ttl := h.resolveCacheTTL(r.Context(), t.ID)
+			ttl := h.resolveCacheTTL(r.Context())
 			_ = h.cache.Set(r.Context(), cacheKey, b, ttl).Err()
 		}
 	}
@@ -327,7 +327,7 @@ func toInt32(v int) int32 {
 // resolveLimit parses the ?limit query param and clamps it to the configured
 // max (geo_personalization.recommendations_max_limit, fallback 20). The max
 // is config-driven per Rule 3 (BUG-007 fix).
-func (h *Handlers) resolveLimit(ctx context.Context, tenantID pgtype.UUID, raw string) int {
+func (h *Handlers) resolveLimit(ctx context.Context, raw string) int {
 	limit := defaultLimit
 
 	if raw != "" {
@@ -338,7 +338,7 @@ func (h *Handlers) resolveLimit(ctx context.Context, tenantID pgtype.UUID, raw s
 
 	maxLimit := defaultMaxLimit
 	if h.settings != nil {
-		maxLimit = h.settings.GetIntOr(ctx, pgtype.UUID{}, "geo_personalization.recommendations_max_limit", defaultMaxLimit)
+		maxLimit = h.settings.GetIntOr(ctx, "geo_personalization.recommendations_max_limit", defaultMaxLimit)
 	}
 
 	if maxLimit < 1 {
@@ -355,12 +355,12 @@ func (h *Handlers) resolveLimit(ctx context.Context, tenantID pgtype.UUID, raw s
 // resolveCacheTTL returns the configured cache TTL
 // (geo_personalization.recommendations_cache_ttl_seconds, fallback 900s/15min).
 // Config-driven per Rule 3 (BUG-007 fix).
-func (h *Handlers) resolveCacheTTL(ctx context.Context, tenantID pgtype.UUID) time.Duration {
+func (h *Handlers) resolveCacheTTL(ctx context.Context) time.Duration {
 	if h.settings == nil {
 		return defaultCacheTTL
 	}
 
-	secs := h.settings.GetIntOr(ctx, pgtype.UUID{}, "geo_personalization.recommendations_cache_ttl_seconds", int(defaultCacheTTL/time.Second))
+	secs := h.settings.GetIntOr(ctx, "geo_personalization.recommendations_cache_ttl_seconds", int(defaultCacheTTL/time.Second))
 	if secs < 1 {
 		return defaultCacheTTL
 	}
@@ -371,12 +371,12 @@ func (h *Handlers) resolveCacheTTL(ctx context.Context, tenantID pgtype.UUID) ti
 // resolveTrendingWindow returns the configured trending-snapshot window
 // (geo_personalization.recommendations_trending_window, fallback "7d").
 // Config-driven per Rule 3 (BUG-004 fix).
-func (h *Handlers) resolveTrendingWindow(ctx context.Context, tenantID pgtype.UUID) string {
+func (h *Handlers) resolveTrendingWindow(ctx context.Context) string {
 	if h.settings == nil {
 		return defaultTrendingWindow
 	}
 
-	w := h.settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.recommendations_trending_window", defaultTrendingWindow)
+	w := h.settings.GetStringOr(ctx, "geo_personalization.recommendations_trending_window", defaultTrendingWindow)
 	if w == "" {
 		return defaultTrendingWindow
 	}
@@ -420,12 +420,12 @@ func buildItems(slugs []string, labels, urls map[string]string, vc visitor.Visit
 // buildContentItems sources trending content (Section 53) and re-weights it by
 // the VisitorContext's ContentCountry (ADR-064a §5). Returns an empty slice
 // (never nil) when the trending reader is unavailable or returns no rows.
-func (h *Handlers) buildContentItems(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext, limit int32) []RecommendationContentItem {
+func (h *Handlers) buildContentItems(ctx context.Context, vc visitor.VisitorContext, limit int32) []RecommendationContentItem {
 	if h.trending == nil {
 		return []RecommendationContentItem{}
 	}
 
-	rows, err := h.trending.GetTrendingContent(ctx, tenantID, h.resolveTrendingWindow(ctx, tenantID), vc.ContentCountry, limit)
+	rows, err := h.trending.GetTrendingContent(ctx, h.resolveTrendingWindow(ctx), vc.ContentCountry, limit)
 	if err != nil {
 		slog.Warn("recommendations: trending content fetch failed", "error", err)
 		return []RecommendationContentItem{}
@@ -454,14 +454,14 @@ func (h *Handlers) buildContentItems(ctx context.Context, tenantID pgtype.UUID, 
 // (never nil) when the trending reader is unavailable or returns no rows.
 // Populates the Level field via GetSpaceLevels (BUG-001 fix — ADR-064a §5
 // response shape requires `level`).
-func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext, limit int32) []RecommendationSpaceItem {
+func (h *Handlers) buildSpaceItems(ctx context.Context, vc visitor.VisitorContext, limit int32) []RecommendationSpaceItem {
 	if h.trending == nil {
 		return []RecommendationSpaceItem{}
 	}
 
-	window := h.resolveTrendingWindow(ctx, tenantID)
+	window := h.resolveTrendingWindow(ctx)
 
-	rows, err := h.trending.GetTrendingSpaces(ctx, tenantID, window, vc.ContentCountry, limit)
+	rows, err := h.trending.GetTrendingSpaces(ctx, window, vc.ContentCountry, limit)
 	if err != nil {
 		slog.Warn("recommendations: trending spaces fetch failed", "error", err)
 		return []RecommendationSpaceItem{}
@@ -479,7 +479,7 @@ func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc
 	levels := map[[16]byte]string{}
 
 	if len(spaceIDs) > 0 {
-		if lv, err := h.trending.GetSpaceLevels(ctx, tenantID, spaceIDs); err == nil {
+		if lv, err := h.trending.GetSpaceLevels(ctx, spaceIDs); err == nil {
 			levels = lv
 		} else {
 			slog.Warn("recommendations: space levels fetch failed", "error", err)
@@ -576,12 +576,12 @@ func contentURL(contentType, slug string) string {
 // loadToolMap loads a JSON slug→string map from system_settings. Returns
 // nil when the setting is missing or invalid (callers fall back to the
 // compiled-in defaults). Used for tool_labels and tool_urls (Rule 3).
-func (h *Handlers) loadToolMap(ctx context.Context, tenantID pgtype.UUID, key string) map[string]string {
+func (h *Handlers) loadToolMap(ctx context.Context, key string) map[string]string {
 	if h.settings == nil {
 		return nil
 	}
 
-	raw := h.settings.GetStringOr(ctx, pgtype.UUID{}, key, "")
+	raw := h.settings.GetStringOr(ctx, key, "")
 	if raw == "" {
 		return nil
 	}
@@ -599,10 +599,10 @@ func (h *Handlers) loadToolMap(ctx context.Context, tenantID pgtype.UUID, key st
 // the recommended tool slugs for the given VisitorContext. The matrix is a
 // JSON object mapping "{archetype}:{japa_stage}" keys to arrays of tool slugs.
 // Resolution order: exact match → "{archetype}:*" → "*:{japa_stage}" → "*:*".
-func (h *Handlers) resolveToolSlugs(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext) []string {
+func (h *Handlers) resolveToolSlugs(ctx context.Context, vc visitor.VisitorContext) []string {
 	raw := ""
 	if h.settings != nil {
-		raw = h.settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.stage_tool_matrix", "")
+		raw = h.settings.GetStringOr(ctx, "geo_personalization.stage_tool_matrix", "")
 	}
 
 	if raw == "" {

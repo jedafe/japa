@@ -33,7 +33,7 @@ func (s *Store) createReview(ctx context.Context, p gen.CreateReviewParams) (gen
 	return row, nil
 }
 
-func (s *Store) getReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Review, error) {
+func (s *Store) getReviewByID(ctx context.Context, id pgtype.UUID) (gen.Review, error) {
 	row, err := s.read.GetReviewByID(ctx, id)
 	if err != nil {
 		return gen.Review{}, fmt.Errorf("getting review by ID: %w", err)
@@ -42,7 +42,7 @@ func (s *Store) getReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 	return row, nil
 }
 
-func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]gen.Review, error) {
+func (s *Store) listReviewsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]gen.Review, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -92,7 +92,7 @@ func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, e
 	}
 }
 
-func (s *Store) listReviewsByReviewer(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
+func (s *Store) listReviewsByReviewer(ctx context.Context, reviewerUserID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -113,7 +113,7 @@ func (s *Store) listReviewsByReviewer(ctx context.Context, tenantID, reviewerUse
 // listReviewsByEntityWithAuthor returns published reviews for an entity joined
 // with the reviewer's user profile so the UI can display author_name without
 // extra round-trips (used by GET /spaces/{id}/reviews and learning tracks).
-func (s *Store) listReviewsByEntityWithAuthor(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.ListReviewsByEntityWithAuthorRow, error) {
+func (s *Store) listReviewsByEntityWithAuthor(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.ListReviewsByEntityWithAuthorRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -136,7 +136,7 @@ func (s *Store) listReviewsByEntityWithAuthor(ctx context.Context, tenantID pgty
 // Unlike ListReviewsByEntity/ListReviewsByReviewer it is not scoped to an
 // entity or reviewer and includes all statuses, so moderators can see
 // pending/flagged reviews too.
-func (s *Store) listReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
+func (s *Store) listReviews(ctx context.Context, limit, offset int32) ([]gen.Review, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -155,7 +155,7 @@ func (s *Store) listReviews(ctx context.Context, tenantID pgtype.UUID, limit, of
 
 // listAdminReviews returns all reviews for a tenant (admin moderation view)
 // with resolved entity names via polymorphic lookup.
-func (s *Store) listAdminReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAdminReviewsRow, error) {
+func (s *Store) listAdminReviews(ctx context.Context, limit, offset int32) ([]gen.ListAdminReviewsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -173,7 +173,7 @@ func (s *Store) listAdminReviews(ctx context.Context, tenantID pgtype.UUID, limi
 }
 
 // listAdminReviewsFiltered returns filtered reviews with entity names.
-func (s *Store) listAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string, limit, offset int32) ([]gen.ListAdminReviewsFilteredRow, error) {
+func (s *Store) listAdminReviewsFiltered(ctx context.Context, status, entityType string, limit, offset int32) ([]gen.ListAdminReviewsFilteredRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -193,12 +193,12 @@ func (s *Store) listAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UU
 }
 
 // countAdminReviews returns the total count of reviews for a tenant.
-func (s *Store) countAdminReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+func (s *Store) countAdminReviews(ctx context.Context) (int32, error) {
 	return s.read.CountAdminReviews(ctx)
 }
 
 // countAdminReviewsFiltered returns the filtered count of reviews.
-func (s *Store) countAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string) (int32, error) {
+func (s *Store) countAdminReviewsFiltered(ctx context.Context, status, entityType string) (int32, error) {
 	return s.read.CountAdminReviewsFiltered(ctx, gen.CountAdminReviewsFilteredParams{
 
 		Status:     status,
@@ -233,7 +233,7 @@ func (s *Store) softDeleteOwnReview(ctx context.Context, p gen.SoftDeleteOwnRevi
 	return row, nil
 }
 
-func (s *Store) deleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteReview(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteReview(ctx, id); err != nil {
 		return fmt.Errorf("deleting review: %w", err)
 	}
@@ -241,7 +241,7 @@ func (s *Store) deleteReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 	return nil
 }
 
-func (s *Store) hasUserReviewedEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, reviewerUserID pgtype.UUID) (bool, error) {
+func (s *Store) hasUserReviewedEntity(ctx context.Context, entityType string, entityID, reviewerUserID pgtype.UUID) (bool, error) {
 	exists, err := s.read.HasUserReviewedEntity(ctx, gen.HasUserReviewedEntityParams{
 
 		EntityType:     entityType,
@@ -268,7 +268,7 @@ func (s *Store) upsertReviewAggregate(ctx context.Context, p gen.UpsertReviewAgg
 	return row, nil
 }
 
-func (s *Store) getReviewAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.ReviewAggregate, error) {
+func (s *Store) getReviewAggregate(ctx context.Context, entityType string, entityID pgtype.UUID) (gen.ReviewAggregate, error) {
 	row, err := s.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
 
 		EntityType: entityType,
@@ -281,7 +281,7 @@ func (s *Store) getReviewAggregate(ctx context.Context, tenantID pgtype.UUID, en
 	return row, nil
 }
 
-func (s *Store) recalculateReviewAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Store) recalculateReviewAggregate(ctx context.Context, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RecalculateReviewAggregate(ctx, gen.RecalculateReviewAggregateParams{
 
 		EntityType: entityType,

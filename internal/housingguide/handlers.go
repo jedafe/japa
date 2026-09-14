@@ -98,12 +98,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /housing-guide — list published housing guides
 // with filters. Query params: ?dest=&city=&type=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
@@ -127,7 +127,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	accommodationType := r.URL.Query().Get("type")
 	page, limit := parsePageParams(r)
 
-	guides, total, err := h.service.List(r.Context(), tenantID, destSpaceID, citySpaceID, accommodationType, page, limit)
+	guides, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, accommodationType, page, limit)
 	if err != nil {
 		slog.Error("housingguide: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list housing guides")
@@ -148,12 +148,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /housing-guide/:id — single published housing
 // guide detail.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
@@ -163,7 +163,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.GetByID(r.Context(), id, tenantID)
+	guide, err := h.service.GetByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
@@ -192,8 +192,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -237,7 +236,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	guides, total, err := h.service.AdminList(r.Context(), tenantID, status, accommodationType, q, destSpaceID, citySpaceID, activePtr, page, limit)
+	guides, total, err := h.service.AdminList(r.Context(), status, accommodationType, q, destSpaceID, citySpaceID, activePtr, page, limit)
 	if err != nil {
 		slog.Error("housingguide: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list housing guides")
@@ -262,13 +261,12 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
@@ -284,7 +282,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.Create(r.Context(), tenantID, input)
+	guide, err := h.service.Create(r.Context(), input)
 	if err != nil {
 		slog.Error("housingguide: admin create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create housing guide")
@@ -309,7 +307,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
@@ -343,8 +341,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -354,7 +351,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
@@ -365,7 +362,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.Update(r.Context(), id, tenantID, input)
+	guide, err := h.service.Update(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
@@ -390,8 +387,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -401,7 +397,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
@@ -412,7 +408,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.Approve(r.Context(), id, tenantID, user.UserID, input)
+	guide, err := h.service.Approve(r.Context(), id, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
@@ -434,8 +430,7 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -445,7 +440,7 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
@@ -459,7 +454,7 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.Reject(r.Context(), id, tenantID, user.UserID, input.Reason)
+	guide, err := h.service.Reject(r.Context(), id, user.UserID, input.Reason)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found or not pending review")

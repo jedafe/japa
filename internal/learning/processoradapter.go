@@ -29,7 +29,7 @@ func NewProcessorAdapter(store *Store) *ProcessorAdapter {
 // UpdateTrackCompletion recalculates a user's progress in a learning track
 // by counting completed lessons vs total published lessons, then persists
 // the percentage to the enrollment record.
-func (a *ProcessorAdapter) UpdateTrackCompletion(ctx context.Context, userID, trackID, tenantID string) error {
+func (a *ProcessorAdapter) UpdateTrackCompletion(ctx context.Context, userID, trackID string) error {
 	var uid, tkid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		return fmt.Errorf("invalid user_id %q: %w", userID, err)
@@ -68,18 +68,14 @@ func (a *ProcessorAdapter) UpdateTrackCompletion(ctx context.Context, userID, tr
 // IssueCertificate generates and stores a certificate for a user who has
 // completed all lessons in a track. Idempotent — returns early if a
 // certificate already exists for this user/track pair.
-func (a *ProcessorAdapter) IssueCertificate(ctx context.Context, userID, trackID, tenantID, courseName string) error {
-	var uid, tid, tkid pgtype.UUID
+func (a *ProcessorAdapter) IssueCertificate(ctx context.Context, userID, trackID, courseName string) error {
+	var uid, tkid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		return fmt.Errorf("invalid user_id %q: %w", userID, err)
 	}
 
 	if err := tkid.Scan(trackID); err != nil {
 		return fmt.Errorf("invalid track_id %q: %w", trackID, err)
-	}
-
-	if err := tid.Scan(tenantID); err != nil {
-		return fmt.Errorf("invalid tenant_id %q: %w", tenantID, err)
 	}
 
 	// Idempotent: skip if certificate already exists.
@@ -96,7 +92,7 @@ func (a *ProcessorAdapter) IssueCertificate(ctx context.Context, userID, trackID
 	// sequences that PostgreSQL's text column rejects (SQLSTATE 22021).
 	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), hex.EncodeToString(uid.Bytes[:8]))
 
-	if _, err := a.store.IssueCertificate(ctx, tid, uid, tkid, certNumber); err != nil {
+	if _, err := a.store.IssueCertificate(ctx, uid, tkid, certNumber); err != nil {
 		return fmt.Errorf("issue certificate: %w", err)
 	}
 

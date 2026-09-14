@@ -78,7 +78,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.Crea
 		arg.Status = "active"
 	}
 
-	src, err := s.store.Create(ctx, tenantID, arg)
+	src, err := s.store.Create(ctx, arg)
 	if err != nil {
 		return Source{}, err
 	}
@@ -88,63 +88,63 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.Crea
 }
 
 // Get retrieves a source by ID.
-func (s *Service) Get(ctx context.Context, tenantID pgtype.UUID, id SourceID) (Source, error) {
-	return s.store.Get(ctx, tenantID, id)
+func (s *Service) Get(ctx context.Context, id SourceID) (Source, error) {
+	return s.store.Get(ctx, id)
 }
 
 // GetByURL retrieves a source by its canonical source_url.
-func (s *Service) GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (Source, error) {
-	return s.store.GetByURL(ctx, tenantID, sourceURL)
+func (s *Service) GetByURL(ctx context.Context, sourceURL string) (Source, error) {
+	return s.store.GetByURL(ctx, sourceURL)
 }
 
 // List returns a page of sources.
-func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelSourcesParams) ([]Source, error) {
-	return s.store.List(ctx, tenantID, arg)
+func (s *Service) List(ctx context.Context, arg gen.ListIntelSourcesParams) ([]Source, error) {
+	return s.store.List(ctx, arg)
 }
 
 // ListByCategory returns enabled sources for a given category.
-func (s *Service) ListByCategory(ctx context.Context, tenantID pgtype.UUID, category Category) ([]Source, error) {
-	return s.store.ListByCategory(ctx, tenantID, string(category))
+func (s *Service) ListByCategory(ctx context.Context, category Category) ([]Source, error) {
+	return s.store.ListByCategory(ctx, string(category))
 }
 
 // ListDue returns up to limit sources whose crawl interval has elapsed.
-func (s *Service) ListDue(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]Source, error) {
-	return s.store.ListDue(ctx, tenantID, limit)
+func (s *Service) ListDue(ctx context.Context, limit int32) ([]Source, error) {
+	return s.store.ListDue(ctx, limit)
 }
 
 // Enable re-enables a previously disabled source so future crawls resume.
-func (s *Service) Enable(ctx context.Context, tenantID pgtype.UUID, id SourceID) error {
-	return s.store.UpdateEnabled(ctx, tenantID, id, true)
+func (s *Service) Enable(ctx context.Context, id SourceID) error {
+	return s.store.UpdateEnabled(ctx, id, true)
 }
 
 // Disable disables a source: future crawls stop, but existing promoted
 // records are preserved.
-func (s *Service) Disable(ctx context.Context, tenantID pgtype.UUID, id SourceID) error {
-	return s.store.UpdateEnabled(ctx, tenantID, id, false)
+func (s *Service) Disable(ctx context.Context, id SourceID) error {
+	return s.store.UpdateEnabled(ctx, id, false)
 }
 
 // Delete removes a source from the registry.
-func (s *Service) Delete(ctx context.Context, tenantID pgtype.UUID, id SourceID) error {
-	return s.store.Delete(ctx, tenantID, id)
+func (s *Service) Delete(ctx context.Context, id SourceID) error {
+	return s.store.Delete(ctx, id)
 }
 
 // Update edits the configurable fields of a source (name, domain, url,
 // category, trust level, crawl settings, license, usage restriction, enabled
 // toggle). Returns the updated source row.
-func (s *Service) Update(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelSourceParams) (Source, error) {
-	return s.store.Update(ctx, tenantID, arg)
+func (s *Service) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (Source, error) {
+	return s.store.Update(ctx, arg)
 }
 
 // ListProposed returns a page of sources with status='proposed' for admin
 // review. Tenant-scoped.
-func (s *Service) ListProposed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Source, error) {
-	return s.store.ListProposed(ctx, tenantID, limit, offset)
+func (s *Service) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {
+	return s.store.ListProposed(ctx, limit, offset)
 }
 
 // ApproveProposed activates a proposed source (status='active', enabled=true)
 // and records the approver. Tenant-scoped.
 func (s *Service) ApproveProposed(ctx context.Context, tenantID, id, approvedBy pgtype.UUID) (Source, error) {
-	src, err := s.store.ApproveProposed(ctx, tenantID, id, approvedBy)
+	src, err := s.store.ApproveProposed(ctx, id, approvedBy)
 	if err != nil {
 		return Source{}, err
 	}
@@ -157,8 +157,8 @@ func (s *Service) ApproveProposed(ctx context.Context, tenantID, id, approvedBy 
 // The actual crawl-now trigger is handled by the HTTP handler which enqueues
 // the intel:fetch_source Asynq task directly (INTEL-011 fix). This method
 // verifies the source exists and is enabled.
-func (s *Service) CrawlNow(ctx context.Context, tenantID pgtype.UUID, id SourceID) error {
-	src, err := s.store.Get(ctx, tenantID, id)
+func (s *Service) CrawlNow(ctx context.Context, id SourceID) error {
+	src, err := s.store.Get(ctx, id)
 	if err != nil {
 		return fmt.Errorf("sources: crawl-now: load source: %w", err)
 	}
@@ -183,7 +183,7 @@ type ProposeInput struct {
 // Propose creates a new source proposal from an authenticated user.
 // The source is inserted with status='proposed' and enabled=false; an admin
 // must approve it before it appears in the public directory.
-func (s *Service) Propose(ctx context.Context, tenantID, userID pgtype.UUID, input ProposeInput) (Source, error) {
+func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input ProposeInput) (Source, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	input.SourceURL = strings.TrimSpace(input.SourceURL)
 	input.Domain = strings.TrimSpace(input.Domain)
@@ -213,13 +213,13 @@ func (s *Service) Propose(ctx context.Context, tenantID, userID pgtype.UUID, inp
 	}
 
 	// Public URLs must be unique per tenant.
-	if _, err := s.store.GetByURL(ctx, tenantID, input.SourceURL); err == nil {
+	if _, err := s.store.GetByURL(ctx, input.SourceURL); err == nil {
 		return Source{}, errpkg.ErrAlreadyExists
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return Source{}, fmt.Errorf("sources: propose: check existing url: %w", err)
 	}
 
-	slug := s.uniqueSlug(ctx, tenantID, slugify(input.Name))
+	slug := s.uniqueSlug(ctx, slugify(input.Name))
 
 	now := time.Now().UTC()
 	proposedAt := pgtype.Timestamptz{Time: now, Valid: true}
@@ -258,7 +258,7 @@ func (s *Service) Propose(ctx context.Context, tenantID, userID pgtype.UUID, inp
 		ProposedAt:          proposedAt,
 	}
 
-	return s.store.Create(ctx, tenantID, arg)
+	return s.store.Create(ctx, arg)
 }
 
 func derefString(s *string) string {
@@ -276,7 +276,7 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtyp
 		return Source{}, fmt.Errorf("%w: source_url", errpkg.ErrRequired)
 	}
 
-	existing, err := s.store.GetByURL(ctx, tenantID, *sourceURL)
+	existing, err := s.store.GetByURL(ctx, *sourceURL)
 	if err == nil {
 		s.queueMetadataFetch(ctx, tenantID, existing)
 		return existing, nil
@@ -291,7 +291,7 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtyp
 		domain = u.Host
 	}
 
-	slug := s.uniqueSlug(ctx, tenantID, *title)
+	slug := s.uniqueSlug(ctx, *title)
 
 	arg := gen.CreateIntelSourceParams{
 
@@ -323,7 +323,7 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID
 	}
 
 	if sourceURL != "" {
-		existing, err := s.store.GetByURL(ctx, tenantID, sourceURL)
+		existing, err := s.store.GetByURL(ctx, sourceURL)
 		if err == nil {
 			s.queueMetadataFetch(ctx, tenantID, existing)
 			return existing, nil
@@ -369,7 +369,7 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID 
 		return Source{}, fmt.Errorf("%w: source_name", errpkg.ErrRequired)
 	}
 
-	existing, err := s.store.GetByURL(ctx, tenantID, derefString(sourceURL))
+	existing, err := s.store.GetByURL(ctx, derefString(sourceURL))
 	if err == nil {
 		s.queueMetadataFetch(ctx, tenantID, existing)
 		return existing, nil
@@ -386,7 +386,7 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID 
 		}
 	}
 
-	slug := s.uniqueSlug(ctx, tenantID, *sourceName)
+	slug := s.uniqueSlug(ctx, *sourceName)
 
 	arg := gen.CreateIntelSourceParams{
 
@@ -408,7 +408,7 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID 
 	return s.Create(ctx, tenantID, arg)
 }
 
-func (s *Service) uniqueSlug(ctx context.Context, tenantID pgtype.UUID, base string) string {
+func (s *Service) uniqueSlug(ctx context.Context, base string) string {
 	base = slugify(base)
 	if base == "" || base == "untitled" {
 		base = "source"
@@ -419,7 +419,7 @@ func (s *Service) uniqueSlug(ctx context.Context, tenantID pgtype.UUID, base str
 		if i > 0 {
 			candidate = fmt.Sprintf("%s-%d", base, i)
 		}
-		_, err := s.store.GetBySlug(ctx, tenantID, candidate)
+		_, err := s.store.GetBySlug(ctx, candidate)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return candidate
 		}
@@ -433,20 +433,20 @@ func (s *Service) uniqueSlug(ctx context.Context, tenantID pgtype.UUID, base str
 
 // ToggleSourceBlock blocks the source if it is not blocked, otherwise unblocks it.
 // Returns the new block state and any error.
-func (s *Service) ToggleSourceBlock(ctx context.Context, tenantID, blockerID, sourceID pgtype.UUID) (bool, error) {
-	blocked, err := s.store.IsSourceBlocked(ctx, tenantID, blockerID, sourceID)
+func (s *Service) ToggleSourceBlock(ctx context.Context, blockerID, sourceID pgtype.UUID) (bool, error) {
+	blocked, err := s.store.IsSourceBlocked(ctx, blockerID, sourceID)
 	if err != nil {
 		return false, fmt.Errorf("sources: toggle block: check: %w", err)
 	}
 
 	if blocked {
-		if err := s.store.UnblockSource(ctx, tenantID, blockerID, sourceID); err != nil {
+		if err := s.store.UnblockSource(ctx, blockerID, sourceID); err != nil {
 			return false, fmt.Errorf("sources: toggle block: unblock: %w", err)
 		}
 		return false, nil
 	}
 
-	_, err = s.store.BlockSource(ctx, tenantID, blockerID, sourceID)
+	_, err = s.store.BlockSource(ctx, blockerID, sourceID)
 	if err != nil {
 		return false, fmt.Errorf("sources: toggle block: block: %w", err)
 	}
@@ -454,11 +454,11 @@ func (s *Service) ToggleSourceBlock(ctx context.Context, tenantID, blockerID, so
 }
 
 // IsSourceBlocked returns whether the user has blocked the given source.
-func (s *Service) IsSourceBlocked(ctx context.Context, tenantID, blockerID, sourceID pgtype.UUID) (bool, error) {
-	return s.store.IsSourceBlocked(ctx, tenantID, blockerID, sourceID)
+func (s *Service) IsSourceBlocked(ctx context.Context, blockerID, sourceID pgtype.UUID) (bool, error) {
+	return s.store.IsSourceBlocked(ctx, blockerID, sourceID)
 }
 
 // ListBlockedSourceIDs returns the source IDs blocked by the given user.
-func (s *Service) ListBlockedSourceIDs(ctx context.Context, tenantID, blockerID pgtype.UUID) ([]pgtype.UUID, error) {
-	return s.store.ListBlockedSourceIDs(ctx, tenantID, blockerID)
+func (s *Service) ListBlockedSourceIDs(ctx context.Context, blockerID pgtype.UUID) ([]pgtype.UUID, error) {
+	return s.store.ListBlockedSourceIDs(ctx, blockerID)
 }

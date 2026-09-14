@@ -44,7 +44,7 @@ func (s *Store) createKnownBot(ctx context.Context, p gen.CreateKnownBotParams) 
 	return row, nil
 }
 
-func (s *Store) getKnownBotByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.KnownBot, error) {
+func (s *Store) getKnownBotByID(ctx context.Context, id pgtype.UUID) (gen.KnownBot, error) {
 	row, err := s.read.GetKnownBotByID(ctx, id)
 	if err != nil {
 		return gen.KnownBot{}, fmt.Errorf("getting known bot by ID: %w", err)
@@ -53,7 +53,7 @@ func (s *Store) getKnownBotByID(ctx context.Context, id, tenantID pgtype.UUID) (
 	return row, nil
 }
 
-func (s *Store) listKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string, pageSize, offset int32) ([]gen.KnownBot, error) {
+func (s *Store) listKnownBots(ctx context.Context, botType string, pageSize, offset int32) ([]gen.KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
 
 		BotType:    botType,
@@ -69,7 +69,7 @@ func (s *Store) listKnownBots(ctx context.Context, tenantID pgtype.UUID, botType
 
 // countKnownBots returns the total number of bots for the tenant, optionally
 // filtered by bot_type. Used for pagination metadata in the list handler.
-func (s *Store) countKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string) (int64, error) {
+func (s *Store) countKnownBots(ctx context.Context, botType string) (int64, error) {
 	count, err := s.read.CountKnownBots(ctx,
 
 		botType,
@@ -90,7 +90,7 @@ func (s *Store) updateKnownBot(ctx context.Context, p gen.UpdateKnownBotParams) 
 	return row, nil
 }
 
-func (s *Store) deleteKnownBot(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteKnownBot(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteKnownBot(ctx, id); err != nil {
 		return fmt.Errorf("deleting known bot: %w", err)
 	}
@@ -103,7 +103,7 @@ func (s *Store) deleteKnownBot(ctx context.Context, id, tenantID pgtype.UUID) er
 // by specificity (longer patterns first).
 //
 //nolint:unused // reserved for future features
-func (s *Store) getBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, userAgent string) ([]gen.KnownBot, error) {
+func (s *Store) getBotsByUserAgent(ctx context.Context, userAgent string) ([]gen.KnownBot, error) {
 	// Query uses ILIKE with pattern concatenation for substring matching.
 	// We pass the raw user-agent and the query does pattern matching.
 	rows, err := s.read.GetBotsByUserAgent(ctx,
@@ -154,8 +154,8 @@ func matchBotsByUserAgent(bots []gen.KnownBot, userAgent string) []KnownBot {
 //
 
 // GetBotsByUserAgent is an exported method.
-func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, userAgent string) ([]KnownBot, error) {
-	bots, err := s.listKnownBots(ctx, tenantID, "", MaxPageSize, 0)
+func (s *Store) GetBotsByUserAgent(ctx context.Context, userAgent string) ([]KnownBot, error) {
+	bots, err := s.listKnownBots(ctx, "", MaxPageSize, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, us
 //
 
 // GetAllBots is an exported method.
-func (s *Store) GetAllBots(ctx context.Context, tenantID pgtype.UUID) ([]KnownBot, error) {
+func (s *Store) GetAllBots(ctx context.Context) ([]KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
 
 		BotType:    "",
@@ -217,7 +217,7 @@ func contentURLPath(contentType, slug string) string {
 // GetLLMsData fetches the data needed for llms-full.txt generation:
 // recent published posts, top tags, and active public spaces.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData, error) {
+func (s *Store) GetLLMsData(ctx context.Context) (LLMsData, error) {
 	posts, err := s.read.ListPublishedContentForLLMsTxt(ctx)
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing posts for llms: %w", err)

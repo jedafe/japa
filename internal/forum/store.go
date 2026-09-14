@@ -258,7 +258,7 @@ func (s *Store) createThread(ctx context.Context, p gen.CreateForumThreadParams)
 }
 
 // getThreadByID returns a thread by ID and tenant.
-func (s *Store) getThreadByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumThread, error) {
+func (s *Store) getThreadByID(ctx context.Context, id pgtype.UUID) (gen.ForumThread, error) {
 	t, err := s.read.GetForumThreadByID(ctx, id)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting forum thread by ID: %w", err)
@@ -268,7 +268,7 @@ func (s *Store) getThreadByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 }
 
 // getThreadBySlug returns a thread by slug and tenant.
-func (s *Store) getThreadBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ForumThread, error) {
+func (s *Store) getThreadBySlug(ctx context.Context, slug string) (gen.ForumThread, error) {
 	t, err := s.read.GetForumThreadBySlug(ctx, slug)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting forum thread by slug: %w", err)
@@ -278,7 +278,7 @@ func (s *Store) getThreadBySlug(ctx context.Context, slug string, tenantID pgtyp
 }
 
 // listThreadsBySpace returns paginated threads for a space.
-func (s *Store) listThreadsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (s *Store) listThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -302,7 +302,7 @@ func (s *Store) listThreadsBySpace(ctx context.Context, tenantID, spaceID pgtype
 }
 
 // listThreadsByAuthor returns paginated threads for an author.
-func (s *Store) listThreadsByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (s *Store) listThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -326,7 +326,7 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, tenantID, authorUserID 
 }
 
 // listThreadsByTenant returns all paginated threads for a tenant (public listing).
-func (s *Store) listThreadsByTenant(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (s *Store) listThreadsByTenant(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -349,7 +349,7 @@ func (s *Store) listThreadsByTenant(ctx context.Context, tenantID pgtype.UUID, c
 }
 
 // listThreadsByTag returns paginated threads for a tag.
-func (s *Store) listThreadsByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (s *Store) listThreadsByTag(ctx context.Context, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -383,7 +383,7 @@ func (s *Store) updateThread(ctx context.Context, p gen.UpdateForumThreadParams)
 }
 
 // softDeleteThread marks a thread as deleted.
-func (s *Store) softDeleteThread(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) softDeleteThread(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.SoftDeleteForumThread(ctx, id); err != nil {
 		return fmt.Errorf("soft-deleting forum thread: %w", err)
 	}
@@ -392,7 +392,7 @@ func (s *Store) softDeleteThread(ctx context.Context, id, tenantID pgtype.UUID) 
 }
 
 // solveThread marks a thread as solved and records the accepted reply.
-func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID, parentReplyID pgtype.UUID) error {
+func (s *Store) solveThread(ctx context.Context, id, solverUserID, parentReplyID pgtype.UUID) error {
 	if err := s.write.SolveForumThread(ctx, gen.SolveForumThreadParams{
 		ID: id,
 
@@ -407,7 +407,7 @@ func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID, par
 
 // unsolveThread reverts the solved flag (DELETE /forum/{id}/solve).
 // Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Solved flag).
-func (s *Store) unsolveThread(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) unsolveThread(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.UnsolveForumThread(ctx,
 		id,
 	); err != nil {
@@ -437,7 +437,7 @@ func (s *Store) isSpaceModerator(ctx context.Context, userID, spaceID pgtype.UUI
 }
 
 // incrementReplyCount adjusts the reply_count on a thread.
-func (s *Store) incrementReplyCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
+func (s *Store) incrementReplyCount(ctx context.Context, id pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementThreadReplyCount(ctx, gen.IncrementThreadReplyCountParams{
 		ID: id,
 
@@ -452,7 +452,7 @@ func (s *Store) incrementReplyCount(ctx context.Context, id, tenantID pgtype.UUI
 // incrementThreadViewCount atomically increments the view_count on a thread by
 // the requested delta. Called fire-and-forget from the GetThread handler and
 // from the Valkey view-count flush worker.
-func (s *Store) incrementThreadViewCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
+func (s *Store) incrementThreadViewCount(ctx context.Context, id pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementForumThreadViewCount(ctx, gen.IncrementForumThreadViewCountParams{
 		Delta: delta,
 		ID:    id,
@@ -478,7 +478,7 @@ func (s *Store) createReply(ctx context.Context, p gen.CreateForumReplyParams) (
 }
 
 // getReplyByID returns a reply by ID and tenant.
-func (s *Store) getReplyByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumReply, error) {
+func (s *Store) getReplyByID(ctx context.Context, id pgtype.UUID) (gen.ForumReply, error) {
 	r, err := s.read.GetForumReplyByID(ctx, id)
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("getting forum reply by ID: %w", err)
@@ -488,7 +488,7 @@ func (s *Store) getReplyByID(ctx context.Context, id, tenantID pgtype.UUID) (gen
 }
 
 // listRepliesByThread returns all replies for a thread.
-func (s *Store) listRepliesByThread(ctx context.Context, threadID, tenantID pgtype.UUID) ([]gen.ForumReply, error) {
+func (s *Store) listRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]gen.ForumReply, error) {
 	rows, err := s.read.ListForumRepliesByThread(ctx,
 		threadID,
 	)
@@ -510,7 +510,7 @@ func (s *Store) updateReply(ctx context.Context, p gen.UpdateForumReplyParams) (
 }
 
 // softDeleteReply marks a reply as deleted.
-func (s *Store) softDeleteReply(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) softDeleteReply(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.SoftDeleteForumReply(ctx, id); err != nil {
 		return fmt.Errorf("soft-deleting forum reply: %w", err)
 	}
@@ -533,7 +533,7 @@ func (s *Store) upsertVote(ctx context.Context, p gen.UpsertForumVoteParams) (ge
 }
 
 // deleteVote removes a user's vote on an entity (DELETE /forum/{id}/vote).
-func (s *Store) deleteVote(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Store) deleteVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.DeleteForumVote(ctx, gen.DeleteForumVoteParams{
 		UserID:     userID,
 		EntityType: entityType,
@@ -547,7 +547,7 @@ func (s *Store) deleteVote(ctx context.Context, tenantID, userID pgtype.UUID, en
 
 // getUserVotesForThread returns the current user's vote values for a thread
 // and all of its replies.
-func (s *Store) getUserVotesForThread(ctx context.Context, tenantID, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
+func (s *Store) getUserVotesForThread(ctx context.Context, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
 	rows, err := s.read.ListUserVotesForThread(ctx, gen.ListUserVotesForThreadParams{
 
 		UserID:   userID,
@@ -667,7 +667,7 @@ func (s *Store) addBookmark(ctx context.Context, p gen.AddForumBookmarkParams) (
 }
 
 // removeBookmark deletes a bookmark from the unified bookmarks table.
-func (s *Store) removeBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Store) removeBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RemoveForumBookmark(ctx, gen.RemoveForumBookmarkParams{
 
 		UserID:     userID,
@@ -683,7 +683,7 @@ func (s *Store) removeBookmark(ctx context.Context, tenantID, userID pgtype.UUID
 // getBookmarkByID fetches a bookmark by its primary key (and owner).
 // Used by DELETE /forum/bookmarks/{id} to resolve the entity before
 // decrementing the denormalized bookmark_count.
-func (s *Store) getBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.Bookmark, error) {
+func (s *Store) getBookmarkByID(ctx context.Context, id, userID pgtype.UUID) (gen.Bookmark, error) {
 	bm, err := s.read.GetForumBookmarkByID(ctx, gen.GetForumBookmarkByIDParams{
 		ID:     id,
 		UserID: userID,
@@ -696,7 +696,7 @@ func (s *Store) getBookmarkByID(ctx context.Context, id, userID, tenantID pgtype
 }
 
 // deleteBookmarkByID deletes a bookmark by its primary key (and owner).
-func (s *Store) deleteBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
+func (s *Store) deleteBookmarkByID(ctx context.Context, id, userID pgtype.UUID) error {
 	if err := s.write.DeleteForumBookmarkByID(ctx, gen.DeleteForumBookmarkByIDParams{
 		ID:     id,
 		UserID: userID,
@@ -708,7 +708,7 @@ func (s *Store) deleteBookmarkByID(ctx context.Context, id, userID, tenantID pgt
 }
 
 // listBookmarksByUser returns paginated forum bookmarks for a user.
-func (s *Store) listBookmarksByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Bookmark, error) {
+func (s *Store) listBookmarksByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Bookmark, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -784,7 +784,7 @@ func (s *Store) createTag(ctx context.Context, p gen.CreateForumTagParams) (gen.
 }
 
 // getTagByID returns a tag by ID and tenant.
-func (s *Store) getTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumTag, error) {
+func (s *Store) getTagByID(ctx context.Context, id pgtype.UUID) (gen.ForumTag, error) {
 	t, err := s.read.GetForumTagByID(ctx, id)
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("getting forum tag by ID: %w", err)
@@ -794,7 +794,7 @@ func (s *Store) getTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.F
 }
 
 // getTagBySlug returns a tag by slug and tenant.
-func (s *Store) getTagBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ForumTag, error) {
+func (s *Store) getTagBySlug(ctx context.Context, slug string) (gen.ForumTag, error) {
 	t, err := s.read.GetForumTagBySlug(ctx, slug)
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("getting forum tag by slug: %w", err)
@@ -804,7 +804,7 @@ func (s *Store) getTagBySlug(ctx context.Context, slug string, tenantID pgtype.U
 }
 
 // listTags returns paginated tags.
-func (s *Store) listTags(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ForumTag, error) {
+func (s *Store) listTags(ctx context.Context, limit, offset int32) ([]gen.ForumTag, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -869,7 +869,7 @@ func (s *Store) removeThreadTag(ctx context.Context, threadID, tagID pgtype.UUID
 }
 
 // updateTagFollowerCount adjusts a tag's follower_count.
-func (s *Store) updateTagFollowerCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
+func (s *Store) updateTagFollowerCount(ctx context.Context, id pgtype.UUID, delta int32) error {
 	if err := s.write.UpdateForumTagFollowerCount(ctx, gen.UpdateForumTagFollowerCountParams{
 		ID: id,
 
@@ -882,7 +882,7 @@ func (s *Store) updateTagFollowerCount(ctx context.Context, id, tenantID pgtype.
 }
 
 // updateTag updates a forum tag's mutable fields.
-func (s *Store) updateTag(ctx context.Context, id, tenantID pgtype.UUID, name, slug, description, rules string, coverImageID, moderatorUserID pgtype.UUID) (gen.ForumTag, error) {
+func (s *Store) updateTag(ctx context.Context, id pgtype.UUID, name, slug, description, rules string, coverImageID, moderatorUserID pgtype.UUID) (gen.ForumTag, error) {
 	tag, err := s.write.UpdateForumTag(ctx, gen.UpdateForumTagParams{
 		ID: id,
 
@@ -901,7 +901,7 @@ func (s *Store) updateTag(ctx context.Context, id, tenantID pgtype.UUID, name, s
 }
 
 // softDeleteTag marks a forum tag as deleted.
-func (s *Store) softDeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) softDeleteTag(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.SoftDeleteForumTag(ctx,
 		id,
 	); err != nil {
@@ -1064,7 +1064,7 @@ func (s *Store) getReplyViewCount(ctx context.Context, replyID pgtype.UUID) (int
 // ---------------------------------------------------------------------------
 
 // getThreadBySlugWithDetails returns a thread plus joined author + space data.
-func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetForumThreadBySlugWithDetailsRow, error) {
+func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string) (gen.GetForumThreadBySlugWithDetailsRow, error) {
 	row, err := s.read.GetForumThreadBySlugWithDetails(ctx,
 		slug,
 	)
@@ -1076,7 +1076,7 @@ func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string, ten
 }
 
 // listThreadsByTenantWithDetails returns paginated threads with author + space.
-func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
+func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1098,7 +1098,7 @@ func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgt
 }
 
 // listThreadsBySpaceWithDetails returns paginated threads for a space with author + space.
-func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spaceID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
+func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, spaceID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1121,7 +1121,7 @@ func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spa
 }
 
 // listThreadsByAuthorWithDetails returns paginated threads for an author with author + space.
-func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
+func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1144,7 +1144,7 @@ func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, au
 }
 
 // listThreadsByTagWithDetails returns paginated threads for a tag with author + space.
-func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
+func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1167,7 +1167,7 @@ func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID
 }
 
 // listRepliesByThreadWithAuthor returns all replies for a thread with author data.
-func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID, tenantID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
+func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
 	rows, err := s.read.ListForumRepliesByThreadWithAuthor(ctx,
 		threadID,
 	)

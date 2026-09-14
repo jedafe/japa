@@ -553,7 +553,7 @@ RETURNING id
 // UpdatePathway updates the mutable fields on a credential_pathways row.
 // Only non-nil pointers in the input are applied. Returns pgx.ErrNoRows
 // if the row does not exist for the given tenant.
-func (s *Store) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePathwayInput) error {
+func (s *Store) UpdatePathway(ctx context.Context, id pgtype.UUID, input UpdatePathwayInput) error {
 	var (
 		sets   []string
 		args   []any

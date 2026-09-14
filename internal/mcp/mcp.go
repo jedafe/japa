@@ -269,7 +269,7 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 	var listReq listToolsRequest
 	_ = json.Unmarshal(req.Params, &listReq) // cursor is optional
 
-	toolConfigs := s.registry.CatalogForUser(ctx, s.perms, user.UserID, user.TenantID)
+	toolConfigs := s.registry.CatalogForUser(ctx, s.perms, user.UserID)
 	tools := make([]mcpTool, 0, len(toolConfigs))
 
 	for _, tc := range toolConfigs {
@@ -360,7 +360,7 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 		UserID:    user.UserID,
 	})
 
-	s.finalizeSession(ctx, session.ID, user.TenantID, callReq.Name, res, execErr)
+	s.finalizeSession(ctx, session.ID, callReq.Name, res, execErr)
 
 	result := s.buildCallResult(res, execErr)
 
@@ -368,7 +368,7 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 }
 
 func (s *Server) toolInCatalog(ctx context.Context, user *auth.AuthenticatedUser, name string) bool {
-	tools := s.registry.CatalogForUser(ctx, s.perms, user.UserID, user.TenantID)
+	tools := s.registry.CatalogForUser(ctx, s.perms, user.UserID)
 	for _, tc := range tools {
 		if tc.FunctionName == name {
 			return true
@@ -445,7 +445,7 @@ func withHITLReview(content, reviewID string) string {
 	return string(b)
 }
 
-func (s *Server) finalizeSession(ctx context.Context, sessionID, tenantID pgtype.UUID, toolName string, res *ai.ToolResult, execErr error) {
+func (s *Server) finalizeSession(ctx context.Context, sessionID pgtype.UUID, toolName string, res *ai.ToolResult, execErr error) {
 	if execErr != nil {
 		msg := execErr.Error()
 		if _, err := s.sessions.FailAgentSession(ctx, gen.FailAgentSessionParams{

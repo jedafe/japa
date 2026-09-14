@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/net/html"
 
 	"github.com/jedafe/japa/internal/valkey"
@@ -47,8 +46,8 @@ type Preview struct {
 // (SEC-013 / Rule 3). *config.Settings satisfies this structurally. When nil,
 // compiled-in defaults are used.
 type fetcherSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetSetting(ctx context.Context, key string) (string, error)
 }
 
 // defaultFetchTimeoutSeconds is the compiled-in fallback for the HTTP timeout
@@ -90,12 +89,12 @@ func (f *Fetcher) SetSettings(sr fetcherSettingsReader) { f.settings = sr }
 // reader is wired, reads `linkpreview.fetch_timeout_seconds` (min 1s, max 120s
 // per catalog) for the given tenant; otherwise falls back to
 // defaultFetchTimeoutSeconds (SEC-013).
-func (f *Fetcher) resolveTimeout(ctx context.Context, tenantID pgtype.UUID) time.Duration {
+func (f *Fetcher) resolveTimeout(ctx context.Context) time.Duration {
 	if f.settings == nil {
 		return time.Duration(defaultFetchTimeoutSeconds) * time.Second
 	}
 
-	secs := f.settings.GetIntOr(ctx, pgtype.UUID{}, "linkpreview.fetch_timeout_seconds", defaultFetchTimeoutSeconds)
+	secs := f.settings.GetIntOr(ctx, "linkpreview.fetch_timeout_seconds", defaultFetchTimeoutSeconds)
 	if secs < 1 {
 		secs = 1
 	}
@@ -112,9 +111,9 @@ func (f *Fetcher) resolveTimeout(ctx context.Context, tenantID pgtype.UUID) time
 // array) per-request so admin changes take effect immediately (BUG-004). When
 // no settings reader is wired, falls back to the in-memory blacklist set via
 // SetBlacklist (BUG-001: parsed as JSON, not CSV).
-func (f *Fetcher) resolveBlacklist(ctx context.Context, tenantID pgtype.UUID) []string {
+func (f *Fetcher) resolveBlacklist(ctx context.Context) []string {
 	if f.settings != nil {
-		raw, err := f.settings.GetSetting(ctx, pgtype.UUID{}, "content.link_preview.blacklist")
+		raw, err := f.settings.GetSetting(ctx, "content.link_preview.blacklist")
 		if err == nil && raw != "" {
 			if bl := ParseBlacklistJSON(raw); len(bl) > 0 {
 				return bl
@@ -237,7 +236,7 @@ func (f *Fetcher) SetBlacklist(blacklist []string) {
 // It checks the cache first, then fetches and parses the page if not cached.
 // The tenantID is used to resolve per-tenant settings (fetch timeout, domain
 // blacklist) from system_settings (BUG-002, BUG-004).
-func (f *Fetcher) Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID) (*Preview, error) {
+func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Preview, error) {
 	// Validate URL for SSRF
 	if err := ValidateURL(rawURL); err != nil {
 		return nil, fmt.Errorf("URL validation failed: %w", err)
@@ -245,7 +244,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID
 
 	// Check blacklist (resolved per-request from system_settings when wired)
 	host := strings.ToLower(getHost(rawURL))
-	blacklist := f.resolveBlacklist(ctx, tenantID)
+	blacklist := f.resolveBlacklist(ctx)
 
 	if IsBlockedDomain(host, blacklist) {
 		return nil, fmt.Errorf("domain is blacklisted: %s", host)
@@ -265,7 +264,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID
 	}
 
 	// Fetch the page
-	preview, err := f.fetchAndParse(ctx, rawURL, tenantID)
+	preview, err := f.fetchAndParse(ctx, rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetching page: %w", err)
 	}
@@ -288,10 +287,10 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID
 
 // fetchAndParse fetches the URL and extracts OG tags. The per-request timeout
 // is resolved from system_settings when wired (SEC-013), defaulting to 10s.
-func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string, tenantID pgtype.UUID) (*Preview, error) {
+func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string) (*Preview, error) {
 	// Apply the settings-driven per-request deadline (SEC-013). If the caller
 	// already supplied a shorter deadline, WithTimeout keeps the shorter one.
-	timeout := f.resolveTimeout(ctx, tenantID)
+	timeout := f.resolveTimeout(ctx)
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

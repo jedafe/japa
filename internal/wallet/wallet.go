@@ -72,10 +72,10 @@ const (
 // read global system_settings with fallbacks (AUDIT-BE2-SETTING-007/008,
 // Section 58 wallet.credit_purchase_enabled + wallet.default_currency).
 type SettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
-	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
+	GetStringOr(ctx context.Context, key, fallback string) string
+	GetBoolOr(ctx context.Context, key string, fallback bool) bool
 }
 
 // Pagination defaults.
@@ -193,7 +193,7 @@ func (s *Service) SetGamificationEvaluator(e GamificationEvaluator) {
 // spaces, assessment, scamalert) can hold it as a narrow dependency without
 // each defining their own adapter interface.
 type ActivityEmitter interface {
-	EmitActivityEvent(ctx context.Context, tenantID, userID pgtype.UUID, input EmitActivityEventInput) (gen.ActivityEvent, error)
+	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input EmitActivityEventInput) (gen.ActivityEvent, error)
 	EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error
 }
 

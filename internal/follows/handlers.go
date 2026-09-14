@@ -176,7 +176,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 // and the entity_id is read from the same path parameter — not from a query
 // string. Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -212,7 +212,7 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	followers, err := h.service.GetFollowers(r.Context(), tenantID, callerID, entityType, entityID, limit, offset)
+	followers, err := h.service.GetFollowers(r.Context(), callerID, entityType, entityID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get followers")
 		return
@@ -223,7 +223,7 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 // GetFollowing handles GET /api/v1/users/{user_id}/following.
 func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -247,7 +247,7 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	following, err := h.service.GetFollowing(r.Context(), tenantID, callerID, userID, limit, offset)
+	following, err := h.service.GetFollowing(r.Context(), callerID, userID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get following")
 		return
@@ -260,7 +260,7 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 // Supports optional ?type=user|space|tag|organization
 // filtering per Section 31 contract (H6).
 func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -287,9 +287,9 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		following, err = h.service.GetFollowingByType(r.Context(), tenantID, user.UserID, user.UserID, et, limit, offset)
+		following, err = h.service.GetFollowingByType(r.Context(), user.UserID, user.UserID, et, limit, offset)
 	} else {
-		following, err = h.service.GetFollowing(r.Context(), tenantID, user.UserID, user.UserID, limit, offset)
+		following, err = h.service.GetFollowing(r.Context(), user.UserID, user.UserID, limit, offset)
 	}
 
 	if err != nil {
@@ -303,7 +303,7 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 // ListMyFollowers handles GET /api/v1/me/followers — the caller's own followers
 // (H5 — Section 31 contract). Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) ListMyFollowers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -316,7 +316,7 @@ func (h *Handlers) ListMyFollowers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	followers, err := h.service.GetFollowers(r.Context(), tenantID, user.UserID, EntityTypeUser, user.UserID, limit, offset)
+	followers, err := h.service.GetFollowers(r.Context(), user.UserID, EntityTypeUser, user.UserID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get followers")
 		return
@@ -345,7 +345,7 @@ func mapTypeFilter(t string) (string, bool) {
 
 // ListMyFollowedTags handles GET /api/v1/me/followed-tags — tags the caller follows.
 func (h *Handlers) ListMyFollowedTags(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -358,7 +358,7 @@ func (h *Handlers) ListMyFollowedTags(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	following, err := h.service.GetFollowingByType(r.Context(), tenantID, user.UserID, user.UserID, EntityTypeTag, limit, offset)
+	following, err := h.service.GetFollowingByType(r.Context(), user.UserID, user.UserID, EntityTypeTag, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get followed tags")
 		return
@@ -380,8 +380,7 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -407,7 +406,7 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	following, err := h.service.IsFollowing(r.Context(), tenantID, user.UserID, entityType, targetID)
+	following, err := h.service.IsFollowing(r.Context(), user.UserID, entityType, targetID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check follow status")
 		return
@@ -418,7 +417,7 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 	// entity cannot "follow back", so it is always false.
 	followedBy := false
 	if entityType == EntityTypeUser {
-		followedBy, err = h.service.IsFollowing(r.Context(), tenantID, targetID, EntityTypeUser, user.UserID)
+		followedBy, err = h.service.IsFollowing(r.Context(), targetID, EntityTypeUser, user.UserID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check follow-back status")
 			return
@@ -439,8 +438,7 @@ func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -470,7 +468,7 @@ func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutual, err := h.service.IsMutualFollow(r.Context(), tenantID, userID, otherID)
+	mutual, err := h.service.IsMutualFollow(r.Context(), userID, otherID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check mutual follow")
 		return

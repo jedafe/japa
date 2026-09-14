@@ -58,7 +58,7 @@ func UserReadProfileHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_user_id", "user_id is not a valid UUID"), nil
 		}
 
-		profile, err := deps.Users.GetProfile(ctx, tenantID, targetUserID)
+		profile, err := deps.Users.GetProfile(ctx, targetUserID)
 		if err != nil {
 			return errorToolResult("user_not_found", fmt.Sprintf("user not found: %v", err)), nil
 		}
@@ -92,7 +92,7 @@ func UserReadProfileHandler(deps *ToolDeps) ToolHandler {
 // UserReadProfilePrivacyTarget extracts the user_id from
 // user.read_profile arguments so the executor can check the ai_exempt flag
 // before dispatch.
-func UserReadProfilePrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func UserReadProfilePrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a userReadProfileArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing user.read_profile args: %w", err)
@@ -210,7 +210,7 @@ func UserReadOwnFieldsHandler(deps *ToolDeps) ToolHandler {
 		// Read the user's own field values. Unlike the generic
 		// custom_field_values.read handler, this does NOT filter
 		// ai_exempt values — the user can see their own private data.
-		cfvs, err := deps.CustomFields.ListFieldValuesByEntity(ctx, tenantID, "user_profile", userID)
+		cfvs, err := deps.CustomFields.ListFieldValuesByEntity(ctx, "user_profile", userID)
 		if err != nil {
 			return errorToolResult("own_fields_read_failed", err.Error()), nil
 		}

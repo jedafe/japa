@@ -74,14 +74,14 @@ func parseUUIDParam(r *http.Request, key string) (pgtype.UUID, error) {
 
 // ListWidgets handles GET /api/v1/admin/widgets.
 func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	page, limit := parsePageParams(r)
 
-	widgets, total, err := h.Service.List(r.Context(), tenantID, r.URL.Query().Get("q"), page, limit)
+	widgets, total, err := h.Service.List(r.Context(), r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -98,7 +98,7 @@ func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
 
 // GetWidget handles GET /api/v1/admin/widgets/{id}.
 func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -109,7 +109,7 @@ func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widget, err := h.Service.Get(r.Context(), id, tenantID)
+	widget, err := h.Service.Get(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -120,7 +120,7 @@ func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
 
 // CreateWidget handles POST /api/v1/admin/widgets.
 func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -131,7 +131,7 @@ func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widget, err := h.Service.Create(r.Context(), tenantID, input)
+	widget, err := h.Service.Create(r.Context(), input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -142,7 +142,7 @@ func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateWidget handles PATCH /api/v1/admin/widgets/{id}.
 func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -159,7 +159,7 @@ func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widget, err := h.Service.Update(r.Context(), id, tenantID, input)
+	widget, err := h.Service.Update(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -170,7 +170,7 @@ func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
 
 // DeleteWidget handles DELETE /api/v1/admin/widgets/{id}.
 func (h *Handlers) DeleteWidget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -181,7 +181,7 @@ func (h *Handlers) DeleteWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.Delete(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.Delete(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}

@@ -80,7 +80,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 		if deps.SearchWebFunc != nil {
 			_, results, err = deps.SearchWebFunc(ctx, deps.httpClient(), deps.Settings, tenantID, a.Query, int(a.Limit))
 		} else {
-			_, results, err = SearchWeb(ctx, deps.httpClient(), deps.Settings, tenantID, a.Query, int(a.Limit))
+			_, results, err = SearchWeb(ctx, deps.httpClient(), deps.Settings, a.Query, int(a.Limit))
 		}
 
 		if err != nil {
@@ -90,7 +90,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 
 		autoEnable := false
 		if deps.Settings != nil {
-			autoEnable = deps.Settings.GetBoolOr(ctx, pgtype.UUID{}, "agent.auto_enable_discovered_sources", false)
+			autoEnable = deps.Settings.GetBoolOr(ctx, "agent.auto_enable_discovered_sources", false)
 		}
 
 		var proposed, existing []sourceDiscoverCandidate
@@ -113,7 +113,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 			}
 
 			// Deduplicate against existing sources by source_url.
-			if src, gerr := deps.IntelSourceManager.GetByURL(ctx, tenantID, r.URL); gerr == nil && src.ID.Valid {
+			if src, gerr := deps.IntelSourceManager.GetByURL(ctx, r.URL); gerr == nil && src.ID.Valid {
 				existing = append(existing, sourceDiscoverCandidate{
 					ID:        src.ID.String(),
 					Name:      src.Name,

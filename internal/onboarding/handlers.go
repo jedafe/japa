@@ -52,13 +52,12 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	status, err := h.Service.GetState(r.Context(), tenantID, user.UserID)
+	status, err := h.Service.GetState(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -99,13 +98,12 @@ func (h *Handlers) Complete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.Complete(r.Context(), tenantID, user.UserID); err != nil {
+	if err := h.Service.Complete(r.Context(), user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -140,13 +138,12 @@ func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.DismissTour(r.Context(), tenantID, user.UserID); err != nil {
+	if err := h.Service.DismissTour(r.Context(), user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -190,12 +187,12 @@ func (h *Handlers) GetOptions(w http.ResponseWriter, r *http.Request) {
 
 // ListTemplates handles GET /admin/onboarding/templates.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	templates, err := h.Service.ListTemplates(r.Context(), tenantID)
+	templates, err := h.Service.ListTemplates(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -206,7 +203,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
 // GetTemplate handles GET /admin/onboarding/templates/:id.
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -217,7 +214,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template, err := h.Service.GetTemplate(r.Context(), tenantID, id)
+	template, err := h.Service.GetTemplate(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -228,7 +225,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 // CreateTemplate handles POST /admin/onboarding/templates.
 func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -244,7 +241,7 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template, err := h.Service.CreateTemplate(r.Context(), tenantID, &req)
+	template, err := h.Service.CreateTemplate(r.Context(), &req)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -255,7 +252,7 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTemplate handles PATCH /admin/onboarding/templates/:id.
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -272,7 +269,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdateTemplate(r.Context(), tenantID, id, &req); err != nil {
+	if err := h.Service.UpdateTemplate(r.Context(), id, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -282,7 +279,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTemplate handles DELETE /admin/onboarding/templates/:id.
 func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -293,7 +290,7 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteTemplate(r.Context(), tenantID, id); err != nil {
+	if err := h.Service.DeleteTemplate(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -305,12 +302,12 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 // Returns the tenant's onboarding configuration (minimum counts + promoted
 // entities). Ref: Section 09 — admin Onboarding Settings surface.
 func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	settings, err := h.Service.GetAdminSettings(r.Context(), tenantID)
+	settings, err := h.Service.GetAdminSettings(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -323,7 +320,7 @@ func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
 // Applies a partial update to the onboarding configuration. Only fields
 // present in the request body are written. Ref: Section 09.
 func (h *Handlers) UpdateAdminSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -334,7 +331,7 @@ func (h *Handlers) UpdateAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdateAdminSettings(r.Context(), tenantID, &req); err != nil {
+	if err := h.Service.UpdateAdminSettings(r.Context(), &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}

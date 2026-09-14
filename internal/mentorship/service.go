@@ -81,7 +81,7 @@ func NewService(database *db.DB) *Service {
 }
 
 // ListPrograms returns all mentorship programs for the tenant with aggregate counts.
-func (s *Service) ListPrograms(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]ProgramWithCounts, error) {
+func (s *Service) ListPrograms(ctx context.Context, limit, offset int32) ([]ProgramWithCounts, error) {
 	rows, err := s.read.ListMentorshipProgramsWithCounts(ctx, gen.ListMentorshipProgramsWithCountsParams{
 
 		PageLimit:  limit,
@@ -110,7 +110,7 @@ func (s *Service) ListPrograms(ctx context.Context, tenantID pgtype.UUID, limit,
 }
 
 // GetProgram returns a single mentorship program by ID.
-func (s *Service) GetProgram(ctx context.Context, tenantID, id pgtype.UUID) (Program, error) {
+func (s *Service) GetProgram(ctx context.Context, id pgtype.UUID) (Program, error) {
 	row, err := s.read.GetMentorshipProgram(ctx,
 
 		id,
@@ -123,7 +123,7 @@ func (s *Service) GetProgram(ctx context.Context, tenantID, id pgtype.UUID) (Pro
 }
 
 // CreateProgram creates a new mentorship program.
-func (s *Service) CreateProgram(ctx context.Context, tenantID pgtype.UUID, name, description string, isActive bool) (Program, error) {
+func (s *Service) CreateProgram(ctx context.Context, name, description string, isActive bool) (Program, error) {
 	row, err := s.write.CreateMentorshipProgram(ctx, gen.CreateMentorshipProgramParams{
 
 		Name:        name,
@@ -138,9 +138,9 @@ func (s *Service) CreateProgram(ctx context.Context, tenantID pgtype.UUID, name,
 }
 
 // UpdateProgram updates an existing mentorship program.
-func (s *Service) UpdateProgram(ctx context.Context, tenantID, id pgtype.UUID, name, description *string, isActive *bool) (Program, error) {
+func (s *Service) UpdateProgram(ctx context.Context, id pgtype.UUID, name, description *string, isActive *bool) (Program, error) {
 	// Fetch current values for merge.
-	current, err := s.GetProgram(ctx, tenantID, id)
+	current, err := s.GetProgram(ctx, id)
 	if err != nil {
 		return Program{}, err
 	}
@@ -175,7 +175,7 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID, id pgtype.UUID, n
 }
 
 // ListMatches returns all mentor-mentee matches for the tenant with resolved names.
-func (s *Service) ListMatches(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Match, error) {
+func (s *Service) ListMatches(ctx context.Context, limit, offset int32) ([]Match, error) {
 	rows, err := s.read.ListMentorshipMatches(ctx, gen.ListMentorshipMatchesParams{
 
 		PageLimit:  limit,
@@ -205,7 +205,7 @@ func (s *Service) ListMatches(ctx context.Context, tenantID pgtype.UUID, limit, 
 }
 
 // UpdateMatch updates a mentor-mentee match status.
-func (s *Service) UpdateMatch(ctx context.Context, tenantID, id pgtype.UUID, status string) (Match, error) {
+func (s *Service) UpdateMatch(ctx context.Context, id pgtype.UUID, status string) (Match, error) {
 	row, err := s.write.UpdateMentorshipMatch(ctx, gen.UpdateMentorshipMatchParams{
 
 		ID:     id,
@@ -229,7 +229,7 @@ func (s *Service) UpdateMatch(ctx context.Context, tenantID, id pgtype.UUID, sta
 
 // DeleteProgram deletes a mentorship program. The ON DELETE CASCADE on
 // mentorship_matches.program_id will remove all associated matches.
-func (s *Service) DeleteProgram(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Service) DeleteProgram(ctx context.Context, id pgtype.UUID) error {
 	rowsAffected, err := s.write.DeleteMentorshipProgram(ctx,
 
 		id,
@@ -259,14 +259,14 @@ type TaskEnqueuer interface {
 // SettingsProvider reads system_settings for runtime config (Rule 3).
 // The config.Settings type satisfies this.
 type SettingsProvider interface {
-	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
+	GetSettingInt(ctx context.Context, key string) (int, error)
 }
 
 // DMCreator opens a DM conversation between two users (§48 integration).
 // The websocket.DMStore satisfies this. Used to auto-open a DM thread when
 // a mentorship connection is accepted (ADR-110).
 type DMCreator interface {
-	GetOrCreateConversation(ctx context.Context, tenantID, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error)
+	GetOrCreateConversation(ctx context.Context, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error)
 }
 
 // Embedder generates pgvector embeddings for mentor bios via the AI gateway
@@ -278,13 +278,13 @@ type Embedder interface {
 // MeilisearchIndexer syncs a mentor's user document to the Meilisearch users
 // index (§102). The search.Indexer satisfies this.
 type MeilisearchIndexer interface {
-	IndexUser(ctx context.Context, userID, tenantID [16]byte) error
+	IndexUser(ctx context.Context, userID [16]byte) error
 }
 
 // EventTracker records platform analytics events (§102 analytics events).
 // The analytics.Service satisfies this via an adapter.
 type EventTracker interface {
-	TrackEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error
+	TrackEvent(ctx context.Context, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error
 }
 
 // MentorProfile is the current user's mentor settings.
@@ -359,10 +359,10 @@ func (s *Service) SetDMCreator(d DMCreator) { s.dmCreator = d }
 func (s *Service) SetSettingsProvider(sp SettingsProvider) { s.settings = sp }
 
 // mentorMaxCapacity returns the platform cap for mentor capacity from system_settings.
-func (s *Service) mentorMaxCapacity(ctx context.Context, tenantID pgtype.UUID) int32 {
+func (s *Service) mentorMaxCapacity(ctx context.Context) int32 {
 	maxCap := int32(10) // catalog default for mentorship.max_capacity (§102)
 	if s.settings != nil {
-		if v, err := s.settings.GetSettingInt(ctx, pgtype.UUID{}, "mentorship.max_capacity"); err == nil && v > 0 {
+		if v, err := s.settings.GetSettingInt(ctx, "mentorship.max_capacity"); err == nil && v > 0 {
 			maxCap = int32(v)
 		}
 	}
@@ -380,19 +380,19 @@ func (s *Service) SetEventTracker(t EventTracker) { s.tracker = t }
 
 // trackEvent is a best-effort analytics event emitter (§102). Failures are
 // logged but never abort the caller's operation.
-func (s *Service) trackEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) {
+func (s *Service) trackEvent(ctx context.Context, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) {
 	if s.tracker == nil {
 		return
 	}
 
-	if err := s.tracker.TrackEvent(ctx, tenantID, userID, eventType, entityType, entityID, meta); err != nil {
+	if err := s.tracker.TrackEvent(ctx, userID, eventType, entityType, entityID, meta); err != nil {
 		slog.Warn("mentorship: track event", "event_type", eventType, "error", err)
 	}
 }
 
 // GetMentorProfile returns the current user's mentor profile settings.
 // GET /api/v1/me/mentor-profile.
-func (s *Service) GetMentorProfile(ctx context.Context, tenantID, userID pgtype.UUID) (MentorProfile, error) {
+func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (MentorProfile, error) {
 	row, err := s.read.GetMentorProfile(ctx,
 
 		userID,
@@ -406,7 +406,7 @@ func (s *Service) GetMentorProfile(ctx context.Context, tenantID, userID pgtype.
 
 		IsMentor:          row.IsMentor,
 		MentorCapacity:    row.MentorCapacity,
-		MentorMaxCapacity: s.mentorMaxCapacity(ctx, tenantID),
+		MentorMaxCapacity: s.mentorMaxCapacity(ctx),
 		ActiveMenteeCount: row.ActiveMenteeCount,
 		MentorAreas:       row.MentorAreas,
 		MentorBio:         row.MentorBio,
@@ -430,7 +430,7 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 	}
 
 	// Load the platform-wide cap once for validation and the response.
-	mentorMaxCap := s.mentorMaxCapacity(ctx, tenantID)
+	mentorMaxCap := s.mentorMaxCapacity(ctx)
 
 	// Merge: use new values where provided, otherwise keep current.
 	mergedIsMentor := current.IsMentor
@@ -497,7 +497,7 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 
 // GetMentorByUsername returns a mentor's public profile by username.
 // GET /api/v1/mentors/:username.
-func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (MentorSummary, error) {
+func (s *Service) GetMentorByUsername(ctx context.Context, username string) (MentorSummary, error) {
 	row, err := s.read.GetMentorByUsername(ctx,
 
 		username,
@@ -507,7 +507,7 @@ func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID,
 	}
 
 	// §102 analytics: mentor_view { mentor_username }
-	s.trackEvent(ctx, tenantID, row.UserID, "mentor_view", "user", row.UserID,
+	s.trackEvent(ctx, row.UserID, "mentor_view", "user", row.UserID,
 		map[string]any{"mentor_username": row.Username})
 
 	return mentorSummaryFromRow(row.UserID, row.IsMentor, row.MentorCapacity,
@@ -522,7 +522,7 @@ func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID,
 // 0.6 keyword + 0.4 bio cosine §102 score (ListMentorsByMatch). When
 // sort=match without an embedding, falls back to keyword-only scoring
 // via the same ListMentors query ordered by area_overlap.
-func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.UUID, areas []string, sort string, menteeEmbedding *pgvector.Vector, limit, offset int32) ([]MentorSummary, int, error) {
+func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, areas []string, sort string, menteeEmbedding *pgvector.Vector, limit, offset int32) ([]MentorSummary, int, error) {
 	// sort=match with an embedding uses the pgvector query.
 	if sort == "match" && menteeEmbedding != nil {
 		rows, err := s.read.ListMentorsByMatch(ctx, gen.ListMentorsByMatchParams{
@@ -581,7 +581,7 @@ func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.
 
 // SearchMentors returns mentors whose username or display name matches the
 // query, scoped to the tenant.
-func (s *Service) SearchMentors(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]MentorSummary, error) {
+func (s *Service) SearchMentors(ctx context.Context, query string, limit int32) ([]MentorSummary, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -654,7 +654,7 @@ LIMIT $2
 // use as the mentee_goal_embedding in match scoring (§102). Returns nil when
 // the user has no embedding (non-mentor or mentor without a bio) — the caller
 // falls back to keyword-only scoring (weight = 1.0).
-func (s *Service) GetMenteeEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) (*pgvector.Vector, error) {
+func (s *Service) GetMenteeEmbedding(ctx context.Context, userID pgtype.UUID) (*pgvector.Vector, error) {
 	row, err := s.read.GetUserEmbedding(ctx,
 
 		userID,
@@ -672,7 +672,7 @@ func (s *Service) GetMenteeEmbedding(ctx context.Context, tenantID, userID pgtyp
 // destination_country_id is injected as a default filter when logged in,
 // with no UI action required"). Returns pgtype.UUID{} (invalid) when no
 // destination is set.
-func (s *Service) GetMenteeDestinationSpaceID(ctx context.Context, tenantID, userID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Service) GetMenteeDestinationSpaceID(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
 	row, err := s.read.GetMenteeDestinationSpaceID(ctx,
 
 		userID,
@@ -686,7 +686,7 @@ func (s *Service) GetMenteeDestinationSpaceID(ctx context.Context, tenantID, use
 
 // GetMentorsByIDs returns up to 4 mentors for the comparison endpoint.
 // GET /api/v1/compare/mentors?ids=a,b,c,d.
-func (s *Service) GetMentorsByIDs(ctx context.Context, tenantID pgtype.UUID, userIDs []pgtype.UUID) ([]MentorSummary, error) {
+func (s *Service) GetMentorsByIDs(ctx context.Context, userIDs []pgtype.UUID) ([]MentorSummary, error) {
 	rows, err := s.read.GetMentorsByIDs(ctx,
 
 		userIDs,
@@ -707,7 +707,7 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, tenantID pgtype.UUID, use
 
 // CreateConnection creates a new mentorship request (status = 'pending').
 // POST /api/v1/mentorship/request.
-func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, menteeID pgtype.UUID, goals *string, destSpaceID pgtype.UUID) (Connection, error) {
+func (s *Service) CreateConnection(ctx context.Context, mentorID, menteeID pgtype.UUID, goals *string, destSpaceID pgtype.UUID) (Connection, error) {
 	if mentorID == menteeID {
 		return Connection{}, ErrCannotSelfMentor
 	}
@@ -745,7 +745,7 @@ func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, ment
 
 	// §102 analytics: mentorship_request_sent { mentor_username }
 	// The mentee (menteeID) is the actor; the mentor is the entity.
-	s.trackEvent(ctx, tenantID, menteeID, "mentorship_request_sent", "mentorship_connection", conn.ID,
+	s.trackEvent(ctx, menteeID, "mentorship_request_sent", "mentorship_connection", conn.ID,
 		map[string]any{"mentor_id": mentorID.String()})
 
 	return connectionFromModel(conn), nil
@@ -753,7 +753,7 @@ func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, ment
 
 // ListOutgoingConnections lists requests sent by the mentee.
 // GET /api/v1/me/mentorship/outgoing.
-func (s *Service) ListOutgoingConnections(ctx context.Context, tenantID, menteeID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
+func (s *Service) ListOutgoingConnections(ctx context.Context, menteeID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListOutgoingConnections(ctx, gen.ListOutgoingConnectionsParams{
 
 		MenteeID:   menteeID,
@@ -791,7 +791,7 @@ func (s *Service) ListOutgoingConnections(ctx context.Context, tenantID, menteeI
 
 // CancelOutgoingConnection cancels a pending request by the mentee.
 // DELETE /api/v1/me/mentorship/outgoing/:id.
-func (s *Service) CancelOutgoingConnection(ctx context.Context, tenantID, menteeID, connID pgtype.UUID) error {
+func (s *Service) CancelOutgoingConnection(ctx context.Context, menteeID, connID pgtype.UUID) error {
 	rowsAffected, err := s.write.CancelPendingConnection(ctx, gen.CancelPendingConnectionParams{
 
 		ID:       connID,
@@ -810,7 +810,7 @@ func (s *Service) CancelOutgoingConnection(ctx context.Context, tenantID, mentee
 
 // ListIncomingConnections lists requests received by the mentor.
 // GET /api/v1/me/mentorship/incoming.
-func (s *Service) ListIncomingConnections(ctx context.Context, tenantID, mentorID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
+func (s *Service) ListIncomingConnections(ctx context.Context, mentorID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListIncomingConnections(ctx, gen.ListIncomingConnectionsParams{
 
 		MentorID:   mentorID,
@@ -875,7 +875,7 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 	// Auto-open DM thread (ADR-110: session communication via §48 DM).
 	result := connectionFromModel(conn)
 	if s.dmCreator != nil {
-		if dm, dmErr := s.dmCreator.GetOrCreateConversation(ctx, tenantID, conn.MentorID, conn.MenteeID); dmErr != nil {
+		if dm, dmErr := s.dmCreator.GetOrCreateConversation(ctx, conn.MentorID, conn.MenteeID); dmErr != nil {
 			slog.Warn("mentorship: auto-open DM thread on accept", "connection_id", connID, "error", dmErr)
 			// Non-fatal — the connection is still accepted; the DM can be
 			// opened manually later.
@@ -889,7 +889,7 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 
 	// §102 analytics: mentorship_accepted { mentor_username }
 	// The mentor (mentorID) is the actor.
-	s.trackEvent(ctx, tenantID, mentorID, "mentorship_accepted", "mentorship_connection", conn.ID,
+	s.trackEvent(ctx, mentorID, "mentorship_accepted", "mentorship_connection", conn.ID,
 		map[string]any{"mentee_id": conn.MenteeID.String()})
 
 	return result, nil
@@ -898,7 +898,7 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 // DeclineConnection declines a pending request (pending → declined).
 // Only the mentor of the connection can decline.
 // PATCH /api/v1/me/mentorship/incoming/:id/decline.
-func (s *Service) DeclineConnection(ctx context.Context, tenantID, mentorID, connID pgtype.UUID) (Connection, error) {
+func (s *Service) DeclineConnection(ctx context.Context, mentorID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is the mentor of this connection.
 	existing, err := s.read.GetMentorshipConnection(ctx,
 
@@ -952,7 +952,7 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
 
 	// §102 analytics: mentorship_completed { connection_id }
-	s.trackEvent(ctx, tenantID, userID, "mentorship_completed", "mentorship_connection", conn.ID, nil)
+	s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", conn.ID, nil)
 
 	return connectionFromModel(conn), nil
 }
@@ -991,7 +991,7 @@ func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID
 
 // ListAllConnections lists all connections for admin (with filters).
 // GET /api/v1/admin/mentorship/connections.
-func (s *Service) ListAllConnections(ctx context.Context, tenantID pgtype.UUID, status string, mentorID, menteeID pgtype.UUID, limit, offset int32) ([]Connection, error) {
+func (s *Service) ListAllConnections(ctx context.Context, status string, mentorID, menteeID pgtype.UUID, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListAllConnections(ctx, gen.ListAllConnectionsParams{
 
 		Status:     status,
@@ -1030,7 +1030,7 @@ func (s *Service) ListAllConnections(ctx context.Context, tenantID pgtype.UUID, 
 
 // AdminUpdateConnection allows an admin to override a connection's status.
 // PATCH /api/v1/admin/mentorship/connections/:id.
-func (s *Service) AdminUpdateConnection(ctx context.Context, tenantID, connID pgtype.UUID, status string) (Connection, error) {
+func (s *Service) AdminUpdateConnection(ctx context.Context, connID pgtype.UUID, status string) (Connection, error) {
 	conn, err := s.write.AdminUpdateConnection(ctx, gen.AdminUpdateConnectionParams{
 
 		ID:     connID,
@@ -1045,7 +1045,7 @@ func (s *Service) AdminUpdateConnection(ctx context.Context, tenantID, connID pg
 
 // UpdateMentorEmbedding sets the pgvector embedding for a mentor's bio.
 // Called by the mentor:generate_embedding Asynq task handler.
-func (s *Service) UpdateMentorEmbedding(ctx context.Context, tenantID, userID pgtype.UUID, embedding []float32) error {
+func (s *Service) UpdateMentorEmbedding(ctx context.Context, userID pgtype.UUID, embedding []float32) error {
 	vec := pgvector.NewVector(embedding)
 
 	return s.write.UpdateMentorEmbedding(ctx, gen.UpdateMentorEmbeddingParams{
@@ -1059,7 +1059,7 @@ func (s *Service) UpdateMentorEmbedding(ctx context.Context, tenantID, userID pg
 // stores it in user_profiles.mentor_embedding. Implements the
 // worker.MentorProcessor interface — called by the mentor:generate_embedding
 // Asynq task handler (§102, ADR-110).
-func (s *Service) GenerateEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) error {
+func (s *Service) GenerateEmbedding(ctx context.Context, userID pgtype.UUID) error {
 	if s.embedder == nil {
 		slog.Warn("mentorship: GenerateEmbedding called with no embedder wired")
 		return nil
@@ -1088,19 +1088,19 @@ func (s *Service) GenerateEmbedding(ctx context.Context, tenantID, userID pgtype
 		return fmt.Errorf("generating mentor bio embedding: %w", err)
 	}
 
-	return s.UpdateMentorEmbedding(ctx, tenantID, userID, embedding)
+	return s.UpdateMentorEmbedding(ctx, userID, embedding)
 }
 
 // UpdateMeilisearch syncs a mentor's user document to the Meilisearch users
 // index. Implements the worker.MentorProcessor interface — called by the
 // mentor:update_meilisearch Asynq task handler (§102, ADR-110).
-func (s *Service) UpdateMeilisearch(ctx context.Context, tenantID, userID pgtype.UUID) error {
+func (s *Service) UpdateMeilisearch(ctx context.Context, userID pgtype.UUID) error {
 	if s.meilisearchIndexer == nil {
 		slog.Warn("mentorship: UpdateMeilisearch called with no indexer wired")
 		return nil
 	}
 
-	return s.meilisearchIndexer.IndexUser(ctx, userID.Bytes, tenantID.Bytes)
+	return s.meilisearchIndexer.IndexUser(ctx, userID.Bytes)
 }
 
 // enqueueGenerateEmbedding fires the mentor:generate_embedding Asynq task.

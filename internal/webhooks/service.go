@@ -30,8 +30,8 @@ const challengeTokenByteLength = 16
 
 // webhooksSettingsReader is the subset of config.Settings webhooks needs.
 type webhooksSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // Service coordinates webhook endpoint lookup, signed delivery, and delivery
@@ -99,8 +99,8 @@ func generateEventID() (pgtype.UUID, error) {
 // ---------------------------------------------------------------------------
 
 // ListEndpoints returns all webhook endpoints for the given tenant.
-func (s *Service) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]WebhookEndpointResponse, error) {
-	rows, err := s.store.ListEndpoints(ctx, tenantID)
+func (s *Service) ListEndpoints(ctx context.Context) ([]WebhookEndpointResponse, error) {
+	rows, err := s.store.ListEndpoints(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +114,8 @@ func (s *Service) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]We
 }
 
 // GetEndpoint returns a single webhook endpoint by ID.
-func (s *Service) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (WebhookEndpointResponse, error) {
-	ep, err := s.store.GetEndpoint(ctx, tenantID, id)
+func (s *Service) GetEndpoint(ctx context.Context, id pgtype.UUID) (WebhookEndpointResponse, error) {
+	ep, err := s.store.GetEndpoint(ctx, id)
 	if err != nil {
 		return WebhookEndpointResponse{}, err
 	}
@@ -128,13 +128,13 @@ func (s *Service) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (We
 // handler can include it in the create response exactly once (§12). New
 // endpoints default to is_active=false until challenge/response verification
 // (BUG-002). createdBy is the admin user creating the endpoint.
-func (s *Service) CreateEndpoint(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreateWebhookRequest) (WebhookEndpointWithSecret, error) {
+func (s *Service) CreateEndpoint(ctx context.Context, createdBy pgtype.UUID, input CreateWebhookRequest) (WebhookEndpointWithSecret, error) {
 	secret, err := generateSecret()
 	if err != nil {
 		return WebhookEndpointWithSecret{}, err
 	}
 
-	ep, err := s.store.CreateEndpoint(ctx, tenantID, input.Name, input.URL, secret, input.EventTypes, createdBy)
+	ep, err := s.store.CreateEndpoint(ctx, input.Name, input.URL, secret, input.EventTypes, createdBy)
 	if err != nil {
 		return WebhookEndpointWithSecret{}, err
 	}
@@ -146,9 +146,9 @@ func (s *Service) CreateEndpoint(ctx context.Context, tenantID, createdBy pgtype
 // never changed by this method — §12 PATCH only accepts { name, url,
 // event_types, is_active } (BUG-023). The current secret is preserved
 // as-is (already encrypted at rest from the initial create).
-func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, input UpdateWebhookRequest) (WebhookEndpointResponse, error) {
+func (s *Service) UpdateEndpoint(ctx context.Context, id pgtype.UUID, input UpdateWebhookRequest) (WebhookEndpointResponse, error) {
 	// Fetch current values for merge.
-	current, err := s.store.GetEndpoint(ctx, tenantID, id)
+	current, err := s.store.GetEndpoint(ctx, id)
 	if err != nil {
 		return WebhookEndpointResponse{}, err
 	}
@@ -193,7 +193,7 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 		}
 	}
 
-	updated, err := s.store.UpdateEndpoint(ctx, tenantID, id, name, url, secret, eventTypes, status, isActive)
+	updated, err := s.store.UpdateEndpoint(ctx, id, name, url, secret, eventTypes, status, isActive)
 	if err != nil {
 		return WebhookEndpointResponse{}, err
 	}
@@ -202,16 +202,16 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 }
 
 // DeleteEndpoint removes a webhook endpoint by ID.
-func (s *Service) DeleteEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
-	return s.store.DeleteEndpoint(ctx, tenantID, id)
+func (s *Service) DeleteEndpoint(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteEndpoint(ctx, id)
 }
 
 // VerifyEndpoint performs the §12 challenge/response verification: generates a
 // random token, sends a GET to {url}?challenge={token}, and verifies the
 // endpoint echoes the token back. On success, marks the endpoint as verified
 // and active (BUG-001). Returns an error if the challenge fails.
-func (s *Service) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
-	endpoint, err := s.store.GetEndpoint(ctx, tenantID, id)
+func (s *Service) VerifyEndpoint(ctx context.Context, id pgtype.UUID) error {
+	endpoint, err := s.store.GetEndpoint(ctx, id)
 	if err != nil {
 		return fmt.Errorf("fetching endpoint for verification: %w", err)
 	}
@@ -229,7 +229,7 @@ func (s *Service) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) 
 		return fmt.Errorf("challenge/response verification failed: %w", err)
 	}
 
-	if err := s.store.VerifyEndpoint(ctx, tenantID, id); err != nil {
+	if err := s.store.VerifyEndpoint(ctx, id); err != nil {
 		return err
 	}
 
@@ -239,9 +239,9 @@ func (s *Service) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) 
 }
 
 // TestEndpoint sends a test event to a webhook endpoint and records the delivery.
-func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.UUID, eventType string) (pgtype.UUID, error) {
+func (s *Service) TestEndpoint(ctx context.Context, endpointID pgtype.UUID, eventType string) (pgtype.UUID, error) {
 	// Verify the endpoint exists and belongs to this tenant.
-	endpoint, err := s.store.GetEndpoint(ctx, tenantID, endpointID)
+	endpoint, err := s.store.GetEndpoint(ctx, endpointID)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
@@ -258,7 +258,7 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 		return pgtype.UUID{}, err
 	}
 
-	deliveryID, err := s.CreateDelivery(ctx, tenantID, endpoint.ID, eventID, eventType, testPayload)
+	deliveryID, err := s.CreateDelivery(ctx, endpoint.ID, eventID, eventType, testPayload)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("creating test delivery: %w", err)
 	}
@@ -319,7 +319,7 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 
 	maxAttempts := MaxDeliveryAttempts
 	if s.settings != nil {
-		maxAttempts = s.settings.GetIntOr(ctx, endpoint.TenantID, "notifications.max_delivery_attempts", MaxDeliveryAttempts)
+		maxAttempts = s.settings.GetIntOr(ctx, "notifications.max_delivery_attempts", MaxDeliveryAttempts)
 	}
 
 	// Single attempt per task invocation (BUG-017: async retry via Asynq
@@ -399,8 +399,8 @@ func backoffDuration(attempt int) time.Duration {
 // ---------------------------------------------------------------------------
 
 // ListDeliveries returns delivery records for a specific endpoint.
-func (s *Service) ListDeliveries(ctx context.Context, tenantID, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDeliveryResponse, error) {
-	rows, err := s.store.ListDeliveries(ctx, tenantID, endpointID, limit, offset)
+func (s *Service) ListDeliveries(ctx context.Context, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDeliveryResponse, error) {
+	rows, err := s.store.ListDeliveries(ctx, endpointID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -414,8 +414,8 @@ func (s *Service) ListDeliveries(ctx context.Context, tenantID, endpointID pgtyp
 }
 
 // GetDelivery returns a specific delivery record.
-func (s *Service) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) (*WebhookDelivery, error) {
-	d, err := s.store.GetDelivery(ctx, tenantID, deliveryID)
+func (s *Service) GetDelivery(ctx context.Context, deliveryID pgtype.UUID) (*WebhookDelivery, error) {
+	d, err := s.store.GetDelivery(ctx, deliveryID)
 	if err != nil {
 		return nil, err
 	}
@@ -426,9 +426,9 @@ func (s *Service) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.U
 // RetryDelivery reschedules a failed delivery for immediate retry. It
 // verifies that the delivery belongs to the given endpointID (BUG-025:
 // previously did not verify ownership, allowing cross-webhook retry).
-func (s *Service) RetryDelivery(ctx context.Context, tenantID, endpointID, deliveryID pgtype.UUID) error {
+func (s *Service) RetryDelivery(ctx context.Context, endpointID, deliveryID pgtype.UUID) error {
 	// Verify the delivery belongs to this endpoint before retrying.
-	delivery, err := s.store.GetDelivery(ctx, tenantID, deliveryID)
+	delivery, err := s.store.GetDelivery(ctx, deliveryID)
 	if err != nil {
 		return fmt.Errorf("fetching delivery for retry: %w", err)
 	}
@@ -437,7 +437,7 @@ func (s *Service) RetryDelivery(ctx context.Context, tenantID, endpointID, deliv
 		return fmt.Errorf("delivery %s does not belong to webhook endpoint %s", deliveryID, endpointID)
 	}
 
-	if err := s.store.RetryDelivery(ctx, tenantID, deliveryID); err != nil {
+	if err := s.store.RetryDelivery(ctx, deliveryID); err != nil {
 		return err
 	}
 
@@ -456,13 +456,13 @@ func (s *Service) RetryDelivery(ctx context.Context, tenantID, endpointID, deliv
 
 // CreateDelivery records a pending webhook delivery in the database. Callers
 // enqueue the Asynq webhook_delivery task with the returned delivery ID.
-func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, eventID pgtype.UUID, eventType string, payload any) (pgtype.UUID, error) {
+func (s *Service) CreateDelivery(ctx context.Context, endpointID, eventID pgtype.UUID, eventType string, payload any) (pgtype.UUID, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("marshaling webhook payload: %w", err)
 	}
 
-	return s.store.CreateDelivery(ctx, tenantID, endpointID, eventID, eventType, payloadJSON)
+	return s.store.CreateDelivery(ctx, endpointID, eventID, eventType, payloadJSON)
 }
 
 // EmitEvent dispatches a webhook event to all active endpoints for the tenant
@@ -471,8 +471,8 @@ func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, even
 // task. This is the canonical entry point for feature services to fire
 // outgoing webhooks (Section 12).
 // // Ref: japaconnect-engineering/sections/12-webhooks.md.
-func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
-	endpoints, err := s.store.ListEndpoints(ctx, tenantID)
+func (s *Service) EmitEvent(ctx context.Context, eventType string, payload any) {
+	endpoints, err := s.store.ListEndpoints(ctx)
 	if err != nil {
 		slog.Warn("webhooks: failed to list endpoints for emit", "error", err)
 		return
@@ -499,7 +499,7 @@ func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType
 			continue
 		}
 
-		deliveryID, err := s.CreateDelivery(ctx, tenantID, ep.ID, eventID, eventType, payload)
+		deliveryID, err := s.CreateDelivery(ctx, ep.ID, eventID, eventType, payload)
 		if err != nil {
 			slog.Error("webhooks: failed to create delivery for emit", "endpoint_id", ep.ID, "event_type", eventType, "error", err)
 			errpkg.CaptureException(fmt.Errorf("emit create delivery %s: %w", eventType, err))

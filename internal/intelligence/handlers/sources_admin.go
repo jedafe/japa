@@ -69,7 +69,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, ok := buildCreateSourceParams(w, tenantID, body)
+	params, ok := buildCreateSourceParams(w, body)
 	if !ok {
 		return
 	}
@@ -93,7 +93,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 // normalises it into CreateIntelSourceParams, applying defaults for enabled,
 // crawl frequency, and domain. On a validation failure it writes the error
 // response and returns ok=false.
-func buildCreateSourceParams(w http.ResponseWriter, tenantID pgtype.UUID, body handleSourceCreateBody) (gen.CreateIntelSourceParams, bool) {
+func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody) (gen.CreateIntelSourceParams, bool) {
 	if body.Name == "" || body.SourceURL == "" || body.Category == "" || body.CrawlMethod == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name, source_url, category, and crawl_method are required")
 		return gen.CreateIntelSourceParams{}, false
@@ -197,8 +197,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -210,7 +209,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 
 	// Load the existing row so PATCH semantics (partial update) work: fields
 	// not in the body keep their current values.
-	existing, err := h.intelSources.Get(r.Context(), tenantID, sourceID)
+	existing, err := h.intelSources.Get(r.Context(), sourceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
@@ -269,7 +268,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := h.intelSources.Update(r.Context(), tenantID, params)
+	src, err := h.intelSources.Update(r.Context(), params)
 	if err != nil {
 		slog.Error("intel: update source failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source")
@@ -383,8 +382,7 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -395,7 +393,7 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enforce the "promoted records preserved" invariant (spec §650).
-	promoted, err := h.intelStores.CountPromotedIntelRecordsBySource(r.Context(), tenantID, sourceID)
+	promoted, err := h.intelStores.CountPromotedIntelRecordsBySource(r.Context(), sourceID)
 	if err != nil {
 		slog.Error("intel: delete source promoted-count failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to verify source safety")
@@ -409,7 +407,7 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.intelSources.Delete(r.Context(), tenantID, sourceID); err != nil {
+	if err := h.intelSources.Delete(r.Context(), sourceID); err != nil {
 		slog.Error("intel: delete source failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete source")
 
@@ -436,8 +434,7 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -447,7 +444,7 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	doc, err := h.intelStores.GetIntelRawDocument(r.Context(), tenantID, docID)
+	doc, err := h.intelStores.GetIntelRawDocument(r.Context(), docID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Raw document not found")
@@ -496,8 +493,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -522,14 +518,14 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scholarship, ok := h.lookupScholarshipForReview(w, r, tenantID, recordID)
+	scholarship, ok := h.lookupScholarshipForReview(w, r, recordID)
 	if !ok {
 		return
 	}
 
 	merged := mergeEditorialOverrides(scholarship.EditorialOverrides, body.Fields)
 
-	if err := h.intelStores.UpdateScholarshipEditorialOverrides(r.Context(), tenantID, scholarship.ID, merged); err != nil {
+	if err := h.intelStores.UpdateScholarshipEditorialOverrides(r.Context(), scholarship.ID, merged); err != nil {
 		slog.Error("intel: review edit apply failed", "scholarship_id", pgUUIDString(scholarship.ID), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to apply editorial edits")
 
@@ -553,7 +549,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fieldChangesJSON, _ := json.Marshal(body.Fields)
-	if err := h.intelStores.CreateIntelReviewLog(r.Context(), tenantID, gen.CreateIntelReviewLogParams{
+	if err := h.intelStores.CreateIntelReviewLog(r.Context(), gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
 		ActorUserID:   userID,
 		Action:        "edit",
@@ -579,8 +575,8 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 // lookupScholarshipForReview resolves the intel record → its promoted
 // scholarship projection row, writing the appropriate 404/500 error response
 // on failure. Returns ok=false when an error response was written.
-func (h *Handlers) lookupScholarshipForReview(w http.ResponseWriter, r *http.Request, tenantID, recordID pgtype.UUID) (gen.Scholarship, bool) {
-	if _, err := h.intelStores.GetIntelRecord(r.Context(), tenantID, recordID); err != nil {
+func (h *Handlers) lookupScholarshipForReview(w http.ResponseWriter, r *http.Request, recordID pgtype.UUID) (gen.Scholarship, bool) {
+	if _, err := h.intelStores.GetIntelRecord(r.Context(), recordID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
 			return gen.Scholarship{}, false
@@ -593,7 +589,7 @@ func (h *Handlers) lookupScholarshipForReview(w http.ResponseWriter, r *http.Req
 	}
 
 	// Load the existing editorial_overrides so we merge rather than replace.
-	scholarship, err := h.intelStores.GetScholarshipByIntelRecord(r.Context(), tenantID, recordID)
+	scholarship, err := h.intelStores.GetScholarshipByIntelRecord(r.Context(), recordID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship projection not found for this record")
@@ -692,7 +688,7 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the source exists and is enabled before enqueuing.
-	src, err := h.intelSources.Get(r.Context(), tenantID, sourceID)
+	src, err := h.intelSources.Get(r.Context(), sourceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
@@ -754,8 +750,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -763,7 +758,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
 
-	rows, err := h.intelSources.ListProposed(r.Context(), tenantID, clampInt32(limit), offset)
+	rows, err := h.intelSources.ListProposed(r.Context(), clampInt32(limit), offset)
 	if err != nil {
 		slog.Error("intel: list proposed sources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_proposed_failed", "Failed to list proposed sources")
@@ -851,8 +846,7 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -863,7 +857,7 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the source exists before disabling.
-	src, err := h.intelSources.Get(r.Context(), tenantID, sourceID)
+	src, err := h.intelSources.Get(r.Context(), sourceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
@@ -876,7 +870,7 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.intelSources.Disable(r.Context(), tenantID, sourceID); err != nil {
+	if err := h.intelSources.Disable(r.Context(), sourceID); err != nil {
 		slog.Error("intel: disable source failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "disable_failed", "Failed to disable source")
 

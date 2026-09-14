@@ -23,7 +23,7 @@ type EmitActivityEventInput struct {
 }
 
 // EmitActivityEvent records an activity event for async processing.
-func (s *Service) EmitActivityEvent(ctx context.Context, tenantID, userID pgtype.UUID, input EmitActivityEventInput) (gen.ActivityEvent, error) {
+func (s *Service) EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input EmitActivityEventInput) (gen.ActivityEvent, error) {
 	if input.ActivityKey == "" {
 		return gen.ActivityEvent{}, errors.New("activity_key is required")
 	}
@@ -63,7 +63,7 @@ func (s *Service) EmitActivityEvent(ctx context.Context, tenantID, userID pgtype
 // ProcessActivityEvent processes a single activity event (called by Asynq task).
 func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
 	// Get the event
-	event, err := s.store.getActivityEventByID(ctx, eventID, tenantID)
+	event, err := s.store.getActivityEventByID(ctx, eventID)
 	if err != nil {
 		return fmt.Errorf("getting activity event: %w", err)
 	}
@@ -78,7 +78,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	}
 
 	// Get the activity rule
-	rule, err := s.store.getActivityRuleByKey(ctx, tenantID, event.ActivityKey)
+	rule, err := s.store.getActivityRuleByKey(ctx, event.ActivityKey)
 	if err != nil {
 		// If rule not found, skip processing (rule may have been deleted).
 		// Distinguish "not found" from real DB errors (BUG-007). The activity
@@ -103,7 +103,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	// wallet.max_daily_earn_points from system_settings) limits total points
 	// earned per user per day across all activity types.
 	if s.settings != nil {
-		ws, werr := s.store.getWalletSettings(ctx, tenantID)
+		ws, werr := s.store.getWalletSettings(ctx)
 		if werr == nil {
 			// EnableEarning killswitch — no points, but the activity still
 			// counts toward badges/challenges.
@@ -116,7 +116,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 	// Check frequency caps (read-only queries outside tx — safe, caps are advisory)
 	if rule.CapPerDay != nil {
-		count, err := s.store.countUserActivityToday(ctx, tenantID, event.UserID, event.ActivityKey)
+		count, err := s.store.countUserActivityToday(ctx, event.UserID, event.ActivityKey)
 		if err != nil {
 			return fmt.Errorf("checking daily cap: %w", err)
 		}
@@ -128,7 +128,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	}
 
 	if rule.CapPerWeek != nil {
-		count, err := s.store.countUserActivityThisWeek(ctx, tenantID, event.UserID, event.ActivityKey)
+		count, err := s.store.countUserActivityThisWeek(ctx, event.UserID, event.ActivityKey)
 		if err != nil {
 			return fmt.Errorf("checking weekly cap: %w", err)
 		}
@@ -207,12 +207,12 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	// (DailyEarningCap) or system_settings (wallet.max_daily_earn_points).
 	dailyCap := int64(0)
 	if s.settings != nil {
-		dailyCap = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.max_daily_earn_points", 0))
+		dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points", 0))
 	}
 
 	if dailyCap == 0 {
 		// Fall back to wallet_settings DailyEarningCap.
-		ws, werr := s.store.getWalletSettings(ctx, tenantID)
+		ws, werr := s.store.getWalletSettings(ctx)
 		if werr == nil && ws.DailyEarningCap > 0 {
 			dailyCap = int64(ws.DailyEarningCap)
 		}
@@ -311,7 +311,7 @@ func (s *Service) evaluateGamification(ctx context.Context, tenantID pgtype.UUID
 // Badges/challenges count the activity itself, not the payout (Section 64);
 // marking processed gives exactly-once evaluation on any replay.
 func (s *Service) settleWithoutPoints(ctx context.Context, tenantID pgtype.UUID, event gen.ActivityEvent) {
-	if err := s.store.markEventProcessed(ctx, event.ID, tenantID); err != nil {
+	if err := s.store.markEventProcessed(ctx, event.ID); err != nil {
 		slog.Warn("wallet: mark skipped event processed failed",
 			"event_id", event.ID.String(), "error", err)
 	}
@@ -320,8 +320,8 @@ func (s *Service) settleWithoutPoints(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // GetBalance returns the current balance for a user (points and/or credits).
-func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) (points, credits int64, err error) {
-	points, err = s.store.getLatestBalance(ctx, tenantID, userID, LedgerTypePoints)
+func (s *Service) GetBalance(ctx context.Context, userID pgtype.UUID) (points, credits int64, err error) {
+	points, err = s.store.getLatestBalance(ctx, userID, LedgerTypePoints)
 	if err != nil {
 		// Only treat "no rows" as zero balance; propagate real DB errors
 		// (BUG-004 — previously swallowed all errors as "no balance yet").
@@ -332,7 +332,7 @@ func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) 
 		points = 0
 	}
 
-	credits, err = s.store.getLatestBalance(ctx, tenantID, userID, LedgerTypeCredits)
+	credits, err = s.store.getLatestBalance(ctx, userID, LedgerTypeCredits)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return 0, 0, fmt.Errorf("getting credits balance: %w", err)
@@ -346,7 +346,7 @@ func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) 
 
 // GetLifetimePoints returns the total positive points ever earned by a user
 // (never decreases — used for badges/tiers per Section 28). BUG-W-003.
-func (s *Service) GetLifetimePoints(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
+func (s *Service) GetLifetimePoints(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	return s.store.read.GetLifetimePoints(ctx,
 
 		userID,
@@ -356,8 +356,8 @@ func (s *Service) GetLifetimePoints(ctx context.Context, tenantID, userID pgtype
 // GetPointsBalance returns only the Points balance for a user. Used by the
 // users service to surface points on a public profile when the user has
 // consented via show_points_publicly (Section 28). Credits are never exposed.
-func (s *Service) GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
-	points, _, err := s.GetBalance(ctx, tenantID, userID)
+func (s *Service) GetPointsBalance(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	points, _, err := s.GetBalance(ctx, userID)
 	return points, err
 }
 
@@ -379,7 +379,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	// AUDIT-BE2-SETTING-008: enforce minimum convertible points from settings.
 	minConvert := int64(DefaultMinConvertPoints)
 	if s.settings != nil {
-		minConvert = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.min_convert_points", DefaultMinConvertPoints))
+		minConvert = int64(s.settings.GetIntOr(ctx, "wallet.min_convert_points", DefaultMinConvertPoints))
 	}
 
 	if input.PointsToConvert < minConvert {
@@ -387,7 +387,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	}
 
 	// Get wallet settings for conversion rate
-	settings, err := s.store.getWalletSettings(ctx, tenantID)
+	settings, err := s.store.getWalletSettings(ctx)
 	rate := int32(DefaultPointsToCreditsRate)
 
 	if err == nil && settings.PointsToCreditsRate != nil && *settings.PointsToCreditsRate > 0 {
@@ -398,7 +398,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 		// The catalog key is a float (0.01 means 1 point = 0.01 credits), but
 		// the wallet ledger uses an integer "points per credit" rate, so we
 		// invert: rate = round(1 / points_to_credit_rate). Guard against zero.
-		if perCredit := s.settings.GetFloatOr(ctx, tenantID, "wallet.points_to_credit_rate", 0); perCredit > 0 {
+		if perCredit := s.settings.GetFloatOr(ctx, "wallet.points_to_credit_rate", 0); perCredit > 0 {
 			if computed := int32(1.0 / perCredit); computed > 0 {
 				rate = computed
 			}
@@ -711,15 +711,15 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 // back to DefaultPointsToCreditsRate when unset. This MUST stay consistent
 // with the resolution in ConvertPointsToCredits so the displayed rate matches
 // the rate actually enforced at conversion time (AUDIT-BE2-SETTING-007).
-func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (gen.WalletSetting, error) {
-	settings, err := s.store.getWalletSettings(ctx, tenantID)
+func (s *Service) GetWalletSettings(ctx context.Context) (gen.WalletSetting, error) {
+	settings, err := s.store.getWalletSettings(ctx)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// No settings row yet — resolve rate from system_settings, then defaults.
 			rate := int32(DefaultPointsToCreditsRate)
 
 			if s.settings != nil {
-				if perCredit := s.settings.GetFloatOr(ctx, tenantID, "wallet.points_to_credit_rate", 0); perCredit > 0 {
+				if perCredit := s.settings.GetFloatOr(ctx, "wallet.points_to_credit_rate", 0); perCredit > 0 {
 					if computed := int32(1.0 / perCredit); computed > 0 {
 						rate = computed
 					}
@@ -744,15 +744,15 @@ func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 // minimum points required for a single conversion. The minimum is read from
 // system_settings key wallet.min_convert_points, falling back to
 // DefaultMinConvertPoints when unset.
-func (s *Service) GetWalletSettingsWithMinConvert(ctx context.Context, tenantID pgtype.UUID) (gen.WalletSetting, int64, error) {
-	settings, err := s.GetWalletSettings(ctx, tenantID)
+func (s *Service) GetWalletSettingsWithMinConvert(ctx context.Context) (gen.WalletSetting, int64, error) {
+	settings, err := s.GetWalletSettings(ctx)
 	if err != nil {
 		return gen.WalletSetting{}, 0, err
 	}
 
 	minConvert := int64(DefaultMinConvertPoints)
 	if s.settings != nil {
-		minConvert = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.min_convert_points", DefaultMinConvertPoints))
+		minConvert = int64(s.settings.GetIntOr(ctx, "wallet.min_convert_points", DefaultMinConvertPoints))
 	}
 
 	return settings, minConvert, nil
@@ -766,17 +766,17 @@ type UpdateWalletSettingsInput struct {
 }
 
 // UpdateWalletSettings updates wallet settings for a tenant.
-func (s *Service) UpdateWalletSettings(ctx context.Context, tenantID pgtype.UUID, input UpdateWalletSettingsInput) (gen.WalletSetting, error) {
+func (s *Service) UpdateWalletSettings(ctx context.Context, input UpdateWalletSettingsInput) (gen.WalletSetting, error) {
 	if input.PointsToCreditsRate <= 0 {
 		return gen.WalletSetting{}, errors.New("points_to_credits_rate must be positive")
 	}
 
-	return s.store.upsertWalletSettings(ctx, tenantID, input.PointsToCreditsRate, input.DailyEarningCap, input.EnableEarning)
+	return s.store.upsertWalletSettings(ctx, input.PointsToCreditsRate, input.DailyEarningCap, input.EnableEarning)
 }
 
 // ListActivityRules returns activity rules for a tenant.
-func (s *Service) ListActivityRules(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ActivityPointRule, error) {
-	return s.store.listActivityRulesByTenant(ctx, tenantID, limit, offset)
+func (s *Service) ListActivityRules(ctx context.Context, limit, offset int32) ([]gen.ActivityPointRule, error) {
+	return s.store.listActivityRulesByTenant(ctx, limit, offset)
 }
 
 // CreateOrUpdateActivityRuleInput holds parameters for creating/updating an activity rule.
@@ -791,7 +791,7 @@ type CreateOrUpdateActivityRuleInput struct {
 }
 
 // CreateOrUpdateActivityRule creates or updates an activity rule.
-func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, tenantID pgtype.UUID, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
+func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
 	if input.ActivityKey == "" {
 		return gen.ActivityPointRule{}, errors.New("activity_key is required")
 	}
@@ -809,15 +809,15 @@ func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, tenantID pgtyp
 }
 
 // ToggleActivityRule toggles an activity rule's enabled state.
-func (s *Service) ToggleActivityRule(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityPointRule, error) {
-	return s.store.toggleActivityRule(ctx, id, tenantID)
+func (s *Service) ToggleActivityRule(ctx context.Context, id pgtype.UUID) (gen.ActivityPointRule, error) {
+	return s.store.toggleActivityRule(ctx, id)
 }
 
 // UpdateActivityRuleByID updates an activity rule by its primary key (BUG-005).
 // Unlike CreateOrUpdateActivityRule (which upserts by activity_key), this
 // method updates the rule identified by {id} — the {id} from the URL route
 // parameter — so PATCH /admin/wallet/rules/{id} updates the correct rule.
-func (s *Service) UpdateActivityRuleByID(ctx context.Context, id, tenantID pgtype.UUID, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
+func (s *Service) UpdateActivityRuleByID(ctx context.Context, id pgtype.UUID, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
 	return s.store.updateActivityRuleByID(ctx, gen.UpdateActivityRuleByIDParams{
 		ID: id,
 
@@ -831,28 +831,28 @@ func (s *Service) UpdateActivityRuleByID(ctx context.Context, id, tenantID pgtyp
 }
 
 // DeleteActivityRule deletes an activity rule.
-func (s *Service) DeleteActivityRule(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.deleteActivityRule(ctx, id, tenantID)
+func (s *Service) DeleteActivityRule(ctx context.Context, id pgtype.UUID) error {
+	return s.store.deleteActivityRule(ctx, id)
 }
 
 // ListLedgerEntries returns ledger entries for a user.
-func (s *Service) ListLedgerEntries(ctx context.Context, tenantID, userID pgtype.UUID, ledgerType *string, limit, offset int32) ([]gen.WalletLedger, error) {
-	return s.store.listLedgerEntriesByUser(ctx, tenantID, userID, ledgerType, limit, offset)
+func (s *Service) ListLedgerEntries(ctx context.Context, userID pgtype.UUID, ledgerType *string, limit, offset int32) ([]gen.WalletLedger, error) {
+	return s.store.listLedgerEntriesByUser(ctx, userID, ledgerType, limit, offset)
 }
 
 // GetLedgerEntry returns a ledger entry by ID.
-func (s *Service) GetLedgerEntry(ctx context.Context, id, tenantID pgtype.UUID) (gen.WalletLedger, error) {
-	return s.store.getLedgerEntryByID(ctx, id, tenantID)
+func (s *Service) GetLedgerEntry(ctx context.Context, id pgtype.UUID) (gen.WalletLedger, error) {
+	return s.store.getLedgerEntryByID(ctx, id)
 }
 
 // GetUserBalance returns the balance for any user (admin operation).
-func (s *Service) GetUserBalance(ctx context.Context, tenantID, userID pgtype.UUID) (points, credits int64, err error) {
-	return s.GetBalance(ctx, tenantID, userID)
+func (s *Service) GetUserBalance(ctx context.Context, userID pgtype.UUID) (points, credits int64, err error) {
+	return s.GetBalance(ctx, userID)
 }
 
 // GetUserBalanceWithInfo returns balance plus basic user info for admin display.
-func (s *Service) GetUserBalanceWithInfo(ctx context.Context, tenantID, userID pgtype.UUID) (username string, points, credits int64, err error) {
-	points, credits, err = s.GetBalance(ctx, tenantID, userID)
+func (s *Service) GetUserBalanceWithInfo(ctx context.Context, userID pgtype.UUID) (username string, points, credits int64, err error) {
+	points, credits, err = s.GetBalance(ctx, userID)
 	if err != nil {
 		return "", 0, 0, err
 	}

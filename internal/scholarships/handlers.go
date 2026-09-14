@@ -33,13 +33,13 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 // HandleFindScholarships searches published scholarship guides.
 // GET /scholarships.
 func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
-	if !h.svc.Enabled(r.Context(), tenantID) {
+	if !h.svc.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
@@ -82,7 +82,7 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 	pageSize := limit
 	pageOffset := (page - 1) * limit
 
-	results, total, err := h.svc.FindScholarships(r.Context(), tenantID, filters)
+	results, total, err := h.svc.FindScholarships(r.Context(), filters)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", err.Error())
 		return
@@ -111,7 +111,7 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
-	if !h.svc.Enabled(r.Context(), tenantID) {
+	if !h.svc.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
@@ -133,13 +133,13 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 // HandleStatuses returns the canonical saved-scholarship status options.
 // GET /scholarships/statuses (Rule 16).
 func (h *Handlers) HandleStatuses(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
-	if !h.svc.Enabled(r.Context(), tenantID) {
+	if !h.svc.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
@@ -163,7 +163,7 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
-	if !h.svc.Enabled(r.Context(), tenantID) {
+	if !h.svc.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
@@ -203,8 +203,7 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -225,7 +224,7 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	saved, err := h.svc.UpdateSavedScholarship(r.Context(), tenantID, userID, guideID, body.Status, body.Notes, body.RemindBeforeDays)
+	saved, err := h.svc.UpdateSavedScholarship(r.Context(), userID, guideID, body.Status, body.Notes, body.RemindBeforeDays)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
@@ -242,8 +241,7 @@ func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -253,7 +251,7 @@ func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := h.svc.DeleteSavedScholarship(r.Context(), tenantID, userID, guideID); err != nil {
+	if err := h.svc.DeleteSavedScholarship(r.Context(), userID, guideID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "delete_failed", err.Error())
 		return
 	}
@@ -307,13 +305,12 @@ func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	stats, err := h.svc.AdminStats(r.Context(), tenantID)
+	stats, err := h.svc.AdminStats(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
@@ -324,20 +321,15 @@ func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.
 
 // handleAdminReport runs the shared auth + pagination + report flow used by
 // the admin scholarship report endpoints.
-func handleAdminReport[T any](w http.ResponseWriter, r *http.Request, report func(ctx context.Context, tenantID pgtype.UUID, page, limit int) ([]T, error)) {
+func handleAdminReport[T any](w http.ResponseWriter, r *http.Request, report func(ctx context.Context, page, limit int) ([]T, error)) {
 	// Auth before tenant: an unauthenticated request must get 401, not 503.
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	page, limit := parsePagination(r)
 
-	rows, err := report(r.Context(), tenantID, page, limit)
+	rows, err := report(r.Context(), page, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", err.Error())
 		return
@@ -491,7 +483,7 @@ func int16Deref(p *int16) int16 {
 
 // buildScholarshipCreateParams builds the sqlc params for a new scholarship row.
 func buildScholarshipCreateParams(
-	tenantID, guideID pgtype.UUID,
+	guideID pgtype.UUID,
 	body *scholarshipBody,
 	deadline pgtype.Date,
 ) gen.CreateScholarshipParams {
@@ -683,8 +675,7 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -696,7 +687,7 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 	search := q.Get("q")
 	status := q.Get("verification_status")
 
-	rows, err := h.svc.store.AdminListScholarships(r.Context(), tenantID, gen.AdminListScholarshipsParams{Column1: search, Column2: status, Limit: safeInt32(limit),
+	rows, err := h.svc.store.AdminListScholarships(r.Context(), gen.AdminListScholarshipsParams{Column1: search, Column2: status, Limit: safeInt32(limit),
 		Offset: offset,
 	})
 	if err != nil {
@@ -704,7 +695,7 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	total, err := h.svc.store.AdminCountScholarships(r.Context(), tenantID, gen.AdminCountScholarshipsParams{Column1: search, Column2: status})
+	total, err := h.svc.store.AdminCountScholarships(r.Context(), gen.AdminCountScholarshipsParams{Column1: search, Column2: status})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to count scholarships")
 		return
@@ -733,8 +724,7 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -796,9 +786,9 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 	}
 
 	// 2. Insert the scholarship projection row with guide_id.
-	arg := buildScholarshipCreateParams(tenantID, contentRow.ID, body, deadline)
+	arg := buildScholarshipCreateParams(contentRow.ID, body, deadline)
 
-	sch, err := h.svc.store.AdminCreateScholarship(r.Context(), tenantID, arg)
+	sch, err := h.svc.store.AdminCreateScholarship(r.Context(), arg)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship")
 		return
@@ -815,8 +805,7 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -827,7 +816,7 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	}
 
 	// Load existing record to merge with updates.
-	existing, err := h.svc.store.AdminGetScholarship(r.Context(), tenantID, id)
+	existing, err := h.svc.store.AdminGetScholarship(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship not found")
 		return
@@ -871,13 +860,13 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	applyScholarshipUpdateDetails(&arg, body)
 	applyScholarshipUpdateSource(&arg, body)
 
-	if err := h.svc.store.AdminUpdateScholarship(r.Context(), tenantID, arg); err != nil {
+	if err := h.svc.store.AdminUpdateScholarship(r.Context(), arg); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scholarship")
 		return
 	}
 
 	// Re-fetch so the admin panel receives the updated row.
-	updated, err := h.svc.store.AdminGetScholarship(r.Context(), tenantID, id)
+	updated, err := h.svc.store.AdminGetScholarship(r.Context(), id)
 	if err != nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": "ok"})
 		return
@@ -894,8 +883,7 @@ func (h *Handlers) HandleAdminDeleteScholarship(w http.ResponseWriter, r *http.R
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -905,7 +893,7 @@ func (h *Handlers) HandleAdminDeleteScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := h.svc.store.AdminDeleteScholarship(r.Context(), tenantID, id); err != nil {
+	if err := h.svc.store.AdminDeleteScholarship(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete scholarship")
 		return
 	}

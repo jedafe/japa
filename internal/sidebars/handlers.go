@@ -151,7 +151,7 @@ func (h *Handlers) GetSidebarOptions(w http.ResponseWriter, r *http.Request) {
 
 // ListSidebars handles GET /api/v1/admin/sidebars.
 func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -174,7 +174,7 @@ func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.Service.ListSidebars(r.Context(), tenantID, app, position, status, q, sortKey, limit, offset)
+	result, err := h.Service.ListSidebars(r.Context(), app, position, status, q, sortKey, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -185,7 +185,7 @@ func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
 
 // GetSidebar handles GET /api/v1/admin/sidebars/{id}.
 func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -196,7 +196,7 @@ func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sidebar, err := h.Service.GetSidebar(r.Context(), id, tenantID)
+	sidebar, err := h.Service.GetSidebar(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -457,7 +457,7 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 		isAuthenticated = true
 		userID = user.UserID
 
-		groupIDs, err := h.Service.GetUserGroupIDs(r.Context(), tenantID, user.UserID.String())
+		groupIDs, err := h.Service.GetUserGroupIDs(r.Context(), user.UserID.String())
 		if err == nil {
 			for _, gid := range groupIDs {
 				userGroupIDs[gid] = true

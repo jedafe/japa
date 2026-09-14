@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/jedafe/japa/internal/languagetesthub"
 )
 
@@ -20,7 +18,7 @@ func NewLanguageTestResolver(svc *languagetesthub.Service) Resolver {
 	return &languageTestResolver{svc: svc}
 }
 
-func (r *languageTestResolver) Resolve(ctx context.Context, ref map[string]any, _ pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *languageTestResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
 		t, err := r.svc.GetTestBySlug(ctx, slug)
 		if err != nil {
@@ -55,7 +53,7 @@ func (r *languageTestResolver) Resolve(ctx context.Context, ref map[string]any, 
 	return ResolvedItem{}, false, errors.New("language_test item_ref missing id or slug")
 }
 
-func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}

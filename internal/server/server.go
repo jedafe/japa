@@ -179,8 +179,8 @@ func Shutdown() {
 }
 
 type studioReviewHookLike interface {
-	OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
-	OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
 }
 
 // multiStudioReviewHook calls every registered studio review hook so the
@@ -190,11 +190,11 @@ type multiStudioReviewHook struct {
 	hooks []studioReviewHookLike
 }
 
-func (m *multiStudioReviewHook) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
+func (m *multiStudioReviewHook) OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
 	var errs []error
 
 	for _, h := range m.hooks {
-		if err := h.OnStudioReviewApproved(ctx, tenantID, reviewID, reviewerID); err != nil {
+		if err := h.OnStudioReviewApproved(ctx, reviewID, reviewerID); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -202,11 +202,11 @@ func (m *multiStudioReviewHook) OnStudioReviewApproved(ctx context.Context, tena
 	return errors.Join(errs...)
 }
 
-func (m *multiStudioReviewHook) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
+func (m *multiStudioReviewHook) OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
 	var errs []error
 
 	for _, h := range m.hooks {
-		if err := h.OnStudioReviewRejected(ctx, tenantID, reviewID, reviewerID); err != nil {
+		if err := h.OnStudioReviewRejected(ctx, reviewID, reviewerID); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -494,7 +494,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// at startup. The content sanitizer reads this list at render time under a
 	// read lock, so a later settings change requires a process restart or a
 	// dedicated reload hook. Empty/unset restores the compiled-in defaults.
-	iframeHostsCSV := settingsService.GetStringOr(context.Background(), defaultTenantID, "content.sanitization.allowed_iframe_hosts", "")
+	iframeHostsCSV := settingsService.GetStringOr(context.Background(), "content.sanitization.allowed_iframe_hosts", "")
 	if iframeHostsCSV != "" {
 		content.SetAllowedIframeHosts(strings.Split(iframeHostsCSV, ","))
 	}
@@ -633,7 +633,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// spaces.wiki_rate_interval_ms (default 2000ms). Hot-reloadable — the
 	// worker re-reads the setting on each wiki enrichment task.
 	spaces.SetWikiRateInterval(time.Duration(
-		settingsService.GetIntOr(context.Background(), defaultTenantID, "spaces.wiki_rate_interval_ms", 2000),
+		settingsService.GetIntOr(context.Background(), "spaces.wiki_rate_interval_ms", 2000),
 	) * time.Millisecond)
 
 	// Initialize email provider gateway (ADR-015 — multi-provider failover)
@@ -667,13 +667,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the Asynq client into customfields so SubmitForm can enqueue
 	// form:fire_submission_triggers tasks (Section 06, BUG-002).
 	cfHandlers.SetAsynqClient(asynqClient)
-	authHandlers.Policy = auth.PasswordPolicyFromSettings(context.Background(), settingsService, defaultTenantID)
+	authHandlers.Policy = auth.PasswordPolicyFromSettings(context.Background(), settingsService)
 	// Wire link preview blacklist fallback from system_settings (AUDIT-BE-010,
 	// BE-037, BUG-001). The blacklist is a JSON array of domains stored under
 	// 'content.link_preview.blacklist'. This startup load is a fallback for
 	// when the settings reader is not wired per-request; the Fetcher also
 	// resolves the blacklist per-request via resolveBlacklist (BUG-004).
-	if blacklistStr, err := settingsService.GetSetting(context.Background(), defaultTenantID, "content.link_preview.blacklist"); err == nil && blacklistStr != "" {
+	if blacklistStr, err := settingsService.GetSetting(context.Background(), "content.link_preview.blacklist"); err == nil && blacklistStr != "" {
 		blacklist := linkpreview.ParseBlacklistJSON(blacklistStr)
 		if len(blacklist) > 0 {
 			linkPreviewFetcher.SetBlacklist(blacklist)
@@ -765,7 +765,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// tenant ID is used because this read happens at boot time, outside any
 	// request context. The resolver also has SetDefaultCurrency for
 	// hot-reload when the setting changes.
-	defaultCurrency := settingsService.GetStringOr(context.Background(), defaultTenantID, "wallet.default_currency", "NGN")
+	defaultCurrency := settingsService.GetStringOr(context.Background(), "wallet.default_currency", "NGN")
 	currencyResolver := wallet.NewCurrencyResolver(walletService.Store(), defaultCurrency)
 	walletService.SetCurrencyResolver(currencyResolver)
 
@@ -929,14 +929,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Rebuild the S3 client from media.storage.* system_settings when the
 	// operator has configured storage via the Control Panel (Section 34).
 	// When the settings are absent the env-var-based client is retained.
-	mediaService.ReconfigureS3FromSettings(context.Background(), defaultTenantID)
+	mediaService.ReconfigureS3FromSettings(context.Background())
 	// Wire the admin-configurable CDN base URL (media.cdn.base_url) into the
 	// package-level media.MediaURL so all callers (tags, blog, feed, widgets,
 	// seo) honour the system_setting without each needing a *media.Service.
 	// Section 34 — CDN & S3-Compatible Object Storage. Resolved against the
 	// default tenant because the CDN prefix is platform-wide.
 	media.SetCDNBaseURLResolver(func() string {
-		return settingsService.GetStringOr(context.Background(), defaultTenantID, "media.cdn.base_url", "")
+		return settingsService.GetStringOr(context.Background(), "media.cdn.base_url", "")
 	})
 
 	mediaHandlers := media.NewHandlers(mediaService)
@@ -993,7 +993,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// create_ticket / notify_admin triggers after a form submission.
 	formTriggerDispatcher := customfields.NewTriggerDispatcher(cfService)
 	formTriggerDispatcher.SetRBACAssigner(func(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error {
-		return rbacStore.AddUserToGroup(ctx, tenantID, userID, groupID)
+		return rbacStore.AddUserToGroup(ctx, userID, groupID)
 	})
 	formTriggerDispatcher.SetNotifyAdmin(func(ctx context.Context, tenantID pgtype.UUID, title, body, actionURL string) error {
 		// Fan out an in-app notification to every active user in the
@@ -1016,7 +1016,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		var firstErr error
 
 		for _, adminID := range adminIDs {
-			if err := notificationService.CreateNotification(ctx, tenantID, adminID,
+			if err := notificationService.CreateNotification(ctx, adminID,
 				"admin_notification", "system", systemID,
 				"form_submission", systemID,
 				title, body, actionURL); err != nil {
@@ -1043,7 +1043,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			input.SubmitterUserID = *submitterUserID
 		}
 
-		_, err := ticketService.CreateTicket(ctx, tenantID, input)
+		_, err := ticketService.CreateTicket(ctx, input)
 
 		return err
 	})
@@ -1889,7 +1889,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Load tool configs from the ai_tools table (migration 000388 seed).
 	// Errors are non-fatal — the agent degrades to no tools if the table
 	// is empty or the configs are unparseable.
-	if err := agentRegistry.LoadFromDB(context.Background(), aiToolRegistry, defaultTenantID); err != nil {
+	if err := agentRegistry.LoadFromDB(context.Background(), aiToolRegistry); err != nil {
 		slog.Warn("server: loading agent tool configs from DB", "error", err)
 	}
 
@@ -1989,7 +1989,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelSourcesStore := sources.NewStore(database)
 	intelSourcesService := sources.NewService(intelSourcesStore)
 	intelSourcesService.SetMetadataQueue(func(ctx context.Context, tenantID pgtype.UUID, sourceID sources.SourceID) error {
-		return taskEnqueuer.EnqueueSourceMetadata(sourceID.String(), tenantID.String())
+		return taskEnqueuer.EnqueueSourceMetadata(sourceID.String())
 	})
 	agentDeps.IntelSourceManager = intelSourcesService
 	jceService.SetSourceRegistry(intelSourcesService)
@@ -2013,9 +2013,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// changing the model in the AI Providers UI takes effect without
 	// also updating this setting). This model is stamped on every
 	// AI-generated content row created by the promoters (ADR-088, INTEL-003).
-	intelExtractionModel := settingsService.GetStringOr(context.Background(), defaultTenantID, "intel.extraction_model", "")
+	intelExtractionModel := settingsService.GetStringOr(context.Background(), "intel.extraction_model", "")
 	// Read max retries from system_settings (Rule 3, INTEL-012 fix).
-	intelExtractionMaxRetries := settingsService.GetIntOr(context.Background(), defaultTenantID, "intel.extraction_max_retries", 3)
+	intelExtractionMaxRetries := settingsService.GetIntOr(context.Background(), "intel.extraction_max_retries", 3)
 
 	intelExtractor := extractor.NewExtractor(
 		aiDispatcher,
@@ -2035,10 +2035,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// is a tenant UUID, not a user UUID).
 	intelDefaultAuthorID := defaultTenantID // worst-case fallback (fixed below)
 
-	if personaIDStr := settingsService.GetStringOr(context.Background(), defaultTenantID, "intel.default_persona_id", ""); personaIDStr != "" {
+	if personaIDStr := settingsService.GetStringOr(context.Background(), "intel.default_persona_id", ""); personaIDStr != "" {
 		var personaID pgtype.UUID
 		if err := personaID.Scan(personaIDStr); err == nil && personaID.Valid {
-			if userID, err := intelStores.GetPersonaUserID(context.Background(), defaultTenantID, personaID); err == nil && userID.Valid {
+			if userID, err := intelStores.GetPersonaUserID(context.Background(), personaID); err == nil && userID.Valid {
 				intelDefaultAuthorID = userID
 			} else {
 				slog.Warn("server: intel.default_persona_id resolve failed, falling back to super admin", "error", err)
@@ -2065,69 +2065,68 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		schemas.EntityTypeScholarship: &intelPromoterPortAdapter{
 			prom: promoter.NewScholarshipPromoter(
 				&intelPromoterStoreAdapter{Store: intelStores},
-				defaultTenantID,
 				intelDefaultAuthorID,
 				promoter.WithAIModel(intelExtractionModel),
 				promoter.WithConfidenceThresholds(
-					settingsService.GetFloatOr(context.Background(), defaultTenantID, "intel.extraction_confidence_auto", 0.85),
-					settingsService.GetFloatOr(context.Background(), defaultTenantID, "intel.extraction_confidence_review", 0.50),
+					settingsService.GetFloatOr(context.Background(), "intel.extraction_confidence_auto", 0.85),
+					settingsService.GetFloatOr(context.Background(), "intel.extraction_confidence_review", 0.50),
 				),
 			),
 		},
 		schemas.EntityTypeJob: &intelPromoterPortAdapter{
-			prom: promoter.NewJobPromoter(&intelJobPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithJobAIModel(intelExtractionModel)),
+			prom: promoter.NewJobPromoter(&intelJobPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithJobAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeVisa: &intelPromoterPortAdapter{
-			prom: promoter.NewVisaPromoter(&intelVisaPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithVisaAIModel(intelExtractionModel)),
+			prom: promoter.NewVisaPromoter(&intelVisaPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithVisaAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeHousing: &intelPromoterPortAdapter{
-			prom: promoter.NewHousingPromoter(&intelHousingPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithHousingAIModel(intelExtractionModel)),
+			prom: promoter.NewHousingPromoter(&intelHousingPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithHousingAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeRemittance: &intelPromoterPortAdapter{
-			prom: promoter.NewRemittancePromoter(&intelRemittancePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID),
+			prom: promoter.NewRemittancePromoter(&intelRemittancePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID),
 		},
 		schemas.EntityTypeCostOfLiving: &intelPromoterPortAdapter{
-			prom: promoter.NewCostOfLivingPromoter(&intelCostOfLivingPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID),
+			prom: promoter.NewCostOfLivingPromoter(&intelCostOfLivingPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID),
 		},
 		// 7 pure guide content type domains — each creates a contents
 		// guide row with the appropriate guide_category. They share the
 		// GuideContentPromoter implementation with different entityType
 		// + guideCategory parameters.
 		schemas.EntityTypeTravelRoutes: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "travel_routes", "travel_routes", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "travel_routes", "travel_routes", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeGrants: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "grants", "grants", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "grants", "grants", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeAdmission: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "admission", "admission", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "admission", "admission", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeBanking: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "banking", "banking", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "banking", "banking", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeWorkCareer: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "work_career", "work_career", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "work_career", "work_career", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeHealthInsurance: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "health_insurance", "health_insurance", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "health_insurance", "health_insurance", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeCultureLifestyle: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "culture_lifestyle", "culture_lifestyle", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "culture_lifestyle", "culture_lifestyle", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeWikiPage: &intelPromoterPortAdapter{
-			prom: promoter.NewWikiPromoter(&intelWikiPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithWikiAIModel(intelExtractionModel)),
+			prom: promoter.NewWikiPromoter(&intelWikiPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithWikiAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeLanguageTest: &intelPromoterPortAdapter{
-			prom: promoter.NewLanguageTestPromoter(&intelLanguageTestPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithLanguageTestAIModel(intelExtractionModel)),
+			prom: promoter.NewLanguageTestPromoter(&intelLanguageTestPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithLanguageTestAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeTaxObligation: &intelPromoterPortAdapter{
-			prom: promoter.NewTaxPromoter(&intelTaxPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithTaxAIModel(intelExtractionModel)),
+			prom: promoter.NewTaxPromoter(&intelTaxPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithTaxAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeCommunityOrganisation: &intelPromoterPortAdapter{
-			prom: promoter.NewCommunityOrgPromoter(&intelCommunityOrgPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithCommunityOrgAIModel(intelExtractionModel)),
+			prom: promoter.NewCommunityOrgPromoter(&intelCommunityOrgPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithCommunityOrgAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeCredentialPathway: &intelPromoterPortAdapter{
-			prom: promoter.NewCredentialPromoter(&intelCredentialPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithCredentialAIModel(intelExtractionModel)),
+			prom: promoter.NewCredentialPromoter(&intelCredentialPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithCredentialAIModel(intelExtractionModel)),
 		},
 	}
 
@@ -2354,7 +2353,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// take priority (LoadAndRegisterProviders clears and re-registers
 	// categories that have DB-backed providers). The default tenant is used
 	// for the initial load; per-tenant reload happens on config changes.
-	if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher, defaultTenantID); err != nil {
+	if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher); err != nil {
 		slog.Warn("ai: loading db-backed providers at startup", "error", err)
 	}
 
@@ -4542,8 +4541,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					return
 				}
 
-				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.context.use")
-				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.generate")
+				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, "ai.context.use")
+				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, "ai.generate")
 
 				if !hasChat && !hasGen {
 					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "ai.context.use or ai.generate required")
@@ -4561,8 +4560,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					return
 				}
 
-				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.context.use")
-				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.generate")
+				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, "ai.context.use")
+				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, "ai.generate")
 
 				if !hasChat && !hasGen {
 					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "ai.context.use or ai.generate required")
@@ -7026,7 +7025,7 @@ type gamificationNotifierAdapter struct {
 
 func (a gamificationNotifierAdapter) Notify(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, title, body, actionURL string) error {
 	var zeroUUID pgtype.UUID
-	return a.svc.CreateNotification(ctx, tenantID, recipientID, nType, "system", zeroUUID, nType, zeroUUID, title, body, actionURL)
+	return a.svc.CreateNotification(ctx, recipientID, nType, "system", zeroUUID, nType, zeroUUID, title, body, actionURL)
 }
 
 // adsNotificationAdapter adapts notifications.Service.DispatchNotification to
@@ -7039,14 +7038,14 @@ type adsNotificationAdapter struct {
 
 func (a adsNotificationAdapter) DispatchNotification(
 	ctx context.Context,
-	tenantID, recipientID pgtype.UUID,
+	recipientID pgtype.UUID,
 	nType, subjectTitle string,
 	actorID pgtype.UUID,
 	subjectType string,
 	subjectID pgtype.UUID,
 	subjectURL, actorName, actorAvatar string,
 ) error {
-	_, err := a.svc.DispatchNotification(ctx, tenantID, recipientID, nType, subjectTitle,
+	_, err := a.svc.DispatchNotification(ctx, recipientID, nType, subjectTitle,
 		actorID, subjectType, subjectID, subjectURL, actorName, actorAvatar)
 	return err
 }
@@ -7060,7 +7059,7 @@ type adsBalanceChecker struct {
 	db     *db.DB
 }
 
-func (c adsBalanceChecker) HasSufficientCredits(ctx context.Context, tenantID, orgID pgtype.UUID, amount int) (bool, error) {
+func (c adsBalanceChecker) HasSufficientCredits(ctx context.Context, orgID pgtype.UUID, amount int) (bool, error) {
 	queries := gen.New(c.db.Reader)
 
 	org, err := queries.GetOrganizationByIDOnly(ctx, orgID)
@@ -7072,7 +7071,7 @@ func (c adsBalanceChecker) HasSufficientCredits(ctx context.Context, tenantID, o
 		return false, fmt.Errorf("ads balance check: organization %s has no owner", orgID.String())
 	}
 
-	_, credits, err := c.wallet.GetBalance(ctx, tenantID, org.OwnerUserID)
+	_, credits, err := c.wallet.GetBalance(ctx, org.OwnerUserID)
 	if err != nil {
 		return false, fmt.Errorf("ads balance check: getting balance: %w", err)
 	}
@@ -7088,12 +7087,12 @@ type tagSlugResolverAdapter struct {
 	svc *tags.Service
 }
 
-func (a tagSlugResolverAdapter) ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
-	return a.svc.ResolveTagSlugMap(ctx, tenantID, slugs)
+func (a tagSlugResolverAdapter) ResolveTagSlugs(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error) {
+	return a.svc.ResolveTagSlugMap(ctx, slugs)
 }
 
-func (a tagSlugResolverAdapter) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {
-	return a.svc.GetOrCreateTagSlugs(ctx, tenantID, slugs)
+func (a tagSlugResolverAdapter) GetOrCreateTagSlugs(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error) {
+	return a.svc.GetOrCreateTagSlugs(ctx, slugs)
 }
 
 // guideCategoryListerAdapter adapts customfields.Service.ListGuideCategories
@@ -7103,8 +7102,8 @@ type guideCategoryListerAdapter struct {
 	svc *customfields.Service
 }
 
-func (a guideCategoryListerAdapter) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]content.GuideCategory, error) {
-	cats, err := a.svc.ListGuideCategories(ctx, tenantID)
+func (a guideCategoryListerAdapter) ListGuideCategories(ctx context.Context) ([]content.GuideCategory, error) {
+	cats, err := a.svc.ListGuideCategories(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -7129,11 +7128,11 @@ type followNotificationAdapter struct {
 
 func (a followNotificationAdapter) DispatchFollowNotification(
 	ctx context.Context,
-	tenantID, recipientID, actorID pgtype.UUID,
+	recipientID, actorID pgtype.UUID,
 	entityType string, entityID pgtype.UUID,
 ) {
 	_, _ = a.svc.DispatchNotification(
-		ctx, tenantID, recipientID,
+		ctx, recipientID,
 		notifications.TypeNewFollower, "",
 		actorID,
 		entityType, entityID,
@@ -7143,14 +7142,14 @@ func (a followNotificationAdapter) DispatchFollowNotification(
 
 func (a commentNotificationAdapter) DispatchNotification(
 	ctx context.Context,
-	tenantID, recipientID pgtype.UUID,
+	recipientID pgtype.UUID,
 	nType, subjectTitle string,
 	actorID pgtype.UUID,
 	subjectType string,
 	subjectID pgtype.UUID,
 	subjectURL, actorName, actorAvatar string,
 ) error {
-	_, err := a.svc.DispatchNotification(ctx, tenantID, recipientID, nType, subjectTitle,
+	_, err := a.svc.DispatchNotification(ctx, recipientID, nType, subjectTitle,
 		actorID, subjectType, subjectID, subjectURL, actorName, actorAvatar)
 	return err
 }
@@ -7171,8 +7170,8 @@ type forumWebhookEmitter struct {
 	svc *webhooks.Service
 }
 
-func (f *forumWebhookEmitter) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
-	f.svc.EmitEvent(ctx, tenantID, eventType, payload)
+func (f *forumWebhookEmitter) EmitEvent(ctx context.Context, eventType string, payload any) {
+	f.svc.EmitEvent(ctx, eventType, payload)
 }
 
 // forumSpaceBroadcaster adapts websocket.Hub.BroadcastToSpace to the forum
@@ -7194,8 +7193,8 @@ type mediaURLResolver struct {
 	media *media.Service
 }
 
-func (r *mediaURLResolver) ResolveMediaURL(ctx context.Context, tenantID, mediaID pgtype.UUID) (string, error) {
-	m, err := r.media.GetMedia(ctx, tenantID, mediaID)
+func (r *mediaURLResolver) ResolveMediaURL(ctx context.Context, mediaID pgtype.UUID) (string, error) {
+	m, err := r.media.GetMedia(ctx, mediaID)
 	if err != nil {
 		return "", err
 	}
@@ -7223,8 +7222,8 @@ type achievementActivityEmitter struct {
 	svc *wallet.Service
 }
 
-func (a *achievementActivityEmitter) EmitActivityEvent(ctx context.Context, tenantID, userID pgtype.UUID, input achievement.ActivityEventInput) (achievement.ActivityEvent, error) {
-	event, err := a.svc.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+func (a *achievementActivityEmitter) EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input achievement.ActivityEventInput) (achievement.ActivityEvent, error) {
+	event, err := a.svc.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
 		ActivityKey: input.ActivityKey,
 		Reference:   input.Reference,
 		Payload:     input.Payload,
@@ -7461,8 +7460,8 @@ type couponRenderAdapter struct {
 	svc *coupons.Service
 }
 
-func (a *couponRenderAdapter) ResolveCouponForRender(ctx context.Context, tenantID, id pgtype.UUID) (*renderer.CouponRenderResult, error) {
-	c, err := a.svc.ResolveCouponForRender(ctx, tenantID, id)
+func (a *couponRenderAdapter) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*renderer.CouponRenderResult, error) {
+	c, err := a.svc.ResolveCouponForRender(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -7489,8 +7488,8 @@ type affiliateLinkRenderAdapter struct {
 	svc *coupons.Service
 }
 
-func (a *affiliateLinkRenderAdapter) ResolveAffiliateLinkForRender(ctx context.Context, tenantID, providerID pgtype.UUID, originalURL string) (*renderer.AffiliateLinkRenderResult, error) {
-	r, err := a.svc.ResolveAffiliateLinkForRender(ctx, tenantID, providerID, originalURL)
+func (a *affiliateLinkRenderAdapter) ResolveAffiliateLinkForRender(ctx context.Context, providerID pgtype.UUID, originalURL string) (*renderer.AffiliateLinkRenderResult, error) {
+	r, err := a.svc.ResolveAffiliateLinkForRender(ctx, providerID, originalURL)
 	if err != nil {
 		return nil, err
 	}
@@ -7608,8 +7607,8 @@ func (d *personaActionDispatcher) ToggleFollow(ctx context.Context, tenantID, pe
 	return err
 }
 
-func (d *personaActionDispatcher) AddReaction(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID, reactionKey string) error {
-	_, err := d.content.AddReaction(ctx, tenantID, entityType, entityID, personaUserID, reactionKey)
+func (d *personaActionDispatcher) AddReaction(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID, reactionKey string) error {
+	_, err := d.content.AddReaction(ctx, entityType, entityID, personaUserID, reactionKey)
 	return err
 }
 
@@ -7617,12 +7616,12 @@ func (d *personaActionDispatcher) CreateBookmark(ctx context.Context, tenantID, 
 	var zeroFolderID pgtype.UUID
 	// Empty folder lets content.CreateBookmark resolve the default folder
 	// from the entity/content type.
-	_, err := d.content.CreateBookmark(ctx, tenantID, personaUserID, entityType, entityID, "", zeroFolderID)
+	_, err := d.content.CreateBookmark(ctx, personaUserID, entityType, entityID, "", zeroFolderID)
 
 	return err
 }
 
-func (d *personaActionDispatcher) SubmitForm(ctx context.Context, tenantID, personaUserID, formID pgtype.UUID, fieldValues map[string]any) (pgtype.UUID, error) {
+func (d *personaActionDispatcher) SubmitForm(ctx context.Context, personaUserID, formID pgtype.UUID, fieldValues map[string]any) (pgtype.UUID, error) {
 	valuesJSON, err := json.Marshal(fieldValues)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("marshal field values: %w", err)
@@ -7653,11 +7652,11 @@ type studioIntelStatusAdapter struct {
 // intelRecordStatusStore is the subset of *intel_stores.Store the adapter
 // needs. Defined here to avoid importing intel_stores in the studio package.
 type intelRecordStatusStore interface {
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
 }
 
-func (a *studioIntelStatusAdapter) UpdateIntelRecordStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) error {
-	return a.store.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+func (a *studioIntelStatusAdapter) UpdateIntelRecordStatus(ctx context.Context, id pgtype.UUID, status string) error {
+	return a.store.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 
 		ID:     id,
 		Status: status,

@@ -64,7 +64,7 @@ func ComparisonTypesListHandler(deps *ToolDeps) ToolHandler {
 			a.Limit = 50
 		}
 
-		types, err := deps.Comparison.ListComparisonTypes(ctx, tenantID, a.Limit, a.Offset)
+		types, err := deps.Comparison.ListComparisonTypes(ctx, a.Limit, a.Offset)
 		if err != nil {
 			return errorToolResult("list_failed", fmt.Sprintf("listing comparison types: %v", err)), nil
 		}
@@ -179,7 +179,7 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_type", "create_type requires name and slug"), nil
 			}
 
-			td, err := deps.Comparison.CreateComparisonType(ctx, tenantID, ComparisonTypeCreateInput{
+			td, err := deps.Comparison.CreateComparisonType(ctx, ComparisonTypeCreateInput{
 				Name:        a.CreateType.Name,
 				Slug:        a.CreateType.Slug,
 				Description: a.CreateType.Description,
@@ -192,7 +192,7 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 			typeID = td.ID
 			createdType = true
 		} else if a.EntityType != "" {
-			td, err := deps.Comparison.GetComparisonTypeBySlug(ctx, a.EntityType, tenantID)
+			td, err := deps.Comparison.GetComparisonTypeBySlug(ctx, a.EntityType)
 			if err != nil {
 				return errorToolResult("type_not_found", fmt.Sprintf("comparison type %q not found: %v", a.EntityType, err)), nil
 			}
@@ -349,7 +349,7 @@ func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
 		}
 
-		result, err := engine.FillValues(ctx, tenantID, inputs)
+		result, err := engine.FillValues(ctx, inputs)
 		if err != nil {
 			return errorToolResult("fill_failed", err.Error()), nil
 		}
@@ -368,7 +368,7 @@ func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
 // ComparisonFillValuesPrivacyTarget extracts the content_id from
 // comparison.fill_values arguments so the executor's privacy gate can block
 // the call when the backing content row is ai_exempt.
-func ComparisonFillValuesPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func ComparisonFillValuesPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a comparisonFillValuesArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
@@ -468,7 +468,7 @@ func ComparisonAddDimensionHandler(deps *ToolDeps) ToolHandler {
 
 		engine := NewComparisonEngine(deps)
 
-		created, err := engine.AddDimensions(ctx, tenantID, inputs)
+		created, err := engine.AddDimensions(ctx, inputs)
 		if err != nil {
 			return errorToolResult("add_dimension_failed", err.Error()), nil
 		}
@@ -516,7 +516,7 @@ func ComparisonReadHandler(deps *ToolDeps) ToolHandler {
 
 		engine := NewComparisonEngine(deps)
 
-		res, err := engine.ReadComparison(ctx, contentID, tenantID)
+		res, err := engine.ReadComparison(ctx, contentID)
 		if err != nil {
 			return errorToolResult("read_failed", err.Error()), nil
 		}
@@ -531,7 +531,7 @@ func ComparisonReadHandler(deps *ToolDeps) ToolHandler {
 // ComparisonReadPrivacyTarget extracts the content_id from
 // comparison.read arguments so the executor's privacy gate can block the
 // call when the backing content row is ai_exempt.
-func ComparisonReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func ComparisonReadPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a comparisonReadArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil

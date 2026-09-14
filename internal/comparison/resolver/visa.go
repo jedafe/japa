@@ -23,7 +23,7 @@ func NewVisaRouteResolver(svc *visaroutes.Service) Resolver {
 	return &visaRouteResolver{svc: svc}
 }
 
-func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	if idStr, ok := ref["id"].(string); ok && idStr != "" {
 		id, err := ParseUUID(idStr)
 		if err != nil {
@@ -58,7 +58,7 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any, ten
 	return ResolvedItem{}, false, errors.New("visa_route item_ref missing id or slug")
 }
 
-func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -86,7 +86,7 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 		page = offset/limit + 1
 	}
 
-	routes, _, err := r.svc.AdminList(ctx, tenantID, destSpaceID, "published", category, query, "", "", boolPtr(true), page, limit)
+	routes, _, err := r.svc.AdminList(ctx, destSpaceID, "published", category, query, "", "", boolPtr(true), page, limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching visa routes: %w", err)
 	}

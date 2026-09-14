@@ -31,7 +31,7 @@ const defaultPageSize int32 = 20
 type NotificationDispatcher interface {
 	DispatchNotification(
 		ctx context.Context,
-		tenantID, recipientID pgtype.UUID,
+		recipientID pgtype.UUID,
 		nType, subjectTitle string,
 		actorID pgtype.UUID,
 		subjectType string,
@@ -50,7 +50,7 @@ type TaskEnqueueClient interface {
 // *rbac.RBAC. Used by DeleteComment to distinguish comments.delete_own
 // (author) from comments.delete_any (moderator) at request time (BUG-003).
 type PermissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // SpaceCommentChecker checks whether a user may comment or reply in a space,
@@ -108,12 +108,12 @@ func (h *Handlers) SetSpaceChecker(c SpaceCommentChecker) { h.spaceChecker = c }
 // body whose accounts have been erased (Section 15 / ADR-029). Returns nil
 // when checkers are not wired or no mentions are erased. Best-effort: errors
 // are logged and an empty result is returned so the request still succeeds.
-func (h *Handlers) computeErasedMentionIDs(ctx context.Context, tenantID pgtype.UUID, body []byte) []string {
+func (h *Handlers) computeErasedMentionIDs(ctx context.Context, body []byte) []string {
 	if h.mentionCheckers == nil {
 		return nil
 	}
 
-	erased, err := mentions.ComputeErasedMentionIDs(ctx, body, tenantID, h.mentionCheckers)
+	erased, err := mentions.ComputeErasedMentionIDs(ctx, body, h.mentionCheckers)
 	if err != nil {
 		slog.Warn("comments: ComputeErasedMentionIDs failed", "error", err)
 		return nil
@@ -254,7 +254,7 @@ func redactAnonymousComments[T any](
 
 // ListComments handles GET /api/v1/content/{id}/comments.
 func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -294,7 +294,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		replies, err := h.Service.ListRepliesByParent(r.Context(), tenantID, parentID, viewerID, limit, offset)
+		replies, err := h.Service.ListRepliesByParent(r.Context(), parentID, viewerID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -318,7 +318,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comments, err := h.Service.ListCommentsByContent(r.Context(), tenantID, contentID, viewerID, sort, limit, offset)
+	comments, err := h.Service.ListCommentsByContent(r.Context(), contentID, viewerID, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -343,7 +343,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	erasedSet := make(map[string]struct{})
 
 	for _, c := range comments {
-		for _, id := range h.computeErasedMentionIDs(r.Context(), tenantID, c.Body) {
+		for _, id := range h.computeErasedMentionIDs(r.Context(), c.Body) {
 			erasedSet[id] = struct{}{}
 		}
 	}
@@ -362,7 +362,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 
 // GetComment handles GET /api/v1/comments/{id}.
 func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -373,7 +373,7 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comment, err := h.Service.GetComment(r.Context(), tenantID, commentID)
+	comment, err := h.Service.GetComment(r.Context(), commentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -398,7 +398,7 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 
 	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.
 	resp := map[string]any{"data": comment}
-	if erasedIDs := h.computeErasedMentionIDs(r.Context(), tenantID, comment.Body); len(erasedIDs) > 0 {
+	if erasedIDs := h.computeErasedMentionIDs(r.Context(), comment.Body); len(erasedIDs) > 0 {
 		resp["deleted_user_ids"] = erasedIDs
 	}
 
@@ -456,7 +456,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	if h.SpamPipeline != nil {
 		clientIP := clientip.FromRequest(r)
 
-		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
+		spamResult, err := h.SpamPipeline.Check(r.Context(), spam.SpamCheckRequest{
 			Content:    string(input.Body),
 			UserID:     user.UserID,
 			IP:         clientIP,
@@ -476,7 +476,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// lines 145-154, BUG-002). Skipped when no space checker is wired or
 	// the content has no space.
 	if h.spaceChecker != nil {
-		spaceID, err := h.Service.GetContentSpaceID(r.Context(), tenantID, contentID)
+		spaceID, err := h.Service.GetContentSpaceID(r.Context(), contentID)
 		if err != nil {
 			slog.Warn("comments: failed to resolve content space_id for perm check", "content_id", contentID.String(), "error", err)
 		} else if spaceID.Valid {
@@ -510,12 +510,12 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// this the jc:spam:rate:{tenant}:{user} sorted set is never populated and
 	// the rate_limit scoring layer always returns 0.
 	if h.SpamPipeline != nil {
-		h.SpamPipeline.RecordContentCreation(r.Context(), tenantID, user.UserID)
+		h.SpamPipeline.RecordContentCreation(r.Context(), user.UserID)
 	}
 
 	// Fire-and-forget comment notifications (Section 49 — BL-001/BL-002).
 	// comment:notify_author/parent/mention → notification:dispatch_batch.
-	h.Service.DispatchCommentNotifications(r.Context(), tenantID, comment, h.notifier)
+	h.Service.DispatchCommentNotifications(r.Context(), comment, h.notifier)
 
 	// Enqueue an async engagement count update so content_scores.comment_count
 	// (used by the feed ranking pipeline) stays in sync with the denormalized
@@ -532,8 +532,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -558,7 +557,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comment, err := h.Service.UpdateComment(r.Context(), tenantID, commentID, user.UserID, input.Body)
+	comment, err := h.Service.UpdateComment(r.Context(), commentID, user.UserID, input.Body)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -572,12 +571,12 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	// type, subject) so mentions that were already notified on create won't
 	// produce duplicates.
 	if h.notifier != nil {
-		h.Service.DispatchMentionNotifications(r.Context(), tenantID, comment, h.notifier)
+		h.Service.DispatchMentionNotifications(r.Context(), comment, h.notifier)
 	}
 
 	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.
 	resp := map[string]any{"data": comment}
-	if erasedIDs := h.computeErasedMentionIDs(r.Context(), tenantID, comment.Body); len(erasedIDs) > 0 {
+	if erasedIDs := h.computeErasedMentionIDs(r.Context(), comment.Body); len(erasedIDs) > 0 {
 		resp["deleted_user_ids"] = erasedIDs
 	}
 
@@ -595,8 +594,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -609,7 +607,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch the comment to determine authorship. GetComment returns a joined
 	// row; we only need AuthorUserID.
-	existing, err := h.Service.GetComment(r.Context(), tenantID, commentID)
+	existing, err := h.Service.GetComment(r.Context(), commentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -621,7 +619,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		// Author path — comments.delete_own. The sqlc query enforces
 		// author_user_id atomically, so even if the row changed hands between
 		// the GetComment and the delete, a non-author cannot delete.
-		if err := h.Service.SoftDeleteCommentByAuthor(r.Context(), tenantID, commentID, user.UserID); err != nil {
+		if err := h.Service.SoftDeleteCommentByAuthor(r.Context(), commentID, user.UserID); err != nil {
 			handleServiceError(w, err)
 			return
 		}
@@ -637,12 +635,12 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 
 	// Moderator path — comments.delete_any. Requires the RBAC checker; when
 	// not wired, deny (test-only default).
-	if h.perms == nil || !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "comments.delete_any") {
+	if h.perms == nil || !h.perms.HasPermission(r.Context(), user.UserID, "comments.delete_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only delete your own comments")
 		return
 	}
 
-	if err := h.Service.SoftDeleteComment(r.Context(), tenantID, commentID); err != nil {
+	if err := h.Service.SoftDeleteComment(r.Context(), commentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -662,8 +660,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -683,7 +680,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.VoteComment(r.Context(), tenantID, commentID, user.UserID, input.Value); err != nil {
+	if err := h.Service.VoteComment(r.Context(), commentID, user.UserID, input.Value); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -697,8 +694,7 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -709,7 +705,7 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveCommentVote(r.Context(), tenantID, commentID, user.UserID); err != nil {
+	if err := h.Service.RemoveCommentVote(r.Context(), commentID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -727,8 +723,7 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -739,12 +734,12 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.canPinComment(r, user.UserID, tenantID, commentID) {
+	if !h.canPinComment(r, user.UserID, commentID) {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to pin this comment")
 		return
 	}
 
-	if err := h.Service.PinComment(r.Context(), tenantID, commentID); err != nil {
+	if err := h.Service.PinComment(r.Context(), commentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -759,8 +754,7 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -771,12 +765,12 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.canPinComment(r, user.UserID, tenantID, commentID) {
+	if !h.canPinComment(r, user.UserID, commentID) {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to unpin this comment")
 		return
 	}
 
-	if err := h.Service.UnpinComment(r.Context(), tenantID, commentID); err != nil {
+	if err := h.Service.UnpinComment(r.Context(), commentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -786,13 +780,13 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 
 // canPinComment returns true if the user holds comments.pin (moderator) or is
 // the author of the parent content (Section 49, BL-003).
-func (h *Handlers) canPinComment(r *http.Request, userID, tenantID, commentID pgtype.UUID) bool {
+func (h *Handlers) canPinComment(r *http.Request, userID, commentID pgtype.UUID) bool {
 	// Moderator path — comments.delete_any RBAC node.
-	if h.perms != nil && h.perms.HasPermission(r.Context(), userID, tenantID, "comments.pin") {
+	if h.perms != nil && h.perms.HasPermission(r.Context(), userID, "comments.pin") {
 		return true
 	}
 	// Content-author path — the author of the parent content may pin.
-	contentAuthorID, err := h.Service.GetCommentContentAuthorID(r.Context(), tenantID, commentID)
+	contentAuthorID, err := h.Service.GetCommentContentAuthorID(r.Context(), commentID)
 	if err != nil {
 		slog.Warn("comments: failed to resolve content author for pin check", "comment_id", commentID.String(), "error", err)
 		return false
@@ -810,8 +804,7 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -835,13 +828,13 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch the comment to get the content_id and current status for the
 	// engagement count update (Section 32).
-	existing, err := h.Service.GetComment(r.Context(), tenantID, commentID)
+	existing, err := h.Service.GetComment(r.Context(), commentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if err := h.Service.RemoveComment(r.Context(), tenantID, commentID, user.UserID, input.Reason); err != nil {
+	if err := h.Service.RemoveComment(r.Context(), commentID, user.UserID, input.Reason); err != nil {
 		handleServiceError(w, err)
 		return
 	}

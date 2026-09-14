@@ -71,19 +71,19 @@ func NewDBResolver(db DBTX, cfg DBConfig) *DBResolver {
 func (r *DBResolver) EntityType() string { return r.cfg.Entity }
 
 // Resolve looks up a single item by the id or slug in ref.
-func (r *DBResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *DBResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	if idStr, ok := ref["id"].(string); ok && idStr != "" {
 		// Most id columns are uuid; use the typed value when possible.
 		if id, err := ParseUUID(idStr); err == nil {
-			return r.resolveByColumn(ctx, r.cfg.IDColumn, id, tenantID)
+			return r.resolveByColumn(ctx, r.cfg.IDColumn, id)
 		}
 
-		return r.resolveByColumn(ctx, r.cfg.IDColumn, idStr, tenantID)
+		return r.resolveByColumn(ctx, r.cfg.IDColumn, idStr)
 	}
 
 	if r.cfg.SlugColumn != "" {
 		if slug, ok := ref["slug"].(string); ok && slug != "" {
-			return r.resolveByColumn(ctx, r.cfg.SlugColumn, slug, tenantID)
+			return r.resolveByColumn(ctx, r.cfg.SlugColumn, slug)
 		}
 	}
 
@@ -202,7 +202,7 @@ func (r *DBResolver) scanArgs(rv *dbRowValues) []any {
 	return dst
 }
 
-func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any) (ResolvedItem, bool, error) {
 	searchCol, err := quoteIdent(col)
 	if err != nil {
 		return ResolvedItem{}, false, err
@@ -218,7 +218,7 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 		return ResolvedItem{}, false, err
 	}
 
-	where, args, err := r.whereClause(tenantID)
+	where, args, err := r.whereClause()
 	if err != nil {
 		return ResolvedItem{}, false, err
 	}
@@ -257,7 +257,7 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 // and optional slug columns for the configured table. If the /compare scope
 // chain provides a geo scope filter, it is applied against DBConfig.GeoSpaceIDColumn
 // or DBConfig.CountryColumn when those columns are configured.
-func (r *DBResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *DBResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -285,7 +285,7 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 		return nil, err
 	}
 
-	where, args, err := r.whereClause(tenantID)
+	where, args, err := r.whereClause()
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 
 // whereClause is a no-op now that tenant scoping has been removed. It keeps
 // the function shape so existing callers still compile.
-func (r *DBResolver) whereClause(tenantID pgtype.UUID) (string, []any, error) {
+func (r *DBResolver) whereClause() (string, []any, error) {
 	return "", nil, nil
 }
 

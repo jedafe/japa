@@ -45,7 +45,7 @@ type Handlers struct {
 // RBACResolver is the subset of the RBAC resolver needed to check
 // permissions in-handler (e.g. service.edit_any for the edit bypass).
 type RBACResolver interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // ReviewItem is a single review returned by ReviewFetcher.ListByEntity.
@@ -72,8 +72,8 @@ type ReviewAggregate struct {
 // service directory to embed reviews + aggregate in GET /services/:slug
 // (BUG-014: §98 spec says "service detail + reviews").
 type ReviewFetcher interface {
-	ListByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]ReviewItem, error)
-	Aggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (ReviewAggregate, error)
+	ListByEntity(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]ReviewItem, error)
+	Aggregate(ctx context.Context, entityType string, entityID pgtype.UUID) (ReviewAggregate, error)
 }
 
 // NewHandlers creates service directory handlers bound to the provided
@@ -138,12 +138,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleCategories handles GET /services/categories — returns the canonical
 // service category option list (Rule 16).
 func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
@@ -155,12 +155,12 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 // HandleList handles GET /services — list published service listings with
 // filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
@@ -196,7 +196,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	services, total, err := h.service.List(r.Context(), tenantID, destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, sort, page, limit)
+	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, sort, page, limit)
 	if err != nil {
 		slog.Error("servicedir: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list services")
@@ -216,12 +216,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /services/:slug — single published service listing.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
@@ -232,7 +232,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	service, err := h.service.GetBySlug(r.Context(), slug, tenantID)
+	service, err := h.service.GetBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
@@ -255,14 +255,14 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if h.reviews != nil {
 		var contentID pgtype.UUID
 		if err := contentID.Scan(service.ID); err == nil {
-			reviews, revErr := h.reviews.ListByEntity(r.Context(), tenantID, "service_listing", contentID, 10, 0, "latest")
+			reviews, revErr := h.reviews.ListByEntity(r.Context(), "service_listing", contentID, 10, 0, "latest")
 			if revErr != nil {
 				slog.Warn("servicedir: fetch reviews for service detail", "slug", slug, "error", revErr)
 			} else {
 				resp["reviews"] = reviews
 			}
 
-			agg, aggErr := h.reviews.Aggregate(r.Context(), tenantID, "service_listing", contentID)
+			agg, aggErr := h.reviews.Aggregate(r.Context(), "service_listing", contentID)
 			if aggErr != nil {
 				slog.Warn("servicedir: fetch review aggregate for service detail", "slug", slug, "error", aggErr)
 			} else {
@@ -291,7 +291,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
@@ -357,7 +357,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	// Determine whether the user holds service.edit_any (admins bypass
 	// the ownership check — BUG-009). The route middleware already verified
 	// the user has at least one of edit_own/edit_any.
-	isEditAny := h.rbac.HasPermission(r.Context(), user.UserID, tenantID, "service.edit_any")
+	isEditAny := h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
 
 	service, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input, isEditAny)
 	if err != nil {
@@ -404,7 +404,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
@@ -467,8 +467,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -505,7 +504,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	services, total, err := h.service.AdminList(r.Context(), tenantID, status, claimStatus, serviceCategory, q, verifiedPtr, destSpaceID, page, limit)
+	services, total, err := h.service.AdminList(r.Context(), status, claimStatus, serviceCategory, q, verifiedPtr, destSpaceID, page, limit)
 	if err != nil {
 		slog.Error("servicedir: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list services")

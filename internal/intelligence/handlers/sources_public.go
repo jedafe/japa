@@ -132,7 +132,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 
 	userID, authed := optionalUser(w, r)
 
-	rows, err := h.intelStores.ListSourceCollections(r.Context(), tenantID)
+	rows, err := h.intelStores.ListSourceCollections(r.Context())
 	if err != nil {
 		slog.Error("intel: list source collections failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_collections_failed", "Failed to load source collections")
@@ -142,7 +142,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 	// Build blocked set for authenticated users (v2 Task 2).
 	blockedSet := make(map[string]struct{})
 	if authed && h.intelSources != nil {
-		blockedIDs, err := h.intelSources.ListBlockedSourceIDs(r.Context(), tenantID, userID)
+		blockedIDs, err := h.intelSources.ListBlockedSourceIDs(r.Context(), userID)
 		if err != nil {
 			slog.Error("intel: collections blocked ids failed", "error", err)
 		} else {
@@ -160,7 +160,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 
 		switch c.CollectionType {
 		case "manual":
-			items, err := h.intelStores.ListSourceCollectionItems(r.Context(), tenantID, c.ID)
+			items, err := h.intelStores.ListSourceCollectionItems(r.Context(), c.ID)
 			if err != nil {
 				slog.Error("intel: list collection items failed", "collection_id", c.ID, "error", err)
 				continue
@@ -178,7 +178,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 			if sort == "" {
 				sort = "popular"
 			}
-			queryItems, _, err := h.intelStores.ListPublicSources(r.Context(), tenantID, q.Category, q.SourceKind, q.Search, sort, int32(c.Limit), 0)
+			queryItems, _, err := h.intelStores.ListPublicSources(r.Context(), q.Category, q.SourceKind, q.Search, sort, int32(c.Limit), 0)
 			if err != nil {
 				slog.Error("intel: query collection sources failed", "collection_id", c.ID, "error", err)
 				continue
@@ -195,7 +195,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 			}
 			isFollowing := false
 			if authed && h.followsSvc != nil {
-				isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), tenantID, userID, follows.EntityTypeSource, s.ID)
+				isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), userID, follows.EntityTypeSource, s.ID)
 			}
 			public = append(public, intelSourceToPublic(s, isFollowing, false, nil))
 		}
@@ -243,7 +243,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
 
-	rows, total, err := h.intelStores.ListPublicSources(r.Context(), tenantID, category, sourceKind, search, sort, clampInt32(limit), offset)
+	rows, total, err := h.intelStores.ListPublicSources(r.Context(), category, sourceKind, search, sort, clampInt32(limit), offset)
 	if err != nil {
 		slog.Error("intel: public sources directory list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "sources_list_failed", "Failed to list sources")
@@ -255,7 +255,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 	// Build a set of blocked sources for the authenticated caller (v2 Task 2).
 	blockedSet := make(map[string]struct{})
 	if authed && h.intelSources != nil {
-		blockedIDs, err := h.intelSources.ListBlockedSourceIDs(r.Context(), tenantID, userID)
+		blockedIDs, err := h.intelSources.ListBlockedSourceIDs(r.Context(), userID)
 		if err != nil {
 			slog.Error("intel: public sources blocked ids failed", "error", err)
 		} else {
@@ -274,7 +274,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 		}
 		isFollowing := false
 		if authed && h.followsSvc != nil {
-			isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), tenantID, userID, follows.EntityTypeSource, s.ID)
+			isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), userID, follows.EntityTypeSource, s.ID)
 		}
 		entries = append(entries, intelSourceToPublic(s, isFollowing, false, nil))
 	}
@@ -310,7 +310,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), tenantID, slug)
+	row, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
@@ -326,9 +326,9 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 
 	var isFollowing, isBlocked bool
 	if authed {
-		isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), tenantID, userID, follows.EntityTypeSource, row.ID)
+		isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), userID, follows.EntityTypeSource, row.ID)
 		if h.intelSources != nil {
-			isBlocked, _ = h.intelSources.IsSourceBlocked(r.Context(), tenantID, userID, row.ID)
+			isBlocked, _ = h.intelSources.IsSourceBlocked(r.Context(), userID, row.ID)
 		}
 	}
 
@@ -354,7 +354,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		LinkedEntity:  linked,
 	}
 
-	h.ensureSourceTags(r.Context(), &src, tenantID)
+	h.ensureSourceTags(r.Context(), &src)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": src,
@@ -393,7 +393,7 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), tenantID, slug)
+	src, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
@@ -410,7 +410,7 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := h.reportSvc.CreateReport(r.Context(), tenantID, user.UserID, reports.CreateReportInput{
+	report, err := h.reportSvc.CreateReport(r.Context(), user.UserID, reports.CreateReportInput{
 		EntityType:   reports.EntityTypeSource,
 		EntityID:     src.ID,
 		Reason:       body.Reason,
@@ -432,7 +432,7 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 // keyword→slug mappings so the frontend can link chips to /tags/{slug}
 // without 404ing. Multi-word keywords are left out of TagSlugs because the
 // directory tag surface is designed for single-token tags.
-func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource, tenantID pgtype.UUID) {
+func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource) {
 	if h.tagSvc == nil || len(src.Keywords) == 0 {
 		return
 	}
@@ -460,7 +460,7 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource, tena
 		return
 	}
 
-	existing, err := h.tagSvc.ResolveTagSlugs(ctx, tenantID, slugList)
+	existing, err := h.tagSvc.ResolveTagSlugs(ctx, slugList)
 	if err != nil {
 		slog.Debug("intel: source tag resolution failed; leaving keywords unlinked", "source", src.Slug, "error", err)
 		src.TagSlugs = tagSlugs
@@ -478,7 +478,7 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource, tena
 			continue
 		}
 
-		_, cerr := h.tagSvc.CreateTag(ctx, tenantID, tags.CreateTagInput{
+		_, cerr := h.tagSvc.CreateTag(ctx, tags.CreateTagInput{
 			Name:     kw,
 			Slug:     slug,
 			IsSystem: false,
@@ -487,7 +487,7 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource, tena
 			// The tag may have been created by a concurrent request. Re-resolve
 			// this single slug; if it now exists, keep the mapping. Otherwise
 			// remove the keyword from the linkable set so the chip won't 404.
-			retry, rerr := h.tagSvc.ResolveTagSlugs(ctx, tenantID, []string{slug})
+			retry, rerr := h.tagSvc.ResolveTagSlugs(ctx, []string{slug})
 			if rerr == nil && len(retry) > 0 {
 				found[slug] = struct{}{}
 				continue
@@ -584,7 +584,7 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	row, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), tenantID, slug)
+	row, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
@@ -604,7 +604,7 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Re-fetch the source to get the updated follower_count.
-	src, err := h.intelSources.Get(r.Context(), tenantID, row.ID)
+	src, err := h.intelSources.Get(r.Context(), row.ID)
 	if err != nil {
 		slog.Error("intel: source follow reload failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_reload_failed", "Failed to load updated source")
@@ -681,7 +681,7 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := h.intelSources.Propose(r.Context(), tenantID, userID, sources.ProposeInput{
+	src, err := h.intelSources.Propose(r.Context(), userID, sources.ProposeInput{
 		Name:        req.Name,
 		Domain:      req.Domain,
 		SourceURL:   req.SourceURL,
@@ -743,7 +743,7 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 		tenantID = h.defaultTenant
 	}
 
-	ids, err := h.intelSources.ListBlockedSourceIDs(r.Context(), tenantID, userID)
+	ids, err := h.intelSources.ListBlockedSourceIDs(r.Context(), userID)
 	if err != nil {
 		slog.Error("intel: list blocked sources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_blocked_sources_failed", "Failed to load blocked sources")
@@ -752,7 +752,7 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 
 	sources := make([]blockedSource, 0, len(ids))
 	for _, id := range ids {
-		src, err := h.intelSources.Get(r.Context(), tenantID, id)
+		src, err := h.intelSources.Get(r.Context(), id)
 		if err != nil {
 			continue
 		}
@@ -793,7 +793,7 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	src, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), tenantID, slug)
+	src, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
@@ -814,7 +814,7 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 		wantBlock = false
 	default:
 		// Should not happen with chi routing; treat as toggle.
-		blocked, err := h.intelSources.IsSourceBlocked(r.Context(), tenantID, userID, src.ID)
+		blocked, err := h.intelSources.IsSourceBlocked(r.Context(), userID, src.ID)
 		if err != nil {
 			slog.Error("intel: source block state failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_block_state_failed", "Failed to check block state")
@@ -824,7 +824,7 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Toggle the service to the desired state.
-	blocked, err := h.intelSources.IsSourceBlocked(r.Context(), tenantID, userID, src.ID)
+	blocked, err := h.intelSources.IsSourceBlocked(r.Context(), userID, src.ID)
 	if err != nil {
 		slog.Error("intel: source block state failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_block_state_failed", "Failed to check block state")
@@ -833,7 +833,7 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 
 	isBlocked := blocked
 	if blocked != wantBlock {
-		isBlocked, err = h.intelSources.ToggleSourceBlock(r.Context(), tenantID, userID, src.ID)
+		isBlocked, err = h.intelSources.ToggleSourceBlock(r.Context(), userID, src.ID)
 		if err != nil {
 			slog.Error("intel: source block toggle failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_block_toggle_failed", "Failed to toggle block")

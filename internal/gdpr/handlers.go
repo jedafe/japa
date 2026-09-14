@@ -124,7 +124,7 @@ func clientIP(r *http.Request) *string {
 
 // RecordConsent handles POST /api/v1/consent.
 func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -145,7 +145,7 @@ func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := h.Service.RecordConsent(r.Context(), tenantID, user.UserID, RecordConsentInput{
+	record, err := h.Service.RecordConsent(r.Context(), user.UserID, RecordConsentInput{
 		ConsentType:   input.ConsentType,
 		Granted:       input.Granted,
 		PolicyVersion: input.PolicyVersion,
@@ -190,12 +190,12 @@ func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 // version so the frontend does not need to hardcode them (BUG-015, BUG-016).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
 func (h *Handlers) GetConsentConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	cfg, err := h.Service.GetConsentConfig(r.Context(), tenantID)
+	cfg, err := h.Service.GetConsentConfig(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -206,7 +206,7 @@ func (h *Handlers) GetConsentConfig(w http.ResponseWriter, r *http.Request) {
 
 // RevokeConsent handles DELETE /api/v1/consent/:type.
 func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -226,10 +226,10 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 	// hardcoded config). Falls back to "1.0" when unset.
 	policyVersion := "1.0"
 	if h.Service != nil && h.Service.settings != nil {
-		policyVersion = h.Service.settings.GetStringOr(r.Context(), pgtype.UUID{}, "gdpr.policy_version", "1.0")
+		policyVersion = h.Service.settings.GetStringOr(r.Context(), "gdpr.policy_version", "1.0")
 	}
 
-	err := h.Service.RevokeConsent(r.Context(), tenantID, user.UserID, consentType, policyVersion)
+	err := h.Service.RevokeConsent(r.Context(), user.UserID, consentType, policyVersion)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -261,7 +261,7 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 
 // GetMyDataExportStatus handles GET /api/v1/me/data-export/status.
 func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -271,7 +271,7 @@ func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	request, found, err := h.Service.GetLatestDataExportRequest(r.Context(), user.UserID, tenantID)
+	request, found, err := h.Service.GetLatestDataExportRequest(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -288,7 +288,7 @@ func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request)
 // CancelMyDataExport handles DELETE /api/v1/me/data-export.
 // Cancels the caller's most recent pending/processing data export request.
 func (h *Handlers) CancelMyDataExport(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -298,7 +298,7 @@ func (h *Handlers) CancelMyDataExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := h.Service.CancelDataExportRequest(r.Context(), user.UserID, tenantID)
+	request, err := h.Service.CancelDataExportRequest(r.Context(), user.UserID)
 	if err != nil {
 		if strings.Contains(err.Error(), "no data export request") {
 			errpkg.WriteError(w, http.StatusNotFound, "no_pending_export", "No data export request to cancel")
@@ -321,7 +321,7 @@ func (h *Handlers) CancelMyDataExport(w http.ResponseWriter, r *http.Request) {
 // GetMyDataExportDownload handles GET /api/v1/me/data-export/download.
 // Redirects to the signed download URL once the export has completed.
 func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -331,7 +331,7 @@ func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	request, found, err := h.Service.GetLatestDataExportRequest(r.Context(), user.UserID, tenantID)
+	request, found, err := h.Service.GetLatestDataExportRequest(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -392,7 +392,7 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 
 // ListAuditLogs handles GET /api/v1/admin/audit-logs.
 func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -429,7 +429,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 
-	logs, err := h.Service.ListAuditLogsWithQuery(r.Context(), tenantID, actorUserID, actionType, targetType, r.URL.Query().Get("q"), startDate, endDate, limit, offset)
+	logs, err := h.Service.ListAuditLogsWithQuery(r.Context(), actorUserID, actionType, targetType, r.URL.Query().Get("q"), startDate, endDate, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -440,7 +440,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 // ListConsentsByTenant handles GET /api/v1/admin/consents.
 func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -449,7 +449,7 @@ func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) 
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 
-	records, err := h.Service.ListConsentsByTenantWithQuery(r.Context(), tenantID, consentType, r.URL.Query().Get("q"), limit, offset)
+	records, err := h.Service.ListConsentsByTenantWithQuery(r.Context(), consentType, r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -460,7 +460,7 @@ func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) 
 
 // DeleteConsent handles DELETE /api/v1/admin/consents/{id}.
 func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -471,7 +471,7 @@ func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := h.Service.DeleteConsent(r.Context(), id, tenantID)
+	record, err := h.Service.DeleteConsent(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -482,14 +482,14 @@ func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
 
 // ListPendingDataExports handles GET /api/v1/admin/data-exports.
 func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	limit := parsePageSize(r)
 
-	requests, err := h.Service.ListPendingDataExportRequests(r.Context(), tenantID, limit)
+	requests, err := h.Service.ListPendingDataExportRequests(r.Context(), limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -500,14 +500,14 @@ func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request
 
 // ListPendingDeletions handles GET /api/v1/admin/deletions.
 func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	limit := parsePageSize(r)
 
-	requests, err := h.Service.ListPendingDeletionRequests(r.Context(), tenantID, limit)
+	requests, err := h.Service.ListPendingDeletionRequests(r.Context(), limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -522,17 +522,17 @@ func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) 
 // ---------------------------------------------------------------------------
 
 // DeleteConsent deletes a single consent record by ID (RBAC: gdpr.consents.delete).
-func (s *Service) DeleteConsent(ctx context.Context, id, tenantID pgtype.UUID) (gen.ConsentRecord, error) {
-	return s.store.deleteConsent(ctx, id, tenantID)
+func (s *Service) DeleteConsent(ctx context.Context, id pgtype.UUID) (gen.ConsentRecord, error) {
+	return s.store.deleteConsent(ctx, id)
 }
 
 // ListConsentsByTenantWithQuery lists consent records with an optional `q` filter.
-func (s *Service) ListConsentsByTenantWithQuery(ctx context.Context, tenantID pgtype.UUID, consentType, q string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
-	return s.store.listConsentsByTenantFiltered(ctx, tenantID, consentType, q, limit, offset)
+func (s *Service) ListConsentsByTenantWithQuery(ctx context.Context, consentType, q string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
+	return s.store.listConsentsByTenantFiltered(ctx, consentType, q, limit, offset)
 }
 
 // ListAuditLogsWithQuery lists audit logs with an optional `q` filter.
-func (s *Service) ListAuditLogsWithQuery(ctx context.Context, tenantID, actorUserID pgtype.UUID, actionType, targetType, q string, startDate, endDate *time.Time, limit, offset int32) ([]gen.AuditLog, error) {
+func (s *Service) ListAuditLogsWithQuery(ctx context.Context, actorUserID pgtype.UUID, actionType, targetType, q string, startDate, endDate *time.Time, limit, offset int32) ([]gen.AuditLog, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}

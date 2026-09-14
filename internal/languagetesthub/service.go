@@ -177,12 +177,12 @@ func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the language_test_hub.enabled system_setting toggle
 // (§99 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "language_test_hub.enabled", false)
+	return s.settings.GetBoolOr(ctx, "language_test_hub.enabled", false)
 }
 
 // ListTests returns all language tests.
@@ -254,7 +254,7 @@ func (s *Service) SearchTests(ctx context.Context, query string, limit int32) ([
 // ListRequirements returns published, active requirements for the public
 // requirements endpoint, optionally filtered by destination space and
 // visa category.
-func (s *Service) ListRequirements(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory string) ([]RequirementDTO, error) {
+func (s *Service) ListRequirements(ctx context.Context, destSpaceID pgtype.UUID, visaCategory string) ([]RequirementDTO, error) {
 	rows, err := s.store.ListRequirements(ctx, ListRequirementsFilter{
 
 		DestinationSpaceID: destSpaceID,
@@ -273,7 +273,7 @@ func (s *Service) ListRequirements(ctx context.Context, tenantID, destSpaceID pg
 }
 
 // ListResources returns prep resources for a test.
-func (s *Service) ListResources(ctx context.Context, tenantID, testID pgtype.UUID, page, limit int32) ([]ResourceDTO, error) {
+func (s *Service) ListResources(ctx context.Context, testID pgtype.UUID, page, limit int32) ([]ResourceDTO, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -284,7 +284,7 @@ func (s *Service) ListResources(ctx context.Context, tenantID, testID pgtype.UUI
 
 	offset := (page - 1) * limit
 
-	rows, err := s.store.ListResources(ctx, tenantID, testID, limit, offset)
+	rows, err := s.store.ListResources(ctx, testID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list resources: %w", err)
 	}
@@ -299,7 +299,7 @@ func (s *Service) ListResources(ctx context.Context, tenantID, testID pgtype.UUI
 
 // ListStories returns published score stories for a test, optionally
 // filtered by destination space.
-func (s *Service) ListStories(ctx context.Context, tenantID, testID, destSpaceID pgtype.UUID, page, limit int32) ([]ScoreStoryDTO, error) {
+func (s *Service) ListStories(ctx context.Context, testID, destSpaceID pgtype.UUID, page, limit int32) ([]ScoreStoryDTO, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -310,7 +310,7 @@ func (s *Service) ListStories(ctx context.Context, tenantID, testID, destSpaceID
 
 	offset := (page - 1) * limit
 
-	rows, err := s.store.ListStories(ctx, tenantID, testID, destSpaceID, limit, offset)
+	rows, err := s.store.ListStories(ctx, testID, destSpaceID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list stories: %w", err)
 	}
@@ -325,7 +325,7 @@ func (s *Service) ListStories(ctx context.Context, tenantID, testID, destSpaceID
 
 // CreateStory submits a new score story for the given test slug on behalf
 // of the authenticated user.
-func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID, testSlug string, input CreateStoryRequest) (ScoreStoryDTO, error) {
+func (s *Service) CreateStory(ctx context.Context, userID pgtype.UUID, testSlug string, input CreateStoryRequest) (ScoreStoryDTO, error) {
 	if input.FinalScore == "" {
 		return ScoreStoryDTO{}, errors.New("final_score is required")
 	}
@@ -387,7 +387,7 @@ func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID,
 
 // CreateLanguageTest creates a new language test. language_tests is a
 // global table and ignores the supplied .
-func (s *Service) CreateLanguageTest(ctx context.Context, tenantID pgtype.UUID, input CreateLanguageTestInput) (TestDTO, error) {
+func (s *Service) CreateLanguageTest(ctx context.Context, input CreateLanguageTestInput) (TestDTO, error) {
 	if input.Slug == "" {
 		return TestDTO{}, errors.New("slug is required")
 	}
@@ -405,7 +405,7 @@ func (s *Service) CreateLanguageTest(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // UpdateLanguageTest updates a language test by id.
-func (s *Service) UpdateLanguageTest(ctx context.Context, id, tenantID pgtype.UUID, input UpdateLanguageTestInput) (TestDTO, error) {
+func (s *Service) UpdateLanguageTest(ctx context.Context, id pgtype.UUID, input UpdateLanguageTestInput) (TestDTO, error) {
 	if input.Slug == nil && input.Name == nil && input.OfficialURL == nil && input.ValidityMonths == nil {
 		return TestDTO{}, errors.New("no fields to update")
 	}
@@ -419,7 +419,7 @@ func (s *Service) UpdateLanguageTest(ctx context.Context, id, tenantID pgtype.UU
 }
 
 // DeleteLanguageTest deletes a language test by id.
-func (s *Service) DeleteLanguageTest(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteLanguageTest(ctx context.Context, id pgtype.UUID) error {
 	if err := s.store.DeleteLanguageTest(ctx, id); err != nil {
 		return fmt.Errorf("languagetesthub: delete language test: %w", err)
 	}
@@ -429,7 +429,7 @@ func (s *Service) DeleteLanguageTest(ctx context.Context, id, tenantID pgtype.UU
 
 // CreateRequirement creates a new requirement (admin). The test is
 // resolved by slug from the request.
-func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, input CreateRequirementRequest) (RequirementDTO, error) {
+func (s *Service) CreateRequirement(ctx context.Context, input CreateRequirementRequest) (RequirementDTO, error) {
 	if input.DestinationSpaceID == "" {
 		return RequirementDTO{}, errors.New("destination_space_id is required")
 	}
@@ -525,7 +525,7 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, i
 
 // UpdateRequirement updates an existing requirement (admin). The test is
 // resolved by slug when provided. Only non-nil request fields are applied.
-func (s *Service) UpdateRequirement(ctx context.Context, id, tenantID pgtype.UUID, req UpdateRequirementRequest) (RequirementDTO, error) {
+func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, req UpdateRequirementRequest) (RequirementDTO, error) {
 	var input UpdateRequirementInput
 
 	hasField := false
@@ -615,7 +615,7 @@ func (s *Service) UpdateRequirement(ctx context.Context, id, tenantID pgtype.UUI
 		return RequirementDTO{}, errors.New("languagetesthub: update requirement: no fields to update")
 	}
 
-	row, err := s.store.UpdateRequirement(ctx, id, tenantID, input)
+	row, err := s.store.UpdateRequirement(ctx, id, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RequirementDTO{}, pgx.ErrNoRows
@@ -801,7 +801,7 @@ func (s *Service) ApproveRequirement(ctx context.Context, id, tenantID, reviewer
 
 // AdminListRequirements returns all requirements (any status) for the
 // admin moderation queue.
-func (s *Service) AdminListRequirements(ctx context.Context, tenantID, destSpaceID pgtype.UUID, status, q string, page, limit int32) ([]RequirementDTO, int64, error) {
+func (s *Service) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UUID, status, q string, page, limit int32) ([]RequirementDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}

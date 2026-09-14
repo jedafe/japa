@@ -169,8 +169,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -187,7 +186,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		Offset: offset,
 	}
 
-	campaigns, total, err := h.service.ListCampaigns(r.Context(), tenantID, f)
+	campaigns, total, err := h.service.ListCampaigns(r.Context(), f)
 	if err != nil {
 		slog.Error("campaign: list failed", "error", err)
 		h.writeServiceError(w, err)
@@ -206,8 +205,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -222,7 +220,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, items, err := h.service.GetCampaign(r.Context(), tenantID, id)
+	campaign, items, err := h.service.GetCampaign(r.Context(), id)
 	if err != nil {
 		slog.Error("campaign: get failed", "error", err, "id", id.String())
 		h.writeServiceError(w, err)
@@ -282,8 +280,7 @@ func (h *Handlers) HandleRetry(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -298,7 +295,7 @@ func (h *Handlers) HandleRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.RetryItem(r.Context(), tenantID, user.UserID, id); err != nil {
+	if err := h.service.RetryItem(r.Context(), user.UserID, id); err != nil {
 		slog.Error("campaign: retry failed", "error", err, "item_id", id.String())
 		h.writeServiceError(w, err)
 
@@ -314,8 +311,7 @@ func (h *Handlers) HandleCancel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -330,7 +326,7 @@ func (h *Handlers) HandleCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.CancelCampaign(r.Context(), tenantID, user.UserID, id); err != nil {
+	if err := h.service.CancelCampaign(r.Context(), user.UserID, id); err != nil {
 		slog.Error("campaign: cancel failed", "error", err, "id", id.String())
 		h.writeServiceError(w, err)
 

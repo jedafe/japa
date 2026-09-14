@@ -128,7 +128,7 @@ type AIDispatcher interface {
 // a formatted research section plus a list of citation URLs. *Service
 // implements this interface, but it can be swapped in tests.
 type Researcher interface {
-	Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, accommodationType string) (string, []string, error)
+	Research(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, accommodationType string) (string, []string, error)
 }
 
 // Service is an exported type.
@@ -165,25 +165,25 @@ func (s *Service) SetHTTPClient(c *http.Client) { s.httpClient = c }
 
 // Enabled reads the housing_guide.enabled system_setting toggle
 // (§96 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "housing_guide.enabled", false)
+	return s.settings.GetBoolOr(ctx, "housing_guide.enabled", false)
 }
 
 // Research runs grounded web research for the given destination, optional
 // city, and accommodation type. It returns a formatted "GROUNDED RESEARCH"
 // section and a list of unique source URLs to append to the generation
 // prompt. Errors are returned so the caller can log and fall back.
-func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, accommodationType string) (string, []string, error) {
+func (s *Service) Research(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, accommodationType string) (string, []string, error) {
 	client := s.httpClient
 	if client == nil {
 		client = http.DefaultClient
 	}
 
-	destName, err := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	destName, err := s.store.GetSpaceName(ctx, destSpaceID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -196,7 +196,7 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpace
 	city := ""
 
 	if citySpaceID.Valid {
-		cityName, err := s.store.GetSpaceName(ctx, citySpaceID, tenantID)
+		cityName, err := s.store.GetSpaceName(ctx, citySpaceID)
 		if err != nil {
 			return "", nil, err
 		}
@@ -221,14 +221,14 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpace
 		fmt.Sprintf("common housing scams in %s 2026", dest),
 	}
 
-	return s.runWebResearch(ctx, client, tenantID, queries)
+	return s.runWebResearch(ctx, client, queries)
 }
 
 // runWebResearch executes the provided queries through the configured
 // external search provider and formats the results for the generation
 // prompt. It returns the full grounded research section and a deduplicated
 // list of citation URLs.
-func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
+func (s *Service) runWebResearch(ctx context.Context, client *http.Client, queries []string) (string, []string, error) {
 	var sections []string
 
 	seenCitations := make(map[string]bool)
@@ -236,7 +236,7 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 	var citations []string
 
 	for _, q := range queries {
-		provider, results, err := ai.SearchWeb(ctx, client, s.settings, tenantID, q, 5)
+		provider, results, err := ai.SearchWeb(ctx, client, s.settings, q, 5)
 		if err != nil {
 			return "", nil, err
 		}
@@ -322,7 +322,7 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 }
 
 // List returns a paginated, filtered list of published housing guides.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, accommodationType string, page, limit int32) ([]GuideDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, accommodationType string, page, limit int32) ([]GuideDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -358,8 +358,8 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 }
 
 // GetByID returns a single published housing guide by id.
-func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (GuideDTO, error) {
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
@@ -372,7 +372,7 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideD
 }
 
 // Create creates a new housing guide (admin). Returns the created guide.
-func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input CreateGuideRequest) (GuideDTO, error) {
+func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDTO, error) {
 	if input.DestinationSpaceID == "" {
 		return GuideDTO{}, errors.New("destination_space_id is required")
 	}
@@ -440,7 +440,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 		return GuideDTO{}, fmt.Errorf("housingguide: create: %w", err)
 	}
 
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: create: fetch created: %w", err)
 	}
@@ -450,7 +450,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 
 // Update updates an existing housing guide (admin). Only provided fields
 // are applied.
-func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input UpdateGuideRequest) (GuideDTO, error) {
+func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideRequest) (GuideDTO, error) {
 	storeInput := UpdateGuideInput{
 		AccommodationType:    input.AccommodationType,
 		LandlordRequirements: input.LandlordRequirements,
@@ -481,7 +481,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 		storeInput.RentRanges = rr
 	}
 
-	if err := s.store.UpdateGuide(ctx, id, tenantID, storeInput); err != nil {
+	if err := s.store.UpdateGuide(ctx, id, storeInput); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
@@ -489,7 +489,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 		return GuideDTO{}, fmt.Errorf("housingguide: update: %w", err)
 	}
 
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: update: fetch updated: %w", err)
 	}
@@ -500,8 +500,8 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 // Approve performs HITL approval on a housing guide (admin). Sets
 // hitl_reviewed_by, hitl_reviewed_at=now(), status='published', and
 // optional review notes.
-func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, input ApproveGuideRequest) (GuideDTO, error) {
-	if err := s.store.ApproveGuide(ctx, id, tenantID, reviewerID, input.Notes); err != nil {
+func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, input ApproveGuideRequest) (GuideDTO, error) {
+	if err := s.store.ApproveGuide(ctx, id, reviewerID, input.Notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
@@ -509,7 +509,7 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 		return GuideDTO{}, fmt.Errorf("housingguide: approve: %w", err)
 	}
 
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: approve: fetch approved: %w", err)
 	}
@@ -527,13 +527,13 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 
 // Reject rejects a pending housing guide (admin HITL). Sets status to
 // 'rejected' and records the reviewer and review notes.
-func (s *Service) Reject(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, reason string) (GuideDTO, error) {
+func (s *Service) Reject(ctx context.Context, id, reviewerID pgtype.UUID, reason string) (GuideDTO, error) {
 	var notes *string
 	if reason != "" {
 		notes = &reason
 	}
 
-	if err := s.store.RejectGuide(ctx, id, tenantID, reviewerID, notes); err != nil {
+	if err := s.store.RejectGuide(ctx, id, reviewerID, notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
@@ -541,7 +541,7 @@ func (s *Service) Reject(ctx context.Context, id, tenantID, reviewerID pgtype.UU
 		return GuideDTO{}, fmt.Errorf("housingguide: reject: %w", err)
 	}
 
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: reject: fetch rejected: %w", err)
 	}
@@ -554,7 +554,7 @@ func (s *Service) Reject(ctx context.Context, id, tenantID, reviewerID pgtype.UU
 
 // AdminList returns all housing guides (any status) for the admin
 // management queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, accommodationType, q string, destSpaceID, citySpaceID pgtype.UUID, isActive *bool, page, limit int32) ([]GuideDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, status, accommodationType, q string, destSpaceID, citySpaceID pgtype.UUID, isActive *bool, page, limit int32) ([]GuideDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -617,11 +617,11 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// Look up the destination (and optional city) names so the prompt and
 	// research queries are human-readable. Missing names are non-fatal; we
 	// fall back to the supplied IDs.
-	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	destName, _ := s.store.GetSpaceName(ctx, destSpaceID)
 	cityName := ""
 
 	if citySpaceID.Valid {
-		cityName, _ = s.store.GetSpaceName(ctx, citySpaceID, tenantID)
+		cityName, _ = s.store.GetSpaceName(ctx, citySpaceID)
 	}
 
 	location := destName
@@ -643,7 +643,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// Augment the prompt with grounded web research. If research fails, log
 	// a warning and continue with the original prompt (graceful degradation).
 	if s.researcher != nil {
-		researchText, _, researchErr := s.researcher.Research(ctx, tenantID, destSpaceID, citySpaceID, input.AccommodationType)
+		researchText, _, researchErr := s.researcher.Research(ctx, destSpaceID, citySpaceID, input.AccommodationType)
 		if researchErr != nil {
 			slog.Warn("housingguide: web research failed, continuing with original prompt", "error", researchErr)
 		} else if researchText != "" {

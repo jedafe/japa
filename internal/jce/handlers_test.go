@@ -22,7 +22,7 @@ type stubFeatureChecker struct {
 	enabled bool
 }
 
-func (s stubFeatureChecker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
+func (s stubFeatureChecker) IsEnabled(ctx context.Context, key string) bool {
 	return s.enabled
 }
 
@@ -172,23 +172,23 @@ type fakeService struct {
 	advisorResult AdvisorResult
 }
 
-func (f *fakeService) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
+func (f *fakeService) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
 	return append([]ComparisonProfile(nil), f.profiles...), nil
 }
 
-func (f *fakeService) GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error) {
+func (f *fakeService) GetComparisonScore(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error) {
 	return f.score, nil
 }
 
-func (f *fakeService) ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error) {
+func (f *fakeService) ListRecommendations(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error) {
 	return append([]ComparisonRecommendation(nil), f.recs...), nil
 }
 
-func (f *fakeService) ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
+func (f *fakeService) ListDataSources(ctx context.Context, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
 	return append([]DataSource(nil), f.dataSources...), int64(len(f.dataSources)), nil
 }
 
-func (f *fakeService) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
+func (f *fakeService) CreateDataSource(ctx context.Context, in DataSourceInput) (DataSource, error) {
 	return DataSource{
 		ID: uuid.New().String(),
 
@@ -204,11 +204,11 @@ func (f *fakeService) CreateDataSource(ctx context.Context, tenantID pgtype.UUID
 	}, nil
 }
 
-func (f *fakeService) GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error) {
+func (f *fakeService) GetDataSource(ctx context.Context, id pgtype.UUID) (DataSource, error) {
 	return f.ds, nil
 }
 
-func (f *fakeService) UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
+func (f *fakeService) UpdateDataSource(ctx context.Context, id pgtype.UUID, in DataSourceInput) (DataSource, error) {
 	return DataSource{
 		ID: id.String(),
 
@@ -224,47 +224,47 @@ func (f *fakeService) UpdateDataSource(ctx context.Context, id, tenantID pgtype.
 	}, nil
 }
 
-func (f *fakeService) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (f *fakeService) DeleteDataSource(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-func (f *fakeService) FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error) {
+func (f *fakeService) FreshnessForComparison(ctx context.Context, contentID, userID pgtype.UUID) (FreshnessSummary, error) {
 	f.freshness.ContentID = contentID.String()
 	return f.freshness, nil
 }
 
-func (f *fakeService) RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
+func (f *fakeService) RefreshComparison(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
 	f.job.ContentID = contentID.String()
 	f.job.SourceKind = sourceKind
 
 	return f.job, nil
 }
 
-func (f *fakeService) ListIngestionJobs(ctx context.Context, contentID, tenantID pgtype.UUID, limit, offset int) ([]IngestionJob, error) {
+func (f *fakeService) ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, limit, offset int) ([]IngestionJob, error) {
 	return append([]IngestionJob(nil), f.jobs...), nil
 }
 
-func (f *fakeService) Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error) {
+func (f *fakeService) Analyze(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error) {
 	f.advisorResult.ContentID = contentID.String()
 	return f.advisorResult, nil
 }
 
-func (f *fakeService) Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
+func (f *fakeService) Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
 	f.advisorResult.ContentID = contentID.String()
 	return f.advisorResult, nil
 }
 
-func (f *fakeService) Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error) {
+func (f *fakeService) Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error) {
 	f.advisorResult.ContentID = contentID.String()
 	return f.advisorResult, nil
 }
 
-func (f *fakeService) Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
+func (f *fakeService) Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
 	f.advisorResult.ContentID = contentID.String()
 	return f.advisorResult, nil
 }
 
-func (f *fakeService) StreamAdvisor(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error {
+func (f *fakeService) StreamAdvisor(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")

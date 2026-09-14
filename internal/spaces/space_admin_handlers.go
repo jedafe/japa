@@ -71,8 +71,7 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -89,7 +88,7 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 	// SPACES-004: increment member_count only on approval. The pending
 	// join path did not increment, so the approval must.
 	if input.Status == "approved" {
-		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID, tenantID, 1); err != nil {
+		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID, 1); err != nil {
 			slog.Error("spaces: failed to increment member_count on join approval",
 				"space_id", spaceID.String(), "user_id", requestID.String(), "error", err)
 		}
@@ -140,8 +139,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -155,7 +153,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	if err := spaceID.Scan(param); err != nil {
 		// Not a UUID — try slug lookup.
-		space, err := h.Service.GetSpaceBySlug(r.Context(), param, tenantID)
+		space, err := h.Service.GetSpaceBySlug(r.Context(), param)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 			return
@@ -167,7 +165,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	// [auth, space-admin] per JEOS §215 — only the space owner or an assigned
 	// moderator may view the analytics dashboard. Guests are blocked by
 	// RequireAuth on the route; non-admin members are blocked here.
-	canManage, err := h.Service.CanManageSpace(r.Context(), spaceID, user.UserID, tenantID)
+	canManage, err := h.Service.CanManageSpace(r.Context(), spaceID, user.UserID)
 	if err != nil {
 		slog.Error("space stats: checking manage permission", "error", err, "space_id", spaceID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to authorize analytics")
@@ -181,7 +179,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-020: single round-trip aggregate instead of 3 sequential queries.
-	summary, err := h.Service.GetSpaceAnalyticsSummary(r.Context(), spaceID, tenantID)
+	summary, err := h.Service.GetSpaceAnalyticsSummary(r.Context(), spaceID)
 	if err != nil {
 		slog.Error("space stats: loading analytics summary", "error", err, "space_id", spaceID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
@@ -277,7 +275,7 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 
 	// SPACES-004: increment member_count only on approval.
 	if status == "approved" {
-		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID, tenantID, 1); err != nil {
+		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID, 1); err != nil {
 			slog.Error("spaces: failed to increment member_count on join approval",
 				"space_id", spaceID.String(), "user_id", userID.String(), "error", err)
 		}

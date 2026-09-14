@@ -36,14 +36,14 @@ type FollowService interface {
 // JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
 // Section 26). The org handlers use it to emit Organization structured data.
 type JSONLDResolver interface {
-	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+	ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
 // CustomFieldLookup resolves a custom field definition by key within a tenant.
 // Used by /organizations/meta to read the org_type select field's options
 // from the custom field system instead of a dedicated table.
 type CustomFieldLookup interface {
-	GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error)
+	GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error)
 }
 
 // NewHandlers creates a Handlers instance with the given Service. A nil
@@ -211,7 +211,7 @@ func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
 	// Read org types from the custom_fields table (key='org_type') when the
 	// lookup is available. The field's options JSONB stores [{value, label}].
 	if h.customFieldLookup != nil && tenantID.Valid {
-		field, err := h.customFieldLookup.GetCustomFieldByKey(r.Context(), "org_type", tenantID)
+		field, err := h.customFieldLookup.GetCustomFieldByKey(r.Context(), "org_type")
 		if err == nil && len(field.Options) > 0 {
 			var opts []map[string]string
 			if jsonErr := json.Unmarshal(field.Options, &opts); jsonErr == nil && len(opts) > 0 {
@@ -325,8 +325,7 @@ func (h *Handlers) ListMyOrganizations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -334,7 +333,7 @@ func (h *Handlers) ListMyOrganizations(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	orgs, err := h.service.ListMyOrganizations(r.Context(), tenantID, user.UserID, limit, offset)
+	orgs, err := h.service.ListMyOrganizations(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -434,7 +433,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 
 // ListMembers handles GET /organizations/{id}/members.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -445,7 +444,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.ListMembers(r.Context(), orgID, tenantID)
+	result, err := h.service.ListMembers(r.Context(), orgID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -602,8 +601,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -614,7 +612,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.ListInvitations(r.Context(), orgID, user.UserID, tenantID)
+	result, err := h.service.ListInvitations(r.Context(), orgID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -666,7 +664,7 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	tokenHash := hashToken(token)
 
-	slug, err := h.service.AcceptInvitation(r.Context(), tokenHash, user.UserID, user.TenantID)
+	slug, err := h.service.AcceptInvitation(r.Context(), tokenHash, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -689,8 +687,7 @@ func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -707,7 +704,7 @@ func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 		FormSubmissionID: req.FormSubmissionID,
 	}
 
-	result, err := h.service.ClaimOwnership(r.Context(), tenantID, user.UserID, req.OrganizationID, input)
+	result, err := h.service.ClaimOwnership(r.Context(), user.UserID, req.OrganizationID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -725,13 +722,12 @@ func (h *Handlers) ListMyClaims(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
 
-	result, err := h.service.ListMyClaims(r.Context(), tenantID, user.UserID)
+	result, err := h.service.ListMyClaims(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -742,14 +738,14 @@ func (h *Handlers) ListMyClaims(w http.ResponseWriter, r *http.Request) {
 
 // ListClaims handles GET /claim-ownership.
 func (h *Handlers) ListClaims(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
 
 	status := r.URL.Query().Get("status")
 
-	result, err := h.service.ListOwnershipClaims(r.Context(), tenantID, status, parsePageSize(r), parsePageOffset(r))
+	result, err := h.service.ListOwnershipClaims(r.Context(), status, parsePageSize(r), parsePageOffset(r))
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -767,8 +763,7 @@ func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -779,7 +774,7 @@ func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claim, err := h.service.GetOwnershipClaimByID(r.Context(), claimID, tenantID)
+	claim, err := h.service.GetOwnershipClaimByID(r.Context(), claimID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -804,8 +799,7 @@ func (h *Handlers) WithdrawClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenantID(w, r)
+	_, ok = requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -816,7 +810,7 @@ func (h *Handlers) WithdrawClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.WithdrawOwnershipClaim(r.Context(), claimID, tenantID, user.UserID); err != nil {
+	if err := h.service.WithdrawOwnershipClaim(r.Context(), claimID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -907,8 +901,7 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
-
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -923,7 +916,7 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 		periodDays = 90
 	}
 
-	analytics, err := h.service.GetOrganizationAnalytics(r.Context(), orgID, tenantID, periodDays)
+	analytics, err := h.service.GetOrganizationAnalytics(r.Context(), orgID, periodDays)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
@@ -942,7 +935,7 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 
 // AdminListOrganizations handles GET /admin/organizations.
 func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -954,7 +947,7 @@ func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	items, total, err := h.service.AdminListOrganizations(r.Context(), tenantID, orgType, countryCode, search, verified, limit, offset)
+	items, total, err := h.service.AdminListOrganizations(r.Context(), orgType, countryCode, search, verified, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -982,7 +975,7 @@ func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request
 
 // AdminGetOrganization handles GET /admin/organizations/{id}.
 func (h *Handlers) AdminGetOrganization(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -993,7 +986,7 @@ func (h *Handlers) AdminGetOrganization(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	org, err := h.service.AdminGetOrganization(r.Context(), id, tenantID)
+	org, err := h.service.AdminGetOrganization(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
@@ -1121,7 +1114,7 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 
 // AdminListMembers handles GET /admin/organizations/{id}/members.
 func (h *Handlers) AdminListMembers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -1132,7 +1125,7 @@ func (h *Handlers) AdminListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := h.service.AdminListMembers(r.Context(), orgID, tenantID)
+	members, err := h.service.AdminListMembers(r.Context(), orgID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1143,7 +1136,7 @@ func (h *Handlers) AdminListMembers(w http.ResponseWriter, r *http.Request) {
 
 // AdminListInvitations handles GET /admin/organizations/{id}/invitations.
 func (h *Handlers) AdminListInvitations(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -1154,7 +1147,7 @@ func (h *Handlers) AdminListInvitations(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	invitations, err := h.service.AdminListInvitations(r.Context(), orgID, tenantID)
+	invitations, err := h.service.AdminListInvitations(r.Context(), orgID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

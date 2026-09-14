@@ -21,14 +21,14 @@ import (
 // personaLister is the subset of the personas service that studio needs to
 // populate the persona dropdown in the create-job modal.
 type personaLister interface {
-	ListPersonas(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, limit, offset int32) ([]personas.PersonaListItem, int64, error)
+	ListPersonas(ctx context.Context, status, q, sort, dir string, limit, offset int32) ([]personas.PersonaListItem, int64, error)
 }
 
 // intelRecordGetter is the subset of the intelligence store needed to
 // validate that an intel_record_id provided to the create-job API exists
 // and belongs to the same tenant.
 type intelRecordGetter interface {
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
 }
 
 // Handlers holds the HTTP handlers for the studio admin API.
@@ -152,7 +152,7 @@ func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreateJob — POST /api/v1/admin/studio/jobs.
 func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -170,13 +170,13 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 	// Approach B: validate intel_record_id if provided (optional field).
 	if in.IntelRecordID.Valid && h.intelStore != nil {
-		if _, err := h.intelStore.GetIntelRecord(r.Context(), tenantID, in.IntelRecordID); err != nil {
+		if _, err := h.intelStore.GetIntelRecord(r.Context(), in.IntelRecordID); err != nil {
 			h.writeError(w, http.StatusBadRequest, "intel_record_not_found", "intel_record_id does not exist or does not belong to this tenant")
 			return
 		}
 	}
 
-	job, err := h.svc.CreateJob(r.Context(), tenantID, user.UserID, in)
+	job, err := h.svc.CreateJob(r.Context(), user.UserID, in)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, "studio_create_failed", err.Error())
 		return
@@ -187,7 +187,7 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetJob — GET /api/v1/admin/studio/jobs/:id.
 func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -197,7 +197,7 @@ func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.svc.GetJob(r.Context(), tenantID, id)
+	job, err := h.svc.GetJob(r.Context(), id)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "job_not_found", "studio job not found")
 		return
@@ -208,7 +208,7 @@ func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleRetryJob — POST /api/v1/admin/studio/jobs/:id/retry.
 func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,7 +218,7 @@ func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.RetryJob(r.Context(), tenantID, id); err != nil {
+	if err := h.svc.RetryJob(r.Context(), id); err != nil {
 		h.writeError(w, http.StatusBadRequest, "retry_failed", err.Error())
 		return
 	}
@@ -228,7 +228,7 @@ func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleCancelJob — DELETE /api/v1/admin/studio/jobs/:id.
 func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -238,7 +238,7 @@ func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.CancelJob(r.Context(), tenantID, id); err != nil {
+	if err := h.svc.CancelJob(r.Context(), id); err != nil {
 		if errors.Is(err, ErrJobNotCancellable) {
 			h.writeError(w, http.StatusConflict, "job_not_cancellable", err.Error())
 			return
@@ -254,14 +254,14 @@ func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleListBatches — GET /api/v1/admin/studio/batches.
 func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	limit, offset := h.parsePagination(r)
 
-	batches, total, err := h.svc.ListBatches(r.Context(), tenantID, limit, offset)
+	batches, total, err := h.svc.ListBatches(r.Context(), limit, offset)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "batch_list_failed", err.Error())
 		return
@@ -302,7 +302,7 @@ func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetBatch — GET /api/v1/admin/studio/batches/:id.
 func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -312,7 +312,7 @@ func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	batch, stats, err := h.svc.GetBatch(r.Context(), tenantID, id)
+	batch, stats, err := h.svc.GetBatch(r.Context(), id)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "batch_not_found", "studio batch not found")
 		return
@@ -347,23 +347,23 @@ func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
 
 // HandleContentTypes — GET /api/v1/admin/studio/content-types.
 func (h *Handlers) HandleContentTypes(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	resp := h.svc.ListContentTypes(r.Context(), tenantID)
+	resp := h.svc.ListContentTypes(r.Context())
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleStats — GET /api/v1/admin/studio/stats.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	stats, err := h.svc.GetStats(r.Context(), tenantID)
+	stats, err := h.svc.GetStats(r.Context())
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
@@ -376,7 +376,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 // Returns active personas in {id, label} format for the create-job dropdown.
 // Delegates to the injected personas service.
 func (h *Handlers) HandlePersonas(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -387,7 +387,7 @@ func (h *Handlers) HandlePersonas(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch active personas only — studio jobs require an active persona.
-	items, _, err := h.personas.ListPersonas(r.Context(), tenantID, "active", "", "created_at", "desc", 100, 0)
+	items, _, err := h.personas.ListPersonas(r.Context(), "active", "", "created_at", "desc", 100, 0)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "personas_list_failed", "Failed to list personas")
 		return

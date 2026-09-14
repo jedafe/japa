@@ -61,7 +61,7 @@ func SpacesFindHandler(deps *ToolDeps) ToolHandler {
 
 		// 1. City-name lookup.
 		if a.CityName != "" {
-			space, err := deps.Spaces.FindCitySpaceByName(ctx, tenantID, a.CityName)
+			space, err := deps.Spaces.FindCitySpaceByName(ctx, a.CityName)
 			if err == nil {
 				return successToolResult(map[string]any{
 					"match_type": "city_name",
@@ -73,7 +73,7 @@ func SpacesFindHandler(deps *ToolDeps) ToolHandler {
 
 		// 2. Geo-code lookup.
 		if a.GeoCode != "" {
-			space, err := deps.Spaces.GetSpaceByGeoCode(ctx, tenantID, a.GeoCode)
+			space, err := deps.Spaces.GetSpaceByGeoCode(ctx, a.GeoCode)
 			if err == nil {
 				return successToolResult(map[string]any{
 					"match_type": "geo_code",
@@ -84,7 +84,7 @@ func SpacesFindHandler(deps *ToolDeps) ToolHandler {
 
 		// 3. Keyword lookup.
 		if len(a.Keywords) > 0 {
-			spaces, err := deps.Spaces.FindSpacesByKeywords(ctx, tenantID, a.Keywords)
+			spaces, err := deps.Spaces.FindSpacesByKeywords(ctx, a.Keywords)
 			if err != nil {
 				return errorToolResult("spaces_find_failed", err.Error()), nil
 			}
@@ -135,7 +135,7 @@ func SpacesReadHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
 		}
 
-		space, err := deps.Spaces.GetSpace(ctx, spaceID, tenantID)
+		space, err := deps.Spaces.GetSpace(ctx, spaceID)
 		if err != nil {
 			return errorToolResult("space_not_found", fmt.Sprintf("space not found: %v", err)), nil
 		}
@@ -160,7 +160,7 @@ func SpacesListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		// No arguments — list all spaces visible to the calling user.
-		spaces, err := deps.Spaces.ListSpaces(ctx, tenantID, userID)
+		spaces, err := deps.Spaces.ListSpaces(ctx, userID)
 		if err != nil {
 			return errorToolResult("spaces_list_failed", err.Error()), nil
 		}
@@ -340,7 +340,7 @@ func SpacesUpdateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		// Fetch existing to preserve fields not in the update args.
-		existing, err := deps.Spaces.GetSpace(ctx, spaceID, tenantID)
+		existing, err := deps.Spaces.GetSpace(ctx, spaceID)
 		if err != nil {
 			return errorToolResult("space_not_found", fmt.Sprintf("space not found: %v", err)), nil
 		}

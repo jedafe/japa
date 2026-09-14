@@ -57,14 +57,14 @@ func newUserContextAdapter(
 // GetUserAIContextData fetches the requested categories and returns them as a
 // map keyed by aiContextCategories values (points_balance, course_progress,
 // mentorship_activity, forum_activity, referral_activity, moderation_history).
-func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, tenantID pgtype.UUID, categories []string) (map[string]any, error) {
+func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID pgtype.UUID, categories []string) (map[string]any, error) {
 	out := make(map[string]any, len(categories))
 
 	for _, cat := range categories {
 		switch cat {
 		case "points_balance":
 			if a.wallet != nil {
-				points, credits, err := a.wallet.GetBalance(ctx, tenantID, userID)
+				points, credits, err := a.wallet.GetBalance(ctx, userID)
 				if err != nil {
 					return nil, fmt.Errorf("points_balance: %w", err)
 				}
@@ -74,7 +74,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 
 		case "course_progress":
 			if a.learning != nil {
-				enrollments, err := a.learning.ListEnrollmentsByUser(ctx, tenantID, userID)
+				enrollments, err := a.learning.ListEnrollmentsByUser(ctx, userID)
 				if err != nil {
 					return nil, fmt.Errorf("course_progress: %w", err)
 				}
@@ -97,12 +97,12 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 
 		case "mentorship_activity":
 			if a.mentorship != nil {
-				menteeConns, err := a.mentorship.ListAllConnections(ctx, tenantID, "", pgtype.UUID{}, userID, 20, 0)
+				menteeConns, err := a.mentorship.ListAllConnections(ctx, "", pgtype.UUID{}, userID, 20, 0)
 				if err != nil {
 					return nil, fmt.Errorf("mentorship_activity mentee: %w", err)
 				}
 
-				mentorConns, err := a.mentorship.ListAllConnections(ctx, tenantID, "", userID, pgtype.UUID{}, 20, 0)
+				mentorConns, err := a.mentorship.ListAllConnections(ctx, "", userID, pgtype.UUID{}, 20, 0)
 				if err != nil {
 					return nil, fmt.Errorf("mentorship_activity mentor: %w", err)
 				}
@@ -116,7 +116,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 		case "forum_activity":
 			if a.forum != nil {
 				threads, err := a.forum.ListThreadsByAuthorWithDetails(
-					ctx, tenantID, userID, nil, "", pgtype.Timestamptz{}, pgtype.UUID{}, nil, 20,
+					ctx, userID, nil, "", pgtype.Timestamptz{}, pgtype.UUID{}, nil, 20,
 				)
 				if err != nil {
 					return nil, fmt.Errorf("forum_activity: %w", err)
@@ -140,7 +140,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 
 		case "referral_activity":
 			if a.referral != nil {
-				stats, err := a.referral.GetReferralStats(ctx, tenantID, userID)
+				stats, err := a.referral.GetReferralStats(ctx, userID)
 				if err != nil {
 					return nil, fmt.Errorf("referral_activity: %w", err)
 				}

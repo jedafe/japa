@@ -37,8 +37,8 @@ type hitlReviewReaderAdapter struct {
 
 // GetHITLReview loads an ai_hitl_reviews row and converts it to the studio
 // package's minimal HITLReview shape.
-func (a *hitlReviewReaderAdapter) GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUID) (studio.HITLReview, error) {
-	rev, err := a.store.GetHITLReview(ctx, tenantID, reviewID)
+func (a *hitlReviewReaderAdapter) GetHITLReview(ctx context.Context, reviewID pgtype.UUID) (studio.HITLReview, error) {
+	rev, err := a.store.GetHITLReview(ctx, reviewID)
 	if err != nil {
 		return studio.HITLReview{}, err
 	}
@@ -81,7 +81,7 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 
 	switch targetTable {
 	case "arrival_checklist_guides":
-		_, err := p.arrivalSvc.ApproveGuide(ctx, targetID, tenantID, reviewerID, arrivalchecklist.ApproveGuideRequest{Notes: strPtrOrNil(notes)})
+		_, err := p.arrivalSvc.ApproveGuide(ctx, targetID, reviewerID, arrivalchecklist.ApproveGuideRequest{Notes: strPtrOrNil(notes)})
 		return err
 
 	case "attestation_pathways":
@@ -97,7 +97,7 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		return err
 
 	case "housing_guides":
-		_, err := p.housingSvc.Approve(ctx, targetID, tenantID, reviewerID, housingguide.ApproveGuideRequest{Notes: strPtrOrNil(notes)})
+		_, err := p.housingSvc.Approve(ctx, targetID, reviewerID, housingguide.ApproveGuideRequest{Notes: strPtrOrNil(notes)})
 		return err
 
 	case "language_test_requirements":
@@ -112,7 +112,7 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		return err
 
 	case "calendar_entries":
-		return p.calendarSvc.AdminUpdate(ctx, targetID, tenantID, reviewerID, "published", notes)
+		return p.calendarSvc.AdminUpdate(ctx, targetID, reviewerID, "published", notes)
 
 	case "doc_pages":
 		if err := p.docsSvc.ApproveDocPage(ctx, tenantID, targetID, reviewerID); err != nil {
@@ -122,7 +122,7 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		return p.docsSvc.PublishDocPage(ctx, tenantID, targetID, reviewerID)
 
 	case "wiki_pages":
-		return p.publishWikiPage(ctx, tenantID, reviewerID, targetID, notes)
+		return p.publishWikiPage(ctx, reviewerID, targetID, notes)
 
 	default:
 		slog.Warn("tool-table publisher: unknown target_table, skipping publish",
@@ -134,7 +134,7 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 // publishWikiPage finds the latest pending revision for the page and approves
 // it. This is necessary because wiki HITL targets the page, but the approval
 // API works on revisions (ADR-088, §80).
-func (p *toolTablePublisher) publishWikiPage(ctx context.Context, tenantID, reviewerID, pageID pgtype.UUID, notes string) error {
+func (p *toolTablePublisher) publishWikiPage(ctx context.Context, reviewerID, pageID pgtype.UUID, notes string) error {
 	var revID pgtype.UUID
 
 	err := p.db.Reader.QueryRow(ctx, `
@@ -149,7 +149,7 @@ func (p *toolTablePublisher) publishWikiPage(ctx context.Context, tenantID, revi
 		return fmt.Errorf("wiki: lookup pending revision: %w", err)
 	}
 
-	_, err = p.wikiSvc.ApproveRevision(ctx, revID, pageID, tenantID, reviewerID, notes)
+	_, err = p.wikiSvc.ApproveRevision(ctx, revID, pageID, reviewerID, notes)
 
 	return err
 }

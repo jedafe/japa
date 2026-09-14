@@ -36,7 +36,7 @@ func NewStore(database *db.DB) *Store {
 
 // ListAdSlotTypes returns the active ad slot types (with flat_rate) available
 // to self-serve advertisers for the given tenant.
-func (s *Store) ListAdSlotTypes(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdSlotType, error) {
+func (s *Store) ListAdSlotTypes(ctx context.Context) ([]gen.AdSlotType, error) {
 	rows, err := s.queries.ListAdSlotTypesForSelfServe(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("adsselfserve: list slot types: %w", err)
@@ -46,7 +46,7 @@ func (s *Store) ListAdSlotTypes(ctx context.Context, tenantID pgtype.UUID) ([]ge
 }
 
 // IsOrgVerified reports whether the organisation is verified (eligibility gate).
-func (s *Store) IsOrgVerified(ctx context.Context, tenantID, orgID pgtype.UUID) (bool, error) {
+func (s *Store) IsOrgVerified(ctx context.Context, orgID pgtype.UUID) (bool, error) {
 	verified, err := s.queries.IsOrgVerified(ctx,
 
 		orgID,
@@ -84,7 +84,7 @@ func (s *Store) CreateCampaign(ctx context.Context, arg gen.CreateSelfServeAdCam
 }
 
 // GetCampaign returns a single campaign scoped to the organisation.
-func (s *Store) GetCampaign(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+func (s *Store) GetCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
 	campaign, err := s.queries.GetSelfServeAdCampaign(ctx, gen.GetSelfServeAdCampaignParams{
 
 		ID:             campaignID,
@@ -99,7 +99,7 @@ func (s *Store) GetCampaign(ctx context.Context, tenantID, orgID, campaignID pgt
 
 // ListCampaigns returns a paginated list of an organisation's campaigns,
 // optionally filtered by status. Pass an empty status string to return all.
-func (s *Store) ListCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID, status string, limit, offset int32) ([]gen.AdCampaign, error) {
+func (s *Store) ListCampaigns(ctx context.Context, orgID pgtype.UUID, status string, limit, offset int32) ([]gen.AdCampaign, error) {
 	rows, err := s.queries.ListOrgAdCampaigns(ctx, gen.ListOrgAdCampaignsParams{
 
 		OrganizationID: orgID,
@@ -116,7 +116,7 @@ func (s *Store) ListCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID, 
 
 // CountCampaigns returns the total number of campaigns for the organisation,
 // optionally filtered by status.
-func (s *Store) CountCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID, status string) (int64, error) {
+func (s *Store) CountCampaigns(ctx context.Context, orgID pgtype.UUID, status string) (int64, error) {
 	count, err := s.queries.CountOrgAdCampaigns(ctx, gen.CountOrgAdCampaignsParams{
 
 		OrganizationID: orgID,
@@ -142,7 +142,7 @@ func (s *Store) UpdateCampaignCreative(ctx context.Context, arg gen.UpdateSelfSe
 }
 
 // PauseCampaign transitions an active campaign to 'paused'.
-func (s *Store) PauseCampaign(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+func (s *Store) PauseCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
 	campaign, err := s.queries.PauseAdCampaign(ctx, gen.PauseAdCampaignParams{
 
 		ID:             campaignID,
@@ -156,7 +156,7 @@ func (s *Store) PauseCampaign(ctx context.Context, tenantID, orgID, campaignID p
 }
 
 // ResumeCampaign transitions a paused campaign to 'active'.
-func (s *Store) ResumeCampaign(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+func (s *Store) ResumeCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
 	campaign, err := s.queries.ResumeAdCampaign(ctx, gen.ResumeAdCampaignParams{
 
 		ID:             campaignID,
@@ -171,7 +171,7 @@ func (s *Store) ResumeCampaign(ctx context.Context, tenantID, orgID, campaignID 
 
 // GetCampaignStats returns impression/click/spend aggregates for a campaign
 // scoped to the organisation.
-func (s *Store) GetCampaignStats(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID) (gen.GetAdCampaignStatsRow, error) {
+func (s *Store) GetCampaignStats(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.GetAdCampaignStatsRow, error) {
 	row, err := s.queries.GetAdCampaignStats(ctx, gen.GetAdCampaignStatsParams{
 
 		ID:             campaignID,
@@ -188,7 +188,7 @@ func (s *Store) GetCampaignStats(ctx context.Context, tenantID, orgID, campaignI
 // organization_id) for the refund task. The organisation_id is not required
 // in the filter because the refund task is invoked by the admin/system, not
 // the org.
-func (s *Store) GetCampaignForRefund(ctx context.Context, tenantID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+func (s *Store) GetCampaignForRefund(ctx context.Context, campaignID pgtype.UUID) (gen.AdCampaign, error) {
 	campaign, err := s.queries.GetCampaignForRefund(ctx,
 
 		campaignID,
@@ -202,7 +202,7 @@ func (s *Store) GetCampaignForRefund(ctx context.Context, tenantID, campaignID p
 
 // MarkCampaignRefunded zeroes the budget_credits and sets status to 'rejected'.
 // Called after the refund task has returned the unused credits to the org wallet.
-func (s *Store) MarkCampaignRefunded(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
+func (s *Store) MarkCampaignRefunded(ctx context.Context, campaignID pgtype.UUID) error {
 	if err := s.queries.MarkCampaignRefunded(ctx,
 
 		campaignID,

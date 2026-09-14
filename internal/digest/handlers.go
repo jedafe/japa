@@ -129,7 +129,7 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /digest/:id — single published digest (public).
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -139,7 +139,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	edition, err := h.service.Get(r.Context(), tenantID, id)
+	edition, err := h.service.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found")
@@ -214,8 +214,7 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -225,7 +224,7 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	edition, err := h.service.AdminGet(r.Context(), tenantID, id)
+	edition, err := h.service.AdminGet(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found")
@@ -246,8 +245,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -268,7 +266,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminUpdate(r.Context(), tenantID, id, *input.Content); err != nil {
+	if err := h.service.AdminUpdate(r.Context(), id, *input.Content); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not editable")
 			return

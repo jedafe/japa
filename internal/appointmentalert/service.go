@@ -109,7 +109,7 @@ type TaskEnqueuer interface {
 // notifications. The notifications.Service satisfies this. Used by
 // DispatchAlerts (§91, ADR-099).
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // permissionChecker is the subset of rbac.RBAC needed to resolve premium-tier
@@ -117,7 +117,7 @@ type Notifier interface {
 // (same pattern as cvformatter). Nil-safe: a nil checker means
 // IsPremiumUser returns false (development/tests).
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // SMSSender is the minimal interface for dispatching SMS notifications to
@@ -167,12 +167,12 @@ func (s *Service) SetSMSSender(sender SMSSender) { s.smsSender = sender }
 
 // Enabled reads the appointment_alert.enabled system_setting toggle
 // (§91 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "appointment_alert.enabled", false)
+	return s.settings.GetBoolOr(ctx, "appointment_alert.enabled", false)
 }
 
 // ErrNotOwner is returned when a user tries to manage an alert they do not own.
@@ -186,12 +186,12 @@ var ErrSMSPremiumOnly = errors.New("sms channel is only available to premium use
 // permission (premium tier). Returns false when no RBAC resolver is wired
 // (development/tests) — in that case SMS channel selection is rejected
 // because the premium status cannot be confirmed (§91, ADR-099).
-func (s *Service) IsPremiumUser(ctx context.Context, userID, tenantID pgtype.UUID) bool {
+func (s *Service) IsPremiumUser(ctx context.Context, userID pgtype.UUID) bool {
 	if s.rbac == nil {
 		return false
 	}
 
-	return s.rbac.HasPermission(ctx, userID, tenantID, "appointment_alert.premium")
+	return s.rbac.HasPermission(ctx, userID, "appointment_alert.premium")
 }
 
 // channelsContainSMS reports whether the `sms` channel is in the list.
@@ -210,7 +210,7 @@ func channelsContainSMS(channels []string) bool {
 // Supports optional search (ILIKE on name/slug) and sort (by name, slug,
 // last_polled_at, or created_at; asc/desc) per the geo-aware tool pattern
 // (§17, §3.3).
-func (s *Service) ListEmbassies(ctx context.Context, tenantID, destSpaceID pgtype.UUID, activeOnly bool, page, limit int32, search, sortBy, sortOrder string) ([]EmbassyDTO, int64, error) {
+func (s *Service) ListEmbassies(ctx context.Context, destSpaceID pgtype.UUID, activeOnly bool, page, limit int32, search, sortBy, sortOrder string) ([]EmbassyDTO, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -244,7 +244,7 @@ func (s *Service) ListEmbassies(ctx context.Context, tenantID, destSpaceID pgtyp
 }
 
 // CreateEmbassy adds a new monitored embassy (admin only).
-func (s *Service) CreateEmbassy(ctx context.Context, tenantID pgtype.UUID, input CreateEmbassyInput) (EmbassyDTO, error) {
+func (s *Service) CreateEmbassy(ctx context.Context, input CreateEmbassyInput) (EmbassyDTO, error) {
 	if input.Slug == "" {
 		return EmbassyDTO{}, errors.New("slug is required")
 	}
@@ -478,7 +478,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 		return nil
 	}
 
-	alerts, err := s.store.ListActiveAlertsByEmbassySlug(ctx, embassySlug, tenantID)
+	alerts, err := s.store.ListActiveAlertsByEmbassySlug(ctx, embassySlug)
 	if err != nil {
 		return fmt.Errorf("appointmentalert: dispatch alerts: list alerts: %w", err)
 	}
@@ -489,7 +489,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 
 	// Load the embassy to get the booking_url for the notification action
 	// link and the name for the notification title.
-	embassy, err := s.store.GetEmbassyBySlug(ctx, embassySlug, tenantID)
+	embassy, err := s.store.GetEmbassyBySlug(ctx, embassySlug)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Warn("appointmentalert: dispatch alerts: get embassy by slug failed", "embassy_slug", embassySlug, "error", err)
 	}
@@ -514,7 +514,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 			embassy.Name, alert.DateRangeStart.Time.Format("2006-01-02"), alert.DateRangeEnd.Time.Format("2006-01-02"))
 		actionURL := embassy.BookingURL
 
-		if err := s.notifier.CreateNotification(ctx, tenantID, alert.UserID,
+		if err := s.notifier.CreateNotification(ctx, alert.UserID,
 			"appointment_alert", "system", zeroUUID,
 			"embassy", alert.ID,
 			title, body, actionURL); err != nil {
@@ -575,7 +575,7 @@ func (s *Service) ScheduleDuePolls(ctx context.Context) (int, error) {
 
 	premiumInterval := 300 // default 5 min (§91)
 	if s.settings != nil {
-		premiumInterval = s.settings.GetIntOr(ctx, pgtype.UUID{}, "appointment_alert.premium_poll_interval", 300)
+		premiumInterval = s.settings.GetIntOr(ctx, "appointment_alert.premium_poll_interval", 300)
 	}
 
 	if premiumInterval <= 0 {
@@ -626,7 +626,7 @@ func containsAny(s string, subs ...string) bool {
 }
 
 // ListUserAlerts returns a user's appointment alerts.
-func (s *Service) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UUID, status string, page, limit int32) ([]AlertDTO, int64, error) {
+func (s *Service) ListUserAlerts(ctx context.Context, userID pgtype.UUID, status string, page, limit int32) ([]AlertDTO, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -698,7 +698,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	// Validate the embassy_slug exists in monitored_embassies for the
 	// given destination and is active (§1.1). This prevents users from
 	// creating alerts for embassies that don't exist or are inactive.
-	embassy, err := s.store.GetEmbassyBySlug(ctx, input.EmbassySlug, tenantID)
+	embassy, err := s.store.GetEmbassyBySlug(ctx, input.EmbassySlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AlertDTO{}, fmt.Errorf("embassy not found for slug %q", input.EmbassySlug)
@@ -718,7 +718,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	// SMS channel gating: the `sms` notification channel is only available
 	// to premium-tier users (holding appointment_alert.premium). Non-premium
 	// users are rejected with ErrSMSPremiumOnly (§91, ADR-099).
-	if channelsContainSMS(input.NotificationChannels) && !s.IsPremiumUser(ctx, userID, tenantID) {
+	if channelsContainSMS(input.NotificationChannels) && !s.IsPremiumUser(ctx, userID) {
 		return AlertDTO{}, ErrSMSPremiumOnly
 	}
 
@@ -773,7 +773,7 @@ func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.U
 
 	// SMS channel gating: if the update includes notification_channels with
 	// `sms`, the user must be premium (§91, ADR-099).
-	if channelsContainSMS(input.NotificationChannels) && !s.IsPremiumUser(ctx, userID, tenantID) {
+	if channelsContainSMS(input.NotificationChannels) && !s.IsPremiumUser(ctx, userID) {
 		return AlertDTO{}, ErrSMSPremiumOnly
 	}
 

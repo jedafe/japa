@@ -17,7 +17,7 @@ import (
 // service for hot-reloadable operational limits (page cache TTL). Defined as
 // an interface so tests can substitute a stub (Rule 3).
 type settingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // Service provides pagebuilder business logic with reader/writer pool separation.
@@ -58,17 +58,17 @@ func validationError(msg string) error {
 // ---------------------------------------------------------------------------
 
 // ListBlocks returns all blocks for a tenant, optionally filtered by q.
-func (s *Service) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Block, int64, error) {
-	return s.store.ListBlocks(ctx, tenantID, q, page, limit)
+func (s *Service) ListBlocks(ctx context.Context, q string, page, limit int32) ([]Block, int64, error) {
+	return s.store.ListBlocks(ctx, q, page, limit)
 }
 
 // GetBlock returns a single block by ID, scoped to the tenant.
-func (s *Service) GetBlock(ctx context.Context, id, tenantID pgtype.UUID) (Block, error) {
-	return s.store.GetBlock(ctx, id, tenantID)
+func (s *Service) GetBlock(ctx context.Context, id pgtype.UUID) (Block, error) {
+	return s.store.GetBlock(ctx, id)
 }
 
 // CreateBlock creates a new block with input validation.
-func (s *Service) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input CreateBlockInput) (Block, error) {
+func (s *Service) CreateBlock(ctx context.Context, input CreateBlockInput) (Block, error) {
 	if input.Name == "" {
 		return Block{}, validationError("name is required")
 	}
@@ -85,11 +85,11 @@ func (s *Service) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input C
 		input.Category = "general"
 	}
 
-	return s.store.CreateBlock(ctx, tenantID, input)
+	return s.store.CreateBlock(ctx, input)
 }
 
 // UpdateBlock updates an existing block with input validation.
-func (s *Service) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input UpdateBlockInput) (Block, error) {
+func (s *Service) UpdateBlock(ctx context.Context, id pgtype.UUID, input UpdateBlockInput) (Block, error) {
 	if input.Name == "" {
 		return Block{}, validationError("name is required")
 	}
@@ -98,12 +98,12 @@ func (s *Service) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, inp
 		return Block{}, validationError("component is required")
 	}
 
-	return s.store.UpdateBlock(ctx, id, tenantID, input)
+	return s.store.UpdateBlock(ctx, id, input)
 }
 
 // DeleteBlock removes a block. System blocks cannot be deleted.
-func (s *Service) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.DeleteBlock(ctx, id, tenantID)
+func (s *Service) DeleteBlock(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteBlock(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -111,17 +111,17 @@ func (s *Service) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) err
 // ---------------------------------------------------------------------------
 
 // ListTemplates returns all templates for a tenant, optionally filtered by q and category.
-func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, category string, page, limit int32) ([]Template, int64, error) {
-	return s.store.ListTemplates(ctx, tenantID, q, category, page, limit)
+func (s *Service) ListTemplates(ctx context.Context, q, category string, page, limit int32) ([]Template, int64, error) {
+	return s.store.ListTemplates(ctx, q, category, page, limit)
 }
 
 // GetTemplate returns a single template by ID, scoped to the tenant.
-func (s *Service) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Template, error) {
-	return s.store.GetTemplate(ctx, id, tenantID)
+func (s *Service) GetTemplate(ctx context.Context, id pgtype.UUID) (Template, error) {
+	return s.store.GetTemplate(ctx, id)
 }
 
 // CreateTemplate creates a new template with input validation.
-func (s *Service) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input CreateTemplateInput) (Template, error) {
+func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput) (Template, error) {
 	if input.Name == "" {
 		return Template{}, validationError("name is required")
 	}
@@ -134,11 +134,11 @@ func (s *Service) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, inpu
 		input.PageType = "custom"
 	}
 
-	return s.store.CreateTemplate(ctx, tenantID, input)
+	return s.store.CreateTemplate(ctx, input)
 }
 
 // UpdateTemplate updates an existing template with input validation.
-func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTemplateInput) (Template, error) {
+func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, input UpdateTemplateInput) (Template, error) {
 	if input.Name == "" {
 		return Template{}, validationError("name is required")
 	}
@@ -147,12 +147,12 @@ func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, 
 		input.Slug = slugify(input.Name)
 	}
 
-	return s.store.UpdateTemplate(ctx, id, tenantID, input)
+	return s.store.UpdateTemplate(ctx, id, input)
 }
 
 // DeleteTemplate removes a template. System templates cannot be deleted.
-func (s *Service) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.DeleteTemplate(ctx, id, tenantID)
+func (s *Service) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteTemplate(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -160,17 +160,17 @@ func (s *Service) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) 
 // ---------------------------------------------------------------------------
 
 // ListThemes returns all themes for a tenant, optionally filtered by q.
-func (s *Service) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Theme, int64, error) {
-	return s.store.ListThemes(ctx, tenantID, q, page, limit)
+func (s *Service) ListThemes(ctx context.Context, q string, page, limit int32) ([]Theme, int64, error) {
+	return s.store.ListThemes(ctx, q, page, limit)
 }
 
 // GetTheme returns a single theme by ID, scoped to the tenant.
-func (s *Service) GetTheme(ctx context.Context, id, tenantID pgtype.UUID) (Theme, error) {
-	return s.store.GetTheme(ctx, id, tenantID)
+func (s *Service) GetTheme(ctx context.Context, id pgtype.UUID) (Theme, error) {
+	return s.store.GetTheme(ctx, id)
 }
 
 // CreateTheme creates a new theme with input validation.
-func (s *Service) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input CreateThemeInput) (Theme, error) {
+func (s *Service) CreateTheme(ctx context.Context, input CreateThemeInput) (Theme, error) {
 	if input.Name == "" {
 		return Theme{}, validationError("name is required")
 	}
@@ -179,26 +179,26 @@ func (s *Service) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input C
 		return Theme{}, validationError("slug is required")
 	}
 
-	return s.store.CreateTheme(ctx, tenantID, input)
+	return s.store.CreateTheme(ctx, input)
 }
 
 // UpdateTheme updates an existing theme with input validation.
-func (s *Service) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input UpdateThemeInput) (Theme, error) {
+func (s *Service) UpdateTheme(ctx context.Context, id pgtype.UUID, input UpdateThemeInput) (Theme, error) {
 	if input.Name == "" {
 		return Theme{}, validationError("name is required")
 	}
 
-	return s.store.UpdateTheme(ctx, id, tenantID, input)
+	return s.store.UpdateTheme(ctx, id, input)
 }
 
 // DeleteTheme removes a theme.
-func (s *Service) DeleteTheme(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.DeleteTheme(ctx, id, tenantID)
+func (s *Service) DeleteTheme(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteTheme(ctx, id)
 }
 
 // SetDefaultTheme sets a theme as the default for the tenant.
-func (s *Service) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.SetDefaultTheme(ctx, id, tenantID)
+func (s *Service) SetDefaultTheme(ctx context.Context, id pgtype.UUID) error {
+	return s.store.SetDefaultTheme(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -207,18 +207,18 @@ func (s *Service) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID)
 
 // ListPages returns a paginated list of pages for a tenant, optionally
 // narrowed by f. page is 1-based; limit is the page size.
-func (s *Service) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListFilter, page, limit int32) ([]Page, int64, error) {
-	return s.store.ListPages(ctx, tenantID, f, page, limit)
+func (s *Service) ListPages(ctx context.Context, f PageListFilter, page, limit int32) ([]Page, int64, error) {
+	return s.store.ListPages(ctx, f, page, limit)
 }
 
 // ListPublishedPages returns only published pages for public consumption.
-func (s *Service) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, error) {
-	return s.store.ListPublishedPages(ctx, tenantID)
+func (s *Service) ListPublishedPages(ctx context.Context) ([]Page, error) {
+	return s.store.ListPublishedPages(ctx)
 }
 
 // GetPage returns a single page by ID, scoped to the tenant.
-func (s *Service) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
-	return s.store.GetPage(ctx, id, tenantID)
+func (s *Service) GetPage(ctx context.Context, id pgtype.UUID) (Page, error) {
+	return s.store.GetPage(ctx, id)
 }
 
 // GetPageBySlug returns a published page by slug for public consumption.
@@ -239,7 +239,7 @@ func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtyp
 		}
 	}
 
-	p, err := s.store.GetPageBySlug(ctx, slug, tenantID)
+	p, err := s.store.GetPageBySlug(ctx, slug)
 	if err != nil {
 		return Page{}, err
 	}
@@ -250,7 +250,7 @@ func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtyp
 		if serialized, err := json.Marshal(p); err == nil {
 			ttlSecs := 300
 			if s.settings != nil {
-				ttlSecs = s.settings.GetIntOr(ctx, pgtype.UUID{}, "page.cache_ttl_secs", 300)
+				ttlSecs = s.settings.GetIntOr(ctx, "page.cache_ttl_secs", 300)
 			}
 
 			if ttlSecs <= 0 {
@@ -268,7 +268,7 @@ func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtyp
 // provided and no blocks are supplied, the template's block array is copied
 // into the new page (Section 16: templates are "starting points for page
 // creation").
-func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
+func (s *Service) CreatePage(ctx context.Context, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
 	if input.Title == "" {
 		return Page{}, validationError("title is required")
 	}
@@ -284,7 +284,7 @@ func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUI
 	// If a template is selected and no blocks were explicitly provided,
 	// copy the template's blocks into the new page (§16 template wiring).
 	if input.TemplateID != nil && input.TemplateID.Valid && (len(input.Blocks) == 0 || string(input.Blocks) == "[]") {
-		tpl, err := s.store.GetTemplate(ctx, *input.TemplateID, tenantID)
+		tpl, err := s.store.GetTemplate(ctx, *input.TemplateID)
 		if err == nil && len(tpl.Blocks) > 0 {
 			input.Blocks = tpl.Blocks
 		}
@@ -292,7 +292,7 @@ func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUI
 
 	input.Blocks = sanitizeBlocksJSON(input.Blocks)
 
-	return s.store.CreatePage(ctx, tenantID, createdBy, input)
+	return s.store.CreatePage(ctx, createdBy, input)
 }
 
 // DuplicatePage clones an existing page into a new draft. The copy inherits
@@ -302,8 +302,8 @@ func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUI
 // slug with a "-copy" suffix (incremented until unique) and the title gets a
 // " (Copy)" suffix. The copy always starts as a draft so it is never
 // accidentally published over the source.
-func (s *Service) DuplicatePage(ctx context.Context, id, tenantID, createdBy pgtype.UUID) (Page, error) {
-	src, err := s.store.GetPage(ctx, id, tenantID)
+func (s *Service) DuplicatePage(ctx context.Context, id, createdBy pgtype.UUID) (Page, error) {
+	src, err := s.store.GetPage(ctx, id)
 	if err != nil {
 		return Page{}, err
 	}
@@ -318,7 +318,7 @@ func (s *Service) DuplicatePage(ctx context.Context, id, tenantID, createdBy pgt
 
 	slug := base + "-copy"
 	for n := 2; n <= 1000; n++ {
-		exists, err := s.store.SlugExists(ctx, slug, tenantID)
+		exists, err := s.store.SlugExists(ctx, slug)
 		if err != nil {
 			return Page{}, err
 		}
@@ -346,7 +346,7 @@ func (s *Service) DuplicatePage(ctx context.Context, id, tenantID, createdBy pgt
 	// template_id is intentionally not copied: the duplicate is an
 	// independent page instance, not a template derivative.
 
-	return s.CreatePage(ctx, tenantID, createdBy, input)
+	return s.CreatePage(ctx, createdBy, input)
 }
 
 // UpdatePage updates an existing page with input validation.
@@ -363,9 +363,9 @@ func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, inpu
 	input.Blocks = sanitizeBlocksJSON(input.Blocks)
 
 	// Fetch the existing slug for cache invalidation before the update.
-	existing, _ := s.store.GetPage(ctx, id, tenantID)
+	existing, _ := s.store.GetPage(ctx, id)
 
-	p, err := s.store.UpdatePage(ctx, id, tenantID, input)
+	p, err := s.store.UpdatePage(ctx, id, input)
 	if err != nil {
 		return Page{}, err
 	}
@@ -421,9 +421,9 @@ func sanitizeBlocksJSON(raw json.RawMessage) json.RawMessage {
 // DeletePage removes a page and invalidates its cache.
 func (s *Service) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) error {
 	// Fetch the slug for cache invalidation before deletion.
-	existing, _ := s.store.GetPage(ctx, id, tenantID)
+	existing, _ := s.store.GetPage(ctx, id)
 
-	if err := s.store.DeletePage(ctx, id, tenantID); err != nil {
+	if err := s.store.DeletePage(ctx, id); err != nil {
 		return err
 	}
 
@@ -434,7 +434,7 @@ func (s *Service) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) erro
 
 // PublishPage sets the page status to 'published' and stamps published_at.
 func (s *Service) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
-	p, err := s.store.PublishPage(ctx, id, tenantID)
+	p, err := s.store.PublishPage(ctx, id)
 	if err != nil {
 		return Page{}, err
 	}
@@ -446,7 +446,7 @@ func (s *Service) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Pa
 
 // ArchivePage sets the page status to 'archived'.
 func (s *Service) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
-	p, err := s.store.ArchivePage(ctx, id, tenantID)
+	p, err := s.store.ArchivePage(ctx, id)
 	if err != nil {
 		return Page{}, err
 	}
@@ -461,18 +461,18 @@ func (s *Service) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Pa
 // replaces the blocks array. The prior implementation called store.UpdatePage
 // with just Blocks set, which wiped every other column on each reorder
 // (§1.3 data-loss bug).
-func (s *Service) ReorderBlocks(ctx context.Context, id, tenantID pgtype.UUID, blocks []map[string]any) (Page, error) {
+func (s *Service) ReorderBlocks(ctx context.Context, id pgtype.UUID, blocks []map[string]any) (Page, error) {
 	blocksJSON, err := json.Marshal(blocks)
 	if err != nil {
 		return Page{}, fmt.Errorf("marshaling blocks: %w", err)
 	}
 
-	existing, err := s.store.GetPage(ctx, id, tenantID)
+	existing, err := s.store.GetPage(ctx, id)
 	if err != nil {
 		return Page{}, err
 	}
 
-	return s.store.UpdatePage(ctx, id, tenantID, UpdatePageInput{
+	return s.store.UpdatePage(ctx, id, UpdatePageInput{
 		Title:       existing.Title,
 		Slug:        existing.Slug,
 		Description: existing.Description,

@@ -49,7 +49,7 @@ func ToolsListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 
-		tools, err := deps.ToolsRegistry.ListTools(ctx, tenantID)
+		tools, err := deps.ToolsRegistry.ListTools(ctx)
 		if err != nil {
 			return errorToolResult("list_failed", fmt.Sprintf("failed to list tools: %v", err)), nil
 		}
@@ -102,7 +102,7 @@ func ToolsReadHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
 
-		record, err := deps.ToolsRegistry.ReadTool(ctx, tenantID, a.ToolType, a.ToolID)
+		record, err := deps.ToolsRegistry.ReadTool(ctx, a.ToolType, a.ToolID)
 		if err != nil {
 			return errorToolResult("read_failed", fmt.Sprintf("failed to read tool: %v", err)), nil
 		}

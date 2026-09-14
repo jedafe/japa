@@ -23,7 +23,7 @@ import (
 // JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
 // Section 26). The user handlers use it to emit Person structured data.
 type JSONLDResolver interface {
-	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+	ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
 // PermissionResolver checks RBAC permissions and super-admin status. The
@@ -31,8 +31,8 @@ type JSONLDResolver interface {
 // (super-admin or a user with the `content.edit` permission node) may
 // fetch content they don't own for editing.
 type PermissionResolver interface {
-	IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // PermissionLister resolves the caller's full effective permission node set
@@ -40,7 +40,7 @@ type PermissionResolver interface {
 // frontend pages can gate UI on the actual permission node (e.g.
 // `forum.ama.create`) instead of hardcoded role names (Rule 16).
 type PermissionLister interface {
-	UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error)
+	UserPermissions(ctx context.Context, userID pgtype.UUID) (map[string]bool, error)
 }
 
 // Handlers holds dependencies for user HTTP handlers.
@@ -193,7 +193,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.Service.GetProfile(r.Context(), user.TenantID, user.UserID)
+	profile, err := h.Service.GetProfile(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -205,7 +205,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	// a resolver failure degrades to omitting the field. The underlying
 	// GetUserContext is L1/L2-cached so this adds no DB load to the /me call.
 	if h.permLister != nil {
-		perms, pErr := h.permLister.UserPermissions(r.Context(), user.UserID, user.TenantID)
+		perms, pErr := h.permLister.UserPermissions(r.Context(), user.UserID)
 		if pErr == nil && len(perms) > 0 {
 			keys := make([]string, 0, len(perms))
 
@@ -225,7 +225,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 
 // GetUserByUsername handles GET /api/v1/users/{username}.
 func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -236,7 +236,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.Service.GetPublicProfileByUsername(r.Context(), tenantID, username)
+	profile, err := h.Service.GetPublicProfileByUsername(r.Context(), username)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -249,7 +249,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"data": profile}
 
 	if h.jsonldResolver != nil {
-		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "Person", profileJSONLDFields(profile)); jErr == nil && len(jsonLd) > 0 {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), "Person", profileJSONLDFields(profile)); jErr == nil && len(jsonLd) > 0 {
 			resp["json_ld"] = json.RawMessage(jsonLd)
 		} else if jErr != nil {
 			slog.Warn("users: JSON-LD template resolution failed", "username", username, "error", jErr)
@@ -337,7 +337,7 @@ func (h *Handlers) UpdateMyJourney(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdateJourney(r.Context(), user.TenantID, user.UserID, &req); err != nil {
+	if err := h.Service.UpdateJourney(r.Context(), user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -366,7 +366,7 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 // ListUsers handles GET /api/v1/users for admin user listing.
 // Query params: search, status, group, page_size (default 20, max 100), page_offset (default 0).
 func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -383,7 +383,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	groupSlug := r.URL.Query().Get("group")
 
-	result, err := h.Service.ListUsers(r.Context(), tenantID, search, status, groupSlug, limit, offset)
+	result, err := h.Service.ListUsers(r.Context(), search, status, groupSlug, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -401,7 +401,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 // //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -416,7 +416,7 @@ func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 
 	profileType := strings.TrimSpace(r.URL.Query().Get("profile_type"))
 
-	result, err := h.Service.ListPublicUsers(r.Context(), tenantID, search, profileType, limit, offset)
+	result, err := h.Service.ListPublicUsers(r.Context(), search, profileType, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -487,7 +487,7 @@ func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Reques
 // ListUserSessions handles GET /api/v1/admin/users/{id}/sessions.
 // Admin-scoped variant of /me/sessions that lists sessions for any user.
 func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -504,7 +504,7 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Admin views another user's sessions — no "current" session to flag.
-	sessions, err := h.Service.ListSessions(r.Context(), tenantID, userID, pgtype.UUID{})
+	sessions, err := h.Service.ListSessions(r.Context(), userID, pgtype.UUID{})
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -516,7 +516,7 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 // GetAdminUser handles GET /api/v1/admin/users/{id}.
 // Resolves the user by UUID (not username) for admin detail views.
 func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -527,7 +527,7 @@ func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.Service.GetProfile(r.Context(), tenantID, userID)
+	profile, err := h.Service.GetProfile(r.Context(), userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -539,7 +539,7 @@ func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
 // ListUserActivity handles GET /api/v1/admin/users/{id}/activity.
 // Merged feed of the user's authored content and comments, newest first.
 func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -567,7 +567,7 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	activity, err := h.Service.ListUserActivity(r.Context(), tenantID, userID, limit)
+	activity, err := h.Service.ListUserActivity(r.Context(), userID, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -580,7 +580,7 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 // Soft-deletes the user (status = 'deleted') to comply with the GDPR erasure
 // model — the row is retained and only a confirmed erasure request may hard-delete.
 func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -596,7 +596,7 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.SoftDeleteUser(r.Context(), tenantID, userID); err != nil {
+	if err := h.Service.SoftDeleteUser(r.Context(), userID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -604,7 +604,7 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	// Revoke all sessions for the deleted user — a soft-deleted user must
 	// not continue to use the platform on existing tokens. Ref: §02
 	// (Session invalidation), Rule 6 (perm cache invalidation).
-	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), tenantID, userID); err != nil {
+	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), userID); err != nil {
 		slog.Error("delete-user: failed to invalidate sessions",
 			"user_id", userID.String(), "error", err)
 	}
@@ -620,7 +620,7 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 // UpdateProfileType handles PATCH /api/v1/admin/users/{id}/profile-type.
 // Allows admins to change a user's profile_type to regular, pro, or business.
 func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -651,7 +651,7 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdateProfileType(r.Context(), tenantID, userID, req.ProfileType); err != nil {
+	if err := h.Service.UpdateProfileType(r.Context(), userID, req.ProfileType); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -670,7 +670,7 @@ func (h *Handlers) GetMyPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prefs, err := h.Service.GetPreferences(r.Context(), user.TenantID, user.UserID)
+	prefs, err := h.Service.GetPreferences(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -692,7 +692,7 @@ func (h *Handlers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdatePreferences(r.Context(), user.TenantID, user.UserID, &req); err != nil {
+	if err := h.Service.UpdatePreferences(r.Context(), user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -725,7 +725,7 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.Service.SetContentCountry(r.Context(), user.TenantID, user.UserID, country); err != nil {
+	if err := h.Service.SetContentCountry(r.Context(), user.UserID, country); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -752,8 +752,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -783,7 +782,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 		spaceID = pgtype.UUID{Bytes: id, Valid: true}
 		// Validate that the space exists and is a geo space (country/state/city
 		// level) — prevents users from setting a non-geo space as their location.
-		if !h.Service.store.isValidGeoSpace(r.Context(), tenantID, spaceID) {
+		if !h.Service.store.isValidGeoSpace(r.Context(), spaceID) {
 			errpkg.WriteError(w, http.StatusBadRequest, "not_a_geo_space", "The selected space is not a geo space (country/state/city)")
 			return
 		}
@@ -794,7 +793,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 		// 1 req/s per Nominatim usage policy. The result is matched to an
 		// existing seeded Space by name (city → state → country fallback).
 		// URL and timeout are configurable via system_settings (Rule 3).
-		cityName, stateName, countryCode, err := reverseGeocode(r.Context(), h.settings, tenantID, *body.Latitude, *body.Longitude)
+		cityName, stateName, countryCode, err := reverseGeocode(r.Context(), h.settings, *body.Latitude, *body.Longitude)
 		if err != nil {
 			slog.Warn("reverse geocode failed", "error", err, "lat", *body.Latitude, "lng", *body.Longitude)
 			errpkg.WriteError(w, http.StatusBadGateway, "geocode_failed", "Could not resolve coordinates to a location")
@@ -805,7 +804,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 		if countryCode != "" {
 			// 1. Try to find a city-level Space matching the city name.
 			if cityName != "" {
-				space, err := h.Service.store.findCitySpace(r.Context(), tenantID, cityName)
+				space, err := h.Service.store.findCitySpace(r.Context(), cityName)
 				if err == nil {
 					spaceID = space
 				}
@@ -816,7 +815,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 			// match the seeded Space name. Try the exact name first, then
 			// retry with common suffixes stripped.
 			if !spaceID.Valid && stateName != "" {
-				space, err := h.Service.store.findStateSpace(r.Context(), tenantID, stateName)
+				space, err := h.Service.store.findStateSpace(r.Context(), stateName)
 				if err == nil {
 					spaceID = space
 				} else {
@@ -825,7 +824,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 						if strings.HasSuffix(stateName, suffix) {
 							trimmed := strings.TrimSuffix(stateName, suffix)
 
-							space, err = h.Service.store.findStateSpace(r.Context(), tenantID, trimmed)
+							space, err = h.Service.store.findStateSpace(r.Context(), trimmed)
 							if err == nil {
 								spaceID = space
 								break
@@ -836,7 +835,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 			}
 			// 3. Fall back to the country-level space if no state match.
 			if !spaceID.Valid {
-				space, err := h.Service.store.findCountrySpace(r.Context(), tenantID, countryCode)
+				space, err := h.Service.store.findCountrySpace(r.Context(), countryCode)
 				if err == nil {
 					spaceID = space
 				}
@@ -853,7 +852,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.SetCurrentGeoSpace(r.Context(), tenantID, user.UserID, spaceID); err != nil {
+	if err := h.Service.SetCurrentGeoSpace(r.Context(), user.UserID, spaceID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -876,13 +875,12 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	geoSpace, err := h.Service.store.getCurrentGeoSpace(r.Context(), tenantID, user.UserID)
+	geoSpace, err := h.Service.store.getCurrentGeoSpace(r.Context(), user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// No profile row yet — return empty location, not an error.

@@ -247,7 +247,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	// in the trending SQL means "no geo filter", while "NG" would filter
 	// to Nigeria only (BUG-VIS-001).
 	if res.settings != nil && t != nil {
-		if !res.settings.GetBoolOr(r.Context(), t.ID, "geo_personalization.enabled", true) {
+		if !res.settings.GetBoolOr(r.Context(), "geo_personalization.enabled", true) {
 			if q := normalizeCountry(r.URL.Query().Get("geo")); q != "" {
 				vc.ContentCountry = q
 				vc.Source = "query"
@@ -380,7 +380,7 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 		// (more reliable than GeoIP for VPN/travel scenarios). Gated on the
 		// geo_personalization.city_level_enabled killswitch (ADR-064a §6) —
 		// when false, city-level enrichment is skipped entirely.
-		if res.getBoolSetting(ctx, t.ID, "geo_personalization.city_level_enabled", true) {
+		if res.getBoolSetting(ctx, "geo_personalization.city_level_enabled", true) {
 			geoSpace, err := res.read.GetUserCurrentGeoSpace(ctx,
 				user.UserID,
 			)
@@ -499,7 +499,7 @@ func (res *Resolver) marketSet(ctx context.Context, t *struct{ ID pgtype.UUID },
 
 	raw := fallback
 	if res.settings != nil && t != nil {
-		raw = res.settings.GetStringOr(ctx, t.ID, key, fallback)
+		raw = res.settings.GetStringOr(ctx, key, fallback)
 	}
 
 	for _, c := range strings.Split(raw, ",") {
@@ -513,12 +513,12 @@ func (res *Resolver) marketSet(ctx context.Context, t *struct{ ID pgtype.UUID },
 
 // getBoolSetting reads a bool system_setting with a fallback. Returns the
 // fallback when the resolver has no settings reader (e.g. tests).
-func (res *Resolver) getBoolSetting(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+func (res *Resolver) getBoolSetting(ctx context.Context, key string, fallback bool) bool {
 	if res.settings == nil {
 		return fallback
 	}
 
-	return res.settings.GetBoolOr(ctx, pgtype.UUID{}, key, fallback)
+	return res.settings.GetBoolOr(ctx, key, fallback)
 }
 
 // defaultCountry returns the configured fallback country code for visitors
@@ -526,7 +526,7 @@ func (res *Resolver) getBoolSetting(ctx context.Context, tenantID pgtype.UUID, k
 func (res *Resolver) defaultCountry(ctx context.Context, t *struct{ ID pgtype.UUID }) string {
 	fallback := "NG"
 	if res.settings != nil && t != nil {
-		return res.settings.GetStringOr(ctx, t.ID, "geo_personalization.default_country", fallback)
+		return res.settings.GetStringOr(ctx, "geo_personalization.default_country", fallback)
 	}
 
 	return fallback
@@ -1011,7 +1011,7 @@ func (res *Resolver) clampLanguage(ctx context.Context, lang string, t *struct{ 
 		return lang
 	}
 
-	enabledRaw := res.settings.GetStringOr(ctx, t.ID, "i18n.enabled_languages", "en,fr")
+	enabledRaw := res.settings.GetStringOr(ctx, "i18n.enabled_languages", "en,fr")
 	enabled := make(map[string]bool)
 
 	for _, l := range strings.Split(enabledRaw, ",") {
@@ -1024,7 +1024,7 @@ func (res *Resolver) clampLanguage(ctx context.Context, lang string, t *struct{ 
 		return lang
 	}
 
-	defaultLang := strings.ToLower(strings.TrimSpace(res.settings.GetStringOr(ctx, t.ID, "i18n.default_language", "en")))
+	defaultLang := strings.ToLower(strings.TrimSpace(res.settings.GetStringOr(ctx, "i18n.default_language", "en")))
 	if enabled[defaultLang] {
 		return defaultLang
 	}

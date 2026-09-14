@@ -64,7 +64,7 @@ func run() error {
 
 	fmt.Printf("reindex: starting bulk reindex for tenant %s\n", tenantStr)
 
-	summary, err := indexer.ReindexAll(ctx, tenantID)
+	summary, err := indexer.ReindexAll(ctx)
 	if err != nil {
 		return fmt.Errorf("reindex: %w", err)
 	}

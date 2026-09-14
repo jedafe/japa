@@ -438,12 +438,12 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // Enabled reads the scholarship_finder.enabled system_settings toggle
 // (ADR-073, §73). Defaults to true when unset.
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "scholarship_finder.enabled", true)
+	return s.settings.GetBoolOr(ctx, "scholarship_finder.enabled", true)
 }
 
 // Option is a single selectable value exposed by the statuses endpoint.
@@ -471,7 +471,7 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // FindScholarships. It is extracted so the filter logic can be unit-tested
 // without a live database. The `now` argument lets tests pin the
 // "hide expired" cutoff to a fixed date.
-func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now time.Time) (string, []interface{}) {
+func findScholarshipsQuery(filters ScholarshipFilters, now time.Time) (string, []interface{}) {
 	if filters.Limit <= 0 || filters.Limit > 100 {
 		filters.Limit = 20
 	}
@@ -631,8 +631,8 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 // meta_description/summary) comes from the joined `contents` row. The
 // previous custom_field_values projection is no longer the source of
 // truth. Uses a direct pgx query for dynamic filtering.
-func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ScholarshipFilters) ([]ScholarshipResult, int64, error) {
-	dataQuery, args := findScholarshipsQuery(tenantID, filters, time.Now())
+func (s *Service) FindScholarships(ctx context.Context, filters ScholarshipFilters) ([]ScholarshipResult, int64, error) {
+	dataQuery, args := findScholarshipsQuery(filters, time.Now())
 
 	pool := s.store.pool.Reader
 
@@ -830,7 +830,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 		return gen.SavedScholarship{}, ErrGuideNotFound
 	}
 
-	defaultReminderDays := safeInt32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "scholarship_finder.default_reminder_days", 14))
+	defaultReminderDays := safeInt32(s.settings.GetIntOr(ctx, "scholarship_finder.default_reminder_days", 14))
 
 	saved, err := s.store.SaveScholarship(ctx, gen.SaveScholarshipParams{
 
@@ -860,7 +860,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 
 	// Award completion points if this is the user's first save (fire-and-forget).
 	if s.enqueuer != nil {
-		completionPoints := s.settings.GetIntOr(ctx, pgtype.UUID{}, "scholarship_finder.completion_points", 10)
+		completionPoints := s.settings.GetIntOr(ctx, "scholarship_finder.completion_points", 10)
 		if completionPoints > 0 {
 			payload, _ := json.Marshal(map[string]interface{}{
 				"tenant_id": tenantID.String(),
@@ -880,7 +880,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 // UpdateSavedScholarship updates the status/notes/reminder_days.
 // `notes` is a pointer so callers can clear notes with an explicit empty
 // string (nil means "leave unchanged", matching the SQL COALESCE update).
-func (s *Service) UpdateSavedScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID, status string, notes *string, remindBeforeDays *int32) (gen.SavedScholarship, error) {
+func (s *Service) UpdateSavedScholarship(ctx context.Context, userID, guideID pgtype.UUID, status string, notes *string, remindBeforeDays *int32) (gen.SavedScholarship, error) {
 	if status != "" && !IsValidStatus(status) {
 		return gen.SavedScholarship{}, fmt.Errorf("scholarships: invalid status: %s", status)
 	}
@@ -906,7 +906,7 @@ func (s *Service) UpdateSavedScholarship(ctx context.Context, tenantID, userID, 
 }
 
 // DeleteSavedScholarship removes a scholarship from the tracker.
-func (s *Service) DeleteSavedScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID) error {
+func (s *Service) DeleteSavedScholarship(ctx context.Context, userID, guideID pgtype.UUID) error {
 	return s.store.DeleteSavedScholarship(ctx, gen.DeleteSavedScholarshipParams{
 
 		UserID:  userID,
@@ -916,7 +916,7 @@ func (s *Service) DeleteSavedScholarship(ctx context.Context, tenantID, userID, 
 
 // IsSavedScholarship checks whether the user has saved the given guide.
 // Returns false (not an error) when no saved-tracker row exists.
-func (s *Service) IsSavedScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (bool, error) {
+func (s *Service) IsSavedScholarship(ctx context.Context, userID, guideID pgtype.UUID) (bool, error) {
 	_, err := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
 
 		UserID:  userID,
@@ -1001,8 +1001,8 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 // AdminStats returns aggregate save counts, upcoming-deadline count,
 // reminders-sent count, unique-users count, and the per-status
 // distribution for the admin panel.
-func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID) (AdminStats, error) {
-	dist, err := s.store.AdminStatusDistribution(ctx, tenantID)
+func (s *Service) AdminStats(ctx context.Context) (AdminStats, error) {
+	dist, err := s.store.AdminStatusDistribution(ctx)
 	if err != nil {
 		return AdminStats{}, err
 	}
@@ -1050,7 +1050,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID) (AdminSt
 // AdminDeadlines returns the upcoming-deadline report mapped to the
 // AdminDeadlineItem shape (id, title, deadline, days_until, status) that
 // the admin panel's DeadlineItem contract expects.
-func (s *Service) AdminDeadlines(ctx context.Context, tenantID pgtype.UUID, page, limit int) ([]AdminDeadlineItem, error) {
+func (s *Service) AdminDeadlines(ctx context.Context, page, limit int) ([]AdminDeadlineItem, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -1172,12 +1172,12 @@ func pgtypeTimestampString(t pgtype.Timestamptz) string {
 }
 
 // AdminStatusDistribution returns the status distribution of saved scholarships.
-func (s *Service) AdminStatusDistribution(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdminScholarshipStatusDistributionRow, error) {
-	return s.store.AdminStatusDistribution(ctx, tenantID)
+func (s *Service) AdminStatusDistribution(ctx context.Context) ([]gen.AdminScholarshipStatusDistributionRow, error) {
+	return s.store.AdminStatusDistribution(ctx)
 }
 
 // AdminTopSaved returns the most-saved scholarships.
-func (s *Service) AdminTopSaved(ctx context.Context, tenantID pgtype.UUID, page, limit int) ([]gen.AdminScholarshipTopSavedRow, error) {
+func (s *Service) AdminTopSaved(ctx context.Context, page, limit int) ([]gen.AdminScholarshipTopSavedRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -1196,7 +1196,7 @@ func (s *Service) AdminTopSaved(ctx context.Context, tenantID pgtype.UUID, page,
 }
 
 // AdminUpcomingDeadlines returns upcoming deadline report.
-func (s *Service) AdminUpcomingDeadlines(ctx context.Context, tenantID pgtype.UUID, page, limit int) ([]gen.AdminScholarshipUpcomingDeadlinesRow, error) {
+func (s *Service) AdminUpcomingDeadlines(ctx context.Context, page, limit int) ([]gen.AdminScholarshipUpcomingDeadlinesRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -1215,7 +1215,7 @@ func (s *Service) AdminUpcomingDeadlines(ctx context.Context, tenantID pgtype.UU
 }
 
 // AdminReminderLog returns the reminder delivery history.
-func (s *Service) AdminReminderLog(ctx context.Context, tenantID pgtype.UUID, page, limit int) ([]gen.AdminScholarshipReminderLogRow, error) {
+func (s *Service) AdminReminderLog(ctx context.Context, page, limit int) ([]gen.AdminScholarshipReminderLogRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}

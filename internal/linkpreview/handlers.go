@@ -3,7 +3,6 @@ package linkpreview
 import (
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
@@ -35,7 +34,7 @@ func (h *Handlers) Fetch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch preview
-	preview, err := h.Fetcher.Fetch(r.Context(), rawURL, pgtype.UUID{})
+	preview, err := h.Fetcher.Fetch(r.Context(), rawURL)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "fetch_failed", err.Error())
 		return

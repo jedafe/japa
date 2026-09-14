@@ -208,7 +208,7 @@ WHERE user_id = $1
 // stage, when non-empty, filters to that stage; when empty, all public
 // profiles with a set japa_stage are returned. destSpaceID, when valid,
 // further filters by destination (geo-aware ?dest= filter, §87).
-func (s *Store) ListByStage(ctx context.Context, tenantID pgtype.UUID, stage string, destSpaceID pgtype.UUID, limit, offset int32) ([]DirectoryRow, int64, error) {
+func (s *Store) ListByStage(ctx context.Context, stage string, destSpaceID pgtype.UUID, limit, offset int32) ([]DirectoryRow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}

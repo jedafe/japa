@@ -24,8 +24,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -60,7 +59,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 		// without first looking up the UUID.
 		var usernameErr error
 
-		targetUserID, usernameErr = h.Service.GetUserIDByUsername(r.Context(), tenantID, strings.TrimSpace(req.Username))
+		targetUserID, usernameErr = h.Service.GetUserIDByUsername(r.Context(), strings.TrimSpace(req.Username))
 		if usernameErr != nil {
 			// GetUserIDByUsername returns a plain "user not found" error for
 			// an unknown handle; map it to a 404 so the client gets a clear
@@ -88,7 +87,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	assignedBy := "site_admin"
 	assignedByID := user.UserID
 
-	isOwner, err := h.Service.IsOwner(r.Context(), space.ID, user.UserID, tenantID)
+	isOwner, err := h.Service.IsOwner(r.Context(), space.ID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -98,7 +97,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 		assignedBy = "space_owner"
 		// Section 03: space_owner path requires the target to be an existing
 		// member of the space before promoting to moderator.
-		isMember, err := h.Service.IsMember(r.Context(), space.ID, targetUserID, tenantID)
+		isMember, err := h.Service.IsMember(r.Context(), space.ID, targetUserID)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -145,8 +144,7 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -157,7 +155,7 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveModerator(r.Context(), space.ID, userID, tenantID); err != nil {
+	if err := h.Service.RemoveModerator(r.Context(), space.ID, userID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -176,13 +174,12 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	mods, err := h.Service.ListModerators(r.Context(), space.ID, tenantID)
+	mods, err := h.Service.ListModerators(r.Context(), space.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -193,7 +190,7 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 
 // AdminListModerators handles GET /api/v1/admin/spaces/{id}/moderators.
 func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -204,13 +201,13 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.Service.GetSpaceByID(r.Context(), tenantID, spaceID)
+	_, err = h.Service.GetSpaceByID(r.Context(), spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	mods, err := h.Service.ListModerators(r.Context(), spaceID, tenantID)
+	mods, err := h.Service.ListModerators(r.Context(), spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -223,7 +220,7 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 // Admin-scoped variant of the space moderator assignment that resolves the
 // space by ID (not slug) and accepts either a user_id or username.
 func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -240,7 +237,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	space, err := h.Service.GetSpaceByID(r.Context(), tenantID, spaceID)
+	space, err := h.Service.GetSpaceByID(r.Context(), spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -265,7 +262,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	case req.Username != "":
-		targetUserID, err = h.Service.GetUserIDByUsername(r.Context(), tenantID, req.Username)
+		targetUserID, err = h.Service.GetUserIDByUsername(r.Context(), req.Username)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -299,7 +296,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 
 // AdminRemoveModerator handles DELETE /api/v1/admin/spaces/{id}/moderators/{userId}.
 func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -315,7 +312,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	space, err := h.Service.GetSpaceByID(r.Context(), tenantID, spaceID)
+	space, err := h.Service.GetSpaceByID(r.Context(), spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -335,7 +332,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	case chi.URLParam(r, "username") != "":
-		targetUserID, err = h.Service.GetUserIDByUsername(r.Context(), tenantID, chi.URLParam(r, "username"))
+		targetUserID, err = h.Service.GetUserIDByUsername(r.Context(), chi.URLParam(r, "username"))
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -345,7 +342,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.Service.RemoveModerator(r.Context(), space.ID, targetUserID, tenantID); err != nil {
+	if err := h.Service.RemoveModerator(r.Context(), space.ID, targetUserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

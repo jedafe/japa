@@ -34,7 +34,7 @@ func NewStoreWithReader(database *db.DB) *Store {
 // UpsertTrendingSnapshot inserts or updates a trending snapshot for an entity.
 func (s *Store) UpsertTrendingSnapshot(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	entityType string,
 	entityID pgtype.UUID,
 	score float64,
@@ -56,7 +56,7 @@ func (s *Store) UpsertTrendingSnapshot(
 // GetTrendingByType returns trending snapshots for a given entity type and window.
 func (s *Store) GetTrendingByType(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	entityType string,
 	window string,
 	geoCode string,
@@ -72,7 +72,7 @@ func (s *Store) GetTrendingByType(
 // GetTrendingContent returns trending content with joined content details.
 func (s *Store) GetTrendingContent(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	window string,
 	geoCode string,
 	limit int32,
@@ -86,7 +86,7 @@ func (s *Store) GetTrendingContent(
 // GetTrendingTags returns trending tags with joined tag details.
 func (s *Store) GetTrendingTags(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	window string,
 	geoCode string,
 	limit int32,
@@ -100,7 +100,7 @@ func (s *Store) GetTrendingTags(
 // GetTrendingSpaces returns trending spaces with joined space details.
 func (s *Store) GetTrendingSpaces(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	window string,
 	geoCode string,
 	limit int32,
@@ -114,7 +114,7 @@ func (s *Store) GetTrendingSpaces(
 // GetTrendingUsers returns trending users with joined user/profile details.
 func (s *Store) GetTrendingUsers(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	window string,
 	geoCode string,
 	limit int32,
@@ -126,14 +126,14 @@ func (s *Store) GetTrendingUsers(
 }
 
 // DeleteExpiredTrendingSnapshots removes all expired trending snapshots.
-func (s *Store) DeleteExpiredTrendingSnapshots(ctx context.Context, tenantID pgtype.UUID) error {
+func (s *Store) DeleteExpiredTrendingSnapshots(ctx context.Context) error {
 	return s.queries.DeleteExpiredTrendingSnapshots(ctx)
 }
 
 // DeleteTrendingSnapshotsByType removes trending snapshots for a specific type/window/geo combination.
 func (s *Store) DeleteTrendingSnapshotsByType(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	entityType string,
 	window string,
 	geoCode string,
@@ -148,7 +148,7 @@ func (s *Store) DeleteTrendingSnapshotsByType(
 // GetTrendingSearchQueries returns trending search queries from the last 24 hours.
 func (s *Store) GetTrendingSearchQueries(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	limit int32,
 ) ([]gen.GetTrendingSearchQueriesRow, error) {
 	return s.queries.GetTrendingSearchQueries(ctx,
@@ -163,7 +163,7 @@ func (s *Store) GetTrendingSearchQueries(
 func (s *Store) GetSuggestedUsers(
 	ctx context.Context,
 	userID pgtype.UUID,
-	tenantID pgtype.UUID,
+
 	limit int32,
 	geoCode *string,
 ) ([]gen.GetSuggestedUsersRow, error) {
@@ -181,7 +181,7 @@ func (s *Store) GetSuggestedUsers(
 func (s *Store) GetSuggestedSpaces(
 	ctx context.Context,
 	userID pgtype.UUID,
-	tenantID pgtype.UUID,
+
 	limit int32,
 	geoCode *string,
 ) ([]gen.GetSuggestedSpacesRow, error) {
@@ -199,7 +199,7 @@ func (s *Store) GetSuggestedSpaces(
 func (s *Store) GetSuggestedTags(
 	ctx context.Context,
 	userID pgtype.UUID,
-	tenantID pgtype.UUID,
+
 	limit int32,
 	geoCode *string,
 ) ([]gen.GetSuggestedTagsRow, error) {
@@ -216,7 +216,7 @@ func (s *Store) GetSuggestedTags(
 // Section 53: "You might also like" (BUG-003).
 func (s *Store) GetSuggestedContent(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	window string,
 	geoCode *string,
 	seedContentID pgtype.UUID,
@@ -237,7 +237,7 @@ func (s *Store) GetSuggestedContent(
 // Used by GetTrendingSpaces to apply the ?level= filter in Go (BUG-008).
 func (s *Store) GetSpaceLevels(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	spaceIDs []pgtype.UUID,
 ) (map[[16]byte]string, error) {
 	if len(spaceIDs) == 0 {

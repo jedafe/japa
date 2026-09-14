@@ -38,7 +38,7 @@ const defaultPageSize int32 = 20
 // active template, falling back to the hardcoded generator when no template
 // exists.
 type JSONLDResolver interface {
-	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+	ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
 // MentionNotifier dispatches mention notifications via the batch system
@@ -47,7 +47,7 @@ type JSONLDResolver interface {
 type MentionNotifier interface {
 	DispatchNotification(
 		ctx context.Context,
-		tenantID, recipientID pgtype.UUID,
+		recipientID pgtype.UUID,
 		nType, subjectTitle string,
 		actorID pgtype.UUID,
 		subjectType string,
@@ -60,15 +60,15 @@ type MentionNotifier interface {
 // index thread content into content_embeddings (§69/ADR-069). Implemented
 // by rag.Service; nil disables RAG indexing (graceful degradation).
 type RAGEntityIndexer interface {
-	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
-	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
+	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 }
 
 // settingsReader is the subset of config.Settings needed by the forum handlers
 // to resolve hot-reloadable system_settings (e.g. i18n.default_language for
 // RAG indexing). Nil falls back to compiled-in defaults.
 type settingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // ContentStore is the subset of the content service the forum handlers need
@@ -77,7 +77,7 @@ type settingsReader interface {
 type ContentStore interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
-	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
 	EnsureContentScore(ctx context.Context, contentID pgtype.UUID) error
 }
@@ -184,7 +184,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 // indexThreadRAG fires-and-forgets a RAG indexing call for a forum thread.
 // Errors are logged, never propagated (Rule 8). The body is the thread title
 // + body concatenated for embedding.
-func (h *Handlers) indexThreadRAG(ctx context.Context, tenantID, threadID pgtype.UUID, title string, body []byte) {
+func (h *Handlers) indexThreadRAG(ctx context.Context, threadID pgtype.UUID, title string, body []byte) {
 	if h.ragIndexer == nil {
 		return
 	}
@@ -206,26 +206,26 @@ func (h *Handlers) indexThreadRAG(ctx context.Context, tenantID, threadID pgtype
 	// to "en" when settings are not injected or the key is unset.
 	language := "en"
 	if h.settings != nil {
-		language = h.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
+		language = h.settings.GetStringOr(ctx, "i18n.default_language", "en")
 	}
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "forum_thread", threadID, text, language); err != nil {
+		if err := h.ragIndexer.IndexEntity(bgCtx, "forum_thread", threadID, text, language); err != nil {
 			slog.Warn("forum: RAG index failed for thread", "thread_id", threadID.String(), "error", err)
 		}
 	}()
 }
 
 // purgeThreadRAG fires-and-forgets a RAG purge for a deleted forum thread.
-func (h *Handlers) purgeThreadRAG(ctx context.Context, tenantID, threadID pgtype.UUID) {
+func (h *Handlers) purgeThreadRAG(ctx context.Context, threadID pgtype.UUID) {
 	if h.ragIndexer == nil {
 		return
 	}
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "forum_thread", threadID); err != nil {
+		if err := h.ragIndexer.PurgeEntity(bgCtx, "forum_thread", threadID); err != nil {
 			slog.Warn("forum: RAG purge failed for thread", "thread_id", threadID.String(), "error", err)
 		}
 	}()
@@ -540,11 +540,11 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
-	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, thread.ID, spaceID, input.Body, "mention.content")
+	h.dispatchMentionNotifications(r.Context(), user.UserID, thread.ID, spaceID, input.Body, "mention.content")
 
 	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: forum threads
 	// are part of the RAG corpus).
-	h.indexThreadRAG(r.Context(), tenantID, thread.ID, input.Title, input.Body)
+	h.indexThreadRAG(r.Context(), thread.ID, input.Title, input.Body)
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new thread.
 	h.enqueueSearchIndex("forum_thread", "index", thread.ID, tenantID)
@@ -557,7 +557,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 // ?sort=latest|top and ?solved=true|false.
 // Public: when no user is present, lists all public threads for the tenant.
 func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -603,7 +603,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsBySpaceWithDetails(r.Context(), tenantID, spaceID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		threads, err := h.Service.ListThreadsBySpaceWithDetails(r.Context(), spaceID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -622,7 +622,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByAuthorWithDetails(r.Context(), tenantID, authorID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		threads, err := h.Service.ListThreadsByAuthorWithDetails(r.Context(), authorID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -641,7 +641,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tagID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tagID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -656,13 +656,13 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	case tagSlug != "":
 		// Resolve the slug to a tag ID, then filter threads by that tag.
 		// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (?tag=slug)
-		tag, err := h.Service.GetTagBySlug(r.Context(), tagSlug, tenantID)
+		tag, err := h.Service.GetTagBySlug(r.Context(), tagSlug)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tag.ID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tag.ID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -679,7 +679,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		// forum index shows everybody's threads. Callers wanting their own
 		// threads pass author_id explicitly. Uses the WithDetails variant so
 		// the frontend receives joined author + space data in one response.
-		threads, err := h.Service.ListThreadsByTenantWithDetails(r.Context(), tenantID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		threads, err := h.Service.ListThreadsByTenantWithDetails(r.Context(), solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -708,7 +708,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	// Use the WithDetails variant so the frontend receives joined author +
 	// space data in one response. Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
-	thread, err := h.Service.GetThreadBySlugWithDetails(r.Context(), slug, tenantID)
+	thread, err := h.Service.GetThreadBySlugWithDetails(r.Context(), slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -764,7 +764,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			// Fall back to the top-voted reply when no explicit accepted
 			// reply exists.
 			if thread.ParentReplyID.Valid {
-				if accepted, accErr := h.Service.GetReplyByIDWithAuthor(r.Context(), thread.ParentReplyID, tenantID); accErr == nil {
+				if accepted, accErr := h.Service.GetReplyByIDWithAuthor(r.Context(), thread.ParentReplyID); accErr == nil {
 					answerBody = forumBodyText(accepted.Body)
 					answerAuthor = ifaceString(accepted.AuthorDisplayName, accepted.AuthorUsername)
 					answerCreatedAt = tsString(accepted.CreatedAt)
@@ -775,7 +775,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if answerBody == "" {
-				if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID, tenantID); topErr == nil {
+				if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID); topErr == nil {
 					answerBody = forumBodyText(top.Body)
 					answerAuthor = ifaceString(top.AuthorDisplayName, top.AuthorUsername)
 					answerCreatedAt = tsString(top.CreatedAt)
@@ -785,13 +785,13 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			jsonLd = h.resolveQAPageJSONLD(r, tenantID, thread, questionBody, authorName, answerBody, answerAuthor, answerCreatedAt, answerUpvotes)
+			jsonLd = h.resolveQAPageJSONLD(r, thread, questionBody, authorName, answerBody, answerAuthor, answerCreatedAt, answerUpvotes)
 			if b, err := json.Marshal(jsonLd); err == nil {
 				h.Service.setJSONLDCache(r.Context(), thread.ID, string(b))
 			}
 		}
 	} else {
-		jsonLd = h.resolveQAPageJSONLD(r, tenantID, thread, questionBody, authorName, "", "", "", "")
+		jsonLd = h.resolveQAPageJSONLD(r, thread, questionBody, authorName, "", "", "", "")
 	}
 
 	response["json_ld"] = jsonLd
@@ -811,18 +811,18 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			AuthorUserID: thread.AuthorUserID,
 			SpaceID:      thread.SpaceID,
 		}
-		canSolve = h.Service.canSolveThread(r.Context(), threadModel, user.UserID, tenantID)
+		canSolve = h.Service.canSolveThread(r.Context(), threadModel, user.UserID)
 		// The author, a space moderator, or a holder of forum.thread.edit_any
 		// may edit. Mirrors the check in UpdateThread so the frontend can show
 		// the edit affordance only when the PATCH would succeed.
 		// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Editing)
-		canEdit = h.Service.canModerateThread(r.Context(), threadModel, user.UserID, tenantID, "forum.thread.edit_any")
+		canEdit = h.Service.canModerateThread(r.Context(), threadModel, user.UserID, "forum.thread.edit_any")
 		// Delete uses the delete_any node; author and delete_own also allow it.
-		canDelete = h.Service.canModerateThread(r.Context(), threadModel, user.UserID, tenantID, "forum.thread.delete_any")
+		canDelete = h.Service.canModerateThread(r.Context(), threadModel, user.UserID, "forum.thread.delete_any")
 		// Moderator scope for replies (edit/delete any), separate from thread
 		// ownership. Used by ReplyItem to show edit/delete affordances.
-		canModerate = h.Service.canModerateAny(r.Context(), thread.SpaceID, user.UserID, tenantID, "forum.reply.edit_any") ||
-			h.Service.canModerateAny(r.Context(), thread.SpaceID, user.UserID, tenantID, "forum.reply.delete_any")
+		canModerate = h.Service.canModerateAny(r.Context(), thread.SpaceID, user.UserID, "forum.reply.edit_any") ||
+			h.Service.canModerateAny(r.Context(), thread.SpaceID, user.UserID, "forum.reply.delete_any")
 
 		// Expose whether the current user has bookmarked this thread so the
 		// frontend can render the correct bookmark toggle state, plus the
@@ -836,7 +836,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 		// BUG-006: return the current user's vote state for the thread and
 		// its replies so VoteRail can render the selected direction.
-		if votes, err := h.Service.GetUserVotesForThread(r.Context(), tenantID, thread.ID, user.UserID); err == nil {
+		if votes, err := h.Service.GetUserVotesForThread(r.Context(), thread.ID, user.UserID); err == nil {
 			response["user_votes"] = userVoteMap(votes)
 		}
 	}
@@ -854,7 +854,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// fail the request.
 	if h.mentionCheckers != nil && len(thread.Body) > 0 {
 		erasedIDs, err := mentions.ComputeErasedMentionIDs(
-			r.Context(), thread.Body, tenantID, h.mentionCheckers,
+			r.Context(), thread.Body, h.mentionCheckers,
 		)
 		if err != nil {
 			slog.Warn("forum: ComputeErasedMentionIDs failed", "thread_id", thread.ID.String(), "error", err)
@@ -877,7 +877,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 // (mention.content) from reply mentions (mention.comment).
 func (h *Handlers) dispatchMentionNotifications(
 	ctx context.Context,
-	tenantID, authorID, subjectID, spaceID pgtype.UUID,
+	authorID, subjectID, spaceID pgtype.UUID,
 	body []byte,
 	notificationType string,
 ) {
@@ -895,7 +895,7 @@ func (h *Handlers) dispatchMentionNotifications(
 	// skip erased users (GDPR), blocked users (privacy), and non-members
 	// of private spaces (visibility leak). Section 15 mention edge cases.
 	if h.mentionCheckers != nil {
-		isPrivateSpace, err := h.mentionCheckers.IsPrivateSpace(ctx, tenantID, spaceID)
+		isPrivateSpace, err := h.mentionCheckers.IsPrivateSpace(ctx, spaceID)
 		if err != nil {
 			slog.Warn("forum: IsPrivateSpace check failed", "space_id", spaceID.String(), "error", err)
 
@@ -903,7 +903,7 @@ func (h *Handlers) dispatchMentionNotifications(
 		}
 
 		mentioned, err = mentions.FilterMentions(
-			ctx, mentioned, tenantID, authorID, spaceID, isPrivateSpace,
+			ctx, mentioned, authorID, spaceID, isPrivateSpace,
 			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
 		)
 		if err != nil {
@@ -917,7 +917,7 @@ func (h *Handlers) dispatchMentionNotifications(
 		}
 
 		if err := h.notifier.DispatchNotification(
-			ctx, tenantID, m.ID,
+			ctx, m.ID,
 			notificationType, "",
 			authorID,
 			"forum", subjectID,
@@ -936,7 +936,7 @@ func (h *Handlers) dispatchMentionNotifications(
 // generator so existing behaviour is preserved.
 func (h *Handlers) resolveQAPageJSONLD(
 	r *http.Request,
-	tenantID pgtype.UUID,
+
 	thread gen.GetForumThreadBySlugWithDetailsRow,
 	questionBody, authorName, answerBody, answerAuthor, answerCreatedAt, answerUpvotes string,
 ) any {
@@ -954,7 +954,7 @@ func (h *Handlers) resolveQAPageJSONLD(
 	}
 
 	if h.jsonldResolver != nil {
-		if raw, err := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "QAPage", fields); err == nil && len(raw) > 0 {
+		if raw, err := h.jsonldResolver.ResolveJSONLD(r.Context(), "QAPage", fields); err == nil && len(raw) > 0 {
 			var parsed any
 			if err := json.Unmarshal(raw, &parsed); err == nil {
 				return parsed
@@ -1031,7 +1031,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
-	h.indexThreadRAG(r.Context(), tenantID, id, input.Title, input.Body)
+	h.indexThreadRAG(r.Context(), id, input.Title, input.Body)
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the updated thread.
 	h.enqueueSearchIndex("forum_thread", "index", id, tenantID)
@@ -1063,7 +1063,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-004: fetch the thread first so we can soft-delete the backing
 	// contents row after the forum thread is deleted.
-	thread, err := h.Service.GetThread(r.Context(), id, tenantID)
+	thread, err := h.Service.GetThread(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1082,7 +1082,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 
 	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted threads
 	// must not be retrievable in RAG).
-	h.purgeThreadRAG(r.Context(), tenantID, id)
+	h.purgeThreadRAG(r.Context(), id)
 
 	// §12 stale-index fix: remove the deleted thread from the Meilisearch index.
 	h.enqueueSearchIndex("forum_thread", "delete", id, tenantID)
@@ -1220,18 +1220,18 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
 	// Fetch the thread to get its spaceID for private-space membership filtering.
 	var replySpaceID pgtype.UUID
-	if thread, tErr := h.Service.GetThread(r.Context(), threadID, tenantID); tErr == nil {
+	if thread, tErr := h.Service.GetThread(r.Context(), threadID); tErr == nil {
 		replySpaceID = thread.SpaceID
 	}
 
-	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
+	h.dispatchMentionNotifications(r.Context(), user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }
 
 // ListReplies handles GET /api/v1/forum/{id}/replies.
 func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1244,7 +1244,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 
 	// Use the WithAuthor variant so the frontend receives joined author data
 	// (username, display_name, avatar_url) in the same response.
-	replies, err := h.Service.ListRepliesByThreadWithAuthor(r.Context(), threadID, tenantID)
+	replies, err := h.Service.ListRepliesByThreadWithAuthor(r.Context(), threadID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1270,7 +1270,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			erased, err := mentions.ComputeErasedMentionIDs(r.Context(), reply.Body, tenantID, h.mentionCheckers)
+			erased, err := mentions.ComputeErasedMentionIDs(r.Context(), reply.Body, h.mentionCheckers)
 			if err != nil {
 				slog.Warn("forum: ComputeErasedMentionIDs failed for reply", "reply_id", reply.ID.String(), "error", err)
 				continue
@@ -1294,7 +1294,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 	// BUG-006: include the current user's reply votes so the frontend can
 	// render each VoteRail in the selected state.
 	if user := auth.FromContext(r.Context()); user != nil {
-		if votes, err := h.Service.GetUserVotesForThread(r.Context(), tenantID, threadID, user.UserID); err == nil {
+		if votes, err := h.Service.GetUserVotesForThread(r.Context(), threadID, user.UserID); err == nil {
 			resp["user_votes"] = userVoteMap(votes)
 		}
 	}
@@ -1467,8 +1467,7 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1489,7 +1488,7 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveVote(r.Context(), tenantID, user.UserID, entityType, entityID); err != nil {
+	if err := h.Service.RemoveVote(r.Context(), user.UserID, entityType, entityID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1507,8 +1506,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1540,7 +1538,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bm, err := h.Service.AddBookmark(r.Context(), tenantID, user.UserID, input.EntityType, entityID, input.Folder)
+	bm, err := h.Service.AddBookmark(r.Context(), user.UserID, input.EntityType, entityID, input.Folder)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1557,8 +1555,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1569,7 +1566,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveBookmarkByID(r.Context(), id, user.UserID, tenantID); err != nil {
+	if err := h.Service.RemoveBookmarkByID(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1583,8 +1580,7 @@ func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1592,7 +1588,7 @@ func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	bookmarks, err := h.Service.ListBookmarksByUser(r.Context(), tenantID, user.UserID, limit, offset)
+	bookmarks, err := h.Service.ListBookmarksByUser(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1912,7 +1908,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tag, err := h.Service.CreateTag(r.Context(), tenantID, CreateTagInput{
+	tag, err := h.Service.CreateTag(r.Context(), CreateTagInput{
 		Name:            input.Name,
 		Slug:            input.Slug,
 		Description:     input.Description,
@@ -1933,7 +1929,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 
 // ListTags handles GET /api/v1/forum/tags.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1941,7 +1937,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	tags, err := h.Service.ListTags(r.Context(), tenantID, limit, offset)
+	tags, err := h.Service.ListTags(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1952,7 +1948,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 
 // GetTagBySlug handles GET /api/v1/forum/tags/{slug}.
 func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1963,7 +1959,7 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.Service.GetTagBySlug(r.Context(), slug, tenantID)
+	tag, err := h.Service.GetTagBySlug(r.Context(), slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2019,7 +2015,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tag, err := h.Service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
+	tag, err := h.Service.UpdateTag(r.Context(), id, UpdateTagInput{
 		Name:            input.Name,
 		Slug:            input.Slug,
 		Description:     input.Description,
@@ -2056,7 +2052,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteTag(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteTag(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2069,7 +2065,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 
 // AddThreadTag handles POST /api/v1/forum/{id}/tags/{tagId}.
 func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
+	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -2086,7 +2082,7 @@ func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.AddThreadTag(r.Context(), user.TenantID, threadID, tagID); err != nil {
+	if err := h.Service.AddThreadTag(r.Context(), threadID, tagID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2098,7 +2094,7 @@ func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 // Accepts a JSON array of tag ids and assigns them all to the thread,
 // enforcing the MaxTagsPerThread cap. Ref: api-routes-catalog L596.
 func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
+	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -2135,7 +2131,7 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 		tagIDs = append(tagIDs, id)
 	}
 
-	if err := h.Service.AddThreadTagsBulk(r.Context(), user.TenantID, threadID, tagIDs); err != nil {
+	if err := h.Service.AddThreadTagsBulk(r.Context(), threadID, tagIDs); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2145,7 +2141,7 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 
 // RemoveThreadTag handles DELETE /api/v1/forum/{id}/tags/{tagId}.
 func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
+	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -2162,7 +2158,7 @@ func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveThreadTag(r.Context(), user.TenantID, threadID, tagID); err != nil {
+	if err := h.Service.RemoveThreadTag(r.Context(), threadID, tagID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2198,7 +2194,7 @@ func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, cont
 		return
 	}
 
-	existing, err := h.content.GetContent(ctx, contentID, tenantID)
+	existing, err := h.content.GetContent(ctx, contentID)
 	if err != nil {
 		slog.Warn("forum: failed to fetch backing content for sync", "content_id", contentID.String(), "error", err)
 		return

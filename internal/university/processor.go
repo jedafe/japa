@@ -74,7 +74,7 @@ func (p *Processor) CalculatePeriodPayouts(ctx context.Context, tenantID, period
 // SendInstructorPayout handles university:send_instructor_payout.
 // Payload: { , payout_id }.
 func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID string) error {
-	tID, err := scanUUID(tenantID)
+	_, err := scanUUID(tenantID)
 	if err != nil {
 		return fmt.Errorf("university: send payout: %w", err)
 	}
@@ -84,7 +84,7 @@ func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID
 		return fmt.Errorf("university: send payout: %w", err)
 	}
 
-	return p.service.SendInstructorPayout(ctx, tID, pID)
+	return p.service.SendInstructorPayout(ctx, pID)
 }
 
 // NotifyInstructorApproved handles university:notify_instructor_approved.

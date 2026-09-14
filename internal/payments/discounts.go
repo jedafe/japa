@@ -20,8 +20,8 @@ type DiscountCodeValidation struct {
 }
 
 // ValidateAndCalculateDiscount validates a discount code and calculates the discount amount.
-func (s *Service) ValidateAndCalculateDiscount(ctx context.Context, tenantID, userID pgtype.UUID, code, purposeType string, amount int64) (DiscountCodeValidation, error) {
-	discountCode, err := s.ValidateDiscountCode(ctx, tenantID, userID, code, purposeType)
+func (s *Service) ValidateAndCalculateDiscount(ctx context.Context, userID pgtype.UUID, code, purposeType string, amount int64) (DiscountCodeValidation, error) {
+	discountCode, err := s.ValidateDiscountCode(ctx, userID, code, purposeType)
 	if err != nil {
 		return DiscountCodeValidation{Valid: false}, err
 	}
@@ -50,8 +50,8 @@ type DiscountCodeUsage struct {
 }
 
 // GetDiscountCodeUsageStats returns usage statistics for a discount code.
-func (s *Service) GetDiscountCodeUsageStats(ctx context.Context, tenantID, codeID pgtype.UUID) (DiscountCodeUsage, error) {
-	discountCode, err := s.store.getDiscountCodeByID(ctx, codeID, tenantID)
+func (s *Service) GetDiscountCodeUsageStats(ctx context.Context, codeID pgtype.UUID) (DiscountCodeUsage, error) {
+	discountCode, err := s.store.getDiscountCodeByID(ctx, codeID)
 	if err != nil {
 		return DiscountCodeUsage{}, errors.New("discount code not found")
 	}

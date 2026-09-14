@@ -87,7 +87,7 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 		return
 	}
 
-	report, err := h.service.CreateReport(r.Context(), tenantID, user.UserID, CreateReportInput{
+	report, err := h.service.CreateReport(r.Context(), user.UserID, CreateReportInput{
 		EntityType:   entityType,
 		EntityID:     entityID,
 		Reason:       body.Reason,
@@ -155,7 +155,7 @@ func (h *Handlers) ReportDMMessage(w http.ResponseWriter, r *http.Request) {
 
 // ListMyReports handles GET /api/v1/me/reports.
 func (h *Handlers) ListMyReports(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -168,7 +168,7 @@ func (h *Handlers) ListMyReports(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	myReports, err := h.service.ListMyReports(r.Context(), tenantID, user.UserID, limit, offset)
+	myReports, err := h.service.ListMyReports(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list your reports")
 		return
@@ -210,7 +210,7 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := page * limit
 
-	allReports, err := h.service.ListReports(r.Context(), tenantID, status, entityType, q, limit, offset)
+	allReports, err := h.service.ListReports(r.Context(), status, entityType, q, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list reports")
 		return
@@ -239,7 +239,7 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReport handles DELETE /api/v1/admin/reports/{id}.
 func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -250,7 +250,7 @@ func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteReport(r.Context(), id, tenantID); err != nil {
+	if err := h.service.DeleteReport(r.Context(), id); err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -260,7 +260,7 @@ func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
 
 // GetReport handles GET /api/v1/admin/reports/{id}.
 func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -271,7 +271,7 @@ func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := h.service.GetReport(r.Context(), id, tenantID)
+	report, err := h.service.GetReport(r.Context(), id)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -284,7 +284,7 @@ func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 // It records the report resolution and, for warn/ban actions, also fires the
 // matching user-moderation side effect (warn the reporter / ban the reported user).
 func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -316,7 +316,7 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load the report so we can resolve warn/ban targets.
-	report, err := h.service.GetReport(r.Context(), id, tenantID)
+	report, err := h.service.GetReport(r.Context(), id)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -332,7 +332,7 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 		note = &input.Reason
 	}
 
-	updated, err := h.service.UpdateReportStatus(r.Context(), id, tenantID, reviewer.UserID, status, note)
+	updated, err := h.service.UpdateReportStatus(r.Context(), id, reviewer.UserID, status, note)
 	if err != nil {
 		writeServiceError(w, err)
 		return

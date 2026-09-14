@@ -39,7 +39,7 @@ func NewStore(database *db.DB) *Store {
 
 // GetCostOfLivingType returns the seeded cost_of_living comparison type
 // definition (with config JSONB containing the weighted cost index weights).
-func (s *Store) GetCostOfLivingType(ctx context.Context, tenantID pgtype.UUID) (gen.ComparisonTypeDefinition, error) {
+func (s *Store) GetCostOfLivingType(ctx context.Context) (gen.ComparisonTypeDefinition, error) {
 	t, err := s.queries.GetCostOfLivingType(ctx)
 	if err != nil {
 		return gen.ComparisonTypeDefinition{}, fmt.Errorf("costofliving: get type: %w", err)
@@ -51,7 +51,7 @@ func (s *Store) GetCostOfLivingType(ctx context.Context, tenantID pgtype.UUID) (
 // ListCities lists cities (comparison_items) with cost_of_living data,
 // paginated and searchable by title, optionally filtered by country geo_code,
 // country_id, state_id, and city_id (via the space_parent_spaces hierarchy).
-func (s *Store) ListCities(ctx context.Context, tenantID, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID, offset, limit int32) ([]gen.ListCOLCitiesRow, error) {
+func (s *Store) ListCities(ctx context.Context, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID, offset, limit int32) ([]gen.ListCOLCitiesRow, error) {
 	rows, err := s.queries.ListCOLCities(ctx, gen.ListCOLCitiesParams{
 
 		TypeID:      typeID,
@@ -72,7 +72,7 @@ func (s *Store) ListCities(ctx context.Context, tenantID, typeID pgtype.UUID, se
 
 // CountCities returns the total number of cities matching the search and
 // optional country geo_code / ancestor scope filters.
-func (s *Store) CountCities(ctx context.Context, tenantID, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID) (int64, error) {
+func (s *Store) CountCities(ctx context.Context, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountCOLCities(ctx, gen.CountCOLCitiesParams{
 
 		TypeID:      typeID,
@@ -92,7 +92,7 @@ func (s *Store) CountCities(ctx context.Context, tenantID, typeID pgtype.UUID, s
 // GetCityByGeoSpaceID returns the cost_of_living comparison item for the
 // given geo space, if one exists. It is used by the JCE resolver to
 // backfill score_inputs for spaces.
-func (s *Store) GetCityByGeoSpaceID(ctx context.Context, tenantID, geoSpaceID pgtype.UUID) (gen.GetCOLByGeoSpaceIDRow, error) {
+func (s *Store) GetCityByGeoSpaceID(ctx context.Context, geoSpaceID pgtype.UUID) (gen.GetCOLByGeoSpaceIDRow, error) {
 	row, err := s.queries.GetCOLByGeoSpaceID(ctx,
 
 		geoSpaceID,
@@ -106,7 +106,7 @@ func (s *Store) GetCityByGeoSpaceID(ctx context.Context, tenantID, geoSpaceID pg
 
 // GetBaselineCity returns the baseline city (is_baseline = true) for the
 // cost_of_living type, with its geo space info.
-func (s *Store) GetBaselineCity(ctx context.Context, tenantID, typeID pgtype.UUID) (gen.GetCOLBaselineCityRow, error) {
+func (s *Store) GetBaselineCity(ctx context.Context, typeID pgtype.UUID) (gen.GetCOLBaselineCityRow, error) {
 	row, err := s.queries.GetCOLBaselineCity(ctx,
 
 		typeID,
@@ -120,7 +120,7 @@ func (s *Store) GetBaselineCity(ctx context.Context, tenantID, typeID pgtype.UUI
 
 // GetCityByID returns a single city (comparison_item) by ID with its geo
 // space info.
-func (s *Store) GetCityByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetCOLCityByIDRow, error) {
+func (s *Store) GetCityByID(ctx context.Context, id pgtype.UUID) (gen.GetCOLCityByIDRow, error) {
 	row, err := s.queries.GetCOLCityByID(ctx,
 
 		id,
@@ -134,7 +134,7 @@ func (s *Store) GetCityByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.
 
 // GetCitiesByIDs batch-fetches multiple cities by ID. Used by CompareCities
 // to avoid an N+1 (one GetCityByID call per requested city).
-func (s *Store) GetCitiesByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.GetCOLCitiesByIDsRow, error) {
+func (s *Store) GetCitiesByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.GetCOLCitiesByIDsRow, error) {
 	rows, err := s.queries.GetCOLCitiesByIDs(ctx,
 
 		ids,
@@ -148,7 +148,7 @@ func (s *Store) GetCitiesByIDs(ctx context.Context, tenantID pgtype.UUID, ids []
 
 // GetValuesForCities returns the comparison values (cost data matrix) for a
 // set of city item IDs. The service layer pivots these into a matrix.
-func (s *Store) GetValuesForCities(ctx context.Context, tenantID pgtype.UUID, itemIDs []pgtype.UUID) ([]gen.GetCOLValuesForCitiesRow, error) {
+func (s *Store) GetValuesForCities(ctx context.Context, itemIDs []pgtype.UUID) ([]gen.GetCOLValuesForCitiesRow, error) {
 	rows, err := s.queries.GetCOLValuesForCities(ctx,
 
 		itemIDs,
@@ -161,7 +161,7 @@ func (s *Store) GetValuesForCities(ctx context.Context, tenantID pgtype.UUID, it
 }
 
 // AdminStats returns the per-city data completeness + staleness report.
-func (s *Store) AdminStats(ctx context.Context, tenantID, typeID pgtype.UUID, offset, limit int32) ([]gen.AdminCOLStatsRow, error) {
+func (s *Store) AdminStats(ctx context.Context, typeID pgtype.UUID, offset, limit int32) ([]gen.AdminCOLStatsRow, error) {
 	rows, err := s.queries.AdminCOLStats(ctx, gen.AdminCOLStatsParams{
 
 		TypeID:     typeID,

@@ -30,7 +30,7 @@ const editLockTTLDefault = 90 * time.Second
 
 // editLockSettingsReader is the subset of config.Settings the edit lock needs.
 type editLockSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 var defaultTenantUUID = pgtype.UUID{Bytes: [16]byte{}, Valid: true}
@@ -104,7 +104,7 @@ func EditLockMiddleware(rdb valkeycompat.Cmdable, settings editLockSettingsReade
 			ttl := editLockTTLDefault
 
 			if settings != nil {
-				ttl = time.Duration(settings.GetIntOr(ctx, pgtype.UUID{}, "content.edit_lock_ttl_seconds", 90)) * time.Second
+				ttl = time.Duration(settings.GetIntOr(ctx, "content.edit_lock_ttl_seconds", 90)) * time.Second
 			}
 
 			if r.Method == http.MethodDelete {

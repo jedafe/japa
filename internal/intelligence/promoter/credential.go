@@ -20,14 +20,14 @@ import (
 // *stores.Store satisfies this interface; tests substitute a mock.
 type CredentialStore interface {
 	PersonaResolver
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	GetCredentialPathwayByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.CredentialPathway, error)
-	CreateCredentialPathwayIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error)
-	UpdateCredentialPathwayIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateCredentialPathwayIntelParams) error
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
-	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetCredentialPathwayByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.CredentialPathway, error)
+	CreateCredentialPathwayIntel(ctx context.Context, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error)
+	UpdateCredentialPathwayIntel(ctx context.Context, arg gen.UpdateCredentialPathwayIntelParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
+	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
 	GetCredentialProfessionBySlug(ctx context.Context, slug string) (gen.CredentialProfession, error)
 	GetCredentialProfessionByName(ctx context.Context, name string) (gen.CredentialProfession, error)
 	WithTx(ctx context.Context, fn func(CredentialTxStore) error) error
@@ -35,17 +35,16 @@ type CredentialStore interface {
 
 // CredentialTxStore is the subset of CredentialStore needed inside a transaction.
 type CredentialTxStore interface {
-	CreateCredentialPathwayIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateCredentialPathwayIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateCredentialPathwayIntelParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	CreateCredentialPathwayIntel(ctx context.Context, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateCredentialPathwayIntel(ctx context.Context, arg gen.UpdateCredentialPathwayIntelParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // CredentialPromoter promotes credential pathway intel_records into the
 // credential_pathways projection table (§94, ADR-102, ADR-076 Amendment 1).
 type CredentialPromoter struct {
 	store    CredentialStore
-	tenantID pgtype.UUID
 	authorID pgtype.UUID
 	aiModel  *string
 	now      func() time.Time
@@ -65,8 +64,8 @@ func WithCredentialAIModel(model string) CredentialPromoterOption {
 }
 
 // NewCredentialPromoter creates a credential promoter backed by the given store.
-func NewCredentialPromoter(store CredentialStore, tenantID, authorID pgtype.UUID, opts ...CredentialPromoterOption) *CredentialPromoter {
-	p := &CredentialPromoter{store: store, tenantID: tenantID, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
+func NewCredentialPromoter(store CredentialStore, authorID pgtype.UUID, opts ...CredentialPromoterOption) *CredentialPromoter {
+	p := &CredentialPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -84,12 +83,12 @@ var ErrNotCredentialPathway = errors.New("promoter: intel record is not a creden
 // Promote maps the intel record identified by recordID to a credential_pathways
 // projection row, creating or updating it while respecting editorial overrides.
 func (p *CredentialPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.CredentialPathway]{
+	return promoteDomain(ctx, p.store, recordID, domainPromoteOps[gen.CredentialPathway]{
 		entityType: p.Entity(),
 		notErr:     ErrNotCredentialPathway,
 		loadLabel:  "credential pathway",
-		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.CredentialPathway, error) {
-			return p.store.GetCredentialPathwayByIntelRecord(ctx, tenantID, pgID)
+		getExisting: func(ctx context.Context, pgID pgtype.UUID) (gen.CredentialPathway, error) {
+			return p.store.GetCredentialPathwayByIntelRecord(ctx, pgID)
 		},
 		createPath: p.credentialCreatePath,
 		updatePath: p.credentialUpdatePath,
@@ -112,12 +111,12 @@ func (p *CredentialPromoter) credentialCreatePath(ctx context.Context, record ge
 	var result PromoteResult
 
 	err = p.store.WithTx(ctx, func(tx CredentialTxStore) error {
-		pathway, err := tx.CreateCredentialPathwayIntel(ctx, p.tenantID, params)
+		pathway, err := tx.CreateCredentialPathwayIntel(ctx, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create credential pathway: %w", err)
 		}
 
-		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
@@ -157,7 +156,7 @@ func (p *CredentialPromoter) credentialUpdatePath(ctx context.Context, record ge
 		params.FreshnessScore = freshScore
 
 		if err := p.store.WithTx(ctx, func(tx CredentialTxStore) error {
-			return tx.UpdateCredentialPathwayIntel(ctx, p.tenantID, params)
+			return tx.UpdateCredentialPathwayIntel(ctx, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump credential pathway freshness: %w", err)
 		}
@@ -187,11 +186,11 @@ func (p *CredentialPromoter) credentialUpdatePath(ctx context.Context, record ge
 	var result PromoteResult
 
 	err = p.store.WithTx(ctx, func(tx CredentialTxStore) error {
-		if err := tx.UpdateCredentialPathwayIntel(ctx, p.tenantID, params); err != nil {
+		if err := tx.UpdateCredentialPathwayIntel(ctx, params); err != nil {
 			return fmt.Errorf("promoter: update credential pathway: %w", err)
 		}
 
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
+		if err := tx.CreateIntelReviewLog(ctx, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
 
@@ -278,7 +277,7 @@ func (p *CredentialPromoter) resolveCountrySpace(ctx context.Context, ext extrac
 		return pgtype.UUID{}, fmt.Errorf("%s not provided", field)
 	}
 
-	id, err := p.store.GetCountrySpace(ctx, p.tenantID, code)
+	id, err := p.store.GetCountrySpace(ctx, code)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}

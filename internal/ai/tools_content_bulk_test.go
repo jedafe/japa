@@ -20,11 +20,11 @@ type stubContentLifecycleService struct {
 	deleteErr        error
 }
 
-func (s *stubContentLifecycleService) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *stubContentLifecycleService) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 	return s.deleteErr
 }
 
-func (s *stubContentLifecycleService) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
+func (s *stubContentLifecycleService) ListContentsByType(ctx context.Context, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
 	}

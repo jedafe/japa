@@ -22,7 +22,7 @@ var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
 
 // ListPublishedByAuthor returns a user's published+public content, newest first,
 // paginated. Powers the public profile Posts tab (GET /users/{id}/content).
-func (s *Service) ListPublishedByAuthor(ctx context.Context, tenantID, authorID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByAuthorRow, error) {
+func (s *Service) ListPublishedByAuthor(ctx context.Context, authorID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByAuthorRow, error) {
 	rows, err := s.read.ListPublishedContentByAuthor(ctx, gen.ListPublishedContentByAuthorParams{
 
 		AuthorID:   authorID,
@@ -41,7 +41,7 @@ func (s *Service) ListPublishedByAuthor(ctx context.Context, tenantID, authorID 
 // returned all tenant content. Public-safe: only published+public content;
 // non-active users are already 404'd by the requireActiveProfileUser gate.
 func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -62,7 +62,7 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := h.Service.ListPublishedByAuthor(r.Context(), tenantID, authorID, limit, offset)
+	items, err := h.Service.ListPublishedByAuthor(r.Context(), authorID, limit, offset)
 	if err != nil {
 		slog.Error("content: ListByAuthor failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
@@ -275,7 +275,7 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 
 // ListPublishedByOrganization returns an org's published+public content, newest
 // first, paginated. Powers the org profile Posts tab (GET /organizations/{id}/content).
-func (s *Service) ListPublishedByOrganization(ctx context.Context, tenantID, orgID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByOrganizationRow, error) {
+func (s *Service) ListPublishedByOrganization(ctx context.Context, orgID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByOrganizationRow, error) {
 	rows, err := s.read.ListPublishedContentByOrganization(ctx, gen.ListPublishedContentByOrganizationParams{
 
 		OrganizationID: orgID,
@@ -292,7 +292,7 @@ func (s *Service) ListPublishedByOrganization(ctx context.Context, tenantID, org
 // ListByOrganization handles GET /organizations/{id}/content — the org profile
 // Posts tab. Non-active orgs are already 404'd by the requireActiveOrgByID gate.
 func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -313,7 +313,7 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := h.Service.ListPublishedByOrganization(r.Context(), tenantID, orgID, limit, offset)
+	items, err := h.Service.ListPublishedByOrganization(r.Context(), orgID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
 		return

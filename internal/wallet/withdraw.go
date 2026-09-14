@@ -84,12 +84,12 @@ type WithdrawalResult struct {
 // proposed credit withdrawal without mutating state.
 //
 // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
-func (s *Service) CalculateWithdrawal(ctx context.Context, tenantID, userID pgtype.UUID, input CalculateWithdrawalInput) (CalculateWithdrawalResult, error) {
+func (s *Service) CalculateWithdrawal(ctx context.Context, userID pgtype.UUID, input CalculateWithdrawalInput) (CalculateWithdrawalResult, error) {
 	if input.CreditAmount <= 0 {
 		return CalculateWithdrawalResult{}, newValidationError("credit_amount", "credit amount must be positive")
 	}
 
-	currency, err := s.resolveWithdrawalCurrency(ctx, tenantID, userID, input.CurrencyCode)
+	currency, err := s.resolveWithdrawalCurrency(ctx, userID, input.CurrencyCode)
 	if err != nil {
 		return CalculateWithdrawalResult{}, err
 	}
@@ -97,7 +97,7 @@ func (s *Service) CalculateWithdrawal(ctx context.Context, tenantID, userID pgty
 	// Check minimum withdrawal amount.
 	minCredits := 1000
 	if s.settings != nil {
-		minCredits = s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.min_withdrawal_credits", 1000)
+		minCredits = s.settings.GetIntOr(ctx, "wallet.min_withdrawal_credits", 1000)
 	}
 
 	if input.CreditAmount < int64(minCredits) {
@@ -106,7 +106,7 @@ func (s *Service) CalculateWithdrawal(ctx context.Context, tenantID, userID pgty
 
 	fiatAmount := CreditsToFiat(int(input.CreditAmount), currency)
 
-	feeAmount, feeBasis, feeRate, err := s.calculateWithdrawalFee(ctx, tenantID, input.CreditAmount, fiatAmount)
+	feeAmount, feeBasis, feeRate, err := s.calculateWithdrawalFee(ctx, input.CreditAmount, fiatAmount)
 	if err != nil {
 		return CalculateWithdrawalResult{}, err
 	}
@@ -142,12 +142,12 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 		return WithdrawalResult{}, newValidationError("idempotency_key", "Idempotency-Key is required")
 	}
 
-	currency, err := s.resolveWithdrawalCurrency(ctx, tenantID, userID, input.CurrencyCode)
+	currency, err := s.resolveWithdrawalCurrency(ctx, userID, input.CurrencyCode)
 	if err != nil {
 		return WithdrawalResult{}, err
 	}
 
-	calc, err := s.CalculateWithdrawal(ctx, tenantID, userID, CalculateWithdrawalInput{
+	calc, err := s.CalculateWithdrawal(ctx, userID, CalculateWithdrawalInput{
 		CreditAmount: input.CreditAmount,
 		CurrencyCode: currency.Code,
 	})
@@ -156,7 +156,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	// Verify the user has enough credits.
-	_, credits, err := s.GetBalance(ctx, tenantID, userID)
+	_, credits, err := s.GetBalance(ctx, userID)
 	if err != nil {
 		return WithdrawalResult{}, fmt.Errorf("reading credits balance: %w", err)
 	}
@@ -166,13 +166,13 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	// Resolve payout method.
-	method, err := s.resolvePayoutMethod(ctx, tenantID, userID, input.PayoutMethodID)
+	method, err := s.resolvePayoutMethod(ctx, userID, input.PayoutMethodID)
 	if err != nil {
 		return WithdrawalResult{}, err
 	}
 
 	// Determine if admin approval is required.
-	status, requiresApproval, err := s.resolveWithdrawalStatus(ctx, tenantID, userID, calc.CreditAmount)
+	status, requiresApproval, err := s.resolveWithdrawalStatus(ctx, userID, calc.CreditAmount)
 	if err != nil {
 		return WithdrawalResult{}, err
 	}
@@ -182,7 +182,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 
 	var provider payout.Provider
 	if !requiresApproval {
-		provider, err = s.resolvePayoutProvider(ctx, tenantID, method)
+		provider, err = s.resolvePayoutProvider(ctx, method)
 		if err != nil {
 			return WithdrawalResult{}, err
 		}
@@ -349,7 +349,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 // resolveWithdrawalCurrency returns the active currency row to use for the
 // withdrawal. If input.CurrencyCode is empty, it resolves via the user's
 // preferences and geo context.
-func (s *Service) resolveWithdrawalCurrency(ctx context.Context, tenantID, userID pgtype.UUID, explicit string) (gen.Currency, error) {
+func (s *Service) resolveWithdrawalCurrency(ctx context.Context, userID pgtype.UUID, explicit string) (gen.Currency, error) {
 	// Explicit selection.
 	if explicit != "" {
 		currency, err := s.store.read.GetCurrencyByCode(ctx, explicit)
@@ -378,7 +378,7 @@ func (s *Service) resolveWithdrawalCurrency(ctx context.Context, tenantID, userI
 		PreferredCurrency: derefString(pref),
 	}
 
-	code, err := s.currencyResolver.ResolveCurrency(ctx, tenantID, cc)
+	code, err := s.currencyResolver.ResolveCurrency(ctx, cc)
 	if err != nil {
 		return gen.Currency{}, fmt.Errorf("resolving currency: %w", err)
 	}
@@ -401,7 +401,7 @@ func (s *Service) resolveWithdrawalCurrency(ctx context.Context, tenantID, userI
 
 // calculateWithdrawalFee resolves the first matching active fee tier and
 // returns the fee amount, basis, and rate.
-func (s *Service) calculateWithdrawalFee(ctx context.Context, tenantID pgtype.UUID, creditAmount, fiatAmount int64) (int64, string, float64, error) {
+func (s *Service) calculateWithdrawalFee(ctx context.Context, creditAmount, fiatAmount int64) (int64, string, float64, error) {
 	tiers, err := s.store.read.ListWithdrawalFeeTiersByTenant(ctx)
 	if err != nil {
 		return 0, "", 0, fmt.Errorf("loading fee tiers: %w", err)
@@ -445,7 +445,7 @@ func (s *Service) calculateWithdrawalFee(ctx context.Context, tenantID pgtype.UU
 
 // resolvePayoutMethod loads the user's payout method, or their default if none
 // is provided.
-func (s *Service) resolvePayoutMethod(ctx context.Context, tenantID, userID pgtype.UUID, methodID string) (gen.WalletWithdrawalMethod, error) {
+func (s *Service) resolvePayoutMethod(ctx context.Context, userID pgtype.UUID, methodID string) (gen.WalletWithdrawalMethod, error) {
 	if methodID == "" {
 		methods, err := s.store.read.ListWithdrawalMethodsByUser(ctx,
 
@@ -494,7 +494,7 @@ func (s *Service) resolvePayoutMethod(ctx context.Context, tenantID, userID pgty
 }
 
 // resolvePayoutProvider returns the configured provider for the given method.
-func (s *Service) resolvePayoutProvider(ctx context.Context, tenantID pgtype.UUID, method gen.WalletWithdrawalMethod) (payout.Provider, error) {
+func (s *Service) resolvePayoutProvider(ctx context.Context, method gen.WalletWithdrawalMethod) (payout.Provider, error) {
 	// In-memory registered provider (NOWPayments, etc.) has priority.
 	providerType := method.Provider
 	if p, ok := s.payoutProviders[providerType]; ok {
@@ -511,7 +511,7 @@ func (s *Service) resolvePayoutProvider(ctx context.Context, tenantID pgtype.UUI
 
 // resolveWithdrawalStatus checks the user's group policy to decide whether the
 // withdrawal requires admin approval.
-func (s *Service) resolveWithdrawalStatus(ctx context.Context, tenantID, userID pgtype.UUID, creditAmount int64) (string, bool, error) {
+func (s *Service) resolveWithdrawalStatus(ctx context.Context, userID pgtype.UUID, creditAmount int64) (string, bool, error) {
 	group, err := s.store.read.GetUserGroupByUserID(ctx,
 
 		userID,
@@ -544,7 +544,7 @@ func (s *Service) resolveWithdrawalStatus(ctx context.Context, tenantID, userID 
 // POST /admin/wallet/withdrawals/{id}/process).
 //
 // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
-func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, withdrawalID pgtype.UUID) (WithdrawalResult, error) {
+func (s *Service) ProcessWithdrawal(ctx context.Context, adminUserID, withdrawalID pgtype.UUID) (WithdrawalResult, error) {
 	withdrawal, err := s.store.read.GetWithdrawalByID(ctx,
 		withdrawalID,
 	)
@@ -580,7 +580,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, 
 		NetAmount:      withdrawal.NetAmount,
 	}
 
-	provider, err := s.resolvePayoutProvider(ctx, tenantID, method)
+	provider, err := s.resolvePayoutProvider(ctx, method)
 	if err != nil {
 		return WithdrawalResult{}, err
 	}
@@ -617,7 +617,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, 
 
 	// Refund credits on failure.
 	if status == WithdrawalStatusFailed {
-		if rerr := s.refundWithdrawalCredits(ctx, tenantID, withdrawal.UserID, withdrawal.CreditAmount, withdrawalID); rerr != nil {
+		if rerr := s.refundWithdrawalCredits(ctx, withdrawal.UserID, withdrawal.CreditAmount, withdrawalID); rerr != nil {
 			slog.Error("failed to refund failed withdrawal", "withdrawal_id", withdrawal.ID, "error", rerr)
 		}
 	}
@@ -639,7 +639,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, 
 
 // RejectWithdrawal rejects a pending or pending_approval withdrawal and
 // refunds the user's credits.
-func (s *Service) RejectWithdrawal(ctx context.Context, tenantID, adminUserID, withdrawalID pgtype.UUID, note string) (WithdrawalResult, error) {
+func (s *Service) RejectWithdrawal(ctx context.Context, adminUserID, withdrawalID pgtype.UUID, note string) (WithdrawalResult, error) {
 	withdrawal, err := s.store.read.GetWithdrawalByID(ctx,
 		withdrawalID,
 	)
@@ -672,7 +672,7 @@ func (s *Service) RejectWithdrawal(ctx context.Context, tenantID, adminUserID, w
 		return WithdrawalResult{}, fmt.Errorf("updating withdrawal status: %w", err)
 	}
 
-	if err := s.refundWithdrawalCredits(ctx, tenantID, withdrawal.UserID, withdrawal.CreditAmount, withdrawalID); err != nil {
+	if err := s.refundWithdrawalCredits(ctx, withdrawal.UserID, withdrawal.CreditAmount, withdrawalID); err != nil {
 		slog.Error("failed to refund rejected withdrawal", "withdrawal_id", withdrawal.ID, "error", err)
 	}
 
@@ -691,7 +691,7 @@ func (s *Service) RejectWithdrawal(ctx context.Context, tenantID, adminUserID, w
 }
 
 // refundWithdrawalCredits re-credits the user's wallet when a payout fails.
-func (s *Service) refundWithdrawalCredits(ctx context.Context, tenantID, userID pgtype.UUID, creditAmount int64, withdrawalID pgtype.UUID) error {
+func (s *Service) refundWithdrawalCredits(ctx context.Context, userID pgtype.UUID, creditAmount int64, withdrawalID pgtype.UUID) error {
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning refund tx: %w", err)
@@ -736,7 +736,7 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, tenantID, userID 
 }
 
 // ListWithdrawals returns a paginated list of the user's withdrawals.
-func (s *Service) ListWithdrawals(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.WalletWithdrawal, error) {
+func (s *Service) ListWithdrawals(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.WalletWithdrawal, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -771,7 +771,7 @@ func (s *Service) ListWithdrawalProviders(ctx context.Context) []string {
 // CreateWithdrawalMethod stores a new user payout method.
 //
 // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
-func (s *Service) CreateWithdrawalMethod(ctx context.Context, tenantID, userID pgtype.UUID, input CreateWithdrawalMethodInput) (gen.WalletWithdrawalMethod, error) {
+func (s *Service) CreateWithdrawalMethod(ctx context.Context, userID pgtype.UUID, input CreateWithdrawalMethodInput) (gen.WalletWithdrawalMethod, error) {
 	if input.Provider == "" {
 		return gen.WalletWithdrawalMethod{}, newValidationError("provider", "provider is required")
 	}
@@ -855,7 +855,7 @@ func (s *Service) CreateWithdrawalMethod(ctx context.Context, tenantID, userID p
 }
 
 // ListWithdrawalMethods returns the user's saved payout methods.
-func (s *Service) ListWithdrawalMethods(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.WalletWithdrawalMethod, error) {
+func (s *Service) ListWithdrawalMethods(ctx context.Context, userID pgtype.UUID) ([]gen.WalletWithdrawalMethod, error) {
 	return s.store.read.ListWithdrawalMethodsByUser(ctx,
 
 		userID,
@@ -863,7 +863,7 @@ func (s *Service) ListWithdrawalMethods(ctx context.Context, tenantID, userID pg
 }
 
 // AdminListWithdrawals returns a paginated list of withdrawals for a tenant.
-func (s *Service) AdminListWithdrawals(ctx context.Context, tenantID pgtype.UUID, status, userID string, limit, offset int32) ([]gen.WalletWithdrawal, int64, error) {
+func (s *Service) AdminListWithdrawals(ctx context.Context, status, userID string, limit, offset int32) ([]gen.WalletWithdrawal, int64, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}

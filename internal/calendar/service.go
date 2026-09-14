@@ -29,7 +29,7 @@ import (
 // an import cycle: notifications → worker → calendar.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // CalendarEntryDTO is the API response shape for a calendar entry (list).
@@ -132,7 +132,7 @@ var ErrEditForbidden = errors.New("calendar: edit forbidden")
 
 // permissionChecker is the subset of rbac.RBAC used for edit authorization.
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // Service holds the business logic for the Community Calendar.
@@ -164,12 +164,12 @@ func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 func (s *Service) SetRBAC(r permissionChecker) { s.rbac = r }
 
 // Enabled reads the calendar.enabled system_setting toggle.
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "calendar.enabled", false)
+	return s.settings.GetBoolOr(ctx, "calendar.enabled", false)
 }
 
 // CategoryOption is a single allowed calendar category (§86).
@@ -195,12 +195,12 @@ var defaultCategories = []CategoryOption{
 // calendar.categories system_setting, falling back to the default list.
 // The fallback also covers the case where the settings store is not
 // fully initialised (e.g. in unit tests with a zero-value Settings).
-func (s *Service) Categories(ctx context.Context, tenantID pgtype.UUID) []CategoryOption {
+func (s *Service) Categories(ctx context.Context) []CategoryOption {
 	if s.settings == nil {
 		return defaultCategories
 	}
 
-	raw, err := s.safeGetSetting(ctx, tenantID, "calendar.categories")
+	raw, err := s.safeGetSetting(ctx, "calendar.categories")
 	if err != nil || raw == "" {
 		return defaultCategories
 	}
@@ -217,7 +217,7 @@ func (s *Service) Categories(ctx context.Context, tenantID pgtype.UUID) []Catego
 // a zero-value Settings (no DB pool) returns an error instead of crashing.
 // This keeps unit tests that construct NewService(nil, &config.Settings{})
 // working without a full DB harness.
-func (s *Service) safeGetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (val string, err error) {
+func (s *Service) safeGetSetting(ctx context.Context, key string) (val string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			val = ""
@@ -225,12 +225,12 @@ func (s *Service) safeGetSetting(ctx context.Context, tenantID pgtype.UUID, key 
 		}
 	}()
 
-	return s.settings.GetSetting(ctx, pgtype.UUID{}, key)
+	return s.settings.GetSetting(ctx, key)
 }
 
 // ValidCategory checks whether a category value is in the allowed list.
-func (s *Service) ValidCategory(ctx context.Context, tenantID pgtype.UUID, category string) bool {
-	for _, c := range s.Categories(ctx, tenantID) {
+func (s *Service) ValidCategory(ctx context.Context, category string) bool {
+	for _, c := range s.Categories(ctx) {
 		if c.Value == category {
 			return true
 		}
@@ -240,7 +240,7 @@ func (s *Service) ValidCategory(ctx context.Context, tenantID pgtype.UUID, categ
 }
 
 // List returns published calendar entries matching the given filters.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID pgtype.UUID, category string, from, to pgtype.Timestamptz, page, limit int32, userID pgtype.UUID) ([]CalendarEntryDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID, originSpaceID pgtype.UUID, category string, from, to pgtype.Timestamptz, page, limit int32, userID pgtype.UUID) ([]CalendarEntryDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -269,7 +269,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 	for _, e := range entries {
 		dto := entryToDTO(e)
 		if userID.Valid {
-			saved, err := s.store.IsSaved(ctx, userID, e.ID, tenantID)
+			saved, err := s.store.IsSaved(ctx, userID, e.ID)
 			if err != nil {
 				slog.Warn("calendar: list: failed to check is_saved", "entry_id", e.ID, "error", err)
 			}
@@ -282,8 +282,8 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 }
 
 // Get returns a single approved calendar entry by id.
-func (s *Service) Get(ctx context.Context, id, tenantID, userID pgtype.UUID) (CalendarEntryDTO, error) {
-	entry, err := s.store.GetEntry(ctx, id, tenantID)
+func (s *Service) Get(ctx context.Context, id, userID pgtype.UUID) (CalendarEntryDTO, error) {
+	entry, err := s.store.GetEntry(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntryDTO{}, pgx.ErrNoRows
@@ -294,7 +294,7 @@ func (s *Service) Get(ctx context.Context, id, tenantID, userID pgtype.UUID) (Ca
 
 	dto := entryToDTO(entry)
 	if userID.Valid {
-		saved, err := s.store.IsSaved(ctx, userID, entry.ID, tenantID)
+		saved, err := s.store.IsSaved(ctx, userID, entry.ID)
 		if err != nil {
 			slog.Warn("calendar: get: failed to check is_saved", "entry_id", entry.ID, "error", err)
 		}
@@ -317,12 +317,12 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 		return CalendarEntryDTO{}, fmt.Errorf("calendar: update: %w", err)
 	}
 
-	editAny := s.rbac != nil && s.rbac.HasPermission(ctx, callerID, tenantID, "calendar.edit_any")
+	editAny := s.rbac != nil && s.rbac.HasPermission(ctx, callerID, "calendar.edit_any")
 	if !editAny && (!existing.SubmittedBy.Valid || existing.SubmittedBy != callerID) {
 		return CalendarEntryDTO{}, ErrEditForbidden
 	}
 
-	entry, err := s.buildEntry(ctx, tenantID, SubmitEntryInput(input))
+	entry, err := s.buildEntry(ctx, SubmitEntryInput(input))
 	if err != nil {
 		return CalendarEntryDTO{}, err
 	}
@@ -342,7 +342,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 // buildEntry validates a submit/update input and converts it into a
 // CalendarEntry value. The caller is responsible for setting Status,
 // SubmittedBy and ID (for update) as appropriate.
-func (s *Service) buildEntry(ctx context.Context, tenantID pgtype.UUID, input SubmitEntryInput) (CalendarEntry, error) {
+func (s *Service) buildEntry(ctx context.Context, input SubmitEntryInput) (CalendarEntry, error) {
 	if input.Title == "" {
 		return CalendarEntry{}, errors.New("title is required")
 	}
@@ -352,7 +352,7 @@ func (s *Service) buildEntry(ctx context.Context, tenantID pgtype.UUID, input Su
 	}
 	// BUG-009: validate category against the dynamic calendar.categories
 	// system_setting list (Rule 3: no hardcoded config).
-	if !s.ValidCategory(ctx, tenantID, input.Category) {
+	if !s.ValidCategory(ctx, input.Category) {
 		return CalendarEntry{}, fmt.Errorf("invalid category: %s", input.Category)
 	}
 
@@ -434,7 +434,7 @@ func (s *Service) buildEntry(ctx context.Context, tenantID pgtype.UUID, input Su
 // Submit creates a new pending calendar entry. The caller must have the
 // calendar.submit permission (checked by the handler before calling).
 func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, input SubmitEntryInput) (string, error) {
-	entry, err := s.buildEntry(ctx, tenantID, input)
+	entry, err := s.buildEntry(ctx, input)
 	if err != nil {
 		return "", err
 	}
@@ -451,8 +451,8 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 }
 
 // Save bookmarks a calendar entry for the given user.
-func (s *Service) Save(ctx context.Context, userID, entryID, tenantID pgtype.UUID) error {
-	if err := s.store.SaveEntry(ctx, userID, entryID, tenantID); err != nil {
+func (s *Service) Save(ctx context.Context, userID, entryID pgtype.UUID) error {
+	if err := s.store.SaveEntry(ctx, userID, entryID); err != nil {
 		return fmt.Errorf("calendar: save: %w", err)
 	}
 
@@ -460,8 +460,8 @@ func (s *Service) Save(ctx context.Context, userID, entryID, tenantID pgtype.UUI
 }
 
 // Unsave removes a bookmarked calendar entry for the given user.
-func (s *Service) Unsave(ctx context.Context, userID, entryID, tenantID pgtype.UUID) error {
-	if err := s.store.UnsaveEntry(ctx, userID, entryID, tenantID); err != nil {
+func (s *Service) Unsave(ctx context.Context, userID, entryID pgtype.UUID) error {
+	if err := s.store.UnsaveEntry(ctx, userID, entryID); err != nil {
 		return fmt.Errorf("calendar: unsave: %w", err)
 	}
 
@@ -471,7 +471,7 @@ func (s *Service) Unsave(ctx context.Context, userID, entryID, tenantID pgtype.U
 // ListSaved returns the calendar entries saved by the given user.
 // Used by GET /me/calendar/saved (§86 Integration: "Saved entries appear on
 // the user dashboard alongside visa checklists.").
-func (s *Service) ListSaved(ctx context.Context, userID, tenantID pgtype.UUID, page, limit int) ([]CalendarEntryDTO, int64, error) {
+func (s *Service) ListSaved(ctx context.Context, userID pgtype.UUID, page, limit int) ([]CalendarEntryDTO, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -482,7 +482,7 @@ func (s *Service) ListSaved(ctx context.Context, userID, tenantID pgtype.UUID, p
 
 	offset := (page - 1) * limit
 
-	entries, total, err := s.store.ListSavedEntries(ctx, userID, tenantID, limit, offset)
+	entries, total, err := s.store.ListSavedEntries(ctx, userID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("calendar: list saved: %w", err)
 	}
@@ -498,8 +498,8 @@ func (s *Service) ListSaved(ctx context.Context, userID, tenantID pgtype.UUID, p
 }
 
 // Subscribe creates a category/destination subscription for the given user.
-func (s *Service) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID, category string) error {
-	if err := s.store.Subscribe(ctx, userID, tenantID, destSpaceID, category); err != nil {
+func (s *Service) Subscribe(ctx context.Context, userID, destSpaceID pgtype.UUID, category string) error {
+	if err := s.store.Subscribe(ctx, userID, destSpaceID, category); err != nil {
 		return fmt.Errorf("calendar: subscribe: %w", err)
 	}
 
@@ -507,8 +507,8 @@ func (s *Service) Subscribe(ctx context.Context, userID, tenantID, destSpaceID p
 }
 
 // Unsubscribe removes a category/destination subscription for the given user.
-func (s *Service) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID, category string) error {
-	if err := s.store.Unsubscribe(ctx, userID, tenantID, destSpaceID, category); err != nil {
+func (s *Service) Unsubscribe(ctx context.Context, userID, destSpaceID pgtype.UUID, category string) error {
+	if err := s.store.Unsubscribe(ctx, userID, destSpaceID, category); err != nil {
 		return fmt.Errorf("calendar: unsubscribe: %w", err)
 	}
 
@@ -516,7 +516,7 @@ func (s *Service) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID
 }
 
 // AdminList returns all calendar entries (any status) for admin management.
-func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID, originSpaceID pgtype.UUID, category, status, q string, from, to pgtype.Timestamptz, sort, order string, page, limit int32) ([]CalendarEntryDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, destSpaceID, originSpaceID pgtype.UUID, category, status, q string, from, to pgtype.Timestamptz, sort, order string, page, limit int32) ([]CalendarEntryDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -558,14 +558,14 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID, originSp
 // BUG-003 / ADR-088: AI-generated entries must pass HITL review before
 // publication, and §86 requires a verifiable source_url for every published
 // entry. The reason, when provided, is persisted as hitl_review_notes.
-func (s *Service) AdminUpdate(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status, reason string) error {
+func (s *Service) AdminUpdate(ctx context.Context, id, reviewerID pgtype.UUID, status, reason string) error {
 	switch status {
 	case "published", "archived", "unverified":
 	default:
 		return fmt.Errorf("invalid status: %s", status)
 	}
 
-	row, err := s.store.GetEntryForReview(ctx, id, tenantID)
+	row, err := s.store.GetEntryForReview(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -586,7 +586,7 @@ func (s *Service) AdminUpdate(ctx context.Context, id, tenantID, reviewerID pgty
 		}
 	}
 
-	if err := s.store.AdminUpdateEntry(ctx, id, tenantID, reviewerID, status, reason); err != nil {
+	if err := s.store.AdminUpdateEntry(ctx, id, reviewerID, status, reason); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -609,8 +609,8 @@ func (s *Service) AdminUpdate(ctx context.Context, id, tenantID, reviewerID pgty
 // content is soft-deleted, never hard-deleted. Gated by calendar.manage.
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 // Ref: japaconnect-engineering/AGENTS.md Rule 11.
-func (s *Service) AdminSoftDelete(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.AdminSoftDeleteEntry(ctx, id, tenantID); err != nil {
+func (s *Service) AdminSoftDelete(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.AdminSoftDeleteEntry(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -682,7 +682,7 @@ func (s *Service) SendReminders(ctx context.Context) (int, error) {
 
 			if err := s.notifier.CreateNotification(
 				ctx,
-				e.TenantID,
+
 				userID,
 				"calendar_reminder",
 				"system",
@@ -805,7 +805,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	category := input.Category
-	if category == "" || !s.ValidCategory(ctx, tenantID, category) {
+	if category == "" || !s.ValidCategory(ctx, category) {
 		category = "other"
 	}
 
@@ -872,7 +872,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// Stamp the AI provenance columns (CreateEntry doesn't set them).
 	// BUG-004: pass ai_prompt_hash for audit reproducibility (ADR-088).
 	aiModel := "content_agent_v1"
-	if err := s.store.MarkAIGenerated(ctx, entryID, tenantID, aiModel, promptHash); err != nil {
+	if err := s.store.MarkAIGenerated(ctx, entryID, aiModel, promptHash); err != nil {
 		slog.Warn("calendar: mark ai generated failed, draft remains", "entry_id", entryID, "error", err)
 	}
 

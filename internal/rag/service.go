@@ -103,7 +103,7 @@ func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language s
 // gateway, and upserts each chunk into content_embeddings. After upserting,
 // stale tail chunks (from a previous, longer index) are deleted.
 // // This is called by the extended content:generate_embedding task handler.
-func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error {
+func (s *Service) IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error {
 	if s.embedder == nil {
 		slog.Warn("rag: index: no embedder configured, skipping", "entity_type", entityType, "entity_id", entityID.String())
 		return nil
@@ -112,10 +112,10 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 	plainText := ExtractPlainText(body)
 	if plainText == "" {
 		// No text to index — purge any existing chunks for this entity.
-		return s.store.DeleteEntityEmbeddings(ctx, tenantID, entityType, entityID)
+		return s.store.DeleteEntityEmbeddings(ctx, entityType, entityID)
 	}
 
-	maxTokens := s.settings.GetIntOr(ctx, pgtype.UUID{}, "rag.chunk_max_tokens", 400)
+	maxTokens := s.settings.GetIntOr(ctx, "rag.chunk_max_tokens", 400)
 	// Defense-in-depth: clamp to [1, 8000] even if catalog validation is
 	// bypassed. 0 or negative causes ChunkText to return the whole text as
 	// one giant chunk (may exceed the embedding model's token limit).
@@ -127,10 +127,10 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 
 	chunkTexts := ChunkText(plainText, maxTokens, maxTokens/5)
 	if len(chunkTexts) == 0 {
-		return s.store.DeleteEntityEmbeddings(ctx, tenantID, entityType, entityID)
+		return s.store.DeleteEntityEmbeddings(ctx, entityType, entityID)
 	}
 
-	model := s.settings.GetStringOr(ctx, pgtype.UUID{}, "rag.embedding_model", "text-embedding-3-small")
+	model := s.settings.GetStringOr(ctx, "rag.embedding_model", "text-embedding-3-small")
 
 	for i, chunkText := range chunkTexts {
 		vec, err := s.embedder.GenerateEmbedding(ctx, chunkText, model)
@@ -142,7 +142,7 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 			return fmt.Errorf("rag: index: empty embedding for chunk %d", i)
 		}
 
-		if err := s.store.UpsertChunk(ctx, tenantID, entityType, entityID, Chunk{
+		if err := s.store.UpsertChunk(ctx, entityType, entityID, Chunk{
 			Index:  i,
 			Text:   chunkText,
 			Vector: vec,
@@ -153,7 +153,7 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 
 	// Delete stale tail chunks from a previous, longer index.
 	// nolint:gosec // G115: bounded
-	if err := s.store.DeleteStaleTail(ctx, tenantID, entityType, entityID, int32(len(chunkTexts))); err != nil { // #nosec G115 -- len() of a chunked text slice // #nosec //nolint:gosec // G115: bounded
+	if err := s.store.DeleteStaleTail(ctx, entityType, entityID, int32(len(chunkTexts))); err != nil { // #nosec G115 -- len() of a chunked text slice // #nosec //nolint:gosec // G115: bounded
 		slog.Warn("rag: index: failed to delete stale tail", "entity_id", entityID.String(), "error", err)
 	}
 
@@ -163,15 +163,15 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 }
 
 // PurgeEntity deletes all chunks for an entity. Used on unpublish/delete.
-func (s *Service) PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
-	return s.store.DeleteEntityEmbeddings(ctx, tenantID, entityType, entityID)
+func (s *Service) PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error {
+	return s.store.DeleteEntityEmbeddings(ctx, entityType, entityID)
 }
 
 // PurgeEntityType deletes all chunks for every entity of the given type
 // within a tenant. Used by the admin DELETE /admin/rag/entity/:type/all
 // route (the by-type aggregate purge from the dashboard).
-func (s *Service) PurgeEntityType(ctx context.Context, tenantID pgtype.UUID, entityType string) error {
-	return s.store.DeleteEmbeddingsByType(ctx, tenantID, entityType)
+func (s *Service) PurgeEntityType(ctx context.Context, entityType string) error {
+	return s.store.DeleteEmbeddingsByType(ctx, entityType)
 }
 
 // Retrieve performs the RAG retrieval step: embed the query, search HNSW,
@@ -185,7 +185,7 @@ func (s *Service) PurgeEntityType(ctx context.Context, tenantID pgtype.UUID, ent
 // non-RAG LLM call).
 func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RetrievedChunk, error) {
 	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, pgtype.UUID{}, "rag.enabled", true); !enabled {
+		if enabled := s.settings.GetBoolOr(ctx, "rag.enabled", true); !enabled {
 			return nil, nil
 		}
 	}
@@ -199,8 +199,8 @@ func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, lan
 		return nil, nil
 	}
 
-	model := s.settings.GetStringOr(ctx, pgtype.UUID{}, "rag.embedding_model", "text-embedding-3-small")
-	topK := int32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "rag.retrieval_top_k", 5)) // #nosec G115 -- bounded by settings validation (1-50)
+	model := s.settings.GetStringOr(ctx, "rag.embedding_model", "text-embedding-3-small")
+	topK := int32(s.settings.GetIntOr(ctx, "rag.retrieval_top_k", 5)) // #nosec G115 -- bounded by settings validation (1-50)
 	// Defense-in-depth: clamp topK to [1, 50] even if the catalog validation
 	// is bypassed (e.g. direct DB write). LIMIT 0 in PostgreSQL returns no
 	// rows, silently breaking RAG; LIMIT -1 returns all rows (unbounded).
@@ -234,9 +234,9 @@ func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, lan
 
 	var results []RetrievedChunk
 	if geoActive {
-		results, err = s.store.SearchGeoFiltered(ctx, tenantID, queryVec, language, topK, *geoSpaceID)
+		results, err = s.store.SearchGeoFiltered(ctx, queryVec, language, topK, *geoSpaceID)
 	} else {
-		results, err = s.store.Search(ctx, tenantID, queryVec, language, topK)
+		results, err = s.store.Search(ctx, queryVec, language, topK)
 	}
 
 	if err != nil {
@@ -279,15 +279,15 @@ func (s *Service) FormatContext(chunks []RetrievedChunk) string {
 }
 
 // GetStats returns the index statistics for the admin status route.
-func (s *Service) GetStats(ctx context.Context, tenantID pgtype.UUID) (IndexStats, error) {
-	return s.store.GetStats(ctx, tenantID)
+func (s *Service) GetStats(ctx context.Context) (IndexStats, error) {
+	return s.store.GetStats(ctx)
 }
 
 // QueueReindex enqueues a full corpus re-index by enumerating all published
 // content IDs and enqueueing the content:generate_embedding task for each.
 // The admin POST /admin/rag/reindex route calls this. Fire-and-forget per
 // Rule 8 — the handler returns 202 immediately.
-func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error {
+func (s *Service) QueueReindex(ctx context.Context) error {
 	if s.enqueuer == nil {
 		return errors.New("rag: reindex: no enqueuer configured")
 	}
@@ -302,7 +302,7 @@ func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error 
 	totalEnqueued := 0
 
 	for {
-		ids, err := s.store.ListPublishedContentIDs(ctx, tenantID, batchSize, offset)
+		ids, err := s.store.ListPublishedContentIDs(ctx, batchSize, offset)
 		if err != nil {
 			return fmt.Errorf("rag: reindex: list batch at offset %d: %w", offset, err)
 		}
@@ -340,9 +340,9 @@ func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error 
 	// fire-and-forget IndexEntity calls in background goroutines. The HTTP
 	// response returns immediately after enumeration; the actual embedding
 	// work happens asynchronously.
-	go s.reindexForumThreads(tenantID)   // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
-	go s.reindexSpaces(tenantID)         // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
-	go s.reindexLearningTracks(tenantID) // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexForumThreads()   // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexSpaces()         // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexLearningTracks() // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 
 	return nil
 }
@@ -350,12 +350,12 @@ func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error 
 // reindexForumThreads enumerates all non-deleted forum threads for the tenant
 // and re-indexes them into content_embeddings. Fire-and-forget — called in a
 // goroutine from QueueReindex.
-func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
+func (s *Service) reindexForumThreads() {
 	ctx := context.Background()
 	language := "en"
 
 	if s.settings != nil {
-		language = s.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
+		language = s.settings.GetStringOr(ctx, "i18n.default_language", "en")
 	}
 
 	const batchSize int32 = 100
@@ -365,7 +365,7 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 	total := 0
 
 	for {
-		ids, err := s.store.ListForumThreadIDs(ctx, tenantID, batchSize, offset)
+		ids, err := s.store.ListForumThreadIDs(ctx, batchSize, offset)
 		if err != nil {
 			slog.Warn("rag: reindex forum threads: list batch failed", "offset", offset, "error", err)
 			return
@@ -377,7 +377,7 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 
 		for _, id := range ids {
 			// Fetch thread title + body from DB for embedding.
-			thread, err := s.fetchForumThreadText(ctx, tenantID, id.ID)
+			thread, err := s.fetchForumThreadText(ctx, id.ID)
 			if err != nil {
 				slog.Warn("rag: reindex forum threads: fetch failed", "thread_id", id.ID.String(), "error", err)
 				continue
@@ -387,7 +387,7 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 				continue
 			}
 
-			if err := s.IndexEntity(ctx, tenantID, "forum_thread", id.ID, thread, language); err != nil {
+			if err := s.IndexEntity(ctx, "forum_thread", id.ID, thread, language); err != nil {
 				slog.Warn("rag: reindex forum threads: index failed", "thread_id", id.ID.String(), "error", err)
 				continue
 			}
@@ -406,12 +406,12 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 // reindexSpaces enumerates all active spaces for the tenant and re-indexes
 // them into content_embeddings. Fire-and-forget — called in a goroutine from
 // QueueReindex.
-func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
+func (s *Service) reindexSpaces() {
 	ctx := context.Background()
 	language := "en"
 
 	if s.settings != nil {
-		language = s.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
+		language = s.settings.GetStringOr(ctx, "i18n.default_language", "en")
 	}
 
 	const batchSize int32 = 100
@@ -421,7 +421,7 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 	total := 0
 
 	for {
-		ids, err := s.store.ListSpaceIDs(ctx, tenantID, batchSize, offset)
+		ids, err := s.store.ListSpaceIDs(ctx, batchSize, offset)
 		if err != nil {
 			slog.Warn("rag: reindex spaces: list batch failed", "offset", offset, "error", err)
 			return
@@ -432,7 +432,7 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 		}
 
 		for _, id := range ids {
-			text, err := s.fetchSpaceText(ctx, tenantID, id.ID)
+			text, err := s.fetchSpaceText(ctx, id.ID)
 			if err != nil {
 				slog.Warn("rag: reindex spaces: fetch failed", "space_id", id.ID.String(), "error", err)
 				continue
@@ -442,7 +442,7 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 				continue
 			}
 
-			if err := s.IndexEntity(ctx, tenantID, "space", id.ID, text, language); err != nil {
+			if err := s.IndexEntity(ctx, "space", id.ID, text, language); err != nil {
 				slog.Warn("rag: reindex spaces: index failed", "space_id", id.ID.String(), "error", err)
 				continue
 			}
@@ -461,12 +461,12 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 // reindexLearningTracks enumerates all published learning tracks for the
 // tenant and re-indexes them into content_embeddings. Fire-and-forget —
 // called in a goroutine from QueueReindex.
-func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
+func (s *Service) reindexLearningTracks() {
 	ctx := context.Background()
 	language := "en"
 
 	if s.settings != nil {
-		language = s.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
+		language = s.settings.GetStringOr(ctx, "i18n.default_language", "en")
 	}
 
 	const batchSize int32 = 100
@@ -476,7 +476,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 	total := 0
 
 	for {
-		ids, err := s.store.ListLearningTrackIDs(ctx, tenantID, batchSize, offset)
+		ids, err := s.store.ListLearningTrackIDs(ctx, batchSize, offset)
 		if err != nil {
 			slog.Warn("rag: reindex learning tracks: list batch failed", "offset", offset, "error", err)
 			return
@@ -487,7 +487,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 		}
 
 		for _, id := range ids {
-			text, err := s.fetchLearningTrackText(ctx, tenantID, id.ID)
+			text, err := s.fetchLearningTrackText(ctx, id.ID)
 			if err != nil {
 				slog.Warn("rag: reindex learning tracks: fetch failed", "track_id", id.ID.String(), "error", err)
 				continue
@@ -497,7 +497,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 				continue
 			}
 
-			if err := s.IndexEntity(ctx, tenantID, "learning_track", id.ID, text, language); err != nil {
+			if err := s.IndexEntity(ctx, "learning_track", id.ID, text, language); err != nil {
 				slog.Warn("rag: reindex learning tracks: index failed", "track_id", id.ID.String(), "error", err)
 				continue
 			}
@@ -515,7 +515,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 
 // fetchForumThreadText loads a forum thread's title + body from the database
 // for RAG embedding. Returns empty string if the thread has no text.
-func (s *Service) fetchForumThreadText(ctx context.Context, tenantID, threadID pgtype.UUID) (string, error) {
+func (s *Service) fetchForumThreadText(ctx context.Context, threadID pgtype.UUID) (string, error) {
 	q := gen.New(s.store.pool.Reader)
 
 	row, err := q.GetForumThreadByID(ctx,
@@ -539,7 +539,7 @@ func (s *Service) fetchForumThreadText(ctx context.Context, tenantID, threadID p
 
 // fetchSpaceText loads a space's name + description + wiki_content from the
 // database for RAG embedding. Returns empty string if the space has no text.
-func (s *Service) fetchSpaceText(ctx context.Context, tenantID, spaceID pgtype.UUID) (string, error) {
+func (s *Service) fetchSpaceText(ctx context.Context, spaceID pgtype.UUID) (string, error) {
 	q := gen.New(s.store.pool.Reader)
 
 	row, err := q.GetSpaceByID(ctx,
@@ -571,7 +571,7 @@ func (s *Service) fetchSpaceText(ctx context.Context, tenantID, spaceID pgtype.U
 
 // fetchLearningTrackText loads a learning track's title + description from
 // the database for RAG embedding. Returns empty string if the track has no text.
-func (s *Service) fetchLearningTrackText(ctx context.Context, tenantID, trackID pgtype.UUID) (string, error) {
+func (s *Service) fetchLearningTrackText(ctx context.Context, trackID pgtype.UUID) (string, error) {
 	q := gen.New(s.store.pool.Reader)
 
 	row, err := q.GetLearningTrackByID(ctx,

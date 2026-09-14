@@ -35,7 +35,7 @@ func (s *Store) createBlogSeries(ctx context.Context, p gen.CreateBlogSeriesPara
 	return row, nil
 }
 
-func (s *Store) getBlogSeriesByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.BlogSeries, error) {
+func (s *Store) getBlogSeriesByID(ctx context.Context, id pgtype.UUID) (gen.BlogSeries, error) {
 	row, err := s.read.GetBlogSeriesByID(ctx, id)
 	if err != nil {
 		return gen.BlogSeries{}, fmt.Errorf("getting blog series by ID: %w", err)
@@ -44,7 +44,7 @@ func (s *Store) getBlogSeriesByID(ctx context.Context, id, tenantID pgtype.UUID)
 	return row, nil
 }
 
-func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetBlogSeriesBySlugRow, error) {
+func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string) (gen.GetBlogSeriesBySlugRow, error) {
 	row, err := s.read.GetBlogSeriesBySlug(ctx, slug)
 	if err != nil {
 		return gen.GetBlogSeriesBySlugRow{}, fmt.Errorf("getting blog series by slug: %w", err)
@@ -53,7 +53,7 @@ func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string, tenantID p
 	return row, nil
 }
 
-func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string, limit, offset int32) ([]gen.ListBlogSeriesByTenantRow, error) {
+func (s *Store) listBlogSeriesByTenant(ctx context.Context, q, contentType string, limit, offset int32) ([]gen.ListBlogSeriesByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -72,7 +72,7 @@ func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID
 	return rows, nil
 }
 
-func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID, limit, offset int32) ([]gen.ListBlogSeriesByAuthorRow, error) {
+func (s *Store) listBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, limit, offset int32) ([]gen.ListBlogSeriesByAuthorRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -90,7 +90,7 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUser
 	return rows, nil
 }
 
-func (s *Store) countBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string) (int64, error) {
+func (s *Store) countBlogSeriesByTenant(ctx context.Context, q, contentType string) (int64, error) {
 	count, err := s.read.CountBlogSeriesByTenant(ctx, gen.CountBlogSeriesByTenantParams{
 
 		Q:           q,
@@ -103,7 +103,7 @@ func (s *Store) countBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUI
 	return count, nil
 }
 
-func (s *Store) countBlogSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID) (int64, error) {
+func (s *Store) countBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID) (int64, error) {
 	count, err := s.read.CountBlogSeriesByAuthor(ctx,
 
 		authorUserID,
@@ -124,7 +124,7 @@ func (s *Store) updateBlogSeries(ctx context.Context, p gen.UpdateBlogSeriesPara
 	return row, nil
 }
 
-func (s *Store) deleteBlogSeries(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteBlogSeries(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteBlogSeries(ctx, id); err != nil {
 		return fmt.Errorf("deleting blog series: %w", err)
 	}
@@ -155,7 +155,7 @@ func (s *Store) removePostFromSeries(ctx context.Context, seriesID, contentID pg
 	return nil
 }
 
-func (s *Store) listPostsInSeries(ctx context.Context, seriesID, tenantID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
+func (s *Store) listPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
 	rows, err := s.read.ListPostsInSeries(ctx,
 		seriesID,
 	)
@@ -177,7 +177,7 @@ func (s *Store) getContentTenantID(ctx context.Context, contentID pgtype.UUID) (
 // pg.ErrNoRows if the content is not part of any series. Used by the editor
 // load to restore the series selector when editing existing content.
 // BUG-009: tenant-scoped to prevent cross-tenant information disclosure.
-func (s *Store) getSeriesForContent(ctx context.Context, contentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Store) getSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
 	return s.read.GetSeriesForContent(ctx,
 		contentID,
 	)
@@ -261,7 +261,7 @@ func (s *Store) createContentReview(ctx context.Context, p gen.CreateContentRevi
 	return contentReviewFromRow(row), nil
 }
 
-func (s *Store) getContentReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ContentReview, error) {
+func (s *Store) getContentReviewByID(ctx context.Context, id pgtype.UUID) (gen.ContentReview, error) {
 	row, err := s.read.GetContentReviewByID(ctx, id)
 	if err != nil {
 		return gen.ContentReview{}, fmt.Errorf("getting content review by ID: %w", err)
@@ -270,7 +270,7 @@ func (s *Store) getContentReviewByID(ctx context.Context, id, tenantID pgtype.UU
 	return contentReviewFromRow(row), nil
 }
 
-func (s *Store) listContentReviewsByContent(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ContentReview, error) {
+func (s *Store) listContentReviewsByContent(ctx context.Context, contentID pgtype.UUID) ([]gen.ContentReview, error) {
 	rows, err := s.read.ListContentReviewsByContent(ctx,
 		contentID,
 	)
@@ -286,7 +286,7 @@ func (s *Store) listContentReviewsByContent(ctx context.Context, contentID, tena
 	return out, nil
 }
 
-func (s *Store) listPendingContentReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ContentReview, error) {
+func (s *Store) listPendingContentReviews(ctx context.Context, limit, offset int32) ([]gen.ContentReview, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -317,7 +317,7 @@ func (s *Store) updateContentReviewStatus(ctx context.Context, p gen.UpdateConte
 	return contentReviewFromRow(row), nil
 }
 
-func (s *Store) deleteContentReview(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteContentReview(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteContentReview(ctx,
 		id,
 	)
@@ -336,7 +336,7 @@ func (s *Store) featureContent(ctx context.Context, p gen.FeatureContentParams) 
 	return row, nil
 }
 
-func (s *Store) unfeatureContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
+func (s *Store) unfeatureContent(ctx context.Context, contentID pgtype.UUID) error {
 	if err := s.write.UnfeatureContent(ctx,
 
 		contentID,
@@ -347,7 +347,7 @@ func (s *Store) unfeatureContent(ctx context.Context, tenantID, contentID pgtype
 	return nil
 }
 
-func (s *Store) listFeaturedPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ContentFeatured, error) {
+func (s *Store) listFeaturedPosts(ctx context.Context, limit, offset int32) ([]gen.ContentFeatured, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -364,7 +364,7 @@ func (s *Store) listFeaturedPosts(ctx context.Context, tenantID pgtype.UUID, lim
 	return rows, nil
 }
 
-func (s *Store) updateFeaturedOrder(ctx context.Context, id, tenantID pgtype.UUID, featuredOrder int32) error {
+func (s *Store) updateFeaturedOrder(ctx context.Context, id pgtype.UUID, featuredOrder int32) error {
 	if err := s.write.UpdateFeaturedOrder(ctx, gen.UpdateFeaturedOrderParams{
 		ID: id,
 
@@ -386,7 +386,7 @@ func (s *Store) expireFeaturedPosts(ctx context.Context) error {
 
 // listFeaturedBlogPostCards returns enriched featured post cards with JOINs
 // to contents, users, and media (H6).
-func (s *Store) listFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListFeaturedBlogPostCardsRow, error) {
+func (s *Store) listFeaturedBlogPostCards(ctx context.Context, limit, offset int32) ([]gen.ListFeaturedBlogPostCardsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -405,7 +405,7 @@ func (s *Store) listFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.U
 
 // countFeaturedBlogPostCards returns the total number of active featured blog
 // posts for pagination meta.
-func (s *Store) countFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+func (s *Store) countFeaturedBlogPostCards(ctx context.Context) (int64, error) {
 	count, err := s.read.CountFeaturedBlogPostCards(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("counting featured blog post cards: %w", err)
@@ -416,7 +416,7 @@ func (s *Store) countFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.
 
 // bulkUpdateFeaturedOrder updates all featured post orders in a single
 // transaction (M3 — all-or-nothing on failure).
-func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUID, items []struct {
+func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, items []struct {
 	ID    pgtype.UUID
 	Order int32
 },
@@ -451,7 +451,7 @@ func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUI
 // image, space name, tags, and series navigation (C4).
 // Authors can view their own drafts; super-admins can view any post in the
 // tenant for moderation. Ref: japaconnect-engineering/sections/24-blog-extension.md.
-func (s *Store) getBlogPostDetail(ctx context.Context, slug string, tenantID, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
+func (s *Store) getBlogPostDetail(ctx context.Context, slug string, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
 	row, err := s.read.GetBlogPostDetail(ctx, gen.GetBlogPostDetailParams{
 		Slug: slug,
 
@@ -522,7 +522,7 @@ func (s *Store) countPublishedBlogPosts(ctx context.Context, f BlogListFilter) (
 
 // listAdminBlogPosts returns all-status blog post cards with author name
 // for the admin /blog table (BUG-B). Offset-paginated per Rule 5.
-func (s *Store) listAdminBlogPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAdminBlogPostsRow, error) {
+func (s *Store) listAdminBlogPosts(ctx context.Context, limit, offset int32) ([]gen.ListAdminBlogPostsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -545,7 +545,7 @@ func (s *Store) listAdminBlogPosts(ctx context.Context, tenantID pgtype.UUID, li
 
 // listPendingReviewSummaries returns joined review-queue rows with post
 // title/slug/author/excerpt for the admin review-queue (C3).
-func (s *Store) listPendingReviewSummaries(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPendingReviewSummariesRow, error) {
+func (s *Store) listPendingReviewSummaries(ctx context.Context, limit, offset int32) ([]gen.ListPendingReviewSummariesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -566,7 +566,7 @@ func (s *Store) listPendingReviewSummaries(ctx context.Context, tenantID pgtype.
 // RSS Feed
 // ---------------------------------------------------------------------------
 
-func (s *Store) listPublishedPostsForRSS(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListPublishedPostsForRSSRow, error) {
+func (s *Store) listPublishedPostsForRSS(ctx context.Context, limit int32) ([]gen.ListPublishedPostsForRSSRow, error) {
 	if limit <= 0 {
 		limit = 50
 	}

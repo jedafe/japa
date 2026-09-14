@@ -108,7 +108,7 @@ type UpdateMilestoneInput struct {
 // the planninggroups.Notifier pattern (§82).
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md.
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // Service holds the business logic for the Visa Timeline Tracker.
@@ -130,16 +130,16 @@ func (s *Service) WithNotifier(n Notifier) *Service { s.notifier = n; return s }
 
 // Enabled reads the visa_timeline.enabled system_setting toggle (§83 feature
 // flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "visa_timeline.enabled", false)
+	return s.settings.GetBoolOr(ctx, "visa_timeline.enabled", false)
 }
 
 // Create records a new visa timeline for the authenticated user.
-func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, input CreateTimelineInput) (TimelineDTO, error) {
+func (s *Service) Create(ctx context.Context, userID pgtype.UUID, input CreateTimelineInput) (TimelineDTO, error) {
 	if input.DestinationSpaceID == "" || input.VisaCategory == "" {
 		return TimelineDTO{}, errors.New("destination_space_id and visa_category are required")
 	}
@@ -201,8 +201,8 @@ func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (TimelineDT
 }
 
 // ListOwn returns the authenticated user's own timelines.
-func (s *Service) ListOwn(ctx context.Context, userID, tenantID pgtype.UUID) ([]TimelineDTO, error) {
-	timelines, err := s.store.ListUserTimelines(ctx, userID, tenantID)
+func (s *Service) ListOwn(ctx context.Context, userID pgtype.UUID) ([]TimelineDTO, error) {
+	timelines, err := s.store.ListUserTimelines(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: list own: %w", err)
 	}
@@ -232,7 +232,7 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 	}
 
 	storeInput := StoreUpdateTimelineInput(input)
-	if err := s.store.UpdateTimeline(ctx, id, tenantID, storeInput); err != nil {
+	if err := s.store.UpdateTimeline(ctx, id, storeInput); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return TimelineDTO{}, pgx.ErrNoRows
 		}
@@ -322,7 +322,7 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 	// implausible if:
 	// - a later-stage milestone already exists with an earlier date, OR
 	// - an earlier-stage milestone already exists with a later date.
-	existingMilestones, err := s.store.ListMilestones(ctx, timelineID, tenantID)
+	existingMilestones, err := s.store.ListMilestones(ctx, timelineID)
 	if err != nil {
 		return MilestoneDTO{}, fmt.Errorf("visatimeline: add milestone: list existing: %w", err)
 	}
@@ -341,13 +341,13 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 			// New milestone is later-stage but dated before an
 			// earlier-stage existing milestone → implausible.
 			if newOrder > emOrder && occurredAt.Time.Before(em.OccurredAt.Time) {
-				s.flagImplausible(ctx, tenantID, userID, timelineID, input.MilestoneType, occurredAt)
+				s.flagImplausible(ctx, userID, timelineID, input.MilestoneType, occurredAt)
 				return MilestoneDTO{}, ErrImplausibleSequence
 			}
 			// New milestone is earlier-stage but dated after a
 			// later-stage existing milestone → implausible.
 			if newOrder < emOrder && occurredAt.Time.After(em.OccurredAt.Time) {
-				s.flagImplausible(ctx, tenantID, userID, timelineID, input.MilestoneType, occurredAt)
+				s.flagImplausible(ctx, userID, timelineID, input.MilestoneType, occurredAt)
 				return MilestoneDTO{}, ErrImplausibleSequence
 			}
 		}
@@ -358,7 +358,7 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 		notesPtr = &input.Notes
 	}
 
-	m, err := s.store.AddMilestone(ctx, timelineID, tenantID, input.MilestoneType, occurredAt, notesPtr)
+	m, err := s.store.AddMilestone(ctx, timelineID, input.MilestoneType, occurredAt, notesPtr)
 	if err != nil {
 		return MilestoneDTO{}, fmt.Errorf("visatimeline: add milestone: %w", err)
 	}
@@ -370,8 +370,8 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 // sequence attempt (§83 Privacy & Anti-Gaming) so moderators can review
 // flagged attempts. Failures are logged but do not change the rejection
 // outcome — the milestone is rejected regardless.
-func (s *Service) flagImplausible(ctx context.Context, tenantID, userID, timelineID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz) {
-	if err := s.store.FlagImplausibleSequence(ctx, tenantID, userID, timelineID, milestoneType, occurredAt); err != nil {
+func (s *Service) flagImplausible(ctx context.Context, userID, timelineID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz) {
+	if err := s.store.FlagImplausibleSequence(ctx, userID, timelineID, milestoneType, occurredAt); err != nil {
 		slog.WarnContext(ctx, "visatimeline: failed to record implausible-sequence flag",
 			"error", err, "timeline_id", timelineID, "user_id", userID)
 	}
@@ -409,7 +409,7 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, 
 		storeInput.OccurredAt = &ts
 	}
 
-	if err := s.store.UpdateMilestone(ctx, milestoneID, tenantID, storeInput); err != nil {
+	if err := s.store.UpdateMilestone(ctx, milestoneID, storeInput); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -422,8 +422,8 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, 
 
 // ListMilestones returns the milestones for a timeline. Ownership is not
 // required (the caller may list milestones for their own timeline).
-func (s *Service) ListMilestones(ctx context.Context, timelineID, tenantID pgtype.UUID) ([]MilestoneDTO, error) {
-	milestones, err := s.store.ListMilestones(ctx, timelineID, tenantID)
+func (s *Service) ListMilestones(ctx context.Context, timelineID pgtype.UUID) ([]MilestoneDTO, error) {
+	milestones, err := s.store.ListMilestones(ctx, timelineID)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: list milestones: %w", err)
 	}
@@ -439,8 +439,8 @@ func (s *Service) ListMilestones(ctx context.Context, timelineID, tenantID pgtyp
 // GetStats returns the public aggregated processing-time statistics for an
 // origin → destination → visa category combination. Consulate and months
 // are optional filters (§83 route signature: ?dest=&origin=&visa=&consulate=&months=).
-func (s *Service) GetStats(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]ProcessingStatDTO, error) {
-	stats, err := s.store.GetStats(ctx, tenantID, originSpaceID, destSpaceID, visaCategory, consulate, months)
+func (s *Service) GetStats(ctx context.Context, originSpaceID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]ProcessingStatDTO, error) {
+	stats, err := s.store.GetStats(ctx, originSpaceID, destSpaceID, visaCategory, consulate, months)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: get stats: %w", err)
 	}
@@ -455,8 +455,8 @@ func (s *Service) GetStats(ctx context.Context, tenantID, originSpaceID, destSpa
 
 // GetTrend returns the monthly trend series for a destination space + visa
 // category over the last `months` months. Consulate is an optional filter.
-func (s *Service) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]TrendPointDTO, error) {
-	points, err := s.store.GetTrend(ctx, tenantID, destSpaceID, visaCategory, consulate, months)
+func (s *Service) GetTrend(ctx context.Context, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]TrendPointDTO, error) {
+	points, err := s.store.GetTrend(ctx, destSpaceID, visaCategory, consulate, months)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: get trend: %w", err)
 	}
@@ -470,7 +470,7 @@ func (s *Service) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUI
 }
 
 // AdminList returns all timelines (any share state) for the moderation queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, filter AdminListFilter) ([]TimelineDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, filter AdminListFilter) ([]TimelineDTO, int64, error) {
 
 	timelines, total, err := s.store.AdminList(ctx, filter)
 	if err != nil {
@@ -670,7 +670,7 @@ func (s *Service) PromptUpdate(ctx context.Context) (int64, error) {
 
 	for _, o := range owners {
 		if err := s.notifier.CreateNotification(
-			ctx, o.TenantID, o.UserID,
+			ctx, o.UserID,
 			"visa_timeline.prompt_update", "system", zero,
 			"visa_timeline", zero,
 			title, body,
@@ -790,7 +790,7 @@ type UpdateProcessingTimeRequest struct {
 }
 
 // UpdateProcessingTime updates a visa_processing_stats row.
-func (s *Service) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProcessingTimeRequest) (ProcessingStatDTO, error) {
+func (s *Service) UpdateProcessingTime(ctx context.Context, id pgtype.UUID, input UpdateProcessingTimeRequest) (ProcessingStatDTO, error) {
 	var in UpdateProcessingTimeInput
 	in.OriginSpaceID = input.OriginSpaceID
 	in.DestinationSpaceID = input.DestinationSpaceID
@@ -812,7 +812,7 @@ func (s *Service) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.
 		in.PeriodStart = &ts
 	}
 
-	row, err := s.store.UpdateProcessingTime(ctx, id, tenantID, in)
+	row, err := s.store.UpdateProcessingTime(ctx, id, in)
 	if err != nil {
 		return ProcessingStatDTO{}, fmt.Errorf("visatimeline: update processing time: %w", err)
 	}
@@ -821,8 +821,8 @@ func (s *Service) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.
 }
 
 // DeleteProcessingTime deletes a visa_processing_stats row.
-func (s *Service) DeleteProcessingTime(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteProcessingTime(ctx, id, tenantID); err != nil {
+func (s *Service) DeleteProcessingTime(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteProcessingTime(ctx, id); err != nil {
 		return fmt.Errorf("visatimeline: delete processing time: %w", err)
 	}
 

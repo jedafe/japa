@@ -458,7 +458,7 @@ func TestBuildContentItems_NilTrendingReturnsEmptySlice(t *testing.T) {
 
 	h := &Handlers{}
 
-	got := h.buildContentItems(t.Context(), validUUID(), visitor.VisitorContext{}, 5)
+	got := h.buildContentItems(t.Context(), visitor.VisitorContext{}, 5)
 	if got == nil {
 		t.Fatal("expected non-nil empty slice, got nil")
 	}
@@ -473,7 +473,7 @@ func TestBuildSpaceItems_NilTrendingReturnsEmptySlice(t *testing.T) {
 
 	h := &Handlers{}
 
-	got := h.buildSpaceItems(t.Context(), validUUID(), visitor.VisitorContext{}, 5)
+	got := h.buildSpaceItems(t.Context(), visitor.VisitorContext{}, 5)
 	if got == nil {
 		t.Fatal("expected non-nil empty slice, got nil")
 	}

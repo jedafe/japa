@@ -24,19 +24,19 @@ import (
 // transaction boundary).
 type HousingStore interface {
 	PersonaResolver
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	GetHousingGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.HousingGuide, error)
-	CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error)
-	UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateHousingGuideIntelParams) error
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetHousingGuideByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.HousingGuide, error)
+	CreateHousingGuideIntel(ctx context.Context, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error)
+	UpdateHousingGuideIntel(ctx context.Context, arg gen.UpdateHousingGuideIntelParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 	// GetCountrySpace resolves the country-level geo space (§05) id for an
 	// ISO-3 country code, so the promoter can stamp
 	// housing_guides.destination_space_id. Returns (pgtype.UUID{}, nil) when
 	// no country space exists yet; the promoter treats that as a nullable
 	// destination_space_id. BUG-005 fix.
-	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
+	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
 	WithTx(ctx context.Context, fn func(HousingTxStore) error) error
 }
 
@@ -46,10 +46,10 @@ type HousingStore interface {
 // this interface (via WithTx's callback), and the test mock satisfies it
 // directly.
 type HousingTxStore interface {
-	CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateHousingGuideIntelParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	CreateHousingGuideIntel(ctx context.Context, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateHousingGuideIntel(ctx context.Context, arg gen.UpdateHousingGuideIntelParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // HousingPromoter promotes housing intel_records into the housing_guides
@@ -60,7 +60,6 @@ type HousingTxStore interface {
 // intel_record_id (ADR-076 Amendment 1).
 type HousingPromoter struct {
 	store    HousingStore
-	tenantID pgtype.UUID
 	authorID pgtype.UUID
 	aiModel  *string // AI model used for extraction (ADR-088, INTEL-003)
 	now      func() time.Time
@@ -82,8 +81,8 @@ func WithHousingAIModel(model string) HousingPromoterOption {
 // NewHousingPromoter creates a promoter backed by the given store. The
 // tenantID and authorID identify the tenant and system author stamped onto
 // the housing_guides projection rows created by the create path.
-func NewHousingPromoter(store HousingStore, tenantID, authorID pgtype.UUID, opts ...HousingPromoterOption) *HousingPromoter {
-	p := &HousingPromoter{store: store, tenantID: tenantID, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
+func NewHousingPromoter(store HousingStore, authorID pgtype.UUID, opts ...HousingPromoterOption) *HousingPromoter {
+	p := &HousingPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -102,12 +101,12 @@ var ErrNotHousing = errors.New("promoter: intel record is not a housing")
 // projection row, creating it or updating it in place while respecting
 // editorial overrides.
 func (p *HousingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.HousingGuide]{
+	return promoteDomain(ctx, p.store, recordID, domainPromoteOps[gen.HousingGuide]{
 		entityType: p.Entity(),
 		notErr:     ErrNotHousing,
 		loadLabel:  "housing guide",
-		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.HousingGuide, error) {
-			return p.store.GetHousingGuideByIntelRecord(ctx, tenantID, pgID)
+		getExisting: func(ctx context.Context, pgID pgtype.UUID) (gen.HousingGuide, error) {
+			return p.store.GetHousingGuideByIntelRecord(ctx, pgID)
 		},
 		createPath: p.housingCreatePath,
 		updatePath: p.housingUpdatePath,
@@ -130,7 +129,7 @@ func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.Inte
 	var destinationSpaceID pgtype.UUID
 
 	if countryCode != "" {
-		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
+		if id, err := p.store.GetCountrySpace(ctx, countryCode); err == nil && id.Valid {
 			destinationSpaceID = id
 		}
 	}
@@ -141,7 +140,7 @@ func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.Inte
 	var citySpaceID pgtype.UUID
 
 	if city := stringField(ext, "city"); city != "" {
-		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, city); err == nil && id.Valid {
+		if id, err := p.store.GetCountrySpace(ctx, city); err == nil && id.Valid {
 			citySpaceID = id
 		}
 	}
@@ -153,12 +152,12 @@ func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.Inte
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx HousingTxStore) error {
-		housing, err := tx.CreateHousingGuideIntel(ctx, p.tenantID, housingParams)
+		housing, err := tx.CreateHousingGuideIntel(ctx, housingParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create housing guide: %w", err)
 		}
 
-		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
@@ -200,7 +199,7 @@ func (p *HousingPromoter) housingUpdatePath(ctx context.Context, record gen.Inte
 		}
 	}
 
-	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "housing guide",
+	return domainUpdateTx(ctx, record, p.authorID, "housing guide",
 		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
 		func(ctx context.Context, fn func(HousingTxStore) error) error { return p.store.WithTx(ctx, fn) },
 		HousingTxStore.UpdateHousingGuideIntel)

@@ -55,7 +55,7 @@ func ScholarshipSearchHandler(deps *ToolDeps) ToolHandler {
 			Page:              1,
 		}
 
-		results, _, err := deps.ScholarshipSearcher.FindScholarships(ctx, tenantID, filters)
+		results, _, err := deps.ScholarshipSearcher.FindScholarships(ctx, filters)
 		if err != nil {
 			return errorToolResult("scholarship_search_failed", err.Error()), nil
 		}

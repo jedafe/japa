@@ -36,7 +36,7 @@ func (h *Handlers) HandleRegisterDevice(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	info, err := h.svc.RegisterDevice(r.Context(), user.TenantID, user.UserID, input)
+	info, err := h.svc.RegisterDevice(r.Context(), user.UserID, input)
 	if err != nil {
 		writeDeviceError(w, err)
 		return
@@ -59,7 +59,7 @@ func (h *Handlers) HandleDeregisterDevice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.svc.DeregisterDevice(r.Context(), user.TenantID, user.UserID, deviceID); err != nil {
+	if err := h.svc.DeregisterDevice(r.Context(), user.UserID, deviceID); err != nil {
 		writeDeviceError(w, err)
 		return
 	}
@@ -75,7 +75,7 @@ func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	devices, err := h.svc.ListDevices(r.Context(), user.TenantID, user.UserID)
+	devices, err := h.svc.ListDevices(r.Context(), user.UserID)
 	if err != nil {
 		writeDeviceError(w, err)
 		return
@@ -91,7 +91,7 @@ func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
 // HandleAdminTestPush sends a test push to a device.
 // POST /api/v1/admin/push/test.
 func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuth(w, r)
+	_, ok := requireAuth(w, r)
 	if !ok {
 		return
 	}
@@ -110,7 +110,7 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.SendTestPush(r.Context(), user.TenantID, body.DeviceID); err != nil {
+	if err := h.svc.SendTestPush(r.Context(), body.DeviceID); err != nil {
 		writeDeviceError(w, err)
 		return
 	}

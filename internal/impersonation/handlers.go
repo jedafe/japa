@@ -67,8 +67,7 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -95,13 +94,13 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 
 	ipAddress := clientip.FromRequest(r)
 
-	if err := h.Service.StartImpersonation(r.Context(), tenantID, user.UserID, targetUserID, ipAddress); err != nil {
+	if err := h.Service.StartImpersonation(r.Context(), user.UserID, targetUserID, ipAddress); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	// Fetch target profile for the response (Section 46 contract).
-	target, err := h.Service.GetTargetProfile(r.Context(), tenantID, targetUserID)
+	target, err := h.Service.GetTargetProfile(r.Context(), targetUserID)
 	if err != nil {
 		// Impersonation succeeded but profile fetch failed — return minimal response.
 		slog.Warn("impersonation: failed to fetch target profile for response", "error", err)
@@ -128,15 +127,14 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	ipAddress := clientip.FromRequest(r)
 
-	targetID, err := h.Service.EndImpersonation(r.Context(), tenantID, user.UserID, ipAddress)
+	targetID, err := h.Service.EndImpersonation(r.Context(), user.UserID, ipAddress)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -160,13 +158,12 @@ func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	targetID, active, ttlSeconds, target, err := h.Service.GetImpersonationStatusWithTarget(r.Context(), tenantID, user.UserID)
+	targetID, active, ttlSeconds, target, err := h.Service.GetImpersonationStatusWithTarget(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

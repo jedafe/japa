@@ -23,8 +23,8 @@ type analyticsEventTrackerAdapter struct {
 
 // TrackEvent delegates to analytics.Service.TrackEvent, converting the
 // primitive params into an analytics.TrackEventInput.
-func (a analyticsEventTrackerAdapter) TrackEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error {
-	_, err := a.svc.TrackEvent(ctx, tenantID, analytics.TrackEventInput{
+func (a analyticsEventTrackerAdapter) TrackEvent(ctx context.Context, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error {
+	_, err := a.svc.TrackEvent(ctx, analytics.TrackEventInput{
 		EventType:  analytics.EventType(eventType),
 		UserID:     userID,
 		EntityType: entityType,

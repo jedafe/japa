@@ -71,7 +71,7 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	// BUG-006: dispatch @mention notifications — fire-and-forget (BL-002,
 	// Section 15). The public CreatePost does this; the admin path must
 	// too, otherwise @mentions in admin-created posts are silently dropped.
-	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, post.ID, post.SpaceID, input.Body)
+	h.dispatchMentionNotifications(r.Context(), user.UserID, post.ID, post.SpaceID, input.Body)
 
 	// BUG-009: enqueue rss:regenerate when an admin creates a post directly
 	// as published. Ref: §24.
@@ -144,7 +144,7 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 	// BUG-009: capture previous status to detect draft→published transition
 	// for rss:regenerate enqueue. Ref: §24.
 	prevStatus := ""
-	if existing, gErr := h.content.GetContent(r.Context(), id, tenantID); gErr == nil {
+	if existing, gErr := h.content.GetContent(r.Context(), id); gErr == nil {
 		prevStatus = existing.Status
 	}
 

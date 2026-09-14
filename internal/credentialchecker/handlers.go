@@ -116,7 +116,7 @@ func (h *Handlers) HandleListProfessions(w http.ResponseWriter, r *http.Request)
 // with filters. Query params: ?dest=&profession=&issuing=&page=&limit=
 // Public.
 func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -145,7 +145,7 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 	professionID := parseProfessionID(r.URL.Query().Get("profession"))
 	page, limit := parsePageParams(r)
 
-	pathways, total, err := h.service.ListPathways(r.Context(), tenantID, destSpaceID, issuingSpaceID, professionID, page, limit)
+	pathways, total, err := h.service.ListPathways(r.Context(), destSpaceID, issuingSpaceID, professionID, page, limit)
 	if err != nil {
 		slog.Error("credentialchecker: list pathways failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list pathways")
@@ -255,8 +255,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -290,7 +289,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	pathways, total, err := h.service.AdminListPathways(r.Context(), tenantID, destSpaceID, issuingSpaceID, professionID, status, page, limit)
+	pathways, total, err := h.service.AdminListPathways(r.Context(), destSpaceID, issuingSpaceID, professionID, status, page, limit)
 	if err != nil {
 		slog.Error("credentialchecker: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list pathways")
@@ -365,8 +364,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -397,7 +395,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.service.GeneratePathwayDraft(r.Context(), tenantID, input)
+	resp, err := h.service.GeneratePathwayDraft(r.Context(), input)
 	if err != nil {
 		slog.Error("credentialchecker: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")

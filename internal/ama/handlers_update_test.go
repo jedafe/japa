@@ -25,12 +25,12 @@ type fakeAMAPatcher struct {
 	closeCalled bool
 }
 
-func (f *fakeAMAPatcher) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID) error {
+func (f *fakeAMAPatcher) CloseAMA(ctx context.Context, threadID, callerUserID pgtype.UUID) error {
 	f.closeCalled = true
 	return f.closeErr
 }
 
-func (f *fakeAMAPatcher) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error) {
+func (f *fakeAMAPatcher) UpdateAMA(ctx context.Context, threadID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error) {
 	f.lastInput = in
 	return f.updated, f.updateErr
 }

@@ -60,8 +60,8 @@ type updateJobListingRequest struct {
 // listingUpdater is the subset of Service methods used by the public job
 // update handler.
 type listingUpdater interface {
-	IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool
-	UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error)
+	IsEnabled(ctx context.Context) bool
+	UpdateJobListing(ctx context.Context, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error)
 }
 
 // Handlers exposes the Jobs Board HTTP endpoints.
@@ -142,12 +142,12 @@ func parseBoolParam(r *http.Request, key string) *bool {
 // HandleFindJobs handles GET /api/v1/jobs — public job finder with server-side
 // filtering on custom_field_values.
 func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service != nil && !h.service.IsEnabled(r.Context(), tenantID) {
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -175,7 +175,7 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 		filters.LocationType = "remote"
 	}
 
-	results, total, err := h.service.FindJobs(r.Context(), tenantID, filters)
+	results, total, err := h.service.FindJobs(r.Context(), filters)
 	if err != nil {
 		slog.Error("jobs: find failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "jobs_find_failed", "Failed to search jobs")
@@ -195,7 +195,7 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 
 // HandleJobDetail handles GET /api/v1/jobs/:slug — public job detail.
 func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -206,7 +206,7 @@ func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	detail, err := h.service.GetJobDetail(r.Context(), tenantID, slug)
+	detail, err := h.service.GetJobDetail(r.Context(), slug)
 	if err != nil {
 		slog.Error("jobs: detail failed", "error", err, "slug", slug)
 		errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found")
@@ -231,8 +231,7 @@ func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -247,7 +246,7 @@ func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	app, err := h.service.ApplyToJob(r.Context(), tenantID, jobID, user.UserID, req.SubmissionID)
+	app, err := h.service.ApplyToJob(r.Context(), jobID, user.UserID, req.SubmissionID)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateApplication) {
 			errpkg.WriteError(w, http.StatusConflict, "already_applied", "You have already applied to this job")
@@ -277,15 +276,14 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	page, limit := parsePagination(r)
 
-	results, total, err := h.service.ListUserApplications(r.Context(), tenantID, user.UserID, page, limit)
+	results, total, err := h.service.ListUserApplications(r.Context(), user.UserID, page, limit)
 	if err != nil {
 		slog.Error("jobs: my applications failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "applications_list_failed", "Failed to list applications")
@@ -311,8 +309,7 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -339,7 +336,7 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePagination(r)
 
-	results, total, err := h.service.ListOrgJobs(r.Context(), tenantID, orgID, page, limit)
+	results, total, err := h.service.ListOrgJobs(r.Context(), orgID, page, limit)
 	if err != nil {
 		slog.Error("jobs: list org jobs failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "org_jobs_list_failed", "Failed to list org jobs")
@@ -366,8 +363,7 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -402,7 +398,7 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	listing, err := h.service.CreateJobListing(r.Context(), tenantID, orgID, user.UserID, req.Title, req.Slug, "", req.Body, req.FieldValues)
+	listing, err := h.service.CreateJobListing(r.Context(), orgID, user.UserID, req.Title, req.Slug, "", req.Body, req.FieldValues)
 	if err != nil {
 		slog.Error("jobs: create listing failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_listing_failed", "Failed to create job listing")
@@ -424,13 +420,12 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.updater == nil || !h.updater.IsEnabled(r.Context(), tenantID) {
+	if h.updater == nil || !h.updater.IsEnabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -451,7 +446,7 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listing, err := h.updater.UpdateJobListing(r.Context(), tenantID, orgID, jobID, user.UserID, UpdateJobListingInput(req))
+	listing, err := h.updater.UpdateJobListing(r.Context(), orgID, jobID, user.UserID, UpdateJobListingInput(req))
 	if err != nil {
 		if errors.Is(err, ErrNotOrgMember) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
@@ -480,8 +475,7 @@ func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -499,14 +493,14 @@ func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Requ
 	// JOBS-012: verify the caller is an admin of the org and the job
 	// actually belongs to that org (prevents reaching applications via a
 	// different org's ID).
-	if !requireOrgJobAdmin(w, r, h, user.UserID, tenantID, orgID, jobID) {
+	if !requireOrgJobAdmin(w, r, h, user.UserID, orgID, jobID) {
 		return
 	}
 
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
 
-	results, total, err := h.service.ListJobApplications(r.Context(), tenantID, jobID, status, page, limit)
+	results, total, err := h.service.ListJobApplications(r.Context(), jobID, status, page, limit)
 	if err != nil {
 		slog.Error("jobs: list job applications failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "applications_list_failed", "Failed to list applications")
@@ -539,8 +533,7 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -561,7 +554,7 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 	}
 
 	// JOBS-012: verify org admin + job ownership before mutating.
-	if !requireOrgJobAdmin(w, r, h, user.UserID, tenantID, orgID, jobID) {
+	if !requireOrgJobAdmin(w, r, h, user.UserID, orgID, jobID) {
 		return
 	}
 
@@ -576,7 +569,7 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 		return
 	}
 
-	app, err := h.service.UpdateApplicationStatus(r.Context(), tenantID, appID, req.Status, req.EmployerNotes)
+	app, err := h.service.UpdateApplicationStatus(r.Context(), appID, req.Status, req.EmployerNotes)
 	if err != nil {
 		slog.Error("jobs: update status failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update application status")
@@ -598,7 +591,7 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 // job belongs to that org. It writes the appropriate error response and
 // returns false on failure. Used by the application list/update handlers
 // (JOBS-012).
-func requireOrgJobAdmin(w http.ResponseWriter, r *http.Request, h *Handlers, userID, tenantID, orgID, jobID pgtype.UUID) bool {
+func requireOrgJobAdmin(w http.ResponseWriter, r *http.Request, h *Handlers, userID, orgID, jobID pgtype.UUID) bool {
 	member, err := h.service.IsOrgMember(r.Context(), userID, orgID, OrgJobAdminRoles)
 	if err != nil {
 		slog.Error("jobs: org admin check failed", "error", err)
@@ -612,7 +605,7 @@ func requireOrgJobAdmin(w http.ResponseWriter, r *http.Request, h *Handlers, use
 		return false
 	}
 
-	owns, err := h.service.JobBelongsToOrg(r.Context(), tenantID, jobID, orgID)
+	owns, err := h.service.JobBelongsToOrg(r.Context(), jobID, orgID)
 	if err != nil {
 		slog.Error("jobs: job ownership check failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "org_check_failed", "Failed to verify job ownership")
@@ -634,8 +627,7 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -643,7 +635,7 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
 
-	results, total, err := h.service.AdminListJobs(r.Context(), tenantID, status, page, limit)
+	results, total, err := h.service.AdminListJobs(r.Context(), status, page, limit)
 	if err != nil {
 		slog.Error("jobs: admin list jobs failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list job listings")
@@ -652,7 +644,7 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Include listing status distribution for the admin dashboard.
-	dist, _ := h.service.AdminJobStatusDistribution(r.Context(), tenantID)
+	dist, _ := h.service.AdminJobStatusDistribution(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
@@ -671,8 +663,7 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -682,7 +673,7 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	featured, err := h.service.ToggleFeature(r.Context(), tenantID, jobID)
+	featured, err := h.service.ToggleFeature(r.Context(), jobID)
 	if err != nil {
 		slog.Error("jobs: toggle feature failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "feature_toggle_failed", "Failed to toggle featured status")
@@ -707,8 +698,7 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -731,7 +721,7 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.service.AdminUpdateJob(r.Context(), tenantID, jobID, body.Title, body.Summary, body.Body, body.Status, body.FieldValues); err != nil {
+	if err := h.service.AdminUpdateJob(r.Context(), jobID, body.Title, body.Summary, body.Body, body.Status, body.FieldValues); err != nil {
 		slog.Error("jobs: admin update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update job listing")
 
@@ -749,8 +739,7 @@ func (h *Handlers) HandleAdminDeleteJob(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -760,7 +749,7 @@ func (h *Handlers) HandleAdminDeleteJob(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.service.AdminDeleteJob(r.Context(), tenantID, jobID); err != nil {
+	if err := h.service.AdminDeleteJob(r.Context(), jobID); err != nil {
 		slog.Error("jobs: admin delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete job listing")
 

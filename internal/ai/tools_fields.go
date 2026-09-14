@@ -54,7 +54,7 @@ func CustomFieldsListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_group_id", "group_id is not a valid UUID"), nil
 		}
 
-		fields, err := deps.CustomFields.ListFieldsByGroup(ctx, groupID, tenantID)
+		fields, err := deps.CustomFields.ListFieldsByGroup(ctx, groupID)
 		if err != nil {
 			return errorToolResult("custom_fields_list_failed", err.Error()), nil
 		}
@@ -115,7 +115,7 @@ func CFVReadHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_entity_id", "entity_id is not a valid UUID"), nil
 		}
 
-		cfvs, err := deps.CustomFields.ListFieldValuesByEntity(ctx, tenantID, a.EntityType, entityID)
+		cfvs, err := deps.CustomFields.ListFieldValuesByEntity(ctx, a.EntityType, entityID)
 		if err != nil {
 			return errorToolResult("cfv_read_failed", err.Error()), nil
 		}
@@ -135,7 +135,7 @@ func CFVReadHandler(deps *ToolDeps) ToolHandler {
 // arguments. The entity_type determines which privacy table to check:
 // "content" → contents.ai_exempt, "user" → users.ai_exempt. Other entity
 // types have no exemption column and return a zero target (skip).
-func CFVReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func CFVReadPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a cfvReadArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing custom_field_values.read args: %w", err)
@@ -246,7 +246,7 @@ func CFVSetHandler(deps *ToolDeps) ToolHandler {
 
 // CFVSetPrivacyTarget extracts the target entity from custom_field_values.set
 // arguments. Maps the entity_type to the corresponding privacy table.
-func CFVSetPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func CFVSetPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a cfvSetArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing custom_field_values.set args: %w", err)
@@ -414,7 +414,7 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 }
 
 // CFVBulkSetPrivacyTarget extracts the target entity for bulk_set.
-func CFVBulkSetPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func CFVBulkSetPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a cfvBulkSetArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing custom_field_values.bulk_set args: %w", err)
@@ -651,9 +651,9 @@ func CustomFieldGroupsListHandler(deps *ToolDeps) ToolHandler {
 
 		var err error
 		if a.EntityClass != "" {
-			groups, err = deps.CustomFieldDefs.ListFieldGroupsByEntityClass(ctx, tenantID, a.EntityClass)
+			groups, err = deps.CustomFieldDefs.ListFieldGroupsByEntityClass(ctx, a.EntityClass)
 		} else {
-			groups, err = deps.CustomFieldDefs.ListFieldGroups(ctx, tenantID)
+			groups, err = deps.CustomFieldDefs.ListFieldGroups(ctx)
 		}
 
 		if err != nil {
@@ -716,7 +716,7 @@ func CustomFieldGroupsCreateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("missing_slug", "slug is required"), nil
 		}
 
-		group, err := deps.CustomFieldDefs.CreateFieldGroup(ctx, tenantID, a.Name, a.Slug, a.Description, a.IsSystem)
+		group, err := deps.CustomFieldDefs.CreateFieldGroup(ctx, a.Name, a.Slug, a.Description, a.IsSystem)
 		if err != nil {
 			return errorToolResult("custom_field_group_create_failed", err.Error()), nil
 		}

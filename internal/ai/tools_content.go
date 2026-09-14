@@ -51,12 +51,12 @@ import (
 // nil (graceful degradation in tests) or when the user holds content.assign_author.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment).
-func permissionCanAssignAuthor(ctx context.Context, deps *ToolDeps, userID, tenantID pgtype.UUID) bool {
+func permissionCanAssignAuthor(ctx context.Context, deps *ToolDeps, userID pgtype.UUID) bool {
 	if deps == nil || deps.Permission == nil {
 		return true
 	}
 
-	return deps.Permission.HasPermission(ctx, userID, tenantID, "content.assign_author")
+	return deps.Permission.HasPermission(ctx, userID, "content.assign_author")
 }
 
 // agentContentTypePermission returns the RBAC node for agent creation of the
@@ -74,12 +74,12 @@ func agentContentTypePermission(contentType string) string {
 // content type list unchanged (graceful degradation in tests/degraded modes).
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (RBAC Permissions).
-func allowedContentTypes(ctx context.Context, deps *ToolDeps, userID, tenantID pgtype.UUID) (map[string]bool, error) {
+func allowedContentTypes(ctx context.Context, deps *ToolDeps, userID pgtype.UUID) (map[string]bool, error) {
 	if deps == nil || deps.ContentTypes == nil {
 		return nil, nil
 	}
 
-	allTypes, err := deps.ContentTypes.ListContentTypes(ctx, tenantID)
+	allTypes, err := deps.ContentTypes.ListContentTypes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func allowedContentTypes(ctx context.Context, deps *ToolDeps, userID, tenantID p
 		}
 
 		permKey := agentContentTypePermission(ct.ContentType)
-		if deps.Permission.HasPermission(ctx, userID, tenantID, permKey) {
+		if deps.Permission.HasPermission(ctx, userID, permKey) {
 			permitted[ct.ContentType] = true
 		}
 	}
@@ -164,7 +164,7 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 
 			filter := visibility.InternalVisibilityFilter(userID)
 
-			results, err := deps.Content.SearchContentsBySpace(ctx, tenantID, spaceID, a.Query, a.Limit, 0, filter)
+			results, err := deps.Content.SearchContentsBySpace(ctx, spaceID, a.Query, a.Limit, 0, filter)
 			if err != nil {
 				return errorToolResult("content_search_failed", err.Error()), nil
 			}
@@ -181,7 +181,7 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 		// Tenant-wide text search (first page — zero cursor).
 		filter := visibility.InternalVisibilityFilter(userID)
 
-		results, err := deps.Content.ListContents(ctx, tenantID, a.Query, pgtype.Timestamptz{}, a.Limit, filter)
+		results, err := deps.Content.ListContents(ctx, a.Query, pgtype.Timestamptz{}, a.Limit, filter)
 		if err != nil {
 			return errorToolResult("content_search_failed", err.Error()), nil
 		}
@@ -332,7 +332,7 @@ func ContentReadHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
 		}
 
-		content, err := deps.Content.GetContent(ctx, contentID, tenantID)
+		content, err := deps.Content.GetContent(ctx, contentID)
 		if err != nil {
 			return errorToolResult("content_not_found", fmt.Sprintf("content not found: %v", err)), nil
 		}
@@ -341,7 +341,7 @@ func ContentReadHandler(deps *ToolDeps) ToolHandler {
 		fieldValues := []map[string]any{}
 
 		if deps.CustomFields != nil {
-			cfvs, err := deps.CustomFields.ListFieldValuesByEntity(ctx, tenantID, "content", contentID)
+			cfvs, err := deps.CustomFields.ListFieldValuesByEntity(ctx, "content", contentID)
 			if err == nil {
 				fieldValues = filterNonExemptFieldValues(cfvs)
 			}
@@ -369,7 +369,7 @@ func ContentReadHandler(deps *ToolDeps) ToolHandler {
 
 // ContentReadPrivacyTarget extracts the content_id from content.read
 // arguments so the executor can check the ai_exempt flag before dispatch.
-func ContentReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func ContentReadPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a contentReadArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.read args: %w", err)
@@ -452,11 +452,11 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 			authorID = userID
 		}
 
-		if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID, tenantID) {
+		if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID) {
 			return errorToolResult("unauthorized_author", "setting author_id to another user requires content.assign_author permission"), nil
 		}
 
-		permittedTypes, err := allowedContentTypes(ctx, deps, userID, tenantID)
+		permittedTypes, err := allowedContentTypes(ctx, deps, userID)
 		if err != nil {
 			return errorToolResult("content_type_check_failed", err.Error()), nil
 		}
@@ -786,7 +786,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if deps.Persona != nil && personaIDStr != "" {
 			personaID, perr := scanUUID(personaIDStr)
 			if perr == nil && personaID.Valid {
-				pid, perr := deps.Persona.GetPersonaUserID(ctx, tenantID, personaID)
+				pid, perr := deps.Persona.GetPersonaUserID(ctx, personaID)
 				if perr == nil && pid.Valid {
 					authorID = pid
 					assignedByPersona = true
@@ -797,11 +797,11 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		// Assigning authorship to someone other than the calling user
 		// requires content.assign_author, unless the draft is being
 		// authored by the configured AI persona (§103 Content Request Flow).
-		if authorID.Valid && authorID != userID && !assignedByPersona && !permissionCanAssignAuthor(ctx, deps, userID, tenantID) {
+		if authorID.Valid && authorID != userID && !assignedByPersona && !permissionCanAssignAuthor(ctx, deps, userID) {
 			return errorToolResult("unauthorized_author", "setting author_id to another user requires content.assign_author permission"), nil
 		}
 
-		permittedTypes, err := allowedContentTypes(ctx, deps, userID, tenantID)
+		permittedTypes, err := allowedContentTypes(ctx, deps, userID)
 		if err != nil {
 			return errorToolResult("content_type_check_failed", err.Error()), nil
 		}
@@ -886,7 +886,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		var hitlReviewID pgtype.UUID
 
 		skipHITL := deps.Permission != nil &&
-			deps.Permission.HasPermission(ctx, userID, tenantID, "agent.skip_hitl")
+			deps.Permission.HasPermission(ctx, userID, "agent.skip_hitl")
 
 		if deps.HITL != nil && !skipHITL {
 			review, hitlErr := deps.HITL.CreateHITLReview(ctx, HITLReview{
@@ -1066,7 +1066,7 @@ type ContentUpdater func(ctx context.Context, contentID, tenantID, editedBy pgty
 
 // ContentUpdatePrivacyTarget extracts the content_id from content.update
 // arguments for the executor's privacy gate.
-func ContentUpdatePrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func ContentUpdatePrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a contentUpdateArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.update args: %w", err)
@@ -1097,7 +1097,7 @@ func GuideCategoriesListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("guide_categories_unavailable", "guide category service is not configured"), nil
 		}
 
-		cats, err := deps.GuideCategories.ListGuideCategories(ctx, tenantID)
+		cats, err := deps.GuideCategories.ListGuideCategories(ctx)
 		if err != nil {
 			return errorToolResult("guide_categories_list_failed", err.Error()), nil
 		}
@@ -1137,12 +1137,12 @@ func ContentTypesListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("content_types_unavailable", "content type service is not configured"), nil
 		}
 
-		types, err := deps.ContentTypes.ListContentTypes(ctx, tenantID)
+		types, err := deps.ContentTypes.ListContentTypes(ctx)
 		if err != nil {
 			return errorToolResult("content_types_list_failed", err.Error()), nil
 		}
 
-		permitted, err := allowedContentTypes(ctx, deps, userID, tenantID)
+		permitted, err := allowedContentTypes(ctx, deps, userID)
 		if err != nil {
 			return errorToolResult("content_type_check_failed", err.Error()), nil
 		}
@@ -1326,7 +1326,7 @@ func ContentDeleteHandler(deps *ToolDeps) ToolHandler {
 
 // ContentDeletePrivacyTarget extracts the content_id from content.delete
 // arguments for the executor's privacy gate.
-func ContentDeletePrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func ContentDeletePrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a contentDeleteArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.delete args: %w", err)
@@ -1372,7 +1372,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 
 			filter := visibility.InternalVisibilityFilter(userID)
 
-			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, "", pgtype.Timestamptz{}, pgtype.UUID{}, 0, a.Limit, "", visitor.VisitorContext{}, filter)
+			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, a.ContentType, "", pgtype.Timestamptz{}, pgtype.UUID{}, 0, a.Limit, "", visitor.VisitorContext{}, filter)
 			if err != nil {
 				return errorToolResult("content_list_failed", err.Error()), nil
 			}
@@ -1393,7 +1393,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("content_unavailable", "content service is not configured"), nil
 		}
 
-		results, err := deps.Content.ListContents(ctx, tenantID, "", pgtype.Timestamptz{}, a.Limit, filter)
+		results, err := deps.Content.ListContents(ctx, "", pgtype.Timestamptz{}, a.Limit, filter)
 		if err != nil {
 			return errorToolResult("content_list_failed", err.Error()), nil
 		}
@@ -1519,7 +1519,7 @@ func ContentPublishHandler(deps *ToolDeps) ToolHandler {
 
 // ContentPublishPrivacyTarget extracts the content_id from content.publish
 // arguments for the executor's privacy gate.
-func ContentPublishPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+func ContentPublishPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 	var a contentPublishArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.publish args: %w", err)

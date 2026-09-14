@@ -148,21 +148,21 @@ func NewService(store *Store, settings *config.Settings) *Service {
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
 // Enabled reads the checklist.enabled system_settings toggle.
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "checklist.enabled", true)
+	return s.settings.GetBoolOr(ctx, "checklist.enabled", true)
 }
 
 // GetSelector returns origin country Geo Spaces (§05) and destination
 // countries with nested visa types from published visa guides. Follows the
 // 3-step selector model in §70: origin → destination → visa type.
 // Anonymous-accessible (no auth required).
-func (s *Service) GetSelector(ctx context.Context, tenantID pgtype.UUID) (SelectorResult, error) {
+func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 	// Step 1: Origins — country-level Geo Spaces.
-	countrySpaces, err := s.store.ListCountrySpaces(ctx, tenantID)
+	countrySpaces, err := s.store.ListCountrySpaces(ctx)
 	if err != nil {
 		return SelectorResult{}, fmt.Errorf("checklist: selector origins: %w", err)
 	}
@@ -178,7 +178,7 @@ func (s *Service) GetSelector(ctx context.Context, tenantID pgtype.UUID) (Select
 
 	// Steps 2+3: Destinations with nested visa types — from published visa
 	// guides' destination_country + visa_type custom fields.
-	fields, err := s.store.ListPublishedVisaGuideFields(ctx, tenantID, []string{
+	fields, err := s.store.ListPublishedVisaGuideFields(ctx, []string{
 		FieldDestinationCountry,
 		FieldVisaType,
 	})
@@ -302,8 +302,8 @@ func slugify(s string) string {
 
 // GetGuide returns the checklist guide result (guide_id + title + items) for
 // GET /checklist/:guide_id. Anonymous-accessible (no auth required).
-func (s *Service) GetGuide(ctx context.Context, tenantID, guideID pgtype.UUID) (ChecklistGuideResult, error) {
-	title, err := s.store.GetVisaGuideTitle(ctx, tenantID, guideID)
+func (s *Service) GetGuide(ctx context.Context, guideID pgtype.UUID) (ChecklistGuideResult, error) {
+	title, err := s.store.GetVisaGuideTitle(ctx, guideID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ChecklistGuideResult{}, pgx.ErrNoRows
@@ -312,7 +312,7 @@ func (s *Service) GetGuide(ctx context.Context, tenantID, guideID pgtype.UUID) (
 		return ChecklistGuideResult{}, fmt.Errorf("checklist: get guide title: %w", err)
 	}
 
-	items, err := s.GetChecklistItems(ctx, tenantID, guideID)
+	items, err := s.GetChecklistItems(ctx, guideID)
 	if err != nil {
 		return ChecklistGuideResult{}, err
 	}
@@ -328,8 +328,8 @@ func (s *Service) GetGuide(ctx context.Context, tenantID, guideID pgtype.UUID) (
 // and returns the document items with stable item_key slugs plus optional
 // required/category/description metadata. Anonymous-accessible (no auth
 // required) — progress is left empty for anonymous users.
-func (s *Service) GetChecklistItems(ctx context.Context, tenantID, guideID pgtype.UUID) ([]ChecklistItem, error) {
-	field, err := s.store.GetVisaGuideField(ctx, tenantID, guideID, FieldRequiredDocuments)
+func (s *Service) GetChecklistItems(ctx context.Context, guideID pgtype.UUID) ([]ChecklistItem, error) {
+	field, err := s.store.GetVisaGuideField(ctx, guideID, FieldRequiredDocuments)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return []ChecklistItem{}, nil
@@ -363,13 +363,13 @@ func (s *Service) GetChecklistItems(ctx context.Context, tenantID, guideID pgtyp
 // ProgressResult — per-item completed/completed_at/notes merged with the
 // guide's checklist items so every item is present (unchecked items without
 // a progress row still appear). Matches the frontend ChecklistProgress type.
-func (s *Service) GetProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (ProgressResult, error) {
-	items, err := s.GetChecklistItems(ctx, tenantID, guideID)
+func (s *Service) GetProgress(ctx context.Context, userID, guideID pgtype.UUID) (ProgressResult, error) {
+	items, err := s.GetChecklistItems(ctx, guideID)
 	if err != nil {
 		return ProgressResult{}, err
 	}
 
-	rows, err := s.store.ListChecklistProgress(ctx, tenantID, userID, guideID)
+	rows, err := s.store.ListChecklistProgress(ctx, userID, guideID)
 	if err != nil {
 		return ProgressResult{}, fmt.Errorf("checklist: get progress: %w", err)
 	}
@@ -422,7 +422,7 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 	if completed != nil {
 		resolvedCompleted = *completed
 	} else {
-		existing, err := s.store.GetSingleProgress(ctx, tenantID, userID, guideID, itemKey)
+		existing, err := s.store.GetSingleProgress(ctx, userID, guideID, itemKey)
 		if err == nil {
 			resolvedCompleted = existing.Completed
 		}
@@ -449,7 +449,7 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 	// Full-completion reward (Section 28 integration). Only when the item was
 	// just marked complete — avoids re-awarding on no-op or note-only updates.
 	if completed != nil && *completed && s.enqueuer != nil && s.settings != nil {
-		points := s.settings.GetIntOr(ctx, pgtype.UUID{}, "checklist.completion_points", 0)
+		points := s.settings.GetIntOr(ctx, "checklist.completion_points", 0)
 		if points > 0 {
 			s.maybeAwardCompletionPoints(ctx, tenantID, userID, guideID, points)
 		}
@@ -462,7 +462,7 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 // completed and, if so, enqueues a wallet:award_points task. Fire-and-forget
 // per Rule 8 — failures are logged, never returned to the caller.
 func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, userID, guideID pgtype.UUID, points int) {
-	items, err := s.GetChecklistItems(ctx, tenantID, guideID)
+	items, err := s.GetChecklistItems(ctx, guideID)
 	if err != nil {
 		slog.Warn("checklist: completion check: list items", "error", err)
 		return
@@ -472,7 +472,7 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, user
 		return
 	}
 
-	completed, err := s.store.CountCompletedChecklistItems(ctx, tenantID, userID, guideID)
+	completed, err := s.store.CountCompletedChecklistItems(ctx, userID, guideID)
 	if err != nil {
 		slog.Warn("checklist: completion check: count", "error", err)
 		return
@@ -503,8 +503,8 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, user
 }
 
 // ResetProgress deletes all progress rows for a user + guide.
-func (s *Service) ResetProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) error {
-	if err := s.store.DeleteChecklistProgress(ctx, tenantID, userID, guideID); err != nil {
+func (s *Service) ResetProgress(ctx context.Context, userID, guideID pgtype.UUID) error {
+	if err := s.store.DeleteChecklistProgress(ctx, userID, guideID); err != nil {
 		return fmt.Errorf("checklist: reset progress: %w", err)
 	}
 
@@ -513,7 +513,7 @@ func (s *Service) ResetProgress(ctx context.Context, tenantID, userID, guideID p
 
 // AdminListProgress lists all users' progress rows (paginated, filterable by
 // guide_id and user_id). Admin-only (checklist.manage permission).
-func (s *Service) AdminListProgress(ctx context.Context, tenantID, guideID, userID pgtype.UUID, page, limit int32) ([]AdminProgressRow, int64, error) {
+func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.UUID, page, limit int32) ([]AdminProgressRow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -535,7 +535,7 @@ func (s *Service) AdminListProgress(ctx context.Context, tenantID, guideID, user
 		return nil, 0, fmt.Errorf("checklist: admin list progress: %w", err)
 	}
 
-	total, err := s.store.AdminCountChecklistProgress(ctx, tenantID, guideID, userID)
+	total, err := s.store.AdminCountChecklistProgress(ctx, guideID, userID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("checklist: admin count progress: %w", err)
 	}
@@ -559,7 +559,7 @@ func (s *Service) AdminListProgress(ctx context.Context, tenantID, guideID, user
 }
 
 // AdminCompletionStats returns per-guide completion aggregates (admin).
-func (s *Service) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID, page, limit int32) ([]CompletionStat, error) {
+func (s *Service) AdminCompletionStats(ctx context.Context, page, limit int32) ([]CompletionStat, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -570,7 +570,7 @@ func (s *Service) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID
 
 	offset := (page - 1) * limit
 
-	rows, err := s.store.AdminCompletionStats(ctx, tenantID, offset, limit)
+	rows, err := s.store.AdminCompletionStats(ctx, offset, limit)
 	if err != nil {
 		return nil, fmt.Errorf("checklist: admin completion stats: %w", err)
 	}

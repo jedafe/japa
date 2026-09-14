@@ -65,7 +65,7 @@ func NewStore(database *db.DB) *Store {
 // the service to build human-readable, destination-specific web research
 // queries. If the space is missing, not valid, or soft-deleted, it returns an
 // empty string with no error.
-func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
+func (s *Store) GetSpaceName(ctx context.Context, spaceID pgtype.UUID) (string, error) {
 	if !spaceID.Valid {
 		return "", nil
 	}
@@ -395,7 +395,7 @@ LIMIT 1
 
 // GetGuideItems returns all items for a published guide, ordered by
 // sort_order. Only published+active guides expose items publicly (§92).
-func (s *Store) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UUID) ([]ItemRow, error) {
+func (s *Store) GetGuideItems(ctx context.Context, guideID pgtype.UUID) ([]ItemRow, error) {
 	const q = `
 SELECT i.id, i.guide_id, i.phase, i.title, i.description, i.official_link,
        i.origin_country_modifier, i.sort_order, i.is_flagged, i.created_at
@@ -549,7 +549,7 @@ type UpdateGuideInput struct {
 }
 
 // UpdateGuide updates mutable fields on a guide, scoped to .
-func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in UpdateGuideInput) error {
+func (s *Store) UpdateGuide(ctx context.Context, id pgtype.UUID, in UpdateGuideInput) error {
 	var (
 		sets   []string
 		args   []any
@@ -652,7 +652,7 @@ WHERE id = $1
 // ApproveGuide performs the human-in-the-loop approval: sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), status = 'published', and
 // optionally records review notes. Scoped to .
-func (s *Store) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
+func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE arrival_checklist_guides
 SET hitl_reviewed_by = $2,
@@ -693,7 +693,7 @@ type UserChecklistRow struct {
 // ListUserChecklists returns the distinct arrival checklist guides a user has
 // progress on, with item counts and completion counts. Uses checklist_progress
 // with list_type = 'arrival' (migration 000381).
-func (s *Store) ListUserChecklists(ctx context.Context, tenantID, userID pgtype.UUID) ([]UserChecklistRow, error) {
+func (s *Store) ListUserChecklists(ctx context.Context, userID pgtype.UUID) ([]UserChecklistRow, error) {
 	const q = `
 SELECT g.id,
        sp.name AS dest_space_name,
@@ -766,7 +766,7 @@ type UserChecklistDetailRow struct {
 
 // GetUserChecklistItems returns all items for a guide with the user's progress
 // merged in (left join on checklist_progress with list_type = 'arrival').
-func (s *Store) GetUserChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]UserChecklistDetailRow, error) {
+func (s *Store) GetUserChecklistItems(ctx context.Context, userID, guideID pgtype.UUID) ([]UserChecklistDetailRow, error) {
 	const q = `
 SELECT i.id, i.guide_id, i.phase, i.title, i.description, i.official_link,
        i.sort_order, i.is_flagged,
@@ -818,7 +818,7 @@ ORDER BY i.sort_order ASC, i.created_at ASC
 // user as having "started" the checklist. Idempotent — if a progress row
 // already exists for this user+guide (any item), it does nothing.
 // Returns the guide DTO so the frontend can render items immediately.
-func (s *Store) StartChecklist(ctx context.Context, tenantID, userID, guideID pgtype.UUID) error {
+func (s *Store) StartChecklist(ctx context.Context, userID, guideID pgtype.UUID) error {
 	// Insert a progress row for the first item of the guide (if any items
 	// exist), so the user's checklist appears in ListUserChecklists. Uses
 	// ON CONFLICT DO NOTHING for idempotency.
@@ -848,7 +848,7 @@ ON CONFLICT (user_id, guide_id, item_key, list_type) DO NOTHING
 // TickItem marks a single arrival checklist item complete/incomplete with an
 // optional note. Uses checklist_progress with list_type = 'arrival'. The
 // item_key is the arrival_checklist_items.id (UUID as text).
-func (s *Store) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemID string, completed bool, notes *string) error {
+func (s *Store) TickItem(ctx context.Context, userID, guideID pgtype.UUID, itemID string, completed bool, notes *string) error {
 	var completedAt pgtype.Timestamptz
 	if completed {
 		completedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
@@ -876,7 +876,7 @@ DO UPDATE SET
 // ListSelectors returns distinct destination_space_id + visa_category
 // combinations that have at least one active published guide, for the
 // public selector endpoint.
-func (s *Store) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]SelectorRow, error) {
+func (s *Store) ListSelectors(ctx context.Context) ([]SelectorRow, error) {
 	const q = `
 SELECT g.destination_space_id, sp.name AS dest_space_name,
        sp.geo_code AS dest_space_code, g.visa_category,

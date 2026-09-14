@@ -26,7 +26,7 @@ func NewStore(read, write *gen.Queries) *Store {
 
 // ── Sidebars ──────────────────────────────────────────────────────────
 
-func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, status, q, sort string, limit, offset int32) ([]gen.ListSidebarsRow, error) {
+func (s *Store) listSidebars(ctx context.Context, app, position, status, q, sort string, limit, offset int32) ([]gen.ListSidebarsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -42,7 +42,7 @@ func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, pos
 	return rows, nil
 }
 
-func (s *Store) countSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, status, q string) (int32, error) {
+func (s *Store) countSidebars(ctx context.Context, app, position, status, q string) (int32, error) {
 	count, err := s.read.CountSidebars(ctx, gen.CountSidebarsParams{
 		App: app, Position: position, Status: status, Q: q,
 	})
@@ -53,7 +53,7 @@ func (s *Store) countSidebars(ctx context.Context, tenantID pgtype.UUID, app, po
 	return count, nil
 }
 
-func (s *Store) getSidebarByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Sidebar, error) {
+func (s *Store) getSidebarByID(ctx context.Context, id pgtype.UUID) (gen.Sidebar, error) {
 	row, err := s.read.GetSidebarByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -97,7 +97,7 @@ func (s *Store) updateSidebar(ctx context.Context, p gen.UpdateSidebarParams) (g
 	return row, nil
 }
 
-func (s *Store) deleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteSidebar(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteSidebar(ctx, id); err != nil {
 		return fmt.Errorf("deleting sidebar: %w", err)
 	}
@@ -107,7 +107,7 @@ func (s *Store) deleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) err
 
 // ── Sidebar Widgets ───────────────────────────────────────────────────
 
-func (s *Store) listSidebarWidgets(ctx context.Context, tenantID, sidebarID pgtype.UUID) ([]gen.SidebarWidget, error) {
+func (s *Store) listSidebarWidgets(ctx context.Context, sidebarID pgtype.UUID) ([]gen.SidebarWidget, error) {
 	rows, err := s.read.ListSidebarWidgets(ctx,
 		sidebarID,
 	)
@@ -118,7 +118,7 @@ func (s *Store) listSidebarWidgets(ctx context.Context, tenantID, sidebarID pgty
 	return rows, nil
 }
 
-func (s *Store) getSidebarWidget(ctx context.Context, id, tenantID pgtype.UUID) (gen.SidebarWidget, error) {
+func (s *Store) getSidebarWidget(ctx context.Context, id pgtype.UUID) (gen.SidebarWidget, error) {
 	row, err := s.read.GetSidebarWidget(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -153,7 +153,7 @@ func (s *Store) updateSidebarWidget(ctx context.Context, p gen.UpdateSidebarWidg
 	return row, nil
 }
 
-func (s *Store) deleteSidebarWidget(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteSidebarWidget(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteSidebarWidget(ctx, id); err != nil {
 		return fmt.Errorf("deleting sidebar widget: %w", err)
 	}
@@ -161,7 +161,7 @@ func (s *Store) deleteSidebarWidget(ctx context.Context, id, tenantID pgtype.UUI
 	return nil
 }
 
-func (s *Store) bulkUpdateSidebarWidgetSortOrder(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID, sortOrders []int32) error {
+func (s *Store) bulkUpdateSidebarWidgetSortOrder(ctx context.Context, ids []pgtype.UUID, sortOrders []int32) error {
 	if err := s.write.BulkUpdateSidebarWidgetSortOrder(ctx, gen.BulkUpdateSidebarWidgetSortOrderParams{
 		Ids: ids, SortOrders: sortOrders,
 	}); err != nil {
@@ -173,7 +173,7 @@ func (s *Store) bulkUpdateSidebarWidgetSortOrder(ctx context.Context, tenantID p
 
 // ── User group resolution ──────────────────────────────────────────────
 
-func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUID) ([]string, error) {
+func (s *Store) getUserGroupIDs(ctx context.Context, userID pgtype.UUID) ([]string, error) {
 	rows, err := s.read.GetUserGroupIDs(ctx,
 		userID,
 	)
@@ -186,7 +186,7 @@ func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUI
 
 // ── Public resolution ──────────────────────────────────────────────────
 
-func (s *Store) listActiveSidebarsForResolve(ctx context.Context, tenantID pgtype.UUID, app, position string) ([]gen.Sidebar, error) {
+func (s *Store) listActiveSidebarsForResolve(ctx context.Context, app, position string) ([]gen.Sidebar, error) {
 	rows, err := s.read.ListActiveSidebarsForResolve(ctx, gen.ListActiveSidebarsForResolveParams{
 		App: app, Position: position,
 	})
@@ -197,7 +197,7 @@ func (s *Store) listActiveSidebarsForResolve(ctx context.Context, tenantID pgtyp
 	return rows, nil
 }
 
-func (s *Store) listActiveSidebarWidgets(ctx context.Context, tenantID, sidebarID pgtype.UUID) ([]gen.SidebarWidget, error) {
+func (s *Store) listActiveSidebarWidgets(ctx context.Context, sidebarID pgtype.UUID) ([]gen.SidebarWidget, error) {
 	rows, err := s.read.ListActiveSidebarWidgets(ctx,
 		sidebarID,
 	)

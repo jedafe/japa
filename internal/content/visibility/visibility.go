@@ -68,9 +68,9 @@ func VisibilityFilterFromRequest(r *http.Request) VisibilityFilter {
 		return filter
 	}
 
-	if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) ||
-		resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "content.edit_any") ||
-		resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "admin.moderation") {
+	if resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+		resolver.HasPermission(r.Context(), user.UserID, "content.edit_any") ||
+		resolver.HasPermission(r.Context(), user.UserID, "admin.moderation") {
 		filter.CanSeeUnpublished = true
 		filter.CanSeePrivate = true
 	}

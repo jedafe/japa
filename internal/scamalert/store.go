@@ -356,7 +356,7 @@ ON CONFLICT (user_id, destination_space_id) DO NOTHING
 
 // IsSubscribed returns true if the user is subscribed to scam alerts for the
 // given destination space.
-func (s *Store) IsSubscribed(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) (bool, error) {
+func (s *Store) IsSubscribed(ctx context.Context, userID, destSpaceID pgtype.UUID) (bool, error) {
 	var exists bool
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT EXISTS (
@@ -371,7 +371,7 @@ SELECT EXISTS (
 }
 
 // Unsubscribe deletes a scam-alert subscription for a user + destination space.
-func (s *Store) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) error {
+func (s *Store) Unsubscribe(ctx context.Context, userID, destSpaceID pgtype.UUID) error {
 	_, err := s.pool.Writer.Exec(ctx, `
 DELETE FROM scam_alert_subscriptions
 WHERE user_id = $1 AND destination_space_id = $2
@@ -386,7 +386,7 @@ WHERE user_id = $1 AND destination_space_id = $2
 // ListSubscribersByDestination returns all user IDs subscribed to scam
 // alerts for the given destination space. Used by the
 // scam_alert:notify_subscribers task to fan out notifications on confirm.
-func (s *Store) ListSubscribersByDestination(ctx context.Context, tenantID, destSpaceID pgtype.UUID) ([]pgtype.UUID, error) {
+func (s *Store) ListSubscribersByDestination(ctx context.Context, destSpaceID pgtype.UUID) ([]pgtype.UUID, error) {
 	rows, err := s.pool.Reader.Query(ctx, `
 SELECT user_id FROM scam_alert_subscriptions
 WHERE destination_space_id = $1
@@ -413,7 +413,7 @@ WHERE destination_space_id = $1
 // GetReportForNotification returns the report's destination_space_id and
 // reporter_id for the notify_subscribers task. Returns pgx.ErrNoRows if
 // the report does not exist or does not belong to the tenant.
-func (s *Store) GetReportForNotification(ctx context.Context, id, tenantID pgtype.UUID) (destSpaceID, reporterID pgtype.UUID, scamType, description string, err error) {
+func (s *Store) GetReportForNotification(ctx context.Context, id pgtype.UUID) (destSpaceID, reporterID pgtype.UUID, scamType, description string, err error) {
 	err = s.pool.Reader.QueryRow(ctx, `
 SELECT destination_space_id, reporter_id, scam_type, description
 FROM scam_reports
@@ -588,7 +588,7 @@ SELECT COUNT(*) FROM scam_reports sr WHERE %s
 // ADR-088: the review action itself is the human-in-the-loop approval — when
 // an AI-generated report is reviewed for the first time, hitl_reviewed_by /
 // hitl_reviewed_at are stamped with the reviewing moderator.
-func (s *Store) UpdateReportStatus(ctx context.Context, id, tenantID pgtype.UUID, status, moderatorNote string, reviewerID pgtype.UUID) error {
+func (s *Store) UpdateReportStatus(ctx context.Context, id pgtype.UUID, status, moderatorNote string, reviewerID pgtype.UUID) error {
 	var notePtr *string
 	if moderatorNote != "" {
 		notePtr = &moderatorNote
@@ -620,7 +620,7 @@ WHERE id = $1 AND deleted_at IS NULL
 }
 
 // PinReport pins a confirmed report to a space.
-func (s *Store) PinReport(ctx context.Context, id, tenantID, pinnedSpaceID pgtype.UUID) error {
+func (s *Store) PinReport(ctx context.Context, id, pinnedSpaceID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
 SET is_pinned = true, pinned_space_id = $2, updated_at = now()
@@ -638,7 +638,7 @@ WHERE id = $1 AND status = 'confirmed' AND deleted_at IS NULL
 }
 
 // UnpinReport removes the pin from a report.
-func (s *Store) UnpinReport(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) UnpinReport(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
 SET is_pinned = false, pinned_space_id = NULL, updated_at = now()

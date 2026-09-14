@@ -31,7 +31,7 @@ import (
 // not the full content service.
 type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
-	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
 }
@@ -165,7 +165,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "story.enabled", false)
+	return s.settings.GetBoolOr(ctx, "story.enabled", false)
 }
 
 // Submit creates a new story — a contents row with content_type='story' plus
@@ -289,12 +289,12 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		return StoryDTO{}, fmt.Errorf("story: create story_meta: %w", err)
 	}
 
-	return s.getStoryDTOByID(ctx, contentRow.ID, tenantID)
+	return s.getStoryDTOByID(ctx, contentRow.ID)
 }
 
 // GetBySlug returns a single published story by its slug. Anonymous-accessible.
-func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (StoryDTO, error) {
-	row, err := s.store.GetStoryBySlug(ctx, slug, tenantID)
+func (s *Service) GetBySlug(ctx context.Context, slug string) (StoryDTO, error) {
+	row, err := s.store.GetStoryBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, pgx.ErrNoRows
@@ -311,7 +311,7 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UU
 // offset pagination convention (?page_size=N&page_offset=N). requesterID,
 // canSeeMembers, and canSeePrivate carry the caller's §14 visibility rights —
 // guests see public stories only.
-func (s *Service) List(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, profession, sort string, pageSize, pageOffset int32, requesterID pgtype.UUID, canSeeMembers, canSeePrivate bool) ([]StoryDTO, int64, error) {
+func (s *Service) List(ctx context.Context, originSpaceID, destSpaceID pgtype.UUID, visaCategory, profession, sort string, pageSize, pageOffset int32, requesterID pgtype.UUID, canSeeMembers, canSeePrivate bool) ([]StoryDTO, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -352,7 +352,7 @@ func (s *Service) List(ctx context.Context, tenantID, originSpaceID, destSpaceID
 // the ownership check is skipped so moderators/admins can edit any story.
 func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditStoryInput, bypassOwnership bool) (StoryDTO, error) {
 	// Fetch existing content to verify ownership.
-	existing, err := s.content.GetContent(ctx, contentID, tenantID)
+	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, pgx.ErrNoRows
@@ -518,7 +518,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		return StoryDTO{}, fmt.Errorf("story: edit: update story_meta: %w", err)
 	}
 
-	return s.getStoryDTOByID(ctx, contentID, tenantID)
+	return s.getStoryDTOByID(ctx, contentID)
 }
 
 // DeleteOwn soft-deletes the author's own story. The caller must verify
@@ -526,7 +526,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 // bypassOwnership is true (caller has story.delete_any), the ownership check
 // is skipped so moderators/admins can delete any story.
 func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, bypassOwnership bool) error {
-	existing, err := s.content.GetContent(ctx, contentID, tenantID)
+	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -579,7 +579,7 @@ func (s *Service) Unverify(ctx context.Context, contentID, tenantID pgtype.UUID)
 // pageSize and pageOffset follow the conventions/api-response-format.md
 // offset pagination convention. sort may be "latest" (default), "oldest",
 // or "title". destSpaceID optionally filters by destination country.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q string, verified *bool, sort string, destSpaceID pgtype.UUID, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, status, q string, verified *bool, sort string, destSpaceID pgtype.UUID, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -613,8 +613,8 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 // getStoryDTOByID fetches a story by content_id and converts to DTO.
 // Uses the joined GetStoryByID query so origin/destination space names and
 // author info are populated.
-func (s *Service) getStoryDTOByID(ctx context.Context, contentID, tenantID pgtype.UUID) (StoryDTO, error) {
-	row, err := s.store.GetStoryByID(ctx, contentID, tenantID)
+func (s *Service) getStoryDTOByID(ctx context.Context, contentID pgtype.UUID) (StoryDTO, error) {
+	row, err := s.store.GetStoryByID(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, pgx.ErrNoRows

@@ -14,12 +14,12 @@ import (
 
 // ListSharePlatforms handles GET /api/v1/share-platforms (admin: all platforms).
 func (h *Handlers) ListSharePlatforms(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	platforms, err := h.Service.ListSharePlatforms(r.Context(), tenantID)
+	platforms, err := h.Service.ListSharePlatforms(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -31,12 +31,12 @@ func (h *Handlers) ListSharePlatforms(w http.ResponseWriter, r *http.Request) {
 // ListEnabledSharePlatforms handles GET /api/v1/share-platforms/enabled (public).
 // Returns only enabled platforms for the share dropdown.
 func (h *Handlers) ListEnabledSharePlatforms(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	platforms, err := h.Service.ListEnabledSharePlatforms(r.Context(), tenantID)
+	platforms, err := h.Service.ListEnabledSharePlatforms(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -47,7 +47,7 @@ func (h *Handlers) ListEnabledSharePlatforms(w http.ResponseWriter, r *http.Requ
 
 // CreateSharePlatform handles POST /api/v1/share-platforms.
 func (h *Handlers) CreateSharePlatform(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -82,7 +82,7 @@ func (h *Handlers) CreateSharePlatform(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.Service.CreateSharePlatform(r.Context(), tenantID, input.Key, input.Label, input.Icon, input.UrlTemplate, input.Color, input.Enabled, input.Position)
+	p, err := h.Service.CreateSharePlatform(r.Context(), input.Key, input.Label, input.Icon, input.UrlTemplate, input.Color, input.Enabled, input.Position)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -93,7 +93,7 @@ func (h *Handlers) CreateSharePlatform(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSharePlatform handles PATCH /api/v1/share-platforms/{key}.
 func (h *Handlers) UpdateSharePlatform(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -128,7 +128,7 @@ func (h *Handlers) UpdateSharePlatform(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.Service.UpdateSharePlatform(r.Context(), tenantID, key, input.Label, input.Icon, input.UrlTemplate, input.Color, input.Enabled, input.Position)
+	p, err := h.Service.UpdateSharePlatform(r.Context(), key, input.Label, input.Icon, input.UrlTemplate, input.Color, input.Enabled, input.Position)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -139,7 +139,7 @@ func (h *Handlers) UpdateSharePlatform(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSharePlatform handles DELETE /api/v1/share-platforms/{key}.
 func (h *Handlers) DeleteSharePlatform(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -150,7 +150,7 @@ func (h *Handlers) DeleteSharePlatform(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteSharePlatform(r.Context(), tenantID, key); err != nil {
+	if err := h.Service.DeleteSharePlatform(r.Context(), key); err != nil {
 		handleServiceError(w, err)
 		return
 	}

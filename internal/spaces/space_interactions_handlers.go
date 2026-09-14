@@ -40,7 +40,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	if h.follows != nil {
 		followed, err = h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, "space", space.ID)
 	} else {
-		followed, err = h.Service.ToggleFollowSpace(r.Context(), tenantID, user.UserID, space.ID)
+		followed, err = h.Service.ToggleFollowSpace(r.Context(), user.UserID, space.ID)
 	}
 
 	if err != nil {
@@ -117,8 +117,7 @@ func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -129,7 +128,7 @@ func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	muted, err := h.Service.IsSpaceMuted(r.Context(), tenantID, user.UserID, space.ID)
+	muted, err := h.Service.IsSpaceMuted(r.Context(), user.UserID, space.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

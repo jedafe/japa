@@ -88,12 +88,12 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 // ListWebhooks returns all webhook endpoints for the tenant.
 // GET /admin/webhooks.
 func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	endpoints, err := h.Service.ListEndpoints(r.Context(), tenantID)
+	endpoints, err := h.Service.ListEndpoints(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -108,7 +108,7 @@ func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 // GetWebhook returns a single webhook endpoint by ID.
 // GET /admin/webhooks/{id}.
 func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -119,7 +119,7 @@ func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	endpoint, err := h.Service.GetEndpoint(r.Context(), tenantID, id)
+	endpoint, err := h.Service.GetEndpoint(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -132,7 +132,7 @@ func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
 // server-generated and returned exactly once in the response (§12).
 // POST /admin/webhooks.
 func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -163,7 +163,7 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	endpoint, err := h.Service.CreateEndpoint(r.Context(), tenantID, userID, input)
+	endpoint, err := h.Service.CreateEndpoint(r.Context(), userID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -176,7 +176,7 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 // UpdateWebhook updates an existing webhook endpoint.
 // PUT/PATCH /admin/webhooks/{id}.
 func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -193,7 +193,7 @@ func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	endpoint, err := h.Service.UpdateEndpoint(r.Context(), tenantID, id, input)
+	endpoint, err := h.Service.UpdateEndpoint(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -205,7 +205,7 @@ func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 // DeleteWebhook removes a webhook endpoint.
 // DELETE /admin/webhooks/{id}.
 func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -216,7 +216,7 @@ func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteEndpoint(r.Context(), tenantID, id); err != nil {
+	if err := h.Service.DeleteEndpoint(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -227,7 +227,7 @@ func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 // TestWebhook sends a test event to a webhook endpoint.
 // POST /admin/webhooks/{id}/test.
 func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -248,7 +248,7 @@ func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
 		input.EventType = "webhook.test"
 	}
 
-	deliveryID, err := h.Service.TestEndpoint(r.Context(), tenantID, id, input.EventType)
+	deliveryID, err := h.Service.TestEndpoint(r.Context(), id, input.EventType)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -267,7 +267,7 @@ func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
 // back. On success, marks the endpoint as verified and active.
 // POST /admin/webhooks/{id}/verify.
 func (h *Handlers) VerifyWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -278,7 +278,7 @@ func (h *Handlers) VerifyWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.VerifyEndpoint(r.Context(), tenantID, id); err != nil {
+	if err := h.Service.VerifyEndpoint(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -290,7 +290,7 @@ func (h *Handlers) VerifyWebhook(w http.ResponseWriter, r *http.Request) {
 
 // ListDeliveries handles GET /admin/webhooks/{id}/deliveries.
 func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -304,7 +304,7 @@ func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	deliveries, err := h.Service.ListDeliveries(r.Context(), tenantID, id, limit, offset)
+	deliveries, err := h.Service.ListDeliveries(r.Context(), id, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -318,7 +318,7 @@ func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 // URL path before retrying (BUG-025: previously ignored {id}, allowing a
 // user to retry a delivery from any webhook by guessing the delivery_id).
 func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -335,7 +335,7 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RetryDelivery(r.Context(), tenantID, endpointID, deliveryID); err != nil {
+	if err := h.Service.RetryDelivery(r.Context(), endpointID, deliveryID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -404,7 +404,7 @@ func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	if h.Service != nil && h.Service.settings != nil {
 		t := &struct{ ID pgtype.UUID }{}
 		if t != nil {
-			raw := h.Service.settings.GetStringOr(r.Context(), t.ID, "webhooks.event_catalog", "")
+			raw := h.Service.settings.GetStringOr(r.Context(), "webhooks.event_catalog", "")
 			if raw != "" {
 				var custom []eventCatalogEntry
 				if err := json.Unmarshal([]byte(raw), &custom); err == nil && len(custom) > 0 {

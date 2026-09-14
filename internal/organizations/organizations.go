@@ -83,14 +83,14 @@ type TierResolver interface {
 
 // SettingsReader is the subset of config.Settings used by the org service.
 type SettingsReader interface {
-	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
-	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
+	GetSettingInt(ctx context.Context, key string) (int, error)
+	GetSettingBool(ctx context.Context, key string) (bool, error)
 }
 
 // webhookEmitter fans an organization.* / claim.* event out to all subscribed
 // webhook endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
-	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
+	EmitEvent(ctx context.Context, eventType string, payload any)
 }
 
 // sourceManager creates canonical intel_sources rows for entity profiles
@@ -162,12 +162,12 @@ func (s *Service) SetSourceManager(m sourceManager) { s.sources = m }
 // emitWebhook fires an organization.* / claim.* event fire-and-forget
 // (Rule 8). Errors are logged but never returned to the caller — webhook
 // delivery is async.
-func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
+func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any) {
 	if s.webhooks == nil {
 		return
 	}
 
-	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
+	s.webhooks.EmitEvent(ctx, eventType, payload)
 }
 
 // enqueueInvitationEmail enqueues an email:send task to notify the invited
@@ -315,7 +315,7 @@ type cachedPublicOrgList struct {
 // returns the cached org. Returns the org and a cache-hit flag for observability.
 func (s *Service) getOrSetOrgProfile(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.Organization, error) {
 	if s.vk == nil {
-		return s.store.GetPublicOrganizationBySlug(ctx, slug, tenantID)
+		return s.store.GetPublicOrganizationBySlug(ctx, slug)
 	}
 
 	cacheKey := orgProfileCacheKey(tenantID, slug)
@@ -326,7 +326,7 @@ func (s *Service) getOrSetOrgProfile(ctx context.Context, tenantID pgtype.UUID, 
 		}
 	}
 
-	org, err := s.store.GetPublicOrganizationBySlug(ctx, slug, tenantID)
+	org, err := s.store.GetPublicOrganizationBySlug(ctx, slug)
 	if err != nil {
 		return org, err
 	}
@@ -346,7 +346,7 @@ func (s *Service) getOrSetOrgProfile(ctx context.Context, tenantID pgtype.UUID, 
 // verified) are part of the key to avoid returning stale filtered results.
 func (s *Service) getOrSetOrgList(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
 	if s.vk == nil {
-		return s.fetchOrgList(ctx, tenantID, search, orgType, verified, limit, offset)
+		return s.fetchOrgList(ctx, search, orgType, verified, limit, offset)
 	}
 
 	page := offset / max(limit, 1)
@@ -361,7 +361,7 @@ func (s *Service) getOrSetOrgList(ctx context.Context, tenantID pgtype.UUID, sea
 		}
 	}
 
-	rows, total, err := s.fetchOrgList(ctx, tenantID, search, orgType, verified, limit, offset)
+	rows, total, err := s.fetchOrgList(ctx, search, orgType, verified, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -377,13 +377,13 @@ func (s *Service) getOrSetOrgList(ctx context.Context, tenantID pgtype.UUID, sea
 }
 
 // fetchOrgList is the uncached DB fetch for ListPublicOrganizations.
-func (s *Service) fetchOrgList(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
-	rows, err := s.store.ListPublicOrganizations(ctx, tenantID, search, orgType, verified, limit, offset)
+func (s *Service) fetchOrgList(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+	rows, err := s.store.ListPublicOrganizations(ctx, search, orgType, verified, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountPublicOrganizations(ctx, tenantID, search, orgType, verified)
+	total, err := s.store.CountPublicOrganizations(ctx, search, orgType, verified)
 	if err != nil {
 		return nil, 0, err
 	}

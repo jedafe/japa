@@ -222,13 +222,13 @@ const MaxPageSize = 100
 // webhookEmitter fans a content.* event out to all subscribed webhook
 // endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
-	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
+	EmitEvent(ctx context.Context, eventType string, payload any)
 }
 
 // folderResolver resolves a default bookmark folder for an entity/content
 // type pair. Implemented by bookmarkfolders.DefaultFolderResolver.
 type folderResolver interface {
-	Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
+	Resolve(ctx context.Context, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
 }
 
 // Service provides content operations with reader/writer pool
@@ -262,7 +262,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
 		ActivityKey: key,
 		Reference:   reference,
 		Payload:     payload,
@@ -288,15 +288,15 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 //
 //nolint:revive // exported: stutter naming is intentional
 type ContentSearcher interface {
-	SearchContentIDs(ctx context.Context, tenantID pgtype.UUID, query string, limit int) ([]pgtype.UUID, error)
+	SearchContentIDs(ctx context.Context, query string, limit int) ([]pgtype.UUID, error)
 }
 
 // settingsReader is the subset of *config.Settings used by the content
 // service for hot-reloadable operational limits (max tags, max pinned
 // posts, etc.). Defined as an interface so tests can substitute a stub.
 type settingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -344,7 +344,7 @@ func (s *Service) SetSearcher(searcher ContentSearcher) { s.searcher = searcher 
 // GetSpacePrimaryGeoParents returns the country/state/city spaces linked to the
 // given space via space_parent_spaces. Used when auto-assigning content to
 // also inherit the geo parents of the space it is posted in.
-func (s *Service) GetSpacePrimaryGeoParents(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]pgtype.UUID, error) {
+func (s *Service) GetSpacePrimaryGeoParents(ctx context.Context, spaceID pgtype.UUID) ([]pgtype.UUID, error) {
 	ids, err := s.read.GetSpacePrimaryGeoParents(ctx,
 		spaceID,
 	)
@@ -360,18 +360,18 @@ func (s *Service) HasSearcher() bool { return s.searcher != nil }
 
 // emitWebhook fires a content.* event fire-and-forget (Rule 8). Errors are
 // logged but never returned to the caller — webhook delivery is async.
-func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
+func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any) {
 	if s.webhooks == nil {
 		return
 	}
 
-	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
+	s.webhooks.EmitEvent(ctx, eventType, payload)
 }
 
 // ListComparisonContentsBySourceID returns published comparison contents
 // linked to a canonical intel_sources row, plus the total count.
 // Ref: v2 source directory item feed for comparison sources.
-func (s *Service) ListComparisonContentsBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error) {
+func (s *Service) ListComparisonContentsBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error) {
 	rows, err := s.read.ListComparisonContentsBySourceID(ctx, gen.ListComparisonContentsBySourceIDParams{
 
 		IntelSourceID: sourceID,

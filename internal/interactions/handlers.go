@@ -100,8 +100,7 @@ func (h *Handlers) BlockUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -119,7 +118,7 @@ func (h *Handlers) BlockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.BlockUser(r.Context(), tenantID, user.UserID, targetID); err != nil {
+	if err := h.service.BlockUser(r.Context(), user.UserID, targetID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
@@ -136,8 +135,7 @@ func (h *Handlers) UnblockUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -155,7 +153,7 @@ func (h *Handlers) UnblockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.UnblockUser(r.Context(), tenantID, user.UserID, targetID); err != nil {
+	if err := h.service.UnblockUser(r.Context(), user.UserID, targetID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
@@ -171,8 +169,7 @@ func (h *Handlers) ListBlocked(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -180,7 +177,7 @@ func (h *Handlers) ListBlocked(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	blocked, err := h.service.ListBlockedUsers(r.Context(), tenantID, user.UserID, limit, offset)
+	blocked, err := h.service.ListBlockedUsers(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list blocked users")
 
@@ -272,8 +269,7 @@ func (h *Handlers) GetUserMuteStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -285,7 +281,7 @@ func (h *Handlers) GetUserMuteStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	muted, err := h.service.IsUserMuted(r.Context(), tenantID, user.UserID, targetID)
+	muted, err := h.service.IsUserMuted(r.Context(), user.UserID, targetID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check mute status")
 
@@ -303,8 +299,7 @@ func (h *Handlers) ListMutedUsers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -312,7 +307,7 @@ func (h *Handlers) ListMutedUsers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	muted, err := h.service.ListMutedUsers(r.Context(), tenantID, user.UserID, limit, offset)
+	muted, err := h.service.ListMutedUsers(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list muted users")
 
@@ -335,8 +330,7 @@ func (h *Handlers) ListMutedSpaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -354,7 +348,7 @@ func (h *Handlers) ListMutedSpaces(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	muted, err := h.service.ListMutedSpaces(r.Context(), tenantID, user.UserID, q, level, spaceTypeID, limit, offset)
+	muted, err := h.service.ListMutedSpaces(r.Context(), user.UserID, q, level, spaceTypeID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list muted spaces")
 

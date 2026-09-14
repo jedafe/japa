@@ -165,8 +165,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -242,7 +241,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		targetSpaceIDs = append(targetSpaceIDs, u)
 	}
 
-	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, user.UserID, CreateCampaignInput{
+	campaign, err := h.Service.CreateCampaign(r.Context(), user.UserID, CreateCampaignInput{
 		Name:                input.Name,
 		SlotTypeName:        input.SlotTypeName,
 		Content:             input.Content,
@@ -269,8 +268,7 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -281,7 +279,7 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.Service.GetCampaign(r.Context(), id, tenantID)
+	campaign, err := h.Service.GetCampaign(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -296,8 +294,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -305,7 +302,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	campaigns, err := h.Service.ListCampaigns(r.Context(), tenantID, limit, offset)
+	campaigns, err := h.Service.ListCampaigns(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -332,7 +329,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.Service.ActivateCampaign(r.Context(), id, tenantID)
+	campaign, err := h.Service.ActivateCampaign(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -364,8 +361,7 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -376,7 +372,7 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.Service.PauseCampaign(r.Context(), id, tenantID)
+	campaign, err := h.Service.PauseCampaign(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -391,8 +387,7 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -403,7 +398,7 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.Service.EndCampaign(r.Context(), id, tenantID)
+	campaign, err := h.Service.EndCampaign(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -434,7 +429,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.Service.RejectCampaign(r.Context(), id, tenantID)
+	campaign, err := h.Service.RejectCampaign(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -479,7 +474,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 // the untargeted/default eligible set; usergroup-based targeting is not yet
 // implemented (no targeting column on ad_campaigns — deferred, see plan P5).
 func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -498,7 +493,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 		userID = user.UserID
 	}
 
-	campaigns, err := h.Service.RenderSlot(r.Context(), tenantID, userID, slotName)
+	campaigns, err := h.Service.RenderSlot(r.Context(), userID, slotName)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -620,8 +615,7 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -629,7 +623,7 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	slotTypes, err := h.Service.ListSlotTypes(r.Context(), tenantID, limit, offset)
+	slotTypes, err := h.Service.ListSlotTypes(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -644,8 +638,7 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -665,7 +658,7 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slotType, err := h.Service.CreateSlotType(r.Context(), tenantID, AdSlotTypeInput{
+	slotType, err := h.Service.CreateSlotType(r.Context(), AdSlotTypeInput{
 		Name:        input.Name,
 		Description: input.Description,
 	})
@@ -683,8 +676,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -705,7 +697,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slotType, err := h.Service.UpdateSlotType(r.Context(), id, tenantID, AdSlotTypeInput{
+	slotType, err := h.Service.UpdateSlotType(r.Context(), id, AdSlotTypeInput{
 		Name:        input.Name,
 		Description: input.Description,
 	})
@@ -723,8 +715,7 @@ func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -735,7 +726,7 @@ func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteSlotType(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteSlotType(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -749,8 +740,7 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -761,7 +751,7 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteCampaign(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteCampaign(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -775,8 +765,7 @@ func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -787,7 +776,7 @@ func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.Service.GetCampaignStats(r.Context(), id, tenantID)
+	stats, err := h.Service.GetCampaignStats(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -806,8 +795,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -871,7 +859,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 		endDate = &t
 	}
 
-	boost, err := h.Service.CreateBoost(r.Context(), tenantID, CreateBoostInput{
+	boost, err := h.Service.CreateBoost(r.Context(), CreateBoostInput{
 		OrganizationID: organizationID,
 		CampaignID:     campaignID,
 		BoostType:      input.BoostType,
@@ -892,8 +880,7 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -910,7 +897,7 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	boosts, err := h.Service.ListBoosts(r.Context(), tenantID, organizationID)
+	boosts, err := h.Service.ListBoosts(r.Context(), organizationID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -925,13 +912,12 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	boosts, err := h.Service.ListActiveBoosts(r.Context(), tenantID)
+	boosts, err := h.Service.ListActiveBoosts(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -946,8 +932,7 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -958,7 +943,7 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	boost, err := h.Service.EndBoost(r.Context(), id, tenantID)
+	boost, err := h.Service.EndBoost(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -973,8 +958,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1007,7 +991,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 		endDate = &t
 	}
 
-	boost, err := h.Service.UpdateBoost(r.Context(), id, tenantID, input.Status, endDate)
+	boost, err := h.Service.UpdateBoost(r.Context(), id, input.Status, endDate)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1022,8 +1006,7 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1034,7 +1017,7 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteBoost(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteBoost(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1050,7 +1033,7 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 // column. Uses the generated UpdateAdCampaignDetails query via the service
 // layer (Rule 2 — never raw SQL in handlers).
 func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1071,7 +1054,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.Service.UpdateCampaignDetails(r.Context(), id, tenantID, input.Name, input.Budget)
+	campaign, err := h.Service.UpdateCampaignDetails(r.Context(), id, input.Name, input.Budget)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1086,7 +1069,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 // via the generated GetAdSlotTypeByID query. The previous raw-SQL handler
 // referenced non-existent width/height columns and would 500.
 func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1097,7 +1080,7 @@ func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slotType, err := h.Service.GetSlotType(r.Context(), id, tenantID)
+	slotType, err := h.Service.GetSlotType(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1116,8 +1099,7 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1128,7 +1110,7 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	network, err := h.Service.CreateAdNetworkDTO(r.Context(), tenantID, input)
+	network, err := h.Service.CreateAdNetworkDTO(r.Context(), input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1143,8 +1125,7 @@ func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1152,7 +1133,7 @@ func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 	pageSize := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	networks, total, err := h.Service.ListAdNetworkDTOs(r.Context(), tenantID, pageSize, offset)
+	networks, total, err := h.Service.ListAdNetworkDTOs(r.Context(), pageSize, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1170,8 +1151,7 @@ func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1182,7 +1162,7 @@ func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	network, err := h.Service.GetAdNetworkDTO(r.Context(), tenantID, id)
+	network, err := h.Service.GetAdNetworkDTO(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1197,8 +1177,7 @@ func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1215,7 +1194,7 @@ func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	network, err := h.Service.UpdateAdNetworkDTO(r.Context(), tenantID, id, input)
+	network, err := h.Service.UpdateAdNetworkDTO(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1230,8 +1209,7 @@ func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1242,7 +1220,7 @@ func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteAdNetwork(r.Context(), tenantID, id); err != nil {
+	if err := h.Service.DeleteAdNetwork(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1272,7 +1250,7 @@ func (h *Handlers) ListAdNetworkProviders(w http.ResponseWriter, r *http.Request
 func (h *Handlers) GetAdNetworkConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	networks, err := h.Service.ListActiveAdNetworks(ctx, pgtype.UUID{})
+	networks, err := h.Service.ListActiveAdNetworks(ctx)
 	if err != nil {
 		handleServiceError(w, err)
 		return

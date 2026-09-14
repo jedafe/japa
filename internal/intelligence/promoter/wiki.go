@@ -25,13 +25,13 @@ import (
 // transaction boundary).
 type WikiStore interface {
 	PersonaResolver
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	GetWikiPageByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.WikiPage, error)
-	CreateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateWikiPageIntelParams) (gen.WikiPage, error)
-	UpdateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateWikiPageIntelParams) error
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetWikiPageByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.WikiPage, error)
+	CreateWikiPageIntel(ctx context.Context, arg gen.CreateWikiPageIntelParams) (gen.WikiPage, error)
+	UpdateWikiPageIntel(ctx context.Context, arg gen.UpdateWikiPageIntelParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 	WithTx(ctx context.Context, fn func(WikiTxStore) error) error
 }
 
@@ -41,10 +41,10 @@ type WikiStore interface {
 // this interface (via WithTx's callback), and the test mock satisfies it
 // directly.
 type WikiTxStore interface {
-	CreateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateWikiPageIntelParams) (gen.WikiPage, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateWikiPageIntelParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	CreateWikiPageIntel(ctx context.Context, arg gen.CreateWikiPageIntelParams) (gen.WikiPage, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateWikiPageIntel(ctx context.Context, arg gen.UpdateWikiPageIntelParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // WikiPromoter promotes wiki_page intel_records into the wiki_pages
@@ -57,7 +57,6 @@ type WikiTxStore interface {
 // 'promoted') so Studio can pick it up.
 type WikiPromoter struct {
 	store    WikiStore
-	tenantID pgtype.UUID
 	authorID pgtype.UUID
 	aiModel  *string // AI model used for extraction (ADR-088, INTEL-003)
 	now      func() time.Time
@@ -79,8 +78,8 @@ func WithWikiAIModel(model string) WikiPromoterOption {
 // NewWikiPromoter creates a promoter backed by the given store. The
 // tenantID and authorID identify the tenant and system author stamped onto
 // the wiki_pages projection rows created by the create path.
-func NewWikiPromoter(store WikiStore, tenantID, authorID pgtype.UUID, opts ...WikiPromoterOption) *WikiPromoter {
-	p := &WikiPromoter{store: store, tenantID: tenantID, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
+func NewWikiPromoter(store WikiStore, authorID pgtype.UUID, opts ...WikiPromoterOption) *WikiPromoter {
+	p := &WikiPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -99,12 +98,12 @@ var ErrNotWikiPage = errors.New("promoter: intel record is not a wiki_page")
 // projection row, creating it or updating it in place while respecting
 // editorial overrides.
 func (p *WikiPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.WikiPage]{
+	return promoteDomain(ctx, p.store, recordID, domainPromoteOps[gen.WikiPage]{
 		entityType: p.Entity(),
 		notErr:     ErrNotWikiPage,
 		loadLabel:  "wiki page",
-		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.WikiPage, error) {
-			return p.store.GetWikiPageByIntelRecord(ctx, tenantID, pgID)
+		getExisting: func(ctx context.Context, pgID pgtype.UUID) (gen.WikiPage, error) {
+			return p.store.GetWikiPageByIntelRecord(ctx, pgID)
 		},
 		createPath: p.wikiCreatePath,
 		updatePath: p.wikiUpdatePath,
@@ -118,18 +117,18 @@ func (p *WikiPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Promote
 // later. Both writes run inside a single transaction so a failure in either
 // rolls back the other (BUG-01 fix, §6.2).
 func (p *WikiPromoter) wikiCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
-	authorID := resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID)
-	params := buildWikiCreateParams(record, ext, p.tenantID, authorID)
+	authorID := resolveAuthorID(ctx, p.store, source, p.authorID)
+	params := buildWikiCreateParams(record, ext, authorID)
 
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx WikiTxStore) error {
-		wiki, err := tx.CreateWikiPageIntel(ctx, p.tenantID, params)
+		wiki, err := tx.CreateWikiPageIntel(ctx, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create wiki page: %w", err)
 		}
 
-		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
@@ -170,7 +169,7 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 		}
 	}
 
-	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "wiki page",
+	return domainUpdateTx(ctx, record, p.authorID, "wiki page",
 		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
 		func(ctx context.Context, fn func(WikiTxStore) error) error { return p.store.WithTx(ctx, fn) },
 		WikiTxStore.UpdateWikiPageIntel)
@@ -185,7 +184,7 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 // "space_id" field when present (a UUID string); otherwise it is left NULL
 // for Studio to assign. guide_id is always NULL on the create path so
 // Studio can fill it in later (Approach B).
-func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, tenantID, authorID pgtype.UUID) gen.CreateWikiPageIntelParams {
+func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, authorID pgtype.UUID) gen.CreateWikiPageIntelParams {
 	title := stringField(ext, "title")
 	if title == "" {
 		title = stringField(ext, "name")

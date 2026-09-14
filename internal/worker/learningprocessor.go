@@ -9,8 +9,8 @@ import "context"
 // LearningProcessor defines the contract for learning platform background
 // tasks — computing track completion percentages and issuing certificates.
 type LearningProcessor interface {
-	UpdateTrackCompletion(ctx context.Context, userID, trackID, tenantID string) error
-	IssueCertificate(ctx context.Context, userID, trackID, tenantID, courseName string) error
+	UpdateTrackCompletion(ctx context.Context, userID, trackID string) error
+	IssueCertificate(ctx context.Context, userID, trackID, courseName string) error
 }
 
 var learningProcessor LearningProcessor

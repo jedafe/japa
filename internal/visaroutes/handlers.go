@@ -104,12 +104,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /visa-routes — list published+active visa routes
 // with filters. Query params: ?dest=&profession=&education=&experience_years=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
 	}
@@ -135,7 +135,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	routes, total, err := h.service.List(r.Context(), tenantID, destSpaceID, profession, education, experienceYears, page, limit)
+	routes, total, err := h.service.List(r.Context(), destSpaceID, profession, education, experienceYears, page, limit)
 	if err != nil {
 		slog.Error("visaroutes: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list visa routes")
@@ -156,12 +156,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleCompare handles GET /visa-routes/compare — compare up to 4 visa
 // routes side-by-side. Query params: ?ids=id1,id2,id3,id4 (max 4).
 func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
 	}
@@ -205,7 +205,7 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routes, err := h.service.Compare(r.Context(), tenantID, ids)
+	routes, err := h.service.Compare(r.Context(), ids)
 	if err != nil {
 		slog.Error("visaroutes: compare failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "compare_failed", "Failed to compare visa routes")
@@ -219,12 +219,12 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /visa-routes/:id — single published+active visa
 // route detail.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
 	}
@@ -261,8 +261,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -300,7 +299,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	routes, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, status, visaCategory, q, sort, order, activePtr, page, limit)
+	routes, total, err := h.service.AdminList(r.Context(), destSpaceID, status, visaCategory, q, sort, order, activePtr, page, limit)
 	if err != nil {
 		slog.Error("visaroutes: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list visa routes")
@@ -325,8 +324,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -362,7 +360,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route, err := h.service.Create(r.Context(), tenantID, input)
+	route, err := h.service.Create(r.Context(), input)
 	if err != nil {
 		slog.Error("visaroutes: admin create failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create visa route")
@@ -465,7 +463,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
 	}

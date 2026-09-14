@@ -210,7 +210,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 // ListReviews handles GET /api/v1/reviews.
 // Supports ?entity_type=, ?entity_id=, ?reviewer_id=, ?page_size=, ?page_offset=.
 func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -234,7 +234,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		reviews, err := h.Service.ListReviewsByEntity(r.Context(), tenantID, entityType, entityID, limit, offset, sortParam)
+		reviews, err := h.Service.ListReviewsByEntity(r.Context(), entityType, entityID, limit, offset, sortParam)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -257,7 +257,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		reviews, err := h.Service.ListReviewsByReviewer(r.Context(), tenantID, reviewerID, limit, offset)
+		reviews, err := h.Service.ListReviewsByReviewer(r.Context(), reviewerID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -280,7 +280,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 // reviews for entity_type='university' + entity_id={id} with author names joined.
 // Ref: Section 29 (polymorphic reviews), Section 39 (university as space).
 func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -294,7 +294,7 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	rows, err := h.Service.ListReviewsByEntityWithAuthor(r.Context(), tenantID, "university", spaceID, limit, offset)
+	rows, err := h.Service.ListReviewsByEntityWithAuthor(r.Context(), "university", spaceID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -331,7 +331,7 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 // Supports ?status=, ?entity_type=, ?page_size=, ?page_offset=.
 // Returns {"data": [...], "total": N} envelope with entity_name resolved.
 func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -348,21 +348,21 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if status != "" || entityType != "" {
-		reviews, err = h.Service.ListAdminReviewsFiltered(r.Context(), tenantID, status, entityType, limit, offset)
+		reviews, err = h.Service.ListAdminReviewsFiltered(r.Context(), status, entityType, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		total, err = h.Service.CountAdminReviewsFiltered(r.Context(), tenantID, status, entityType)
+		total, err = h.Service.CountAdminReviewsFiltered(r.Context(), status, entityType)
 	} else {
-		rows, listErr := h.Service.ListAdminReviews(r.Context(), tenantID, limit, offset)
+		rows, listErr := h.Service.ListAdminReviews(r.Context(), limit, offset)
 		if listErr != nil {
 			handleServiceError(w, listErr)
 			return
 		}
 
-		total, err = h.Service.CountAdminReviews(r.Context(), tenantID)
+		total, err = h.Service.CountAdminReviews(r.Context())
 		// Convert []gen.ListAdminReviewsRow to []gen.ListAdminReviewsFilteredRow
 		// since they share the same shape.
 		reviews = make([]gen.ListAdminReviewsFilteredRow, len(rows))
@@ -387,7 +387,7 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 
 // GetReview handles GET /api/v1/reviews/{id}.
 func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -398,7 +398,7 @@ func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.GetReview(r.Context(), id, tenantID)
+	review, err := h.Service.GetReview(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -441,7 +441,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.UpdateReview(r.Context(), id, tenantID, user.UserID, input.Rating, input.Title, input.Body)
+	review, err := h.Service.UpdateReview(r.Context(), id, user.UserID, input.Rating, input.Title, input.Body)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -472,13 +472,13 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch review before deleting to get entity info for aggregate recalc.
-	review, err := h.Service.GetReview(r.Context(), id, tenantID)
+	review, err := h.Service.GetReview(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if err := h.Service.DeleteReview(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.Service.DeleteReview(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -509,13 +509,13 @@ func (h *Handlers) HardDeleteReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch review before deleting to get entity info for aggregate recalc.
-	review, err := h.Service.GetReview(r.Context(), id, tenantID)
+	review, err := h.Service.GetReview(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if err := h.Service.HardDeleteReview(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.HardDeleteReview(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -532,8 +532,7 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -544,7 +543,7 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.FlagReview(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.FlagReview(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -555,7 +554,7 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 // GetAggregate handles GET /api/v1/reviews/aggregate.
 // Supports ?entity_type= and ?entity_id=.
 func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -575,7 +574,7 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	aggregate, err := h.Service.GetAggregate(r.Context(), tenantID, entityType, entityID)
+	aggregate, err := h.Service.GetAggregate(r.Context(), entityType, entityID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -592,8 +591,7 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -619,7 +617,7 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.ModerateReview(r.Context(), id, tenantID, user.UserID, input.Status, input.Reason)
+	review, err := h.Service.ModerateReview(r.Context(), id, user.UserID, input.Status, input.Reason)
 	if err != nil {
 		handleServiceError(w, err)
 		return

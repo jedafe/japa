@@ -30,7 +30,7 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 // HandleListSlots returns available ad slot types with flat_rate.
 // GET /org/{org_id}/ads/slots.
 func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -39,7 +39,7 @@ func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slots, err := h.svc.ListSlots(r.Context(), tenantID)
+	slots, err := h.svc.ListSlots(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -114,7 +114,7 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 // HandleListCampaigns lists an org's campaigns.
 // GET /org/{org_id}/ads/campaigns.
 func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -131,7 +131,7 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	page, limit := parsePagination(r)
 
-	campaigns, total, err := h.svc.ListCampaigns(r.Context(), tenantID, orgID, status, page, limit)
+	campaigns, total, err := h.svc.ListCampaigns(r.Context(), orgID, status, page, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
@@ -148,7 +148,7 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 // HandleGetCampaign returns a single campaign detail.
 // GET /org/{org_id}/ads/campaigns/{id}.
 func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -167,7 +167,7 @@ func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.svc.GetCampaign(r.Context(), tenantID, orgID, campaignID)
+	campaign, err := h.svc.GetCampaign(r.Context(), orgID, campaignID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
@@ -179,7 +179,7 @@ func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleUpdateCampaign updates a campaign's creative (pending/paused only).
 // PATCH /org/{org_id}/ads/campaigns/{id}.
 func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -208,7 +208,7 @@ func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	campaign, err := h.svc.UpdateCampaignCreative(r.Context(), tenantID, orgID, campaignID, body.Content, body.TargetURL)
+	campaign, err := h.svc.UpdateCampaignCreative(r.Context(), orgID, campaignID, body.Content, body.TargetURL)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
@@ -220,7 +220,7 @@ func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) 
 // HandlePauseCampaign pauses an active campaign.
 // POST /org/{org_id}/ads/campaigns/{id}/pause.
 func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -239,7 +239,7 @@ func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.svc.PauseCampaign(r.Context(), tenantID, orgID, campaignID)
+	campaign, err := h.svc.PauseCampaign(r.Context(), orgID, campaignID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "pause_failed", err.Error())
 		return
@@ -256,7 +256,7 @@ func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleResumeCampaign resumes a paused campaign.
 // POST /org/{org_id}/ads/campaigns/{id}/resume.
 func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -275,7 +275,7 @@ func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	campaign, err := h.svc.ResumeCampaign(r.Context(), tenantID, orgID, campaignID)
+	campaign, err := h.svc.ResumeCampaign(r.Context(), orgID, campaignID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "resume_failed", err.Error())
 		return
@@ -292,7 +292,7 @@ func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) 
 // HandleGetStats returns campaign statistics.
 // GET /org/{org_id}/ads/campaigns/{id}/stats.
 func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -311,7 +311,7 @@ func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.svc.GetCampaignStats(r.Context(), tenantID, orgID, campaignID)
+	stats, err := h.svc.GetCampaignStats(r.Context(), orgID, campaignID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return

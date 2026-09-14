@@ -113,13 +113,13 @@ func (s *Service) countSpacesByCurrency(ctx context.Context, code string) (int32
 }
 
 // listActiveCreditPacks returns all active credit packs for a tenant.
-func (s *Service) listActiveCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([]gen.CreditPack, error) {
-	return s.store.listActiveCreditPacks(ctx, tenantID)
+func (s *Service) listActiveCreditPacks(ctx context.Context) ([]gen.CreditPack, error) {
+	return s.store.listActiveCreditPacks(ctx)
 }
 
 // listAllCreditPacks returns all credit packs (including inactive) for a tenant.
-func (s *Service) listAllCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([]gen.CreditPack, error) {
-	return s.store.listAllCreditPacks(ctx, tenantID)
+func (s *Service) listAllCreditPacks(ctx context.Context) ([]gen.CreditPack, error) {
+	return s.store.listAllCreditPacks(ctx)
 }
 
 // createCreditPack creates a new credit pack.
@@ -133,8 +133,8 @@ func (s *Service) updateCreditPack(ctx context.Context, p gen.UpdateCreditPackPa
 }
 
 // deactivateCreditPack soft-deletes a credit pack.
-func (s *Service) deactivateCreditPack(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.deactivateCreditPack(ctx, id, tenantID)
+func (s *Service) deactivateCreditPack(ctx context.Context, id pgtype.UUID) error {
+	return s.store.deactivateCreditPack(ctx, id)
 }
 
 // getUserPreferredCurrency returns the user's explicit currency preference.
@@ -175,7 +175,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 	// the endpoint returns 403 credit_purchase_disabled but spending existing
 	// credits continues to work (Section 58).
 	if s.settings != nil {
-		if !s.settings.GetBoolOr(ctx, pgtype.UUID{}, "wallet.credit_purchase_enabled", true) {
+		if !s.settings.GetBoolOr(ctx, "wallet.credit_purchase_enabled", true) {
 			return PurchaseCreditsResult{}, errCreditPurchaseDisabled
 		}
 	}
@@ -190,7 +190,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 		preferred, _ := s.store.getUserPreferredCurrency(ctx, userID)
 		// VisitorContext.ContentCountry and GeoContext.CountryCode are
 		// populated by the handler from the request context (ADR-064 + §37).
-		resolved, err := s.currencyResolver.ResolveCurrency(ctx, tenantID, CurrencyContext{
+		resolved, err := s.currencyResolver.ResolveCurrency(ctx, CurrencyContext{
 			PreferredCurrency: preferred,
 			ContentCountry:    input.ContentCountry,
 			GeoCountry:        input.GeoCountry,
@@ -203,7 +203,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 	if currencyCode == "" {
 		// Final fallback: system default via settings, then compiled default.
 		if s.settings != nil {
-			currencyCode = s.settings.GetStringOr(ctx, pgtype.UUID{}, "wallet.default_currency", "NGN")
+			currencyCode = s.settings.GetStringOr(ctx, "wallet.default_currency", "NGN")
 		} else {
 			currencyCode = "NGN"
 		}
@@ -228,7 +228,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 			return PurchaseCreditsResult{}, fmt.Errorf("invalid pack_id: %w", err)
 		}
 
-		pack, err := s.store.getCreditPackByID(ctx, packID, tenantID)
+		pack, err := s.store.getCreditPackByID(ctx, packID)
 		if err != nil {
 			return PurchaseCreditsResult{}, fmt.Errorf("resolving credit pack: %w", err)
 		}
@@ -250,7 +250,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 	// caller can bypass it. Pack purchases are exempt (the pack defines its
 	// own amount). Defense in depth (Rule 16).
 	if input.PackID == "" && s.settings != nil {
-		minPurchase := s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.min_purchase_credits", 100)
+		minPurchase := s.settings.GetIntOr(ctx, "wallet.min_purchase_credits", 100)
 		if creditsToGrant < minPurchase {
 			return PurchaseCreditsResult{}, fmt.Errorf("minimum %d credits required for purchase", minPurchase)
 		}

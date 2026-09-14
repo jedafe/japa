@@ -32,7 +32,7 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 	if err := asUUID.Scan(param); err == nil && asUUID.Valid {
 		// Authed member path: return the full row for the admin dashboard.
 		if user := auth.FromContext(r.Context()); user != nil {
-			org, err := h.service.GetOrganization(r.Context(), asUUID, tenantID)
+			org, err := h.service.GetOrganization(r.Context(), asUUID)
 			if err != nil {
 				handleServiceError(w, err)
 				return
@@ -65,7 +65,7 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 	// the "Org Leader" sidebar widget. Best-effort: a missing/deleted owner
 	// degrades to a nil owner field (the widget shows its empty state).
 	orgDTO := toPublicOrg(org)
-	if ownerRow, oErr := h.service.GetOrgOwnerPublicProfile(r.Context(), org.ID, tenantID); oErr == nil {
+	if ownerRow, oErr := h.service.GetOrgOwnerPublicProfile(r.Context(), org.ID); oErr == nil {
 		orgDTO.Owner = &OrgOwnerResponse{
 			ID:          ownerRow.ID,
 			Username:    ownerRow.Username,
@@ -81,7 +81,7 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 	resp := map[string]any{"data": orgDTO}
 
 	if h.jsonldResolver != nil {
-		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "Organization", orgJSONLDFields(org)); jErr == nil && len(jsonLd) > 0 {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), "Organization", orgJSONLDFields(org)); jErr == nil && len(jsonLd) > 0 {
 			resp["json_ld"] = json.RawMessage(jsonLd)
 		} else if jErr != nil {
 			slog.Warn("organizations: JSON-LD template resolution failed", "slug", param, "error", jErr)
@@ -94,7 +94,7 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 // ListPublicMembers handles GET /organizations/{id}/members (public). The
 // active-org gate (requireActiveOrgByID) has already 404'd non-active orgs.
 func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -105,7 +105,7 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.service.ListPublicMembers(r.Context(), orgID, tenantID)
+	rows, err := h.service.ListPublicMembers(r.Context(), orgID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -89,8 +89,7 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -99,7 +98,7 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	unreadOnly := r.URL.Query().Has("unread_only") && r.URL.Query().Get("unread_only") != "false" && r.URL.Query().Get("unread_only") != "0"
 
-	notifications, err := h.service.GetNotifications(r.Context(), tenantID, user.UserID, limit, offset, unreadOnly)
+	notifications, err := h.service.GetNotifications(r.Context(), user.UserID, limit, offset, unreadOnly)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get notifications")
 		return
@@ -114,13 +113,12 @@ func (h *Handlers) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	count, err := h.service.GetUnreadCount(r.Context(), tenantID, user.UserID)
+	count, err := h.service.GetUnreadCount(r.Context(), user.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get unread count")
 		return
@@ -161,13 +159,12 @@ func (h *Handlers) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.service.MarkAllAsRead(r.Context(), tenantID, user.UserID); err != nil {
+	if err := h.service.MarkAllAsRead(r.Context(), user.UserID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark all notifications as read")
 		return
 	}

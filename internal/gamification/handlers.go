@@ -115,7 +115,7 @@ func writeDisabled(w http.ResponseWriter, err error) bool {
 // HandleListBadges handles GET /api/v1/gamification/badges — all active badge
 // definitions. Public route (gamification.view permission at registration site).
 func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -125,7 +125,7 @@ func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	badges, err := h.service.ListBadges(r.Context(), tenantID)
+	badges, err := h.service.ListBadges(r.Context())
 	if err != nil {
 		if writeDisabled(w, err) {
 			return
@@ -145,7 +145,7 @@ func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
 // HandleListChallenges handles GET /api/v1/gamification/challenges — active
 // challenges within their date range. Public route.
 func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -155,7 +155,7 @@ func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	challenges, err := h.service.ListActiveChallenges(r.Context(), tenantID)
+	challenges, err := h.service.ListActiveChallenges(r.Context())
 	if err != nil {
 		if writeDisabled(w, err) {
 			return
@@ -239,8 +239,7 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -250,7 +249,7 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	badges, err := h.service.ListUserBadges(r.Context(), tenantID, user.UserID)
+	badges, err := h.service.ListUserBadges(r.Context(), user.UserID)
 	if err != nil {
 		if writeDisabled(w, err) {
 			return
@@ -274,8 +273,7 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -285,7 +283,7 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progress, err := h.service.ListUserChallengeProgress(r.Context(), tenantID, user.UserID)
+	progress, err := h.service.ListUserChallengeProgress(r.Context(), user.UserID)
 	if err != nil {
 		if writeDisabled(w, err) {
 			return
@@ -305,7 +303,7 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 // HandleUserBadges handles GET /api/v1/users/:username/badges — public badge
 // display for a user's profile. Public route.
 func (h *Handlers) HandleUserBadges(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -321,7 +319,7 @@ func (h *Handlers) HandleUserBadges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	badges, err := h.service.ListUserBadgesByUsername(r.Context(), tenantID, username)
+	badges, err := h.service.ListUserBadgesByUsername(r.Context(), username)
 	if err != nil {
 		if writeDisabled(w, err) {
 			return
@@ -349,8 +347,7 @@ func (h *Handlers) HandleAdminListBadges(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -362,7 +359,7 @@ func (h *Handlers) HandleAdminListBadges(w http.ResponseWriter, r *http.Request)
 
 	limit, offset := parsePageParams(r)
 
-	badges, total, err := h.service.ListAllBadges(r.Context(), tenantID, limit, offset)
+	badges, total, err := h.service.ListAllBadges(r.Context(), limit, offset)
 	if err != nil {
 		slog.Error("gamification: admin list badges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
@@ -386,8 +383,7 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -403,7 +399,7 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	badge, err := h.service.CreateBadge(r.Context(), tenantID, in)
+	badge, err := h.service.CreateBadge(r.Context(), in)
 	if err != nil {
 		slog.Error("gamification: admin create badge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_create_failed", err.Error())
@@ -423,8 +419,7 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -445,7 +440,7 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	badge, err := h.service.UpdateBadge(r.Context(), tenantID, badgeID, in)
+	badge, err := h.service.UpdateBadge(r.Context(), badgeID, in)
 	if err != nil {
 		slog.Error("gamification: admin update badge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_update_failed", err.Error())
@@ -521,8 +516,7 @@ func (h *Handlers) HandleAdminDeleteBadge(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -537,7 +531,7 @@ func (h *Handlers) HandleAdminDeleteBadge(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.service.DeleteBadge(r.Context(), tenantID, badgeID); err != nil {
+	if err := h.service.DeleteBadge(r.Context(), badgeID); err != nil {
 		slog.Error("gamification: admin delete badge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_delete_failed", err.Error())
 
@@ -556,8 +550,7 @@ func (h *Handlers) HandleAdminListChallenges(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -569,7 +562,7 @@ func (h *Handlers) HandleAdminListChallenges(w http.ResponseWriter, r *http.Requ
 
 	limit, offset := parsePageParams(r)
 
-	challenges, total, err := h.service.ListAllChallenges(r.Context(), tenantID, limit, offset)
+	challenges, total, err := h.service.ListAllChallenges(r.Context(), limit, offset)
 	if err != nil {
 		slog.Error("gamification: admin list challenges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "challenges_fetch_failed", "Failed to fetch challenges")
@@ -594,8 +587,7 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -611,7 +603,7 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	challenge, err := h.service.CreateChallenge(r.Context(), tenantID, in)
+	challenge, err := h.service.CreateChallenge(r.Context(), in)
 	if err != nil {
 		slog.Error("gamification: admin create challenge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "challenge_create_failed", err.Error())
@@ -631,8 +623,7 @@ func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Req
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -653,7 +644,7 @@ func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	challenge, err := h.service.UpdateChallenge(r.Context(), tenantID, challengeID, in)
+	challenge, err := h.service.UpdateChallenge(r.Context(), challengeID, in)
 	if err != nil {
 		slog.Error("gamification: admin update challenge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "challenge_update_failed", err.Error())
@@ -673,8 +664,7 @@ func (h *Handlers) HandleAdminDeleteChallenge(w http.ResponseWriter, r *http.Req
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -689,7 +679,7 @@ func (h *Handlers) HandleAdminDeleteChallenge(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := h.service.DeleteChallenge(r.Context(), tenantID, challengeID); err != nil {
+	if err := h.service.DeleteChallenge(r.Context(), challengeID); err != nil {
 		slog.Error("gamification: admin delete challenge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "challenge_delete_failed", err.Error())
 

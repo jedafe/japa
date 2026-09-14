@@ -415,7 +415,7 @@ WHERE c.id = $1 AND c.content_type = 'achievement'
 // of publication status. For admin/moderation response paths only — the
 // caller must hold the achievement.moderate permission (enforced at the
 // route level).
-func (s *Store) GetByIDAnyStatus(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementRow, error) {
+func (s *Store) GetByIDAnyStatus(ctx context.Context, contentID pgtype.UUID) (AchievementRow, error) {
 	q := achievementSelectColumns + `
 WHERE c.id = $1 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
@@ -432,7 +432,7 @@ LIMIT 1
 
 // ListBySpace returns published achievements filed in the Space identified by
 // its slug, for the Space widget. Ordered by published_at DESC.
-func (s *Store) ListBySpace(ctx context.Context, spaceSlug string, tenantID pgtype.UUID, limit int32) ([]AchievementRow, error) {
+func (s *Store) ListBySpace(ctx context.Context, spaceSlug string, limit int32) ([]AchievementRow, error) {
 	if limit <= 0 {
 		limit = 10
 	}

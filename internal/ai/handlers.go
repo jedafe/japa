@@ -54,7 +54,7 @@ type TaskEnqueueClient interface {
 // builder to check each ai.context.* category node before including that
 // category in a user's AI context.
 type PermissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // ConsentChecker checks whether a user has granted a specific consent type.
@@ -71,7 +71,7 @@ type ConsentChecker interface {
 // is the calling user so the resolver can enforce voice visibility (system
 // voices or voices created by the caller are visible; ADR-114, BUG-009).
 type PersonaVoiceResolver interface {
-	GetVoicePrompt(ctx context.Context, tenantID, userID, voiceID pgtype.UUID) (string, error)
+	GetVoicePrompt(ctx context.Context, userID, voiceID pgtype.UUID) (string, error)
 }
 
 // UserContextProvider fetches the per-category site activity that feeds
@@ -86,8 +86,8 @@ type UserContextProvider interface {
 // is approved or rejected, so studio_jobs and the linked tool-table row can be
 // transitioned (ADR-076 Amendment 1, Approach B).
 type StudioReviewHook interface {
-	OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
-	OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
 }
 
 // Handlers holds dependencies for AI HTTP handlers.
@@ -179,7 +179,7 @@ func (h *Handlers) SetUserContextProvider(p UserContextProvider) {
 // the given calling user. Returns an empty string with no error when voiceID is
 // blank or the resolver is not wired. Invisible voices are treated as no-op
 // prompts (return "") rather than errors (BUG-009).
-func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID, userID pgtype.UUID, voiceID string) (string, error) {
+func (h *Handlers) resolveVoicePrompt(ctx context.Context, userID pgtype.UUID, voiceID string) (string, error) {
 	if voiceID == "" || h.PersonaVoiceResolver == nil {
 		return "", nil
 	}
@@ -189,7 +189,7 @@ func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID, userID pgty
 		return "", err
 	}
 
-	return h.GetVoicePrompt(ctx, tenantID, userID, vid)
+	return h.GetVoicePrompt(ctx, userID, vid)
 }
 
 // applyModelAndVoice resolves and validates a per-request model/voice override
@@ -208,7 +208,7 @@ func (h *Handlers) applyModelAndVoice(
 ) bool {
 	effectiveModel := model
 	if effectiveModel == "" && defaultKey != "" && h.Settings != nil {
-		effectiveModel = h.Settings.GetStringOr(r.Context(), pgtype.UUID{}, defaultKey, "")
+		effectiveModel = h.Settings.GetStringOr(r.Context(), defaultKey, "")
 	}
 
 	if effectiveModel != "" {
@@ -233,7 +233,7 @@ func (h *Handlers) applyModelAndVoice(
 			userID = caller.UserID
 		}
 
-		voicePrompt, err := h.resolveVoicePrompt(r.Context(), tenantID, userID, voiceID)
+		voicePrompt, err := h.resolveVoicePrompt(r.Context(), userID, voiceID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_voice", "The requested voice could not be found")
 			return false
@@ -325,7 +325,7 @@ func (h *Handlers) buildUserAIContext(ctx context.Context, userID, tenantID pgty
 		enabled := map[string]bool{}
 
 		for node, key := range aiContextCategories {
-			if h.Perms.HasPermission(ctx, userID, tenantID, node) {
+			if h.Perms.HasPermission(ctx, userID, node) {
 				enabled[key] = true
 
 				enabledKeys = append(enabledKeys, key)
@@ -411,7 +411,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 // requireContentAssistEnabled short-circuits the in-editor AI assist endpoints
 // when the ai.content_assist_enabled system setting is false (Section 20 V1
 // Tool Catalog; conventions/system-settings-catalog.md).
-func (h *Handlers) requireContentAssistEnabled(ctx context.Context, w http.ResponseWriter, tenantID pgtype.UUID) bool {
+func (h *Handlers) requireContentAssistEnabled(ctx context.Context, w http.ResponseWriter) bool {
 	if h.Settings != nil && !h.Settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.content_assist_enabled", true) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_assist_disabled", "AI content assist is currently disabled")
 		return false
@@ -781,7 +781,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		// admin AI usage dashboard can track volume even though the actual
 		// gateway call happens asynchronously in the docs worker.
 		if h.Store != nil {
-			if lerr := h.Store.RecordAIUsage(r.Context(), tenantID, user.UserID, "docs", "", "generate", info.ID, 0, 0, 0, 0); lerr != nil {
+			if lerr := h.Store.RecordAIUsage(r.Context(), user.UserID, "docs", "", "generate", info.ID, 0, 0, 0, 0); lerr != nil {
 				slog.Warn("ai: failed to record docs usage log", "error", lerr)
 			}
 		}
@@ -809,7 +809,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "generate", input.Category, Request{
@@ -916,7 +916,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	// Honor the global JapaBot toggle (system_settings 'ai.japabot_enabled',
 	// default true). A disabled toggle short-circuits before any provider call.
-	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), pgtype.UUID{}, "ai.japabot_enabled", true) {
+	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), "ai.japabot_enabled", true) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "japabot_disabled", "JapaBot is currently disabled")
 		return
 	}
@@ -1018,7 +1018,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "chat", "chat", Request{
@@ -1121,7 +1121,7 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
+	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
 	}
 
@@ -1164,7 +1164,7 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_improve", "content_generation", Request{
@@ -1194,7 +1194,7 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
+	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
 	}
 
@@ -1237,7 +1237,7 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_summarize", "content_generation", Request{
@@ -1267,7 +1267,7 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
+	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
 	}
 
@@ -1311,7 +1311,7 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_translate", "content_generation", Request{
@@ -1341,7 +1341,7 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
+	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
 	}
 
@@ -1402,7 +1402,7 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
+	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
 	}
 
@@ -1526,7 +1526,7 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
+	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
 	}
 
@@ -1562,7 +1562,7 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
 	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_draft", "content_generation", Request{
@@ -2380,7 +2380,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 	// published/rejected studio job from being paired with a review that never
 	// actually transitioned due to a hook failure.
 	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
-		if err := h.OnStudioReviewApproved(r.Context(), tenantID, reviewID, user.UserID); err != nil {
+		if err := h.OnStudioReviewApproved(r.Context(), reviewID, user.UserID); err != nil {
 			slog.Error("studio review approve hook failed", "review_id", reviewID, "error", err)
 			// Surface the underlying publish failure (e.g. missing primary
 			// space) so the reviewer can fix it instead of guessing why the
@@ -2443,7 +2443,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	// For studio-sourced reviews, run the studio hook first and only commit
 	// the review status if the hook succeeds (BUG-004).
 	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
-		if err := h.OnStudioReviewRejected(r.Context(), tenantID, reviewID, user.UserID); err != nil {
+		if err := h.OnStudioReviewRejected(r.Context(), reviewID, user.UserID); err != nil {
 			slog.Error("studio review reject hook failed", "review_id", reviewID, "error", err)
 			errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed", "The studio reject step failed; the review has not been rejected")
 

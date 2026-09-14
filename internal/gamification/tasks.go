@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ---------------------------------------------------------------------------
@@ -14,8 +12,8 @@ import (
 
 // ExpireChallenges deactivates challenges whose ends_at is in the past.
 // Called daily by the gamification:expire_challenges Asynq task.
-func (s *Service) ExpireChallenges(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	count, err := s.store.ExpireChallengesPastEndDate(ctx, tenantID)
+func (s *Service) ExpireChallenges(ctx context.Context) (int64, error) {
+	count, err := s.store.ExpireChallengesPastEndDate(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("gamification: expire challenges: %w", err)
 	}

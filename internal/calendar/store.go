@@ -132,7 +132,7 @@ func (s *Store) CreateEntry(ctx context.Context, entry CalendarEntry) (pgtype.UU
 // MarkAIGenerated stamps the ADR-088 AI provenance columns on an existing
 // calendar entry. Called after CreateEntry for AI-generated drafts.
 // BUG-004: now stores ai_prompt_hash for audit reproducibility.
-func (s *Store) MarkAIGenerated(ctx context.Context, id, tenantID pgtype.UUID, aiModel, aiPromptHash string) error {
+func (s *Store) MarkAIGenerated(ctx context.Context, id pgtype.UUID, aiModel, aiPromptHash string) error {
 	_, err := s.pool.Writer.Exec(ctx, `
 UPDATE calendar_entries
 SET ai_generated = true,
@@ -151,7 +151,7 @@ WHERE id = $1
 // GetEntryForReview fetches the fields needed for the ADR-088 HITL gate
 // check before publishing. Used by Service.AdminUpdate to verify that
 // AI-generated entries have been reviewed before allowing publication.
-func (s *Store) GetEntryForReview(ctx context.Context, id, tenantID pgtype.UUID) (gen.CalendarGetEntryForReviewRow, error) {
+func (s *Store) GetEntryForReview(ctx context.Context, id pgtype.UUID) (gen.CalendarGetEntryForReviewRow, error) {
 	row, err := s.read.CalendarGetEntryForReview(ctx,
 		id,
 	)
@@ -290,7 +290,7 @@ func (s *Store) SubscribersForEntry(ctx context.Context, entry CalendarEntry) ([
 }
 
 // GetEntry returns a single published calendar entry by id and tenant.
-func (s *Store) GetEntry(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEntry, error) {
+func (s *Store) GetEntry(ctx context.Context, id pgtype.UUID) (CalendarEntry, error) {
 	row, err := s.read.CalendarGetEntry(ctx,
 		id,
 	)
@@ -504,7 +504,7 @@ LIMIT $%d OFFSET $%d
 }
 
 // IsSaved returns true if the given user has saved the given entry.
-func (s *Store) IsSaved(ctx context.Context, userID, entryID, tenantID pgtype.UUID) (bool, error) {
+func (s *Store) IsSaved(ctx context.Context, userID, entryID pgtype.UUID) (bool, error) {
 	exists, err := s.read.CalendarIsSaved(ctx, gen.CalendarIsSavedParams{
 		UserID:  userID,
 		EntryID: entryID,
@@ -517,7 +517,7 @@ func (s *Store) IsSaved(ctx context.Context, userID, entryID, tenantID pgtype.UU
 }
 
 // SaveEntry inserts a calendar_saves row (user bookmarks an event).
-func (s *Store) SaveEntry(ctx context.Context, userID, entryID, tenantID pgtype.UUID) error {
+func (s *Store) SaveEntry(ctx context.Context, userID, entryID pgtype.UUID) error {
 	if err := s.write.CalendarSaveEntry(ctx, gen.CalendarSaveEntryParams{
 		UserID: userID, EntryID: entryID,
 	}); err != nil {
@@ -528,7 +528,7 @@ func (s *Store) SaveEntry(ctx context.Context, userID, entryID, tenantID pgtype.
 }
 
 // UnsaveEntry deletes a calendar_saves row.
-func (s *Store) UnsaveEntry(ctx context.Context, userID, entryID, tenantID pgtype.UUID) error {
+func (s *Store) UnsaveEntry(ctx context.Context, userID, entryID pgtype.UUID) error {
 	if err := s.write.CalendarUnsaveEntry(ctx, gen.CalendarUnsaveEntryParams{
 		UserID: userID, EntryID: entryID,
 	}); err != nil {
@@ -542,7 +542,7 @@ func (s *Store) UnsaveEntry(ctx context.Context, userID, entryID, tenantID pgtyp
 // joined via calendar_saves. Used by GET /me/calendar/saved (§86 Integration:
 // "Saved entries appear on the user dashboard alongside visa checklists.").
 // Only published, non-deleted entries are returned.
-func (s *Store) ListSavedEntries(ctx context.Context, userID, tenantID pgtype.UUID, limit, offset int) ([]CalendarEntry, int64, error) {
+func (s *Store) ListSavedEntries(ctx context.Context, userID pgtype.UUID, limit, offset int) ([]CalendarEntry, int64, error) {
 	rows, err := s.read.CalendarListSavedEntries(ctx, gen.CalendarListSavedEntriesParams{
 		UserID: userID,
 
@@ -573,7 +573,7 @@ func (s *Store) ListSavedEntries(ctx context.Context, userID, tenantID pgtype.UU
 // BUG-012: an empty string means "all categories" and must be stored as SQL
 // NULL, not as a distinct empty-string category, so NULLS NOT DISTINCT and
 // delete matching work correctly.
-func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID, category string) error {
+func (s *Store) Subscribe(ctx context.Context, userID, destSpaceID pgtype.UUID, category string) error {
 	var catPtr *string
 	if category != "" {
 		catPtr = &category
@@ -590,7 +590,7 @@ func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgt
 }
 
 // Unsubscribe deletes a calendar_subscriptions row.
-func (s *Store) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID, category string) error {
+func (s *Store) Unsubscribe(ctx context.Context, userID, destSpaceID pgtype.UUID, category string) error {
 	var catPtr *string
 	if category != "" {
 		catPtr = &category
@@ -766,7 +766,7 @@ LIMIT $%d OFFSET $%d
 
 // AdminUpdateEntry updates the status of a calendar entry and stamps the
 // reviewer. Valid statuses: published, archived, unverified.
-func (s *Store) AdminUpdateEntry(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status, reason string) error {
+func (s *Store) AdminUpdateEntry(ctx context.Context, id, reviewerID pgtype.UUID, status, reason string) error {
 	n, err := s.write.CalendarAdminUpdateEntry(ctx, gen.CalendarAdminUpdateEntryParams{
 		ID: id,
 
@@ -790,7 +790,7 @@ func (s *Store) AdminUpdateEntry(ctx context.Context, id, tenantID, reviewerID p
 // is excluded from all list/get queries (which filter deleted_at IS NULL).
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 // Ref: japaconnect-engineering/AGENTS.md Rule 11.
-func (s *Store) AdminSoftDeleteEntry(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) AdminSoftDeleteEntry(ctx context.Context, id pgtype.UUID) error {
 	n, err := s.write.CalendarAdminSoftDeleteEntry(ctx,
 		id,
 	)

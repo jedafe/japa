@@ -182,7 +182,7 @@ func (s *Service) CreatePollForThread(ctx context.Context, threadID, tenantID, u
 	}
 
 	// Verify the thread exists and belongs to the tenant.
-	thread, err := s.store.getThreadByID(ctx, threadID, tenantID)
+	thread, err := s.store.getThreadByID(ctx, threadID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.ForumPoll{}, errpkg.ErrNotFound
@@ -200,7 +200,7 @@ func (s *Service) CreatePollForThread(ctx context.Context, threadID, tenantID, u
 	}
 
 	// Only the thread author or a moderator may attach a poll.
-	if thread.AuthorUserID != userID && !s.canModerateThread(ctx, thread, userID, tenantID, "forum.thread.moderate") {
+	if thread.AuthorUserID != userID && !s.canModerateThread(ctx, thread, userID, "forum.thread.moderate") {
 		return gen.ForumPoll{}, fmt.Errorf("%w: only the author or a moderator may add a poll", errpkg.ErrForbidden)
 	}
 
