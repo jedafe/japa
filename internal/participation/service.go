@@ -65,7 +65,7 @@ type ActionDispatcher interface {
 	// post; the forum thread links to it via forum_threads.content_id
 	// (BUG-004 — previously the thread was created with content_id=NULL,
 	// leaving an orphan published content row).
-	CreateForumThread(ctx context.Context, tenantID, personaUserID, contentID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error)
+	CreateForumThread(ctx context.Context, personaUserID, contentID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error)
 	// CreateForumReply posts a reply to a forum thread (forum_answer action).
 	CreateForumReply(ctx context.Context, tenantID, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error)
 	// ToggleFollow follows the target entity as the persona.
@@ -383,7 +383,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 			title := "Persona Discussion"
 			slug := fmt.Sprintf("persona-%d", time.Now().UnixNano())
 
-			threadID, derr := s.dispatcher.CreateForumThread(ctx, tenantID, authorID, contentID, spaceID, title, slug, p.Body)
+			threadID, derr := s.dispatcher.CreateForumThread(ctx, authorID, contentID, spaceID, title, slug, p.Body)
 			if derr != nil {
 				slog.Error("participation: dispatch forum_question", "action_id", actionID, "error", derr)
 			} else {

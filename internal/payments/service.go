@@ -74,7 +74,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 			return CreatePaymentResult{}, err
 		}
 
-		if _, uErr := s.UpdatePaymentStatus(ctx, p.ID, tenantID, PaymentStatusSucceeded); uErr != nil {
+		if _, uErr := s.UpdatePaymentStatus(ctx, p.ID, PaymentStatusSucceeded); uErr != nil {
 			slog.Error("payments: failed to emit succeeded webhook for zero-amount payment", "payment_id", p.ID, "error", uErr)
 		}
 
@@ -295,7 +295,7 @@ func (s *Service) ListPaymentsByStatus(ctx context.Context, status string, limit
 }
 
 // UpdatePaymentStatus updates a payment's status.
-func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Payment, error) {
+func (s *Service) UpdatePaymentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.Payment, error) {
 	payment, err := s.store.updatePaymentStatus(ctx, id, status)
 	if err != nil {
 		return gen.Payment{}, err
@@ -347,7 +347,7 @@ func (s *Service) GetAdminPayment(ctx context.Context, id pgtype.UUID) (gen.Paym
 // concurrent webhook deliveries both pass the read check and both enqueue
 // the worker task (Guide §13 — "Webhook replay processed twice → duplicate
 // credit").
-func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, provider string, event WebhookEvent, status string) error {
+func (s *Service) ProcessWebhook(ctx context.Context, provider string, event WebhookEvent, status string) error {
 	// Atomic insert-or-skip: if the event already exists (ON CONFLICT DO
 	// NOTHING), no rows are returned and we treat it as already recorded.
 	// This collapses the previous read-check + insert + mark into a single

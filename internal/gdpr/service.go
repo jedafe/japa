@@ -242,7 +242,7 @@ func (s *Service) ListConsentsByTenant(ctx context.Context, consentType string, 
 // ---------------------------------------------------------------------------
 
 // RequestDataExport creates a data export request and enqueues a background job.
-func (s *Service) RequestDataExport(ctx context.Context, tenantID, userID pgtype.UUID) (gen.DataExportRequest, error) {
+func (s *Service) RequestDataExport(ctx context.Context, userID pgtype.UUID) (gen.DataExportRequest, error) {
 	request, err := s.store.createDataExportRequest(ctx, userID)
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("creating data export request: %w", err)
@@ -325,7 +325,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	}
 
 	// Collect user data from all relevant tables.
-	userData, err := s.collectUserData(ctx, request.UserID, pgtype.UUID{})
+	userData, err := s.collectUserData(ctx, request.UserID)
 	if err != nil {
 		if _, statusErr := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
 			ID:     requestID,
@@ -449,7 +449,7 @@ func (s *Service) CleanupExpiredExports(ctx context.Context) error {
 // ---------------------------------------------------------------------------
 
 // RequestAccountDeletion creates a deletion request and enqueues a background job.
-func (s *Service) RequestAccountDeletion(ctx context.Context, tenantID, userID pgtype.UUID, reason string) (gen.AccountDeletionRequest, error) {
+func (s *Service) RequestAccountDeletion(ctx context.Context, userID pgtype.UUID, reason string) (gen.AccountDeletionRequest, error) {
 	// ADR-068 compliance: persona backing accounts (is_bot = true) are system
 	// accounts, not data subjects — user-erasure/export flows do not apply to
 	// them. Erasing a persona backing account would cascade-delete the
@@ -1948,7 +1948,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 	// documents should be removed from the posts index too. Best-effort:
 	// the enqueuer fires search:index_entity with operation "delete" so the
 	// worker handles the Meilisearch cleanup asynchronously.
-	s.enqueueSearchIndexDelete(tenantID, userID, "user")
+	s.enqueueSearchIndexDelete(userID, "user")
 
 	return nil
 }
@@ -1957,7 +1957,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 // "delete" to remove the entity's document from the Meilisearch index. Used by
 // GDPR erasure to ensure erased users' documents are purged from search.
 // Best-effort — logs errors but never fails the caller.
-func (s *Service) enqueueSearchIndexDelete(tenantID, entityID pgtype.UUID, entityType string) {
+func (s *Service) enqueueSearchIndexDelete(entityID pgtype.UUID, entityType string) {
 	if s.enqueuer == nil {
 		return
 	}
@@ -2196,7 +2196,7 @@ type UserDataExport struct {
 }
 
 // collectUserData gathers all user data from relevant tables.
-func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.UUID) (*UserDataExport, error) {
+func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*UserDataExport, error) {
 	export := &UserDataExport{
 		ExportMetadata: map[string]interface{}{
 			"user_id": userID.String(),

@@ -646,7 +646,7 @@ func (s *Service) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUI
 // publication. If the dispatcher is nil or the call fails, the draft is
 // still created with empty minimum_score/score_breakdown so the reviewer
 // can fill them manually.
-func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateRequirementRequest) (RequirementDTO, error) {
+func (s *Service) GenerateDraft(ctx context.Context, input GenerateRequirementRequest) (RequirementDTO, error) {
 	if input.DestinationSpaceID == "" {
 		return RequirementDTO{}, errors.New("destination_space_id is required")
 	}

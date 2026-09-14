@@ -341,7 +341,7 @@ type GenerateInput struct {
 // the draft is still created with the admin-supplied structured input
 // so a reviewer can fill it manually (graceful degradation, matching
 // the visaroutes/housingguide/calendar pattern).
-func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input GenerateInput) (OrgDTO, error) {
+func (s *Service) Generate(ctx context.Context, generatedBy pgtype.UUID, input GenerateInput) (OrgDTO, error) {
 	if input.Name == "" {
 		return OrgDTO{}, errors.New("name is required")
 	}

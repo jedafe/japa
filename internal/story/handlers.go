@@ -379,7 +379,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID, hasPermission(r, user, "story.delete_any")); err != nil {
+	if err := h.service.DeleteOwn(r.Context(), contentID, user.UserID, hasPermission(r, user, "story.delete_any")); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
@@ -588,7 +588,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// bypassOwnership=true: admin with story.delete_any can delete any story.
-	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID, true); err != nil {
+	if err := h.service.DeleteOwn(r.Context(), contentID, user.UserID, true); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return

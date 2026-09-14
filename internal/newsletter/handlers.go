@@ -699,7 +699,7 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleSendCampaign triggers sending a newsletter campaign.
 // POST /admin/newsletter/campaigns/{id}/send.
 func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -732,7 +732,7 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 	// campaign stuck in 'sending' forever (§62, ADR-080 §3). The worker
 	// re-fetches the campaign and resolves segment-aware recipients from the
 	// DB, so the handler does not need to pre-fetch the recipient list.
-	if err := h.Service.EnqueueNewsletterSend(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.EnqueueNewsletterSend(r.Context(), id); err != nil {
 		slog.Error("enqueuing newsletter send", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
 

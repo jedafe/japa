@@ -144,7 +144,7 @@ func (s *Service) ApproveInstructor(ctx context.Context, tenantID, instructorID,
 		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
 
-	s.enqueueNotifyInstructorApproved(ctx, tenantID, row.ID)
+	s.enqueueNotifyInstructorApproved(ctx, row.ID)
 
 	return profileFromRow(row), nil
 }
@@ -246,7 +246,7 @@ func (s *Service) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUI
 		return gen.ApproveUniversityTrackRow{}, err
 	}
 
-	s.enqueueNotifyCourseApproved(ctx, tenantID, trackID)
+	s.enqueueNotifyCourseApproved(ctx, trackID)
 	// Enqueue search index sync so the track appears in the marketplace index.
 	s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
 		"entity_id":   trackID.String(),
@@ -610,13 +610,13 @@ func (s *Service) FetchLogo(ctx context.Context, tenantID, spaceID pgtype.UUID, 
 // Asynq enqueue helpers (fire-and-forget; errors logged, never returned)
 // ---------------------------------------------------------------------------
 
-func (s *Service) enqueueNotifyInstructorApproved(ctx context.Context, tenantID, instructorID pgtype.UUID) {
+func (s *Service) enqueueNotifyInstructorApproved(ctx context.Context, instructorID pgtype.UUID) {
 	s.enqueue(ctx, worker.TypeUniversityNotifyInstructorApproved, map[string]string{
 		"instructor_id": instructorID.String(),
 	})
 }
 
-func (s *Service) enqueueNotifyCourseApproved(ctx context.Context, tenantID, trackID pgtype.UUID) {
+func (s *Service) enqueueNotifyCourseApproved(ctx context.Context, trackID pgtype.UUID) {
 	s.enqueue(ctx, worker.TypeUniversityNotifyCourseApproved, map[string]string{
 		"track_id": trackID.String(),
 	})

@@ -248,8 +248,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -303,7 +302,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	// record rather than promoting the approved one. Fire-and-forget per
 	// Rule 8; an enqueue failure is logged but does not roll back the
 	// approval (the control panel can re-trigger promotion manually).
-	if err := h.enqueueIntelPromote(r.Context(), tenantID, recordID, userID); err != nil {
+	if err := h.enqueueIntelPromote(r.Context(), recordID, userID); err != nil {
 		slog.Error("intel: approve enqueue promote failed", "record_id", recordID.String(), "error", err)
 	}
 

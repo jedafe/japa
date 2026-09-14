@@ -323,8 +323,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -339,7 +338,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteOwn(r.Context(), contentID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
@@ -456,8 +455,7 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -481,7 +479,7 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	achievement, err := h.service.AdminSetStatus(r.Context(), contentID, tenantID, input.Status)
+	achievement, err := h.service.AdminSetStatus(r.Context(), contentID, input.Status)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
@@ -504,8 +502,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -515,7 +512,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminDelete(r.Context(), contentID, tenantID); err != nil {
+	if err := h.service.AdminDelete(r.Context(), contentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return

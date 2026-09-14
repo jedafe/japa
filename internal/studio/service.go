@@ -35,7 +35,7 @@ type IntelRecordStatusUpdater interface {
 // review is approved (§75: "Approve → publish"). The return value is the
 // updated content row; the studio service ignores it.
 type ContentPublisher interface {
-	UpdateContentStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (any, error)
+	UpdateContentStatus(ctx context.Context, contentID pgtype.UUID, status string) (any, error)
 }
 
 // HITLReview is a minimal read model for the ai_hitl_reviews row the studio
@@ -213,7 +213,7 @@ func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UU
 
 	// Enqueue a single studio:run_batch task — the processor fans out
 	// individual content:generate_draft jobs respecting max_concurrent_jobs.
-	if err := s.enqueueRunBatch(ctx, tenantID, batch.ID); err != nil {
+	if err := s.enqueueRunBatch(ctx, batch.ID); err != nil {
 		slog.Warn("studio: enqueue run_batch failed, jobs remain queued", "batch_id", batch.ID, "error", err)
 	}
 
@@ -451,7 +451,7 @@ func (s *Service) enqueueGeneration(ctx context.Context, job Job) error {
 // enqueueRunBatch enqueues a studio:run_batch task for the batch. The task
 // processor fans out individual content:generate_draft jobs respecting
 // studio.max_concurrent_jobs (ADR-076 §2/§7).
-func (s *Service) enqueueRunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error {
+func (s *Service) enqueueRunBatch(ctx context.Context, batchID pgtype.UUID) error {
 	if s.enqueuer == nil {
 		return errors.New("studio: no enqueuer configured")
 	}
@@ -472,7 +472,7 @@ func (s *Service) enqueueRunBatch(ctx context.Context, tenantID, batchID pgtype.
 
 // enqueueRetryFailed enqueues a studio:retry_failed task for a batch. The
 // task processor retries all failed jobs asynchronously (ADR-076 §7).
-func (s *Service) enqueueRetryFailed(ctx context.Context, tenantID, batchID pgtype.UUID) error {
+func (s *Service) enqueueRetryFailed(ctx context.Context, batchID pgtype.UUID) error {
 	if s.enqueuer == nil {
 		return errors.New("studio: no enqueuer configured")
 	}
@@ -670,7 +670,7 @@ func (s *Service) RetryFailed(ctx context.Context, jobID pgtype.UUID) error {
 // EnqueueRetryFailed enqueues a studio:retry_failed task for a batch. Called
 // by the HTTP handler so batch retry is asynchronous (ADR-076 §7).
 func (s *Service) EnqueueRetryFailed(ctx context.Context, tenantID, batchID pgtype.UUID) error {
-	return s.enqueueRetryFailed(ctx, tenantID, batchID)
+	return s.enqueueRetryFailed(ctx, batchID)
 }
 
 // OnStudioReviewApproved is called when a source='studio' HITL review is
@@ -721,7 +721,7 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, reviewID, reviewer
 			return errors.New("studio: approve: content publisher not wired")
 		}
 
-		if _, perr := s.contentPub.UpdateContentStatus(ctx, targetID, pgtype.UUID{}, "published"); perr != nil {
+		if _, perr := s.contentPub.UpdateContentStatus(ctx, targetID, "published"); perr != nil {
 			return fmt.Errorf("studio: approve: publish content: %w", perr)
 		}
 	} else if targetTable != "contents" && targetID.Valid {

@@ -692,7 +692,7 @@ func slugify(s string) string {
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with the prompt as content so a reviewer can
 // fill it manually (graceful degradation).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
+func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest) (GenerateDraftResponse, error) {
 	if input.SpaceID == "" {
 		return GenerateDraftResponse{}, errors.New("space_id is required")
 	}

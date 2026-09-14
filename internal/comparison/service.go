@@ -508,7 +508,7 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 	// comparison — no orphaned content rows without items/dimensions.
 	// Ref: §6.2 transaction boundary, BUG-001.
 	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (CreateComparisonResult, error) {
-		contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, tenantID, content.CreateContentInput{
+		contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, content.CreateContentInput{
 			AuthorID:      userID,
 			SpaceID:       input.SpaceID,
 			ContentType:   content.TypeComparison,
@@ -646,7 +646,7 @@ func (s *Service) UpdateComparison(ctx context.Context, id, tenantID pgtype.UUID
 // (set when the caller has comparison.delete_any, BUG-002/BUG-011).
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
-func (s *Service) DeleteComparison(ctx context.Context, id, tenantID, deletedBy pgtype.UUID, bypassOwnership bool) error {
+func (s *Service) DeleteComparison(ctx context.Context, id, deletedBy pgtype.UUID, bypassOwnership bool) error {
 	existing, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting comparison for delete: %w", err)

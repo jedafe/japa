@@ -151,8 +151,7 @@ func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -185,7 +184,7 @@ func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	imp, err := h.service.StartImport(r.Context(), tenantID, user.UserID, req.SourceType, req.SourceURL)
+	imp, err := h.service.StartImport(r.Context(), user.UserID, req.SourceType, req.SourceURL)
 	if err != nil {
 		slog.Error("contentimport: start failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
@@ -314,8 +313,7 @@ func (h *Handlers) HandleAdminStartImport(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -359,7 +357,7 @@ func (h *Handlers) HandleAdminStartImport(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	imp, err := h.service.StartImport(r.Context(), tenantID, targetUserID, req.SourceType, req.SourceURL)
+	imp, err := h.service.StartImport(r.Context(), targetUserID, req.SourceType, req.SourceURL)
 	if err != nil {
 		slog.Error("contentimport: admin start failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
@@ -418,8 +416,7 @@ func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -434,7 +431,7 @@ func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	imp, err := h.service.RetryImport(r.Context(), tenantID, importID)
+	imp, err := h.service.RetryImport(r.Context(), importID)
 	if err != nil {
 		slog.Error("contentimport: retry failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_retry_failed", "Failed to retry import")

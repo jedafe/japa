@@ -303,7 +303,7 @@ func (s *Service) GetActiveAssessment(ctx context.Context) (*AssessmentFormDTO, 
 // the assessment:score_submission task fire-and-forget (Rule 8). For anonymous
 // users (userID is nil), the submission is created without a user_id.
 // Returns the submission ID.
-func (s *Service) SubmitAssessment(ctx context.Context, tenantID pgtype.UUID, userID *uuid.UUID, formID pgtype.UUID, fieldValues json.RawMessage) (pgtype.UUID, error) {
+func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, formID pgtype.UUID, fieldValues json.RawMessage) (pgtype.UUID, error) {
 	var userIDVal pgtype.UUID
 	if userID != nil {
 		userIDVal = pgtype.UUID{Bytes: *userID, Valid: true}

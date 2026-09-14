@@ -240,7 +240,7 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 
 // RequestDataExport handles POST /api/v1/account/export.
 func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -250,7 +250,7 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := h.Service.RequestDataExport(r.Context(), tenantID, user.UserID)
+	request, err := h.Service.RequestDataExport(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -355,7 +355,7 @@ func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Reques
 
 // RequestAccountDeletion handles POST /api/v1/account/delete.
 func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -377,7 +377,7 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	request, err := h.Service.RequestAccountDeletion(r.Context(), tenantID, user.UserID, input.Reason)
+	request, err := h.Service.RequestAccountDeletion(r.Context(), user.UserID, input.Reason)
 	if err != nil {
 		handleServiceError(w, err)
 		return

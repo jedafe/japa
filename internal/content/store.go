@@ -388,7 +388,7 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 // include content creation inside a larger transaction (e.g. the comparison
 // service's CreateComparison method, which must atomically create the content
 // row plus its items and dimensions). Ref: §6.2 transaction boundary, BUG-001.
-func (s *Service) CreateContentWithQueries(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
+func (s *Service) CreateContentWithQueries(ctx context.Context, q *gen.Queries, input CreateContentInput) (gen.CreateContentRow, error) {
 	return s.createContent(ctx, q, q, input)
 }
 

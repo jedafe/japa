@@ -39,7 +39,7 @@ func main() {
 			packages.NeedImports |
 			packages.NeedDeps,
 		Dir:   absRoot,
-		Tests: true,
+		Tests: false,
 	}
 
 	pkgs, err := packages.Load(cfg, "./...")
@@ -61,8 +61,9 @@ func main() {
 	propagateInterfaces(pkgs, removals)
 	fmt.Printf("after interface propagation: %d objects\n", len(removals))
 
+	written := make(map[string]bool)
 	for _, p := range pkgs {
-		if err := refactorPackage(p, removals); err != nil {
+		if err := refactorPackage(p, removals, written); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -252,8 +253,13 @@ func allImplementersRemove(pkgs []*packages.Package, namedByPkg map[*packages.Pa
 	return true
 }
 
-func refactorPackage(p *packages.Package, removals map[types.Object][]int) error {
+func refactorPackage(p *packages.Package, removals map[types.Object][]int, written map[string]bool) error {
 	for _, f := range p.Syntax {
+		tok := p.Fset.File(f.Pos())
+		path := tok.Name()
+		if written[path] {
+			continue
+		}
 		astutil.Apply(f, func(c *astutil.Cursor) bool {
 			switch n := c.Node().(type) {
 			case *ast.FuncDecl:
@@ -301,8 +307,6 @@ func refactorPackage(p *packages.Package, removals map[types.Object][]int) error
 		// were removed.
 		removeDeadLocals(p, f)
 
-		tok := p.Fset.File(f.Pos())
-		path := tok.Name()
 		out, err := formatNode(p.Fset, f)
 		if err != nil {
 			return fmt.Errorf("formatting %s: %w", path, err)
@@ -310,6 +314,7 @@ func refactorPackage(p *packages.Package, removals map[types.Object][]int) error
 		if err := os.WriteFile(path, out, 0644); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		}
+		written[path] = true
 	}
 	return nil
 }

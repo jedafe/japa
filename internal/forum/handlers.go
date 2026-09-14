@@ -132,7 +132,7 @@ func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
 // enqueueSearchIndex enqueues a Meilisearch re-index task for a forum entity
 // (thread or tag). operation is "index" (create/update) or "delete".
 // Fire-and-forget per Rule 8.
-func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID pgtype.UUID) {
 	if h.asynqClient == nil {
 		return
 	}
@@ -159,7 +159,7 @@ func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID, te
 // enqueueContentEmbedding fires a content:generate_embedding task for the
 // backing contents row of a forum thread. Required so content_scores exists
 // and GET /content/{id}/related can resolve vectors (BUG-004).
-func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueContentEmbedding(contentID pgtype.UUID) {
 	if h.asynqClient == nil {
 		return
 	}
@@ -511,7 +511,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		h.enqueueContentEmbedding(contentID, tenantID)
+		h.enqueueContentEmbedding(contentID)
 	}
 
 	thread, err := h.Service.CreateThread(r.Context(), user.UserID, CreateThreadInput{
@@ -546,7 +546,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	h.indexThreadRAG(r.Context(), thread.ID, input.Title, input.Body)
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new thread.
-	h.enqueueSearchIndex("forum_thread", "index", thread.ID, tenantID)
+	h.enqueueSearchIndex("forum_thread", "index", thread.ID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
@@ -1033,7 +1033,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	h.indexThreadRAG(r.Context(), id, input.Title, input.Body)
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the updated thread.
-	h.enqueueSearchIndex("forum_thread", "index", id, tenantID)
+	h.enqueueSearchIndex("forum_thread", "index", id)
 
 	// The QAPage JSON-LD for this thread is now stale; clear it so the next
 	// GET regenerates with the updated title/body.
@@ -1048,8 +1048,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1084,7 +1083,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	h.purgeThreadRAG(r.Context(), id)
 
 	// §12 stale-index fix: remove the deleted thread from the Meilisearch index.
-	h.enqueueSearchIndex("forum_thread", "delete", id, tenantID)
+	h.enqueueSearchIndex("forum_thread", "delete", id)
 
 	// The QAPage JSON-LD for a deleted thread must not be served again.
 	h.Service.deleteJSONLDCache(r.Context(), id)
@@ -1173,8 +1172,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1204,7 +1202,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reply, err := h.Service.CreateReply(r.Context(), tenantID, threadID, user.UserID, CreateReplyInput{
+	reply, err := h.Service.CreateReply(r.Context(), threadID, user.UserID, CreateReplyInput{
 		Body:          input.Body,
 		ParentReplyID: parentReplyID,
 		IsAnonymous:   input.IsAnonymous,
@@ -1857,8 +1855,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1916,7 +1913,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new tag.
-	h.enqueueSearchIndex("tag", "index", tag.ID, tenantID)
+	h.enqueueSearchIndex("tag", "index", tag.ID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tag})
 }
@@ -1968,8 +1965,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2023,7 +2019,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the updated tag.
-	h.enqueueSearchIndex("tag", "index", tag.ID, tenantID)
+	h.enqueueSearchIndex("tag", "index", tag.ID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
@@ -2034,8 +2030,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2052,7 +2047,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// §12 stale-index fix: remove the deleted tag from the Meilisearch index.
-	h.enqueueSearchIndex("tag", "delete", id, tenantID)
+	h.enqueueSearchIndex("tag", "delete", id)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
@@ -2260,5 +2255,5 @@ func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, cont
 		return
 	}
 
-	h.enqueueContentEmbedding(contentID, tenantID)
+	h.enqueueContentEmbedding(contentID)
 }

@@ -525,7 +525,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 // ownership (story.delete_own permission + author_id match). If
 // bypassOwnership is true (caller has story.delete_any), the ownership check
 // is skipped so moderators/admins can delete any story.
-func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, bypassOwnership bool) error {
+func (s *Service) DeleteOwn(ctx context.Context, contentID, userID pgtype.UUID, bypassOwnership bool) error {
 	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

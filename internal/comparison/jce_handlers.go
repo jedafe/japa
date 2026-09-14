@@ -477,7 +477,7 @@ type updateJCEComparisonBody struct {
 
 // DeleteJCEComparison handles DELETE /api/v1/jce/comparisons/{id}.
 func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -494,7 +494,7 @@ func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bypass := hasAnyPermission(r, user, "comparison.delete_any")
-	if err := h.Service.DeleteJCEComparison(r.Context(), id, tenantID, user.UserID, bypass); err != nil {
+	if err := h.Service.DeleteJCEComparison(r.Context(), id, user.UserID, bypass); err != nil {
 		if errors.Is(err, errpkg.ErrForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only delete your own comparisons")
 			return

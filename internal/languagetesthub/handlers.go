@@ -58,7 +58,7 @@ func (h *Handlers) SetAsynqClient(c TaskEnqueueClient) { h.asynqClient = c }
 // enqueueSearchIndex enqueues an async task to sync a language test
 // requirement to the Meilisearch language_test_requirements index
 // (ADR-088 JapaBot Indexability). operation is "index" or "delete".
-func (h *Handlers) enqueueSearchIndex(reqID, tenantID pgtype.UUID, operation string) {
+func (h *Handlers) enqueueSearchIndex(reqID pgtype.UUID, operation string) {
 	if h.asynqClient == nil {
 		return
 	}
@@ -530,8 +530,7 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -557,7 +556,7 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 		return
 	}
 
-	draft, err := h.service.GenerateDraft(r.Context(), tenantID, input)
+	draft, err := h.service.GenerateDraft(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
@@ -623,7 +622,7 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 	// Enqueue Meilisearch index sync so JapaBot RAG retrieval picks up the
 	// newly published, HITL-reviewed requirement (ADR-088 JapaBot
 	// Indexability). Fire-and-forget per Rule 8.
-	h.enqueueSearchIndex(id, tenantID, "index")
+	h.enqueueSearchIndex(id, "index")
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{

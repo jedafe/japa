@@ -75,7 +75,7 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 				continue
 			}
 
-			s.notifyBadgeAwarded(ctx, tenantID, userID, b.Name)
+			s.notifyBadgeAwarded(ctx, userID, b.Name)
 
 			var iconID *string
 
@@ -148,7 +148,7 @@ func (s *Service) incrementChallengeProgress(ctx context.Context, tenantID, user
 
 // notifyBadgeAwarded fires the badge-award notification (fire-and-forget,
 // Rule 8) — nil-safe when no Notifier is wired.
-func (s *Service) notifyBadgeAwarded(ctx context.Context, tenantID, userID pgtype.UUID, badgeName string) {
+func (s *Service) notifyBadgeAwarded(ctx context.Context, userID pgtype.UUID, badgeName string) {
 	if s.notifier == nil {
 		return
 	}
@@ -267,7 +267,7 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, tenantID, userID pgt
 			continue
 		}
 
-		s.notifyBadgeAwarded(ctx, tenantID, userID, b.Name)
+		s.notifyBadgeAwarded(ctx, userID, b.Name)
 
 		var iconID *string
 

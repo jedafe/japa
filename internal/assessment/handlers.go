@@ -227,7 +227,7 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 // answers. Anonymous users are allowed; authenticated users get persistent
 // history. Body: {"field_values": {...}}.
 func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -281,7 +281,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		userID = &uid
 	}
 
-	submissionID, err := h.service.SubmitAssessment(r.Context(), tenantID, userID, formID, body.FieldValues)
+	submissionID, err := h.service.SubmitAssessment(r.Context(), userID, formID, body.FieldValues)
 	if err != nil {
 		slog.Error("assessment: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submission_failed", "Failed to create submission")

@@ -439,12 +439,12 @@ func (h *Handlers) RefreshViews(w http.ResponseWriter, r *http.Request) {
 
 // RunSecurityScan handles POST /api/v1/admin/analytics/security/scan.
 func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.EnqueueSecurityScan(r.Context(), tenantID); err != nil {
+	if err := h.Service.EnqueueSecurityScan(r.Context()); err != nil {
 		handleServiceError(w, err)
 		return
 	}

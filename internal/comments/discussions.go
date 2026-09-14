@@ -203,8 +203,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -253,7 +252,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 	// when linking an existing one). Fire-and-forget per Rule 8.
 	if result.CreatedThread.ID.Valid {
 		h.enqueueContentFanOut(
-			result.CreatedThread.ID, tenantID, user.UserID,
+			result.CreatedThread.ID, user.UserID,
 			result.CreatedThread.SpaceID, "discussion", "followers",
 		)
 	}

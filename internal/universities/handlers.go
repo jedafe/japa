@@ -119,7 +119,7 @@ func (h *Handlers) SetEnqueuer(e TaskEnqueuer) { h.enqueuer = e }
 // enqueueSpaceAutoPopulate enqueues space:auto_populate so Wikidata enrichment
 // (P1813 short name, founded year, student count, logo, etc.) runs for the
 // new or updated university. Fire-and-forget (Rule 8).
-func (h *Handlers) enqueueSpaceAutoPopulate(ctx context.Context, tenantID, spaceID pgtype.UUID) {
+func (h *Handlers) enqueueSpaceAutoPopulate(ctx context.Context, spaceID pgtype.UUID) {
 	if h.enqueuer == nil {
 		return
 	}
@@ -139,7 +139,7 @@ func (h *Handlers) enqueueSpaceAutoPopulate(ctx context.Context, tenantID, space
 	}
 }
 
-func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uploadedBy pgtype.UUID, logoURL string) {
+func (h *Handlers) enqueueFetchLogo(ctx context.Context, spaceID, uploadedBy pgtype.UUID, logoURL string) {
 	if h.enqueuer == nil || strings.TrimSpace(logoURL) == "" {
 		return
 	}
@@ -703,7 +703,7 @@ func slugify(s string) string {
 
 // CreateUniversity handles POST /admin/universities — creates a University-type space.
 func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -774,21 +774,21 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 
 	// Always run Wikidata enrichment for a new university (P1813 short name,
 	// founded year, student count, logo, etc.).
-	h.enqueueSpaceAutoPopulate(r.Context(), tenantID, space.ID)
+	h.enqueueSpaceAutoPopulate(r.Context(), space.ID)
 
 	var actorID pgtype.UUID
 	if u := auth.FromContext(r.Context()); u != nil {
 		actorID = u.UserID
 	}
 
-	h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, input.LogoURL)
+	h.enqueueFetchLogo(r.Context(), space.ID, actorID, input.LogoURL)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
 // UpdateUniversity handles PATCH /admin/universities/:id.
 func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -884,7 +884,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 			actorID = u.UserID
 		}
 
-		h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, *input.LogoURL)
+		h.enqueueFetchLogo(r.Context(), space.ID, actorID, *input.LogoURL)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
@@ -1071,7 +1071,7 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 // from Wikidata P1813. Returns a summary of created / skipped / failed counts.
 // Ref: Section 39, audit finding U-1.
 func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1196,11 +1196,11 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		}
 
 		if !adminSuppliedInitials {
-			h.enqueueSpaceAutoPopulate(r.Context(), tenantID, space.ID)
+			h.enqueueSpaceAutoPopulate(r.Context(), space.ID)
 		}
 
 		if logoURL != "" {
-			h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, logoURL)
+			h.enqueueFetchLogo(r.Context(), space.ID, actorID, logoURL)
 		}
 
 		created++

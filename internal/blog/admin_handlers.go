@@ -76,7 +76,7 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	// BUG-009: enqueue rss:regenerate when an admin creates a post directly
 	// as published. Ref: §24.
 	if post.Status == content.StatusPublished {
-		h.enqueueRSSRegenerate(tenantID)
+		h.enqueueRSSRegenerate()
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
@@ -158,7 +158,7 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-009: enqueue rss:regenerate on draft→published transition. Ref: §24.
 	if prevStatus != content.StatusPublished && post.Status == content.StatusPublished {
-		h.enqueueRSSRegenerate(tenantID)
+		h.enqueueRSSRegenerate()
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": post})

@@ -235,7 +235,7 @@ func (s *Service) SetEnqueuer(e spaceEnqueuer) {
 
 // EnqueueAutoPopulate enqueues the space:auto_populate task if an enqueuer
 // is wired. Best-effort — logs errors but never fails the caller.
-func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID, tenantID pgtype.UUID) {
+func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID pgtype.UUID) {
 	if s.enqueuer == nil {
 		return
 	}
@@ -251,7 +251,7 @@ func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID, tenantID pgt
 // EnqueueSearchIndex enqueues a search:index_entity task to sync the space to
 // the Meilisearch index (BL-004). operation is "index" (create/update) or
 // "delete". Best-effort — logs errors but never fails the caller.
-func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID, tenantID pgtype.UUID, operation string) {
+func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID pgtype.UUID, operation string) {
 	if s.enqueuer == nil {
 		return
 	}

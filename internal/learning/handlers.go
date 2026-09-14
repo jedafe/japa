@@ -137,7 +137,7 @@ func (h *Handlers) purgeTrackRAG(ctx context.Context, trackID pgtype.UUID) {
 
 // enqueueTrackCompletionUpdate enqueues an async track completion update task.
 // Fire-and-forget: errors are logged but never propagated.
-func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -1006,7 +1006,7 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue async track completion update — fire-and-forget (best-effort
 	// backup for environments where the worker is running).
-	h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID, t.ID)
+	h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": progress})
 }

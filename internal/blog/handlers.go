@@ -256,7 +256,7 @@ var errWrongContentType = errors.New("not a blog post")
 
 // enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant (C6).
 // Fire-and-forget: errors are logged but never propagated (Rule 8).
-func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
+func (h *Handlers) enqueueRSSRegenerate() {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -1080,8 +1080,7 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1131,7 +1130,7 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// C6: enqueue rss:regenerate so the feed reflects the newly published post.
-	h.enqueueRSSRegenerate(tenantID)
+	h.enqueueRSSRegenerate()
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
@@ -2002,7 +2001,7 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Ref: §24 "RSS feed (static XML, regenerated via the new rss_regenerate
 	// task on every publish)".
 	if post.Status == content.StatusPublished {
-		h.enqueueRSSRegenerate(tenantID)
+		h.enqueueRSSRegenerate()
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
@@ -2317,7 +2316,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 	// content HTTP handler does this at content/handlers.go:1308, but the
 	// blog UpdatePost calls the service directly. Ref: §24.
 	if existing.Status != content.StatusPublished && updated.Status == content.StatusPublished {
-		h.enqueueRSSRegenerate(tenantID)
+		h.enqueueRSSRegenerate()
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})

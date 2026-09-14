@@ -66,7 +66,7 @@ func (h *Handlers) SetRBAC(r *rbac.RBAC) {
 
 // enqueueSearchIndex enqueues an async task to sync a doc page to the
 // Meilisearch doc_pages index (SEARCH-001). operation is "index" or "delete".
-func (h *Handlers) enqueueSearchIndex(pageID, tenantID pgtype.UUID, operation string) {
+func (h *Handlers) enqueueSearchIndex(pageID pgtype.UUID, operation string) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -436,7 +436,7 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue Meilisearch index sync for the new doc page.
-	h.enqueueSearchIndex(pageID, tenantID, "index")
+	h.enqueueSearchIndex(pageID, "index")
 
 	// Fetch the created page to return it (any status — use GetDocPageByID).
 	page, fetchErr := h.Service.GetDocPageByID(r.Context(), pageID)
@@ -504,7 +504,7 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// SEARCH-001: enqueue Meilisearch index sync for the updated doc page.
-	h.enqueueSearchIndex(id, tenantID, "index")
+	h.enqueueSearchIndex(id, "index")
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
@@ -534,7 +534,7 @@ func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.enqueueSearchIndex(id, tenantID, "index")
+	h.enqueueSearchIndex(id, "index")
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
 }
 
@@ -563,7 +563,7 @@ func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.enqueueSearchIndex(id, tenantID, "index")
+	h.enqueueSearchIndex(id, "index")
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "published"}})
 }
 
@@ -586,7 +586,7 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// SEARCH-001: enqueue Meilisearch document deletion for the removed doc page.
-	h.enqueueSearchIndex(id, tenantID, "delete")
+	h.enqueueSearchIndex(id, "delete")
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

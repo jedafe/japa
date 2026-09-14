@@ -294,7 +294,7 @@ func parseCreditPurchaseMetadata(metadata []byte) (credits int, currency string)
 // scheduleFanOutTask enqueues a content:fan_out_to_feeds task with the given
 // fan-out type. Used by the scheduled-publish handler to trigger multi-space
 // fan-out (Section 32). Fire-and-forget per Rule 8.
-func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
+func scheduleFanOutTask(enq *Enqueuer, contentID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
 	if enq == nil {
 		return
 	}
@@ -320,7 +320,7 @@ func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pg
 // scheduleScholarshipSyncFromGuide enqueues the scholarship:sync_from_guide task
 // when the published scheduled content is a scholarship guide. The handler is
 // idempotent and a no-op for non-scholarship content.
-func scheduleScholarshipSyncFromGuide(ctx context.Context, contentID, tenantID pgtype.UUID, contentIDStr string) {
+func scheduleScholarshipSyncFromGuide(ctx context.Context, contentID pgtype.UUID, contentIDStr string) {
 	if taskEnqueuer == nil {
 		return
 	}
@@ -356,7 +356,7 @@ func scheduleScholarshipSyncFromGuide(ctx context.Context, contentID, tenantID p
 // cron. Fire-and-forget per Rule 8 (RSS-013).
 // // Ref: japaconnect-engineering/sections/26-seo-performance.md
 // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md.
-func scheduleRSSRegenerate(enq *Enqueuer, tenantID pgtype.UUID) {
+func scheduleRSSRegenerate(enq *Enqueuer) {
 	if enq == nil {
 		return
 	}
@@ -570,7 +570,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	// - org_boost: expire the organization boost
 	// - pro_membership: refunds affect future renewal only (no reversal)
 	if payload.Status == "refunded" {
-		if err := reversePaymentSideEffects(ctx, tenantID, p); err != nil {
+		if err := reversePaymentSideEffects(ctx, p); err != nil {
 			// Non-fatal: still mark the payment as refunded so the status
 			// reflects the provider's state. The reversal can be retried.
 			slog.Error("task:payment:process_webhook: failed to reverse side effects", "payment_id", p.ID, "purpose_type", p.PurposeType, "error", err)
@@ -608,9 +608,9 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 // payment's purpose_type is form_submission (which updates the linked
 // submission to 'new' and enqueues its triggers).
 func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, tenantID pgtype.UUID, p gen.Payment) {
-	enqueueUniversityEnrollment(tenantID, p)
-	enqueueCreditPurchaseGrant(tenantID, p)
-	enqueueReferralConversion(tenantID, p)
+	enqueueUniversityEnrollment(p)
+	enqueueCreditPurchaseGrant(p)
+	enqueueReferralConversion(p)
 
 	if p.PurposeType == "form_submission" {
 		processPaidFormSubmission(ctx, queries, p)
@@ -706,7 +706,7 @@ func enqueueAffiliateCommission(ctx context.Context, p gen.Payment) bool {
 // the creator ledger, upsert the enrollment, and bump the track's enrollment
 // counter. The purpose_id is the track_id. Fire-and-forget per Rule 8 — the
 // payment is already marked succeeded.
-func enqueueUniversityEnrollment(tenantID pgtype.UUID, p gen.Payment) {
+func enqueueUniversityEnrollment(p gen.Payment) {
 	if p.PurposeType != "course_access" || taskEnqueuer == nil {
 		return
 	}
@@ -734,7 +734,7 @@ func enqueueUniversityEnrollment(tenantID pgtype.UUID, p gen.Payment) {
 // credits_to_grant and currency_code are read from the payment metadata (set
 // by purchaseCredits when creating the payment row). Fire-and-forget per
 // Rule 8.
-func enqueueCreditPurchaseGrant(tenantID pgtype.UUID, p gen.Payment) {
+func enqueueCreditPurchaseGrant(p gen.Payment) {
 	if p.PurposeType != "credit_purchase" || taskEnqueuer == nil {
 		return
 	}
@@ -762,7 +762,7 @@ func enqueueCreditPurchaseGrant(tenantID pgtype.UUID, p gen.Payment) {
 // transition to qualified→credited. The task is idempotent (no-op when no
 // referral row exists for the payer). Fire-and-forget per Rule 8.
 // Ref: japaconnect-engineering/sections/60-referral-system.md (Attribution).
-func enqueueReferralConversion(tenantID pgtype.UUID, p gen.Payment) {
+func enqueueReferralConversion(p gen.Payment) {
 	if taskEnqueuer == nil {
 		return
 	}
@@ -845,7 +845,7 @@ func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, p gen.
 // - course_access: revoke the course access grant
 // - org_boost: expire the organization boost
 // - pro_membership: no reversal (refunds affect future renewal only)
-func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.Payment) error {
+func reversePaymentSideEffects(ctx context.Context, p gen.Payment) error {
 	switch p.PurposeType {
 	case "credit_purchase":
 		// Reverse the wallet credit grant by enqueueing a negative grant.
@@ -1760,7 +1760,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	}
 
 	scheduleScheduledPublishFanOut(ctx, contentID, tenantID, payload.ContentID)
-	scheduleScholarshipSyncFromGuide(ctx, contentID, tenantID, payload.ContentID)
+	scheduleScholarshipSyncFromGuide(ctx, contentID, payload.ContentID)
 
 	return nil
 }
@@ -1781,7 +1781,7 @@ func scheduleScheduledPublishFanOut(ctx context.Context, contentID, tenantID pgt
 	}
 
 	// 1. Always fan out to the author's followers.
-	scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, pgtype.UUID{}, published.ContentType, "followers")
+	scheduleFanOutTask(taskEnqueuer, contentID, published.AuthorID, pgtype.UUID{}, published.ContentType, "followers")
 
 	// 2. Fan out to each assigned space via content_spaces (Section 14).
 	// Falls back to the primary contents.space_id if no content_spaces rows.
@@ -1801,13 +1801,13 @@ func scheduleScheduledPublishFanOut(ctx context.Context, contentID, tenantID pgt
 
 	// 3. Enqueue a "space" task and a "bubble" task per assigned space.
 	for _, sid := range spaceIDs {
-		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, fanOutSpace)
-		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, "bubble")
+		scheduleFanOutTask(taskEnqueuer, contentID, published.AuthorID, sid, published.ContentType, fanOutSpace)
+		scheduleFanOutTask(taskEnqueuer, contentID, published.AuthorID, sid, published.ContentType, "bubble")
 	}
 
 	// RSS-013: regenerate RSS feeds so the newly published scheduled content
 	// appears without waiting for the hourly cron. Fire-and-forget.
-	scheduleRSSRegenerate(taskEnqueuer, tenantID)
+	scheduleRSSRegenerate(taskEnqueuer)
 }
 
 // HandleLinkPreviewFetch fetches and stores OpenGraph metadata for a URL.
@@ -4415,7 +4415,7 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 		published++
 
 		// §73: keep the scholarship finder in sync for scheduled scholarship guides.
-		scheduleScholarshipSyncFromGuide(ctx, pc, pgtype.UUID{}, pc.String())
+		scheduleScholarshipSyncFromGuide(ctx, pc, pc.String())
 
 		slog.Info("task:content:publish_sweep: content published", "content_id", pc.String())
 	}

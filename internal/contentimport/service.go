@@ -190,7 +190,7 @@ func safeInt32(n int) int32 {
 // enqueues the import:process_source task fire-and-forget (Rule 8). The
 // handler returns the import record immediately — the task runs
 // asynchronously.
-func (s *Service) StartImport(ctx context.Context, tenantID, userID pgtype.UUID, sourceType, sourceURL string) (gen.ContentImport, error) {
+func (s *Service) StartImport(ctx context.Context, userID pgtype.UUID, sourceType, sourceURL string) (gen.ContentImport, error) {
 	if !isValidSourceType(sourceType) {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: invalid source type %q", sourceType)
 	}
@@ -292,7 +292,7 @@ func (s *Service) AdminListImports(ctx context.Context, status string, page, lim
 // RetryImport resets a failed or partial import to pending status and
 // re-enqueues the import:process_source task. Only imports with status
 // 'failed' or 'partial' can be retried — the SQL query enforces this.
-func (s *Service) RetryImport(ctx context.Context, tenantID, importID pgtype.UUID) (gen.ContentImport, error) {
+func (s *Service) RetryImport(ctx context.Context, importID pgtype.UUID) (gen.ContentImport, error) {
 	imp, err := s.store.ResetForRetry(ctx, importID)
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: retry: reset: %w", err)

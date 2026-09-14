@@ -149,7 +149,7 @@ func (h *Handlers) SetReportService(rs reportService) { h.reportSvc = rs }
 // as directory tags and linked from the source header.
 func (h *Handlers) SetTagService(ts tagService) { h.tagSvc = ts }
 
-func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID, reviewerUserID pgtype.UUID) error {
+func (h *Handlers) enqueueIntelPromote(ctx context.Context, recordID, reviewerUserID pgtype.UUID) error {
 	if h.asynqClient == nil {
 		return errors.New("intel: asynq client not configured")
 	}

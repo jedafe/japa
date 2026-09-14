@@ -172,7 +172,7 @@ func (s *Service) ListSlots(ctx context.Context) ([]SlotInfo, error) {
 // create campaign, deduct credits, enqueue notification, enter review queue.
 // // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
 // //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3
-func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pgtype.UUID, input CreateCampaignInput) (gen.AdCampaign, error) {
+func (s *Service) CreateCampaign(ctx context.Context, orgID, userID pgtype.UUID, input CreateCampaignInput) (gen.AdCampaign, error) {
 	enabled, err := s.settings.GetSettingBool(ctx, "ads.self_serve_enabled")
 	if err == nil && !enabled {
 		return gen.AdCampaign{}, ErrFeatureDisabled
@@ -417,7 +417,7 @@ func (s *Service) GetCampaignStats(ctx context.Context, orgID, campaignID pgtype
 // RefundCampaignCredits refunds unused credits on rejection or early end.
 // Called by the ads:refund_campaign_credits worker task.
 // Honours the ads.credit_refund_on_reject system setting (§61, default true).
-func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
+func (s *Service) RefundCampaignCredits(ctx context.Context, campaignID pgtype.UUID) error {
 	campaign, err := s.store.GetCampaignForRefund(ctx, campaignID)
 	if err != nil {
 		return fmt.Errorf("adsselfserve: get campaign for refund: %w", err)

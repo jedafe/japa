@@ -77,7 +77,7 @@ type AIDispatcher interface {
 // ContentCreator creates content rows for imported videos.
 // *content.Service satisfies this interface.
 type ContentCreator interface {
-	CreateContentWithQueries(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+	CreateContentWithQueries(ctx context.Context, q *gen.Queries, input content.CreateContentInput) (gen.CreateContentRow, error)
 }
 
 // SourceRegistry links a video source to the canonical intel_sources registry.
@@ -823,8 +823,7 @@ func (s *Service) GenerateDraft(ctx context.Context, userID, videoSourceID pgtyp
 	}
 
 	prompt := s.buildSummaryPrompt(source)
-
-	tenantID := pgtype.UUID{}
+	_ = pgtype.UUID{}
 
 	// ai_prompt_hash for audit traceability (ADR-088).
 	sum := sha256.Sum256([]byte(prompt))
@@ -875,7 +874,7 @@ func (s *Service) GenerateDraft(ctx context.Context, userID, videoSourceID pgtyp
 
 	aiModel := "video_summary_v1"
 
-	created, err := s.content.CreateContentWithQueries(ctx, s.store.write, tenantID, content.CreateContentInput{
+	created, err := s.content.CreateContentWithQueries(ctx, s.store.write, content.CreateContentInput{
 		AuthorID:        userID,
 		ContentType:     content.TypeVideo,
 		Title:           title,

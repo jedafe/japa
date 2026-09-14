@@ -382,8 +382,7 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -401,14 +400,14 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue background processing tasks — fire-and-forget.
-	h.enqueueMediaTasks(r.Context(), tenantID, mediaID)
+	h.enqueueMediaTasks(r.Context(), mediaID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"confirmed": true}})
 }
 
 // enqueueMediaTasks enqueues image/video processing and virus scan tasks
 // based on the media's MIME type. Fire-and-forget: errors are logged only.
-func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgtype.UUID) {
+func (h *Handlers) enqueueMediaTasks(ctx context.Context, mediaID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -1051,7 +1050,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.enqueueMediaTasks(r.Context(), tenantID, mediaID)
+	h.enqueueMediaTasks(r.Context(), mediaID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{

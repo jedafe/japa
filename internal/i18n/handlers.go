@@ -48,7 +48,7 @@ func NewHandlers(service *Service) *Handlers {
 
 // enqueueTranslatePack enqueues an async AI translation task for a language pack.
 // Fire-and-forget: errors are logged but never propagated.
-func (h *Handlers) enqueueTranslatePack(packID, sourceLang, targetLang string, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueTranslatePack(packID, sourceLang, targetLang string) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -395,7 +395,7 @@ func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
 // per Rule 8 — returns 202 immediately.
 // POST /admin/i18n/strings/ai-translate-batch — body: {"source_locale":"en","target_locale":"fr"}.
 func (h *Handlers) AITranslateBatch(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -426,7 +426,7 @@ func (h *Handlers) AITranslateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue the fire-and-forget AI translate task (Rule 8).
-	h.enqueueTranslatePack("", input.SourceLocale, input.TargetLocale, tenantID)
+	h.enqueueTranslatePack("", input.SourceLocale, input.TargetLocale)
 
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]string{

@@ -43,7 +43,7 @@ func NewHandlers(service *Service) *Handlers {
 // enqueueAdEventIngest enqueues an async ad event ingestion task.
 // Fire-and-forget: errors are logged but never propagated.
 // userID may be invalid (zero UUID) for guest events — user_id is nullable.
-func (h *Handlers) enqueueAdEventIngest(tenantID, campaignID, userID pgtype.UUID, eventType string) {
+func (h *Handlers) enqueueAdEventIngest(campaignID, userID pgtype.UUID, eventType string) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -545,7 +545,7 @@ func campaignToWire(c AdCampaign) map[string]any {
 // Accepts a batch of ad events for async ingestion. Public (catalog: POST
 // /ads/events) — fire-and-forget impression/click ingestion from guests too.
 func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -592,7 +592,7 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 			_ = userID.Scan(e.UserID)
 		}
 
-		h.enqueueAdEventIngest(tenantID, campaignID, userID, e.EventType)
+		h.enqueueAdEventIngest(campaignID, userID, e.EventType)
 
 		ingested++
 	}

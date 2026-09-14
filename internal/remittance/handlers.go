@@ -704,8 +704,7 @@ func (h *Handlers) HandleAdminTriggerFetch(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -720,7 +719,7 @@ func (h *Handlers) HandleAdminTriggerFetch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.service.TriggerFetch(r.Context(), tenantID, providerID); err != nil {
+	if err := h.service.TriggerFetch(r.Context(), providerID); err != nil {
 		slog.Error("remittance: admin trigger fetch failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "fetch_failed", "Failed to trigger fetch")
 

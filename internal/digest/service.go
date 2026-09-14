@@ -299,7 +299,7 @@ func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgt
 // digest:generate Asynq task (§84, ADR-092). The task assembles the edition
 // from platform analytics — no AI generation (purely metrics-driven).
 // Returns "accepted" to indicate the task was enqueued (202 response).
-func (s *Service) AdminGenerate(ctx context.Context, tenantID pgtype.UUID) (string, error) {
+func (s *Service) AdminGenerate(ctx context.Context) (string, error) {
 	payload, _ := json.Marshal(map[string]string{})
 	if err := s.enqueuer.Enqueue("digest:generate", payload); err != nil {
 		return "", fmt.Errorf("digest: enqueue generate: %w", err)

@@ -2145,7 +2145,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.enqueueFormTriggers(formID, tenantID, submission.ID, userID, fieldValues)
+		h.enqueueFormTriggers(formID, submission.ID, userID, fieldValues)
 
 		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 			"data": map[string]any{"id": submission.ID, "status": "new"},
@@ -2199,7 +2199,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.enqueueFormTriggers(formID, tenantID, submission.ID, userID, fieldValues)
+		h.enqueueFormTriggers(formID, submission.ID, userID, fieldValues)
 
 		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 			"data": map[string]any{"id": submission.ID, "status": "new"},
@@ -2269,7 +2269,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 // given submission. It is a no-op when AsynqClient is nil (tests). Errors are
 // logged, not returned — the submission is already persisted and the user
 // should not be penalized for an infra issue.
-func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pgtype.UUID, fieldValues []byte) {
+func (h *Handlers) enqueueFormTriggers(formID, submissionID, userID pgtype.UUID, fieldValues []byte) {
 	if h.AsynqClient == nil {
 		return
 	}

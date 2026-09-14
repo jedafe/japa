@@ -41,7 +41,7 @@ func NewHandlers(service *Service) *Handlers {
 
 // enqueueReviewAggregateRecalc enqueues an async review aggregate recalculation
 // task. Fire-and-forget: errors are logged but never propagated.
-func (h *Handlers) enqueueReviewAggregateRecalc(tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) {
+func (h *Handlers) enqueueReviewAggregateRecalc(entityType string, entityID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -146,8 +146,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -202,7 +201,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async review aggregate recalculation — fire-and-forget.
-	h.enqueueReviewAggregateRecalc(tenantID, entityType, entityID)
+	h.enqueueReviewAggregateRecalc(entityType, entityID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
@@ -413,8 +412,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -448,7 +446,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async review aggregate recalculation — fire-and-forget.
-	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
+	h.enqueueReviewAggregateRecalc(review.EntityType, review.EntityID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
@@ -459,8 +457,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -484,7 +481,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async review aggregate recalculation — fire-and-forget.
-	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
+	h.enqueueReviewAggregateRecalc(review.EntityType, review.EntityID)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
@@ -496,8 +493,7 @@ func (h *Handlers) HardDeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -521,7 +517,7 @@ func (h *Handlers) HardDeleteReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async review aggregate recalculation — fire-and-forget.
-	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
+	h.enqueueReviewAggregateRecalc(review.EntityType, review.EntityID)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

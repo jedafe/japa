@@ -320,7 +320,7 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 	// --- Return channel and run the loop in a goroutine ---
 	events := make(chan AgentEvent, 32)
 
-	go h.runLoop(ctx, session, userID, tenantID, prompt, geoSpaceID, geoSummary, preSearchResult, draftCtx, events)
+	go h.runLoop(ctx, session, userID, prompt, geoSpaceID, geoSummary, preSearchResult, draftCtx, events)
 
 	return events, nil
 }
@@ -403,7 +403,7 @@ func (h *AgentHandler) getStringSetting(ctx context.Context, key, fallback strin
 func (h *AgentHandler) runLoop(
 	ctx context.Context,
 	session gen.AiAgentSession,
-	userID, tenantID pgtype.UUID,
+	userID pgtype.UUID,
 	prompt string,
 	geoSpaceID *pgtype.UUID,
 	geoSummary string,

@@ -374,7 +374,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 	return primarySpaceID
 }
 
-func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueContentEmbedding(contentID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -398,7 +398,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 // enqueueAffiliateLinkScan enqueues the content:scan_affiliate_links task
 // (Section 55). Fire-and-forget: errors are logged but never propagated.
 // AUDIT-BE-TASK-001: the task was defined and registered but never enqueued.
-func (h *Handlers) enqueueAffiliateLinkScan(contentID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueAffiliateLinkScan(contentID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -421,7 +421,7 @@ func (h *Handlers) enqueueAffiliateLinkScan(contentID, tenantID pgtype.UUID) {
 
 // enqueueSearchIndex enqueues an async task to sync content to the Meilisearch
 // search index. operation can be "index" (create/update) or "delete".
-func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation string) {
+func (h *Handlers) enqueueSearchIndex(contentID pgtype.UUID, operation string) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -448,7 +448,7 @@ func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation
 // enqueueScholarshipSyncFromGuide enqueues the scholarship:sync_from_guide Asynq
 // task when a guide is in the 'scholarship' category. It is a no-op for other
 // content types and is idempotent by ( content_id). Fire-and-forget.
-func (h *Handlers) enqueueScholarshipSyncFromGuide(contentID, tenantID pgtype.UUID, guideCategory *string) {
+func (h *Handlers) enqueueScholarshipSyncFromGuide(contentID pgtype.UUID, guideCategory *string) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -475,7 +475,7 @@ func (h *Handlers) enqueueScholarshipSyncFromGuide(contentID, tenantID pgtype.UU
 
 // enqueueModerationScan enqueues an async content moderation scan task.
 // Fire-and-forget: errors are logged but never propagated to the caller.
-func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueModerationScan(entityType string, entityID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -513,7 +513,7 @@ func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, a
 	}
 
 	// 1. Always fan out to the author's followers.
-	h.enqueueFanOutTask(contentID, tenantID, authorID, pgtype.UUID{}, contentType, "followers")
+	h.enqueueFanOutTask(contentID, authorID, pgtype.UUID{}, contentType, "followers")
 
 	// 2. Fan out to each assigned space via content_spaces (Section 14).
 	// Falls back to the primary contents.space_id if no content_spaces rows
@@ -537,13 +537,13 @@ func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, a
 
 	// 3. Enqueue a "space" task and a "bubble" task per assigned space.
 	for _, sid := range spaceIDs {
-		h.enqueueFanOutTask(contentID, tenantID, authorID, sid, contentType, "space")
-		h.enqueueFanOutTask(contentID, tenantID, authorID, sid, contentType, "bubble")
+		h.enqueueFanOutTask(contentID, authorID, sid, contentType, "space")
+		h.enqueueFanOutTask(contentID, authorID, sid, contentType, "bubble")
 	}
 }
 
 // enqueueFanOutTask marshals and enqueues a single fan-out task.
-func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
+func (h *Handlers) enqueueFanOutTask(contentID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
 
@@ -570,7 +570,7 @@ func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgty
 // for the hourly cron. Fire-and-forget per Rule 8 (RSS-013).
 // // Ref: japaconnect-engineering/sections/26-seo-performance.md
 // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md.
-func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
+func (h *Handlers) enqueueRSSRegenerate() {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -653,7 +653,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, authorID, c
 
 // enqueueLinkPreview enqueues an async link preview fetch task for a URL
 // found in a content block. Fire-and-forget.
-func (h *Handlers) enqueueLinkPreview(url, blockID string, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueLinkPreview(url, blockID string) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -795,7 +795,7 @@ func (h *Handlers) enqueueLinkPreviewsForBody(bodyHTML string, contentID, tenant
 
 		seen[u] = true
 
-		h.enqueueLinkPreview(u, blockID, tenantID)
+		h.enqueueLinkPreview(u, blockID)
 	}
 }
 
@@ -1107,17 +1107,17 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async embedding generation — fire-and-forget.
-	h.enqueueContentEmbedding(content.ID, tenantID)
+	h.enqueueContentEmbedding(content.ID)
 
 	// Enqueue search index sync — fire-and-forget.
-	h.enqueueSearchIndex(content.ID, tenantID, "index")
+	h.enqueueSearchIndex(content.ID, "index")
 
 	// Enqueue moderation scan — fire-and-forget.
-	h.enqueueModerationScan("content", content.ID, tenantID)
+	h.enqueueModerationScan("content", content.ID)
 
 	// §73: sync published scholarship guides to the scholarship finder
 	// projection. Fire-and-forget; the worker is a no-op for other categories.
-	h.enqueueScholarshipSyncFromGuide(content.ID, tenantID, content.GuideCategory)
+	h.enqueueScholarshipSyncFromGuide(content.ID, content.GuideCategory)
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002).
 	h.dispatchMentionNotifications(r.Context(), user.UserID, content.ID, content.SpaceID, content.Body)
@@ -1136,11 +1136,11 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("content: failed to ensure content_scores row on direct publish", "content_id", content.ID.String(), "error", err)
 		}
 
-		h.enqueueAffiliateLinkScan(content.ID, tenantID)
+		h.enqueueAffiliateLinkScan(content.ID)
 		h.enqueueFeedFanOut(r.Context(), content.ID, tenantID, user.UserID, content.SpaceID, content.ContentType)
 		// RSS-013: regenerate RSS feeds so new content appears without
 		// waiting for the hourly cron.
-		h.enqueueRSSRegenerate(tenantID)
+		h.enqueueRSSRegenerate()
 	}
 
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
@@ -1815,19 +1815,19 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if prevErr == nil && prevContent.Status == StatusPublished && content.Status != StatusPublished {
 		worker.PurgeRAGEntity(r.Context(), "content", id)
 	} else {
-		h.enqueueContentEmbedding(id, tenantID)
+		h.enqueueContentEmbedding(id)
 	}
 
 	// Enqueue search index sync — fire-and-forget.
-	h.enqueueSearchIndex(id, tenantID, "index")
+	h.enqueueSearchIndex(id, "index")
 
 	// Enqueue moderation scan — fire-and-forget.
-	h.enqueueModerationScan("content", id, tenantID)
+	h.enqueueModerationScan("content", id)
 
 	// §73: keep the scholarship finder projection in sync with the published
 	// scholarship guide. Fire-and-forget; the worker is a no-op for other
 	// categories and for unpublished content.
-	h.enqueueScholarshipSyncFromGuide(id, tenantID, content.GuideCategory)
+	h.enqueueScholarshipSyncFromGuide(id, content.GuideCategory)
 
 	// Dispatch @mention notifications for newly added mentions — fire-and-forget
 	// (BUG-006). The notification batch system deduplicates by (recipient, type,
@@ -1840,7 +1840,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if prevErr == nil && prevContent.Status != StatusPublished && content.Status == StatusPublished {
 		h.enqueueFeedFanOut(r.Context(), id, tenantID, content.AuthorID, content.SpaceID, content.ContentType)
 		// RSS-013: regenerate RSS feeds on draft→published transition.
-		h.enqueueRSSRegenerate(tenantID)
+		h.enqueueRSSRegenerate()
 	}
 
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
@@ -1856,8 +1856,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1886,7 +1885,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue search index deletion — fire-and-forget.
-	h.enqueueSearchIndex(id, tenantID, "delete")
+	h.enqueueSearchIndex(id, "delete")
 
 	// BUG-002 fix: purge RAG embeddings on content delete (ADR-069 §2:
 	// "Content is unpublished or deleted — deletes its content_embeddings
@@ -1895,7 +1894,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 
 	// §73: a deleted guide may still have a scholarships projection. The worker
 	// will see the content is gone and remove the row.
-	h.enqueueScholarshipSyncFromGuide(id, tenantID, content.GuideCategory)
+	h.enqueueScholarshipSyncFromGuide(id, content.GuideCategory)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
@@ -1966,18 +1965,18 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	// AUDIT-BE-TASK-001: enqueue the affiliate link scan task on publish
 	// (Section 55 — fire-and-forget, low tier). The worker handler reads
 	// the affiliate.scan_on_publish system setting; if false, it exits early.
-	h.enqueueAffiliateLinkScan(id, tenantID)
+	h.enqueueAffiliateLinkScan(id)
 
 	// Enqueue feed fan-out when content transitions to published (BL-005).
 	// This covers the draft→published path that CreateContent doesn't handle.
 	if prevErr == nil && prevContent.Status != StatusPublished {
 		h.enqueueFeedFanOut(r.Context(), id, tenantID, updated.AuthorID, updated.SpaceID, updated.ContentType)
 		// RSS-013: regenerate RSS feeds on explicit publish.
-		h.enqueueRSSRegenerate(tenantID)
+		h.enqueueRSSRegenerate()
 	}
 
 	// §73: a published scholarship guide must be visible in the finder.
-	h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
+	h.enqueueScholarshipSyncFromGuide(id, updated.GuideCategory)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
@@ -1989,9 +1988,10 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = user // used for RBAC audit trail
+	_ = user
+	_, // used for RBAC audit trail
 
-	tenantID, ok := h.requireTenant(w, r)
+		ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2026,7 +2026,7 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 	worker.PurgeRAGEntity(r.Context(), "content", id)
 
 	// §73: archived guides must not appear in the finder.
-	h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
+	h.enqueueScholarshipSyncFromGuide(id, updated.GuideCategory)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
@@ -2040,8 +2040,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2091,7 +2090,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// §73: in_review stories are not published; keep finder in sync.
-		h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
+		h.enqueueScholarshipSyncFromGuide(id, updated.GuideCategory)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 		return
@@ -2103,10 +2102,10 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.enqueueScheduledPublish(id, tenantID, input.PublishAt)
+	h.enqueueScheduledPublish(id, input.PublishAt)
 
 	// §73: scheduled content is not published, so remove any stale finder projection.
-	h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
+	h.enqueueScholarshipSyncFromGuide(id, updated.GuideCategory)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
@@ -2219,7 +2218,7 @@ func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) 
 // enqueueScheduledPublish enqueues the scheduled_publish Asynq task to fire
 // at publishAt. Fire-and-forget: logs and returns on failure rather than
 // failing the request — the content is already saved as 'scheduled'.
-func (h *Handlers) enqueueScheduledPublish(contentID, tenantID pgtype.UUID, publishAt time.Time) {
+func (h *Handlers) enqueueScheduledPublish(contentID pgtype.UUID, publishAt time.Time) {
 	if h.AsynqClient == nil {
 		return
 	}

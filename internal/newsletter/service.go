@@ -148,7 +148,7 @@ func (s *Service) WebhookSecret(_ context.Context) string {
 // EnqueueNewsletterSend enqueues a newsletter_send Asynq task. The worker
 // re-fetches the campaign and resolves segment-aware recipients from the
 // DB, so only the IDs are carried in the payload (§62, ADR-080 §3).
-func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID pgtype.UUID) error {
+func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID pgtype.UUID) error {
 	if s.client == nil {
 		return errors.New("asynq client not configured")
 	}

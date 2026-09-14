@@ -182,7 +182,7 @@ func (s *Service) SetStorage(st Storage) {
 }
 
 // CreateExport creates a new export job and enqueues a background task.
-func (s *Service) CreateExport(ctx context.Context, tenantID, userID pgtype.UUID, name, exportType, format string, includeMetadata bool) (gen.PlatformDataExport, error) {
+func (s *Service) CreateExport(ctx context.Context, userID pgtype.UUID, name, exportType, format string, includeMetadata bool) (gen.PlatformDataExport, error) {
 	if !ValidExportType(exportType) {
 		return gen.PlatformDataExport{}, fmt.Errorf("invalid export_type: %s", exportType)
 	}

@@ -523,7 +523,7 @@ func (s *Service) Deactivate(ctx context.Context, id pgtype.UUID) error {
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with placeholder content so a reviewer can
 // fill it manually (graceful degradation).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateRouteRequest) (GenerateDraftResponse, error) {
+func (s *Service) GenerateDraft(ctx context.Context, input GenerateRouteRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
 		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}
