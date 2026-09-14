@@ -220,12 +220,12 @@ In `internal/spaces/store.go`:
 // LinkSpaceToPrimarySpaces keyword-matches the space name against primary
 // country/state/city spaces and inserts space_parent_spaces rows. It returns
 // the most specific matched space ID (city > state > country) for parent_id.
-func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID pgtype.UUID, tenantID pgtype.UUID, name string) (pgtype.UUID, []pgtype.UUID, error) {
+func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID pgtype.UUID, ID pgtype.UUID, name string) (pgtype.UUID, []pgtype.UUID, error) {
     keywords := extractSpaceKeywords(name)
     if len(keywords) == 0 {
         return pgtype.UUID{}, nil, nil
     }
-    matches, err := s.FindSpacesByKeywords(ctx, tenantID, keywords)
+    matches, err := s.FindSpacesByKeywords(ctx, ID, keywords)
     if err != nil {
         return pgtype.UUID{}, nil, fmt.Errorf("finding primary spaces by keywords: %w", err)
     }
@@ -314,12 +314,12 @@ Change the creation call to:
 space, err := h.Service.CreateSpaceWithOwner(ctx, gen.CreateSpaceParams{...}, user.UserID, nil)
 if err != nil { ... }
 
-parentID, parentIDs, err := h.Service.LinkSpaceToPrimarySpaces(ctx, space.ID, tenantID, req.Name)
+parentID, parentIDs, err := h.Service.LinkSpaceToPrimarySpaces(ctx, space.ID, ID, req.Name)
 if err != nil {
     slog.Warn("create space: failed to link primary spaces", "space_id", space.ID, "error", err)
 }
 if parentID.Valid {
-    if err := h.Service.SetSpaceParent(ctx, space.ID, tenantID, parentID, parentIDs); err != nil {
+    if err := h.Service.SetSpaceParent(ctx, space.ID, ID, parentID, parentIDs); err != nil {
         slog.Warn("create space: failed to set space parent", "error", err)
     }
 }
@@ -328,11 +328,11 @@ if parentID.Valid {
 - [ ] **Step 4: Add `SetSpaceParent` transactional method in `internal/spaces/store.go`**
 
 ```go
-func (s *Service) SetSpaceParent(ctx context.Context, spaceID, tenantID, parentID pgtype.UUID, parentIDs []pgtype.UUID) error {
+func (s *Service) SetSpaceParent(ctx context.Context, spaceID, ID, parentID pgtype.UUID, parentIDs []pgtype.UUID) error {
     return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
         if err := q.UpdateSpaceParentID(ctx, gen.UpdateSpaceParentIDParams{
             ID:       spaceID,
-            TenantID: tenantID,
+            ID: ID,
             ParentID: parentID,
         }); err != nil {
             return fmt.Errorf("updating parent_id: %w", err)
@@ -401,7 +401,7 @@ In `internal/content/handlers.go`, after title matches, fetch the primary space'
 
 ```go
 if selectedSpaceID.Valid {
-    parentSpaceIDs, err := h.Service.GetSpacePrimaryGeoParents(ctx, tenantID, selectedSpaceID)
+    parentSpaceIDs, err := h.Service.GetSpacePrimaryGeoParents(ctx, ID, selectedSpaceID)
     if err == nil {
         for _, pid := range parentSpaceIDs {
             if !isSameUUID(pid, selectedSpaceID) {
@@ -417,9 +417,9 @@ if selectedSpaceID.Valid {
 If `content.Service` does not have a reader for `space_parent_spaces`, add a query method:
 
 ```go
-func (s *Service) GetSpacePrimaryGeoParents(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]pgtype.UUID, error) {
+func (s *Service) GetSpacePrimaryGeoParents(ctx context.Context, ID, spaceID pgtype.UUID) ([]pgtype.UUID, error) {
     rows, err := s.read.GetSpacePrimaryGeoParents(ctx, gen.GetSpacePrimaryGeoParentsParams{
-        TenantID: tenantID,
+        ID: ID,
         SpaceID:  spaceID,
     })
     if err != nil {
@@ -521,7 +521,7 @@ In `internal/feed/handlers.go` `GetExploreFeed`:
 
 ```go
 contentCountry := visitor.FromContext(r.Context()).ContentCountry
-items, err := h.service.GetFeed(ctx, tenantID, "explore", nil, nil, nil, sort, limit, offset, contentCountry)
+items, err := h.service.GetFeed(ctx, ID, "explore", nil, nil, nil, sort, limit, offset, contentCountry)
 ```
 
 Update `Service.GetFeed` and `Store.getExploreFeed` signatures to accept `contentCountry string`.

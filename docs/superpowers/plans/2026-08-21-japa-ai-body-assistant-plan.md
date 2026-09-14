@@ -27,7 +27,7 @@
 - Create: `internal/ai/draft_test.go`
 
 **Interfaces:**
-- Consumes: `Handlers.dispatchAndRecordUsage(ctx, tenantID, userID, "assist_draft", "content_generation", req)`.
+- Consumes: `Handlers.dispatchAndRecordUsage(ctx, ID, userID, "assist_draft", "content_generation", req)`.
 - Produces: `func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request)`.
 
 - [ ] **Step 1: Add the `HandleDraft` method stub to `internal/ai/handlers.go`**
@@ -138,7 +138,7 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok { return }
 
-	tenantID, ok := requireTenant(w, r)
+	ID, ok := requireTenant(w, r)
 	if !ok { return }
 
 	var input DraftInput
@@ -273,7 +273,7 @@ Expected: FAIL (handler still returns 400 or empty response).
 func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok { return }
-	tenantID, ok := requireTenant(w, r)
+	ID, ok := requireTenant(w, r)
 	if !ok { return }
 
 	var input DraftInput
@@ -294,16 +294,16 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]any{
 		"prompt":       prompt,
 		"user_id":      user.UserID.String(),
-		"tenant_id":    tenantID.String(),
+		"tenant_id":    ID.String(),
 		"content_type": input.ContentType,
 		"tone":         input.Tone,
 		"task":         "draft",
 	}
 
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), ID, input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_draft", "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), ID, user.UserID, "assist_draft", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})

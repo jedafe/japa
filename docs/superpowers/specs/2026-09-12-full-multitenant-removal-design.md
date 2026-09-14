@@ -61,12 +61,12 @@ Before the final schema migration, a data audit must confirm that every scoped r
   - Rewrite unique-constraint-aware operations (e.g. `ON CONFLICT (tenant_id, key)` → `ON CONFLICT (key)`).
 - `internal/db/gen/*.sql.go` (99 files) and `internal/db/gen/models.go`
   - Regenerated via `make sqlc-gen`.
-  - Query methods no longer accept or filter by `tenant_id`; however, `TenantID` model fields still exist in this phase because the underlying schema still contains `tenant_id` columns. Code in Phase 2 must ignore these fields.
-  - Internally, `internal/config/settings.go` stops using `tenantID` for queries and cache keys (cache key becomes `jc:settings:{key}`). The public `GetSetting`, `GetSettingBool`, etc. signatures keep the `tenantID` parameter in Phase 1 but ignore it, so the rest of the codebase still compiles. The parameter is removed in Phase 2.
+  - Query methods no longer accept or filter by `tenant_id`; however, `ID` model fields still exist in this phase because the underlying schema still contains `tenant_id` columns. Code in Phase 2 must ignore these fields.
+  - Internally, `internal/config/settings.go` stops using `ID` for queries and cache keys (cache key becomes `jc:settings:{key}`). The public `GetSetting`, `GetSettingBool`, etc. signatures keep the `ID` parameter in Phase 1 but ignore it, so the rest of the codebase still compiles. The parameter is removed in Phase 2.
 - `internal/features/features.go`
   - Remove `tenant_id` from the `feature_flags` query.
   - Change the Valkey cache key from `jc:flags:{tenant_id}:{flag_key}` to `jc:flags:{flag_key}`.
-  - The public `FeatureChecker` and `Checker.IsEnabled` signatures keep the `tenantID` parameter in Phase 1 but ignore it; the parameter is removed in Phase 2.
+  - The public `FeatureChecker` and `Checker.IsEnabled` signatures keep the `ID` parameter in Phase 1 but ignore it; the parameter is removed in Phase 2.
   - Rollout hashing can continue to use the default tenant constant in Phase 1; the final global hashing decision is made in Phase 2.
 - `internal/db/queries/settings.sql` and `internal/db/queries/features.sql`
   - Remove tenant-scoped parameters and filters.
@@ -78,7 +78,7 @@ Before the final schema migration, a data audit must confirm that every scoped r
 - `go build ./...` passes for packages that compile against the new generated code.
 - `system_settings` and `feature_flags` unit tests pass.
 - No `tenant_id` remains in `internal/db/queries` or in sqlc query methods.
-- `TenantID` fields may still exist in `internal/db/gen/models.go`; they are treated as defunct until Phase 4.
+- `ID` fields may still exist in `internal/db/gen/models.go`; they are treated as defunct until Phase 4.
 
 ### Phase 2 — Go backend runtime
 **Goal:** Remove tenant context propagation and all non-generated Go code references.
@@ -93,8 +93,8 @@ Before the final schema migration, a data audit must confirm that every scoped r
   - Remove `defaultTenant` resolution and middleware injection.
   - Remove tenant from bot detection middleware initialization, if any.
 - Handlers and services (135+ files with `requireTenant` and 12 files with `tenant.IDFromContext`)
-  - Remove `requireTenant` helper and `tenantID` local variables.
-  - Update call sites to settings/feature-checker/other services without `tenantID`.
+  - Remove `requireTenant` helper and `ID` local variables.
+  - Update call sites to settings/feature-checker/other services without `ID`.
   - Remove `tenant_id` from JSON response DTOs where it is exposed.
 - `internal/worker/handlers.go` and other worker files
   - Remove tenant iteration in RSS, sitemap, LLMs, spam, feed, and maintenance tasks.
@@ -207,11 +207,11 @@ Before the final schema migration, a data audit must confirm that every scoped r
 ## Detailed technical notes
 
 ### Settings and feature flags
-These are the two most widely used tenant-scoped subsystems and are the highest priority in Phase 1. Internally, the DB queries and cache keys become global, but the public Go API signatures keep the `tenantID` parameter in Phase 1 (it is ignored) so the rest of the codebase continues to compile. Phase 2 removes the parameters entirely.
+These are the two most widely used tenant-scoped subsystems and are the highest priority in Phase 1. Internally, the DB queries and cache keys become global, but the public Go API signatures keep the `ID` parameter in Phase 1 (it is ignored) so the rest of the codebase continues to compile. Phase 2 removes the parameters entirely.
 
-- `Settings.GetSetting(ctx, tenantID, key)` still accepts `tenantID` but ignores it; internally it queries and caches by `key` only.
-- `Settings.InvalidateSettings(ctx, tenantID)` still accepts `tenantID` but ignores it; it flushes all settings.
-- `feature.Checker.IsEnabled(ctx, tenantID, key)` still accepts `tenantID` but ignores it; the `feature_flags` query uses `key` only and the cache key is `jc:flags:{flag_key}`.
+- `Settings.GetSetting(ctx, ID, key)` still accepts `ID` but ignores it; internally it queries and caches by `key` only.
+- `Settings.InvalidateSettings(ctx, ID)` still accepts `ID` but ignores it; it flushes all settings.
+- `feature.Checker.IsEnabled(ctx, ID, key)` still accepts `ID` but ignores it; the `feature_flags` query uses `key` only and the cache key is `jc:flags:{flag_key}`.
 
 Because both use Valkey, the cache key change must be made at the same time as the code change to avoid stale tenant-scoped cache entries.
 

@@ -391,9 +391,9 @@ In `internal/spaces/store.go`, update `ListSpacesPaginated` / `CountSpaces` and 
 ```go
 // ListSpacesPaginated returns a page of spaces with SQL-level search, geo,
 // level, region, subregion, sort, and visibility filtering.
-func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
+func (s *Service) ListSpacesPaginated(ctx context.Context, ID, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
     spaces, err := s.read.ListSpacesPaginated(ctx, gen.ListSpacesPaginatedParams{
-        TenantID:     tenantID,
+        ID:     ID,
         ViewerUserID: viewerUserID,
         Search:       search,
         GeoCode:      geoCode,
@@ -412,9 +412,9 @@ func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserI
 
 // CountSpaces returns the total count of spaces matching the paginated
 // discovery filters.
-func (s *Service) CountSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion string) (int64, error) {
+func (s *Service) CountSpaces(ctx context.Context, ID, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion string) (int64, error) {
     total, err := s.read.CountSpaces(ctx, gen.CountSpacesParams{
-        TenantID:     tenantID,
+        ID:     ID,
         ViewerUserID: viewerUserID,
         Search:       search,
         GeoCode:      geoCode,
@@ -430,9 +430,9 @@ func (s *Service) CountSpaces(ctx context.Context, tenantID, viewerUserID pgtype
 
 // ListSpacesByParentAndLevel returns child spaces of a given level using the
 // canonical space_parent_spaces junction.
-func (s *Service) ListSpacesByParentAndLevel(ctx context.Context, tenantID, viewerUserID, parentID pgtype.UUID, level string) ([]gen.ListSpacesByParentAndLevelRow, error) {
+func (s *Service) ListSpacesByParentAndLevel(ctx context.Context, ID, viewerUserID, parentID pgtype.UUID, level string) ([]gen.ListSpacesByParentAndLevelRow, error) {
     return s.read.ListSpacesByParentAndLevel(ctx, gen.ListSpacesByParentAndLevelParams{
-        TenantID:     tenantID,
+        ID:     ID,
         ParentID:     parentID,
         Level:        level,
         ViewerUserID: viewerUserID,
@@ -441,9 +441,9 @@ func (s *Service) ListSpacesByParentAndLevel(ctx context.Context, tenantID, view
 
 // ListSpacesByAncestorAndType returns spaces of a specific type that are linked
 // to an ancestor via space_parent_spaces.
-func (s *Service) ListSpacesByAncestorAndType(ctx context.Context, tenantID, spaceTypeID, ancestorID pgtype.UUID, search, sort string, limit, offset int32) ([]gen.ListSpacesByAncestorAndTypeRow, error) {
+func (s *Service) ListSpacesByAncestorAndType(ctx context.Context, ID, spaceTypeID, ancestorID pgtype.UUID, search, sort string, limit, offset int32) ([]gen.ListSpacesByAncestorAndTypeRow, error) {
     return s.read.ListSpacesByAncestorAndType(ctx, gen.ListSpacesByAncestorAndTypeParams{
-        TenantID:       tenantID,
+        ID:       ID,
         SpaceTypeID:    spaceTypeID,
         AncestorSpaceID: ancestorID,
         Search:         search,
@@ -455,9 +455,9 @@ func (s *Service) ListSpacesByAncestorAndType(ctx context.Context, tenantID, spa
 
 // CountSpacesByAncestorAndType returns the count of spaces of a specific type
 // linked to an ancestor via space_parent_spaces.
-func (s *Service) CountSpacesByAncestorAndType(ctx context.Context, tenantID, spaceTypeID, ancestorID pgtype.UUID, search string) (int64, error) {
+func (s *Service) CountSpacesByAncestorAndType(ctx context.Context, ID, spaceTypeID, ancestorID pgtype.UUID, search string) (int64, error) {
     return s.read.CountSpacesByAncestorAndType(ctx, gen.CountSpacesByAncestorAndTypeParams{
-        TenantID:        tenantID,
+        ID:        ID,
         SpaceTypeID:     spaceTypeID,
         AncestorSpaceID: ancestorID,
         Search:          search,
@@ -465,14 +465,14 @@ func (s *Service) CountSpacesByAncestorAndType(ctx context.Context, tenantID, sp
 }
 
 // ListDistinctRegions returns the distinct regions for country-level spaces.
-func (s *Service) ListDistinctRegions(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
-    return s.read.ListDistinctRegions(ctx, tenantID)
+func (s *Service) ListDistinctRegions(ctx context.Context, ID pgtype.UUID) ([]string, error) {
+    return s.read.ListDistinctRegions(ctx, ID)
 }
 
 // ListDistinctSubregions returns the distinct subregions for a given region.
-func (s *Service) ListDistinctSubregions(ctx context.Context, tenantID pgtype.UUID, region string) ([]string, error) {
+func (s *Service) ListDistinctSubregions(ctx context.Context, ID pgtype.UUID, region string) ([]string, error) {
     return s.read.ListDistinctSubregions(ctx, gen.ListDistinctSubregionsParams{
-        TenantID: tenantID,
+        ID: ID,
         Region:   region,
     })
 }
@@ -500,12 +500,12 @@ subregion := strings.TrimSpace(q.Get("subregion"))
 In the default branch:
 
 ```go
-rows, perr := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, sort, int32(limit), int32(offset))
+rows, perr := h.Service.ListSpacesPaginated(r.Context(), ID, viewerUserID, search, geoCode, levelFilter, region, subregion, sort, int32(limit), int32(offset))
 if perr != nil {
     handleServiceError(w, perr)
     return
 }
-count, cerr := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion)
+count, cerr := h.Service.CountSpaces(r.Context(), ID, viewerUserID, search, geoCode, levelFilter, region, subregion)
 ```
 
 In the `?parent` branch:
@@ -518,9 +518,9 @@ case q.Get("parent") != "":
         return
     }
     if levelFilter != "" {
-        spaces, err = h.Service.ListSpacesByParentAndLevel(r.Context(), tenantID, viewerUserID, parentID, levelFilter)
+        spaces, err = h.Service.ListSpacesByParentAndLevel(r.Context(), ID, viewerUserID, parentID, levelFilter)
     } else {
-        spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, viewerUserID, parentID)
+        spaces, err = h.Service.ListChildSpaces(r.Context(), ID, viewerUserID, parentID)
     }
 ```
 
@@ -530,9 +530,9 @@ In `internal/spaces/space_crud_handlers.go`:
 
 ```go
 func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
-    tenantID, ok := h.requireTenant(w, r)
+    ID, ok := h.requireTenant(w, r)
     if !ok { return }
-    regions, err := h.Service.ListDistinctRegions(r.Context(), tenantID)
+    regions, err := h.Service.ListDistinctRegions(r.Context(), ID)
     if err != nil {
         errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list regions")
         return
@@ -541,14 +541,14 @@ func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request) {
-    tenantID, ok := h.requireTenant(w, r)
+    ID, ok := h.requireTenant(w, r)
     if !ok { return }
     region := r.URL.Query().Get("region")
     if region == "" {
         errpkg.WriteError(w, http.StatusBadRequest, "missing_region", "region query parameter is required")
         return
     }
-    subregions, err := h.Service.ListDistinctSubregions(r.Context(), tenantID, region)
+    subregions, err := h.Service.ListDistinctSubregions(r.Context(), ID, region)
     if err != nil {
         errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list subregions")
         return
@@ -611,9 +611,9 @@ AND (@subregion::text = '' OR s.subregion = @subregion)
 - [ ] **Step 2: Update store method**
 
 ```go
-func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
+func (s *Service) ListSpacesByTypePaginated(ctx context.Context, ID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
     return s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
-        TenantID:    tenantID,
+        ID:    ID,
         SpaceTypeID: spaceTypeID,
         Search:      search,
         GeoCode:     geoCode,
@@ -625,9 +625,9 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, space
     })
 }
 
-func (s *Service) CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error) {
+func (s *Service) CountSpacesByType(ctx context.Context, ID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error) {
     return s.read.CountSpacesByType(ctx, gen.CountSpacesByTypeParams{
-        TenantID:    tenantID,
+        ID:    ID,
         SpaceTypeID: spaceTypeID,
         Search:      search,
         GeoCode:     geoCode,
@@ -646,13 +646,13 @@ Example update in `internal/universities/handlers.go`:
 
 ```go
 // In the SpacesService interface:
-ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
-CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
+ListSpacesByTypePaginated(ctx context.Context, ID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
+CountSpacesByType(ctx context.Context, ID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
 
 // In the two handler call sites:
-universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, "", "", sort, limit32, offset)
+universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), ID, spaceType.ID, search, country, "", "", sort, limit32, offset)
 ...
-total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country, "", "")
+total, err := h.spaces.CountSpacesByType(r.Context(), ID, spaceType.ID, search, country, "", "")
 ```
 
 - [ ] **Step 3: Run sqlc and tests**
@@ -721,7 +721,7 @@ func parseBoolFilter(filters map[string]any, key string) bool {
 In `internal/comparison/resolver/space_type.go`:
 
 ```go
-func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters map[string]any, ID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
     if limit <= 0 {
         limit = defaultSearchLimit
     }
@@ -732,7 +732,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
         offset = 0
     }
 
-    typeID, err := r.typeID(ctx, tenantID)
+    typeID, err := r.typeID(ctx, ID)
     if err != nil {
         return nil, err
     }
@@ -748,27 +748,27 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
     case "country":
         region := parseStringFilter(filters, "region")
         subregion := parseStringFilter(filters, "subregion")
-        rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", region, subregion, "name", limit, offset)
+        rows, err := r.svc.ListSpacesByTypePaginated(ctx, ID, typeID, search, "", region, subregion, "name", limit, offset)
         if err != nil {
             return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
         }
         out := make([]ResolvedItem, 0, len(rows))
         for _, it := range rows {
             if base, ok := spaceBaseFromRow(it); ok {
-                out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
+                out = append(out, resolveSpaceBase(ctx, ID, r.deps, r.entityType, base))
             }
         }
         return out, nil
     case "state":
         countryID := parseUUIDFilter(filters, "country_id")
         if !countryID.Valid {
-            rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", "", "", "name", limit, offset)
+            rows, err := r.svc.ListSpacesByTypePaginated(ctx, ID, typeID, search, "", "", "", "name", limit, offset)
             if err != nil {
                 return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
             }
             items = rows
         } else {
-            rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, countryID, search, "name", limit, offset)
+            rows, err := r.svc.ListSpacesByAncestorAndType(ctx, ID, typeID, countryID, search, "name", limit, offset)
             if err != nil {
                 return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
             }
@@ -777,20 +777,20 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
     case "city":
         stateID := parseUUIDFilter(filters, "state_id")
         if !stateID.Valid {
-            rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", "", "", "name", limit, offset)
+            rows, err := r.svc.ListSpacesByTypePaginated(ctx, ID, typeID, search, "", "", "", "name", limit, offset)
             if err != nil {
                 return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
             }
             items = rows
         } else {
-            rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, stateID, search, "name", limit, offset)
+            rows, err := r.svc.ListSpacesByAncestorAndType(ctx, ID, typeID, stateID, search, "name", limit, offset)
             if err != nil {
                 return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
             }
             items = rows
         }
     default:
-        rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", "", "", "name", limit, offset)
+        rows, err := r.svc.ListSpacesByTypePaginated(ctx, ID, typeID, search, "", "", "", "name", limit, offset)
         if err != nil {
             return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
         }
@@ -803,14 +803,14 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
         out = make([]ResolvedItem, 0, len(rows))
         for _, it := range rows {
             if base, ok := spaceBaseFromRow(it); ok {
-                out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
+                out = append(out, resolveSpaceBase(ctx, ID, r.deps, r.entityType, base))
             }
         }
     case []gen.ListSpacesByAncestorAndTypeRow:
         out = make([]ResolvedItem, 0, len(rows))
         for _, it := range rows {
             if base, ok := spaceBaseFromRow(it); ok {
-                out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
+                out = append(out, resolveSpaceBase(ctx, ID, r.deps, r.entityType, base))
             }
         }
     }
@@ -836,7 +836,7 @@ case gen.ListSpacesByAncestorAndTypeRow:
 In `internal/comparison/resolver/university.go`:
 
 ```go
-func (r *universityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *universityResolver) Search(ctx context.Context, query string, filters map[string]any, ID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
     if limit <= 0 {
         limit = defaultSearchLimit
     }
@@ -847,7 +847,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
         offset = 0
     }
 
-    typeID, err := r.universityTypeID(ctx, tenantID)
+    typeID, err := r.universityTypeID(ctx, ID)
     if err != nil {
         return nil, err
     }
@@ -865,7 +865,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
         if !ancestorID.Valid {
             continue
         }
-        rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, ancestorID, query, "name", limit, offset)
+        rows, err := r.svc.ListSpacesByAncestorAndType(ctx, ID, typeID, ancestorID, query, "name", limit, offset)
         if err != nil {
             return nil, fmt.Errorf("searching universities: %w", err)
         }
@@ -877,7 +877,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
     }
 
     if !found {
-        rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, query, "", "", "", "name", limit, offset)
+        rows, err := r.svc.ListSpacesByTypePaginated(ctx, ID, typeID, query, "", "", "", "name", limit, offset)
         if err != nil {
             return nil, fmt.Errorf("searching universities: %w", err)
         }
@@ -890,14 +890,14 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
         out = make([]ResolvedItem, 0, len(rows))
         for _, it := range rows {
             if base, ok := spaceBaseFromRow(it); ok {
-                out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "university", base))
+                out = append(out, resolveSpaceBase(ctx, ID, r.deps, "university", base))
             }
         }
     case []gen.ListSpacesByAncestorAndTypeRow:
         out = make([]ResolvedItem, 0, len(rows))
         for _, it := range rows {
             if base, ok := spaceBaseFromRow(it); ok {
-                out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "university", base))
+                out = append(out, resolveSpaceBase(ctx, ID, r.deps, "university", base))
             }
         }
     }
@@ -960,9 +960,9 @@ WHERE ci.tenant_id = @tenant_id
 Update `internal/costofliving/store.go`:
 
 ```go
-func (s *Store) ListCities(ctx context.Context, tenantID, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID, offset, limit int32) ([]gen.ListCOLCitiesRow, error) {
+func (s *Store) ListCities(ctx context.Context, ID, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID, offset, limit int32) ([]gen.ListCOLCitiesRow, error) {
     rows, err := s.queries.ListCOLCities(ctx, gen.ListCOLCitiesParams{
-        TenantID:    tenantID,
+        ID:    ID,
         TypeID:      typeID,
         Search:      search,
         CountryCode: countryCode,
@@ -978,9 +978,9 @@ func (s *Store) ListCities(ctx context.Context, tenantID, typeID pgtype.UUID, se
     return rows, nil
 }
 
-func (s *Store) CountCities(ctx context.Context, tenantID, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID) (int64, error) {
+func (s *Store) CountCities(ctx context.Context, ID, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID) (int64, error) {
     count, err := s.queries.CountCOLCities(ctx, gen.CountCOLCitiesParams{
-        TenantID:    tenantID,
+        ID:    ID,
         TypeID:      typeID,
         Search:      search,
         CountryCode: countryCode,
@@ -998,13 +998,13 @@ func (s *Store) CountCities(ctx context.Context, tenantID, typeID pgtype.UUID, s
 Update `internal/costofliving/service.go` `ListCities` to pass `pgtype.UUID{}` for the new ID filters (the public calculator only uses `countryCode`):
 
 ```go
-rows, err := s.store.ListCities(ctx, tenantID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, offset, int32(limit))
+rows, err := s.store.ListCities(ctx, ID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, offset, int32(limit))
 ```
 
 and `CountCities`:
 
 ```go
-total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{})
+total, err := s.store.CountCities(ctx, ID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{})
 ```
 
 Also update any other `CountCities` call site (e.g. `AdminStats` in `internal/costofliving/service.go`) to pass `pgtype.UUID{}` for the three new ID parameters.
@@ -1019,7 +1019,7 @@ countryID = parseUUIDFilter(filters, "country_id")
 stateID = parseUUIDFilter(filters, "state_id")
 cityID = parseUUIDFilter(filters, "city_id")
 
-rows, err := r.store.ListCities(ctx, tenantID, typeDef.ID, query, countryCode, countryID, stateID, cityID, offset, limit)
+rows, err := r.store.ListCities(ctx, ID, typeDef.ID, query, countryCode, countryID, stateID, cityID, offset, limit)
 ```
 
 - [ ] **Step 5: Update `visaRouteResolver.Search`**
@@ -1027,7 +1027,7 @@ rows, err := r.store.ListCities(ctx, tenantID, typeDef.ID, query, countryCode, c
 In `internal/comparison/resolver/visa.go`:
 
 ```go
-func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, ID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
     if limit <= 0 {
         limit = defaultSearchLimit
     }
@@ -1053,7 +1053,7 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
         page = offset/limit + 1
     }
 
-    routes, _, err := r.svc.AdminList(ctx, tenantID, destSpaceID, "published", category, query, "", "", boolPtr(true), page, limit)
+    routes, _, err := r.svc.AdminList(ctx, ID, destSpaceID, "published", category, query, "", "", boolPtr(true), page, limit)
     if err != nil {
         return nil, fmt.Errorf("searching visa routes: %w", err)
     }
@@ -1217,7 +1217,7 @@ git commit -m "migrations: create university course catalog and offerings"
 - Test: `internal/university_courses/service_test.go` or `university_courses_test.go`
 
 **Interfaces:**
-- Produces: `CourseCatalog`, `CourseOffering`, `Store`, `Service`, and `SearchOfferings(ctx, tenantID, universityID, query, limit, offset)`.
+- Produces: `CourseCatalog`, `CourseOffering`, `Store`, `Service`, and `SearchOfferings(ctx, ID, universityID, query, limit, offset)`.
 
 - [ ] **Step 1: Write SQL queries**
 
@@ -1282,7 +1282,7 @@ import (
 
 type CourseCatalog struct {
     ID                   pgtype.UUID
-    TenantID             pgtype.UUID
+    ID             pgtype.UUID
     Title                string
     Slug                 string
     Description          *string
@@ -1299,7 +1299,7 @@ type CourseCatalog struct {
 
 type CourseOffering struct {
     ID                  pgtype.UUID
-    TenantID            pgtype.UUID
+    ID            pgtype.UUID
     CourseID            pgtype.UUID
     UniversityID        pgtype.UUID
     Slug                string
@@ -1363,7 +1363,7 @@ func toCourseOffering(row any) (CourseOffering, error) {
     switch r := row.(type) {
     case gen.ListCourseOfferingsByUniversityRow:
         return CourseOffering{
-            ID: r.ID, TenantID: r.TenantID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
+            ID: r.ID, ID: r.ID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
             Tuition: r.Tuition, Currency: r.Currency, DurationYears: r.DurationYears,
             StudyMode: r.StudyMode, IntakeMonths: r.IntakeMonths, EntryRequirements: r.EntryRequirements,
             Accreditation: r.Accreditation, IsPublished: r.IsPublished, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -1374,7 +1374,7 @@ func toCourseOffering(row any) (CourseOffering, error) {
         }, nil
     case gen.GetCourseOfferingByIDRow:
         return CourseOffering{
-            ID: r.ID, TenantID: r.TenantID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
+            ID: r.ID, ID: r.ID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
             Tuition: r.Tuition, Currency: r.Currency, DurationYears: r.DurationYears,
             StudyMode: r.StudyMode, IntakeMonths: r.IntakeMonths, EntryRequirements: r.EntryRequirements,
             Accreditation: r.Accreditation, IsPublished: r.IsPublished, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -1385,7 +1385,7 @@ func toCourseOffering(row any) (CourseOffering, error) {
         }, nil
     case gen.GetCourseOfferingBySlugRow:
         return CourseOffering{
-            ID: r.ID, TenantID: r.TenantID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
+            ID: r.ID, ID: r.ID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
             Tuition: r.Tuition, Currency: r.Currency, DurationYears: r.DurationYears,
             StudyMode: r.StudyMode, IntakeMonths: r.IntakeMonths, EntryRequirements: r.EntryRequirements,
             Accreditation: r.Accreditation, IsPublished: r.IsPublished, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -1399,9 +1399,9 @@ func toCourseOffering(row any) (CourseOffering, error) {
     }
 }
 
-func (s *Store) SearchOfferings(ctx context.Context, tenantID, universityID pgtype.UUID, query string, limit, offset int32) ([]CourseOffering, error) {
+func (s *Store) SearchOfferings(ctx context.Context, ID, universityID pgtype.UUID, query string, limit, offset int32) ([]CourseOffering, error) {
     rows, err := s.read.ListCourseOfferingsByUniversity(ctx, gen.ListCourseOfferingsByUniversityParams{
-        TenantID:     tenantID,
+        ID:     ID,
         UniversityID: universityID,
         Search:       query,
         LimitVal:     limit,
@@ -1421,10 +1421,10 @@ func (s *Store) SearchOfferings(ctx context.Context, tenantID, universityID pgty
     return out, nil
 }
 
-func (s *Store) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID) (CourseOffering, error) {
+func (s *Store) GetOfferingByID(ctx context.Context, ID, id pgtype.UUID) (CourseOffering, error) {
     row, err := s.read.GetCourseOfferingByID(ctx, gen.GetCourseOfferingByIDParams{
         ID:       id,
-        TenantID: tenantID,
+        ID: ID,
     })
     if err != nil {
         return CourseOffering{}, fmt.Errorf("university_courses: get offering by id: %w", err)
@@ -1432,10 +1432,10 @@ func (s *Store) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID) (
     return toCourseOffering(row)
 }
 
-func (s *Store) GetOfferingBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (CourseOffering, error) {
+func (s *Store) GetOfferingBySlug(ctx context.Context, ID pgtype.UUID, slug string) (CourseOffering, error) {
     row, err := s.read.GetCourseOfferingBySlug(ctx, gen.GetCourseOfferingBySlugParams{
         Slug:     slug,
-        TenantID: tenantID,
+        ID: ID,
     })
     if err != nil {
         return CourseOffering{}, fmt.Errorf("university_courses: get offering by slug: %w", err)
@@ -1464,20 +1464,20 @@ type Service struct {
 
 func NewService(store *Store) *Service { return &Service{store: store} }
 
-func (s *Service) SearchOfferings(ctx context.Context, tenantID, universityID pgtype.UUID, query string, limit, offset int32) ([]CourseOffering, error) {
-    return s.store.SearchOfferings(ctx, tenantID, universityID, query, limit, offset)
+func (s *Service) SearchOfferings(ctx context.Context, ID, universityID pgtype.UUID, query string, limit, offset int32) ([]CourseOffering, error) {
+    return s.store.SearchOfferings(ctx, ID, universityID, query, limit, offset)
 }
 
-func (s *Service) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID) (CourseOffering, error) {
-    offering, err := s.store.GetOfferingByID(ctx, tenantID, id)
+func (s *Service) GetOfferingByID(ctx context.Context, ID, id pgtype.UUID) (CourseOffering, error) {
+    offering, err := s.store.GetOfferingByID(ctx, ID, id)
     if err != nil {
         return CourseOffering{}, fmt.Errorf("fetching course offering: %w", err)
     }
     return offering, nil
 }
 
-func (s *Service) GetOfferingBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (CourseOffering, error) {
-    offering, err := s.store.GetOfferingBySlug(ctx, tenantID, slug)
+func (s *Service) GetOfferingBySlug(ctx context.Context, ID pgtype.UUID, slug string) (CourseOffering, error) {
+    offering, err := s.store.GetOfferingBySlug(ctx, ID, slug)
     if err != nil {
         return CourseOffering{}, fmt.Errorf("fetching course offering: %w", err)
     }
@@ -1537,7 +1537,7 @@ func NewCourseResolver(svc *university_courses.Service) Resolver {
     return &courseResolver{svc: svc}
 }
 
-func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, ID pgtype.UUID) (ResolvedItem, bool, error) {
     idStr, _ := ref["id"].(string)
     slug, _ := ref["slug"].(string)
 
@@ -1552,9 +1552,9 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
         if perr != nil {
             return ResolvedItem{}, false, perr
         }
-        offering, err = r.svc.GetOfferingByID(ctx, tenantID, id)
+        offering, err = r.svc.GetOfferingByID(ctx, ID, id)
     } else {
-        offering, err = r.svc.GetOfferingBySlug(ctx, tenantID, slug)
+        offering, err = r.svc.GetOfferingBySlug(ctx, ID, slug)
     }
 
     if err != nil {
@@ -1566,7 +1566,7 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
     return offeringToResolvedItem(offering), true, nil
 }
 
-func (r *courseResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *courseResolver) Search(ctx context.Context, query string, filters map[string]any, ID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
     if limit <= 0 {
         limit = defaultSearchLimit
     }
@@ -1581,7 +1581,7 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
     if !universityID.Valid {
         return nil, errors.New("university_id filter is required for course search")
     }
-    offerings, err := r.svc.SearchOfferings(ctx, tenantID, universityID, query, limit, offset)
+    offerings, err := r.svc.SearchOfferings(ctx, ID, universityID, query, limit, offset)
     if err != nil {
         return nil, fmt.Errorf("searching course offerings: %w", err)
     }

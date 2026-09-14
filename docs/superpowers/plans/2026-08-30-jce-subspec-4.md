@@ -569,7 +569,7 @@ type UpsertComparisonValueInput struct {
 }
 ```
 
-Keep `Service.UpsertComparisonValueWithMetadata(ctx, tenantID, input UpsertComparisonValueInput, metadata []byte)`. Update `Store.upsertComparisonValueWithMetadata` to pass `DataSourceID` to the generated query.
+Keep `Service.UpsertComparisonValueWithMetadata(ctx, ID, input UpsertComparisonValueInput, metadata []byte)`. Update `Store.upsertComparisonValueWithMetadata` to pass `DataSourceID` to the generated query.
 
 Example snippet for `UpsertComparisonValue`:
 
@@ -611,7 +611,7 @@ RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, 
 ```go
 type DataSource struct {
     ID             string         `json:"id"`
-    TenantID       string         `json:"tenant_id"`
+    ID       string         `json:"tenant_id"`
     EntityType     *string        `json:"entity_type,omitempty"`
     EntityID       *string        `json:"entity_id,omitempty"`
     DimensionSlug  *string        `json:"dimension_slug,omitempty"`
@@ -639,7 +639,7 @@ type DataSourceInput struct {
 
 type IngestionJob struct {
     ID             string  `json:"id"`
-    TenantID       string  `json:"tenant_id"`
+    ID       string  `json:"tenant_id"`
     ContentID      string  `json:"content_id"`
     Status         string  `json:"status"`
     SourceKind     *string `json:"source_kind,omitempty"`
@@ -678,7 +678,7 @@ type FreshnessSummary struct {
 
 type AdvisorInput struct {
     ContentID  pgtype.UUID  `json:"content_id"`
-    TenantID   pgtype.UUID  `json:"tenant_id"`
+    ID   pgtype.UUID  `json:"tenant_id"`
     UserID     pgtype.UUID  `json:"user_id"`
     ProfileID  *pgtype.UUID `json:"profile_id,omitempty"`
     Question   string       `json:"question"`
@@ -761,12 +761,12 @@ import (
 )
 
 type DataSourceService interface {
-    ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error)
-    CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
-    GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error)
-    UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
-    DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID) error
-    MatchDataSource(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string) (*DataSource, error)
+    ListDataSources(ctx context.Context, ID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error)
+    CreateDataSource(ctx context.Context, ID pgtype.UUID, in DataSourceInput) (DataSource, error)
+    GetDataSource(ctx context.Context, id, ID pgtype.UUID) (DataSource, error)
+    UpdateDataSource(ctx context.Context, id, ID pgtype.UUID, in DataSourceInput) (DataSource, error)
+    DeleteDataSource(ctx context.Context, id, ID pgtype.UUID) error
+    MatchDataSource(ctx context.Context, ID pgtype.UUID, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string) (*DataSource, error)
 }
 ```
 
@@ -814,12 +814,12 @@ git commit -m "feat(jce): add data source service"
 
 ```go
 type FreshnessService interface {
-    FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error)
+    FreshnessForComparison(ctx context.Context, contentID, ID, userID pgtype.UUID) (FreshnessSummary, error)
     cellFreshness(ctx context.Context, v gen.ComparisonValue, source *DataSource, settings freshnessSettings) (int, bool, error)
 }
 
 // Signature on Service:
-func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error)
+func (s *Service) FreshnessForComparison(ctx context.Context, contentID, ID, userID pgtype.UUID) (FreshnessSummary, error)
 
 // freshnessSettings groups the freshness-related system_settings with safe defaults.
 type freshnessSettings struct {
@@ -837,14 +837,14 @@ type freshnessSettings struct {
 - [ ] **Step 1: Add `loadFreshnessSettings` to `freshness.go`** using the injected `*config.Settings` (`s.settings`) with `GetIntOr` and safe defaults:
 
 ```go
-func (s *Service) loadFreshnessSettings(ctx context.Context, tenantID pgtype.UUID) freshnessSettings {
+func (s *Service) loadFreshnessSettings(ctx context.Context, ID pgtype.UUID) freshnessSettings {
     return freshnessSettings{
-        staleHours:       s.settings.GetIntOr(ctx, tenantID, "jce.freshness_stale_hours", 168),
-        decayPerHour:     s.settings.GetIntOr(ctx, tenantID, "jce.freshness_decay_per_hour", 2),
-        officialWeight:   s.settings.GetIntOr(ctx, tenantID, "jce.freshness_official_weight", 100),
-        thirdPartyWeight: s.settings.GetIntOr(ctx, tenantID, "jce.freshness_third_party_weight", 75),
-        aiEstimateWeight: s.settings.GetIntOr(ctx, tenantID, "jce.freshness_ai_estimate_weight", 50),
-        cacheTTLMinutes:  s.settings.GetIntOr(ctx, tenantID, "jce.freshness_cache_ttl_minutes", 10),
+        staleHours:       s.settings.GetIntOr(ctx, ID, "jce.freshness_stale_hours", 168),
+        decayPerHour:     s.settings.GetIntOr(ctx, ID, "jce.freshness_decay_per_hour", 2),
+        officialWeight:   s.settings.GetIntOr(ctx, ID, "jce.freshness_official_weight", 100),
+        thirdPartyWeight: s.settings.GetIntOr(ctx, ID, "jce.freshness_third_party_weight", 75),
+        aiEstimateWeight: s.settings.GetIntOr(ctx, ID, "jce.freshness_ai_estimate_weight", 50),
+        cacheTTLMinutes:  s.settings.GetIntOr(ctx, ID, "jce.freshness_cache_ttl_minutes", 10),
     }
 }
 ```
@@ -926,10 +926,10 @@ func (s *Service) cellFreshness(
 - [ ] **Step 3: Implement `FreshnessForComparison`**.
     - Load items and dimensions with `s.compSvc.GetJCEComparisonMatrix`.
     - Load all raw `comparison_values` for the content with `gen.New(s.db.Reader).GetComparisonValuesByContent` (this returns `[]gen.ComparisonValue` including `updated_at`, `data_source_id`, and `metadata`).
-    - Load all tenant data sources with `s.dataSources.ListDataSources(ctx, tenantID, nil, nil)` and index them by ID.
+    - Load all tenant data sources with `s.dataSources.ListDataSources(ctx, ID, nil, nil)` and index them by ID.
     - For each value, resolve the source: if `v.DataSourceID.Valid`, use the indexed data source; otherwise call `Service.MatchDataSource` using `entityType = "content"` (as a `*string`), the value's `item_id` and `dimension_id`, and `metadata.source` as the source name.
     - Call `cellFreshness` and aggregate overall and per-item scores. Return the JSON shape from design spec §8.
-- [ ] **Step 4: Cache summary in Valkey**. After computing the summary in `FreshnessForComparison`, store it with `s.vk.Set(ctx, fmt.Sprintf("jc:jce:freshness:%s:%s", tenantID, contentID), b, time.Duration(ttlMinutes)*time.Minute)`. Before computing, attempt a cache hit with `s.vk.Get(ctx, key)` and unmarshal the JSON on a hit.
+- [ ] **Step 4: Cache summary in Valkey**. After computing the summary in `FreshnessForComparison`, store it with `s.vk.Set(ctx, fmt.Sprintf("jc:jce:freshness:%s:%s", ID, contentID), b, time.Duration(ttlMinutes)*time.Minute)`. Before computing, attempt a cache hit with `s.vk.Get(ctx, key)` and unmarshal the JSON on a hit.
 - [ ] **Step 5: Write tests** covering:
     - missing metadata falls back to default confidence,
     - `is_estimate` applies 0.85 penalty,
@@ -966,10 +966,10 @@ git commit -m "feat(jce): add freshness scoring and summary"
 
 ```go
 type IngestionService interface {
-    RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
-    GetIngestionJob(ctx context.Context, id, tenantID pgtype.UUID) (IngestionJob, error)
-    ListIngestionJobs(ctx context.Context, contentID, tenantID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
-    ProcessRefreshValues(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error
+    RefreshComparison(ctx context.Context, contentID, ID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
+    GetIngestionJob(ctx context.Context, id, ID pgtype.UUID) (IngestionJob, error)
+    ListIngestionJobs(ctx context.Context, contentID, ID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
+    ProcessRefreshValues(ctx context.Context, ID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error
 }
 ```
 
@@ -979,7 +979,7 @@ Worker payload:
 const TypeJCERefreshValues = "jce:refresh_values"
 
 type JceRefreshValuesPayload struct {
-    TenantID       string  `json:"tenant_id"`
+    ID       string  `json:"tenant_id"`
     ContentID      string  `json:"content_id"`
     SourceKind     *string `json:"source_kind,omitempty"`
     IngestionJobID string  `json:"ingestion_job_id"`
@@ -1002,20 +1002,20 @@ type JceRefreshValuesPayload struct {
 ```go
 func (s *Service) ProcessRefreshValues(
     ctx context.Context,
-    tenantID, contentID, jobID pgtype.UUID,
+    ID, contentID, jobID pgtype.UUID,
     sourceKind *string,
     userID pgtype.UUID,
 ) error {
-    job, err := s.UpdateIngestionJob(ctx, jobID, tenantID, IngestionJob{
+    job, err := s.UpdateIngestionJob(ctx, jobID, ID, IngestionJob{
         Status: "running",
     })
     if err != nil {
         return err
     }
 
-    matrix, err := s.comparison.GetJCEComparisonMatrix(ctx, contentID, tenantID)
+    matrix, err := s.comparison.GetJCEComparisonMatrix(ctx, contentID, ID)
     if err != nil {
-        return s.failJob(ctx, job.ID, tenantID, err)
+        return s.failJob(ctx, job.ID, ID, err)
     }
 
     refreshed := 0
@@ -1024,19 +1024,19 @@ func (s *Service) ProcessRefreshValues(
         for _, dim := range item.Dimensions {
             dimID := dim.DimensionID
 
-            source, err := s.resolveRefreshSource(ctx, tenantID, contentID, itemID, dimID, sourceKind)
+            source, err := s.resolveRefreshSource(ctx, ID, contentID, itemID, dimID, sourceKind)
             if err != nil {
                 continue
             }
 
-            filled, metaBytes, err := s.resolveRefreshValue(ctx, tenantID, contentID, itemID, dimID, source, sourceKind)
+            filled, metaBytes, err := s.resolveRefreshValue(ctx, ID, contentID, itemID, dimID, source, sourceKind)
             if err != nil {
                 continue
             }
 
             dsID := strToUUID(source.ID)
             filled.DataSourceID = &dsID
-            _, err = s.comparison.UpsertComparisonValueWithMetadata(ctx, tenantID, filled, metaBytes)
+            _, err = s.comparison.UpsertComparisonValueWithMetadata(ctx, ID, filled, metaBytes)
             if err != nil {
                 continue
             }
@@ -1044,17 +1044,17 @@ func (s *Service) ProcessRefreshValues(
         }
     }
 
-    _, err = s.UpdateIngestionJob(ctx, job.ID, tenantID, IngestionJob{
+    _, err = s.UpdateIngestionJob(ctx, job.ID, ID, IngestionJob{
         Status:         "completed",
         RefreshedCount: refreshed,
         CompletedAt:    ptrString(time.Now().UTC().Format(time.RFC3339)),
     })
     if err != nil {
-        return s.failJob(ctx, job.ID, tenantID, err)
+        return s.failJob(ctx, job.ID, ID, err)
     }
 
     // invalidate caches
-    _ = s.vk.Del(ctx, fmt.Sprintf("jc:jce:freshness:%s:%s", tenantID, contentID))
+    _ = s.vk.Del(ctx, fmt.Sprintf("jc:jce:freshness:%s:%s", ID, contentID))
     return nil
 }
 ```
@@ -1076,8 +1076,8 @@ func strToUUIDPtr(s string) *pgtype.UUID {
     return &u
 }
 
-func (s *Service) failJob(ctx context.Context, jobID, tenantID pgtype.UUID, cause error) error {
-    _, _ = s.UpdateIngestionJob(ctx, jobID, tenantID, IngestionJob{
+func (s *Service) failJob(ctx context.Context, jobID, ID pgtype.UUID, cause error) error {
+    _, _ = s.UpdateIngestionJob(ctx, jobID, ID, IngestionJob{
         Status:      "failed",
         Error:       ptrString(cause.Error()),
         CompletedAt: ptrString(time.Now().UTC().Format(time.RFC3339)),
@@ -1087,7 +1087,7 @@ func (s *Service) failJob(ctx context.Context, jobID, tenantID pgtype.UUID, caus
 
 func (s *Service) resolveRefreshSource(
     ctx context.Context,
-    tenantID, contentID, itemID, dimID pgtype.UUID,
+    ID, contentID, itemID, dimID pgtype.UUID,
     sourceKind *string,
 ) (*DataSource, error) {
     // Match a source for this cell. The exact scope (entity_type, entity_id, dimension_slug) is derived from
@@ -1098,7 +1098,7 @@ func (s *Service) resolveRefreshSource(
 
 func (s *Service) resolveRefreshValue(
     ctx context.Context,
-    tenantID, contentID, itemID, dimID pgtype.UUID,
+    ID, contentID, itemID, dimID pgtype.UUID,
     source *DataSource,
     sourceKind *string,
 ) (comparison.UpsertComparisonValueInput, []byte, error) {
@@ -1146,7 +1146,7 @@ func HandleJceRefreshValues(ctx context.Context, t *asynq.Task) error {
     if err := json.Unmarshal(t.Payload(), &p); err != nil {
         return fmt.Errorf("unmarshal refresh payload: %w", err)
     }
-    tenantID, err := pgtype.UUIDFromString(p.TenantID)
+    ID, err := pgtype.UUIDFromString(p.ID)
     if err != nil {
         return fmt.Errorf("invalid tenant_id in refresh payload: %w", err)
     }
@@ -1165,7 +1165,7 @@ func HandleJceRefreshValues(ctx context.Context, t *asynq.Task) error {
             return fmt.Errorf("invalid requested_by_user_id in refresh payload: %w", err)
         }
     }
-    return jceIngestionSvc.ProcessRefreshValues(ctx, tenantID, contentID, jobID, p.SourceKind, userID)
+    return jceIngestionSvc.ProcessRefreshValues(ctx, ID, contentID, jobID, p.SourceKind, userID)
 }
 ```
 
@@ -1206,11 +1206,11 @@ git commit -m "feat(jce): add refresh ingestion jobs and worker handler"
 
 ```go
 type Advisor interface {
-    Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
-    Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
-    Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
-    Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
-    StreamAdvisor(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
+    Analyze(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
+    Rank(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+    Explain(ctx context.Context, contentID, itemID, ID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
+    Recommend(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+    StreamAdvisor(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
 }
 
 type AIDispatcher interface {
@@ -1235,7 +1235,7 @@ type AIDispatcher interface {
 
 ```go
 b, _ := json.Marshal(result)
-_ = s.vk.Set(ctx, fmt.Sprintf("jc:jce:advisor:%s:%s:%s:%x", tenantID, contentID, profileID, sha256.Sum256([]byte(question))), b, time.Duration(ttlMinutes)*time.Minute)
+_ = s.vk.Set(ctx, fmt.Sprintf("jc:jce:advisor:%s:%s:%s:%x", ID, contentID, profileID, sha256.Sum256([]byte(question))), b, time.Duration(ttlMinutes)*time.Minute)
 ```
 
 Use a cache hit at the start of `Analyze` when `force` is false.
@@ -1279,23 +1279,23 @@ type service interface {
     // existing Sub-spec 2/3 methods already declared in this file
 
     // Data sources
-    ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error)
-    CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
-    GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error)
-    UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
-    DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID) error
+    ListDataSources(ctx context.Context, ID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error)
+    CreateDataSource(ctx context.Context, ID pgtype.UUID, in DataSourceInput) (DataSource, error)
+    GetDataSource(ctx context.Context, id, ID pgtype.UUID) (DataSource, error)
+    UpdateDataSource(ctx context.Context, id, ID pgtype.UUID, in DataSourceInput) (DataSource, error)
+    DeleteDataSource(ctx context.Context, id, ID pgtype.UUID) error
 
     // Freshness and refresh
-    FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error)
-    RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
-    ListIngestionJobs(ctx context.Context, contentID, tenantID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
+    FreshnessForComparison(ctx context.Context, contentID, ID, userID pgtype.UUID) (FreshnessSummary, error)
+    RefreshComparison(ctx context.Context, contentID, ID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
+    ListIngestionJobs(ctx context.Context, contentID, ID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
 
     // Advisor
-    Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
-    Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
-    Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
-    Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
-    StreamAdvisor(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
+    Analyze(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
+    Rank(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+    Explain(ctx context.Context, contentID, itemID, ID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
+    Recommend(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+    StreamAdvisor(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
 }
 ```
 
@@ -1343,7 +1343,7 @@ Example handler skeletons:
 
 ```go
 func (h *Handlers) handleListDataSources(w http.ResponseWriter, r *http.Request) {
-    tenantID, ok := requireTenant(w, r)
+    ID, ok := requireTenant(w, r)
     if !ok { return }
 
     q := r.URL.Query()
@@ -1361,7 +1361,7 @@ func (h *Handlers) handleListDataSources(w http.ResponseWriter, r *http.Request)
         entityID = id
     }
 
-    sources, err := h.service.ListDataSources(r.Context(), tenantID, et, entityID)
+    sources, err := h.service.ListDataSources(r.Context(), ID, et, entityID)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1370,7 +1370,7 @@ func (h *Handlers) handleListDataSources(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handlers) handleCreateDataSource(w http.ResponseWriter, r *http.Request) {
-    tenantID, ok := requireTenant(w, r)
+    ID, ok := requireTenant(w, r)
     if !ok { return }
 
     var body dataSourceCreateBody
@@ -1393,7 +1393,7 @@ func (h *Handlers) handleCreateDataSource(w http.ResponseWriter, r *http.Request
         }
     }
 
-    ds, err := h.service.CreateDataSource(r.Context(), tenantID, in)
+    ds, err := h.service.CreateDataSource(r.Context(), ID, in)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1402,14 +1402,14 @@ func (h *Handlers) handleCreateDataSource(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handlers) handleGetDataSource(w http.ResponseWriter, r *http.Request) {
-    tenantID, ok := requireTenant(w, r)
+    ID, ok := requireTenant(w, r)
     if !ok { return }
     id, err := parseUUIDParam(r, "id")
     if err != nil {
         errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
         return
     }
-    ds, err := h.service.GetDataSource(r.Context(), id, tenantID)
+    ds, err := h.service.GetDataSource(r.Context(), id, ID)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1418,7 +1418,7 @@ func (h *Handlers) handleGetDataSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) handleUpdateDataSource(w http.ResponseWriter, r *http.Request) {
-    tenantID, ok := requireTenant(w, r)
+    ID, ok := requireTenant(w, r)
     if !ok { return }
     id, err := parseUUIDParam(r, "id")
     if err != nil {
@@ -1445,7 +1445,7 @@ func (h *Handlers) handleUpdateDataSource(w http.ResponseWriter, r *http.Request
         }
     }
 
-    ds, err := h.service.UpdateDataSource(r.Context(), id, tenantID, in)
+    ds, err := h.service.UpdateDataSource(r.Context(), id, ID, in)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1454,14 +1454,14 @@ func (h *Handlers) handleUpdateDataSource(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handlers) handleDeleteDataSource(w http.ResponseWriter, r *http.Request) {
-    tenantID, ok := requireTenant(w, r)
+    ID, ok := requireTenant(w, r)
     if !ok { return }
     id, err := parseUUIDParam(r, "id")
     if err != nil {
         errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
         return
     }
-    if err := h.service.DeleteDataSource(r.Context(), id, tenantID); err != nil {
+    if err := h.service.DeleteDataSource(r.Context(), id, ID); err != nil {
         handleServiceError(w, err)
         return
     }
@@ -1469,14 +1469,14 @@ func (h *Handlers) handleDeleteDataSource(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handlers) handleGetFreshness(w http.ResponseWriter, r *http.Request) {
-    tenantID, userID, ok := h.requireTenantAndUser(w, r)
+    ID, userID, ok := h.requireTenantAndUser(w, r)
     if !ok { return }
     contentID, err := parseUUIDParam(r, "id")
     if err != nil {
         errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
         return
     }
-    summary, err := h.service.FreshnessForComparison(r.Context(), contentID, tenantID, userID)
+    summary, err := h.service.FreshnessForComparison(r.Context(), contentID, ID, userID)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1485,7 +1485,7 @@ func (h *Handlers) handleGetFreshness(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) handleRefreshComparison(w http.ResponseWriter, r *http.Request) {
-    tenantID, userID, ok := h.requireTenantAndUser(w, r)
+    ID, userID, ok := h.requireTenantAndUser(w, r)
     if !ok { return }
     contentID, err := parseUUIDParam(r, "id")
     if err != nil {
@@ -1494,7 +1494,7 @@ func (h *Handlers) handleRefreshComparison(w http.ResponseWriter, r *http.Reques
     }
     var body refreshBody
     if !decodeBody(w, r, &body) { return }
-    job, err := h.service.RefreshComparison(r.Context(), contentID, tenantID, userID, body.SourceKind)
+    job, err := h.service.RefreshComparison(r.Context(), contentID, ID, userID, body.SourceKind)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1503,7 +1503,7 @@ func (h *Handlers) handleRefreshComparison(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handlers) handleListIngestionJobs(w http.ResponseWriter, r *http.Request) {
-    tenantID, userID, ok := h.requireTenantAndUser(w, r)
+    ID, userID, ok := h.requireTenantAndUser(w, r)
     if !ok { return }
     contentID, err := parseUUIDParam(r, "id")
     if err != nil {
@@ -1515,7 +1515,7 @@ func (h *Handlers) handleListIngestionJobs(w http.ResponseWriter, r *http.Reques
     if s := r.URL.Query().Get("offset"); s != "" {
         if n, err := strconv.Atoi(s); err == nil && n >= 0 { offset = n }
     }
-    jobs, err := h.service.ListIngestionJobs(r.Context(), contentID, tenantID, limit, offset)
+    jobs, err := h.service.ListIngestionJobs(r.Context(), contentID, ID, limit, offset)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1524,7 +1524,7 @@ func (h *Handlers) handleListIngestionJobs(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handlers) handleAnalyze(w http.ResponseWriter, r *http.Request) {
-    tenantID, userID, ok := h.requireTenantAndUser(w, r)
+    ID, userID, ok := h.requireTenantAndUser(w, r)
     if !ok { return }
     contentID, err := parseUUIDParam(r, "id")
     if err != nil {
@@ -1535,7 +1535,7 @@ func (h *Handlers) handleAnalyze(w http.ResponseWriter, r *http.Request) {
     if !decodeBody(w, r, &body) { return }
     var profileID *pgtype.UUID
     if body.ProfileID != nil { profileID, _ = optionalUUIDPtr(*body.ProfileID) }
-    res, err := h.service.Analyze(r.Context(), contentID, tenantID, userID, profileID, body.Question)
+    res, err := h.service.Analyze(r.Context(), contentID, ID, userID, profileID, body.Question)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1544,7 +1544,7 @@ func (h *Handlers) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) handleRank(w http.ResponseWriter, r *http.Request) {
-    tenantID, userID, ok := h.requireTenantAndUser(w, r)
+    ID, userID, ok := h.requireTenantAndUser(w, r)
     if !ok { return }
     contentID, err := parseUUIDParam(r, "id")
     if err != nil {
@@ -1555,7 +1555,7 @@ func (h *Handlers) handleRank(w http.ResponseWriter, r *http.Request) {
     if !decodeBody(w, r, &body) { return }
     var profileID *pgtype.UUID
     if body.ProfileID != nil { profileID, _ = optionalUUIDPtr(*body.ProfileID) }
-    res, err := h.service.Rank(r.Context(), contentID, tenantID, userID, profileID)
+    res, err := h.service.Rank(r.Context(), contentID, ID, userID, profileID)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1564,7 +1564,7 @@ func (h *Handlers) handleRank(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) handleExplain(w http.ResponseWriter, r *http.Request) {
-    tenantID, userID, ok := h.requireTenantAndUser(w, r)
+    ID, userID, ok := h.requireTenantAndUser(w, r)
     if !ok { return }
     contentID, err := parseUUIDParam(r, "id")
     if err != nil {
@@ -1579,7 +1579,7 @@ func (h *Handlers) handleExplain(w http.ResponseWriter, r *http.Request) {
     if body.ItemID != nil { itemID, _ = optionalUUIDPtr(*body.ItemID) }
     factorKey := ""
     if body.FactorKey != nil { factorKey = *body.FactorKey }
-    res, err := h.service.Explain(r.Context(), contentID, itemID, tenantID, userID, profileID, factorKey, body.Question)
+    res, err := h.service.Explain(r.Context(), contentID, itemID, ID, userID, profileID, factorKey, body.Question)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1588,7 +1588,7 @@ func (h *Handlers) handleExplain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) handleRecommend(w http.ResponseWriter, r *http.Request) {
-    tenantID, userID, ok := h.requireTenantAndUser(w, r)
+    ID, userID, ok := h.requireTenantAndUser(w, r)
     if !ok { return }
     contentID, err := parseUUIDParam(r, "id")
     if err != nil {
@@ -1599,7 +1599,7 @@ func (h *Handlers) handleRecommend(w http.ResponseWriter, r *http.Request) {
     if !decodeBody(w, r, &body) { return }
     var profileID *pgtype.UUID
     if body.ProfileID != nil { profileID, _ = optionalUUIDPtr(*body.ProfileID) }
-    res, err := h.service.Recommend(r.Context(), contentID, tenantID, userID, profileID)
+    res, err := h.service.Recommend(r.Context(), contentID, ID, userID, profileID)
     if err != nil {
         handleServiceError(w, err)
         return
@@ -1608,7 +1608,7 @@ func (h *Handlers) handleRecommend(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) handleStreamAdvisor(w http.ResponseWriter, r *http.Request) {
-    tenantID, userID, ok := h.requireTenantAndUser(w, r)
+    ID, userID, ok := h.requireTenantAndUser(w, r)
     if !ok { return }
     contentID, err := parseUUIDParam(r, "id")
     if err != nil {
@@ -1623,7 +1623,7 @@ func (h *Handlers) handleStreamAdvisor(w http.ResponseWriter, r *http.Request) {
     }
     var profileID *pgtype.UUID
     if body.ProfileID != nil { profileID, _ = optionalUUIDPtr(*body.ProfileID) }
-    if err := h.service.StreamAdvisor(r.Context(), contentID, tenantID, userID, profileID, body.Question, w); err != nil {
+    if err := h.service.StreamAdvisor(r.Context(), contentID, ID, userID, profileID, body.Question, w); err != nil {
         handleServiceError(w, err)
     }
 }
@@ -1633,11 +1633,11 @@ Add a small helper for handlers that need both tenant and user:
 
 ```go
 func (h *Handlers) requireTenantAndUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, *auth.AuthenticatedUser, bool) {
-    tenantID, ok := requireTenant(w, r)
+    ID, ok := requireTenant(w, r)
     if !ok { return pgtype.UUID{}, nil, false }
     user, ok := requireUser(w, r)
     if !ok { return pgtype.UUID{}, nil, false }
-    return tenantID, user, true
+    return ID, user, true
 }
 ```
 
@@ -1727,11 +1727,11 @@ func (t *ToolDeps) WithJCE(svc JCEService) *ToolDeps {
 }
 
 type JCEService interface {
-    Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (map[string]any, error)
-    Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error)
-    Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error)
-    Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error)
-    Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error)
+    Analyze(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID, question string) (map[string]any, error)
+    Rank(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (map[string]any, error)
+    Explain(ctx context.Context, contentID, itemID, ID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error)
+    Recommend(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (map[string]any, error)
+    Refresh(ctx context.Context, contentID, ID, userID pgtype.UUID, sourceKind *string) (map[string]any, error)
 }
 ```
 
@@ -1752,32 +1752,32 @@ type ToolAdapter struct { svc *Service }
 
 func NewToolAdapter(svc *Service) ai.JCEService { return &ToolAdapter{svc: svc} }
 
-func (a *ToolAdapter) Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (map[string]any, error) {
-    res, err := a.svc.Analyze(ctx, contentID, tenantID, userID, profileID, question)
+func (a *ToolAdapter) Analyze(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID, question string) (map[string]any, error) {
+    res, err := a.svc.Analyze(ctx, contentID, ID, userID, profileID, question)
     if err != nil { return nil, err }
     return toMap(res)
 }
 
-func (a *ToolAdapter) Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error) {
-    res, err := a.svc.Rank(ctx, contentID, tenantID, userID, profileID)
+func (a *ToolAdapter) Rank(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (map[string]any, error) {
+    res, err := a.svc.Rank(ctx, contentID, ID, userID, profileID)
     if err != nil { return nil, err }
     return toMap(res)
 }
 
-func (a *ToolAdapter) Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error) {
-    res, err := a.svc.Explain(ctx, contentID, &itemID, tenantID, userID, profileID, factorKey, question)
+func (a *ToolAdapter) Explain(ctx context.Context, contentID, itemID, ID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error) {
+    res, err := a.svc.Explain(ctx, contentID, &itemID, ID, userID, profileID, factorKey, question)
     if err != nil { return nil, err }
     return toMap(res)
 }
 
-func (a *ToolAdapter) Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error) {
-    res, err := a.svc.Recommend(ctx, contentID, tenantID, userID, profileID)
+func (a *ToolAdapter) Recommend(ctx context.Context, contentID, ID, userID, profileID pgtype.UUID) (map[string]any, error) {
+    res, err := a.svc.Recommend(ctx, contentID, ID, userID, profileID)
     if err != nil { return nil, err }
     return toMap(res)
 }
 
-func (a *ToolAdapter) Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
-    res, err := a.svc.RefreshComparison(ctx, contentID, tenantID, userID, sourceKind)
+func (a *ToolAdapter) Refresh(ctx context.Context, contentID, ID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
+    res, err := a.svc.RefreshComparison(ctx, contentID, ID, userID, sourceKind)
     if err != nil { return nil, err }
     return toMap(res)
 }
@@ -1817,7 +1817,7 @@ Example:
 
 ```go
 func JCEAnalyze(deps *ai.ToolDeps) ai.ToolHandler {
-    return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ai.ToolResult, error) {
+    return func(ctx context.Context, args json.RawMessage, userID, ID pgtype.UUID) (*ai.ToolResult, error) {
         var a jceArgs
         if err := json.Unmarshal(args, &a); err != nil {
             return errorToolResult("invalid_args", err.Error()), nil
@@ -1834,7 +1834,7 @@ func JCEAnalyze(deps *ai.ToolDeps) ai.ToolHandler {
             }
             profileID = p
         }
-        result, err := deps.JCE.Analyze(ctx, contentID, tenantID, userID, profileID, a.Question)
+        result, err := deps.JCE.Analyze(ctx, contentID, ID, userID, profileID, a.Question)
         if err != nil {
             return errorToolResult("advisor_failed", err.Error()), nil
         }

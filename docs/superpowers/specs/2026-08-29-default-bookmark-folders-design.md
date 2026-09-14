@@ -65,7 +65,7 @@ The resolver is called from the three bookmark creation entry points:
 
 ### Folder pre-seeding
 
-`internal/bookmarkfolders` exposes `CreateDefaultFoldersForUser(ctx, tenantID, userID)` that inserts the full set of mapped folder names in a single call. This is invoked from:
+`internal/bookmarkfolders` exposes `CreateDefaultFoldersForUser(ctx, ID, userID)` that inserts the full set of mapped folder names in a single call. This is invoked from:
 
 - `internal/auth/handlers.go` after `CreateUser`.
 - `internal/auth/oauth_handlers.go` after OAuth registration.

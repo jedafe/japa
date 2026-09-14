@@ -320,7 +320,7 @@ for i := range steps {
     }
 
     rows, err := s.store.FindRoadmapContentByDimension(
-        ctx, tenantID,
+        ctx, ID,
         steps[i].Dimension,
         journeyCtx.DestinationCountry,
         journeyCtx.JourneyStage,

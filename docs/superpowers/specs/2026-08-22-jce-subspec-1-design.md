@@ -252,11 +252,11 @@ Alternatively, for Sub-spec 1, keep the handlers inside `internal/comparison` an
 
 Extend `internal/comparison/service.go`:
 
-- `CreateQuickComparison(ctx, tenantID, userID, CreateQuickComparisonInput)`
-- `PromoteToDetailed(ctx, tenantID, userID, quickContentID)` — creates a new detailed `contents` row, clones items/dimensions/values, links via `promoted_from_id`, and returns the new content ID/slug.
-- `ResolveItemRef(ctx, tenantID, itemRef)` — resolves a `item_ref` JSONB into a display title and canonical link.
-- `SearchEntities(ctx, tenantID, entityType, SearchEntitiesInput)` — dispatches a search to the registered resolver for the given `item_ref.type` and returns candidate items for the `/compare` picker.
-- `ListComparisonsWithFilters(ctx, tenantID, ListComparisonsInput)` — returns public detailed comparisons by default (`depth='detailed'`, `status='published'`, `visibility='public'`). With `mine=true`, returns the caller's own comparisons, filtered by `depth` and `status`.
+- `CreateQuickComparison(ctx, ID, userID, CreateQuickComparisonInput)`
+- `PromoteToDetailed(ctx, ID, userID, quickContentID)` — creates a new detailed `contents` row, clones items/dimensions/values, links via `promoted_from_id`, and returns the new content ID/slug.
+- `ResolveItemRef(ctx, ID, itemRef)` — resolves a `item_ref` JSONB into a display title and canonical link.
+- `SearchEntities(ctx, ID, entityType, SearchEntitiesInput)` — dispatches a search to the registered resolver for the given `item_ref.type` and returns candidate items for the `/compare` picker.
+- `ListComparisonsWithFilters(ctx, ID, ListComparisonsInput)` — returns public detailed comparisons by default (`depth='detailed'`, `status='published'`, `visibility='public'`). With `mine=true`, returns the caller's own comparisons, filtered by `depth` and `status`.
 - `CreateComparisonFromType(ctx, ...)` — creates a comparison with `item_ref` items and dimensions from the type's custom field group.
 
 ### 7.3 Handlers and routes
@@ -287,8 +287,8 @@ Introduce an `ItemRefResolver` interface:
 ```go
 type ItemRefResolver interface {
     EntityType() string
-    Resolve(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID) (ResolvedItem, error)
-    Search(ctx context.Context, tenantID pgtype.UUID, q string, filters map[string]any, limit, offset int) ([]ResolvedItem, error)
+    Resolve(ctx context.Context, ID pgtype.UUID, id pgtype.UUID) (ResolvedItem, error)
+    Search(ctx context.Context, ID pgtype.UUID, q string, filters map[string]any, limit, offset int) ([]ResolvedItem, error)
 }
 
 type ResolvedItem struct {
@@ -322,7 +322,7 @@ A registry maps `item_ref.type` to a resolver. Sub-spec 1 registers a core set a
 
 The design aliases `col_country`, `remittance_provider`, `travel_route`, `hotel`, `flight` are reserved for future sub-specs where table-level filtering (e.g. `provider_type`, country-level cost-of-living rows) and additional resolvers are introduced. Sub-spec 1 registers the base names (`col_city`, `remittance`, `travel`) so the comparison type configs seeded by migration `000545` and `000546` resolve correctly.
 
-Each resolver implements a `Search(ctx, tenantID, q, filters)` method so the generic `GET /api/v1/jce/entities/{type}` can be used by the `/compare` item picker.
+Each resolver implements a `Search(ctx, ID, q, filters)` method so the generic `GET /api/v1/jce/entities/{type}` can be used by the `/compare` item picker.
 
 If a resolver is missing, the item is still stored and displayed by `title_cache`. New tool resolvers can be registered without touching `comparison_items`.
 

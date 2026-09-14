@@ -215,9 +215,9 @@ Recreate the four professional profile tables with their original schema. Data c
 - Modify: `Makefile` if needed to add test target.
 
 **Interfaces:**
-- `func ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error)`
-- `func SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID, tier string) error`
-- `func (s *Service) GetTierSetting(ctx context.Context, tenantID, userID pgtype.UUID, keyPrefix string) (string, error)`
+- `func ResolveUserTier(ctx context.Context, ID, userID pgtype.UUID) (string, error)`
+- `func SetUserTier(ctx context.Context, ID, userID pgtype.UUID, tier string) error`
+- `func (s *Service) GetTierSetting(ctx context.Context, ID, userID pgtype.UUID, keyPrefix string) (string, error)`
 
 - [x] **Step 1: Add SQL queries to `internal/db/queries/tiers.sql`.**
 
@@ -277,9 +277,9 @@ var tierRanks = map[string]int{
 
 var tierSlugs = []string{"members", "pro", "business"}
 
-func (s *Service) ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
+func (s *Service) ResolveUserTier(ctx context.Context, ID, userID pgtype.UUID) (string, error) {
     rank, err := s.store.read.ResolveUserTier(ctx, gen.ResolveUserTierParams{
-        TenantID: tenantID,
+        ID: ID,
         UserID:   userID,
     })
     if err != nil {
@@ -293,35 +293,35 @@ func (s *Service) ResolveUserTier(ctx context.Context, tenantID, userID pgtype.U
     return "regular", nil
 }
 
-func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID, tier string) error {
+func (s *Service) SetUserTier(ctx context.Context, ID, userID pgtype.UUID, tier string) error {
     if _, ok := tierRanks[tier]; !ok {
         return fmt.Errorf("invalid tier: %s", tier)
     }
 
-    if err := s.store.write.RemoveUserFromTierGroups(ctx, tenantID, userID); err != nil {
+    if err := s.store.write.RemoveUserFromTierGroups(ctx, ID, userID); err != nil {
         return fmt.Errorf("remove tier groups: %w", err)
     }
 
     // Always keep the user in the base members group.
-    baseID, err := s.store.write.GetTierGroupID(ctx, tenantID, "members")
+    baseID, err := s.store.write.GetTierGroupID(ctx, ID, "members")
     if err != nil {
         return fmt.Errorf("lookup members group: %w", err)
     }
-    if err := s.store.write.AddUserToGroup(ctx, tenantID, userID, baseID); err != nil {
+    if err := s.store.write.AddUserToGroup(ctx, ID, userID, baseID); err != nil {
         return fmt.Errorf("add members group: %w", err)
     }
 
     if tier != "regular" {
-        targetID, err := s.store.write.GetTierGroupID(ctx, tenantID, tier)
+        targetID, err := s.store.write.GetTierGroupID(ctx, ID, tier)
         if err != nil {
             return fmt.Errorf("lookup %s group: %w", tier, err)
         }
-        if err := s.store.write.AddUserToGroup(ctx, tenantID, userID, targetID); err != nil {
+        if err := s.store.write.AddUserToGroup(ctx, ID, userID, targetID); err != nil {
             return fmt.Errorf("add %s group: %w", tier, err)
         }
     }
 
-    if err := s.store.write.UpdateUserProfileType(ctx, tenantID, userID, tier); err != nil {
+    if err := s.store.write.UpdateUserProfileType(ctx, ID, userID, tier); err != nil {
         return fmt.Errorf("update profile_type: %w", err)
     }
 
@@ -385,16 +385,16 @@ No functional change to filter; values are just `regular/pro/business`.
 - [x] **Step 1: Resolve user tier in `CreateOrganization`.**
 
 ```go
-tier, err := s.tiers.ResolveUserTier(ctx, tenantID, user.UserID)
+tier, err := s.tiers.ResolveUserTier(ctx, ID, user.UserID)
 if err != nil { ... }
 ```
 
 - [x] **Step 2: Read per-tier limit and fallback to global.**
 
 ```go
-limit := s.settings.GetIntOr(ctx, tenantID, fmt.Sprintf("organizations.max_per_user.%s", tier), -1)
+limit := s.settings.GetIntOr(ctx, ID, fmt.Sprintf("organizations.max_per_user.%s", tier), -1)
 if limit < 0 {
-    limit = s.settings.GetIntOr(ctx, tenantID, "organizations.max_per_user", 5)
+    limit = s.settings.GetIntOr(ctx, ID, "organizations.max_per_user", 5)
 }
 ```
 
@@ -417,7 +417,7 @@ Use existing `CountUserOrganizations` query. If `count >= limit`, return `errpkg
 - [x] **Step 1: Resolve user tier and cap `RateLimitTier` in `CreateAPIKey`.**
 
 ```go
-tier, err := s.tiers.ResolveUserTier(ctx, tenantID, userID)
+tier, err := s.tiers.ResolveUserTier(ctx, ID, userID)
 if err != nil { ... }
 
 maxTier := map[string]string{

@@ -93,8 +93,8 @@ DROP TABLE IF EXISTS professional_profile_types;
 Helper (conceptual):
 
 ```go
-func ResolveUserTier(ctx, userID, tenantID) (string, error)
-func GetTierSetting(ctx, tenantID, tier, key) (string, error)
+func ResolveUserTier(ctx, userID, ID) (string, error)
+func GetTierSetting(ctx, ID, tier, key) (string, error)
 ```
 
 ## Tier-gated capabilities and settings
@@ -114,7 +114,7 @@ The tier model is the single place to resolve both **numeric limits** and **feat
 | Comparisons per day | `jce.comparisons.max_per_day.{tier}` | `5` / `25` / `-1` | `CreateComparison` |
 | Points earned per day | `wallet.max_daily_earn_points.{tier}` | `100` / `500` / `-1` | `AwardPoints` |
 
-A naming convention is established: `feature.area.metric.{tier}`. Admins configure each key in the control panel. Code resolves the user's effective tier once, then reads `GetSetting(ctx, tenantID, keyPrefix + "." + tier)`.
+A naming convention is established: `feature.area.metric.{tier}`. Admins configure each key in the control panel. Code resolves the user's effective tier once, then reads `GetSetting(ctx, ID, keyPrefix + "." + tier)`.
 
 ### Feature access (RBAC permission nodes)
 
@@ -145,8 +145,8 @@ This maps the existing `api.rate_limit.{basic,standard,premium}` keys directly t
 ### Tier management
 
 - New `internal/tiers` package with:
-  - `ResolveUserTier(ctx, userID, tenantID) (string, error)`
-  - `SetUserTier(ctx, userID, tenantID, tier string) error` — adds/removes tier group memberships and syncs `users.profile_type`.
+  - `ResolveUserTier(ctx, userID, ID) (string, error)`
+  - `SetUserTier(ctx, userID, ID, tier string) error` — adds/removes tier group memberships and syncs `users.profile_type`.
 - Update `PATCH /api/v1/admin/users/{id}/profile-type` to accept `regular/pro/business` and call `SetUserTier`.
 - Update `GET /api/v1/admin/users/moderation-config` profile type options.
 - Update `ListPublicUsers` to filter by the new `profile_type` values.

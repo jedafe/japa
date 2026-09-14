@@ -529,27 +529,27 @@ internal/
 
 ```go
 // Profiles
-func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
-func (s *Service) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error)
-func (s *Service) GetComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) (ComparisonProfile, error)
-func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
-func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
-func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
+func (s *Service) CreateComparisonProfile(ctx context.Context, ID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
+func (s *Service) ListComparisonProfiles(ctx context.Context, ID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error)
+func (s *Service) GetComparisonProfile(ctx context.Context, id, ID, userID pgtype.UUID) (ComparisonProfile, error)
+func (s *Service) UpdateComparisonProfile(ctx context.Context, id, ID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
+func (s *Service) DeleteComparisonProfile(ctx context.Context, id, ID, userID pgtype.UUID) error
+func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, ID, userID pgtype.UUID) error
 
 // Score factors
-func (s *Service) ListScoreFactors(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error)
-func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
-func (s *Service) GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error)
-func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
-func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID) error
+func (s *Service) ListScoreFactors(ctx context.Context, ID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error)
+func (s *Service) CreateScoreFactor(ctx context.Context, ID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
+func (s *Service) GetScoreFactor(ctx context.Context, id, ID pgtype.UUID) (ScoreFactor, error)
+func (s *Service) UpdateScoreFactor(ctx context.Context, id, ID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
+func (s *Service) DeleteScoreFactor(ctx context.Context, id, ID, userID pgtype.UUID) error
 
 // Scoring
-func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, force bool) (ScoreResult, error)
-func (s *Service) GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
-func (s *Service) PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
+func (s *Service) ScoreComparison(ctx context.Context, contentID, ID, userID pgtype.UUID, profileID *pgtype.UUID, force bool) (ScoreResult, error)
+func (s *Service) GetComparisonScore(ctx context.Context, contentID, ID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
+func (s *Service) PreviewScoreForItems(ctx context.Context, ID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
 
 // Recommendations
-func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]Recommendation, error)
+func (s *Service) ListRecommendations(ctx context.Context, contentID, ID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]Recommendation, error)
 ```
 
 ### 6.3 Profile model
@@ -557,7 +557,7 @@ func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, 
 ```go
 type ComparisonProfile struct {
     ID             string
-    TenantID       string
+    ID       string
     UserID         *string
     Title          string
     SourceSpaceID  *string
@@ -592,7 +592,7 @@ type ProfileDemographics struct {
 ```go
 type ScoreFactor struct {
     ID               string
-    TenantID         string
+    ID         string
     ComparisonTypeID *string
     FactorKey        string
     Label            string
