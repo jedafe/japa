@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { type Component } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
@@ -10,7 +9,7 @@
 		GuestHomeStory,
 		GuestHomeTool,
 		GuestHomeStat,
-		SpaceSuggestion
+		GuestHomeCategory
 	} from '$lib/types';
 	import {
 		Briefcase,
@@ -27,27 +26,20 @@
 		Mail,
 		Phone,
 		Clock,
-		Facebook,
-		Twitter,
-		Instagram,
-		Youtube,
-		Linkedin,
 		FileCheck,
 		Calculator,
 		Bot,
 		Sparkles,
 		Star,
-		Search,
 		ClipboardCheck
 	} from 'lucide-svelte';
 
 	interface Props {
 		home: GuestHomeData;
 		siteSettings?: Record<string, unknown>;
-		contentCountry?: string;
 	}
 
-	let { home, siteSettings, contentCountry = 'global' }: Props = $props();
+	let { home, siteSettings }: Props = $props();
 
 	// ---------------------------------------------------------------------------
 	// Newsletter state
@@ -58,8 +50,9 @@
 
 	let oppScroller: HTMLDivElement | undefined = $state(undefined);
 	let storyScroller: HTMLDivElement | undefined = $state(undefined);
+	let storyIndex = $state(0);
 
-	const iconMap: Record<string, Component> = {
+	const iconMap: Record<string, any> = {
 		Briefcase,
 		GraduationCap,
 		Plane,
@@ -74,21 +67,15 @@
 		Mail,
 		Phone,
 		Clock,
-		Facebook,
-		Twitter,
-		Instagram,
-		Youtube,
-		Linkedin,
 		FileCheck,
 		Calculator,
 		Bot,
 		Sparkles,
 		Star,
-		Search,
 		ClipboardCheck
 	};
 
-	function getIcon(name: string | undefined): Component | null {
+	function getIcon(name: string | undefined): any {
 		if (!name) return null;
 		return iconMap[name] ?? null;
 	}
@@ -228,14 +215,7 @@
 	const logoUrlLight = $derived((siteSettings?.['appearance.logo_url'] as string | undefined) ?? '');
 	const logoUrlDark = $derived((siteSettings?.['appearance.logo_url_dark'] as string | undefined) ?? '');
 
-	const fallbackDestinations: SpaceSuggestion[] = [
-		{ id: 'ca', slug: 'canada', name: 'Canada' },
-		{ id: 'gb', slug: 'united-kingdom', name: 'United Kingdom' },
-		{ id: 'au', slug: 'australia', name: 'Australia' },
-		{ id: 'de', slug: 'germany', name: 'Germany' }
-	];
-
-	const destinations = $derived(home.topDestinations.length > 0 ? home.topDestinations.slice(0, 4) : fallbackDestinations);
+	const destinations = $derived(home.topDestinations.slice(0, 4));
 
 	const title = $derived(t('landing.home.title', 'JapaConnect — Work. Study. Live. Anywhere in the World.'));
 	const description = $derived(
@@ -406,9 +386,9 @@
 				<ChevronLeft size={20} />
 			</button>
 
-			<div bind:this={oppScroller} class="opportunity-scroll" role="list">
+			<div bind:this={oppScroller} class="opportunity-scroll">
 				{#each home.opportunities as opp (opp.id)}
-					<a href={opportunityHref(opp)} class="opportunity-card" role="listitem">
+					<a href={opportunityHref(opp)} class="opportunity-card">
 						<div class="opportunity-card-top">
 							<span class="opportunity-type {opportunityTagClasses(opp.type)}">{opp.tag}</span>
 							{#if opp.badge}
@@ -544,7 +524,7 @@
 		<div class="tools-grid">
 			{#each home.tools as tool (tool.id)}
 				<a href={toolHref(tool)} class="tool-card group">
-					<div class="tool-icon" style="background-color: {tool.accent ? `${tool.accent}15` : 'var(--color-surface-subtle)'}; color: {tool.accent ?? 'var(--color-primary)'}">
+					<div class="tool-icon" style="background-color: {tool.accent ? `color-mix(in srgb, ${tool.accent} 15%, transparent)` : 'var(--color-surface-subtle)'}; color: {tool.accent ?? 'var(--color-primary)'}">
 						{#if getIcon(opportunityIconName(tool.icon))}
 							<svelte:component this={getIcon(opportunityIconName(tool.icon))} size={24} />
 						{/if}
@@ -605,11 +585,11 @@
 				)}
 			</p>
 			<div class="footer-socials">
-				<a href="/" aria-label={t('landing.home.social_facebook', 'Facebook')}><Facebook size={18} /></a>
-				<a href="/" aria-label={t('landing.home.social_twitter', 'Twitter')}><Twitter size={18} /></a>
-				<a href="/" aria-label={t('landing.home.social_instagram', 'Instagram')}><Instagram size={18} /></a>
-				<a href="/" aria-label={t('landing.home.social_youtube', 'YouTube')}><Youtube size={18} /></a>
-				<a href="/" aria-label={t('landing.home.social_linkedin', 'LinkedIn')}><Linkedin size={18} /></a>
+				<a href="/" aria-label={t('landing.home.social_facebook', 'Facebook')}><Globe size={18} /></a>
+				<a href="/" aria-label={t('landing.home.social_twitter', 'Twitter')}><Globe size={18} /></a>
+				<a href="/" aria-label={t('landing.home.social_instagram', 'Instagram')}><Globe size={18} /></a>
+				<a href="/" aria-label={t('landing.home.social_youtube', 'YouTube')}><Globe size={18} /></a>
+				<a href="/" aria-label={t('landing.home.social_linkedin', 'LinkedIn')}><Globe size={18} /></a>
 			</div>
 		</div>
 

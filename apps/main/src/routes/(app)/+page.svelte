@@ -10,7 +10,8 @@
 	import { t } from '$lib/i18n';
 	import type { CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import GuestHomePage from '$lib/components/landing/GuestHomePage.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -64,7 +65,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-{#if data.landing}
+{#if data.guestHome}
+	<!-- ADR-058 §5 Exception #3: new default guest homepage -->
+	<GuestHomePage home={data.home} siteSettings={data.siteSettings} />
+{:else if data.landing}
 	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page (or default seed) -->
 	<LandingRenderer blocks={data.landing.blocks} geoCountry={data.contentCountry} />
 {:else}

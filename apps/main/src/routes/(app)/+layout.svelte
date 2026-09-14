@@ -27,7 +27,8 @@
 	);
 
 	// ADR-058 §5 Exception #3: guest landing page renders WITHOUT the app shell.
-	const isGuestLanding = $derived(!!page.data.landing);
+	// The new default guest homepage (guestHome) also uses GuestHeader and a custom footer.
+	const isGuestLanding = $derived(!!page.data.landing || !!page.data.guestHome);
 
 	// Settings hub: auto-collapse the left nav to give settings panels more
 	// room, but keep the right sidebar and let the user expand via the toggle.
@@ -131,7 +132,9 @@
 		menu={data.menu}
 	/>
 	{@render children()}
-	<GuestFooter menu={data.footerMenu} />
+	{#if !page.data.guestHome}
+		<GuestFooter menu={data.footerMenu} />
+	{/if}
 {:else}
 	<!-- AppShell handles both authenticated and guest users. The LeftNav
 	     shows a Login button for guests and filters menu items by visibility.
