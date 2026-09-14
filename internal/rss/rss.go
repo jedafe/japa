@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -96,16 +95,11 @@ func (h *Handlers) SetRedis(r CacheClient) {
 // auto-hidden items). Reads from the Valkey cache populated by the
 // rss:regenerate worker task when available; falls back to live DB.
 func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
-	tenantID := pgtype.UUID{}
-	if tenantID == (pgtype.UUID{}) {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
 
 	siteURL := resolveSiteURL(r, h.siteURL)
 
 	// Try the Valkey cache first (jc:cache:feed:rss:{}).
-	cacheKey := valkey.MustKey("cache:feed:rss:%s", tenantID.String())
+	cacheKey := valkey.MustKey("cache:feed:rss")
 	if h.redis != nil {
 		if cached, err := h.redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
 			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
@@ -189,14 +183,8 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if tenantID == (pgtype.UUID{}) {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
-
 	siteURL := resolveSiteURL(r, h.siteURL)
-	cacheKey := valkey.MustKey("cache:feed:rss:space:%s:%s", tenantID.String(), slug)
+	cacheKey := valkey.MustKey("cache:feed:rss:space:%s", slug)
 
 	h.serveCachedOrLive(
 		w, r, cacheKey,
@@ -227,14 +215,8 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if tenantID == (pgtype.UUID{}) {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
-
 	siteURL := resolveSiteURL(r, h.siteURL)
-	cacheKey := valkey.MustKey("cache:feed:rss:tag:%s:%s", tenantID.String(), slug)
+	cacheKey := valkey.MustKey("cache:feed:rss:tag:%s", slug)
 
 	h.serveCachedOrLive(
 		w, r, cacheKey,
@@ -265,14 +247,8 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if tenantID == (pgtype.UUID{}) {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
-
 	siteURL := resolveSiteURL(r, h.siteURL)
-	cacheKey := valkey.MustKey("cache:feed:rss:user:%s:%s", tenantID.String(), username)
+	cacheKey := valkey.MustKey("cache:feed:rss:user:%s", username)
 
 	h.serveCachedOrLive(
 		w, r, cacheKey,

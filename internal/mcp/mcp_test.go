@@ -25,8 +25,7 @@ func TestMain(m *testing.M) {
 }
 
 var (
-	testUserID   = mustUUID("00000000-0000-0000-0000-000000000001")
-	testTenantID = mustUUID("00000000-0000-0000-0000-000000000002")
+	testUserID = mustUUID("00000000-0000-0000-0000-000000000001")
 )
 
 type testDeps struct {

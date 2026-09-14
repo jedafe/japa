@@ -14,22 +14,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// testTenantID is a fixed UUID used in tests.
-var testTenantID = func() pgtype.UUID {
-	var id pgtype.UUID
-	_ = id.Scan("00000000-0000-0000-0000-000000000001")
-	return id
-}()
-
-// withTenant injects a tenant into the request context, simulating the
-// tenant.Middleware that wraps all /api/v1 routes in production.
+// withTenant injects a placeholder into the request context.
 func withTenant(r *http.Request) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(),
 		struct{}{}, &struct {
 			ID   pgtype.UUID
 			Name string
 			Slug string
-		}{ID: testTenantID}))
+		}{ID: pgtype.UUID{}}))
 }
 
 // TestHandleListSlots_NoTenant_503 verifies that the slots endpoint requires

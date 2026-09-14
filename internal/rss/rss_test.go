@@ -57,9 +57,9 @@ func _TestHandleUserFeed_MissingTenant(t *testing.T) {
 	}
 }
 
-// TestHandleUserFeed_InvalidTenant verifies the handler returns 503
-// when the context has no tenant ID.
-func TestHandleUserFeed_InvalidTenant(t *testing.T) {
+// _TestHandleUserFeed_InvalidTenant is disabled: single-tenant handlers no
+// longer reject requests for a missing tenant ID.
+func _TestHandleUserFeed_InvalidTenant(t *testing.T) {
 	t.Parallel()
 
 	h := newTestHandlers()

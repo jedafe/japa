@@ -44,14 +44,12 @@ func newJobUpdateRequest(t *testing.T, body map[string]any, withUser bool, orgID
 		}
 	}
 
-	tenantID := pgtype.UUID{}
-
 	ctx := t.Context()
 	ctx = context.WithValue(ctx, struct{}{}, &struct {
 		ID   pgtype.UUID
 		Name string
 		Slug string
-	}{ID: tenantID})
+	}{ID: pgtype.UUID{}})
 
 	if withUser {
 		userID := pgtype.UUID{}

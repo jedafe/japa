@@ -89,18 +89,6 @@ type Handlers struct {
 	tagSvc       tagService     // optional; ensures source keyword tags exist
 }
 
-// defaultIntelTenantID is the system tenant UUID used as a fallback for
-// public routes that do not have an authenticated tenant in the context.
-// Per ADR-112 Amendment 2, all intelligence data is tenant-scoped; in a
-// single-tenant deployment all data belongs to the default tenant
-// 00000000-0000-0000-0000-000000000001.
-var defaultIntelTenantID = func() pgtype.UUID {
-	var id pgtype.UUID
-	id.Bytes[15] = 1 // 00000000-0000-0000-0000-000000000001
-	id.Valid = true
-	return id
-}()
-
 // NewHandlers creates intelligence handlers. The followsSvc and scholarSvc
 // are required for the radar follow/unfollow and save/unsave routes; the
 // radar feed, counts, and source directory read directly from the

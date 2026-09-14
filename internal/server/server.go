@@ -2020,7 +2020,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// source has no explicit persona_id. Falls back to the super admin user
 	// if the setting is missing or the persona lookup fails — the fallback
 	// must be a valid users(id) row to avoid the FK violation on
-	// contents.author_id (BUG: the prior code passed defaultTenantID, which
+	// contents.author_id (BUG: the prior code passed a default tenant UUID, which
 	// is a tenant UUID, not a user UUID).
 	var intelDefaultAuthorID pgtype.UUID
 

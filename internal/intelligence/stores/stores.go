@@ -129,7 +129,7 @@ func (s *Store) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSo
 
 // GetPersonaUserID resolves the backing user_id for an AI persona. Used by
 // promoters to stamp contents.author_id with the persona's bot user instead
-// of the invalid defaultTenantID (FK violation fix). Returns an invalid
+// of the invalid default author ID (FK violation fix). Returns an invalid
 // pgtype.UUID when the persona does not exist so the caller can fall back
 // to the default author.
 func (s *Store) GetPersonaUserID(ctx context.Context, personaID pgtype.UUID) (pgtype.UUID, error) {

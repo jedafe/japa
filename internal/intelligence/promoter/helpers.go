@@ -28,7 +28,7 @@ type PersonaResolver interface {
 // source has a persona_id, it looks up the persona's backing user_id and
 // uses that as the author. If the persona lookup fails or the source has no
 // persona, it falls back to the promoter's default authorID. This fixes the
-// FK violation where defaultTenantID was used as contents.author_id.
+// FK violation where a default tenant UUID was incorrectly used as contents.author_id.
 func resolveAuthorID(ctx context.Context, resolver PersonaResolver, source gen.IntelSource, fallbackAuthorID pgtype.UUID) pgtype.UUID {
 	if !source.PersonaID.Valid {
 		return fallbackAuthorID
