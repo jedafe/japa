@@ -24,7 +24,7 @@
       : (guestHome?.tools ?? [])
   );
 
-  const visibleItems = $derived(items.slice(0, props.max_items ?? 8));
+  const visibleItems = $derived(items.slice(0, props.max_items ?? 6));
   const title = $derived(props.title ?? 'Powerful Tools & Resources');
   const subtitle = $derived(props.subtitle ?? 'Free tools to help you plan, apply, and succeed.');
 
