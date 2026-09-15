@@ -2,6 +2,7 @@
   import type { GuestToolsProps, GuestHomeData, GuestHomeTool } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
+  import { writable } from 'svelte/store';
   import GuestCardList from './GuestCardList.svelte';
   import { getLucideIcon } from './guestIconMap';
 
@@ -14,14 +15,8 @@
 
   let { props, id = 'guest-tools' }: Props = $props();
 
-  const guestHomeStore = getGuestHomeData();
-  let guestHome = $state<GuestHomeData | undefined>(undefined);
-
-  $effect(() => {
-    if (!guestHomeStore) return;
-    const unsub = guestHomeStore.subscribe((v) => (guestHome = v));
-    return unsub;
-  });
+  const guestHomeStore = $derived(getGuestHomeData() ?? writable<GuestHomeData | undefined>(undefined));
+  const guestHome = $derived($guestHomeStore);
 
   const items = $derived<GuestHomeTool[]>(
     props.data_source === 'manual' && props.items

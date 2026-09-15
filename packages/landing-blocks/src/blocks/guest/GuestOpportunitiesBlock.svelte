@@ -2,6 +2,7 @@
   import type { GuestOpportunitiesProps, GuestHomeData, GuestHomeOpportunity } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
+  import { writable } from 'svelte/store';
   import { MapPin, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-svelte';
 
   interface Props {
@@ -13,15 +14,9 @@
 
   let { props, id = 'guest-opportunities' }: Props = $props();
 
-  const guestHomeStore = getGuestHomeData();
-  let guestHome = $state<GuestHomeData | undefined>(undefined);
+  const guestHomeStore = $derived(getGuestHomeData() ?? writable<GuestHomeData | undefined>(undefined));
+  const guestHome = $derived($guestHomeStore);
   let scroller = $state<HTMLDivElement | undefined>(undefined);
-
-  $effect(() => {
-    if (!guestHomeStore) return;
-    const unsub = guestHomeStore.subscribe((v) => (guestHome = v));
-    return unsub;
-  });
 
   const items = $derived<GuestHomeOpportunity[]>(
     props.data_source === 'manual' && props.items
