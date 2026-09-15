@@ -60,7 +60,7 @@
   <GuestBlockStyles />
 {/if}
 
-<div class="landing-page min-h-screen bg-[var(--color-bg)] {hasGuestBlocks ? 'guest-light' : ''}" style="container-type: inline-size">
+<div class="landing-page min-h-screen bg-[var(--color-bg)]" style="container-type: inline-size">
   {#each blocks as block (block.id)}
     {#if isBlockVisible(block, geoCountry)}
       {@const meta = blockRegistry[block.type]}
