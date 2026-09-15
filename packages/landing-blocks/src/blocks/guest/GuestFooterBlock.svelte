@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { GuestFooterProps } from '../../types';
-  import { Globe } from 'lucide-svelte';
   import { getLucideIcon } from './guestIconMap';
+  import SocialIcon from './SocialIcon.svelte';
 
   interface Props {
     props: GuestFooterProps;
@@ -24,12 +24,71 @@
       'Your trusted partner in navigating global opportunities and building a better future.'
   );
 
-  const socials = $derived(props.socials ?? []);
-  const columns = $derived(props.columns ?? []);
+  const defaultSocials: NonNullable<GuestFooterProps['socials']> = [
+    { id: 'facebook', icon: 'Facebook', url: 'https://facebook.com/japaconnect', label: 'Facebook' },
+    { id: 'twitter', icon: 'Twitter', url: 'https://twitter.com/japaconnect', label: 'Twitter' },
+    { id: 'instagram', icon: 'Instagram', url: 'https://instagram.com/japaconnect', label: 'Instagram' },
+    { id: 'youtube', icon: 'Youtube', url: 'https://youtube.com/japaconnect', label: 'YouTube' },
+    { id: 'linkedin', icon: 'Linkedin', url: 'https://linkedin.com/company/japaconnect', label: 'LinkedIn' },
+  ];
+
+  const defaultColumns: NonNullable<GuestFooterProps['columns']> = [
+    {
+      id: 'explore',
+      title: 'Explore',
+      links: [
+        { label: 'Jobs Abroad', url: '/explore' },
+        { label: 'Study Abroad', url: '/explore' },
+        { label: 'Visa & Relocation', url: '/explore' },
+        { label: 'Business', url: '/explore' },
+        { label: 'Countries', url: '/explore' },
+      ],
+    },
+    {
+      id: 'resources',
+      title: 'Resources',
+      links: [
+        { label: 'Blog', url: '/blog' },
+        { label: 'Guides', url: '/guides' },
+        { label: 'Tools', url: '/tools' },
+        { label: 'Compare Countries', url: '/compare' },
+        { label: 'Success Stories', url: '/stories' },
+      ],
+    },
+    {
+      id: 'company',
+      title: 'Company',
+      links: [
+        { label: 'About Us', url: '/about' },
+        { label: 'How It Works', url: '/how-it-works' },
+        { label: 'Pricing', url: '/pricing' },
+        { label: 'FAQs', url: '/faq' },
+        { label: 'Contact Us', url: '/contact' },
+      ],
+    },
+    {
+      id: 'help',
+      title: 'Need Help?',
+      links: [
+        { label: 'support@japaconnect.com', url: 'mailto:support@japaconnect.com', icon: 'Mail' },
+        { label: '+1 (234) 567-8900', url: 'tel:+12345678900', icon: 'Phone' },
+        { label: 'Mon - Fri: 9AM - 6PM (EST)', icon: 'Clock' },
+      ],
+    },
+  ];
+
+  const defaultBottomLinks: NonNullable<GuestFooterProps['bottom_links']> = [
+    { label: 'Privacy Policy', url: '/privacy' },
+    { label: 'Terms of Service', url: '/terms' },
+    { label: 'Cookies Policy', url: '/cookies' },
+  ];
+
+  const socials = $derived(props.socials ?? defaultSocials);
+  const columns = $derived(props.columns ?? defaultColumns);
   const copyright = $derived(
     props.copyright ?? `© ${new Date().getFullYear()} JapaConnect. All rights reserved.`
   );
-  const bottomLinks = $derived(props.bottom_links ?? []);
+  const bottomLinks = $derived(props.bottom_links ?? defaultBottomLinks);
 </script>
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
@@ -42,13 +101,8 @@
       {#if socials.length > 0}
         <div class="footer-socials">
           {#each socials as social (social.id ?? social.url)}
-            {@const Icon = getLucideIcon(social.icon)}
             <a href={social.url} aria-label={social.label} target="_blank" rel="noopener noreferrer">
-              {#if Icon}
-                <Icon size={18} />
-              {:else}
-                <Globe size={18} />
-              {/if}
+              <SocialIcon name={social.icon} size={18} />
             </a>
           {/each}
         </div>
@@ -60,15 +114,28 @@
         <div class="footer-column">
           <h3 class="footer-column-title">{col.title}</h3>
           <ul class="footer-column-list">
-            {#each col.links as link (link.url)}
+            {#each col.links as link, i (`${link.url ?? ''}:${link.label}:${i}`)}
+              {@const LinkIcon = getLucideIcon(link.icon)}
               <li>
-                <a
-                  href={link.url}
-                  target={link.target === '_blank' ? '_blank' : undefined}
-                  rel={link.target === '_blank' ? 'noopener noreferrer' : undefined}
-                >
-                  {link.label}
-                </a>
+                {#if link.url}
+                  <a
+                    href={link.url}
+                    target={link.target === '_blank' ? '_blank' : undefined}
+                    rel={link.target === '_blank' ? 'noopener noreferrer' : undefined}
+                  >
+                    {#if LinkIcon}
+                      <LinkIcon size={14} />
+                    {/if}
+                    <span>{link.label}</span>
+                  </a>
+                {:else}
+                  <span class="footer-column-text">
+                    {#if LinkIcon}
+                      <LinkIcon size={14} />
+                    {/if}
+                    <span>{link.label}</span>
+                  </span>
+                {/if}
               </li>
             {/each}
           </ul>
