@@ -552,6 +552,339 @@ export interface HeadingProps {
   max_width?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
 }
 
+// ─── Guest homepage data types ─────────────────────────────────────────
+
+/** A destination space surfaced in the guest hero floating card. */
+export interface GuestHomeDestination {
+  id: string;
+  slug?: string;
+  name: string;
+  member_count?: number;
+  icon_url?: string | null;
+}
+
+/** A marketing stat block on the guest landing page. */
+export interface GuestHomeStat {
+  value: string;
+  label: string;
+  icon: string;
+}
+
+/** A category card on the guest landing page. */
+export interface GuestHomeCategory {
+  id: string;
+  title: string;
+  description: string;
+  href: string;
+  icon: string;
+  color: string;
+}
+
+/** A featured-opportunity card on the guest landing page. */
+export interface GuestHomeOpportunity {
+  id: string;
+  type: 'job' | 'scholarship' | 'visa' | 'business' | 'internship' | string;
+  title: string;
+  organization: string;
+  location: string;
+  location_code?: string;
+  tag: string;
+  badge?: string;
+  value?: string;
+  logo_url?: string | null;
+  href: string;
+  published_at?: string;
+}
+
+/** A success-story card on the guest landing page. */
+export interface GuestHomeStory {
+  id: string;
+  slug?: string;
+  title: string;
+  quote: string;
+  author_name: string;
+  author_role?: string;
+  author_avatar_url?: string | null;
+  destination?: string;
+}
+
+/** A curated tool card surfaced on the guest landing page. */
+export interface GuestHomeTool {
+  id: string;
+  name: string;
+  slug?: string;
+  description?: string;
+  href?: string;
+  icon?: string;
+  badge?: string;
+  accent?: string;
+}
+
+/** SSR payload for the default guest homepage. */
+export interface GuestHomeData {
+  topDestinations: GuestHomeDestination[];
+  opportunities: GuestHomeOpportunity[];
+  stories: GuestHomeStory[];
+  tools: GuestHomeTool[];
+  stats: GuestHomeStat[];
+  categories: GuestHomeCategory[];
+}
+
+/** Copy overrides for the guest homepage block. Keys mirror the original
+ *  `landing.home.*` translation keys. When a key is absent, the block falls
+ *  back to the default English string baked into the component. */
+export interface GuestHomeCopy {
+  // Page meta
+  title?: string;
+  description?: string;
+
+  // Hero
+  hero_label?: string;
+  eyebrow?: string;
+  headline_prefix?: string;
+  headline_accent?: string;
+  subhead?: string;
+  cta_start?: string;
+  cta_explore?: string;
+  hero_image_alt?: string;
+  top_destinations?: string;
+  see_all_countries?: string;
+  join_title?: string;
+  join_subtitle?: string;
+  join_cta_label?: string;
+
+  // Explore
+  explore_title?: string;
+  explore_subtitle?: string;
+  explore_link?: string;
+
+  // Opportunities
+  opportunities_title?: string;
+  opportunities_view_all?: string;
+  carousel_prev?: string;
+  carousel_next?: string;
+
+  // Stories
+  stories_eyebrow?: string;
+  stories_title?: string;
+  stories_subtitle?: string;
+  stories_read_more?: string;
+  story_dot?: string;
+
+  // Tools
+  tools_title?: string;
+  tools_subtitle?: string;
+
+  // Newsletter
+  newsletter_title?: string;
+  newsletter_subtitle?: string;
+  newsletter_placeholder?: string;
+  newsletter_cta?: string;
+  newsletter_success?: string;
+  newsletter_error?: string;
+
+  // Footer
+  footer_label?: string;
+  footer_tagline?: string;
+  footer_explore?: string;
+  footer_jobs?: string;
+  footer_study?: string;
+  footer_visa?: string;
+  footer_business?: string;
+  footer_countries?: string;
+  footer_resources?: string;
+  footer_blog?: string;
+  footer_guides?: string;
+  footer_tools?: string;
+  footer_compare?: string;
+  footer_stories?: string;
+  footer_company?: string;
+  footer_about?: string;
+  footer_how?: string;
+  footer_pricing?: string;
+  footer_faqs?: string;
+  footer_contact?: string;
+  footer_help?: string;
+  footer_hours?: string;
+  footer_rights?: string;
+  footer_privacy?: string;
+  footer_terms?: string;
+  footer_cookies?: string;
+
+  // Social
+  social_facebook?: string;
+  social_twitter?: string;
+  social_instagram?: string;
+  social_youtube?: string;
+  social_linkedin?: string;
+
+  // Time ago
+  time_recent?: string;
+  time_year?: string;
+  time_month?: string;
+  time_week?: string;
+  time_day?: string;
+  time_hour?: string;
+  time_minute?: string;
+  time_ago?: string;
+  time_just?: string;
+
+  // App
+  app_name?: string;
+}
+
+/** Props for the guest homepage block — wraps the legacy GuestHomePage
+ *  layout as a single Page Builder block. */
+export interface GuestHomeProps {
+  /** Copy overrides; keys match `landing.home.*` translation keys. */
+  copy?: GuestHomeCopy;
+  /** Hero image URL. */
+  hero_image?: string;
+  /** Light and dark logo URLs for the footer. */
+  logo?: { light?: string; dark?: string };
+  /** Newsletter subscription endpoint. */
+  newsletter_endpoint?: string;
+}
+
+/** Shared layout props for the guest card-list blocks. */
+export interface GuestCardListBaseProps {
+  layout?: 'grid' | 'slider';
+  columns?: number;
+  responsive_columns?: { tablet?: number; mobile?: number };
+  gap?: 'none' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  card_style?: 'default' | 'outlined' | 'filled';
+}
+
+/** Props for the `guest_home` container preset. */
+export interface GuestHomeContainerProps {
+  layout?: 'stack';
+  children?: Block[];
+  /** Legacy copy overrides, kept for backward compatibility. */
+  copy?: GuestHomeCopy;
+  /** Legacy hero image URL. */
+  hero_image?: string;
+  /** Legacy light/dark logo URLs for the footer. */
+  logo?: { light?: string; dark?: string };
+  /** Legacy newsletter subscription endpoint. */
+  newsletter_endpoint?: string;
+}
+
+/** Props for the `guest_hero` container block. */
+export interface GuestHeroContainerProps {
+  layout?: 'grid';
+  columns?: number;
+  responsive_columns?: { tablet?: number; mobile?: number };
+  gap?: 'none' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  children?: Block[];
+}
+
+/** Props for `guest_hero_text`. */
+export interface GuestHeroTextProps {
+  eyebrow?: string;
+  headline_prefix?: string;
+  headline_accent?: string;
+  subhead?: string;
+  ctas?: CTA[];
+}
+
+/** Props for `guest_hero_image`. */
+export interface GuestHeroImageProps {
+  slides?: MediaRef[];
+  image_alt?: string;
+  autoplay?: boolean;
+  interval?: number;
+  dots?: boolean;
+  arrows?: boolean;
+}
+
+/** Props for `guest_hero_stats`. */
+export interface GuestHeroStatsProps {
+  title?: string;
+  data_source?: 'context' | 'manual';
+  items?: GuestHomeStat[];
+  max_items?: number;
+}
+
+/** Props for `guest_hero_destinations`. */
+export interface GuestHeroDestinationsProps {
+  title?: string;
+  see_all_href?: string;
+  data_source?: 'context' | 'manual';
+  items?: GuestHomeDestination[];
+  max_items?: number;
+}
+
+/** Props for `guest_hero_community`. */
+export interface GuestHeroCommunityProps {
+  title?: string;
+  subtitle?: string;
+  cta?: { label?: string; href?: string; icon?: string };
+  data_source?: 'context' | 'manual';
+  value?: string;
+  label?: string;
+}
+
+/** Props for `guest_categories`. */
+export interface GuestCategoriesProps extends GuestCardListBaseProps {
+  title?: string;
+  subtitle?: string;
+  view_all_href?: string;
+  data_source?: 'context' | 'manual';
+  items?: GuestHomeCategory[];
+  max_items?: number;
+}
+
+/** Props for `guest_opportunities`. */
+export interface GuestOpportunitiesProps extends GuestCardListBaseProps {
+  title?: string;
+  view_all_href?: string;
+  data_source?: 'context' | 'manual';
+  items?: GuestHomeOpportunity[];
+  max_items?: number;
+}
+
+/** Props for `guest_stories`. */
+export interface GuestStoriesProps extends GuestCardListBaseProps {
+  title?: string;
+  subtitle?: string;
+  read_more_href?: string;
+  data_source?: 'context' | 'manual';
+  items?: GuestHomeStory[];
+  max_items?: number;
+}
+
+/** Props for `guest_tools`. */
+export interface GuestToolsProps extends GuestCardListBaseProps {
+  title?: string;
+  subtitle?: string;
+  view_all_href?: string;
+  data_source?: 'context' | 'manual';
+  items?: GuestHomeTool[];
+  max_items?: number;
+}
+
+/** Props for `guest_newsletter`. */
+export interface GuestNewsletterProps {
+  title?: string;
+  subtitle?: string;
+  endpoint?: string;
+  placeholder?: string;
+  cta?: string;
+  success_message?: string;
+  error_message?: string;
+}
+
+/** Props for `guest_footer`. */
+export interface GuestFooterProps {
+  logo?: { light?: string; dark?: string };
+  tagline?: string;
+  socials?: Array<{ icon: string; url: string; label: string }>;
+  columns?: Array<{
+    title: string;
+    links: Array<{ label: string; url: string; target?: string }>;
+  }>;
+}
+
 /** Discriminated union of all block types. */
 export type Block =
   | (BaseBlock & { type: 'heading'; props: HeadingProps })
@@ -580,6 +913,19 @@ export type Block =
   | (BaseBlock & { type: 'tabs'; props: TabsProps })
   | (BaseBlock & { type: 'media'; props: MediaBlockProps })
   | (BaseBlock & { type: 'widget'; props: WidgetBlockProps })
+  | (BaseBlock & { type: 'guest_home'; props: GuestHomeContainerProps })
+  | (BaseBlock & { type: 'guest_hero'; props: GuestHeroContainerProps })
+  | (BaseBlock & { type: 'guest_hero_text'; props: GuestHeroTextProps })
+  | (BaseBlock & { type: 'guest_hero_image'; props: GuestHeroImageProps })
+  | (BaseBlock & { type: 'guest_hero_stats'; props: GuestHeroStatsProps })
+  | (BaseBlock & { type: 'guest_hero_destinations'; props: GuestHeroDestinationsProps })
+  | (BaseBlock & { type: 'guest_hero_community'; props: GuestHeroCommunityProps })
+  | (BaseBlock & { type: 'guest_categories'; props: GuestCategoriesProps })
+  | (BaseBlock & { type: 'guest_opportunities'; props: GuestOpportunitiesProps })
+  | (BaseBlock & { type: 'guest_stories'; props: GuestStoriesProps })
+  | (BaseBlock & { type: 'guest_tools'; props: GuestToolsProps })
+  | (BaseBlock & { type: 'guest_newsletter'; props: GuestNewsletterProps })
+  | (BaseBlock & { type: 'guest_footer'; props: GuestFooterProps })
   | (BaseBlock & { type: 'container'; props: ContainerProps })
   | (BaseBlock & { type: 'custom'; props: CustomBlockProps; block_def_id: string });
 
