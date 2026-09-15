@@ -78,10 +78,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -146,7 +142,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -209,10 +205,6 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 // ListReviews handles GET /api/v1/reviews.
 // Supports ?entity_type=, ?entity_id=, ?reviewer_id=, ?page_size=, ?page_offset=.
 func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -279,10 +271,6 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 // reviews for entity_type='university' + entity_id={id} with author names joined.
 // Ref: Section 29 (polymorphic reviews), Section 39 (university as space).
 func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -330,10 +318,6 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 // Supports ?status=, ?entity_type=, ?page_size=, ?page_offset=.
 // Returns {"data": [...], "total": N} envelope with entity_name resolved.
 func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -386,10 +370,6 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 
 // GetReview handles GET /api/v1/reviews/{id}.
 func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -412,7 +392,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -457,7 +437,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -493,7 +473,7 @@ func (h *Handlers) HardDeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -528,7 +508,7 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -550,10 +530,6 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 // GetAggregate handles GET /api/v1/reviews/aggregate.
 // Supports ?entity_type= and ?entity_id=.
 func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// catalog: GET /reviews/:entity_type/:entity_id/aggregate
 	entityType := chi.URLParam(r, "entity_type")
@@ -587,7 +563,7 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

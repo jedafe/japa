@@ -24,7 +24,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -81,9 +80,6 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -132,10 +128,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleStages handles GET /japa-stage/stages — returns the canonical stage
 // option list (Rule 16).
 func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
@@ -150,10 +142,6 @@ func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
 // view. Returns an empty data object (stage omitted) when the profile is not
 // public, so anonymous browsers simply see no stage.
 func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
@@ -186,10 +174,6 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 // members filtered by stage. Query params: ?stage=&dest=&page=&page_size=
 // (dest is the destination space id, geo-aware ?dest= filter per §87).
 func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
@@ -243,7 +227,7 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -280,7 +264,7 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

@@ -34,7 +34,6 @@
 
 	type SidebarWidget = {
 		id: string;
-		tenant_id: string;
 		sidebar_id: string;
 		widget_type: string;
 		label: string;
@@ -48,7 +47,6 @@
 
 	type Sidebar = {
 		id: string;
-		tenant_id: string;
 		app: string;
 		position: string;
 		slug: string;

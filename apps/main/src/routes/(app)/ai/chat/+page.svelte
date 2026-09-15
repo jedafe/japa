@@ -93,7 +93,7 @@
 			{t('ai.chat.disabled', 'JapaBot is currently disabled')}
 		</h1>
 		<p class="text-sm" style="color: var(--color-muted)">
-			{t('ai.chat.disabled_help', 'This feature is turned off for this tenant. Contact an administrator to enable it.')}
+			{t('ai.chat.disabled_help', 'This feature is turned off on this platform. Contact an administrator to enable it.')}
 		</p>
 	</div>
 {:else}

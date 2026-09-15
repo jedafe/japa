@@ -120,10 +120,6 @@ func NewHandlers(service *Service) *Handlers {
 // newsletter. Gated by feature.newsletter at the route level.
 // Ref: conventions/api-routes-catalog.md (POST /newsletter/subscribe).
 func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Global killswitch (newsletter.enabled, ADR-080 §62).
 	if !h.Service.Enabled(r.Context()) {
@@ -213,9 +209,6 @@ func isValidEmail(s string) bool {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
@@ -258,10 +251,6 @@ func parseOffset(r *http.Request) int32 {
 // CreateSubscriber adds a new newsletter subscriber.
 // POST /admin/newsletter/subscribers.
 func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Email  string `json:"email"`
@@ -309,10 +298,6 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 // (§62 RBAC, ADR-080 §6). Each email is upserted with source='import'.
 // Returns the count of imported and skipped (invalid) emails.
 func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Emails []string `json:"emails"`
@@ -361,10 +346,6 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 // optionally filtered by ?status= (subscribed|unsubscribed|bounced|complained).
 // GET /admin/newsletter/subscribers.
 func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
@@ -419,10 +400,6 @@ func (h *Handlers) DeleteSubscriber(w http.ResponseWriter, r *http.Request) {
 // Returns the standard paginated envelope {items, total, total_pages} so the
 // admin DataTable can render serverSide pagination (§22, ADR-080 §3).
 func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := int(parsePageSize(r))
 	offset := int(parseOffset(r))
@@ -479,10 +456,6 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 // CreateCampaign creates a new newsletter campaign.
 // POST /admin/newsletter/campaigns.
 func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -561,10 +534,6 @@ func jsonString(s string) string {
 // UpdateCampaign updates an existing newsletter campaign.
 // PATCH /admin/newsletter/campaigns/{id}.
 func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -653,10 +622,6 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 // UpdateSubscriber updates a subscriber's status.
 // PATCH /admin/newsletter/subscribers/{id}.
 func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := requireID(w, r, "id", "subscriber")
 	if !ok {
@@ -699,10 +664,6 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleSendCampaign triggers sending a newsletter campaign.
 // POST /admin/newsletter/campaigns/{id}/send.
 func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -767,10 +728,6 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleUnsubscribe handles one-click unsubscribe via token or email.
 // DELETE /newsletter/unsubscribe.
 func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	token := r.URL.Query().Get("token")
 	if token != "" {
@@ -801,10 +758,6 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 // HandleGetPreferences returns subscriber preferences.
 // GET /newsletter/preferences.
 func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -824,10 +777,6 @@ func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) 
 // HandleUpdatePreferences updates subscriber preferences.
 // PATCH /newsletter/preferences.
 func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -863,10 +812,6 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 // HandleAdminStats returns newsletter stats.
 // GET /admin/newsletter/stats.
 func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -893,10 +838,6 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 //
 //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Shared-secret auth: the provider echoes a secret set in config.
 	// Use constant-time comparison to avoid timing side channels (§5.2).

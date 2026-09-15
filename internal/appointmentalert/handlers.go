@@ -50,9 +50,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -100,10 +97,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleListEmbassies handles GET /embassies — list monitored embassies
 // with an optional destination filter. Query params: ?dest=&page=&limit=.
 func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
@@ -150,7 +143,7 @@ func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -189,7 +182,7 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -245,7 +238,7 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -301,7 +294,7 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -347,10 +340,6 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 // registration). Query: ?dest=&active=&page=&limit=.
 func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -422,10 +411,6 @@ func (h *Handlers) HandleAdminCreateEmbassy(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
@@ -477,10 +462,6 @@ func (h *Handlers) HandleAdminUpdateEmbassy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	embassyID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -524,10 +505,6 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	embassyID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

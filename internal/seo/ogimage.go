@@ -113,25 +113,23 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string) *conte
 	return &meta
 }
 
-// ogCacheKey builds the tenant-scoped Valkey cache key for an OG image.
-// Pattern: jc:og:{}:{content_id} (Section 26, valkey-keys-catalog).
+// ogCacheKey builds the Valkey cache key for an OG image.
+// Pattern: jc:og:{content_id} (Section 26, valkey-keys-catalog).
 func ogCacheKey(contentID string) string {
-	return "jc:og:" + "" + ":" + contentID
+	return "jc:og:" + contentID
 }
 
 // ServeOGImage generates and serves an OG image for the given content ID.
-// Rendered images are cached in Valkey (key jc:og:{}:{content_id},
+// Rendered images are cached in Valkey (key jc:og:{content_id},
 // TTL 24h per Section 26) so repeated fetches by social crawlers don't
 // re-render. If the content is found and indexable, its title is rendered
 // as the main text; otherwise a default brand image is served. Private or
 // non-indexable content always gets the default brand image (no title leak).
 func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	t := &struct{ ID pgtype.UUID }{}
 
-	// Try Valkey cache first (Section 26). The cache key is tenant-scoped
-	// so one tenant's OG image never bleeds to another (Rule 4).
-	if t != nil && h.vkClient != nil {
+	// Try Valkey cache first (Section 26).
+	if h.vkClient != nil {
 		cacheKey := ogCacheKey(idStr)
 		if cached, err := h.vkClient.Redis().Get(r.Context(), cacheKey).Bytes(); err == nil && len(cached) > 0 {
 			w.Header().Set("Content-Type", "image/png")
@@ -148,11 +146,9 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 
 	isBrandFallback := false
 
-	if t != nil {
-		if meta := h.lookupContent(r.Context(), idStr); meta != nil {
-			title = cleanTitle(meta.Title)
-			subtitle = humanizeContentType(meta.ContentType)
-		}
+	if meta := h.lookupContent(r.Context(), idStr); meta != nil {
+		title = cleanTitle(meta.Title)
+		subtitle = humanizeContentType(meta.ContentType)
 	}
 
 	// Fallback to brand defaults when no content matched (or content is
@@ -176,7 +172,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	// Cache the rendered PNG in Valkey (Section 26: TTL 24h). Cache only
 	// content-specific images (not the brand fallback) so the fallback
 	// stays cheap and doesn't pollute the cache with generic entries.
-	if t != nil && h.vkClient != nil && !isBrandFallback {
+	if h.vkClient != nil && !isBrandFallback {
 		cacheKey := ogCacheKey(idStr)
 		if err := h.vkClient.Redis().Set(r.Context(), cacheKey, buf.Bytes(), ogCacheTTL).Err(); err != nil {
 			slog.Warn("og-image: failed to cache", "content_id", idStr, "error", err)

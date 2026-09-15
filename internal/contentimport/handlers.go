@@ -45,9 +45,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -151,7 +148,7 @@ func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -204,7 +201,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -273,7 +270,7 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -311,10 +308,6 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 // import record immediately.
 func (h *Handlers) HandleAdminStartImport(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -377,10 +370,6 @@ func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
@@ -414,10 +403,6 @@ func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request
 // Re-enqueues import:process_source fire-and-forget (Rule 8).
 func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

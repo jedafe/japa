@@ -193,7 +193,7 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 	});
 
 	// {{ template-literal token picker (§14 — global template literals).
-	// The picker lists active tenant tokens from GET /api/v1/literals and
+	// The picker lists active platform tokens from GET /api/v1/literals and
 	// inserts the raw `{{Key}}` placeholder as plain text — the backend
 	// resolver expands it at render time, so no node is stored in the doc.
 	const literalExt = Mention.configure({

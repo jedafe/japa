@@ -41,9 +41,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -135,10 +132,6 @@ func parsePageLimit(r *http.Request) (int, int) {
 // route (col_calculator.use — all users including anonymous).
 // Query params: search, country_code, page, limit.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
@@ -169,10 +162,6 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 // returns the comparison matrix with raw values + ratios vs the baseline.
 // Public route. Query param: city_ids (comma-separated UUIDs).
 func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
@@ -211,10 +200,6 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 // col_calculator.manage (checked by RBAC middleware at route registration).
 func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

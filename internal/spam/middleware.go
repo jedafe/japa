@@ -9,14 +9,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
-// IPBlockMiddleware checks whether the request IP is blocked for the
-// current tenant. Per §41 IP Block Middleware, the block_type determines
+// IPBlockMiddleware checks whether the request IP is blocked. Per §41 IP
+// Block Middleware, the block_type determines
 // the scope of the block:
 //   - "full"         → 403 Forbidden on every request (global block).
 //   - "registration" → stored in context; enforced by the registration
@@ -37,11 +36,7 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := &struct{ ID pgtype.UUID }{}
-			if t == nil {
-				next.ServeHTTP(w, r)
-				return
-			}
+
 
 			ip := extractIP(r)
 			if ip == "" {
@@ -135,11 +130,7 @@ var CensorResultKey = contextKey{"censor_result"}
 func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := &struct{ ID pgtype.UUID }{}
-			if t == nil {
-				next.ServeHTTP(w, r)
-				return
-			}
+
 
 			// Extract text from the request body for censor checking.
 			// extractBodyText also restores the body on the request so the

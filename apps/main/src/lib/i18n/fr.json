@@ -200,7 +200,7 @@
 	"auth.errors.password_breached": "Ce mot de passe est apparu dans une fuite de données et ne peut pas être utilisé",
 	"auth.errors.password_mismatch": "Les mots de passe ne correspondent pas",
 	"auth.errors.rate_limited": "Trop de tentatives, veuillez réessayer dans une minute",
-	"auth.errors.tenant_unavailable": "Service temporairement indisponible",
+	"auth.errors.service_unavailable": "Service temporairement indisponible",
 	"auth.errors.token_error": "Échec de la création de la session. Veuillez réessayer",
 	"auth.errors.weak_password": "Le mot de passe doit contenir au moins 8 caractères avec majuscule, minuscule et un chiffre",
 	"auth.fields.confirm_password": "Confirmer le mot de passe",

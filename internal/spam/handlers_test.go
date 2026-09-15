@@ -436,23 +436,7 @@ func TestDeleteUserBlock_InvalidBlockedID(t *testing.T) {
 	}
 }
 
-// --- requireTenant/requireUser tests ---
-
-func _TestRequireTenant_Missing(t *testing.T) {
-	t.Parallel()
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/admin/spam/ip-blocks", nil)
-	// No tenant in context
-	_, ok := requireTenant(w, req)
-	if ok {
-		t.Error("requireTenant should return false when tenant is missing")
-	}
-
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
-	}
-}
+// --- requireUser tests ---
 
 func TestRequireUser_Missing(t *testing.T) {
 	t.Parallel()

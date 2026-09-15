@@ -128,13 +128,13 @@ export const load: PageServerLoad = async (event) => {
 		try {
 			// Ownership-scoped: GET /me/content/{id} returns the caller's own
 			// content by ID (any status — published, scheduled, or draft),
-			// tenant + author scoped. The public GET /content/{slug} resolves
+			// author scoped. The public GET /content/{slug} resolves
 			// by slug and is not ownership-scoped, so it cannot safely serve
 			// the editor restore. The status='draft'-scoped /me/drafts/{id}
 			// only covers drafts; /me/content/{id} covers the rest so the
 			// Edit button on published content detail pages works too.
 			// For non-owners (super-admin or `content.edit` RBAC holder), the
-			// backend falls back to a tenant-scoped fetch — see GetMyContent.
+			// backend falls back to a platform-scoped fetch — see GetMyContent.
 			draft = await apiGet<ContentRecord>(ctx, `/me/content/${draftId}`);
 			// When the draft is a comparison, also fetch its items/dimensions
 			// from the JCE endpoint so the ComparisonBuilder can render them.
@@ -143,7 +143,6 @@ export const load: PageServerLoad = async (event) => {
 					const jce = await apiGet<JCEComparison>(ctx, `/jce/comparisons/${draft.id}`);
 					comparisonDetail = {
 						id: jce.content.id,
-						tenant_id: jce.content.tenant_id,
 						author_id: jce.content.author_id,
 						title: jce.content.title,
 						slug: jce.content.slug,

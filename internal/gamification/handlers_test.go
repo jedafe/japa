@@ -247,7 +247,7 @@ func TestLeaderboardPeriodValidation(t *testing.T) {
 // TestHandleGetLeaderboard_InvalidScope verifies that the leaderboard handler
 // rejects invalid scope values with a 400 error. This test does not require
 // a tenant context because scope validation happens before the service call
-// — but the handler checks tenant first, so we expect tenant_unavailable (503)
+// — but the handler checks tenant first, so we expect service_unavailable (503)
 // unless a tenant is set. The scope validation logic is tested directly in
 // TestLeaderboardScopeValidation above.
 func _TestHandleGetLeaderboard_NoTenant(t *testing.T) {
@@ -256,7 +256,7 @@ func _TestHandleGetLeaderboard_NoTenant(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.HandleGetLeaderboard(rr, req)
 
-	// No tenant in context → 503 tenant_unavailable.
+	// No tenant in context → 503 service_unavailable.
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Errorf("HandleGetLeaderboard without tenant = %d, want %d",
 			rr.Code, http.StatusServiceUnavailable)

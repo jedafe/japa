@@ -44,9 +44,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as checklist/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -137,10 +134,6 @@ func parsePageParams(r *http.Request) (pageSize, pageOffset int32) {
 // HandleList handles GET /stories — list published stories with filters.
 // Query params: ?origin=&dest=&visa=&profession=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
@@ -190,10 +183,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetBySlug handles GET /stories/:slug — single published story.
 func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
@@ -258,7 +247,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -308,7 +297,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -364,7 +353,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -412,7 +401,7 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -456,7 +445,7 @@ func (h *Handlers) HandleUnverify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -499,10 +488,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
@@ -567,7 +552,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

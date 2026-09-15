@@ -209,7 +209,7 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		if (spaceType) spaceParams.set('space_type', spaceType);
 		if (level) spaceParams.set('level', level);
 		// member_only forces the membership listing even for super admins, whose
-		// /me/spaces response otherwise returns every space in the tenant.
+		// /me/spaces response otherwise returns every space on the platform.
 		const memberSpaceParams = new URLSearchParams(spaceParams);
 		memberSpaceParams.set('member_only', '1');
 

@@ -174,11 +174,6 @@ func (h *Handlers) requireMediaAuth(w http.ResponseWriter, r *http.Request) (pgt
 		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
 	}
 
-	_, ok = h.requireTenant(w, r)
-	if !ok {
-		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
-	}
-
 	mediaID, ok := parseMediaID(w, r)
 	if !ok {
 		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
@@ -225,10 +220,6 @@ func (h *Handlers) SetPermissionChecker(pc permissionChecker) {
 	h.perms = pc
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -294,7 +285,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -382,7 +373,7 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -488,7 +479,7 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -549,7 +540,7 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request,
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -615,7 +606,7 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -642,7 +633,7 @@ func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -668,7 +659,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -736,7 +727,7 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -787,10 +778,6 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 
 // ListByUser handles GET /users/{id}/media — the public profile Media tab.
 func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var uploaderID pgtype.UUID
 	if err := uploaderID.Scan(chi.URLParam(r, "id")); err != nil {
@@ -816,10 +803,6 @@ func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
 // ListByOrganization handles GET /organizations/{id}/media — the org profile
 // Media tab. Non-active orgs are already 404'd by the requireActiveOrgByID gate.
 func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var orgID pgtype.UUID
 	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
@@ -853,7 +836,7 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -917,7 +900,7 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -968,7 +951,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1070,7 +1053,7 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

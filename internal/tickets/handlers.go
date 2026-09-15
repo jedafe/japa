@@ -49,10 +49,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -146,7 +142,7 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -207,7 +203,7 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -231,7 +227,7 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -281,7 +277,7 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -341,7 +337,7 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -382,7 +378,7 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -431,7 +427,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -538,7 +534,7 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -599,7 +595,7 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -658,7 +654,7 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -690,7 +686,7 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -729,10 +725,6 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTicket handles DELETE /api/v1/admin/tickets/:id.
 func (h *Handlers) DeleteTicket(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -758,7 +750,7 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -791,7 +783,7 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -849,7 +841,7 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -881,7 +873,7 @@ func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -956,7 +948,7 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1030,7 +1022,7 @@ func (h *Handlers) DeleteTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

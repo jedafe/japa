@@ -571,18 +571,18 @@ func (q *Queries) ListModerationAppeals(ctx context.Context, search *string) ([]
 	return items, nil
 }
 
-const listTenantAdminIDs = `-- name: ListTenantAdminIDs :many
+const listSystemAdminIDs = `-- name: ListSystemAdminIDs :many
 SELECT u.id FROM users u
 JOIN user_group_memberships gm ON gm.user_id = u.id
 JOIN user_groups ug ON ug.id = gm.group_id
 WHERE u.status = 'active' AND ug.slug = 'super_admin' AND ug.is_system = true
 `
 
-// Returns active user IDs in the system super_admin group for a tenant.
+// Returns active user IDs in the system super_admin group.
 // Used by the notify_admin form trigger (Section 06) to fan out admin
-// notifications via the notification service. Scoped to the caller's tenant.
-func (q *Queries) ListTenantAdminIDs(ctx context.Context) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listTenantAdminIDs)
+// notifications via the notification service.
+func (q *Queries) ListSystemAdminIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listSystemAdminIDs)
 	if err != nil {
 		return nil, err
 	}

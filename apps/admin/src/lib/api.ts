@@ -127,7 +127,7 @@ export interface PlanFeature {
 
 export interface SubscriptionPlan {
 	id: string;
-	tenant_id: string;
+
 	slug: string;
 	name: string;
 	description: string;
@@ -286,7 +286,7 @@ export const docsApi = {
 
 export type AdNetwork = {
 	id: string;
-	tenant_id: string;
+
 	provider: 'adsense' | 'ezoic' | 'media_net' | 'custom';
 	name: string;
 	client_id?: string;
@@ -696,7 +696,7 @@ export const aiApi = {
 
 export interface JsonLdTemplate {
 	id: string;
-	tenant_id: string;
+
 	content_type: string;
 	template: Record<string, unknown> | null;
 	is_active: boolean;
@@ -762,7 +762,7 @@ export const tagsAdminApi = {
 
 export interface PersonaVoice {
 	id: string;
-	tenant_id: string;
+
 	name: string;
 	slug: string;
 	description: string | null;
@@ -1746,7 +1746,7 @@ export const usersWarningsAdminApi = {
 
 export interface PermissionPreset {
 	id: string;
-	tenant_id: string;
+
 	name: string;
 	visibility: string;
 	posting_perm: string;
@@ -2135,7 +2135,7 @@ export interface CatalogOption {
 // Section 104 — AI Content Campaigns admin API.
 export interface Campaign {
 	id: string;
-	tenant_id: string;
+
 	name: string;
 	prompt: string;
 	status: string;

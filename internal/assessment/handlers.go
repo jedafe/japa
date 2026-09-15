@@ -59,9 +59,6 @@ func (h *Handlers) SetFeedService(fs *feed.Service) {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -161,10 +158,6 @@ func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 // assessment form with scoring metadata (thresholds only, not weights —
 // weights are internal per ADR-071 §2). Public route.
 func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
@@ -227,10 +220,6 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 // answers. Anonymous users are allowed; authenticated users get persistent
 // history. Body: {"field_values": {...}}.
 func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
@@ -301,10 +290,6 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 // single assessment result with roadmap. Public if the result has no user_id
 // (anonymous); auth required for user results.
 func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
@@ -355,10 +340,6 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 // and no in-flight scoring is expected (treated as pending here — the caller
 // distinguishes via retry budget on the client).
 func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
@@ -409,10 +390,6 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 // visitor's journey context captured at submission time. Anonymous results are
 // public; user results require the owner.
 func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
@@ -569,7 +546,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -621,10 +598,6 @@ func (h *Handlers) HandleAdminGetForm(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
@@ -649,10 +622,6 @@ func (h *Handlers) HandleAdminGetForm(w http.ResponseWriter, r *http.Request) {
 // the assessment form's scoring_config. Admin-only. Body: {"scoring_config": {...}}.
 func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -712,10 +681,6 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 // range. Admin-only (gated by assessment.view_results RBAC middleware).
 func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -781,10 +746,6 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 // aggregate score distribution and completion statistics. Admin-only.
 func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

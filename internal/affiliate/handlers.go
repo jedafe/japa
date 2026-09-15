@@ -93,9 +93,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -160,7 +157,7 @@ func (h *Handlers) Enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -185,7 +182,7 @@ func (h *Handlers) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -218,7 +215,7 @@ func (h *Handlers) CreateMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -254,7 +251,7 @@ func (h *Handlers) GetMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -285,7 +282,7 @@ func (h *Handlers) UpdateMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -317,7 +314,7 @@ func (h *Handlers) DeleteMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -342,7 +339,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -453,10 +450,6 @@ func sanitizeRedirectURL(dest string) string {
 // the sqlc ListAffiliateMembersFiltered query (no raw SQL, no hardcoded
 // limit). Money is rendered via pgtype.Numeric → string (never float).
 func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
@@ -491,10 +484,6 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMemberStatusAdmin handles PATCH /api/v1/admin/affiliate-program/members/:user_id.
 func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, err := parseUUIDParam(r, "user_id")
 	if err != nil {
@@ -529,10 +518,6 @@ func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Reques
 // (catalog). Uses the sqlc ListAllAffiliateLinksFiltered query (joins users
 // for the username column). Money is rendered via pgtype.Numeric → string.
 func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
@@ -585,10 +570,6 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 // management). Admin-scoped soft-delete (deactivate) — the row is retained for
 // audit. Guarded by affiliate.admin.manage.
 func (h *Handlers) DeleteLinkAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -626,10 +607,6 @@ var (
 // total links, total clicks, total conversions, total commissions.
 // Tenant-scoped, guarded by affiliate.admin.view.
 func (h *Handlers) GetProgramStatsAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	stats, err := h.Service.GetProgramStats(r.Context())
 	if err != nil {
@@ -657,10 +634,6 @@ func (h *Handlers) GetCommissionRates(w http.ResponseWriter, r *http.Request) {
 // GetProgramInfo never read, so admin changes never reached users and the
 // worker credited at a different rate than displayed (BUG-004).
 func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		ProMonthly *float64 `json:"pro_monthly"`

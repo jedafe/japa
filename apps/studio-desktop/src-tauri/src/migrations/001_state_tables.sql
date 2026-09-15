@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL DEFAULT '',
   watched_path TEXT NOT NULL DEFAULT '',
   base_url TEXT NOT NULL DEFAULT '',
-  tenant_id TEXT,
   api_key TEXT,
   mode TEXT NOT NULL DEFAULT 'operator',
   auto_sync INTEGER NOT NULL DEFAULT 0,

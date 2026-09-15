@@ -5,7 +5,7 @@
 // // The endpoint GET /api/v1/recommendations is public (OptionalAuth) — it
 // works for both guests (using GeoIP-based VisitorContext) and authenticated
 // users (using profile-enriched VisitorContext). Results are cached in
-// Valkey at jc:recommendations:{session_id} or jc:recommendations:ip:{}:{ip}
+// Valkey at jc:recommendations:{session_id} or jc:recommendations:ip:{ip}
 // with a configurable TTL (default 15 minutes).
 // // Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md
 package recommendations
@@ -216,14 +216,7 @@ var featureSlugs = map[string]bool{
 // // Query params:
 // //	limit — max number of tools/features to return (default 10, max configurable)
 func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"error": map[string]string{"code": "tenant_unavailable", "message": "No tenant available"},
-		})
 
-		return
-	}
 
 	vc := visitor.FromContext(r.Context())
 
@@ -247,10 +240,8 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 			cacheKey = valkey.MustKey("recommendations:user:%s", user.UserID.String())
 		}
 	} else {
-		// Tenant-scoped IP key (BUG-006 fix): without the tenant segment two
-		// tenants sharing an IP (NAT/localhost/VPN) would bleed each other's
-		// recommendation cache.
-		cacheKey = valkey.MustKey("recommendations:ip:%s:%s", t.ID.String(), clientip.FromRequest(r))
+		// IP-scoped cache key for anonymous guests.
+		cacheKey = valkey.MustKey("recommendations:ip:%s", clientip.FromRequest(r))
 	}
 
 	// Try cache. On hit, slice tools/features to the requested limit and

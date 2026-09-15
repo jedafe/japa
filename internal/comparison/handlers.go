@@ -60,10 +60,6 @@ func parseComparisonItemID(r *http.Request) (pgtype.UUID, error) {
 	return parseUUIDParam(r, "id")
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -157,7 +153,7 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -224,10 +220,6 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 
 // ListComparisonTypes handles GET /api/v1/comparisons/types.
 func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -247,10 +239,6 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 // No authentication required; the SQL layer filters to status='published'
 // AND visibility='public' so drafts/private comparisons are never exposed.
 func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	filter, err := h.buildListComparisonsFilter(r)
 	if err != nil {
@@ -312,7 +300,7 @@ func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -334,10 +322,6 @@ func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) 
 
 // GetComparisonType handles GET /api/v1/comparisons/types/{slug}.
 func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -360,7 +344,7 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -422,7 +406,7 @@ func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -451,7 +435,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -503,7 +487,7 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -533,7 +517,7 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -627,10 +611,6 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 // comparisons; unpublished or non-public comparisons require the authenticated
 // user to be the author.
 func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	contentID, err := h.Service.ResolveComparisonContentID(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
@@ -668,7 +648,7 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -726,7 +706,7 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -756,10 +736,6 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 // published and publicly-visible comparisons; unpublished or non-public
 // comparisons require the authenticated user to be the author.
 func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	contentID, err := h.Service.ResolveComparisonContentID(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
@@ -802,7 +778,7 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -876,7 +852,7 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -997,7 +973,7 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1060,7 +1036,7 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1129,7 +1105,7 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1200,7 +1176,7 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1313,7 +1289,7 @@ func (h *Handlers) AutoGenerateDimensions(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

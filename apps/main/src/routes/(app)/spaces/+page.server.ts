@@ -3,7 +3,7 @@ import { apiContext, apiList, apiGet, ApiError } from '$lib/server/api';
 import type { Space, SpaceType } from '$lib/types';
 
 /**
- * Spaces index at /spaces — public (OptionalAuth), SSR. Lists every tenant
+ * Spaces index at /spaces — public (OptionalAuth), SSR. Lists every
  * space the caller can see, with member/post counts. Each card links to the
  * space hub at /spaces/[slug]. Search filters by name or slug. The type
  * filter uses the space type SLUG in the URL (?type=university) for clean,

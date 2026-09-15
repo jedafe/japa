@@ -24,7 +24,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -144,7 +144,7 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -174,7 +174,7 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -190,10 +190,6 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 
 // AdminListModerators handles GET /api/v1/admin/spaces/{id}/moderators.
 func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -220,10 +216,6 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 // Admin-scoped variant of the space moderator assignment that resolves the
 // space by ID (not slug) and accepts either a user_id or username.
 func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -296,10 +288,6 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 
 // AdminRemoveModerator handles DELETE /api/v1/admin/spaces/{id}/moderators/{userId}.
 func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")

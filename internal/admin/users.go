@@ -27,10 +27,6 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -113,10 +109,6 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 // a soft-deleted user and all cascading data. Only works on users with status=deleted.
 func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

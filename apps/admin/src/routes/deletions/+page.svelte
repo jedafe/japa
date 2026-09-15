@@ -10,7 +10,6 @@
 	// Matches gen.ListDeletedContentsRow JSON output.
 	type DeletedContent = {
 		id: string;
-		tenant_id: string;
 		author_id: string;
 		title: string;
 		content_type: string;

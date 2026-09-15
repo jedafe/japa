@@ -17,7 +17,7 @@ class SearchApi {
 
   /// Search content
   ///
-  /// Search published content by title within the API key's tenant.
+  /// Search published content by title.
   ///
   /// Note: This method returns the HTTP [Response].
   ///
@@ -69,7 +69,7 @@ class SearchApi {
 
   /// Search content
   ///
-  /// Search published content by title within the API key's tenant.
+  /// Search published content by title.
   ///
   /// Parameters:
   ///

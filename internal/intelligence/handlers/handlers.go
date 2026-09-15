@@ -176,9 +176,6 @@ func optionalUser(_ http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	return u.UserID, true
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
 	raw := chi.URLParam(r, param)

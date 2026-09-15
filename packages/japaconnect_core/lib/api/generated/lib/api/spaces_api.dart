@@ -17,7 +17,7 @@ class SpacesApi {
 
   /// List public spaces
   ///
-  /// Retrieve a paginated list of public spaces visible to the API key's tenant.
+  /// Retrieve a paginated list of public spaces.
   ///
   /// Note: This method returns the HTTP [Response].
   ///
@@ -64,7 +64,7 @@ class SpacesApi {
 
   /// List public spaces
   ///
-  /// Retrieve a paginated list of public spaces visible to the API key's tenant.
+  /// Retrieve a paginated list of public spaces.
   ///
   /// Parameters:
   ///

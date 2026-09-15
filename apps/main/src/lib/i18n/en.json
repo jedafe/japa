@@ -219,7 +219,7 @@
 	"auth.errors.password_breached": "This password has appeared in a data breach and cannot be used",
 	"auth.errors.password_mismatch": "Passwords do not match",
 	"auth.errors.rate_limited": "Too many attempts, please try again in a minute",
-	"auth.errors.tenant_unavailable": "Service temporarily unavailable",
+	"auth.errors.service_unavailable": "Service temporarily unavailable",
 	"auth.errors.token_error": "Failed to create a session. Please try again",
 	"auth.errors.weak_password": "Password must be at least 8 characters with upper, lower, and a number",
 	"auth.fields.confirm_password": "Confirm password",

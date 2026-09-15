@@ -95,9 +95,6 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if !false {
 

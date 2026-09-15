@@ -23,10 +23,6 @@ import (
 
 // GetPost handles GET /api/v1/post/{content_type}/{slug}.
 func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	contentType := chi.URLParam(r, "content_type")
 	if contentType == "" {

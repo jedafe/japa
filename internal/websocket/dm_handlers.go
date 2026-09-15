@@ -69,27 +69,12 @@ func requireUserFromContext(r *http.Request) (*auth.AuthenticatedUser, bool) {
 	return user, true
 }
 
-// requireTenantFromContext extracts the tenant ID from the request context.
-// For DM handlers, we need the tenant from the auth token or context.
-func requireTenantFromContext(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	_, ok := requireUserFromContext(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return pgtype.UUID{}, false
-	}
-
-	return pgtype.UUID{}, true
-}
 
 // ListConversations handles GET /api/v1/dm/conversations.
 func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
 		return
 	}
 
@@ -113,10 +98,6 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 	user, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
 		return
 	}
 
@@ -188,10 +169,6 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
-		return
-	}
 
 	conversationIDStr := chi.URLParam(r, "id")
 
@@ -219,10 +196,6 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
 		return
 	}
 
@@ -290,10 +263,6 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
-		return
-	}
 
 	conversationIDStr := chi.URLParam(r, "id")
 
@@ -317,10 +286,6 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 	user, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
 		return
 	}
 
@@ -348,10 +313,6 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
-		return
-	}
 
 	conversationIDStr := chi.URLParam(r, "id")
 
@@ -375,10 +336,6 @@ func (h *Handlers) BlockMessageRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
 		return
 	}
 
@@ -407,10 +364,6 @@ func (h *Handlers) GetDMPrivacy(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
-		return
-	}
 
 	privacy, err := h.dmService.GetDMPrivacy(r.Context(), user.UserID)
 	if err != nil {
@@ -426,10 +379,6 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
 		return
 	}
 
@@ -456,10 +405,6 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
 		return
 	}
 
@@ -517,10 +462,6 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
-		return
-	}
 
 	conversationIDStr := chi.URLParam(r, "id")
 
@@ -563,10 +504,6 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok = requireTenantFromContext(w, r)
-	if !ok {
 		return
 	}
 

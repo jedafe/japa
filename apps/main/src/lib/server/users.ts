@@ -20,7 +20,7 @@ const USER_PAGE_SIZE = 1000;
  * opening, so we hydrate it from the public `/users` directory.
  *
  * The public users list is fetched once with a large page size and paged
- * through only if the tenant has more than `USER_PAGE_SIZE` users.
+ * through only if the platform has more than `USER_PAGE_SIZE` users.
  */
 export async function attachAuthorUsernames<T extends Authorish>(
 	ctx: ApiContext,

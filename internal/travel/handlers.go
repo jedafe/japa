@@ -51,9 +51,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go, remittance/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -134,10 +131,6 @@ func writeConflictIfDuplicate(w http.ResponseWriter, err error, code, message st
 // flight search to the configured provider.
 // Query: origin, dest, date, adults, return_date, cabin_class.
 func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	origin := r.URL.Query().Get("origin")
 	dest := r.URL.Query().Get("dest")
@@ -196,10 +189,6 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 // search to the configured provider.
 // Query: dest, checkin, checkout, guests, rooms.
 func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	dest := r.URL.Query().Get("dest")
 	checkin := r.URL.Query().Get("checkin")
@@ -254,10 +243,6 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 // HandlePublicListProviders handles GET /api/v1/travel/providers — list active
 // travel providers for the current tenant. Public, no auth required.
 func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
@@ -286,10 +271,6 @@ func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Requ
 // provider_type, q (ILIKE search on name/slug).
 func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -332,10 +313,6 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var body struct {
 		Name            string          `json:"name"`
@@ -413,10 +390,6 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	providerID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

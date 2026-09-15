@@ -7,7 +7,7 @@
 	 * display names are resolved via Intl.DisplayNames (a platform API, not app
 	 * data — Rule 16 safe). Timezone selector uses the browser's
 	 * Intl.supportedValuesOf API (a static list of IANA timezone names that never
-	 * changes per-user or per-tenant — it is the platform's own enumeration, not
+	 * changes per-user or per-platform — it is the platform's own enumeration, not
 	 * app data).
 	 *
 	 * Language persists via PUT /me/preferences ({ language }).

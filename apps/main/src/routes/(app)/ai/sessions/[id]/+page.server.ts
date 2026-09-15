@@ -8,7 +8,7 @@ import type { AgentSessionDetail } from '$lib/ai/agentTypes';
  * /ai/sessions/[id] — single agent session detail. SSR fetches
  * GET /api/v1/ai/agent/sessions/{id} which returns the session row plus
  * its full tool-call audit log. The backend enforces ownership at the DB
- * layer (GetAgentSessionForUser: tenant_id + user_id + id) so a 404 here
+ * layer (GetAgentSessionForUser: user_id + id) so a 404 here
  * means either the session doesn't exist or belongs to another user.
  *
  * Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (API Routes)

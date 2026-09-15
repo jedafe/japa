@@ -1133,7 +1133,7 @@ class ScorePreviewInput {
 
 class DataSource {
   final String id;
-  final String? tenantId;
+
   final String? entityType;
   final String? entityId;
   final String? dimensionSlug;
@@ -1149,7 +1149,7 @@ class DataSource {
 
   const DataSource({
     required this.id,
-    this.tenantId,
+
     this.entityType,
     this.entityId,
     this.dimensionSlug,
@@ -1167,7 +1167,7 @@ class DataSource {
   factory DataSource.fromJson(Map<String, dynamic> json) {
     return DataSource(
       id: json['id'] as String,
-      tenantId: json['tenant_id'] as String?,
+
       entityType: json['entity_type'] as String?,
       entityId: json['entity_id'] as String?,
       dimensionSlug: json['dimension_slug'] as String?,
@@ -1185,7 +1185,7 @@ class DataSource {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        if (tenantId != null) 'tenant_id': tenantId,
+
         if (entityType != null) 'entity_type': entityType,
         if (entityId != null) 'entity_id': entityId,
         if (dimensionSlug != null) 'dimension_slug': dimensionSlug,
@@ -1462,7 +1462,7 @@ class AdvisorStreamChunk {
 
 class IngestionJob {
   final String id;
-  final String? tenantId;
+
   final String contentId;
   final String status;
   final String? sourceKind;
@@ -1475,7 +1475,7 @@ class IngestionJob {
 
   const IngestionJob({
     required this.id,
-    this.tenantId,
+
     required this.contentId,
     required this.status,
     this.sourceKind,
@@ -1490,7 +1490,7 @@ class IngestionJob {
   factory IngestionJob.fromJson(Map<String, dynamic> json) {
     return IngestionJob(
       id: json['id'] as String,
-      tenantId: json['tenant_id'] as String?,
+
       contentId: json['content_id'] as String,
       status: json['status'] as String,
       sourceKind: json['source_kind'] as String?,
@@ -1505,7 +1505,7 @@ class IngestionJob {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        if (tenantId != null) 'tenant_id': tenantId,
+
         'content_id': contentId,
         'status': status,
         if (sourceKind != null) 'source_kind': sourceKind,

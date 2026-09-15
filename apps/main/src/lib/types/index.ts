@@ -141,7 +141,7 @@ export interface TagSuggestion {
 }
 
 /* ------------------------------------------------------------------ *
- * Tag detail — GET /tags/{slug} (public, tenant-scoped)
+ * Tag detail — GET /tags/{slug} (public)
  * ------------------------------------------------------------------ */
 
 export interface TagDetail {
@@ -318,7 +318,7 @@ export interface CustomFieldGroup {
 /** GET /blog/series item. */
 export interface BlogSeries {
 	id: string;
-	tenant_id: string;
+
 	slug: string;
 	title: string;
 	description?: string | null;
@@ -370,7 +370,7 @@ export interface ContentRecord {
  */
 export interface VideoSource {
 	id: string;
-	tenant_id?: string;
+
 	author_user_id?: string;
 	source_type: string;
 	source_url: string;
@@ -582,7 +582,7 @@ export type AuthErrorCode =
 	| 'weak_password'
 	| 'password_breached'
 	| 'invalid_body'
-	| 'tenant_unavailable'
+	| 'service_unavailable'
 	| 'unsupported_provider'
 	| 'state_error'
 	| 'invalid_state'
@@ -690,7 +690,7 @@ export interface OnboardingOptions {
 /** A forum discussion thread (GET /forum, GET /forum/{slug}). */
 export interface ForumThread {
 	id: string;
-	tenant_id: string;
+
 	content_id: string | null;
 	space_id: string;
 	author_user_id: string;
@@ -734,7 +734,7 @@ export interface ForumThread {
  * Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Tags) */
 export interface ForumTag {
 	id: string;
-	tenant_id: string;
+
 	name: string;
 	slug: string;
 	description?: string | null;
@@ -774,7 +774,7 @@ export interface PollWithResults {
 /** A forum reply (GET /forum/{id}/replies, POST /forum/{id}/replies). */
 export interface ForumReply {
 	id: string;
-	tenant_id: string;
+
 	thread_id: string;
 	parent_reply_id: string | null;
 	author_user_id: string;
@@ -820,7 +820,7 @@ export interface ForumVote {
 /** GET /content/{id}/comments and GET /content/{id}/comments?parent_id=. */
 export interface Comment {
 	id: string;
-	tenant_id: string;
+
 	content_id: string;
 	author_user_id: string | null;
 	parent_id: string | null;
@@ -1290,7 +1290,7 @@ export interface UserDashboard {
  * column; use the slug. */
 export interface SpaceType {
 	id: string;
-	tenant_id: string;
+
 	name: string;
 	slug: string;
 	description: string | null;
@@ -1305,7 +1305,7 @@ export interface SpaceType {
 /** GET /spaces/{slug} `space` field — full gen.Space row. */
 export interface Space {
 	id: string;
-	tenant_id: string;
+
 	parent_id: string | null;
 	space_type_id: string;
 	name: string;
@@ -1362,7 +1362,7 @@ export interface SpaceDetail {
 /** GET /spaces/{slug}/moderators item — ListSpaceModeratorsRow. */
 export interface SpaceModerator {
 	id: string;
-	tenant_id: string;
+
 	space_id: string;
 	user_id: string;
 	assigned_by: 'site_admin' | 'space_owner';
@@ -1405,7 +1405,7 @@ export interface SpaceMember {
 /** GET /space-permission-presets item — gen.SpacePermissionPreset row. */
 export interface SpacePermissionPreset {
 	id: string;
-	tenant_id: string;
+
 	name: string;
 	visibility: string;
 	posting_perm: string;
@@ -1440,7 +1440,7 @@ export interface SpaceJoinRequest {
 /** POST /spaces/{id}/report response — gen.Report row. */
 export interface SpaceReport {
 	id: string;
-	tenant_id: string;
+
 	reporter_user_id: string;
 	entity_type: string;
 	entity_id: string;
@@ -1458,7 +1458,7 @@ export interface SpaceReport {
  *  own submitted content reports with their review status. */
 export interface MyReport {
 	id: string;
-	tenant_id: string;
+
 	reporter_user_id: string;
 	entity_type: string;
 	entity_id: string;
@@ -1759,7 +1759,7 @@ export interface TrendingUser extends TrendingSnapshotBase {
 /** GET /learn/tracks item — a learning track. */
 export interface LearnTrack {
 	id: string;
-	tenant_id: string;
+
 	title: string;
 	slug: string;
 	description?: string | null;
@@ -1780,7 +1780,7 @@ export interface LearnTrackDetail {
 /** A module within a learning track. */
 export interface LearnModule {
 	id: string;
-	tenant_id: string;
+
 	track_id: string;
 	title: string;
 	slug: string;
@@ -1792,7 +1792,7 @@ export interface LearnModule {
 /** GET /learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug} — a single lesson. */
 export interface LearnLesson {
 	id: string;
-	tenant_id: string;
+
 	module_id: string;
 	module_title?: string | null;
 	title: string;
@@ -1860,7 +1860,7 @@ export interface LearnEnrollment {
 /** GET /coupons item — a public active coupon. */
 export interface Coupon {
 	id: string;
-	tenant_id: string;
+
 	provider_id: string | null;
 	coupon_type: string;
 	title: string;
@@ -1900,7 +1900,7 @@ export interface JCEComparison {
 /** Backing content row for a JCE comparison. */
 export interface ComparisonContent {
 	id: string;
-	tenant_id: string;
+
 	author_id: string;
 	title: string;
 	slug: string;
@@ -1924,7 +1924,7 @@ export interface ComparisonMetadata {
  */
 export interface ComparisonDetail {
 	id: string;
-	tenant_id: string;
+
 	author_id: string;
 	title: string;
 	slug: string;
@@ -1943,7 +1943,7 @@ export interface ComparisonDetail {
 export interface ComparisonItem {
 	id: string;
 	content_id: string;
-	tenant_id: string;
+
 	type_id: string | null;
 	title: string;
 	description: string | null;
@@ -1957,7 +1957,7 @@ export interface ComparisonItem {
 export interface ComparisonDimension {
 	id: string;
 	content_id: string;
-	tenant_id: string;
+
 	type_id: string | null;
 	label: string;
 	dimension_type: string;
@@ -2002,7 +2002,7 @@ export interface ComparisonCreated {
  */
 export interface ComparisonListItem {
 	id: string;
-	tenant_id: string;
+
 	author_id: string;
 	space_id: string | null;
 	content_type: string;
@@ -2022,7 +2022,7 @@ export interface ComparisonListItem {
 /** GET /jce/comparison-types — a comparison type with field/item counts. */
 export interface ComparisonType {
 	id: string;
-	tenant_id: string;
+
 	name: string;
 	slug: string;
 	description: string | null;
@@ -2099,7 +2099,7 @@ export interface TicketListItem {
 
 /** GET /me/tickets/{id} — full ticket + comments + attachments. */
 export interface TicketDetail extends TicketListItem {
-	tenant_id: string;
+
 	submitter_user_id: string;
 	assigned_to?: string | null;
 	assigned_group_id?: string | null;
@@ -2432,7 +2432,7 @@ export interface AssessmentField {
 
 export interface AssessmentForm {
 	id: string;
-	tenant_id: string;
+
 	name: string;
 	slug: string;
 	description: string;
@@ -2732,7 +2732,7 @@ export interface ReferralHistoryEntry {
 // --- Section 62: Newsletter ---
 export interface NewsletterSubscriber {
 	id: string;
-	tenant_id: string;
+
 	email: string;
 	user_id: string | null;
 	status: string;
@@ -2746,7 +2746,7 @@ export interface NewsletterSubscriber {
 // --- Section 65: Content Import ---
 export interface ContentImport {
 	id: string;
-	tenant_id: string;
+
 	user_id: string;
 	source_type: string;
 	source_url: string | null;
@@ -2768,7 +2768,7 @@ export interface ImportSource {
 // --- Section 106: Video Content Import ---
 export interface VideoImportJob {
 	id: string;
-	tenant_id: string;
+
 	user_id: string;
 	source_type: string;
 	source_url: string | null;
@@ -3419,7 +3419,7 @@ export interface Mentor {
 /** GET /me/mentor-profile — the caller's own mentor settings. */
 export interface MentorProfile {
 	user_id: string;
-	tenant_id: string;
+
 	is_mentor: boolean | null;
 	mentor_capacity: number | null;
 	mentor_max_capacity: number;
@@ -3434,7 +3434,7 @@ export interface MentorProfile {
 /** Mentorship connection (outgoing/incoming/admin list item). */
 export interface MentorshipConnection {
 	id: string;
-	tenant_id: string;
+
 	mentor_id: string;
 	mentee_id: string;
 	status: string;

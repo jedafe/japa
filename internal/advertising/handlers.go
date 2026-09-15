@@ -86,10 +86,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -165,7 +161,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -268,7 +264,7 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -294,7 +290,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -318,7 +314,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -361,7 +357,7 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -387,7 +383,7 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -418,7 +414,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -474,10 +470,6 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 // the untargeted/default eligible set; usergroup-based targeting is not yet
 // implemented (no targeting column on ad_campaigns — deferred, see plan P5).
 func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slotName := r.URL.Query().Get("slot")
 	if slotName == "" {
@@ -545,10 +537,6 @@ func campaignToWire(c AdCampaign) map[string]any {
 // Accepts a batch of ad events for async ingestion. Public (catalog: POST
 // /ads/events) — fire-and-forget impression/click ingestion from guests too.
 func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Events []struct {
@@ -615,7 +603,7 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -638,7 +626,7 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -676,7 +664,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -715,7 +703,7 @@ func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -740,7 +728,7 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -765,7 +753,7 @@ func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -795,7 +783,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -880,7 +868,7 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -912,7 +900,7 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -932,7 +920,7 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -958,7 +946,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1006,7 +994,7 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1033,10 +1021,6 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 // column. Uses the generated UpdateAdCampaignDetails query via the service
 // layer (Rule 2 — never raw SQL in handlers).
 func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1069,10 +1053,6 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 // via the generated GetAdSlotTypeByID query. The previous raw-SQL handler
 // referenced non-existent width/height columns and would 500.
 func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1099,7 +1079,7 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1125,7 +1105,7 @@ func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1151,7 +1131,7 @@ func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1177,7 +1157,7 @@ func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1209,7 +1189,7 @@ func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

@@ -88,9 +88,6 @@ func (h *Handlers) SetRAGIndexer(ri ragIndexer) {
 	h.rag = ri
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -139,10 +136,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // Also accepts ?dest= (destination space ID) as a geo-aware alternative to
 // the URL path :space_slug parameter (ADR-086 geo-aware pattern).
 func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// ?dest= takes precedence over :space_slug when provided.
 	if destParam := r.URL.Query().Get("dest"); destParam != "" {
@@ -233,10 +226,6 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 //	?has_wiki=     true (default) or false — when true, only spaces with at
 //	               least one active wiki page are returned.
 func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query()
 	level := strings.ToLower(q.Get("level"))
@@ -259,10 +248,6 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 // HandleGetPage handles GET /wiki/:space_slug/:page_slug — single wiki page
 // with its current approved revision content.
 func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	spaceSlug := chi.URLParam(r, "space_slug")
 	pageSlug := chi.URLParam(r, "page_slug")
@@ -296,10 +281,6 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 // HandleGetHistory handles GET /wiki/:space_slug/:page_slug/history —
 // revision history for a wiki page.
 func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	spaceSlug := chi.URLParam(r, "space_slug")
 	pageSlug := chi.URLParam(r, "page_slug")
@@ -353,7 +334,7 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -455,7 +436,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -577,7 +558,7 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -638,7 +619,7 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -679,7 +660,7 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -730,7 +711,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -790,10 +771,6 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 // HandleAdminList handles GET /admin/wiki — admin list of all wiki pages.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

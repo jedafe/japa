@@ -203,8 +203,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// Gate registration on the general.registration_open system setting.
 	// Default is true (fail open) — only block when explicitly set to false.
 	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
-	tenant := &struct{ ID pgtype.UUID }{}
-	if h.Settings != nil && tenant != nil {
+	if h.Settings != nil {
 		if open, err := h.Settings.GetSettingBool(r.Context(), "general.registration_open"); err == nil && !open {
 			errpkg.WriteError(w, http.StatusForbidden, "registration_closed",
 				"Registration is currently closed. Please check back later.")
@@ -265,11 +264,6 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 		errpkg.WriteError(w, http.StatusBadRequest, "weak_password", err.Error())
 
-		return
-	}
-
-	if tenant == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -431,17 +425,13 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenant := &struct{ ID pgtype.UUID }{}
-	if tenant == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	// Get client IP from request
 	ip := clientIP(r)
 	bruteKey := LoginIdentifier(req.Email, ip)
 
-	// Check brute-force lockout — read max attempts from tenant settings.
+	// Check brute-force lockout — read max attempts from system settings.
 	maxAttempts := DefaultMaxLoginAttempts
 	if h.Settings != nil {
 		maxAttempts = MaxLoginAttempts(r.Context(), h.Settings)
@@ -1133,11 +1123,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	// Always return 200 to prevent email enumeration — whether the user exists or not.
 	defer func() {
@@ -1472,11 +1458,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	// Always return 200 to prevent email enumeration.
 	defer func() {

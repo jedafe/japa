@@ -10,7 +10,6 @@
 
 	type VideoImportJob = {
 		id: string;
-		tenant_id: string;
 		user_id: string;
 		owner_username?: string;
 		source_type: string;

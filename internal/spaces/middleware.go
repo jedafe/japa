@@ -7,7 +7,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
@@ -41,11 +40,7 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 				return
 			}
 
-			t := &struct{ ID pgtype.UUID }{}
-			if t == nil {
-				errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-				return
-			}
+
 
 			space, err := service.GetSpaceBySlug(r.Context(), slug)
 			if err != nil {

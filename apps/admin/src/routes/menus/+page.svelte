@@ -22,7 +22,6 @@
 
 	type MenuItem = {
 		id: string;
-		tenant_id: string;
 		menu_id: string;
 		parent_id?: string | null;
 		label: string;
@@ -41,7 +40,6 @@
 
 	type Menu = {
 		id: string;
-		tenant_id: string;
 		slug: string;
 		name: string;
 		placement: string;

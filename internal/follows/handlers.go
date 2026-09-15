@@ -24,10 +24,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -102,7 +98,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -176,10 +172,6 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 // and the entity_id is read from the same path parameter — not from a query
 // string. Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// The caller's user ID is needed to resolve is_following per item
 	// (Section 31). Best-effort: when absent, is_following defaults to false.
@@ -223,10 +215,6 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 // GetFollowing handles GET /api/v1/users/{user_id}/following.
 func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// The caller's user ID is needed to resolve is_following per item
 	// (Section 31). Best-effort: when absent, is_following defaults to false.
@@ -260,10 +248,6 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 // Supports optional ?type=user|space|tag|organization
 // filtering per Section 31 contract (H6).
 func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -303,10 +287,6 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 // ListMyFollowers handles GET /api/v1/me/followers — the caller's own followers
 // (H5 — Section 31 contract). Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) ListMyFollowers(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -345,10 +325,6 @@ func mapTypeFilter(t string) (string, bool) {
 
 // ListMyFollowedTags handles GET /api/v1/me/followed-tags — tags the caller follows.
 func (h *Handlers) ListMyFollowedTags(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -380,7 +356,7 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -438,7 +414,7 @@ func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

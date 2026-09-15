@@ -22,7 +22,7 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -108,7 +108,7 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -126,10 +126,6 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 // SPACES-003: returns primary spaces (country/state/city) eligible to be
 // parents of a custom space, filtered by the optional ?q= search param.
 func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 

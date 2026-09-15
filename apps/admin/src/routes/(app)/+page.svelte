@@ -29,7 +29,6 @@
 	type TrafficSourceRow = { referrer: string | null; visits: number };
 	type ContentStatRow = {
 		day: string;
-		tenant_id: string;
 		content_id: string;
 		views: number;
 		reactions: number;

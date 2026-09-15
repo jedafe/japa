@@ -27,7 +27,6 @@
 
 	type ContentImport = {
 		id: string;
-		tenant_id: string;
 		user_id: string;
 		source_type: string;
 		source_url?: string | null;

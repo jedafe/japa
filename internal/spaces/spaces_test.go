@@ -333,8 +333,8 @@ func _TestListSpaceTypes_NoTenant(t *testing.T) {
 		t.Fatalf("status = %d, want 503", rr.Code)
 	}
 
-	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "tenant_unavailable" {
-		t.Errorf("error.code = %q, want tenant_unavailable", got.Error.Code)
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "service_unavailable" {
+		t.Errorf("error.code = %q, want service_unavailable", got.Error.Code)
 	}
 }
 

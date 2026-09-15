@@ -27,7 +27,6 @@ export interface StudioSettings {
 	default_visibility: string;
 	default_tags: string[];
 	contentMinLength?: number;
-	tenantId?: string;
 	// Session tokens obtained by exchanging the API key.
 	accessToken?: string;
 	refreshToken?: string;

@@ -45,9 +45,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -96,10 +93,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleSelector handles GET /checklist/selector — country + visa-type
 // options from published visa guides. Public, no auth required.
 func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
@@ -127,10 +120,6 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 // auth required (anonymous browse). Returns the ChecklistGuideResult shape
 // that matches the frontend ChecklistGuide type (§70 contract).
 func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	guideID, ok := scanUUIDParam(w, r, "guide_id")
 	if !ok {
@@ -169,7 +158,7 @@ func (h *Handlers) HandleGetProgress(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -213,7 +202,7 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -267,7 +256,7 @@ func (h *Handlers) HandleResetProgress(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -300,10 +289,6 @@ func (h *Handlers) HandleResetProgress(w http.ResponseWriter, r *http.Request) {
 // progress, filterable by guide_id and user_id. Admin-only.
 func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -352,10 +337,6 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 // completion rates by guide. Admin-only.
 func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

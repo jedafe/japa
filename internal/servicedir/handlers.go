@@ -88,9 +88,6 @@ func NewHandlers(service *Service, settings *config.Settings, rbac RBACResolver,
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -138,10 +135,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleCategories handles GET /services/categories — returns the canonical
 // service category option list (Rule 16).
 func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
@@ -155,10 +148,6 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 // HandleList handles GET /services — list published service listings with
 // filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
@@ -216,10 +205,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /services/:slug — single published service listing.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
@@ -286,7 +271,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -333,7 +318,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -394,7 +379,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -467,10 +452,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
@@ -534,7 +515,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -588,7 +569,7 @@ func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -627,10 +608,6 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

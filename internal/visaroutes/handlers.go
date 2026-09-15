@@ -54,9 +54,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -104,10 +101,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /visa-routes — list published+active visa routes
 // with filters. Query params: ?dest=&profession=&education=&experience_years=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
@@ -156,10 +149,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleCompare handles GET /visa-routes/compare — compare up to 4 visa
 // routes side-by-side. Query params: ?ids=id1,id2,id3,id4 (max 4).
 func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
@@ -219,10 +208,6 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /visa-routes/:id — single published+active visa
 // route detail.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
@@ -259,10 +244,6 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // (any status). Supports ?dest=&status=&active=&category=&q=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -324,7 +305,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -457,7 +438,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

@@ -110,10 +110,6 @@ type PaymentProviderInfo struct {
 // panel). If no rows exist yet, falls back to system_settings pricing config
 // and ultimately to compiled-in defaults (Rule 3).
 func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Try DB-managed plans first.
 	dbPlans, err := gen.New(h.Service.db.Reader).ListActiveSubscriptionPlans(r.Context())
@@ -264,10 +260,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -333,7 +325,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -415,10 +407,6 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 // HandlePaystackWebhook handles POST /api/v1/payments/webhook/paystack.
 // This endpoint is public (no auth required) as webhooks come from external services.
 func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Read raw body for signature verification.
 	body, err := io.ReadAll(r.Body)
@@ -478,10 +466,6 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 // HandleStripeWebhook handles POST /api/v1/payments/webhook/stripe.
 // This endpoint is public (no auth required) as webhooks come from external services.
 func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Read raw body for signature verification.
 	body, err := io.ReadAll(r.Body)
@@ -543,10 +527,6 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 // NOWPayments IPN sends HMAC-SHA256 of the payload using the IPN secret,
 // with the signature in the x-nowpayments-sig header.
 func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Read raw body for signature verification.
 	body, err := io.ReadAll(r.Body)
@@ -776,7 +756,7 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -802,7 +782,7 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -838,7 +818,7 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -909,7 +889,7 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -952,7 +932,7 @@ func (h *Handlers) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -975,7 +955,7 @@ func (h *Handlers) GetActiveSubscription(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -997,7 +977,7 @@ func (h *Handlers) CancelMySubscription(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1027,7 +1007,7 @@ func (h *Handlers) CreateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1110,7 +1090,7 @@ func (h *Handlers) ListDiscountCodes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1133,7 +1113,7 @@ func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1173,7 +1153,7 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1284,10 +1264,6 @@ func verifyStripeSignature(payload []byte, header, secret string) error {
 
 // UpdateDiscountCode handles PATCH /admin/discount-codes/:id.
 func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1399,10 +1375,6 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 
 // GetDiscountCodeUsage handles GET /admin/discount-codes/:id/usage.
 func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	codeID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1461,7 +1433,7 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1503,7 +1475,7 @@ func (h *Handlers) ReactivateSubscription(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1602,10 +1574,6 @@ func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
 
 // ListAdminPlans handles GET /api/v1/admin/plans.
 func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	plans, err := gen.New(h.Service.db.Reader).ListSubscriptionPlans(r.Context())
 	if err != nil {
@@ -1623,10 +1591,6 @@ func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
 
 // CreateAdminPlan handles POST /api/v1/admin/plans.
 func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input AdminPlanInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1679,10 +1643,6 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 
 // UpdateAdminPlan handles PATCH /api/v1/admin/plans/{id}.
 func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1729,10 +1689,6 @@ func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
 
 // DeleteAdminPlan handles DELETE /api/v1/admin/plans/{id}.
 func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1755,10 +1711,6 @@ func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
 // Lists all payments across the platform with optional filters (JEOS §17
 // "Admin Payment Routes"). Gated by payments.refund permission (admin-only).
 func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -1814,10 +1766,6 @@ func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
 // GetAdminPayment handles GET /api/v1/admin/payments/:id.
 // Returns payment detail (JEOS §17 "Admin Payment Routes").
 func (h *Handlers) GetAdminPayment(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1843,10 +1791,6 @@ type PlanTrackResponse struct {
 
 // AdminListPlanTracks handles GET /api/v1/admin/plans/{id}/tracks.
 func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1873,10 +1817,6 @@ func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
 // AdminSetPlanTracks handles PUT /api/v1/admin/plans/{id}/tracks.
 // Replaces the entire track list for a plan.
 func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1942,10 +1882,6 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 
 // AdminAddTrackToPlan handles POST /api/v1/admin/plans/{id}/tracks/{trackId}.
 func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1972,10 +1908,6 @@ func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
 
 // AdminRemoveTrackFromPlan handles DELETE /api/v1/admin/plans/{id}/tracks/{trackId}.
 func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2003,10 +1935,6 @@ func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Reque
 // PublicListPlanTracks handles GET /api/v1/pricing/plans/{slug}/tracks.
 // Returns the track IDs included in a plan (empty = all tracks).
 func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {

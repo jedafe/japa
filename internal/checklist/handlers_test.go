@@ -100,7 +100,7 @@ func _TestHandleSelector_NoTenant(t *testing.T) {
 	h.HandleSelector(rr, req)
 
 	if rr.Code != http.StatusServiceUnavailable {
-		t.Errorf("HandleSelector without tenant = %d, want %d (tenant_unavailable)", rr.Code, http.StatusServiceUnavailable)
+		t.Errorf("HandleSelector without tenant = %d, want %d (service_unavailable)", rr.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -114,7 +114,7 @@ func _TestHandleGetItems_NoTenant(t *testing.T) {
 	h.HandleGetItems(rr, req)
 
 	if rr.Code != http.StatusServiceUnavailable {
-		t.Errorf("HandleGetItems without tenant = %d, want %d (tenant_unavailable)", rr.Code, http.StatusServiceUnavailable)
+		t.Errorf("HandleGetItems without tenant = %d, want %d (service_unavailable)", rr.Code, http.StatusServiceUnavailable)
 	}
 }
 

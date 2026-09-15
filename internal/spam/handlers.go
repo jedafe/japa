@@ -26,10 +26,6 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -155,9 +151,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -182,10 +175,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // server-side pagination (BUG-010). Supports optional block_type filter.
 func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -229,7 +218,7 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -293,7 +282,7 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -368,10 +357,6 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -409,10 +394,6 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 // CreateCensoredWord handles POST /admin/spam/censored-words.
 func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -470,10 +451,6 @@ func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -524,10 +501,6 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -556,10 +529,6 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 // server-side pagination (BUG-010). Tenant-scoped per JEOS §9.
 func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -598,10 +567,6 @@ func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 // DeleteUserBlock handles DELETE /admin/spam/user-blocks/{blockerId}/{blockedId}.
 func (h *Handlers) DeleteUserBlock(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

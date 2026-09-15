@@ -68,14 +68,7 @@ func NewHandlers(database *db.DB, service *Service, settings *config.Settings, v
 // Supports server-side pagination (page, page_size), search (q), and
 // sort (sort + dir) per the admin list-endpoint spec.
 func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"error": map[string]any{"code": "tenant_unavailable", "message": "No tenant available", "status": 503},
-		})
 
-		return
-	}
 
 	page, pageSize := parsePagination(r)
 	sortCol, sortDir := parseSort(r, map[string]bool{"created_at": true, "persona_name": true, "content_type": true, "status": true}, "created_at", "desc")
@@ -84,7 +77,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	// Count total matching rows for pagination meta.
 	var total int
 
-	countArgs := []interface{}{t.ID}
+	countArgs := []interface{}{}
 
 	countQuery := `SELECT count(*) FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
@@ -119,14 +112,14 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	// is present (BUG-002 — previously pageSize/offset were in the initial
 	// args, causing $2=search to receive pageSize and $3=LIMIT to receive
 	// offset when search was provided).
-	listArgs := []interface{}{t.ID}
+	listArgs := []interface{}{}
 	listQuery := `SELECT cr.id, cr.content_id, c.content_type, cr.status, cr.created_at,
 			        u.username as persona_name
 			 FROM content_reviews cr
 			 JOIN contents c ON c.id = cr.content_id
 			 JOIN users u ON u.id = c.author_id
 			 WHERE cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
-	argIdx := 2
+	argIdx := 1
 
 	if search != "" {
 		listQuery += ` AND (u.username ILIKE '%' || $` + strconv.Itoa(argIdx) + ` || '%' OR c.content_type ILIKE '%' || $` + strconv.Itoa(argIdx) + ` || '%')`
@@ -183,29 +176,21 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 // HandleStats — GET /api/v1/admin/participation/stats
 // Returns synthetic action totals (read from the Valkey global daily counter,
 // BUG-005) and the global cap (read from system_settings
-// participation.global_daily_cap, BUG-013). The tenant for the counter is
-// taken from the request context.
+// participation.global_daily_cap, BUG-013).
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"error": map[string]any{"code": "tenant_unavailable", "message": "No tenant available", "status": 503},
-		})
 
-		return
-	}
 
 	var activePersonas int
 	_ = h.database.Reader.QueryRow(r.Context(), `SELECT count(*) FROM ai_personas WHERE status = 'active'`).Scan(&activePersonas)
 
 	// Synthetic actions today from the Valkey global daily counter
-	// (jc:persona:global:{}:{date}, §76). A SPA cannot query
+	// (jc:persona:global:{date}, §76). A SPA cannot query
 	// Valkey directly (Rule 16), so the backend must return this value.
 	syntheticToday := 0
 
 	today := time.Now().UTC().Format("2006-01-02")
 	if h.vk != nil {
-		key := valkey.MustKey("persona:global:%s:%s", t.ID.String(), today)
+		key := valkey.MustKey("persona:global:%s", today)
 		if v, err := h.vk.Get(r.Context(), key).Int(); err == nil {
 			syntheticToday = v
 		}

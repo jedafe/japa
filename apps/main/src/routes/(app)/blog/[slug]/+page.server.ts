@@ -5,7 +5,7 @@ import type { ContentAnalytics, ContentArticle, SeriesPost } from '$lib/types/co
 import type { Comment } from '$lib/types';
 
 /**
- * Blog single post — GET /api/v1/blog/{slug} (public, tenant-scoped).
+ * Blog single post — GET /api/v1/blog/{slug} (public, platform-scoped).
  * Ref: japaconnect-engineering/sections/14-content-type-system.md
  *      japaconnect-engineering/sections/49-unified-comments.md
  * Rendered as a dev.to reading layout (ADR-058 Exception #1):

@@ -230,13 +230,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context and writes a 503
-// error when none is available. The boolean return is false when the caller
-// should abort (the error has already been written).
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
-
 // handleServiceError translates a Service-layer error into the appropriate HTTP
 // response. It centralizes the not-found, duplicate, and fallback mapping so
 // every handler stays consistent.

@@ -10,14 +10,14 @@ import type { SessionUser } from '$lib/types';
  * marketplace. The canonical host is configured via the
  * `university.subdomain` and `university.custom_domain` system_settings
  * (ADR-063 §2); the edge/proxy routes the configured host to this app
- * and the backend resolves the tenant from the hostname. The
+ * and the backend uses the hostname for host-based routing. The
  * learn.japaconnect.com host redirects to the configured university host
  * (handled by the edge/proxy).
  * Ref: japaconnect-engineering/conventions/system-settings-catalog.md
  */
 export const handle: Handle = async ({ event, resolve }) => {
-	// Hostname excludes the port; the backend resolves the tenant from it.
-	event.locals.tenantHost = event.url.hostname;
+	// Hostname excludes the port; forwarded to the backend for host-based routing.
+	event.locals.requestHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 
 	// Detect locale prefix in the URL path (e.g. /fr/tracks → 'fr').

@@ -123,10 +123,6 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 	h.permCache.InvalidateUserCache(ctx, targetUserID)
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -176,10 +172,6 @@ func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request) (gen.GetTa
 // ListTags handles GET /api/v1/tags — public list with ?q, ?sort, ?page, ?page_size.
 // Also handles GET /api/v1/admin/tags — admin list with pagination.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query().Get("q")
 
@@ -253,10 +245,6 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 
 // GetTag handles GET /api/v1/tags/{slug}. [public].
 func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	tag, ok := h.resolveTag(w, r)
 	if !ok {
@@ -333,10 +321,6 @@ func (h *Handlers) tagFieldDefs(ctx context.Context) []tagFieldDef {
 // The composite (created_at, id) cursor avoids skipping items that share the
 // same created_at timestamp. [public].
 func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	tag, ok := h.resolveTag(w, r)
 	if !ok {
@@ -442,10 +426,6 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 
 // ToggleTagFollow handles POST/DELETE /api/v1/tags/{slug}/follow.
 func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -468,10 +448,6 @@ func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
 
 // GetTagFollowers handles GET /api/v1/tags/{slug}/followers.
 func (h *Handlers) GetTagFollowers(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	tag, ok := h.resolveTag(w, r)
 	if !ok {
@@ -617,10 +593,6 @@ func splitTagNames(v any) []string {
 
 // CreateTag handles POST /api/v1/admin/tags.
 func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Name         string          `json:"name"`
@@ -717,10 +689,6 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTag handles PATCH /api/v1/admin/tags/{id}.
 func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -856,10 +824,6 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 // DeleteTag handles DELETE /api/v1/admin/tags/{id}.
 // Spec: "delete tag (only if no content tagged)" and system tags cannot be deleted.
 func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -924,10 +888,6 @@ func isValidHexColor(s string) bool {
 
 // ListTagModerators handles GET /api/v1/admin/tags/:id/moderators.
 func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	tagID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -955,10 +915,6 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 
 // AddTagModerator handles POST /api/v1/admin/tags/:id/moderators (Section 49).
 func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1032,10 +988,6 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 
 // RemoveTagModerator handles DELETE /api/v1/admin/tags/:id/moderators/:userId (Section 49).
 func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	tagID, err := parseUUIDParam(r, "id")
 	if err != nil {

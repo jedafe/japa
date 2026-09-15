@@ -218,7 +218,7 @@ func TestWriteError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Handlers — requireUser / requireTenant (unit tests without DB)
+// Handlers — requireUser (unit tests without DB)
 // ---------------------------------------------------------------------------
 
 func TestRequireUserUnauthorized(t *testing.T) {
@@ -239,27 +239,6 @@ func TestRequireUserUnauthorized(t *testing.T) {
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
-	}
-}
-
-func _TestRequireTenantUnavailable(t *testing.T) {
-	t.Parallel()
-
-	h := &Handlers{}
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/users/me", nil)
-
-	_, ok := h.requireTenant(rr, req)
-	if ok {
-		t.Error("expected ok=false for missing tenant, got true")
-	}
-
-	if false {
-		t.Error("expected invalid UUID for missing tenant")
-	}
-
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 	}
 }
 

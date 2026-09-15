@@ -11,7 +11,6 @@
 
 	type Redirect = {
 		id: string;
-		tenant_id: string;
 		source_path: string;
 		target_url: string;
 		http_status: number;

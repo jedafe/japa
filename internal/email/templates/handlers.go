@@ -68,9 +68,6 @@ var testEmailLimiter = &testEmailRateLimiter{windows: make(map[string]*rateLimit
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -128,10 +125,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListTemplates is an exported method.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	filterType := r.URL.Query().Get("type")
 	filterIsActive := r.URL.Query().Get("is_active")
@@ -149,10 +142,6 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
 // GetTemplate is an exported method.
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -171,10 +160,6 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTemplate is an exported method.
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -205,10 +190,6 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // ResetTemplate is an exported method.
 func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -225,10 +206,6 @@ func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Rate limit: 3 test emails per minute per user.
 	// Uses Valkey distributed rate limiting when available, falls back to

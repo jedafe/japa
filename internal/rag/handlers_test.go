@@ -63,13 +63,11 @@ func TestHandleGetSettings_Unauthorized(t *testing.T) {
 	}
 }
 
-// TestHandleStatus_NoTenant verifies that the status endpoint returns
-// tenant_unavailable when no tenant is in the context.
-func _TestHandleStatus_NoTenant(t *testing.T) {
-	// This test would need a mock auth context to pass the requireUser check
-	// and then fail at requireTenant. For a full test, we'd need the auth
-	// middleware's context injection. This is a placeholder — the full
-	// integration test lives in internal/server/routes_test.go.
+// TestHandleStatus_NoService is a placeholder for the service-unavailable path.
+func _TestHandleStatus_NoService(t *testing.T) {
+	// This test would need a mock auth context to pass the requireUser check.
+	// For a full test, we'd need the auth middleware's context injection.
+	// This is a placeholder — the full integration test lives in internal/server/routes_test.go.
 	t.Skip("requires auth context injection — covered by integration tests")
 }
 

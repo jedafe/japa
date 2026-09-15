@@ -244,10 +244,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -395,7 +391,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -556,10 +552,6 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 // ?sort=latest|top and ?solved=true|false.
 // Public: when no user is present, lists all public threads for the tenant.
 func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	cursor := parseCursorCreatedAt(r)
@@ -694,10 +686,6 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 // GetThread handles GET /api/v1/forum/{slug}.
 func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -996,7 +984,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1048,7 +1036,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1099,7 +1087,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1141,7 +1129,7 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1172,7 +1160,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1226,10 +1214,6 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 
 // ListReplies handles GET /api/v1/forum/{id}/replies.
 func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1303,7 +1287,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1338,7 +1322,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1364,10 +1348,6 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1401,7 +1381,7 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1457,7 +1437,7 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1496,7 +1476,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1545,7 +1525,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1570,7 +1550,7 @@ func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1709,7 +1689,7 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1852,7 +1832,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1917,10 +1897,6 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 
 // ListTags handles GET /api/v1/forum/tags.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -1936,10 +1912,6 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 
 // GetTagBySlug handles GET /api/v1/forum/tags/{slug}.
 func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -1962,7 +1934,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2027,7 +1999,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

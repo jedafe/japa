@@ -80,7 +80,7 @@
 	}
 
 	// §06 'suggest' fields can declare a named option source instead of a
-	// static list — {"source":"geo_countries"} pulls the tenant's countries
+	// static list — {"source":"geo_countries"} pulls the platform's countries
 	// from GET /geo/countries (Rule 16).
 	function suggestSource(field: CustomFieldDef): string | null {
 		const o = field.options;

@@ -24,10 +24,6 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	rows, err := h.Service.read.ListSpaceJoinRequests(r.Context(),
 		spaceID,
@@ -71,10 +67,6 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	err = h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
 		SpaceID: spaceID,
@@ -114,10 +106,6 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	err = h.Service.write.UpdateSpaceStatus(r.Context(), gen.UpdateSpaceStatusParams{
 		ID: spaceID,
@@ -137,10 +125,6 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -199,10 +183,6 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 // given a composite id (space_id::user_id) so the panel can target a specific
 // request for approval/rejection.
 func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	rows, err := h.Service.read.ListAllSpaceJoinRequests(r.Context())
 	if err != nil {
@@ -240,10 +220,6 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 // encodes space_id::user_id, which is split and applied via the existing
 // UpdateSpaceJoinRequest store call.
 func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Request, status string) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	composite := chi.URLParam(r, "id")
 

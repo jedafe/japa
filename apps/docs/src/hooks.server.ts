@@ -34,8 +34,8 @@ function resolveAudiences(
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// Hostname excludes the port; the backend resolves the tenant from it.
-	event.locals.tenantHost = event.url.hostname;
+	// Hostname excludes the port; forwarded to the backend for host-based routing.
+	event.locals.requestHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 
 	// Detect locale prefix in the URL path (e.g. /fr/docs → 'fr').

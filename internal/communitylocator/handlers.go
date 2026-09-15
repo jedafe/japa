@@ -49,9 +49,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -100,10 +97,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // organisations with filters. Query params:
 // ?dest=&city=&origin=&type=&lat=&lng=&radius=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
@@ -175,10 +168,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // of hardcoding the options. Public/anonymous (the list itself is not
 // sensitive); feature-flagged with the rest of the routes.
 func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
@@ -191,10 +180,6 @@ func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /community-locator/:slug — single published
 // community organisation.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
@@ -235,7 +220,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -305,7 +290,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -345,10 +330,6 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 // Supports ?dest=&origin=&type=&status=&q=&sort=&dir=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -406,7 +387,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -445,10 +426,6 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -486,10 +463,6 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -545,7 +518,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -601,10 +574,6 @@ func (h *Handlers) HandleAdminArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -641,10 +610,6 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {

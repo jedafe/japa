@@ -70,7 +70,7 @@ export const load: PageServerLoad = async (event) => {
 	const isGated = audience !== 'users' && audience !== 'api';
 
 	// Permission-based edit affordance (§44). Group-name checks are not
-	// reliable because roles vary per tenant; the docs.manage node is canonical.
+	// reliable because roles vary by platform; the docs.manage node is canonical.
 	// DOC-007: permissions are already resolved in hooks.server.ts.
 	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
 

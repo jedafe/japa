@@ -67,9 +67,6 @@ func (h *Handlers) writeError(w http.ResponseWriter, status int, code, message s
 	})
 }
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -108,10 +105,6 @@ func (h *Handlers) parsePagination(r *http.Request) (int32, int32) {
 
 // HandleListJobs — GET /api/v1/admin/studio/jobs.
 func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := h.parsePagination(r)
 	f := JobListFilter{Limit: limit, Offset: offset}
@@ -152,10 +145,6 @@ func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreateJob — POST /api/v1/admin/studio/jobs.
 func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -187,10 +176,6 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetJob — GET /api/v1/admin/studio/jobs/:id.
 func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
@@ -208,10 +193,6 @@ func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleRetryJob — POST /api/v1/admin/studio/jobs/:id/retry.
 func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
@@ -228,10 +209,6 @@ func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleCancelJob — DELETE /api/v1/admin/studio/jobs/:id.
 func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
@@ -254,10 +231,6 @@ func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleListBatches — GET /api/v1/admin/studio/batches.
 func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := h.parsePagination(r)
 
@@ -275,10 +248,6 @@ func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreateBatch — POST /api/v1/admin/studio/batches.
 func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -302,10 +271,6 @@ func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetBatch — GET /api/v1/admin/studio/batches/:id.
 func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
@@ -327,10 +292,6 @@ func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
 // request — batches may contain many failed jobs and retrying them
 // synchronously would time out.
 func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
@@ -347,10 +308,6 @@ func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
 
 // HandleContentTypes — GET /api/v1/admin/studio/content-types.
 func (h *Handlers) HandleContentTypes(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	resp := h.svc.ListContentTypes(r.Context())
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": resp})
@@ -358,10 +315,6 @@ func (h *Handlers) HandleContentTypes(w http.ResponseWriter, r *http.Request) {
 
 // HandleStats — GET /api/v1/admin/studio/stats.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	stats, err := h.svc.GetStats(r.Context())
 	if err != nil {
@@ -376,10 +329,6 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 // Returns active personas in {id, label} format for the create-job dropdown.
 // Delegates to the injected personas service.
 func (h *Handlers) HandlePersonas(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.personas == nil {
 		h.writeError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")

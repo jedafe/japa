@@ -58,10 +58,6 @@ func (h *AdminHandlers) runAdminList(w http.ResponseWriter, r *http.Request, typ
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	status := r.URL.Query().Get("status")
 	typeFilter := r.URL.Query().Get(typeKey)
@@ -109,7 +105,7 @@ func (h *AdminHandlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -165,10 +161,6 @@ func (h *AdminHandlers) runAdminGet(w http.ResponseWriter, r *http.Request, notF
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
@@ -195,10 +187,6 @@ func (h *AdminHandlers) GetSource(w http.ResponseWriter, r *http.Request) {
 // PatchSource handles PATCH /api/v1/admin/video-sources/{id}.
 func (h *AdminHandlers) PatchSource(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -251,7 +239,7 @@ func (h *AdminHandlers) RetryImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

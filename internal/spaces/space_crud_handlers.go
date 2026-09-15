@@ -27,10 +27,6 @@ import (
 // SPACES-009/011: the default (no type/parent filter) branch uses SQL-level
 // pagination, search, geo, and sort for performance and spec conformance.
 func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Resolve the optional viewer user so the visibility filter can include
 	// members/private spaces the caller belongs to (BUG-007, Section 05 line 272).
@@ -163,10 +159,6 @@ func ptrStringsToStrings(in []*string) []string {
 
 // ListDistinctRegions handles GET /api/v1/spaces/regions.
 func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	regions, err := h.Service.ListDistinctRegions(r.Context())
 	if err != nil {
@@ -179,10 +171,6 @@ func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
 
 // ListSubregionsByRegion handles GET /api/v1/spaces/subregions.
 func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	region := r.URL.Query().Get("region")
 	if region == "" {
@@ -313,10 +301,6 @@ func rowToMap[T any](row T) map[string]any {
 // admin panel with owner and space_type name resolved via JOINs. Supports
 // q (name/slug search), status, and visibility filter params.
 func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -354,10 +338,6 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 // to. Super admins see every active space in the tenant so they can post to
 // any space without joining it first (Section 03 — admin override).
 func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -430,10 +410,6 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 // tab. Public-safe: only public+active spaces of the {id} user. Non-active
 // users are already 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
@@ -496,10 +472,6 @@ func toSpaceCards(spaces []gen.ListPublicSpacesByMemberUserRow) []SpaceCard {
 // ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space
 // the caller moderates. Supports optional ?q, ?page_size and ?page_offset.
 func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -529,10 +501,6 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 // returns every space the caller belongs to as a member. Supports optional ?q,
 // ?page_size and ?page_offset.
 func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -563,10 +531,6 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -674,10 +638,6 @@ func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	space, err := h.Service.GetSpace(r.Context(), id)
 	if err != nil {
@@ -729,15 +689,6 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 
 	if !IsValidLevel(req.Level) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, custom, or global")
-		return
-	}
-	_, // Custom spaces must be linked to at least one primary space (Section 05).
-		// The platform first keyword-matches the space name against primary geo
-		// spaces; if that fails, the creator must explicitly provide a parent_id
-		// or parent_space_ids. Parent linkage is resolved before creation.
-
-		ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -905,10 +856,6 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -1119,10 +1066,6 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 

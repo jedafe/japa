@@ -33,9 +33,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -125,10 +122,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // Apply handles POST /learn/university/instructor/apply.
 func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -155,10 +148,6 @@ func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
 // total_revenue_kobo, courses_count) so the creator dashboard can render
 // without a second round-trip (BUG-003).
 func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -213,10 +202,6 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 
 // UpdateMyInstructorProfile handles PATCH /learn/university/instructor/me.
 func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -264,10 +249,6 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 
 // GetPublicInstructor handles GET /learn/university/instructors/{id}.
 func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -302,10 +283,6 @@ func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
 
 // ListMyTracks handles GET /learn/university/my/tracks.
 func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -334,10 +311,6 @@ func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
 
 // CreateMyTrack handles POST /learn/university/my/tracks.
 func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -414,10 +387,6 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMyTrack handles PATCH /learn/university/my/tracks/{id}.
 func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -490,10 +459,6 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 
 // SubmitMyTrack handles POST /learn/university/my/tracks/{id}/submit.
 func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -522,10 +487,6 @@ func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
 
 // GetMyTrackStats handles GET /learn/university/my/tracks/{id}/stats.
 func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -617,10 +578,6 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 // contract); the university page Courses tab sends space_id to list linked
 // tracks (ADR-063 §9.2).
 func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePagination(r)
 
@@ -661,10 +618,6 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 
 // GetCatalogTrack handles GET /learn/university/catalog/{slug}.
 func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -690,10 +643,6 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 // Returns the earnings summary (open/paid/total) plus a daily revenue_series
 // for the LayerChart (BUG-005).
 func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -744,10 +693,6 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 // Returns payouts mapped to a clean DTO with the fields the frontend expects
 // (amount_kobo, requested_at, processed_at, status) (BUG-006).
 func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -813,10 +758,6 @@ func payoutFromRow(p gen.InstructorPayout) payoutDTO {
 // Optional ?space_id= scopes the list to instructors with a track targeted at
 // that space (ADR-063 admin per-university view).
 func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
@@ -848,10 +789,6 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 // AdminGetInstructor handles GET /admin/university/instructors/{id}.
 // Returns the masked instructor profile (payout_method is never exposed raw).
 func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -869,10 +806,6 @@ func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
 
 // AdminApproveInstructor handles POST /admin/university/instructors/{id}/approve.
 func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -902,10 +835,6 @@ func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request
 
 // AdminRejectInstructor handles POST /admin/university/instructors/{id}/reject.
 func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -928,10 +857,6 @@ func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request)
 
 // AdminSuspendInstructor handles POST /admin/university/instructors/{id}/suspend.
 func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -954,10 +879,6 @@ func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request
 
 // AdminReinstateInstructor handles POST /admin/university/instructors/{id}/reinstate.
 func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -981,10 +902,6 @@ func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Reque
 // AdminDeleteInstructor handles DELETE /admin/university/instructors/{id}.
 // Blocked while the instructor is approved — reject or suspend first.
 func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1008,10 +925,6 @@ func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request)
 // Returns {data, meta{total,limit,offset}} so the admin hub can show the
 // true pending count (not just the page length).
 func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePagination(r)
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
@@ -1040,10 +953,6 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 
 // AdminApproveTrack handles POST /admin/university/tracks/{id}/approve.
 func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1065,10 +974,6 @@ func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
 // Returns {data, meta{total,limit,offset}} so the admin hub can show the
 // true pending-payout count (not just the page length).
 func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
@@ -1098,10 +1003,6 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 
 // AdminGetPayout handles GET /admin/university/payouts/{id}.
 func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	payoutID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1119,10 +1020,6 @@ func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
 
 // AdminProcessPayout handles POST /admin/university/payouts/{id}/process.
 func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	payoutID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1149,10 +1046,6 @@ func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
 // ?payout_id= ?from= ?to= (RFC 3339, half-open [from,to)) and offset pagination
 // (?page=&limit=). Returns the standard {data, meta{total,page,limit}} envelope.
 func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePagination(r)
 
@@ -1213,10 +1106,6 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 // AdminGetRevenueSplit handles GET /admin/university/revenue-splits/{id}.
 // Read-only single fetch of an immutable revenue-split audit record (ADR-063 §9).
 func (h *Handlers) AdminGetRevenueSplit(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	splitID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1342,10 +1231,6 @@ func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
 // submission_status (BUG-002). Optional ?space_id= scopes to tracks targeted
 // at that space.
 func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
@@ -1375,10 +1260,6 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 
 // AdminGetTrack handles GET /admin/university/tracks/{id}.
 func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1397,10 +1278,6 @@ func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
 // AdminRejectTrack handles POST /admin/university/tracks/{id}/reject.
 // Rejects a submitted track with an optional reason (BUG-002, BUG-004).
 func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1425,10 +1302,6 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 // AdminFailPayout handles POST /admin/university/payouts/{id}/fail.
 // Marks a payout as failed with an optional reason (BUG-002).
 func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	payoutID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1453,10 +1326,6 @@ func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
 // AdminUpdateInstructor handles PATCH /admin/university/instructors/{id}.
 // Updates an instructor's tier and/or commission override (BUG-002).
 func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1502,10 +1371,6 @@ func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request)
 // Toggles the featured flag on a marketplace track (BUG-012: wires the
 // university.course.feature RBAC node).
 func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1540,10 +1405,6 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 // AdminListCategories handles GET /admin/university/categories.
 // Supports ?active=true|false and ?search= filters plus ?page=&limit= pagination.
 func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePagination(r)
 	active := r.URL.Query().Get("active")
@@ -1578,10 +1439,6 @@ func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
 
 // AdminCreateCategory handles POST /admin/university/categories.
 func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var body struct {
 		Slug      string `json:"slug"`
@@ -1621,10 +1478,6 @@ func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
 
 // AdminGetCategory handles GET /admin/university/categories/{id}.
 func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1642,10 +1495,6 @@ func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
 
 // AdminUpdateCategory handles PATCH /admin/university/categories/{id}.
 func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1676,10 +1525,6 @@ func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
 // AdminDeleteCategory handles DELETE /admin/university/categories/{id}.
 // Blocked if any learning_tracks still reference the category slug.
 func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -1715,10 +1560,6 @@ func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 // PublicListActiveCategories handles GET /learn/university/categories.
 // No auth required — returns only active categories for the catalog dropdown.
 func (h *Handlers) PublicListActiveCategories(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	rows, err := h.service.store.ListActiveTrackCategories(r.Context())
 	if err != nil {
@@ -1737,9 +1578,6 @@ func (h *Handlers) PublicListActiveCategories(w http.ResponseWriter, r *http.Req
 // No auth required — returns public marketplace option lists (difficulty levels,
 // instructor social platforms). Ref: Section 36 (Rule 16).
 func (h *Handlers) GetCatalogOptions(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	difficulty, _ := admin.CatalogOptions("university.tracks.difficulty")
 	social, _ := admin.CatalogOptions("university.instructor.social_platforms")

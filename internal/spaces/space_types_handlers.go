@@ -33,10 +33,6 @@ func isAllowedCategory(category string) bool {
 // admin panel DataTable search and filter. The public member-facing endpoint
 // can pass selectable=true to hide geo (country/state/city) types.
 func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	categoryFilter := strings.TrimSpace(r.URL.Query().Get("category"))
@@ -65,10 +61,6 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 
 // ListSpaceTypeCategories handles GET /api/v1/admin/space-type-categories.
 func (h *Handlers) ListSpaceTypeCategories(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	categories, err := h.Service.ListSpaceTypeCategories(r.Context())
 	if err != nil {
@@ -84,10 +76,6 @@ func (h *Handlers) GetSpaceType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -128,10 +116,6 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var fieldGroupID pgtype.UUID
 	if req.FieldGroupID != "" {
@@ -194,10 +178,6 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var fieldGroupID pgtype.UUID
 	if req.FieldGroupID != "" {
@@ -235,10 +215,6 @@ func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 

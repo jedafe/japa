@@ -21,10 +21,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
@@ -74,10 +70,6 @@ func parseUUIDParam(r *http.Request, key string) (pgtype.UUID, error) {
 
 // ListWidgets handles GET /api/v1/admin/widgets.
 func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page, limit := parsePageParams(r)
 
@@ -98,10 +90,6 @@ func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
 
 // GetWidget handles GET /api/v1/admin/widgets/{id}.
 func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -120,10 +108,6 @@ func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
 
 // CreateWidget handles POST /api/v1/admin/widgets.
 func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input CreateWidgetInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -142,10 +126,6 @@ func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateWidget handles PATCH /api/v1/admin/widgets/{id}.
 func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -170,10 +150,6 @@ func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
 
 // DeleteWidget handles DELETE /api/v1/admin/widgets/{id}.
 func (h *Handlers) DeleteWidget(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -193,7 +169,7 @@ func (h *Handlers) DeleteWidget(w http.ResponseWriter, r *http.Request) {
 // rendered widget data, Valkey-cached by the widget's cache_ttl_secs.
 // Sets X-Cache: HIT or X-Cache: MISS response header.
 func (h *Handlers) RenderWidget(w http.ResponseWriter, r *http.Request) {
-	// Public endpoint — no tenant required (tenant is resolved from the widget
+	// Public endpoint — no tenant required (widget is resolved
 	// row itself). No auth required per Section 16.
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {

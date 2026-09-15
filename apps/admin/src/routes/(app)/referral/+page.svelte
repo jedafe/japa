@@ -11,7 +11,6 @@
 	// Backend contract: internal/referral/service.go Program struct.
 	type ReferralProgram = {
 		id: string;
-		tenant_id: string;
 		referrer_reward_cents: number;
 		referee_reward_cents: number;
 		max_referrals: number;
@@ -25,7 +24,6 @@
 	// Backend contract: internal/referral/service.go Referral struct.
 	type Referral = {
 		id: string;
-		tenant_id: string;
 		referrer_id: string;
 		referrer_username?: string;
 		referrer_display_name?: string;

@@ -53,9 +53,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go, wiki/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -134,10 +131,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /planning-groups — list public planning groups.
 // Query params: ?dest=&visa=&page=&limit= (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
@@ -181,10 +174,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /planning-groups/:id — single planning group (public).
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
@@ -224,7 +213,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -269,7 +258,7 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -320,7 +309,7 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -398,7 +387,7 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -431,10 +420,6 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 // HandleGetMembers handles GET /planning-groups/:id/members — list members.
 // Auth + membership required (§82: group content is members-only).
 func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -472,7 +457,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -522,7 +507,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -565,10 +550,6 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 // requesting user's milestones in a group. Auth + membership required
 // (§82: milestone details are visible only to group members).
 func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -599,10 +580,6 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 // HandleCreateMilestone handles POST /planning-groups/:id/milestones — create
 // a milestone for the requesting user. Auth + membership required.
 func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -653,7 +630,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -705,10 +682,6 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 // week's check-ins for a group. Auth + membership required (§82: group
 // check-ins are visible only to group members).
 func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -738,10 +711,6 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 // HandleCreateCheckin handles POST /planning-groups/:id/checkins — create a
 // weekly check-in for the requesting user. Auth + membership required.
 func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -801,10 +770,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
@@ -854,10 +819,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 // for an explicit new expiry.
 func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

@@ -54,9 +54,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service, patcher: service}
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -111,10 +108,6 @@ func parseCursor(r *http.Request) pgtype.Timestamptz {
 // Supports the geo-aware ?dest= and ?profession= filters (§88 / §§79–101)
 // and cursor-based pagination (?page_size=, ?cursor_created_at=).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	dest := r.URL.Query().Get("dest")
 	profession := r.URL.Query().Get("profession")
@@ -134,10 +127,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /forum/ama/:id — single AMA thread.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	threadID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -168,7 +157,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -259,7 +248,7 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -306,7 +295,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -389,7 +378,7 @@ func (h *Handlers) HandleApproveQuestion(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

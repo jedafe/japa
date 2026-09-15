@@ -8,7 +8,7 @@ import type { RequestHandler } from './$types';
  * The layout's <link rel="alternate" type="application/rss+xml">
  * points here for forum autodiscovery. This proxies to the backend's
  * /feed.xml (Section 26) which includes all published content (forum
- * threads, blog posts, etc.). The backend feed is tenant-scoped and
+ * threads, blog posts, etc.). The backend feed is platform-scoped and
  * cached via the rss:regenerate Asynq task.
  *
  * Ref: japaconnect-engineering/sections/26-seo-performance.md

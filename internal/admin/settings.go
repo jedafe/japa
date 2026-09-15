@@ -599,11 +599,6 @@ func invalidateLinkPreviewCache(ctx context.Context, vk valkeycompat.Cmdable) {
 	}
 }
 
-// requireTenant resolves the tenant from the request context.
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
-
 // requireUser resolves the authenticated user from the request context.
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -619,23 +614,17 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 // ListSettings — GET /admin/settings
 // ---------------------------------------------------------------------------
 
-// ListSettings returns all platform settings for the current tenant,
-// organized by category. The response shape matches the frontend's
-// expected format: an array of categories, each containing an array
-// of settings with their current values.
+// ListSettings returns all platform settings, organized by category.
+// The response shape matches the frontend's expected format: an array of
+// categories, each containing an array of settings with their current values.
 func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	ctx := r.Context()
 
-	// Fetch all settings for this tenant from the database.
+	// Fetch all settings from the database.
 	rows, err := h.DB.Reader.Query(ctx, `SELECT key, value FROM system_settings `)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load settings")
@@ -704,10 +693,6 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 // dot-notation key (category.setting_key).
 func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

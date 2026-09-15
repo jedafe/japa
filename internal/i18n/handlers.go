@@ -84,9 +84,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
@@ -99,10 +96,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // ListByLocale returns all translations for a given locale.
 // GET /admin/translations?locale=en.
 func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	locale := r.URL.Query().Get("locale")
 	if locale == "" {
@@ -145,10 +138,6 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 // ListLocales returns distinct locales with counts.
 // GET /admin/translations/locales.
 func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	counts, err := h.Service.Counts(r.Context())
 	if err != nil {
@@ -162,10 +151,6 @@ func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
 // Upsert handles create/update of a single translation.
 // POST /admin/translations.
 func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Locale  string  `json:"locale"`
@@ -209,10 +194,6 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 // UpsertBatch handles batch creation/update of translations.
 // POST /admin/translations/batch.
 func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Translations []struct {
@@ -256,10 +237,6 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 // Delete removes a translation.
 // DELETE /admin/translations/{id}?locale=en.
 func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -287,10 +264,6 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 // DeleteByLocale removes all translations for a locale.
 // DELETE /admin/i18n/languages/{locale}.
 func (h *Handlers) DeleteByLocale(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	locale := chi.URLParam(r, "locale")
 	if locale == "" {
@@ -310,10 +283,6 @@ func (h *Handlers) DeleteByLocale(w http.ResponseWriter, r *http.Request) {
 // into the requested target locale and upserts the result.
 // POST /admin/i18n/strings/{id}/translate — body: {"target_locale": "fr"}.
 func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.AIDispatcher == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI translation is not configured")
@@ -395,10 +364,6 @@ func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
 // per Rule 8 — returns 202 immediately.
 // POST /admin/i18n/strings/ai-translate-batch — body: {"source_locale":"en","target_locale":"fr"}.
 func (h *Handlers) AITranslateBatch(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		SourceLocale string `json:"source_locale"`
@@ -470,10 +435,6 @@ func extractAITranslationText(resp ai.Response) string {
 // GetLocaleTranslations returns all translations for a locale as a flat map.
 // GET /api/v1/translations/{locale}.
 func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Catalog route param is :lang_code (was :locale).
 	locale := chi.URLParam(r, "lang_code")
@@ -497,10 +458,6 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 // HandleListPublicLocales returns the list of enabled locales for the tenant.
 // GET /api/v1/i18n/locales — public, no auth required.
 func (h *Handlers) HandleListPublicLocales(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	locales, err := h.Service.ListLocales(r.Context())
 	if err != nil {

@@ -496,7 +496,7 @@
 			}));
 			dataLoaded = { ...dataLoaded, upcoming_events: true };
 		}
-		// space_categories fetches the tenant's space types (Section 05/39) —
+		// space_categories fetches the platform's space types (Section 05/39) —
 		// the widget links each type to the filtered /spaces directory.
 		async function fetchSpaceCategories() {
 			const res = await api.get<SpaceTypeItem[]>('/space-types');

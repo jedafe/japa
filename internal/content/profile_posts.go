@@ -41,10 +41,6 @@ func (s *Service) ListPublishedByAuthor(ctx context.Context, authorID pgtype.UUI
 // returned all tenant content. Public-safe: only published+public content;
 // non-active users are already 404'd by the requireActiveProfileUser gate.
 func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var authorID pgtype.UUID
 	if err := authorID.Scan(chi.URLParam(r, "id")); err != nil {
@@ -292,10 +288,6 @@ func (s *Service) ListPublishedByOrganization(ctx context.Context, orgID pgtype.
 // ListByOrganization handles GET /organizations/{id}/content — the org profile
 // Posts tab. Non-active orgs are already 404'd by the requireActiveOrgByID gate.
 func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var orgID pgtype.UUID
 	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {

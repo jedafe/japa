@@ -15,7 +15,6 @@
 	// Matches gen.ListPendingDeletionRequestsRow JSON output.
 	type DeletionRequest = {
 		id: string;
-		tenant_id: string;
 		user_id: string;
 		status: string;
 		reason?: string;

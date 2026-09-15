@@ -252,7 +252,7 @@
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
 		<div class="flex items-center gap-3 text-sm" style="color: var(--color-muted)">
 			<AlertTriangle class="h-5 w-5" />
-			{t('ai.feature_disabled', 'AI content generation is currently disabled for this tenant.')}
+			{t('ai.feature_disabled', 'AI content generation is currently disabled on this platform.')}
 		</div>
 	</div>
 {:else if !canGenerate}

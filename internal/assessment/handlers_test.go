@@ -28,8 +28,7 @@ import (
 func TestHandleHistory_Unauthorized(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/assessment/history", nil)
-	// Set a tenant context so requireTenant passes, isolating the auth check.
-	req = req.WithContext(withTenant(req.Context()))
+	// Set up request context for the auth check.
 	rr := httptest.NewRecorder()
 	h.HandleHistory(rr, req)
 
@@ -43,7 +42,6 @@ func TestHandleHistory_Unauthorized(t *testing.T) {
 func TestHandleAdminGetForm_Unauthorized(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/assessment/form", nil)
-	req = req.WithContext(withTenant(req.Context()))
 	rr := httptest.NewRecorder()
 	h.HandleAdminGetForm(rr, req)
 
@@ -57,7 +55,6 @@ func TestHandleAdminGetForm_Unauthorized(t *testing.T) {
 func TestHandleAdminUpdateForm_Unauthorized(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/assessment/form", nil)
-	req = req.WithContext(withTenant(req.Context()))
 	rr := httptest.NewRecorder()
 	h.HandleAdminUpdateForm(rr, req)
 
@@ -71,7 +68,6 @@ func TestHandleAdminUpdateForm_Unauthorized(t *testing.T) {
 func TestHandleAdminListResults_Unauthorized(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/assessment/results", nil)
-	req = req.WithContext(withTenant(req.Context()))
 	rr := httptest.NewRecorder()
 	h.HandleAdminListResults(rr, req)
 
@@ -85,7 +81,6 @@ func TestHandleAdminListResults_Unauthorized(t *testing.T) {
 func TestHandleAdminStats_Unauthorized(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/assessment/stats", nil)
-	req = req.WithContext(withTenant(req.Context()))
 	rr := httptest.NewRecorder()
 	h.HandleAdminStats(rr, req)
 
@@ -104,7 +99,6 @@ func TestHandleAdminStats_Unauthorized(t *testing.T) {
 func TestHandleGetResult_NilServiceReturns503(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/assessment/result/"+uuid.New().String(), nil)
-	req = req.WithContext(withTenant(req.Context()))
 	rr := httptest.NewRecorder()
 	h.HandleGetResult(rr, req)
 
@@ -446,21 +440,6 @@ func TestParseFieldScoringConfig(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
-
-// withTenant returns a context with a test tenant set, so requireTenant
-// passes in handler tests.
-func withTenant(ctx context.Context) context.Context {
-
-	return context.WithValue(ctx, struct{}{}, &struct {
-		ID   pgtype.UUID
-		Name string
-		Slug string
-	}{
-		ID:   pgtype.UUID{},
-		Name: "Test",
-		Slug: "test",
-	})
-}
 
 // withUser returns a context with an authenticated user set, so requireUser
 // passes in handler tests.

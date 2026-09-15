@@ -43,9 +43,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -92,10 +89,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleGetLatest handles GET /digest/latest — latest published digest.
 func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var spaceID pgtype.UUID
 	// Accept ?dest= (geo-aware standard) or ?space_id= (legacy alias).
@@ -129,10 +122,6 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /digest/:id — single published digest (public).
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -167,10 +156,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page, limit := parsePageParams(r)
 	if limit > 200 {
@@ -214,10 +199,6 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -243,10 +224,6 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 // HandleAdminUpdate handles PATCH /admin/digest/:id — edit draft content.
 func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -288,7 +265,7 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -319,10 +296,6 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 // ADR-092). The edition enters the 1-hour admin review window on completion.
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

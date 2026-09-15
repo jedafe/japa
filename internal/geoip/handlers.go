@@ -172,11 +172,7 @@ func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 // HandleListCountries returns every seeded country space.
 // // GET /api/v1/geo/countries.
 func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	countries, err := h.spaces.ListSpacesByLevel(r.Context(), pgtype.UUID{}, "country")
 	if err != nil {
@@ -196,11 +192,7 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 // up by its ISO geo_code.
 // // GET /api/v1/geo/countries/{code}/states.
 func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	code := chi.URLParam(r, "code")
 	if code == "" {
@@ -225,11 +217,7 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 // HandleListCities returns the city spaces for a state.
 // // GET /api/v1/geo/states/{id}/cities.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	stateIDStr := chi.URLParam(r, "id")
 
@@ -258,11 +246,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 // completing a user's location, not creating an owned community.
 // // POST /api/v1/geo/states/{id}/cities.
 func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -321,10 +305,7 @@ func (h *Handlers) suggestedSpaces(r *http.Request, geo GeoContext) []SuggestedS
 		return out
 	}
 
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		return out
-	}
+
 
 	ctx := r.Context()
 

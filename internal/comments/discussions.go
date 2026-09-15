@@ -162,10 +162,6 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 
 // ListDiscussions handles GET /api/v1/content/{id}/discussions.
 func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -203,7 +199,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

@@ -14,7 +14,7 @@
 	// The /university hub is the admin landing for the Japa University creator
 	// economy (ADR-063): instructor review, track approvals, payouts, and the
 	// read-only revenue-split audit viewer. "Japa University" is the brand name
-	// of a single tenant-wide creator marketplace — it is NOT the Section 39
+	// of a single platform-wide creator marketplace — it is NOT the Section 39
 	// university space-type directory (that lives at /universities). All counts
 	// come from the backend admin API (Rule 16).
 

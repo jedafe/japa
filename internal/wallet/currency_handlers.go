@@ -39,10 +39,6 @@ func (h *Handlers) ListCurrencies(w http.ResponseWriter, r *http.Request) {
 // ListCreditPacks handles GET /api/v1/wallet/credit-packs.
 // Returns all active credit packs for the tenant.
 func (h *Handlers) ListCreditPacks(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	packs, err := h.Service.listActiveCreditPacks(r.Context())
 	if err != nil {
@@ -288,10 +284,6 @@ func (h *Handlers) ControlDeleteCurrency(w http.ResponseWriter, r *http.Request)
 
 // AdminListCreditPacks handles GET /api/v1/admin/wallet/credit-packs.
 func (h *Handlers) AdminListCreditPacks(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	packs, err := h.Service.listAllCreditPacks(r.Context())
 	if err != nil {
@@ -304,10 +296,6 @@ func (h *Handlers) AdminListCreditPacks(w http.ResponseWriter, r *http.Request) 
 
 // AdminCreateCreditPack handles POST /api/v1/admin/wallet/credit-packs.
 func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Name         string `json:"name"`
@@ -362,10 +350,6 @@ func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request)
 
 // AdminUpdateCreditPack handles PATCH /api/v1/admin/wallet/credit-packs/{id}.
 func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -425,10 +409,6 @@ func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request)
 // AdminDeleteCreditPack handles DELETE /api/v1/admin/wallet/credit-packs/{id}.
 // Soft-deletes by setting is_active=false.
 func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -450,10 +430,6 @@ func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request)
 
 // AdminListCreditPurchases handles GET /api/v1/admin/wallet/purchases.
 func (h *Handlers) AdminListCreditPurchases(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query()
 
@@ -516,7 +492,7 @@ func (h *Handlers) PurchaseCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

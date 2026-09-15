@@ -6,7 +6,7 @@ import type { ContentArticle } from '$lib/types/content';
 import type { BlogSeries } from '$lib/types';
 
 /**
- * Blog listing — GET /api/v1/blog (public, tenant-scoped).
+ * Blog listing — GET /api/v1/blog (public, platform-scoped).
  * Ref: japaconnect-engineering/sections/14-content-type-system.md
  * Supports ?tab=latest|top|featured|series, ?sort=latest|top, ?tag=slug,
  * ?space_id=uuid, ?author_id=uuid and ?series_id=uuid per §24.

@@ -679,8 +679,8 @@ func _TestHandleListCountries_NoTenant(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
 
 	errObj := body["error"].(map[string]any)
-	if errObj["code"] != "tenant_unavailable" {
-		t.Errorf("error code = %v, want tenant_unavailable", errObj["code"])
+	if errObj["code"] != "service_unavailable" {
+		t.Errorf("error code = %v, want service_unavailable", errObj["code"])
 	}
 }
 

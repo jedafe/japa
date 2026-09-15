@@ -259,7 +259,6 @@ export interface ComparisonProfileInput {
 
 export interface DataSource {
 	id: string;
-	tenant_id?: string;
 	entity_type?: string | null;
 	entity_id?: string | null;
 	dimension_slug?: string | null;
@@ -337,7 +336,6 @@ export interface ProfileStat {
 
 export interface IngestionJob {
 	id: string;
-	tenant_id?: string;
 	content_id: string;
 	status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 	source_kind?: string | null;
