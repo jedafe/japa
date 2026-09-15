@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { UrlTabs, type UrlTab } from '$lib/components/ui';
 	import FeedGeoControl from '$lib/components/feed/FeedGeoControl.svelte';
 	import FeedSortBar from '$lib/components/feed/FeedSortBar.svelte';
 	import FeedList from '$lib/components/feed/FeedList.svelte';
 	import FeedUpdatePill from '$lib/components/feed/FeedUpdatePill.svelte';
-	import { LandingRenderer } from '@japaconnect/landing-blocks';
+	import { LandingRenderer, type Block } from '@japaconnect/landing-blocks';
 	import { t } from '$lib/i18n';
 	import type { CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import GuestHomePage from '$lib/components/landing/GuestHomePage.svelte';
+	import { apiBaseUrl } from '$lib/api/client';
+	import { getCsrfToken } from '$lib/api/csrf.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -50,6 +52,30 @@
 			url: page.url.origin
 		})
 	);
+
+	// Fetch context for Page Builder blocks (newsletter, widgets, etc.).
+	// Only pass in the browser — blocks like MapBlock call fetch during
+	// component init, and SvelteKit forbids relative fetch() during SSR.
+	const fetchCtx = $derived(
+		browser
+			? {
+					fetch,
+					apiBase: apiBaseUrl,
+					csrfToken: data.csrfToken ?? getCsrfToken() ?? null
+			  }
+			: undefined
+	);
+
+	// Fallback guest homepage is a single native Page Builder block.
+	const fallbackBlocks = $derived<Block[]>([
+		{
+			id: 'guest-home-fallback',
+			type: 'guest_home',
+			visible: true,
+			label: 'Guest Home',
+			props: {}
+		}
+	]);
 </script>
 
 <svelte:head>
@@ -67,10 +93,10 @@
 
 {#if data.guestHome}
 	<!-- ADR-058 §5 Exception #3: new default guest homepage -->
-	<GuestHomePage home={data.home} />
+	<LandingRenderer blocks={fallbackBlocks} {fetchCtx} geoCountry={data.contentCountry} guestHome={data.home} />
 {:else if data.landing}
 	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page (or default seed) -->
-	<LandingRenderer blocks={data.landing.blocks} geoCountry={data.contentCountry} />
+	<LandingRenderer blocks={data.landing.blocks} {fetchCtx} geoCountry={data.contentCountry} guestHome={data.home} />
 {:else}
 	<!-- Authenticated home timeline in the app shell -->
 	<div class="mx-auto w-full max-w-full">
