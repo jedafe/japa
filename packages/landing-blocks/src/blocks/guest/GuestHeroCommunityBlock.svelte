@@ -25,6 +25,13 @@
   const subtitle = $derived(props.subtitle ?? 'Your future starts with the right information.');
   const cta = $derived(props.cta);
 
+  const avatars = $derived(
+    (guestHome?.stories ?? [])
+      .map((s) => s.author_avatar_url)
+      .filter(Boolean)
+      .slice(0, 3) as string[]
+  );
+
   function fmt(template: string, vars: Record<string, string>): string {
     return template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
   }
@@ -33,9 +40,14 @@
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
 <div class="floating-card floating-card-community">
   <div class="community-avatars">
-    {#each [1, 2, 3] as i (i)}
-      <div class="community-avatar" style="z-index: {4 - i}; margin-left: {i === 1 ? 0 : -10}px">
-        <Users size={16} />
+    {#each [0, 1, 2] as i (i)}
+      {@const url = avatars[i]}
+      <div class="community-avatar" style="z-index: {3 - i}; margin-left: {i === 0 ? 0 : '-10px'}">
+        {#if url}
+          <img src={url} alt="" class="community-avatar-img" />
+        {:else}
+          <Users size={16} />
+        {/if}
       </div>
     {/each}
   </div>

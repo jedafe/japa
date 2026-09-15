@@ -25,7 +25,7 @@
       : (guestHome?.stories ?? [])
   );
 
-  const visibleItems = $derived(items.slice(0, props.max_items ?? 6));
+  const visibleItems = $derived(items.slice(0, props.max_items ?? 3));
   const eyebrow = $derived(props.eyebrow ?? 'Real People. Real Stories.');
   const title = $derived(props.title ?? 'Success Stories That Inspire');
   const subtitle = $derived(

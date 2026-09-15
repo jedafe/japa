@@ -234,8 +234,8 @@ async function buildGuestHome(
 
 	let stories: GuestHomeStory[] = [];
 	try {
-		const storyRes = await apiList<Story>(ctx, '/stories?limit=3&sort=top');
-		stories = storyRes.items.slice(0, 3).map(mapStoryToGuestHome);
+		const storyRes = await apiList<Story>(ctx, '/stories?limit=10&sort=top');
+		stories = storyRes.items.slice(0, 10).map(mapStoryToGuestHome);
 	} catch (err) {
 		console.error('[HOME] stories load failed', err);
 	}
