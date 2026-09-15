@@ -5,6 +5,7 @@
   import BlockShell from '../shell/BlockShell.svelte';
   import { isBlockVisible, isBlockEmpty } from './blockVisibility';
   import { setGuestHomeData } from '../data/guestHomeContext';
+  import GuestBlockStyles from '../blocks/guest/GuestBlockStyles.svelte';
 
   interface Props {
     blocks: Block[];
@@ -19,6 +20,11 @@
   $effect(() => {
     guestHomeStore.set(guestHome);
   });
+
+  // Load the shared guest-block stylesheet only when at least one guest_*
+  // block is on the page, so the split guest blocks render with the same
+  // visual styling as the legacy monolithic block.
+  const hasGuestBlocks = $derived(blocks.some((b) => b.type.startsWith('guest_')));
 
   // Generate per-device visibility CSS for top-level blocks.
   // Uses @container queries so they respond to the preview container width
@@ -49,6 +55,10 @@
 <svelte:head>
   {@html responsiveVisibilityCss ? '<style>' + responsiveVisibilityCss + '<\/style>' : ''}
 </svelte:head>
+
+{#if hasGuestBlocks}
+  <GuestBlockStyles />
+{/if}
 
 <div class="landing-page min-h-screen bg-[var(--color-bg)]" style="container-type: inline-size">
   {#each blocks as block (block.id)}

@@ -96,3 +96,28 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .hero-dots {
+    position: absolute;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 0.5rem;
+    z-index: 10;
+  }
+  .hero-dot {
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.5);
+    border: 0;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .hero-dot:hover,
+  .hero-dot-active {
+    background: rgba(255, 255, 255, 1);
+  }
+</style>
