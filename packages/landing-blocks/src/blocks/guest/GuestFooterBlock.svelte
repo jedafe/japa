@@ -37,7 +37,7 @@
       <p class="footer-tagline">{tagline}</p>
       {#if socials.length > 0}
         <div class="footer-socials">
-          {#each socials as social (social.url)}
+          {#each socials as social (social.id ?? social.url)}
             {@const Icon = getLucideIcon(social.icon)}
             <a href={social.url} aria-label={social.label} target="_blank" rel="noopener noreferrer">
               {#if Icon}
@@ -52,7 +52,7 @@
     </div>
 
     <div class="guest-footer-columns">
-      {#each columns as col (col.title)}
+      {#each columns as col (col.id ?? col.title)}
         <div class="footer-column">
           <h3 class="footer-column-title">{col.title}</h3>
           <ul class="footer-column-list">
