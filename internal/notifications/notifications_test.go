@@ -340,27 +340,6 @@ func TestNotificationDispatchPayloadJSONTags(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// requireTenant (unit test without DB)
-// ---------------------------------------------------------------------------
-
-func _TestRequireTenantNoTenant(t *testing.T) {
-	t.Parallel()
-
-	h := &Handlers{}
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/notifications", nil)
-	// No tenant in context — should return false.
-	_, ok := h.requireTenant(rr, req)
-	if ok {
-		t.Error("expected ok=false when no tenant in context")
-	}
-
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // requireUser (unit test without DB)
 // ---------------------------------------------------------------------------
 

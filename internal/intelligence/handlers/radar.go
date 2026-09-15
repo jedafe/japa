@@ -316,10 +316,6 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, _ := optionalUser(w, r)
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query()
 	page, limit := h.parsePagination(r)
@@ -506,9 +502,6 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if !false {
 
@@ -566,7 +559,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -693,7 +686,7 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -750,7 +743,7 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -803,9 +796,6 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if !false {
 
@@ -865,7 +855,7 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -910,7 +900,7 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -987,7 +977,7 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

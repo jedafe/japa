@@ -7,7 +7,6 @@
 
 	type TemplateLiteral = {
 		id: string;
-		tenant_id: string;
 		key: string;
 		kind: 'expression' | 'static';
 		value: string;

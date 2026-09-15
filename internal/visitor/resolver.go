@@ -209,9 +209,7 @@ func NewResolver(read *gen.Queries, rdb valkeycompat.Cmdable, settings *config.S
 func (res *Resolver) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vc := res.resolve(r)
-		if t := &struct{ ID pgtype.UUID }{}; t != nil {
-			res.enrichRegion(r.Context(), &vc, t)
-		}
+		res.enrichRegion(r.Context(), &vc)
 
 		ctx := context.WithValue(r.Context(), ContextKey{}, vc)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -222,14 +220,12 @@ func (res *Resolver) Middleware(next http.Handler) http.Handler {
 func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	geoCtx := geoip.FromContext(r.Context())
 	user := auth.FromContext(r.Context())
-	t := &struct{ ID pgtype.UUID }{}
 
 	vc := VisitorContext{
 		GeoIPCountry:      geoCtx.CountryCode,
-		CurrentCountry:    geoCtx.CountryCode,
-		OriginCountry:     geoCtx.CountryCode, // default: GeoIP; enriched from profile below
+		CurrentCountry:    geoCtx.CountryCode, // default: GeoIP; enriched from profile below
 		CurrentCity:       geoCtx.City,        // ADR-064a: GeoIP city as initial value
-		Language:          res.clampLanguage(r.Context(), resolveLanguage(r), t),
+		Language:          res.clampLanguage(r.Context(), resolveLanguage(r)),
 		RoadmapSlugs:      []string{},
 		WeakestDimensions: []string{},
 	}
@@ -246,7 +242,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	// (trending, recommendations, search) treat it as global — empty/NULL
 	// in the trending SQL means "no geo filter", while "NG" would filter
 	// to Nigeria only (BUG-VIS-001).
-	if res.settings != nil && t != nil {
+	if res.settings != nil {
 		if !res.settings.GetBoolOr(r.Context(), "geo_personalization.enabled", true) {
 			if q := normalizeCountry(r.URL.Query().Get("geo")); q != "" {
 				vc.ContentCountry = q
@@ -288,17 +284,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 			cacheKey = valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())
 		}
 	} else {
-		// BUG-V001: Anonymous IP cache key must be tenant-scoped to
-		// prevent cross-tenant data bleed. The archetype resolver uses
-		// tenant-scoped geo_personalization.origin_markets /
-		// destination_markets settings, so two tenants with different
-		// market lists produce different archetypes for the same IP.
-		// Without tenant scoping, tenant A's cached context would be
-		// served to tenant B. When tenant is nil (no tenant context),
-		// skip caching entirely — we cannot safely tenant-scope the key.
-		if t != nil {
-			cacheKey = valkey.MustKey("visitor:ctx:ip:%s:%s", t.ID, clientip.FromRequest(r))
-		}
+		cacheKey = valkey.MustKey("visitor:ctx:ip:%s", clientip.FromRequest(r))
 	}
 
 	// Try cache first. cacheKey is empty when the anonymous visitor has no
@@ -306,7 +292,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	// bleed on an unscoped key).
 	if res.rdb != nil && cacheKey != "" {
 		if cached, err := res.rdb.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
-			if cv, ok := res.unmarshalCache(r.Context(), cached, t); ok {
+			if cv, ok := res.unmarshalCache(r.Context(), cached); ok {
 				// Preserve auth state (not cached) and language (request-scoped).
 				cv.IsAuthenticated = vc.IsAuthenticated
 				cv.UserID = vc.UserID
@@ -319,7 +305,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	}
 
 	// 2. Authenticated user's content_country_preference (explicit override).
-	if user != nil && t != nil {
+	if user != nil {
 		if pref, err := res.read.GetUserContentCountryPreference(r.Context(),
 
 			user.UserID,
@@ -328,7 +314,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 			vc.Source = "preference"
 			// Still resolve archetype for analytics/surfacing, using profile
 			// fields + GeoIP, but the preference wins for ContentCountry.
-			res.enrichArchetype(r.Context(), &vc, user, t, "")
+			res.enrichArchetype(r.Context(), &vc, user, "")
 			res.cache(r.Context(), cacheKey, vc)
 
 			return vc
@@ -339,7 +325,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	//    signals (ADR-064). For authenticated users this loads japa_status +
 	//    destination_country custom fields. For guests it classifies from
 	//    GeoIP alone.
-	res.enrichArchetype(r.Context(), &vc, user, t, cacheKey)
+	res.enrichArchetype(r.Context(), &vc, user, cacheKey)
 
 	return vc
 }
@@ -348,13 +334,13 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 // resolves the archetype, and sets ContentCountry from the archetype when no
 // explicit override is present. When cacheKey is non-empty the resolved
 // context is cached.
-func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, user *auth.AuthenticatedUser, t *struct{ ID pgtype.UUID }, cacheKey string) {
+func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, user *auth.AuthenticatedUser, cacheKey string) {
 	// Load config-driven market lists (ADR-064: config, not hardcoded).
-	originMarkets := res.marketSet(ctx, t, "geo_personalization.origin_markets", defaultOriginMarkets)
-	destMarkets := res.marketSet(ctx, t, "geo_personalization.destination_markets", defaultDestinationMarkets)
+	originMarkets := res.marketSet(ctx, "geo_personalization.origin_markets", defaultOriginMarkets)
+	destMarkets := res.marketSet(ctx, "geo_personalization.destination_markets", defaultDestinationMarkets)
 
 	// Load profile signals for authenticated users.
-	if user != nil && t != nil {
+	if user != nil {
 		fields, err := res.read.GetUserGeoProfileFields(ctx,
 			user.UserID,
 		)
@@ -374,7 +360,7 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 
 		// Journey-aware recommendations: load the latest Japa Readiness
 		// Assessment (§71) and overlay its signals on top of profile fields.
-		res.enrichFromAssessment(ctx, vc, t, user.UserID)
+		res.enrichFromAssessment(ctx, vc, user.UserID)
 		// ADR-064a: Resolve the user's current_geo_space_id to extract
 		// city-level data and override CurrentCountry from the Space hierarchy
 		// (more reliable than GeoIP for VPN/travel scenarios). Gated on the
@@ -435,7 +421,7 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 	// to the configured system default rather than serving an empty country
 	// downstream.
 	if vc.ContentCountry == "" {
-		vc.ContentCountry = res.defaultCountry(ctx, t)
+		vc.ContentCountry = res.defaultCountry(ctx)
 	}
 
 	if vc.Source == "" {
@@ -494,11 +480,11 @@ func resolveArchetype(current, stage, destination string, originMarkets, destMar
 // marketSet reads a CSV system_setting and returns the set of uppercase ISO
 // codes. The fallback is used when the setting is unset or the resolver has
 // no settings reader (e.g. tests).
-func (res *Resolver) marketSet(ctx context.Context, t *struct{ ID pgtype.UUID }, key, fallback string) map[string]bool {
+func (res *Resolver) marketSet(ctx context.Context, key, fallback string) map[string]bool {
 	out := make(map[string]bool)
 
 	raw := fallback
-	if res.settings != nil && t != nil {
+	if res.settings != nil {
 		raw = res.settings.GetStringOr(ctx, key, fallback)
 	}
 
@@ -522,10 +508,10 @@ func (res *Resolver) getBoolSetting(ctx context.Context, key string, fallback bo
 }
 
 // defaultCountry returns the configured fallback country code for visitors
-// with no resolvable geo signal. Falls back to "NG" when no setting/tenant.
-func (res *Resolver) defaultCountry(ctx context.Context, t *struct{ ID pgtype.UUID }) string {
+// with no resolvable geo signal. Falls back to "NG" when no setting.
+func (res *Resolver) defaultCountry(ctx context.Context) string {
 	fallback := "NG"
-	if res.settings != nil && t != nil {
+	if res.settings != nil {
 		return res.settings.GetStringOr(ctx, "geo_personalization.default_country", fallback)
 	}
 
@@ -545,7 +531,7 @@ func (res *Resolver) cache(ctx context.Context, key string, vc VisitorContext) {
 
 // unmarshalCache decodes a JSON-cached VisitorContext. Returns ok=false for
 // old-format (country|source) entries so the caller re-resolves.
-func (res *Resolver) unmarshalCache(ctx context.Context, s string, t *struct{ ID pgtype.UUID }) (VisitorContext, bool) {
+func (res *Resolver) unmarshalCache(ctx context.Context, s string) (VisitorContext, bool) {
 	if len(s) == 0 || s[0] != '{' {
 		return VisitorContext{}, false
 	}
@@ -556,7 +542,7 @@ func (res *Resolver) unmarshalCache(ctx context.Context, s string, t *struct{ ID
 	}
 
 	if vc.ContentCountry == "" {
-		vc.ContentCountry = res.defaultCountry(ctx, t)
+		vc.ContentCountry = res.defaultCountry(ctx)
 		vc.Source = "default"
 	}
 
@@ -588,7 +574,7 @@ func normalizeCountry(c string) string {
 
 // enrichRegion populates ContentRegion from the resolved ContentCountry by
 // looking up the matching primary country space. Falls back to empty.
-func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *struct{ ID pgtype.UUID }) {
+func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext) {
 	if vc.ContentCountry == "" {
 		return
 	}
@@ -710,7 +696,7 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 // enrichFromAssessment loads the latest Japa Readiness Assessment result for
 // an authenticated user and overlays origin/destination/visa route, roadmap
 // slugs, and weakest dimensions onto the VisitorContext.
-func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContext, t *struct{ ID pgtype.UUID }, userID pgtype.UUID) {
+func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContext, userID pgtype.UUID) {
 	if res.read == nil {
 		return
 	}
@@ -1004,10 +990,10 @@ func normalizeVisaRoute(s string) string {
 	return ""
 }
 
-// clampLanguage ensures the resolved language is in the tenant's enabled list,
+// clampLanguage ensures the resolved language is in the enabled list,
 // falling back to the default and then "en".
-func (res *Resolver) clampLanguage(ctx context.Context, lang string, t *struct{ ID pgtype.UUID }) string {
-	if res.settings == nil || t == nil {
+func (res *Resolver) clampLanguage(ctx context.Context, lang string) string {
+	if res.settings == nil {
 		return lang
 	}
 

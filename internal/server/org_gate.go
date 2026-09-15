@@ -17,11 +17,7 @@ import (
 func requireActiveOrgByID(orgSvc *organizations.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := &struct{ ID pgtype.UUID }{}
-			if t == nil {
-				writeOrgGateError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-				return
-			}
+
 
 			var orgID pgtype.UUID
 			if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {

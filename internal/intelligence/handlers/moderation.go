@@ -248,7 +248,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -328,7 +328,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -466,9 +466,6 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if !false {
 
@@ -553,9 +550,6 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if !false {
 
@@ -638,9 +632,6 @@ func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if !false {
 

@@ -7,7 +7,6 @@
 
 	type PageTemplate = {
 		id: string;
-		tenant_id: string;
 		name: string;
 		slug: string;
 		description?: string;

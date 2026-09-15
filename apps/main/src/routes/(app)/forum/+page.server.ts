@@ -7,7 +7,7 @@ import type { GuideListItem } from '$lib/types/content';
  * Forum list at /forum — Reddit-style compact thread list inside the app shell.
  * Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
  *
- * The backend lists threads by tenant, keyset-paginated by created_at desc
+ * The backend lists threads by keyset-paginated by created_at desc
  * (page_size + cursor_created_at). Sort=top orders by vote_score descending.
  * Supports ?tag=slug, ?sort=latest|top|featured and ?status=all|solved|open.
  * sort=featured consumes the generic content_featured junction

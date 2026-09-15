@@ -14,8 +14,8 @@ declare global {
 			user: SessionUser | null;
 			/** Active colour theme, resolved from the jc_theme cookie. */
 			theme: ThemeName;
-			/** Hostname (port stripped) used for backend tenant resolution. */
-			tenantHost: string;
+			/** Hostname (port stripped) used for reverse-proxy and host-based routing. */
+			requestHost: string;
 			/** Resolved UI locale code (e.g. 'en', 'fr', 'yo'), from the jc_locale
 			 *  cookie or the locale prefix in the URL. Dynamic per ADR-013. */
 			locale: Locale;

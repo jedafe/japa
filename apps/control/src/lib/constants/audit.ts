@@ -1,7 +1,7 @@
 /**
  * actionColorClass returns a Tailwind badge class for an audit action_type.
- * It matches by prefix/suffix so namespaced actions like `tenant.delete` and
- * `gdpr.account_deleted` are classified correctly. Used by the control panel
+ * It matches by prefix/suffix so namespaced actions like `gdpr.account_deleted`
+ * are classified correctly. Used by the control panel
  * audit-log action column renderer.
  */
 export function actionColorClass(action: string): string {

@@ -66,9 +66,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
@@ -111,10 +108,6 @@ func parseOffset(r *http.Request) int32 {
 // ListPrograms returns all mentorship programs for the tenant.
 // GET /admin/mentorship/programs.
 func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
@@ -133,10 +126,6 @@ func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 // GetProgram returns a single mentorship program by ID.
 // GET /admin/mentorship/programs/{id}.
 func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -156,10 +145,6 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 // CreateProgram creates a new mentorship program.
 // POST /admin/mentorship/programs.
 func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Name        string `json:"name"`
@@ -196,10 +181,6 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 // UpdateProgram updates an existing mentorship program.
 // PATCH /admin/mentorship/programs/{id}.
 func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -236,10 +217,6 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 // ListMatches returns all mentor-mentee matches for the tenant.
 // GET /admin/mentorship/matches.
 func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
@@ -258,10 +235,6 @@ func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 // UpdateMatch updates a mentor-mentee match status.
 // PATCH /admin/mentorship/matches/{id}.
 func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -297,10 +270,6 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 // DeleteProgram deletes a mentorship program.
 // DELETE /admin/mentorship/programs/{id}.
 func (h *Handlers) DeleteProgram(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -366,10 +335,6 @@ func parsePage(r *http.Request) (int32, int32) {
 // When dest is empty and the user is authenticated, injects the user's
 // profile destination as the default filter (§102 Geo Awareness).
 func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePage(r)
 
@@ -445,10 +410,6 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 // GetMentorByUsername returns a mentor's public profile.
 // GET /api/v1/mentors/{username}.
 func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	username := chi.URLParam(r, "username")
 	if username == "" {
@@ -475,10 +436,6 @@ func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 // CompareMentors returns up to 4 mentors for the comparison endpoint.
 // GET /api/v1/compare/mentors?ids=a,b,c,d.
 func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	idsStr := r.URL.Query().Get("ids")
 	if idsStr == "" {
@@ -518,10 +475,6 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 // GetMyMentorProfile returns the current user's mentor profile settings.
 // GET /api/v1/me/mentor-profile.
 func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -542,10 +495,6 @@ func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 // UpdateMyMentorProfile toggles is_mentor and sets capacity/areas/bio.
 // PATCH /api/v1/me/mentor-profile.
 func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -585,10 +534,6 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 // RequestMentorship creates a new mentorship request.
 // POST /api/v1/mentorship/request.
 func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -647,10 +592,6 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 // ListOutgoingConnections lists requests sent by the current user (as mentee).
 // GET /api/v1/me/mentorship/outgoing.
 func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -674,10 +615,6 @@ func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Reques
 // CancelOutgoingConnection cancels a pending request by the mentee.
 // DELETE /api/v1/me/mentorship/outgoing/{id}.
 func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -708,10 +645,6 @@ func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Reque
 // ListIncomingConnections lists requests received by the current user (as mentor).
 // GET /api/v1/me/mentorship/incoming.
 func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -736,10 +669,6 @@ func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Reques
 // Only the mentor of the connection can accept.
 // PATCH /api/v1/me/mentorship/incoming/{id}/accept.
 func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -774,10 +703,6 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 // Only the mentor of the connection can decline.
 // PATCH /api/v1/me/mentorship/incoming/{id}/decline.
 func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -812,10 +737,6 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 // Either party (mentor or mentee) can complete.
 // PATCH /api/v1/mentorship/{id}/complete.
 func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -850,10 +771,6 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 // Either party (mentor or mentee) can cancel.
 // PATCH /api/v1/mentorship/{id}/cancel.
 func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	userID, ok := h.requireAuthUser(w, r)
 	if !ok {
@@ -899,10 +816,6 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 // ListAllConnections lists all connections for admin.
 // GET /api/v1/admin/mentorship/connections.
 func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit, offset := parsePage(r)
 	status := r.URL.Query().Get("status")
@@ -930,10 +843,6 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 // AdminUpdateConnection allows an admin to override a connection's status.
 // PATCH /api/v1/admin/mentorship/connections/{id}.
 func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var connID pgtype.UUID
 	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {

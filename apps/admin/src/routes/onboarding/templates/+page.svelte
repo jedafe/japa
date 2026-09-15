@@ -14,7 +14,6 @@
 
 	type OnboardingTemplate = {
 		id: string;
-		tenant_id?: string;
 		name: string;
 		description: string | null;
 		steps: unknown[] | string;

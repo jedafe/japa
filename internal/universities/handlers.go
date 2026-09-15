@@ -161,10 +161,6 @@ func (h *Handlers) enqueueFetchLogo(ctx context.Context, spaceID, uploadedBy pgt
 	}
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // resolveLogoURL resolves a space's logo_media_id to an imgproxy-signed URL
 // via the media service. Returns an empty string when no logo is set, the
@@ -264,10 +260,6 @@ type universityDetail struct {
 // never loads in full on a single SSR render (Section 39 line 149, ADR-039).
 // [public].
 func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
@@ -373,10 +365,6 @@ func universityRowToMap[T any](row T) map[string]any {
 // Supports ?page=&limit=&q=&country= query params. Returns {data, meta} with
 // pagination metadata for the admin DataTable. [admin: admin.settings].
 func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
@@ -434,10 +422,6 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 // GetUniversity handles GET /api/v1/universities/{slug} — a single university
 // space together with its custom field values. [public].
 func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -703,10 +687,6 @@ func slugify(s string) string {
 
 // CreateUniversity handles POST /admin/universities — creates a University-type space.
 func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Name     string `json:"name"`
@@ -788,10 +768,6 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 
 // UpdateUniversity handles PATCH /admin/universities/:id.
 func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -892,10 +868,6 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
 // DeleteUniversity handles DELETE /admin/universities/:id.
 func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -913,10 +885,6 @@ func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
 
 // VerifyUniversity handles POST /admin/universities/:id/verify.
 func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -956,10 +924,6 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 // a prior verify by setting status back to "pending" (consistent with
 // CreateUniversity's unverified status). Ref: Section 39, audit finding U-1.
 func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -1008,10 +972,6 @@ var allowedUniversityStatuses = map[string]bool{
 // the space status to one of {active, pending, suspended}. Ref: Section 39,
 // audit finding U-1.
 func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -1071,10 +1031,6 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 // from Wikidata P1813. Returns a summary of created / skipped / failed counts.
 // Ref: Section 39, audit finding U-1.
 func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// 10 MB upload cap — matches media.max_upload_mb default for a CSV.
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
@@ -1220,10 +1176,6 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 // pre-selected as Item 1 (Section 39 line 152: "comparison matrix link
 // (redirects to /comparisons/universities)"). Ref: audit finding U-5.
 func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {

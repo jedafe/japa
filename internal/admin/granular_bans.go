@@ -48,10 +48,6 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
@@ -262,10 +258,6 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
@@ -348,10 +340,6 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {

@@ -58,7 +58,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -195,10 +195,6 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -382,10 +378,6 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	sourceID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -432,10 +424,6 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -493,7 +481,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -677,10 +665,6 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	sourceID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -749,7 +733,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -796,7 +780,7 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -845,7 +829,7 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

@@ -33,10 +33,6 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 // HandleFindScholarships searches published scholarship guides.
 // GET /scholarships.
 func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context()) {
@@ -105,10 +101,6 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 // HandleScholarshipDetail returns a single scholarship guide.
 // GET /scholarships/{id}.
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context()) {
@@ -133,10 +125,6 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 // HandleStatuses returns the canonical saved-scholarship status options.
 // GET /scholarships/statuses (Rule 16).
 func (h *Handlers) HandleStatuses(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context()) {
@@ -157,7 +145,7 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -203,7 +191,7 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -241,7 +229,7 @@ func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -268,7 +256,7 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -303,10 +291,6 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.Request) {
 	// Auth before tenant: an unauthenticated request must get 401, not 503.
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -588,9 +572,6 @@ func applyScholarshipUpdateSource(arg *gen.UpdateScholarshipParams, body *schola
 	}
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
@@ -675,10 +656,6 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query()
 	page, limit := parsePagination(r)
@@ -724,7 +701,7 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -805,10 +782,6 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -881,10 +854,6 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 // Requires: scholarship.manage.
 func (h *Handlers) HandleAdminDeleteScholarship(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

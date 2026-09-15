@@ -118,10 +118,6 @@ func (h *Handlers) SetKeyRotation(kr *auth.KeyRotation) {
 	h.keyRot = kr
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -225,10 +221,6 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 
 // GetUserByUsername handles GET /api/v1/users/{username}.
 func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	username := chi.URLParam(r, "username")
 	if username == "" {
@@ -366,10 +358,6 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 // ListUsers handles GET /api/v1/users for admin user listing.
 // Query params: search, status, group, page_size (default 20, max 100), page_offset (default 0).
 func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 	// Admin-only: only super_admin group members may list users.
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -401,10 +389,6 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 // //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -466,9 +450,6 @@ type ConfigDuration struct {
 // Ref: japaconnect-engineering/sections/03-rbac.md (user statuses/profile types)
 // //	japaconnect-engineering/sections/46-impersonation.md (moderation)
 func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.requireTenant(w, r); !ok {
-		return
-	}
 
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -487,10 +468,6 @@ func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Reques
 // ListUserSessions handles GET /api/v1/admin/users/{id}/sessions.
 // Admin-scoped variant of /me/sessions that lists sessions for any user.
 func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -516,10 +493,6 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 // GetAdminUser handles GET /api/v1/admin/users/{id}.
 // Resolves the user by UUID (not username) for admin detail views.
 func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
@@ -539,10 +512,6 @@ func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
 // ListUserActivity handles GET /api/v1/admin/users/{id}/activity.
 // Merged feed of the user's authored content and comments, newest first.
 func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -580,10 +549,6 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 // Soft-deletes the user (status = 'deleted') to comply with the GDPR erasure
 // model — the row is retained and only a confirmed erasure request may hard-delete.
 func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -620,10 +585,6 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 // UpdateProfileType handles PATCH /api/v1/admin/users/{id}/profile-type.
 // Allows admins to change a user's profile_type to regular, pro, or business.
 func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -752,7 +713,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -875,7 +836,7 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -961,7 +922,7 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

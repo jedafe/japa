@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/crypto"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -38,11 +37,6 @@ func (h *StockHandlers) requireUser(w http.ResponseWriter, r *http.Request) (*au
 	}
 
 	return user, true
-}
-
-// requireTenant resolves the tenant from the request context.
-func (h *StockHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (*struct{ ID pgtype.UUID }, bool) {
-	return &struct{ ID pgtype.UUID }{}, true
 }
 
 // hasPermission checks a single permission node via the RBAC resolver in context.
@@ -188,11 +182,6 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 
 	if !hasPermission(r, "media.stock.import") {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "media.stock.import permission required")
-		return
-	}
-
-	_, ok = h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 

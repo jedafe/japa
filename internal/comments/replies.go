@@ -43,10 +43,6 @@ func (s *Service) ListByAuthor(ctx context.Context, authorID pgtype.UUID, limit,
 // Public-safe: only replies on published+public content; non-active users are
 // already 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var authorID pgtype.UUID
 	if err := authorID.Scan(chi.URLParam(r, "id")); err != nil {

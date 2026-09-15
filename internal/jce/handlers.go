@@ -66,10 +66,6 @@ type Handlers struct {
 // NewHandlers creates Handlers backed by the given JCE service.
 func NewHandlers(service service) *Handlers { return &Handlers{service: service} }
 
-// requireTenant resolves the tenant from the request context.
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -165,7 +161,7 @@ func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -188,7 +184,7 @@ func (h *Handlers) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -219,7 +215,7 @@ func (h *Handlers) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -246,7 +242,7 @@ func (h *Handlers) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -278,7 +274,7 @@ func (h *Handlers) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -304,7 +300,7 @@ func (h *Handlers) SetDefaultProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -330,7 +326,7 @@ func (h *Handlers) GetProfileStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -357,7 +353,7 @@ func (h *Handlers) ListScoreFactors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -384,7 +380,7 @@ func (h *Handlers) CreateScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -421,7 +417,7 @@ func (h *Handlers) GetScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -448,7 +444,7 @@ func (h *Handlers) UpdateScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -480,7 +476,7 @@ func (h *Handlers) DeleteScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -510,7 +506,7 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -559,7 +555,7 @@ func (h *Handlers) GetComparisonScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -592,7 +588,7 @@ func (h *Handlers) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -627,7 +623,7 @@ func (h *Handlers) PreviewScoreForItems(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -682,21 +678,7 @@ type advisorBody struct {
 	FactorKey *string `json:"factor_key,omitempty"`
 }
 
-// requireTenantAndUser resolves both tenant and authenticated user from the
-// request context and returns their UUIDs.
-func (h *Handlers) requireTenantAndUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, pgtype.UUID, bool) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return pgtype.UUID{}, pgtype.UUID{}, false
-	}
 
-	user, ok := requireUser(w, r)
-	if !ok {
-		return pgtype.UUID{}, pgtype.UUID{}, false
-	}
-
-	return pgtype.UUID{}, user.UserID, true
-}
 
 // validSourceKind reports whether the supplied source kind is one of the
 // accepted comparison_data_sources.source_kind values.
@@ -744,10 +726,6 @@ func dataSourceInputFromBody(body dataSourceCreateBody) (DataSourceInput, error)
 
 // HandleListDataSources handles GET /api/v1/jce/data-sources.
 func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query()
 	entityType := q.Get("entity_type")
@@ -792,10 +770,6 @@ func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request)
 
 // HandleCreateDataSource handles POST /api/v1/jce/data-sources.
 func (h *Handlers) HandleCreateDataSource(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var body dataSourceCreateBody
 	if !decodeBody(w, r, &body) {
@@ -824,10 +798,6 @@ func (h *Handlers) HandleCreateDataSource(w http.ResponseWriter, r *http.Request
 
 // HandleGetDataSource handles GET /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleGetDataSource(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -846,10 +816,6 @@ func (h *Handlers) HandleGetDataSource(w http.ResponseWriter, r *http.Request) {
 
 // HandleUpdateDataSource handles PATCH /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleUpdateDataSource(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -884,10 +850,6 @@ func (h *Handlers) HandleUpdateDataSource(w http.ResponseWriter, r *http.Request
 
 // HandleDeleteDataSource handles DELETE /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleDeleteDataSource(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -905,10 +867,11 @@ func (h *Handlers) HandleDeleteDataSource(w http.ResponseWriter, r *http.Request
 
 // HandleGetFreshness handles GET /api/v1/jce/comparisons/{id}/freshness.
 func (h *Handlers) HandleGetFreshness(w http.ResponseWriter, r *http.Request) {
-	_, userID, ok := h.requireTenantAndUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -927,10 +890,11 @@ func (h *Handlers) HandleGetFreshness(w http.ResponseWriter, r *http.Request) {
 
 // HandleRefreshComparison handles POST /api/v1/jce/comparisons/{id}/refresh.
 func (h *Handlers) HandleRefreshComparison(w http.ResponseWriter, r *http.Request) {
-	_, userID, ok := h.requireTenantAndUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -959,7 +923,7 @@ func (h *Handlers) HandleRefreshComparison(w http.ResponseWriter, r *http.Reques
 
 // HandleListIngestionJobs handles GET /api/v1/jce/comparisons/{id}/ingestion-jobs.
 func (h *Handlers) HandleListIngestionJobs(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := h.requireTenantAndUser(w, r)
+	_, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -1018,10 +982,11 @@ func advisorItemID(body advisorBody) (pgtype.UUID, error) {
 
 // HandleAnalyze handles POST /api/v1/jce/comparisons/{id}/analyze.
 func (h *Handlers) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
-	_, userID, ok := h.requireTenantAndUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1051,10 +1016,11 @@ func (h *Handlers) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 
 // HandleRank handles POST /api/v1/jce/comparisons/{id}/rank.
 func (h *Handlers) HandleRank(w http.ResponseWriter, r *http.Request) {
-	_, userID, ok := h.requireTenantAndUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1084,10 +1050,11 @@ func (h *Handlers) HandleRank(w http.ResponseWriter, r *http.Request) {
 
 // HandleExplain handles POST /api/v1/jce/comparisons/{id}/explain.
 func (h *Handlers) HandleExplain(w http.ResponseWriter, r *http.Request) {
-	_, userID, ok := h.requireTenantAndUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1128,10 +1095,11 @@ func (h *Handlers) HandleExplain(w http.ResponseWriter, r *http.Request) {
 
 // HandleRecommend handles POST /api/v1/jce/comparisons/{id}/recommend.
 func (h *Handlers) HandleRecommend(w http.ResponseWriter, r *http.Request) {
-	_, userID, ok := h.requireTenantAndUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1161,10 +1129,11 @@ func (h *Handlers) HandleRecommend(w http.ResponseWriter, r *http.Request) {
 
 // HandleStreamAdvisor handles POST /api/v1/jce/comparisons/{id}/advisor (SSE).
 func (h *Handlers) HandleStreamAdvisor(w http.ResponseWriter, r *http.Request) {
-	_, userID, ok := h.requireTenantAndUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {

@@ -219,17 +219,11 @@ func (c *Checker) cacheSet(flagKey string, enabled bool) {
 	}
 }
 
-// ClearCache clears all cached flag values.
+// ClearCache clears all cached flag values (in-memory and Valkey).
 func (c *Checker) ClearCache() {
 	c.cache.mu.Lock()
 	defer c.cache.mu.Unlock()
 	c.cache.entries = make(map[string]*flagCacheEntry)
-}
-
-// ClearCacheForTenant clears all cached flag values.
-// The ID parameter is kept for Phase 1 compatibility and is ignored.
-func (c *Checker) ClearCacheForTenant() {
-	c.ClearCache()
 	c.valkeyFlushAll(context.Background())
 }
 
@@ -541,7 +535,7 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percenta
 		return fmt.Errorf("updating rollout for %s: %w", key, err)
 	}
 
-	c.ClearCacheForTenant()
+	c.ClearCache()
 
 	return nil
 }
@@ -553,11 +547,7 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percenta
 func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := &struct{ ID pgtype.UUID }{}
-			if t == nil {
-				errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-				return
-			}
+
 
 			if !checker.IsEnabled(r.Context(), key) {
 				errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")

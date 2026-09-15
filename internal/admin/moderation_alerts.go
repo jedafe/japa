@@ -22,10 +22,6 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	status := r.URL.Query().Get("status")
 
@@ -61,10 +57,6 @@ func (h *Handlers) AcknowledgeModerationAlert(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := scanUUIDParam(r, "id")
 	if err != nil {
@@ -93,10 +85,6 @@ func (h *Handlers) ResolveModerationAlert(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := scanUUIDParam(r, "id")
 	if err != nil {
@@ -140,10 +128,6 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	orgID, err := scanUUIDParam(r, "id")
 	if err != nil {
@@ -218,10 +202,6 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 // or empty defaults to "pending" (the review queue view), and "all" returns
 // every claim for history/audit. Ref: sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Default to pending so existing callers (e.g. the /organisations page's
 	// "Approve Claim" action map) keep receiving only actionable claims.
@@ -303,10 +283,6 @@ func (h *Handlers) GetClaimFormSubmission(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	claimID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

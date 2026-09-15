@@ -84,7 +84,7 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -135,7 +135,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -207,10 +207,6 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 // source in the tenant so the video content single page can render the
 // embed. Non-existent IDs return 404.
 func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
@@ -241,7 +237,7 @@ func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -266,10 +262,6 @@ func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
 
 // ListChannelVideos handles GET /api/v1/u/{username}/videos.
 func (h *Handlers) ListChannelVideos(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	username := chi.URLParam(r, "username")
 	if username == "" {
@@ -294,7 +286,7 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -338,7 +330,7 @@ func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -371,7 +363,7 @@ func (h *Handlers) runUserList(w http.ResponseWriter, r *http.Request, fetch use
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -401,7 +393,7 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -459,7 +451,7 @@ func (h *Handlers) PreviewBulkImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -485,7 +477,7 @@ func (h *Handlers) RetryMyImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -522,9 +514,6 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	return user, true
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func isVideoClientError(err error) bool {
 	if err == nil {

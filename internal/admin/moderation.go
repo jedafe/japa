@@ -44,10 +44,6 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.DB == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
@@ -286,10 +282,6 @@ func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	statuses := []ModerationOption{
 		{Value: "pending", Label: "Pending"},
@@ -503,10 +495,6 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var req struct {
 		Actions []struct {
@@ -590,10 +578,6 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var req struct {
 		ID   string `json:"id"`
@@ -657,10 +641,6 @@ type BroadcastRequest struct {
 // Creates a system_announcement notification for all users in the tenant.
 func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1120,10 +1100,6 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -1161,10 +1137,6 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -1323,10 +1295,6 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 // Accepts an action (approve/reject/delete) and applies it to the moderation item.
 func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1642,10 +1610,6 @@ func (h *Handlers) callStudioHook(ctx context.Context, id, reviewerID pgtype.UUI
 
 // RemoveContent handles POST /admin/content/:id/remove.
 func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id := chi.URLParam(r, "id")
 
@@ -1669,10 +1633,6 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 
 // RestoreContent handles POST /admin/content/:id/restore.
 func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id := chi.URLParam(r, "id")
 
@@ -1698,10 +1658,6 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 // Returns soft-deleted and removed content items for the admin deletions audit view.
 // Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content).
 func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := int32(100)
 
@@ -1728,10 +1684,6 @@ func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
 
 // ListBroadcasts handles GET /admin/broadcasts.
 func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	rows, err := h.Queries.ListAdminBroadcasts(r.Context())
 	if err != nil {

@@ -6,7 +6,7 @@ import { loginUrl } from '$lib/appOrigins';
 /**
  * Browser-side API client for mutations and client-initiated reads.
  * Requests go to PUBLIC_JC_API_URL (proxied to the backend in dev). The proxy
- * converts the jc_token cookie into a Bearer header and forwards the tenant host,
+ * converts the jc_token cookie into a Bearer header and forwards the request host,
  * so callers only pass path + body.
  *
  * Mutating requests (POST/PATCH/PUT/DELETE) attach the X-CSRF-Token header from

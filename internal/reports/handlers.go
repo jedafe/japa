@@ -38,10 +38,6 @@ func (h *Handlers) SetEnqueuer(e TaskEnqueuer) {
 	h.enqueuer = e
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -65,10 +61,6 @@ type reportRequestBody struct {
 // report handler: parse the entity ID from the given URL param, decode the
 // body, and create the report.
 func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityType, idParam string) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -154,10 +146,6 @@ func (h *Handlers) ReportDMMessage(w http.ResponseWriter, r *http.Request) {
 
 // ListMyReports handles GET /api/v1/me/reports.
 func (h *Handlers) ListMyReports(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -179,10 +167,6 @@ func (h *Handlers) ListMyReports(w http.ResponseWriter, r *http.Request) {
 // ListReports handles GET /api/v1/admin/reports. Supports ?status= and
 // ?entity_type= filters.
 func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var status, entityType, q *string
 	if s := r.URL.Query().Get("status"); s != "" {
@@ -238,10 +222,6 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReport handles DELETE /api/v1/admin/reports/{id}.
 func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -259,10 +239,6 @@ func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
 
 // GetReport handles GET /api/v1/admin/reports/{id}.
 func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -283,10 +259,6 @@ func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 // It records the report resolution and, for warn/ban actions, also fires the
 // matching user-moderation side effect (warn the reporter / ban the reported user).
 func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	reviewer, ok := h.requireUser(w, r)
 	if !ok {

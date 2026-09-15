@@ -99,12 +99,10 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	// OAuth providers are rejected at initiation so the setting actually
 	// affects the site. Ref: conventions/system-settings-catalog.md
 	if h.Settings != nil {
-		if t := &struct{ ID pgtype.UUID }{}; t != nil {
-			if allowed, err := h.Settings.GetSettingBool(r.Context(), "users.allow_social_login"); err == nil && !allowed {
-				errpkg.WriteError(w, http.StatusForbidden, "social_login_disabled",
-					"Social login is disabled for this tenant")
-				return
-			}
+		if allowed, err := h.Settings.GetSettingBool(r.Context(), "users.allow_social_login"); err == nil && !allowed {
+			errpkg.WriteError(w, http.StatusForbidden, "social_login_disabled",
+				"Social login is disabled")
+			return
 		}
 	}
 
@@ -235,11 +233,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		h.redirectOAuthError(w, r, "tenant_unavailable")
-		return
-	}
+
 
 	// Try to find existing linked account — returning user.
 	existing, err := h.Store.GetOAuthAccount(r.Context(), providerName, userInfo.ProviderUserID)

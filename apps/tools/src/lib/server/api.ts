@@ -22,7 +22,7 @@ export class ApiError extends Error {
 export interface ApiContext {
 	fetch: typeof fetch;
 	token: string | null;
-	/** Hostname with the port stripped — resolves the tenant on the backend. */
+	/** Hostname with the port stripped — forwarded to the backend for host-based routing. */
 	host: string;
 	/**
 	 * Double-submit CSRF token (Ref: §5.2). Attached as X-CSRF-Token on every
@@ -37,7 +37,7 @@ export function apiContext(event: RequestEvent): ApiContext {
 	return {
 		fetch: event.fetch,
 		token: event.locals.token,
-		host: event.locals.tenantHost,
+		host: event.locals.requestHost,
 		csrfToken: event.locals.csrfToken ?? null
 	};
 }
@@ -50,7 +50,7 @@ async function request<T>(
 ): Promise<ApiOk<T>> {
 	const headers: Record<string, string> = {
 		'content-type': 'application/json',
-		// The backend resolves the tenant from the host. X-Forwarded-Host is the
+		// Forward the host header to the backend for reverse-proxy correctness. X-Forwarded-Host is the
 		// portable channel (the Fetch API silently ignores any `host` header set
 		// here, so we only send x-forwarded-host).
 		'x-forwarded-host': ctx.host

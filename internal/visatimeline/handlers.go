@@ -66,9 +66,6 @@ func (h *Handlers) SetPointsChecker(pc pointsChecker) {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -116,10 +113,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleStats handles GET /visa-timelines/stats — public aggregated
 // processing-time statistics. Query params: ?origin=&dest=&visa=&consulate=&months=.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
@@ -166,10 +159,6 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 // HandleTrend handles GET /visa-timelines/stats/trend — public monthly trend.
 // Query params: ?dest=&visa=&consulate=&months= (default 12).
 func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
@@ -217,7 +206,7 @@ func (h *Handlers) HandleListOwn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -245,7 +234,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -362,7 +351,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -413,7 +402,7 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -474,7 +463,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -529,10 +518,6 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 // route registration). Supports ?user_id=&dest=&visa=&outcome=&q=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -612,10 +597,6 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {

@@ -29,11 +29,7 @@ func (h *Handlers) Render(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	var input struct {
 		ContentID string          `json:"content_id"`

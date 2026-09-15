@@ -9,7 +9,6 @@
 
 	type VideoSource = {
 		id: string;
-		tenant_id: string;
 		author_user_id: string;
 		author_username?: string;
 		source_type: string;

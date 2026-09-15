@@ -86,9 +86,6 @@ func (h *Handlers) enqueueSearchIndex(reqID pgtype.UUID, operation string) {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -135,10 +132,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleListTests handles GET /language-tests — list all language tests.
 func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
@@ -160,10 +153,6 @@ func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
 // required tests + minimum scores for a destination/visa combination.
 // Query params: ?dest=&visa=.
 func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
@@ -195,10 +184,6 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 // returning the test details plus a summary of resources and score
 // stories.
 func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
@@ -252,10 +237,6 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 // HandleListResources handles GET /language-tests/:test_slug/resources —
 // list prep resources for a test.
 func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
@@ -303,10 +284,6 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 // HandleListStories handles GET /language-tests/:test_slug/stories — list
 // published score stories for a test. Query params: ?dest=&page=&limit=.
 func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
@@ -367,7 +344,7 @@ func (h *Handlers) HandleCreateStory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -422,10 +399,6 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
@@ -471,10 +444,6 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 // checked at route registration).
 func (h *Handlers) HandleAdminCreateRequirement(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -530,10 +499,6 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
@@ -586,7 +551,7 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

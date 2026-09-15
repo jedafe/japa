@@ -373,9 +373,6 @@ func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, 
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -2121,7 +2118,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2493,20 +2490,17 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	t := &struct{ ID pgtype.UUID }{}
-	if t != nil {
-		ok, err := h.Store.UserBelongsToTenant(r.Context(), userID)
-		if err != nil {
-			slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
-			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
+	ok, err := h.Store.UserExists(r.Context(), userID)
+	if err != nil {
+		slog.Error("verifying user existence", "error", err, "user_id", userID)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
 
-			return
-		}
+		return
+	}
 
-		if !ok {
-			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
-			return
-		}
+	if !ok {
+		errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+		return
 	}
 
 	entries, err := h.Honcho.GetContext(r.Context(), userID)
@@ -2562,20 +2556,17 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	t := &struct{ ID pgtype.UUID }{}
-	if t != nil {
-		ok, err := h.Store.UserBelongsToTenant(r.Context(), userID)
-		if err != nil {
-			slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
-			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
+	ok, err := h.Store.UserExists(r.Context(), userID)
+	if err != nil {
+		slog.Error("verifying user existence", "error", err, "user_id", userID)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
 
-			return
-		}
+		return
+	}
 
-		if !ok {
-			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
-			return
-		}
+	if !ok {
+		errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+		return
 	}
 
 	if err := h.Honcho.DeleteEntry(r.Context(), userID, entryID); err != nil {

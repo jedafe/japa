@@ -7,7 +7,7 @@ import type { RequestHandler } from './$types';
  *
  * The tag hub's <link rel="alternate" type="application/rss+xml"> points
  * here for feed autodiscovery. This proxies to the backend's
- * /tags/{slug}/feed.xml (api-routes-catalog.md — public, tenant-scoped,
+ * /tags/{slug}/feed.xml (api-routes-catalog.md — public, platform-scoped,
  * mounted at the API root outside /api/v1). Keeps the feed URL on the
  * site origin so readers never see the backend host.
  *

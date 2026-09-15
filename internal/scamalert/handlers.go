@@ -58,9 +58,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -108,10 +105,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /scam-alerts — list confirmed scam reports.
 // Query params: ?dest=&scam_type=&page=&limit= (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
@@ -156,10 +149,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleSchema handles GET /scam-alerts/schema — returns the canonical
 // scam_type and platform option lists (Rule 16).
 func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
@@ -172,10 +161,6 @@ func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /scam-alerts/:id — single confirmed scam report.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
@@ -220,10 +205,6 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // optional: authenticated users have their reporter_id stamped; anonymous
 // reports are accepted when scam_alert.anonymous_reports is enabled.
 func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
@@ -296,7 +277,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -376,7 +357,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -430,7 +411,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -486,10 +467,6 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 // (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -549,7 +526,7 @@ func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -607,10 +584,6 @@ func (h *Handlers) HandlePin(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -662,10 +635,6 @@ func (h *Handlers) HandlePin(w http.ResponseWriter, r *http.Request) {
 // registration).
 func (h *Handlers) HandleUnpin(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

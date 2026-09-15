@@ -138,18 +138,17 @@ class TauriDbAdapter implements StorageAdapter {
 	async saveSettings(settings: StudioSettings): Promise<void> {
 		await this.db.execute(
 			`INSERT OR REPLACE INTO projects (
-				id, name, watched_path, base_url, tenant_id, api_key, mode, auto_sync,
+				id, name, watched_path, base_url, api_key, mode, auto_sync,
 				auto_sync_content_types, default_content_type, default_guide_category,
 				default_persona_id, default_voice_id, default_space_id, default_status,
 				default_visibility, default_tags, access_token, refresh_token,
 				token_expires_at, device_id, created_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, datetime('now'))`,
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, datetime('now'))`,
 			[
 				PROJECT_ID,
 				settings.projectName,
 				settings.projectRoot,
 				settings.baseUrl,
-				settings.tenantId ?? null,
 				settings.apiKey,
 				settings.mode,
 				settings.autoSync ? 1 : 0,
@@ -372,8 +371,7 @@ function rowToSettings(row: Record<string, unknown>): StudioSettings {
 		accessToken: row.access_token ? String(row.access_token) : undefined,
 		refreshToken: row.refresh_token ? String(row.refresh_token) : undefined,
 		tokenExpiresAt: row.token_expires_at ? Number(row.token_expires_at) : undefined,
-		deviceId: row.device_id ? String(row.device_id) : undefined,
-		tenantId: row.tenant_id ? String(row.tenant_id) : undefined
+		deviceId: row.device_id ? String(row.device_id) : undefined
 	};
 }
 

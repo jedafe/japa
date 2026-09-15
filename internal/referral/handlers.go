@@ -52,9 +52,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
@@ -113,10 +110,6 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 // GetProgram returns the referral program settings for the tenant.
 // GET /admin/referral/program.
 func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	program, err := h.Service.GetProgram(r.Context())
 	if err != nil {
@@ -132,10 +125,6 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 // UpdateProgram updates the referral program settings.
 // PUT /admin/referral/program.
 func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		ReferrerRewardCents *int32  `json:"referrer_reward_cents,omitempty"`
@@ -165,10 +154,6 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 // ListReferrals returns all referrals for the tenant (legacy).
 // GET /admin/referral/referrals.
 func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
@@ -187,10 +172,6 @@ func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 // GetReferral returns a single referral by ID (legacy).
 // GET /admin/referral/referrals/{id}.
 func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -210,10 +191,6 @@ func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 // DeleteReferral soft-deletes a referral by setting status to 'rejected'.
 // DELETE /admin/referral/referrals/{id}.
 func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -238,10 +215,6 @@ func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
 // HandleGetMyCode returns the user's referral code and stats.
 // GET /me/referral.
 func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -313,10 +286,6 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 // HandleMyHistory returns the user's referral history.
 // GET /me/referral/history.
 func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -353,10 +322,6 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 // HandleAdminListReferrals returns all referrals for admin oversight.
 // GET /admin/referrals.
 func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -382,10 +347,6 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 // HandleAdminResolveFlagged resolves a flagged referral.
 // PATCH /admin/referrals/{id}/resolve.
 func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -422,10 +383,6 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 // HandleAdminReferralStats returns referral stats by status.
 // GET /admin/referrals/stats.
 func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -444,10 +401,6 @@ func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Reque
 // HandleAdminFlagged returns the flagged referral queue.
 // GET /admin/referrals/flagged.
 func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")

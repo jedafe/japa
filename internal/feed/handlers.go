@@ -113,10 +113,6 @@ func (h *Handlers) resolveFeedLiterals(r *http.Request, items []FeedItem) {
 	}
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // optionalUser resolves the authenticated user from the request context, if present.
 func (h *Handlers) optionalUser(r *http.Request) *auth.AuthenticatedUser {
@@ -133,14 +129,12 @@ func (h *Handlers) parsePageSize(r *http.Request) int32 {
 	defaultSize := int32(defaultPageSize)
 
 	if h.settings != nil {
-		if t := &struct{ ID pgtype.UUID }{}; t != nil {
-			if v := h.settings.GetIntOr(r.Context(), "content.posts_per_page", int(defaultPageSize)); v > 0 {
-				if v > int(MaxPageSize) {
-					v = int(MaxPageSize)
-				}
-
-				defaultSize = toInt32(v)
+		if v := h.settings.GetIntOr(r.Context(), "content.posts_per_page", int(defaultPageSize)); v > 0 {
+			if v > int(MaxPageSize) {
+				v = int(MaxPageSize)
 			}
+
+			defaultSize = toInt32(v)
 		}
 	}
 
@@ -199,10 +193,6 @@ func parseSort(r *http.Request) string {
 // BUG-006: caches results in Valkey (jc:explore:{tenant}:{geo}:{page}, Section 53, TTL 15min).
 // Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -243,10 +233,6 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -272,10 +258,6 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -308,10 +290,6 @@ func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := h.parsePageSize(r)
 
@@ -335,10 +313,6 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	user := h.optionalUser(r)
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -372,10 +346,6 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 // optional — guests see all public rows. When the viewer is authenticated,
 // mutual user_blocks are excluded per §41 (BUG-002).
 func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	authorIDStr := chi.URLParam(r, "user_id")
 

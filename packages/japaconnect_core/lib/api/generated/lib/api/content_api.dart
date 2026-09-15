@@ -18,7 +18,7 @@ class ContentApi {
 
   /// List published content
   ///
-  /// Retrieve a paginated list of published, public content within the API key's tenant. Drafts, scheduled, and private content are never exposed.
+  /// Retrieve a paginated list of published, public content. Drafts, scheduled, and private content are never exposed.
   ///
   /// Note: This method returns the HTTP [Response].
   ///
@@ -65,7 +65,7 @@ class ContentApi {
 
   /// List published content
   ///
-  /// Retrieve a paginated list of published, public content within the API key's tenant. Drafts, scheduled, and private content are never exposed.
+  /// Retrieve a paginated list of published, public content. Drafts, scheduled, and private content are never exposed.
   ///
   /// Parameters:
   ///

@@ -25,9 +25,6 @@ func NewHandlers(service *Service) *Handlers {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -138,10 +135,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListRedirects is an exported method.
 func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var isActive *bool
 
@@ -172,10 +165,6 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 
 // GetRedirect is an exported method.
 func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -194,10 +183,6 @@ func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 
 // CreateRedirect is an exported method.
 func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		SourcePath string  `json:"source_path"`
@@ -231,10 +216,6 @@ func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRedirect is an exported method.
 func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -270,10 +251,6 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 
 // DeleteRedirect is an exported method.
 func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -291,10 +268,6 @@ func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 
 // BulkAction is an exported method.
 func (h *Handlers) BulkAction(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input BulkActionInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {

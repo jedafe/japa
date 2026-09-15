@@ -1,6 +1,5 @@
 export interface ScoreFactorAdmin {
 	id: string;
-	tenant_id?: string;
 	comparison_type_id?: string | null;
 	factor_key: string;
 	label: string;
@@ -17,7 +16,6 @@ export interface ScoreFactorAdmin {
 
 export interface DataSource {
 	id: string;
-	tenant_id: string;
 	entity_type?: string | null;
 	entity_id?: string | null;
 	dimension_slug?: string | null;
@@ -36,7 +34,6 @@ export type DataSourceAdmin = DataSource;
 
 export interface IngestionJob {
 	id: string;
-	tenant_id: string;
 	content_id: string;
 	status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 	source_kind?: string | null;

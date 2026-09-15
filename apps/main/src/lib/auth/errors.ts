@@ -18,7 +18,7 @@ export function mapAuthError(code: string, status?: number): FieldError {
 		weak_password: { field: 'password', messageKey: 'auth.errors.weak_password' },
 		password_breached: { field: 'password', messageKey: 'auth.errors.password_breached' },
 		invalid_body: { field: 'form', messageKey: 'auth.errors.invalid_body' },
-		tenant_unavailable: { field: 'form', messageKey: 'auth.errors.tenant_unavailable' },
+		service_unavailable: { field: 'form', messageKey: 'auth.errors.service_unavailable' },
 		unsupported_provider: { field: 'form', messageKey: 'auth.errors.oauth_unsupported_provider' },
 		state_error: { field: 'form', messageKey: 'auth.errors.oauth_state_error' },
 		invalid_state: { field: 'form', messageKey: 'auth.errors.oauth_state_error' },

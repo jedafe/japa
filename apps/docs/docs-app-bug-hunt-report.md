@@ -106,7 +106,7 @@ This pass audited the entire Docs SvelteKit app against the backend API catalog 
 | R2 | `POST /admin/docs/ai-generate` has no Docs app UI | Low | Admin-only; intentional. |
 | R3 | `SidebarWidgetRenderer` silently no-ops for many widget types | Low | Registry rejects non-docs widget types; no UI requested. |
 | R4 | `/newsletter/subscribe` CSRF for guests may fail if no `csrf_token` cookie | Medium | The docs hook only fetches `/csrf` for authenticated users; guest newsletter submits need either a guest CSRF cookie or an exempt public route. Not a Docs-app-only fix. |
-| R5 | OpenAPI download proxy at `docs/openapi.json` always fetches from `API_BASE` without `event.locals.token` | Low | The route is public (`/docs/openapi.json`), so no auth needed, but tenant/host handling is correct. |
+| R5 | OpenAPI download proxy at `docs/openapi.json` always fetches from `API_BASE` without `event.locals.token` | Low | The route is public (`/docs/openapi.json`), so no auth needed, but host forwarding is correct. |
 
 ## Files changed
 

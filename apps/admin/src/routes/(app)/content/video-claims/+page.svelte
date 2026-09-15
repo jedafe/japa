@@ -8,7 +8,6 @@
 
 	type VideoClaim = {
 		id: string;
-		tenant_id: string;
 		claimant_user_id: string;
 		claimant_username?: string;
 		video_author_user_id: string;

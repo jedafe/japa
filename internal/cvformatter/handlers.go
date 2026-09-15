@@ -50,9 +50,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -102,10 +99,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // when the feature flag is off. Accepts ?dest= to filter by destination
 // space ID (geo-aware tool pattern: ?dest= is the primary filter).
 func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
@@ -147,10 +140,6 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 // HandleGetStandard handles GET /cv-formatter/standards/:dest — single
 // destination CV standard. Public; :dest is the destination_space_id.
 func (h *Handlers) HandleGetStandard(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
@@ -197,7 +186,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -337,7 +326,7 @@ func (h *Handlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -383,7 +372,7 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -485,9 +474,6 @@ func (h *Handlers) HandleAdminListStandards(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "cv_formatter_unavailable", "CV formatter not configured")
@@ -516,9 +502,6 @@ func (h *Handlers) HandleAdminUpsertStandard(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "cv_formatter_unavailable", "CV formatter not configured")

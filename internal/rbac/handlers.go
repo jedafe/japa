@@ -24,19 +24,9 @@ func NewHandlers(store *Store, rbac *RBAC) *Handlers {
 	return &Handlers{store: store, rbac: rbac}
 }
 
-// requireTenant extracts the tenant ID from the authenticated user context.
-// Returns false and writes an error response if the user is not available.
-func requireTenant(r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // ListGroups handles GET /api/v1/admin/rbac/groups.
 func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	groups, err := h.store.ListGroups(r.Context())
 	if err != nil {
@@ -60,11 +50,6 @@ type CreateGroupInput struct {
 
 // CreateGroup handles POST /api/v1/admin/rbac/groups.
 func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	var input CreateGroupInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -129,11 +114,6 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // DELETE query) and by an explicit check here. The filter prevents
 // cross-tenant deletion.
 func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
@@ -151,11 +131,6 @@ func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 
 // ListGroupMembers handles GET /api/v1/admin/rbac/groups/{id}/members.
 func (h *Handlers) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
@@ -179,11 +154,6 @@ type AddGroupMemberInput struct {
 
 // AddGroupMember handles POST /api/v1/admin/rbac/groups/{id}/members.
 func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
@@ -218,11 +188,6 @@ func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 
 // RemoveGroupMember handles DELETE /api/v1/admin/rbac/groups/{id}/members/{userId}.
 func (h *Handlers) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
@@ -289,11 +254,6 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 
 // ListRoles handles GET /api/v1/admin/rbac/roles.
 func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	limit := int32(25)
 	offset := int32(0)
@@ -341,11 +301,6 @@ type CreateRoleInput struct {
 
 // CreateRole handles POST /api/v1/admin/rbac/roles.
 func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	var input CreateRoleInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -496,11 +451,6 @@ func parseUUID(s string) (pgtype.UUID, error) {
 
 // DeleteRole handles DELETE /admin/roles/:id (P5.6).
 func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	roleID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
@@ -518,11 +468,6 @@ func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRole handles PATCH /admin/roles/:id (P5.6).
 func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	roleID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
@@ -598,11 +543,6 @@ func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 // and permission updates on system groups are allowed. The filter
 // prevents cross-tenant updates.
 func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
-		return
-	}
 
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {

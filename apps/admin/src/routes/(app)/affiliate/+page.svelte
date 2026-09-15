@@ -37,7 +37,6 @@
 		id: string;
 		user_id: string;
 		username: string | null;
-		tenant_id: string;
 		enrolled_at: string;
 		status: string;
 		total_clicks: number;
@@ -51,7 +50,6 @@
 		id: string;
 		user_id: string;
 		username: string | null;
-		tenant_id: string;
 		product_type: string;
 		product_id: string | null;
 		code: string;

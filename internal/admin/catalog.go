@@ -467,9 +467,6 @@ func (h *Handlers) GetWidgetConfigOptions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	// Return a deep copy so a caller cannot mutate the shared catalog.
 	out := WidgetConfigOptions{
@@ -506,9 +503,6 @@ func (h *Handlers) GetCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	name := chi.URLParam(r, "name")
 	if name == "" {

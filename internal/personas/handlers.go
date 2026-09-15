@@ -41,9 +41,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers (same pattern as university/handlers.go, rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -130,10 +127,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
@@ -192,7 +185,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -244,10 +237,6 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
@@ -274,10 +263,6 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // modes, status, voice_prompt. Gated by persona.manage permission.
 func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -335,10 +320,6 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
@@ -368,7 +349,7 @@ func (h *Handlers) HandleCreateVoice(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -401,10 +382,6 @@ func (h *Handlers) HandleGetVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
@@ -431,10 +408,6 @@ func (h *Handlers) HandleGetVoice(w http.ResponseWriter, r *http.Request) {
 // Gated by persona.manage permission.
 func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -471,10 +444,6 @@ func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
@@ -501,10 +470,6 @@ func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
 // Gated by participation.view permission (ADR-077 §10/§11).
 func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

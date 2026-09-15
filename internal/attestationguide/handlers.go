@@ -50,9 +50,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -109,10 +106,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /attestation — lookup published attestation
 // pathways with filters. Query params: ?dest=&doc_type=&issuing=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
@@ -160,10 +153,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /attestation/:id — single published attestation
 // pathway detail.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
@@ -198,10 +187,6 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // pathway JSON so the client can render it to PDF. The Content-Disposition
 // filename uses .json to reflect the actual format. Public.
 func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
@@ -251,7 +236,7 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -300,10 +285,6 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 // BUG-004: sort and q (search) params now honoured.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -366,10 +347,6 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
@@ -409,10 +386,6 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
@@ -461,10 +434,6 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
@@ -508,7 +477,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -562,7 +531,7 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

@@ -181,13 +181,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context and writes a 503
-// error when none is available. The boolean return is false when the caller
-// should abort.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
-
 // requireUser resolves the authenticated user from the request context and
 // writes a 401 error when none is available.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -836,7 +829,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1152,10 +1145,6 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 // GetContent handles GET /api/v1/content/{slug}.
 func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -1440,10 +1429,6 @@ func tsFormat(t pgtype.Timestamptz) string {
 
 // ListContent handles GET /api/v1/content with optional type and space filters.
 func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 
@@ -1558,7 +1543,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1856,7 +1841,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1912,7 +1897,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 
 	_ = user // used for RBAC audit trail
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1989,12 +1974,6 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = user
-	_, // used for RBAC audit trail
-
-		ok = h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2040,7 +2019,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2117,10 +2096,6 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 // for deduplication. The country_code is resolved server-side from the
 // client IP via the GeoIP middleware (Section 14 — view tracking).
 func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2195,10 +2170,6 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 
 // GetContentShareCount handles GET /api/v1/content/{id}/share-count.
 func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2248,10 +2219,6 @@ func (h *Handlers) enqueueScheduledPublish(contentID pgtype.UUID, publishAt time
 // ListRevisions handles GET /api/v1/content/{id}/revisions.
 // Tenant-scoped and permission-gated (BUG-012).
 func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2287,7 +2254,7 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2368,7 +2335,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2482,7 +2449,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2519,10 +2486,6 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 
 // ListReactions handles GET /api/v1/content/{id}/reactions.
 func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2554,7 +2517,7 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2614,10 +2577,6 @@ func toJSONLDResponse(t gen.ContentTypeJsonldTemplate) jsonldTemplateResponse {
 
 // ListJSONLDTemplates handles GET /api/v1/content/jsonld-templates.
 func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query().Get("q")
 
@@ -2640,10 +2599,6 @@ func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 
 // UpsertJSONLDTemplate handles PUT /api/v1/content/jsonld-templates.
 func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		ContentType string          `json:"content_type"`
@@ -2674,10 +2629,6 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 // It removes a single JSON-LD template by its primary key, scoped to the
 // caller's tenant (§21 missing CRUD leg, §26 RBAC CRUD completeness).
 func (h *Handlers) DeleteJSONLDTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2703,7 +2654,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2757,7 +2708,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2811,7 +2762,7 @@ func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2881,7 +2832,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2995,7 +2946,7 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -3062,7 +3013,7 @@ func (h *Handlers) FeatureContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -3111,7 +3062,7 @@ func (h *Handlers) UnfeatureContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -3140,7 +3091,7 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -3174,10 +3125,6 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 
 // GetRelatedContent handles GET /api/v1/content/{id}/related.
 func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -3213,8 +3160,6 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 // new categories from the admin panel — no code change required.
 // // Ref: japaconnect-engineering/sections/14-content-type-system.md.
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
-	_, _ = h.requireTenant(w, r)
-
 	guideCategories := []map[string]string{}
 
 	if h.guideCategoryLister != nil && false {
@@ -3284,7 +3229,7 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -3338,7 +3283,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

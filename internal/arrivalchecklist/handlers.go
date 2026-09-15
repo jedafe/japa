@@ -48,9 +48,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -98,10 +95,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleSelector handles GET /arrival-checklist/selector — returns the
 // available destination + visa category combinations. Anonymous-accessible.
 func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
@@ -122,10 +115,6 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 // HandleGetGuide handles GET /arrival-checklist/:guide_id — returns the
 // checklist items for a guide. Anonymous-accessible.
 func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
@@ -164,7 +153,7 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -193,7 +182,7 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -231,7 +220,7 @@ func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -275,7 +264,7 @@ func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -326,10 +315,6 @@ func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 // registration). Supports ?dest=&visa_category=&applicant_type=&status=&q=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -389,10 +374,6 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
@@ -427,10 +408,6 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 // AI generation is dispatched as a separate Asynq task.
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -469,7 +446,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -511,10 +488,6 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 // route registration).
 func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

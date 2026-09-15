@@ -1188,10 +1188,10 @@ type UpsertCustomFieldValueParams struct {
 	ValueJson   []byte             `json:"value_json"`
 }
 
-// Tenant scoping for upsert is enforced at the handler layer via a
-// GetField(fieldID, ID) pre-check (the handler rejects 404 before
-// reaching this query). The custom_field_values table has no the id
-// column, so the INSERT itself cannot be tenant-scoped at the SQL level.
+// Scoping for upsert is enforced at the handler layer via a GetField
+// pre-check (the handler rejects 404 before reaching this query). The
+// custom_field_values table has no the id column, so the INSERT itself
+// cannot be scoped at the SQL level.
 func (q *Queries) UpsertCustomFieldValue(ctx context.Context, arg UpsertCustomFieldValueParams) (CustomFieldValue, error) {
 	row := q.db.QueryRow(ctx, upsertCustomFieldValue,
 		arg.FieldID,

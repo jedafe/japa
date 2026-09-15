@@ -51,9 +51,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -115,10 +112,6 @@ func writeDisabled(w http.ResponseWriter, err error) bool {
 // HandleListBadges handles GET /api/v1/gamification/badges — all active badge
 // definitions. Public route (gamification.view permission at registration site).
 func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
@@ -145,10 +138,6 @@ func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
 // HandleListChallenges handles GET /api/v1/gamification/challenges — active
 // challenges within their date range. Public route.
 func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
@@ -176,10 +165,6 @@ func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) 
 // points leaderboard. Query params: scope (global|space:{id}), period
 // (all_time|monthly|weekly). Public route.
 func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
@@ -239,7 +224,7 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -273,7 +258,7 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -303,10 +288,6 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 // HandleUserBadges handles GET /api/v1/users/:username/badges — public badge
 // display for a user's profile. Public route.
 func (h *Handlers) HandleUserBadges(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	username := chi.URLParam(r, "username")
 	if username == "" {
@@ -347,10 +328,6 @@ func (h *Handlers) HandleAdminListBadges(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
@@ -383,10 +360,6 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
@@ -417,10 +390,6 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 // (gamification.manage_badges).
 func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -461,7 +430,7 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -515,10 +484,6 @@ func (h *Handlers) HandleAdminDeleteBadge(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	badgeID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -547,10 +512,6 @@ func (h *Handlers) HandleAdminDeleteBadge(w http.ResponseWriter, r *http.Request
 // (gamification.manage_challenges).
 func (h *Handlers) HandleAdminListChallenges(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -586,10 +547,6 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
@@ -620,10 +577,6 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 // mutable fields. Admin route (gamification.manage_challenges).
 func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -661,10 +614,6 @@ func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Req
 // Admin route (gamification.manage_challenges).
 func (h *Handlers) HandleAdminDeleteChallenge(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

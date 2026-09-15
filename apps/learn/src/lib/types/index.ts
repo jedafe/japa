@@ -419,7 +419,6 @@ export type InstructorStatus = 'pending' | 'approved' | 'rejected' | 'suspended'
 
 export interface InstructorProfile {
 	id: string;
-	tenant_id: string;
 	user_id: string;
 	display_name: string;
 	headline?: string | null;

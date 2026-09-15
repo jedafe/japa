@@ -36,9 +36,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -93,10 +90,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListPublicCoupons handles GET /api/v1/coupons.
 func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	providerID := parseQueryUUID(r, "provider_id")
 	couponType := parseQueryString(r, "coupon_type")
@@ -120,10 +113,6 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 
 // GetCoupon handles GET /api/v1/coupons/:id.
 func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -142,10 +131,6 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 
 // RecordCouponClick handles POST /api/v1/coupons/:id/click.
 func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -191,10 +176,6 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 
 // ListProviders handles GET /api/v1/admin/affiliate-providers.
 func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
@@ -210,10 +191,6 @@ func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 
 // CreateProvider handles POST /api/v1/admin/affiliate-providers.
 func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input CreateProviderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -248,10 +225,6 @@ func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
 
 // GetProvider handles GET /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -270,10 +243,6 @@ func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProvider handles PATCH /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -303,10 +272,6 @@ func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 
 // DeleteProvider handles DELETE /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) DeleteProvider(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -326,10 +291,6 @@ func (h *Handlers) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 
 // ListCouponsAdmin handles GET /api/v1/admin/coupons.
 func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	status := parseQueryString(r, "status")
 	couponType := parseQueryString(r, "coupon_type")
@@ -353,10 +314,6 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 
 // CreateCouponAdmin handles POST /api/v1/admin/coupons.
 func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -398,10 +355,6 @@ func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // GetCouponAdmin handles GET /api/v1/admin/coupons/:id.
 func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -420,10 +373,6 @@ func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // UpdateCouponAdmin handles PATCH /api/v1/admin/coupons/:id.
 func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -458,10 +407,6 @@ func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // DeleteCouponAdmin handles DELETE /api/v1/admin/coupons/:id.
 func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -483,10 +428,6 @@ func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
 // BE-LOW-001: tenant-scoped — the tenant context from the request ensures
 // a render request cannot resolve a coupon from another tenant.
 func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -507,10 +448,6 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 // BE-LOW-001: tenant-scoped — the tenant context from the request ensures
 // a render request cannot resolve a provider from another tenant.
 func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	providerIDStr := r.URL.Query().Get("provider_id")
 	originalURL := r.URL.Query().Get("url")
@@ -555,10 +492,6 @@ func parseQueryUUID(r *http.Request, key string) *pgtype.UUID {
 // ListAffiliateScanResults handles GET /admin/affiliate/scan-results
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
@@ -591,10 +524,6 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 // ReviewAffiliateScanResult handles PATCH /admin/affiliate/scan-results/{id}
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -645,10 +574,6 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 // ListAffiliateCommissions handles GET /admin/affiliate/commissions
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
@@ -703,10 +628,6 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 // UpdateProviderAuthorCommission handles PATCH /admin/affiliate/providers/{id}/author-commission
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -758,10 +679,6 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 // affiliate_content_commissions and the enqueue trigger for the
 // affiliate:credit_author_commission task.
 func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		ProviderID         string  `json:"provider_id"`

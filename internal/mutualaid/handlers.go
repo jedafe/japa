@@ -116,9 +116,6 @@ func permKeyForPostType(postType string) string {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -194,9 +191,6 @@ func scanOptionalUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 // HandleCategories handles GET /mutual-aid/categories — returns the canonical
 // category option list (Rule 16).
 func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	cats := h.service.Categories()
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
@@ -205,9 +199,6 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 // HandlePostTypes handles GET /mutual-aid/post-types — returns the canonical
 // post type option list (Rule 16).
 func (h *Handlers) HandlePostTypes(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	types := h.service.PostTypes()
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
@@ -216,10 +207,6 @@ func (h *Handlers) HandlePostTypes(w http.ResponseWriter, r *http.Request) {
 // HandleList handles GET /mutual-aid — list active posts with filters.
 // Query params: ?type=&category=&dest=&city=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
@@ -273,10 +260,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /mutual-aid/:id — single active post.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
@@ -318,7 +301,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -421,7 +404,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -478,7 +461,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -577,7 +560,7 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -620,7 +603,7 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -664,7 +647,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -708,10 +691,6 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 // at route registration). Supports ?type=&status=&dest=&city=&q=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -776,10 +755,6 @@ func (h *Handlers) HandleAdminModerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

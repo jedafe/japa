@@ -15,10 +15,6 @@ import (
 
 // ListPermissionPresets handles GET /api/v1/space-permission-presets.
 func (h *Handlers) ListPermissionPresets(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	presets, err := h.Service.ListPermissionPresets(r.Context())
 	if err != nil {
@@ -36,10 +32,6 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 	name := chi.URLParam(r, "name")
 	if name == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Preset name is required")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 

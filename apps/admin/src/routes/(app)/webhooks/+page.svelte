@@ -15,7 +15,6 @@
 
 	type WebhookEndpoint = {
 		id: string;
-		tenant_id: string;
 		name: string;
 		url: string;
 		event_types: string[];
@@ -35,7 +34,6 @@
 
 	type WebhookDelivery = {
 		id: string;
-		tenant_id: string;
 		endpoint_id: string;
 		event_id: string;
 		event_type: string;

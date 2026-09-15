@@ -74,9 +74,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -105,10 +102,6 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 // HandleGetRates handles GET /api/v1/remittance/rates — latest rates for a
 // corridor. Query: send, receive.
 func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
@@ -139,10 +132,6 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 // HandleCalculate handles GET /api/v1/remittance/calculate — send-amount
 // calculator. Query: send_amount, send, receive.
 func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
@@ -180,10 +169,6 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 // HandleGetHistory handles GET /api/v1/remittance/history — rate history
 // time-series. Query: send, receive, days (default 30, max 365).
 func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
@@ -222,10 +207,6 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 // HandleGetProviders handles GET /api/v1/remittance/providers — list active
 // providers.
 func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
@@ -248,10 +229,6 @@ func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
 // HandleGetCorridors handles GET /api/v1/remittance/corridors — supported
 // currency pairs.
 func (h *Handlers) HandleGetCorridors(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
@@ -281,7 +258,7 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -311,7 +288,7 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -358,7 +335,7 @@ func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -436,10 +413,6 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := int32(20)
 
@@ -493,10 +466,6 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var body struct {
 		Name         string          `json:"name"`
@@ -567,10 +536,6 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	providerID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -637,10 +602,6 @@ func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Re
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	providerID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -702,10 +663,6 @@ func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Re
 // remittance:fetch_rates task (fire-and-forget per Rule 8).
 func (h *Handlers) HandleAdminTriggerFetch(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

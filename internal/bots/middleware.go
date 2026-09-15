@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
 )
@@ -29,18 +28,13 @@ const botListCacheTTL = 5 * time.Minute
 
 // BotDetectionMiddleware identifies known bots from the User-Agent header
 // and stores bot information in the request context for downstream handlers.
-// The middleware queries the bot registry for the current tenant and performs
-// in-memory pattern matching. The bot list is cached in Valkey (5-min TTL)
-// to avoid a per-request DB hit.
+// The middleware queries the bot registry and performs in-memory pattern matching.
+// The bot list is cached in Valkey (5-min TTL) to avoid a per-request DB hit.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func BotDetectionMiddleware(store *Store, rdb *valkey.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := &struct{ ID pgtype.UUID }{}
-			if t == nil {
-				next.ServeHTTP(w, r)
-				return
-			}
+
 
 			ua := r.UserAgent()
 			if ua == "" {

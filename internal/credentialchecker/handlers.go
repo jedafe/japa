@@ -46,9 +46,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -92,9 +89,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleListProfessions handles GET /credentials/professions — list all
 // credential professions. Public.
 func (h *Handlers) HandleListProfessions(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
@@ -116,10 +110,6 @@ func (h *Handlers) HandleListProfessions(w http.ResponseWriter, r *http.Request)
 // with filters. Query params: ?dest=&profession=&issuing=&page=&limit=
 // Public.
 func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
@@ -166,10 +156,6 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 // HandleGetPathway handles GET /credentials/:id — pathway detail plus
 // published community notes. Public.
 func (h *Handlers) HandleGetPathway(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
@@ -206,7 +192,7 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -253,10 +239,6 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 // at route registration). Supports ?dest=&profession=&issuing=&status=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -315,10 +297,6 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
@@ -362,10 +340,6 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 // (credential_checker.manage permission checked at route registration).
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -415,10 +389,6 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -463,7 +433,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

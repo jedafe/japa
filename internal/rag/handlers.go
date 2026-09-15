@@ -41,9 +41,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as university/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -76,10 +73,6 @@ func (h *Handlers) HandleReindex(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
@@ -104,10 +97,6 @@ func (h *Handlers) HandleReindex(w http.ResponseWriter, r *http.Request) {
 // Gated by ai.rag.manage permission.
 func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -139,10 +128,6 @@ func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 // individual-entity level.
 func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -203,10 +188,6 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.settings == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings service not configured")
@@ -237,10 +218,6 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 //	japaconnect-engineering/conventions/system-settings-catalog.md
 func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

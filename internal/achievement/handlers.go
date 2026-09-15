@@ -47,9 +47,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -97,10 +94,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /achievements — list published achievements with
 // filters. Query params: ?dest=&milestone=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
@@ -147,10 +140,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // published achievements are visible to anonymous viewers; an unpublished
 // (admin-moderated) achievement is visible only to its own author.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
@@ -198,7 +187,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -263,7 +252,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -323,7 +312,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -365,10 +354,6 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 // HandleListBySpace handles GET /spaces/:slug/achievements — published
 // achievements filed in the given Space, for the Space widget.
 func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
@@ -411,10 +396,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "achievement_unavailable", "Achievement service not configured")
@@ -453,10 +434,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 // permission checked at route registration).
 func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -500,10 +477,6 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 // permission checked at route registration). Soft-delete per Rule 11.
 func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

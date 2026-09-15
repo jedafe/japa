@@ -49,9 +49,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -99,10 +96,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /tax-calculator — list published tax obligation
 // guides with filters. Query params: ?dest=&origin=&employment=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
@@ -162,10 +155,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleTreaty handles GET /tax-calculator/treaty — treaty status for an
 // origin/destination pair. Query params: ?dest=&origin=.
 func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
@@ -226,10 +215,6 @@ func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
 // Supports ?status=&employment=&dest=&origin=&q=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -297,10 +282,6 @@ func (h *Handlers) HandleCreateGuide(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
@@ -329,10 +310,6 @@ func (h *Handlers) HandleCreateGuide(w http.ResponseWriter, r *http.Request) {
 // a placeholder response describing the pending draft state.
 func (h *Handlers) HandleGenerateGuide(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -365,7 +342,7 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -405,10 +382,6 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 // repeated calls for the same pair update the mutable fields.
 func (h *Handlers) HandleUpsertTreaty(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

@@ -67,10 +67,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -153,10 +149,6 @@ func (h *Handlers) ListPageTypes(w http.ResponseWriter, r *http.Request) {
 
 // ListBlocks handles GET /api/v1/admin/pagebuilder/blocks.
 func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page, limit := parsePageParams(r)
 
@@ -177,10 +169,6 @@ func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
 
 // GetBlock handles GET /api/v1/admin/pagebuilder/blocks/{id}.
 func (h *Handlers) GetBlock(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -199,10 +187,6 @@ func (h *Handlers) GetBlock(w http.ResponseWriter, r *http.Request) {
 
 // CreateBlock handles POST /api/v1/admin/pagebuilder/blocks.
 func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input CreateBlockInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -221,10 +205,6 @@ func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
 
 // UpdateBlock handles PATCH /api/v1/admin/pagebuilder/blocks/{id}.
 func (h *Handlers) UpdateBlock(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -249,10 +229,6 @@ func (h *Handlers) UpdateBlock(w http.ResponseWriter, r *http.Request) {
 
 // DeleteBlock handles DELETE /api/v1/admin/pagebuilder/blocks/{id}.
 func (h *Handlers) DeleteBlock(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -274,10 +250,6 @@ func (h *Handlers) DeleteBlock(w http.ResponseWriter, r *http.Request) {
 
 // ListTemplates handles GET /api/v1/admin/pagebuilder/templates.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query().Get("q")
 	category := r.URL.Query().Get("category")
@@ -301,10 +273,6 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
 // GetTemplate handles GET /api/v1/admin/pagebuilder/templates/{id}.
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -323,10 +291,6 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 // CreateTemplate handles POST /api/v1/admin/pagebuilder/templates.
 func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input CreateTemplateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -345,10 +309,6 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTemplate handles PATCH /api/v1/admin/pagebuilder/templates/{id}.
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -373,10 +333,6 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTemplate handles DELETE /api/v1/admin/pagebuilder/templates/{id}.
 func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -398,10 +354,6 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 
 // ListThemes handles GET /api/v1/admin/pagebuilder/themes.
 func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page, limit := parsePageParams(r)
 
@@ -422,10 +374,6 @@ func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
 
 // GetTheme handles GET /api/v1/admin/pagebuilder/themes/{id}.
 func (h *Handlers) GetTheme(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -444,10 +392,6 @@ func (h *Handlers) GetTheme(w http.ResponseWriter, r *http.Request) {
 
 // CreateTheme handles POST /api/v1/admin/pagebuilder/themes.
 func (h *Handlers) CreateTheme(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input CreateThemeInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -466,10 +410,6 @@ func (h *Handlers) CreateTheme(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTheme handles PATCH /api/v1/admin/pagebuilder/themes/{id}.
 func (h *Handlers) UpdateTheme(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -494,10 +434,6 @@ func (h *Handlers) UpdateTheme(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTheme handles DELETE /api/v1/admin/pagebuilder/themes/{id}.
 func (h *Handlers) DeleteTheme(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -515,10 +451,6 @@ func (h *Handlers) DeleteTheme(w http.ResponseWriter, r *http.Request) {
 
 // SetDefaultTheme handles POST /api/v1/admin/pagebuilder/themes/{id}/default.
 func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -548,10 +480,6 @@ func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
 
 // ListPages handles GET /api/v1/admin/pages.
 func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	q := r.URL.Query()
 	page, limit := parsePageParams(r)
@@ -578,10 +506,6 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 
 // GetPage handles GET /api/v1/admin/pages/{id}.
 func (h *Handlers) GetPage(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -604,7 +528,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -626,10 +550,6 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 
 // UpdatePage handles PATCH /api/v1/admin/pages/{id}.
 func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -654,10 +574,6 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 
 // DeletePage handles DELETE /api/v1/admin/pages/{id}.
 func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -675,10 +591,6 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 
 // PublishPage handles POST /api/v1/admin/pages/{id}/publish.
 func (h *Handlers) PublishPage(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -697,10 +609,6 @@ func (h *Handlers) PublishPage(w http.ResponseWriter, r *http.Request) {
 
 // ArchivePage handles POST /api/v1/admin/pages/{id}/archive.
 func (h *Handlers) ArchivePage(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -723,7 +631,7 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -755,10 +663,6 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 // ListPublishedPages handles GET /pages — public endpoint, no auth required.
 // Returns only pages with status='published', ordered by created_at DESC.
 func (h *Handlers) ListPublishedPages(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	pages, err := h.Service.ListPublishedPages(r.Context())
 	if err != nil {
@@ -773,10 +677,6 @@ func (h *Handlers) ListPublishedPages(w http.ResponseWriter, r *http.Request) {
 // Widget blocks within the page's blocks array are server-side resolved and a
 // resolved literal map is attached to the response for the SSR resolver.
 func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -888,10 +788,6 @@ func (h *Handlers) resolveWidgetBlocks(ctx context.Context, blocksJSON json.RawM
 // It snapshots the page's current block array into a new page template
 // (Section 16: "save-as-template" preserves the page's blocks).
 func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	pageID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -952,7 +848,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

@@ -54,9 +54,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings, updater: service}
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -114,10 +111,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // BUG-009: categories are served via the API (Rule 16), not hardcoded in
 // the frontend.
 func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	cats := h.service.Categories(r.Context())
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
@@ -127,10 +120,6 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 // optional filters (dest, origin, category, from, to, view). Also accepts
 // ?destination_space_id= as legacy alias.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var destSpaceID pgtype.UUID
 
@@ -218,7 +207,7 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -254,10 +243,6 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /calendar/:id — single approved calendar entry.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	entryID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -297,7 +282,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -353,7 +338,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -423,7 +408,7 @@ func (h *Handlers) HandleSave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -449,7 +434,7 @@ func (h *Handlers) HandleUnsave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -476,7 +461,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -523,7 +508,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -586,10 +571,6 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 // sort, order, page, page_size params per geo-aware tool pattern.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -690,7 +671,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -744,10 +725,6 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/AGENTS.md Rule 11.
 func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

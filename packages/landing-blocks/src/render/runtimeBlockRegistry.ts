@@ -27,7 +27,7 @@ export interface RuntimeBlockMeta {
   configSchema?: BlockConfigSchema;
   /** For custom blocks: the default config (seeded into new instances). */
   defaultConfig?: Record<string, unknown>;
-  /** For custom blocks: the slug (unique within tenant). */
+  /** For custom blocks: the slug (unique platform-wide). */
   slug?: string;
 }
 

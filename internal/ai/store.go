@@ -392,10 +392,9 @@ func (s *Store) RecordToolUsage(ctx context.Context, toolID pgtype.UUID, userID 
 	return nil
 }
 
-// UserBelongsToTenant reports whether the given user id exists within the
-// given tenant. Used by the admin AI-context handlers to prevent cross-tenant
-// access to a user's Honcho memory (ADR-027, §9 multi-tenancy).
-func (s *Store) UserBelongsToTenant(ctx context.Context, userID string) (bool, error) {
+// UserExists reports whether the given user id exists.
+// Used by the admin AI-context handlers to validate user access to Honcho memory.
+func (s *Store) UserExists(ctx context.Context, userID string) (bool, error) {
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		return false, fmt.Errorf("invalid user id %q: %w", userID, err)
@@ -407,7 +406,7 @@ func (s *Store) UserBelongsToTenant(ctx context.Context, userID string) (bool, e
 		SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)
 	`, uid).Scan(&exists)
 	if err != nil {
-		return false, fmt.Errorf("checking user tenant membership: %w", err)
+		return false, fmt.Errorf("checking user existence: %w", err)
 	}
 
 	return exists, nil

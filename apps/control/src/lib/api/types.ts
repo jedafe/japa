@@ -106,17 +106,6 @@ export interface FeatureFlag {
 	allowed_groups: string[];
 }
 
-export interface Tenant {
-	id: string;
-	name: string;
-	slug: string;
-	domain: string | null;
-	status: string;
-	created_at: string;
-	updated_at: string;
-	deleted_at?: string | null;
-}
-
 export interface SecurityOverview {
 	active_ip_blocks: number;
 }
@@ -138,7 +127,6 @@ export interface SecurityFinding {
 
 export interface IpBlock {
 	id: string;
-	tenant_id: string;
 	cidr: string;
 	block_type: string;
 	reason: string | null;
@@ -170,7 +158,6 @@ export interface AiBudget {
 
 export interface AiProvider {
 	id: string;
-	tenant_id: string;
 	name: string;
 	provider_type: string;
 	api_key_masked: string;
@@ -190,7 +177,6 @@ export interface AuditLogEntry {
 	action_type: string;
 	entity_type: string;
 	entity_id: string;
-	tenant_id: string | null;
 	ip_address: string;
 	impersonated_user_id: string | null;
 	metadata: Record<string, unknown>;

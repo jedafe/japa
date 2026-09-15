@@ -190,7 +190,6 @@ const controlRoutes: string[] = [
 	'/queue',
 	'/security',
 	'/settings',
-	'/tenants',
 	'/webhooks',
 ];
 

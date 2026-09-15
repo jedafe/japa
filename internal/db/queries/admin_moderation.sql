@@ -195,10 +195,10 @@ SELECT u.id FROM users u
 JOIN user_group_memberships gm ON gm.user_id = u.id
 WHERE u.status = 'active' AND gm.group_id = $1;
 
--- name: ListTenantAdminIDs :many
--- Returns active user IDs in the system super_admin group for a tenant.
+-- name: ListSystemAdminIDs :many
+-- Returns active user IDs in the system super_admin group.
 -- Used by the notify_admin form trigger (Section 06) to fan out admin
--- notifications via the notification service. Scoped to the caller's tenant.
+-- notifications via the notification service.
 SELECT u.id FROM users u
 JOIN user_group_memberships gm ON gm.user_id = u.id
 JOIN user_groups ug ON ug.id = gm.group_id

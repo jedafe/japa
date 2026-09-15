@@ -187,12 +187,6 @@ type createOrganizationRequest struct {
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 // //	japaconnect-engineering/sections/08-custom-field-architecture.md
 func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-
-	if t != nil {
-
-	}
-
 	orgTypes := []map[string]string{
 		{"value": OrgTypeBusiness, "label": "Business"},
 		{"value": OrgTypeNGO, "label": "NGO"},

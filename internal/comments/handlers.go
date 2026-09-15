@@ -122,10 +122,6 @@ func (h *Handlers) computeErasedMentionIDs(ctx context.Context, body []byte) []s
 	return erased
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -254,10 +250,6 @@ func redactAnonymousComments[T any](
 
 // ListComments handles GET /api/v1/content/{id}/comments.
 func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -362,10 +354,6 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 
 // GetComment handles GET /api/v1/comments/{id}.
 func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -412,7 +400,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -532,7 +520,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -594,7 +582,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -660,7 +648,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -694,7 +682,7 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -723,7 +711,7 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -754,7 +742,7 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -804,7 +792,7 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

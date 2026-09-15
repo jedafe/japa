@@ -80,9 +80,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -142,10 +139,6 @@ func parseBoolParam(r *http.Request, key string) *bool {
 // HandleFindJobs handles GET /api/v1/jobs — public job finder with server-side
 // filtering on custom_field_values.
 func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if h.service != nil && !h.service.IsEnabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
@@ -195,10 +188,6 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 
 // HandleJobDetail handles GET /api/v1/jobs/:slug — public job detail.
 func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -231,7 +220,7 @@ func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -276,7 +265,7 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -309,7 +298,7 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -363,7 +352,7 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -420,7 +409,7 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -475,7 +464,7 @@ func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -533,7 +522,7 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -627,10 +616,6 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
@@ -663,10 +648,6 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	jobID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -696,10 +677,6 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 // Requires: jobs.manage.
 func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -737,10 +714,6 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 // Requires: jobs.manage.
 func (h *Handlers) HandleAdminDeleteJob(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-	_, ok := requireTenant(w, r)
-	if !ok {
 		return
 	}
 

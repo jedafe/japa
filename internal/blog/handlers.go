@@ -46,7 +46,7 @@ func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -289,10 +289,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -486,7 +482,7 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -542,10 +538,6 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 // JEOS §24: returns the public Series DTO with cover_image_url and pagination
 // metadata (total, page_size, page_offset).
 func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -614,10 +606,6 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 // GetSeries handles GET /api/v1/blog/series/{slug}.
 // Returns the public Series DTO with a computed cover_image_url.
 func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -636,10 +624,6 @@ func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 
 // ListSeriesPosts handles GET /api/v1/blog/series/{id}/posts — lists all posts in a series.
 func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -669,7 +653,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -734,7 +718,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -783,7 +767,7 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -822,7 +806,7 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -859,7 +843,7 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -918,7 +902,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -968,7 +952,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1012,7 +996,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1053,7 +1037,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1080,7 +1064,7 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1143,7 +1127,7 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1208,7 +1192,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1282,10 +1266,6 @@ func (h *Handlers) UnfeaturePost(w http.ResponseWriter, r *http.Request) {
 // H6: returns enriched blog post cards (with title/slug/author/cover image)
 // instead of raw content_featured junction rows.
 func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -1365,7 +1345,7 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -1421,10 +1401,6 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 // trusted-proxy model (clientip.ForwardedBaseURL) to prevent host-header
 // injection.
 func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Resolve the public-facing site URL. X-Forwarded-Host/Proto are
 	// honoured only when the immediate peer is a trusted proxy
@@ -1480,10 +1456,6 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 // C4: returns an enriched DTO with author name, avatar, featured image URL,
 // tags, and series navigation (prev/next within a series).
 func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -1683,10 +1655,6 @@ func formatTimestamptz(t pgtype.Timestamptz) string {
 // JOINs users + media for author name and featured image URL.
 // BUG-005: switched from cursor-based to offset-based pagination per Rule 5.
 func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -1825,10 +1793,6 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 // panel. Reuses the content listing; unlike the public ListPosts it does
 // NOT filter out non-published posts.
 func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -1850,10 +1814,6 @@ func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
 // a blog post (Rule 11: user content is soft-deleted, never hard-deleted).
 // H2: returns 204 No Content on success (REST DELETE convention).
 func (h *Handlers) AdminDeletePost(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1878,7 +1838,7 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2015,7 +1975,7 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2067,7 +2027,7 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2177,7 +2137,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -2332,7 +2292,7 @@ func (h *Handlers) DeletePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

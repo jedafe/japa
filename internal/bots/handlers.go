@@ -42,9 +42,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
@@ -88,10 +85,6 @@ func parseOffset(r *http.Request) int32 {
 // ListKnownBots returns all known bots for the tenant, optionally filtered by bot_type.
 // GET /api/v1/admin/bots?bot_type=search_engine.
 func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	botType := r.URL.Query().Get("bot_type")
 	if botType != "" && !IsBotType(botType) {
@@ -115,10 +108,6 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 // GetKnownBot returns a single known bot by ID.
 // GET /api/v1/admin/bots/{id}.
 func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -138,10 +127,6 @@ func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
 // CreateKnownBot creates a new known bot entry.
 // POST /api/v1/admin/bots.
 func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Name             string `json:"name"`
@@ -205,10 +190,6 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 // UpdateKnownBot updates an existing known bot entry.
 // PUT /api/v1/admin/bots/:id.
 func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	botID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -267,10 +248,6 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 // DeleteKnownBot removes a known bot entry.
 // DELETE /api/v1/admin/bots/:id.
 func (h *Handlers) DeleteKnownBot(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	botID, err := parseUUIDParam(r, "id")
 	if err != nil {

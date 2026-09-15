@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -64,10 +63,6 @@ func NewHandlers() *Handlers {
 // It returns a single catalog of value/label options for public UI dropdowns.
 // The catalog is a canonical backend source of truth (Rule 16).
 func (h *Handlers) GetCatalog(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -88,6 +83,3 @@ func (h *Handlers) GetCatalog(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
-func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}

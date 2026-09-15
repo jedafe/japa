@@ -46,7 +46,7 @@ func _TestSearch_NoAuthContext(t *testing.T) {
 
 	// Search uses OptionalAuth so guests can search published content
 	// (Phase 10.01). Without any context set, the handler falls through
-	// to the tenant check and returns 503 tenant_unavailable — it does
+	// to the tenant check and returns 503 service_unavailable — it does
 	// NOT return 401 because auth is optional.
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test", nil)
@@ -63,8 +63,8 @@ func _TestSearch_NoAuthContext(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &body)
 
 	errObj, _ := body["error"].(map[string]any)
-	if errObj["code"] != "tenant_unavailable" {
-		t.Errorf("error.code = %v, want tenant_unavailable", errObj["code"])
+	if errObj["code"] != "service_unavailable" {
+		t.Errorf("error.code = %v, want service_unavailable", errObj["code"])
 	}
 }
 
@@ -93,8 +93,8 @@ func _TestSearch_TenantUnavailable(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &body)
 
 	errObj, _ := body["error"].(map[string]any)
-	if errObj["code"] != "tenant_unavailable" {
-		t.Errorf("error.code = %v, want tenant_unavailable", errObj["code"])
+	if errObj["code"] != "service_unavailable" {
+		t.Errorf("error.code = %v, want service_unavailable", errObj["code"])
 	}
 }
 

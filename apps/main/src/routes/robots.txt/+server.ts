@@ -15,8 +15,8 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		const backendURL = `${API_BASE}/robots.txt`;
 		const res = await fetch(backendURL, {
 			headers: {
-				// Forward the tenant host so the backend's tenant middleware can
-				// resolve the correct bot registry for multi-tenant deployments.
+				// Forward the request host so the backend's host middleware can
+				// resolve the correct bot registry for deployments.
 				'X-Forwarded-Host': url.hostname
 			},
 			signal: request.signal

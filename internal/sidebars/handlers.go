@@ -34,9 +34,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -151,10 +148,6 @@ func (h *Handlers) GetSidebarOptions(w http.ResponseWriter, r *http.Request) {
 
 // ListSidebars handles GET /api/v1/admin/sidebars.
 func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -185,10 +178,6 @@ func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
 
 // GetSidebar handles GET /api/v1/admin/sidebars/{id}.
 func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -207,10 +196,6 @@ func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
 
 // CreateSidebar handles POST /api/v1/admin/sidebars.
 func (h *Handlers) CreateSidebar(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input CreateSidebarInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -242,10 +227,6 @@ func (h *Handlers) CreateSidebar(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSidebar handles PATCH /api/v1/admin/sidebars/{id}.
 func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -270,10 +251,6 @@ func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSidebar handles DELETE /api/v1/admin/sidebars/{id}.
 func (h *Handlers) DeleteSidebar(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -293,10 +270,6 @@ func (h *Handlers) DeleteSidebar(w http.ResponseWriter, r *http.Request) {
 
 // CreateSidebarWidget handles POST /api/v1/admin/sidebars/{id}/widgets.
 func (h *Handlers) CreateSidebarWidget(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -334,10 +307,6 @@ func (h *Handlers) CreateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSidebarWidget handles PATCH /api/v1/admin/sidebars/{id}/widgets/{widgetId}.
 func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -368,10 +337,6 @@ func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSidebarWidget handles DELETE /api/v1/admin/sidebars/{id}/widgets/{widgetId}.
 func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -395,10 +360,6 @@ func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // ReorderSidebarWidgets handles POST /api/v1/admin/sidebars/{id}/widgets/reorder.
 func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -429,10 +390,6 @@ func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request)
 
 // Resolve handles GET /api/v1/sidebars/resolve?app=&position=&path=.
 func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	app := r.URL.Query().Get("app")
 	position := r.URL.Query().Get("position")

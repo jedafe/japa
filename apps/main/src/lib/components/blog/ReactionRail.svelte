@@ -35,7 +35,7 @@
 	interface Props {
 		/** The content ID (UUID) for API calls. */
 		contentId: string;
-		/** Legacy fallback for aggregate reaction count; not used when tenant
+		/** Legacy fallback for aggregate reaction count; not used when platform
 		 *  reaction types are loaded. Kept for backward compatibility. */
 		voteScore?: number;
 		commentCount?: number;
@@ -81,7 +81,7 @@
 	let reactionTypes = $state<ReactionType[]>([]);
 
 	// Fetch admin-configured reaction types (Section 14 — reactions are
-	// admin-configurable per tenant, not hardcoded).
+	// admin-configurable per platform, not hardcoded).
 	$effect(() => {
 		if (!reactionsEnabled || !contentId) return;
 		untrack(() => {});

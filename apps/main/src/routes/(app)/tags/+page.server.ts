@@ -3,7 +3,7 @@ import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type { TagDetail } from '$lib/types';
 
 /**
- * Tags index at /tags — public, SSR, indexable. Lists every tenant tag with
+ * Tags index at /tags — public, SSR, indexable. Lists every tag with
  * follower counts; each card links to the tag hub at /tags/[slug]. Search
  * filters by name or slug server-side. Sort filter is optional.
  *

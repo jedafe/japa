@@ -156,13 +156,6 @@ func parseIPPrefix(s string) (netip.Prefix, error) {
 	return addr.Prefix(bits)
 }
 
-// requireTenant resolves the tenant from the request context and writes a 503
-// error when none is available. The boolean return is false when the caller
-// should abort (the error has already been written).
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
-
 // handleServiceError translates a Service-layer error into the appropriate HTTP
 // response. It centralizes the not-found, duplicate, and fallback mapping so
 // every handler stays consistent.
@@ -339,10 +332,6 @@ func (h *Handlers) enrichFieldGroups(
 // applied post-enrichment so they work with the derived/simplified values
 // the frontend uses (Section 06).
 func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	entityClass := r.URL.Query().Get("entity_class")
 	entityType := r.URL.Query().Get("entity_type")
@@ -493,10 +482,6 @@ func (h *Handlers) GetFieldGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	group, err := h.Service.GetFieldGroup(r.Context(), id)
 	if err != nil {
@@ -540,10 +525,6 @@ func (h *Handlers) CreateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	group, err := h.Service.CreateFieldGroup(r.Context(), req.Name, req.Slug, req.Description, false)
 	if err != nil {
@@ -581,10 +562,6 @@ func (h *Handlers) CreateFieldGroupAdmin(w http.ResponseWriter, r *http.Request)
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
 		slug = slugify(req.Name)
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
 	}
 
 	group, err := h.Service.CreateFieldGroup(r.Context(), req.Name, slug, req.Description, false)
@@ -668,10 +645,6 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	group, err := h.Service.UpdateFieldGroup(r.Context(), id, req.Name, req.Description)
 	if err != nil {
@@ -687,10 +660,6 @@ func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -739,10 +708,6 @@ func (h *Handlers) ListFieldsByGroup(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -802,10 +767,6 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	field, err := h.Service.CreateField(r.Context(), gen.CreateCustomFieldParams{
 		GroupID: groupID,
@@ -888,10 +849,6 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	field, err := h.Service.UpdateField(r.Context(), gen.UpdateCustomFieldParams{
 		Label:          req.Label,
@@ -935,10 +892,6 @@ func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, id
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if err := h.Service.DeleteField(r.Context(), id); err != nil {
 		handleServiceError(w, err)
@@ -974,10 +927,6 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -1032,10 +981,6 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 	var entityID pgtype.UUID
 	if err := entityID.Scan(chi.URLParam(r, "entity_id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -1100,10 +1045,6 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	var entityID pgtype.UUID
 	if err := entityID.Scan(req.EntityID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -1369,10 +1310,6 @@ func (h *Handlers) DeleteFieldPermission(w http.ResponseWriter, r *http.Request)
 
 // ListForms handles GET /api/v1/forms.
 func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// When space_id is provided, filter forms to that space and include
 	// submission counts. The space-scoped forms builder UI relies on this.
@@ -1427,10 +1364,6 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -1613,10 +1546,6 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	if status == "" {
 		status = "draft"
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	form, err := h.Service.CreateForm(r.Context(), gen.CreateFormParams{
 
@@ -1647,10 +1576,6 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 	spaceID, err := parseUUIDParam(r, "spaceId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -1793,10 +1718,6 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// BUG-006: preserve the existing submission_fee_credits when the request
 	// does not include it. Without this, the Go zero value (0) would silently
@@ -1840,10 +1761,6 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if err := h.Service.DeleteForm(r.Context(), id); err != nil {
 		handleServiceError(w, err)
@@ -1860,10 +1777,6 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -1900,10 +1813,6 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 // fields) for backward compatibility with embeds that don't yet understand
 // steps.
 func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -2069,10 +1978,6 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Tenant is required even for public submissions so the row is scoped.
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Optional auth: record the submitter when a valid session exists.
 	var userID pgtype.UUID
@@ -2613,10 +2518,6 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Offset pagination per Rule 5 / api-response-format.md.
 	pageSize := int32(20)
@@ -2687,10 +2588,6 @@ func (h *Handlers) GetFormSubmission(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	submission, err := h.Service.GetFormSubmission(r.Context(), id)
 	if err != nil {
@@ -2735,10 +2632,6 @@ func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Status is required")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	submission, err := h.Service.GetFormSubmission(r.Context(), id)
 	if err != nil {
@@ -2771,10 +2664,6 @@ func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) 
 	id, err := parseUUIDParam(r, "sub_id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
 		return
 	}
 
@@ -3035,10 +2924,6 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	// Fetch the form to get its slug for the field group naming.
 	form, err := h.Service.GetForm(r.Context(), formID)
@@ -3201,10 +3086,6 @@ func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 // table (tenant-scoped). Falls back to a hardcoded list if the table is
 // empty (e.g. before the seed migration runs).
 func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	types, err := h.Service.ListEntityTypes(r.Context())
 	if err != nil || len(types) == 0 {
@@ -3248,10 +3129,6 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 // - page: 1-based page number (default 1)
 // - page_size: page size (default 25, max 100)
 func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	sortParam := r.URL.Query().Get("sort")
@@ -3368,10 +3245,6 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 
 // CreateEntityType handles POST /admin/custom-field-entity-types.
 func (h *Handlers) CreateEntityType(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var req struct {
 		Value     string `json:"value"`
@@ -3411,10 +3284,6 @@ func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var req struct {
 		Label     string `json:"label"`
@@ -3453,10 +3322,6 @@ func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	if err := h.Service.DeleteEntityType(r.Context(), id); err != nil {
 		handleServiceError(w, err)
@@ -3472,10 +3337,6 @@ func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
 
 // ListGuideCategoriesAdmin handles GET /admin/guide-categories.
 func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	cats, err := h.Service.ListGuideCategories(r.Context())
 	if err != nil {
@@ -3491,10 +3352,6 @@ func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Reque
 // transaction. After creation, the admin can add fields to the group via the
 // existing custom field group editor (/custom-fields/{groupId}).
 func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var req struct {
 		Slug  string `json:"slug"`
@@ -3526,10 +3383,6 @@ func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 // DeleteGuideCategoryAdmin handles DELETE /admin/guide-categories/{slug}.
 // System categories (seeded) cannot be deleted.
 func (h *Handlers) DeleteGuideCategoryAdmin(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {

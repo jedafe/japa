@@ -241,7 +241,7 @@ func TestCacheRoundTrip(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	got, ok := res.unmarshalCache(t.Context(), string(b), nil)
+	got, ok := res.unmarshalCache(t.Context(), string(b))
 	if !ok {
 		t.Fatal("unmarshalCache returned ok=false for JSON entry")
 	}
@@ -265,11 +265,11 @@ func TestUnmarshalCacheRejectsOldFormat(t *testing.T) {
 	res := NewResolver(nil, nil, nil)
 	// Old format was "NG|geoip" (not JSON). Must return ok=false so the
 	// resolver re-resolves instead of trusting a stale shape.
-	if _, ok := res.unmarshalCache(t.Context(), "NG|geoip", nil); ok {
+	if _, ok := res.unmarshalCache(t.Context(), "NG|geoip"); ok {
 		t.Fatal("unmarshalCache accepted old-format entry; expected ok=false")
 	}
 
-	if _, ok := res.unmarshalCache(t.Context(), "", nil); ok {
+	if _, ok := res.unmarshalCache(t.Context(), ""); ok {
 		t.Fatal("unmarshalCache accepted empty entry; expected ok=false")
 	}
 }
@@ -282,7 +282,7 @@ func TestUnmarshalCacheEmptyCountryDefaultsToNG(t *testing.T) {
 	res := NewResolver(nil, nil, nil)
 	b, _ := json.Marshal(VisitorContext{Source: "archetype"})
 
-	got, ok := res.unmarshalCache(t.Context(), string(b), nil)
+	got, ok := res.unmarshalCache(t.Context(), string(b))
 	if !ok {
 		t.Fatal("unmarshalCache returned ok=false for valid JSON")
 	}
@@ -333,7 +333,7 @@ func TestEnrichArchetypePreservesContentCountryPreference(t *testing.T) {
 		RoadmapSlugs:       []string{},
 		WeakestDimensions:  []string{},
 	}
-	res.enrichArchetype(t.Context(), &vc, nil, nil, "")
+	res.enrichArchetype(t.Context(), &vc, nil, "")
 
 	if vc.ContentCountry != "FR" {
 		t.Errorf("ContentCountry = %q, want FR (preference preserved)", vc.ContentCountry)

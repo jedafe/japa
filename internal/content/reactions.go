@@ -10,10 +10,6 @@ import (
 
 // ListReactionTypes handles GET /api/v1/reaction-types.
 func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	types, err := h.Service.ListReactionTypes(r.Context())
 	if err != nil {
@@ -26,10 +22,6 @@ func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
 
 // CreateReactionType handles POST /api/v1/reaction-types.
 func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Key      string `json:"key"`
@@ -70,10 +62,6 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 
 // UpdateReactionType handles PATCH /api/v1/reaction-types/{key}.
 func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	key := chi.URLParam(r, "key")
 	if key == "" {
@@ -114,10 +102,6 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReactionType handles DELETE /api/v1/reaction-types/{key}.
 func (h *Handlers) DeleteReactionType(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	key := chi.URLParam(r, "key")
 	if key == "" {

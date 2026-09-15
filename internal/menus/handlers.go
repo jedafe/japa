@@ -49,9 +49,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -116,10 +113,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListMenus is an exported method.
 func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -144,10 +137,6 @@ func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 
 // GetMenu is an exported method.
 func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -166,10 +155,6 @@ func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
 
 // CreateMenu is an exported method.
 func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Slug      string `json:"slug"`
@@ -199,10 +184,6 @@ func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMenu is an exported method.
 func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -237,10 +218,6 @@ func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMenu is an exported method.
 func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -260,10 +237,6 @@ func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
 
 // CreateMenuItem is an exported method.
 func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -294,10 +267,6 @@ func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMenuItem is an exported method.
 func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -339,10 +308,6 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMenuItem is an exported method.
 func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -371,10 +336,6 @@ func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // ReorderMenuItems is an exported method.
 func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -437,10 +398,6 @@ func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID pgtype.
 
 // GetMenuBySlug is an exported method.
 func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {

@@ -993,10 +993,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// dispatcher can log it.
 		queries := gen.New(database.Reader)
 
-		adminIDs, err := queries.ListTenantAdminIDs(ctx)
+		adminIDs, err := queries.ListSystemAdminIDs(ctx)
 		if err != nil {
-			slog.Error("customfields: notify_admin form trigger, listing tenant admins", "error", err)
-			return fmt.Errorf("notify_admin: listing tenant admins: %w", err)
+			slog.Error("customfields: notify_admin form trigger, listing system admins", "error", err)
+			return fmt.Errorf("notify_admin: listing system admins: %w", err)
 		}
 
 		slog.Info("customfields: notify_admin form trigger", "title", title, "admin_count", len(adminIDs))
@@ -4522,10 +4522,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// JapaBot users without ai.generate can still pick a model/voice.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/models", func(w http.ResponseWriter, r *http.Request) {
 				user := auth.FromContext(r.Context())
-				t := &struct{ ID pgtype.UUID }{}
-
-				if user == nil || t == nil {
-					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication and tenant required")
+				if user == nil {
+					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication required")
 					return
 				}
 
@@ -4541,10 +4539,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/voices", func(w http.ResponseWriter, r *http.Request) {
 				user := auth.FromContext(r.Context())
-				t := &struct{ ID pgtype.UUID }{}
-
-				if user == nil || t == nil {
-					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication and tenant required")
+				if user == nil {
+					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication required")
 					return
 				}
 

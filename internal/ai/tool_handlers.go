@@ -48,9 +48,6 @@ func toolWriteError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-func (h *ToolHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // ---------------------------------------------------------------------------
 // Admin Handlers — AI Tool Registry
@@ -59,10 +56,6 @@ func (h *ToolHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (pg
 // ListTools returns all AI tools for the tenant.
 // GET /admin/ai/tools.
 func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	tools, err := h.Registry.ListTools(r.Context())
 	if err != nil {
@@ -81,10 +74,6 @@ func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
 // GetTool returns a single AI tool by ID.
 // GET /admin/ai/tools/{id}.
 func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -104,10 +93,6 @@ func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
 // UpdateTool updates an existing AI tool's configuration.
 // PUT /admin/ai/tools/{id}.
 func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -146,10 +131,6 @@ func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 // DeleteTool removes an AI tool by ID.
 // DELETE /admin/ai/tools/{id}.
 func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -172,10 +153,6 @@ func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
 // usage for ALL tools (used by the admin /ai usage tab).
 // GET /admin/ai/tools/usage?tool_id=...&days=30.
 func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	days := 30
 

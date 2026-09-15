@@ -177,7 +177,7 @@ func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -291,7 +291,7 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -327,7 +327,7 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -380,7 +380,7 @@ func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -438,7 +438,7 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -521,7 +521,7 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -714,7 +714,7 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -748,7 +748,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -915,10 +915,6 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 // HandleAdminListSessions returns all agent sessions for the tenant,
 // paginated, with an optional status filter (?status=running|completed|...).
 func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -959,10 +955,6 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 // HandleAdminGetSession returns any session in the tenant (not just the
 // caller's) plus its full tool call audit trail. Admin-only.
 func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	sessionID, ok := parseURLUUID(w, r, "id")
 	if !ok {
@@ -1002,10 +994,6 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 // success rate, average latency) for the tenant, optionally filtered by
 // date range (?from=YYYY-MM-DD&to=YYYY-MM-DD).
 func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	fromDate, toDate, ok := parseDateRange(w, r)
 	if !ok {
@@ -1030,10 +1018,6 @@ func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.
 // HandleAdminCostReport returns a cost breakdown by user for the tenant,
 // optionally filtered by date range.
 func (h *AgentHTTPHandlers) HandleAdminCostReport(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	fromDate, toDate, ok := parseDateRange(w, r)
 	if !ok {
@@ -1093,7 +1077,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 		return
 	}
 
-	_, ok = requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}

@@ -115,7 +115,7 @@
 		maintenanceMode && !(data.user?.groups?.some((g) => g === 'Super Admin' || g === 'Admin') ?? false)
 	);
 
-	// Tenant custom code injection (§57). Loaded from GET /site/settings/public
+	// Custom code injection (§57). Loaded from GET /site/settings/public
 	// and rendered server-side in the root layout so it applies to every route.
 	let customCss = $derived((data.siteSettings?.['site.custom_css'] as string | undefined) ?? '');
 	let customJs = $derived((data.siteSettings?.['site.custom_js'] as string | undefined) ?? '');

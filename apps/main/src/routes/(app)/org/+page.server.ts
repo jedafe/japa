@@ -12,7 +12,7 @@ import type {
 
 /**
  * Organizations index at /org — public, SSR, indexable. Lists every
- * tenant organization with member/follower counts and verification state.
+ * platform organization with member/follower counts and verification state.
  * Each card links to the org profile at /org/[slug]. Search filters by
  * name or slug. org_type and verified filters are optional.
  *

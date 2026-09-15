@@ -37,10 +37,6 @@ func safeInt32(n int) int32 {
 
 // ListJCEComparisons — listJCEComparisons handles GET /api/v1/jce/comparisons.
 func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user := auth.FromContext(r.Context())
 
@@ -170,7 +166,7 @@ func (h *Handlers) ListJCEComparisonsAdmin(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	_, ok = h.requireTenant(w, r)
+	ok = true
 	if !ok {
 		return
 	}
@@ -246,10 +242,6 @@ func marshalItemRef(ref any) []byte {
 
 // CreateJCEComparison handles POST /api/v1/jce/comparisons.
 func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -346,10 +338,6 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 
 // GetJCEComparison handles GET /api/v1/jce/comparisons/{id|slug}.
 func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	idOrSlug := chi.URLParam(r, "idOrSlug")
 	if idOrSlug == "" {
@@ -415,10 +403,6 @@ func canAccessJCEComparison(cmp JCEComparison, user *auth.AuthenticatedUser, byp
 
 // UpdateJCEComparison handles PATCH /api/v1/jce/comparisons/{id}.
 func (h *Handlers) UpdateJCEComparison(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -477,10 +461,6 @@ type updateJCEComparisonBody struct {
 
 // DeleteJCEComparison handles DELETE /api/v1/jce/comparisons/{id}.
 func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -510,10 +490,6 @@ func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
 
 // PromoteJCEComparison handles POST /api/v1/jce/comparisons/{id}/promote.
 func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -545,10 +521,6 @@ func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) 
 
 // GetJCEComparisonMatrix handles GET /api/v1/jce/comparisons/{id|slug}/matrix.
 func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	idOrSlug := chi.URLParam(r, "id")
 	if idOrSlug == "" {
@@ -588,10 +560,6 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 
 // SearchJCEEntities handles GET /api/v1/jce/entities/{type}.
 func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	entityType := chi.URLParam(r, "type")
 	if entityType == "" {
@@ -674,10 +642,6 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 
 // ResolveJCEEntity handles GET /api/v1/jce/entities/{type}/{id}.
 func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	entityType := chi.URLParam(r, "type")
 	idOrSlug := chi.URLParam(r, "id")
@@ -698,10 +662,6 @@ func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
 
 // CreateSelectionToken handles POST /api/v1/jce/selections.
 func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var req struct {
 		TypeSlug string           `json:"type_slug"`
@@ -733,10 +693,6 @@ func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) 
 
 // CreateJCEComparisonFromToken handles POST /api/v1/jce/comparisons/from-token.
 func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {

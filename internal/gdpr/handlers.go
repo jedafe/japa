@@ -43,10 +43,6 @@ func NewHandlers(service *Service) *Handlers {
 
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
 
-// requireTenant resolves the tenant from the request context.
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -124,10 +120,6 @@ func clientIP(r *http.Request) *string {
 
 // RecordConsent handles POST /api/v1/consent.
 func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -190,10 +182,6 @@ func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 // version so the frontend does not need to hardcode them (BUG-015, BUG-016).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
 func (h *Handlers) GetConsentConfig(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	cfg, err := h.Service.GetConsentConfig(r.Context())
 	if err != nil {
@@ -206,10 +194,6 @@ func (h *Handlers) GetConsentConfig(w http.ResponseWriter, r *http.Request) {
 
 // RevokeConsent handles DELETE /api/v1/consent/:type.
 func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -240,10 +224,6 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 
 // RequestDataExport handles POST /api/v1/account/export.
 func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -261,10 +241,6 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 
 // GetMyDataExportStatus handles GET /api/v1/me/data-export/status.
 func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -288,10 +264,6 @@ func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request)
 // CancelMyDataExport handles DELETE /api/v1/me/data-export.
 // Cancels the caller's most recent pending/processing data export request.
 func (h *Handlers) CancelMyDataExport(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -321,10 +293,6 @@ func (h *Handlers) CancelMyDataExport(w http.ResponseWriter, r *http.Request) {
 // GetMyDataExportDownload handles GET /api/v1/me/data-export/download.
 // Redirects to the signed download URL once the export has completed.
 func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -355,10 +323,6 @@ func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Reques
 
 // RequestAccountDeletion handles POST /api/v1/account/delete.
 func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -392,10 +356,6 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 
 // ListAuditLogs handles GET /api/v1/admin/audit-logs.
 func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	actionType := r.URL.Query().Get("action_type")
 	targetType := r.URL.Query().Get("target_type")
@@ -440,10 +400,6 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 // ListConsentsByTenant handles GET /api/v1/admin/consents.
 func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	consentType := r.URL.Query().Get("type")
 	limit := parsePageSize(r)
@@ -460,10 +416,6 @@ func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) 
 
 // DeleteConsent handles DELETE /api/v1/admin/consents/{id}.
 func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -482,10 +434,6 @@ func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
 
 // ListPendingDataExports handles GET /api/v1/admin/data-exports.
 func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 
@@ -500,10 +448,6 @@ func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request
 
 // ListPendingDeletions handles GET /api/v1/admin/deletions.
 func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 
@@ -584,9 +528,6 @@ func strPtr(s string) *string {
 
 // ExecuteDeletion handles POST /admin/gdpr/deletion-requests/:id/execute (P5.6).
 func (h *Handlers) ExecuteDeletion(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.requireTenant(w, r); !ok {
-		return
-	}
 
 	var requestID pgtype.UUID
 	if err := requestID.Scan(chi.URLParam(r, "id")); err != nil {

@@ -18,8 +18,8 @@ import type { SessionUser } from '$lib/types';
  * locale-prefixed URL). That added a serial backend round-trip to the SSR
  * critical path for data that is effectively global.
  *
- * The cache is keyed by tenant host (each tenant can have its own settings)
- * and lives for SETTINGS_TTL_MS. A stale entry is served on fetch failure so
+ * The cache is keyed by request host.
+ * It lives for SETTINGS_TTL_MS. A stale entry is served on fetch failure so
  * a transient backend blip doesn't degrade the page. The cache is positive-
  * only: misses are not cached, so the next request retries immediately.
  *
@@ -171,8 +171,8 @@ async function tryRefreshSession(event: Parameters<Handle>[0]['event']): Promise
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// Hostname excludes the port; the backend resolves the tenant from it.
-	event.locals.tenantHost = event.url.hostname;
+	// Hostname excludes the port; forwarded to the backend for host-based routing.
+	event.locals.requestHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 
 	// Detect locale prefix in the URL path (e.g. /fr/blog → 'fr', /blog → null).
@@ -186,8 +186,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// locale-prefix validation. Previously these were fetched on every
 	// request that lacked a theme/locale cookie (i.e. most first visits and
 	// every locale-prefixed URL). Now served from an in-process cache
-	// (settingsCache, TTL SETTINGS_TTL_MS) keyed by tenant host so the
-	// backend is only hit once per TTL window per tenant.
+	// (settingsCache, TTL SETTINGS_TTL_MS) keyed by request host so the
+	// backend is only hit once per TTL window.
 	// Ref: conventions/system-settings-catalog.md
 	const themeCookie = event.cookies.get('jc_theme');
 	const localeCookie = event.cookies.get('jc_locale');
@@ -197,8 +197,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	let siteSettings: Record<string, unknown> = {};
 	if (needSettings && !building) {
-		const tenantHost = event.locals.tenantHost;
-		const cached = settingsCache.get(tenantHost);
+		const requestHost = event.locals.requestHost;
+		const cached = settingsCache.get(requestHost);
 		const now = Date.now();
 		if (cached && cached.expiresAt > now) {
 			siteSettings = cached.value;
@@ -208,7 +208,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 					(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ??
 					{};
 				siteSettings = fresh;
-				settingsCache.set(tenantHost, { value: fresh, expiresAt: now + SETTINGS_TTL_MS });
+				settingsCache.set(requestHost, { value: fresh, expiresAt: now + SETTINGS_TTL_MS });
 			} catch {
 				// Serve stale entry if available (transient backend blip),
 				// otherwise degrade to empty defaults.
