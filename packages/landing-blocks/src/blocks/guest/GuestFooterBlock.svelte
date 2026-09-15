@@ -39,11 +39,11 @@
       id: 'explore',
       title: 'Explore',
       links: [
-        { label: 'Jobs Abroad', url: '/explore' },
-        { label: 'Study Abroad', url: '/explore' },
-        { label: 'Visa & Relocation', url: '/explore' },
-        { label: 'Business', url: '/explore' },
-        { label: 'Countries', url: '/explore' },
+        { label: 'Jobs Abroad', url: '/jobs' },
+        { label: 'Study Abroad', url: '/scholarships' },
+        { label: 'Visa & Relocation', url: '/guides' },
+        { label: 'Business', url: '/jobs' },
+        { label: 'Countries', url: '/compare' },
       ],
     },
     {
@@ -61,11 +61,11 @@
       id: 'company',
       title: 'Company',
       links: [
-        { label: 'About Us', url: '/about' },
-        { label: 'How It Works', url: '/how-it-works' },
+        { label: 'About Us', url: '/' },
+        { label: 'How It Works', url: '/' },
         { label: 'Pricing', url: '/pricing' },
-        { label: 'FAQs', url: '/faq' },
-        { label: 'Contact Us', url: '/contact' },
+        { label: 'FAQs', url: '/' },
+        { label: 'Contact Us', url: '/' },
       ],
     },
     {
@@ -80,9 +80,9 @@
   ];
 
   const defaultBottomLinks: NonNullable<GuestFooterProps['bottom_links']> = [
-    { label: 'Privacy Policy', url: '/privacy' },
-    { label: 'Terms of Service', url: '/terms' },
-    { label: 'Cookies Policy', url: '/cookies' },
+    { label: 'Privacy Policy', url: '/' },
+    { label: 'Terms of Service', url: '/' },
+    { label: 'Cookies Policy', url: '/' },
   ];
 
   const socials = $derived(props.socials ?? defaultSocials);
@@ -91,6 +91,19 @@
     props.copyright ?? `© ${new Date().getFullYear()} JapaConnect. All rights reserved.`
   );
   const bottomLinks = $derived(props.bottom_links ?? defaultBottomLinks);
+
+  function isExternal(url: string) {
+    return /^https?:\/\//.test(url) || /^\/\//.test(url);
+  }
+
+  function linkAttrs(url: string | undefined, target: string | undefined) {
+    const shouldBlank = target === '_blank' || (!!url && isExternal(url));
+    return {
+      href: url ?? '',
+      target: shouldBlank ? '_blank' : undefined,
+      rel: shouldBlank ? 'noopener noreferrer' : undefined,
+    };
+  }
 </script>
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
@@ -120,11 +133,8 @@
               {@const LinkIcon = getLucideIcon(link.icon)}
               <li>
                 {#if link.url}
-                  <a
-                    href={link.url}
-                    target={link.target === '_blank' ? '_blank' : undefined}
-                    rel={link.target === '_blank' ? 'noopener noreferrer' : undefined}
-                  >
+                  {@const attrs = linkAttrs(link.url, link.target)}
+                  <a {...attrs}>
                     {#if LinkIcon}
                       <LinkIcon size={14} />
                     {/if}
@@ -150,14 +160,15 @@
     <p class="footer-copyright">{copyright}</p>
     {#if bottomLinks.length > 0}
       <div class="footer-legal">
-        {#each bottomLinks as link (link.url)}
-          <a
-            href={link.url}
-            target={link.target === '_blank' ? '_blank' : undefined}
-            rel={link.target === '_blank' ? 'noopener noreferrer' : undefined}
-          >
-            {link.label}
-          </a>
+        {#each bottomLinks as link (link.label)}
+          {@const attrs = linkAttrs(link.url, link.target)}
+          {#if link.url}
+            <a {...attrs}>
+              {link.label}
+            </a>
+          {:else}
+            <span>{link.label}</span>
+          {/if}
         {/each}
       </div>
     {/if}
