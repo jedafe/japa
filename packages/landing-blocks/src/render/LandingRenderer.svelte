@@ -14,7 +14,7 @@
   }
   let { blocks, fetchCtx, geoCountry, guestHome }: Props = $props();
 
-  const guestHomeStore = setGuestHomeData(guestHome);
+  const guestHomeStore = setGuestHomeData(undefined);
   $effect(() => {
     guestHomeStore.set(guestHome);
   });

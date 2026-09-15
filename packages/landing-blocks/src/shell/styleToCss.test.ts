@@ -114,9 +114,9 @@ describe('styleToCss', () => {
     const top = styleToCss({ border: { width: 4, style: 'solid', color: '#ff0000', sides: 'top' } });
     expect(top.inline['border-top']).toBe('4px solid #ff0000');
 
-    const x = styleToCss({ border: { width: 3, style: 'dotted', color: '#00ff00', sides: 'x' } });
-    expect(x.inline['border-left']).toBe('3px dotted #00ff00');
-    expect(x.inline['border-right']).toBe('3px dotted #00ff00');
+    const x = styleToCss({ border: { width: 2, style: 'dotted', color: '#00ff00', sides: 'x' } });
+    expect(x.inline['border-left']).toBe('2px dotted #00ff00');
+    expect(x.inline['border-right']).toBe('2px dotted #00ff00');
     expect(x.inline['border-top']).toBeUndefined();
 
     const y = styleToCss({ border: { width: 1, style: 'double', color: '#000000', sides: 'y' } });
@@ -216,11 +216,11 @@ describe('responsiveStyleToCss', () => {
     expect(css).toContain('padding: 16px');
   });
 
-  it('emits desktop override query', () => {
+  it('emits tablet override query', () => {
     const css = responsiveStyleToCss(
-      { responsive: { desktop: { border: { width: 2, style: 'solid', color: '#000000' } } } },
+      { responsive: { tablet: { border: { width: 2, style: 'solid', color: '#000000' } } } },
       '[data-bs="abc"]'
     );
-    expect(css).toContain('@container (min-width: 1025px)');
+    expect(css).toContain('@container (min-width: 769px) and (max-width: 1024px)');
   });
 });

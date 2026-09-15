@@ -561,6 +561,7 @@ export interface GuestHomeDestination {
   name: string;
   member_count?: number;
   icon_url?: string | null;
+  href?: string;
 }
 
 /** A marketing stat block on the guest landing page. */
@@ -606,6 +607,7 @@ export interface GuestHomeStory {
   author_name: string;
   author_role?: string;
   author_avatar_url?: string | null;
+  href?: string;
   destination?: string;
 }
 
@@ -749,6 +751,9 @@ export interface GuestHomeProps {
 
 /** Shared layout props for the guest card-list blocks. */
 export interface GuestCardListBaseProps {
+  title?: string;
+  subtitle?: string;
+  view_all_href?: string;
   layout?: 'grid' | 'slider';
   columns?: number;
   responsive_columns?: { tablet?: number; mobile?: number };
@@ -846,9 +851,6 @@ export interface GuestOpportunitiesProps extends GuestCardListBaseProps {
 
 /** Props for `guest_stories`. */
 export interface GuestStoriesProps extends GuestCardListBaseProps {
-  title?: string;
-  subtitle?: string;
-  read_more_href?: string;
   data_source?: 'context' | 'manual';
   items?: GuestHomeStory[];
   max_items?: number;

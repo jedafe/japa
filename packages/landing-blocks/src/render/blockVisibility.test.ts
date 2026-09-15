@@ -3,14 +3,13 @@ import { describe, it, expect } from 'vitest';
 import { isBlockEmpty, isBlockGeoVisible, isBlockVisible } from './blockVisibility';
 import type { Block, WidgetBlockProps } from '../types';
 
-function makeBlock(overrides: Partial<Block> & { type: Block['type']; props?: Record<string, unknown> }): Block {
+function makeBlock(overrides: { type: string; props?: Record<string, unknown> } & Record<string, unknown>): Block {
   return {
     id: 'b1',
     visible: true,
-    type: overrides.type,
-    props: overrides.props ?? {},
     ...overrides,
-  } as Block;
+    props: (overrides.props ?? {}) as Record<string, unknown>,
+  } as unknown as Block;
 }
 
 describe('isBlockEmpty', () => {

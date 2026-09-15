@@ -131,7 +131,7 @@
                 <button
                   type="button"
                   onclick={() => {
-                    const next = links.filter((_, i) => i !== li);
+                    const next = links.filter((_: unknown, i: number) => i !== li);
                     updateCol({ ...col, links: next });
                   }}
                   class="text-[var(--color-danger)]"
