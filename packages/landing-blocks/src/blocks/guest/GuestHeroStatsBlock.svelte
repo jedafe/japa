@@ -35,11 +35,11 @@
 </script>
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
-<div class="hero-stats" {id}>
+<div class="guest-hero-stats" {id}>
   {#if props.title}
     <h3 class="hero-stats-title">{props.title}</h3>
   {/if}
-  <div class="hero-stats-grid">
+  <div class="hero-stats">
     {#each visibleItems as stat (stat.label)}
       <div class="hero-stat">
         <span class="hero-stat-value">{stat.value}</span>
