@@ -2,6 +2,7 @@
   import type { GuestHeroStatsProps, GuestHomeData, GuestHomeStat } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
+  import { writable } from 'svelte/store';
   import { getLucideIcon } from './guestIconMap';
 
   interface Props {
@@ -13,14 +14,8 @@
 
   let { props, id = 'guest-hero-stats' }: Props = $props();
 
-  const guestHomeStore = getGuestHomeData();
-  let guestHome = $state<GuestHomeData | undefined>(undefined);
-
-  $effect(() => {
-    if (!guestHomeStore) return;
-    const unsub = guestHomeStore.subscribe((v) => (guestHome = v));
-    return unsub;
-  });
+  const guestHomeStore = $derived(getGuestHomeData() ?? writable<GuestHomeData | undefined>(undefined));
+  const guestHome = $derived($guestHomeStore);
 
   function getIcon(name: string | undefined): string {
     return name ?? 'Users';
