@@ -891,6 +891,8 @@ export interface GuestFooterProps {
     title: string;
     links: Array<{ label: string; url: string; target?: string }>;
   }>;
+  copyright?: string;
+  bottom_links?: Array<{ label: string; url: string; target?: string }>;
 }
 
 /** Discriminated union of all block types. */

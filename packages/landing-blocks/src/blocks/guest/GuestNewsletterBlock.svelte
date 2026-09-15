@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { GuestNewsletterProps } from '../../types';
   import type { FetchContext } from '../../data/types';
-  import { Plane } from 'lucide-svelte';
+  import { Plane, ArrowRight } from 'lucide-svelte';
 
   interface Props {
     props: GuestNewsletterProps;
@@ -16,13 +16,13 @@
   let newsletterStatus = $state<'idle' | 'loading' | 'success' | 'error'>('idle');
   let newsletterMessage = $state('');
 
-  const title = $derived(props.title ?? 'Get the Latest Global Opportunities');
+  const title = $derived(props.title ?? 'Stay Ahead, Always');
   const subtitle = $derived(
     props.subtitle ??
-      'Join thousands of people who receive hand-picked opportunities, tips, and resources to help you work, study, and live anywhere.'
+      'Get the latest opportunities, tips, and updates straight to your inbox.'
   );
   const placeholder = $derived(props.placeholder ?? 'Enter your email address');
-  const cta = $derived(props.cta ?? 'Subscribe');
+  const cta = $derived(props.cta ?? 'Subscribe Now');
   const endpoint = $derived(props.endpoint ?? '/newsletter/subscribe');
   const successMessage = $derived(
     props.success_message ?? "You're subscribed! Check your inbox for the next update."
@@ -84,6 +84,7 @@
       />
       <button type="submit" class="newsletter-btn" disabled={newsletterStatus === 'loading'}>
         {cta}
+        <ArrowRight size={18} />
       </button>
     </form>
 

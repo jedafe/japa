@@ -26,6 +26,10 @@
 
   const socials = $derived(props.socials ?? []);
   const columns = $derived(props.columns ?? []);
+  const copyright = $derived(
+    props.copyright ?? `© ${new Date().getFullYear()} JapaConnect. All rights reserved.`
+  );
+  const bottomLinks = $derived(props.bottom_links ?? []);
 </script>
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
@@ -71,5 +75,22 @@
         </div>
       {/each}
     </div>
+  </div>
+
+  <div class="guest-footer-bottom">
+    <p class="footer-copyright">{copyright}</p>
+    {#if bottomLinks.length > 0}
+      <div class="footer-legal">
+        {#each bottomLinks as link (link.url)}
+          <a
+            href={link.url}
+            target={link.target === '_blank' ? '_blank' : undefined}
+            rel={link.target === '_blank' ? 'noopener noreferrer' : undefined}
+          >
+            {link.label}
+          </a>
+        {/each}
+      </div>
+    {/if}
   </div>
 </footer>
