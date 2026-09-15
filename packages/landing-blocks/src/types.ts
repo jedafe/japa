@@ -890,7 +890,7 @@ export interface GuestFooterProps {
   columns?: Array<{
     id?: string;
     title: string;
-    links: Array<{ label: string; url: string; target?: string }>;
+    links: Array<{ label: string; url?: string; target?: string; icon?: string }>;
   }>;
   copyright?: string;
   bottom_links?: Array<{ label: string; url: string; target?: string }>;
@@ -991,7 +991,6 @@ export type CustomBlockProps = Record<string, unknown>;
 /** A row from the `pagebuilder_blocks` table (as returned by the API). */
 export interface CustomBlockDef {
   id: string;
-  tenant_id: string;
   name: string;
   slug: string;
   category: string;

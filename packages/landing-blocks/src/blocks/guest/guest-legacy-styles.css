@@ -1161,7 +1161,11 @@
     gap: 0.625rem;
   }
 
-  .footer-column-list a {
+  .footer-column-list a,
+  .footer-column-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
     font-size: 0.875rem;
     color: #94a3b8;
     text-decoration: none;

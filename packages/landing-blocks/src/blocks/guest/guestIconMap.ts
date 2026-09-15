@@ -18,6 +18,9 @@ import {
   BookOpen,
   LayoutGrid,
   Home,
+  Mail,
+  Phone,
+  Clock,
 } from 'lucide-svelte';
 
 const iconMap: Record<string, unknown> = {
@@ -39,6 +42,9 @@ const iconMap: Record<string, unknown> = {
   BookOpen,
   LayoutGrid,
   Home,
+  Mail,
+  Phone,
+  Clock,
 };
 
 export function getLucideIcon(name: string | undefined): Component | null {
