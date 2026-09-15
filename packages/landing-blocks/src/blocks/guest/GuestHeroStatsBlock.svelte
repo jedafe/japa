@@ -2,6 +2,7 @@
   import type { GuestHeroStatsProps, GuestHomeData, GuestHomeStat } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
+  import { getLucideIcon } from './guestIconMap';
 
   interface Props {
     props: GuestHeroStatsProps;
@@ -42,8 +43,16 @@
   <div class="hero-stats">
     {#each visibleItems as stat (stat.label)}
       <div class="hero-stat">
-        <span class="hero-stat-value">{stat.value}</span>
-        <span class="hero-stat-label">{stat.label}</span>
+        <div class="hero-stat-icon">
+          {#if getLucideIcon(stat.icon)}
+            {@const Icon = getLucideIcon(stat.icon)}
+            <Icon size={20} />
+          {/if}
+        </div>
+        <div class="hero-stat-body">
+          <span class="hero-stat-value">{stat.value}</span>
+          <span class="hero-stat-label">{stat.label}</span>
+        </div>
       </div>
     {/each}
   </div>

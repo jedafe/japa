@@ -42,12 +42,12 @@
 <GuestCardList
   {title}
   {subtitle}
-  view_all_href={props.view_all_href ?? '/tools'}
+  view_all_href={props.view_all_href}
   view_all_label="View all tools"
   layout={props.layout ?? 'grid'}
-  columns={props.columns ?? 4}
-  responsive_columns={props.responsive_columns}
-  gap={props.gap ?? 'md'}
+  columns={props.columns ?? 3}
+  responsive_columns={props.responsive_columns ?? { tablet: 2, mobile: 1 }}
+  gap={props.gap ?? 'lg'}
   card_style={props.card_style ?? 'default'}
   items={visibleItems}
   {id}

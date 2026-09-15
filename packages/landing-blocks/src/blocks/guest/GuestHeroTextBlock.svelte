@@ -59,3 +59,11 @@
     {/each}
   </div>
 </div>
+
+<style>
+  .hero-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+</style>

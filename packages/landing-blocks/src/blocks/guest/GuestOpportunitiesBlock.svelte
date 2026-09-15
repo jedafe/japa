@@ -2,9 +2,7 @@
   import type { GuestOpportunitiesProps, GuestHomeData, GuestHomeOpportunity } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
-  import GuestCardList from './GuestCardList.svelte';
-  import { getLucideIcon } from './guestIconMap';
-  import { MapPin } from 'lucide-svelte';
+  import { MapPin, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-svelte';
 
   interface Props {
     props: GuestOpportunitiesProps;
@@ -17,6 +15,7 @@
 
   const guestHomeStore = getGuestHomeData();
   let guestHome = $state<GuestHomeData | undefined>(undefined);
+  let scroller = $state<HTMLDivElement | undefined>(undefined);
 
   $effect(() => {
     if (!guestHomeStore) return;
@@ -33,6 +32,8 @@
   const visibleItems = $derived(items.slice(0, props.max_items ?? 6));
   const title = $derived(props.title ?? 'Featured Opportunities');
   const subtitle = $derived(props.subtitle ?? 'Hand-picked opportunities from around the world.');
+  const viewAllHref = $derived(props.view_all_href ?? '/explore');
+  const viewAllLabel = $derived(props.view_all_label ?? 'View all opportunities');
 
   function opportunityHref(opp: GuestHomeOpportunity): string {
     if (opp.href) return opp.href;
@@ -104,52 +105,84 @@
     }
     return 'Just now';
   }
+
+  function scrollBy(direction: number) {
+    if (!scroller) return;
+    const card = scroller.firstElementChild as HTMLElement | null;
+    const width = card?.offsetWidth ?? 320;
+    scroller.scrollBy({ left: direction * (width + 16), behavior: 'smooth' });
+  }
 </script>
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
-<GuestCardList
-  {title}
-  {subtitle}
-  view_all_href={props.view_all_href ?? '/explore'}
-  view_all_label="View all opportunities"
-  layout={props.layout ?? 'slider'}
-  columns={props.columns ?? 3}
-  responsive_columns={props.responsive_columns}
-  gap={props.gap ?? 'md'}
-  card_style={props.card_style ?? 'default'}
-  items={visibleItems}
-  {id}
->
-  {#snippet card(opp: GuestHomeOpportunity)}
-    <a href={opportunityHref(opp)} class="opportunity-card">
-      <div class="opportunity-card-top">
-        <span class="opportunity-type {opportunityTagClasses(opp.type)}">{opp.tag}</span>
-        {#if opp.badge}
-          <span class="opportunity-badge">{opp.badge}</span>
+<section class="guest-section" {id} aria-label={title}>
+  <div class="guest-section-inner">
+    <div class="section-header-row">
+      <div>
+        <h2 class="section-title">{title}</h2>
+        {#if subtitle}
+          <p class="section-subtitle">{subtitle}</p>
         {/if}
       </div>
-      <div class="opportunity-logo">
-        {#if opp.logo_url}
-          <img src={opp.logo_url} alt="" class="opportunity-logo-img" />
-        {:else}
-          <div class="opportunity-logo-fallback {logoBg(opp.type)}">{logoInitials(opp.organization)}</div>
-        {/if}
+      <a href={viewAllHref} class="section-link">
+        {viewAllLabel}
+        <ArrowRight size={16} />
+      </a>
+    </div>
+
+    <div class="carousel-wrap">
+      <button
+        type="button"
+        class="carousel-arrow carousel-arrow-left"
+        onclick={() => scrollBy(-1)}
+        aria-label="Previous"
+      >
+        <ChevronLeft size={20} />
+      </button>
+
+      <div bind:this={scroller} class="opportunity-scroll">
+        {#each visibleItems as opp (opp.id)}
+          <a href={opportunityHref(opp)} class="opportunity-card">
+            <div class="opportunity-card-top">
+              <span class="opportunity-type {opportunityTagClasses(opp.type)}">{opp.tag}</span>
+              {#if opp.badge}
+                <span class="opportunity-badge">{opp.badge}</span>
+              {/if}
+            </div>
+            <div class="opportunity-logo">
+              {#if opp.logo_url}
+                <img src={opp.logo_url} alt="" class="opportunity-logo-img" />
+              {:else}
+                <div class="opportunity-logo-fallback {logoBg(opp.type)}">{logoInitials(opp.organization)}</div>
+              {/if}
+            </div>
+            <h3 class="opportunity-title">{opp.title}</h3>
+            <p class="opportunity-org">{opp.organization}</p>
+            <div class="opportunity-meta">
+              <span class="opportunity-location">
+                <MapPin size={14} />
+                {opp.location}
+              </span>
+              {#if opp.value}
+                <span class="opportunity-value">{opp.value}</span>
+              {/if}
+            </div>
+            <div class="opportunity-footer">
+              <span class="opportunity-type-pill {opportunityTagClasses(opp.type)}">{opp.tag}</span>
+              <span class="opportunity-time">{timeAgo(opp.published_at)}</span>
+            </div>
+          </a>
+        {/each}
       </div>
-      <h3 class="opportunity-title">{opp.title}</h3>
-      <p class="opportunity-org">{opp.organization}</p>
-      <div class="opportunity-meta">
-        <span class="opportunity-location">
-          <MapPin size={14} />
-          {opp.location}
-        </span>
-        {#if opp.value}
-          <span class="opportunity-value">{opp.value}</span>
-        {/if}
-      </div>
-      <div class="opportunity-footer">
-        <span class="opportunity-type-pill {opportunityTagClasses(opp.type)}">{opp.tag}</span>
-        <span class="opportunity-time">{timeAgo(opp.published_at)}</span>
-      </div>
-    </a>
-  {/snippet}
-</GuestCardList>
+
+      <button
+        type="button"
+        class="carousel-arrow carousel-arrow-right"
+        onclick={() => scrollBy(1)}
+        aria-label="Next"
+      >
+        <ChevronRight size={20} />
+      </button>
+    </div>
+  </div>
+</section>
