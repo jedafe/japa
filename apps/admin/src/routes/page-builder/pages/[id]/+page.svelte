@@ -31,6 +31,13 @@
 		type CustomBlockDef,
 		type RuntimeBlockMeta,
 		type VisibilityRules,
+		type GuestHomeData,
+		type GuestHomeStat,
+		type GuestHomeCategory,
+		type GuestHomeOpportunity,
+		type GuestHomeTool,
+		type GuestHomeStory,
+		type GuestHomeDestination,
 	} from '@japaconnect/landing-blocks';
 	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
 	import { Button } from '$lib/components/ui/button';
@@ -59,6 +66,7 @@
 	let pageData = $state<{ id: string; title: string; slug: string; status: string; page_type: string; theme_id?: string } | null>(null);
 	let blocks = $state<Block[]>([]);
 	let themes = $state<Theme[]>([]);
+	let guestHomePreview = $state<GuestHomeData | undefined>(undefined);
 	let loading = $state(true);
 	let saving = $state(false);
 	let publishing = $state(false);
@@ -207,6 +215,8 @@
 				blocks = untrack(() => parseBlocks(d.blocks));
 				pageTitle = untrack(() => d.title);
 				selectedThemeId = d.theme_id ?? '';
+				// Live preview data for the guest homepage block.
+				void loadGuestHome(blocks);
 			}
 			if (themesRes.ok) themes = ((themesRes.data as any[]) ?? []).map((th) => ({ id: th.id, name: th.name, is_default: th.is_default }));
 			// Load custom block definitions into the runtime registry.
@@ -219,6 +229,95 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	async function loadGuestHome(blockList: Block[]) {
+		if (!blockList.some((b) => b.type === 'guest_home')) {
+			guestHomePreview = undefined;
+			return;
+		}
+
+		const settingsRes = await api<Record<string, unknown>>('/site/settings/public');
+		if (!settingsRes.ok) {
+			guestHomePreview = undefined;
+			return;
+		}
+		const settings = settingsRes.data ?? {};
+
+		const stats = asArray<GuestHomeStat>(settings['landing.stats']);
+		const categories = asArray<GuestHomeCategory>(settings['landing.categories']);
+		const opportunities = asArray<GuestHomeOpportunity>(settings['landing.featured_opportunities']);
+		const tools = asArray<GuestHomeTool>(settings['landing.tools']);
+		let topDestinations = asArray<GuestHomeDestination>(settings['landing.top_destinations']);
+
+		// If no curated top destinations are configured, try the directory API.
+		if (topDestinations.length === 0) {
+			try {
+				const spaceRes = await api<GuestHomeDestination[]>('/spaces?level=country&sort=members&page_size=4');
+				if (spaceRes.ok) topDestinations = (spaceRes.data ?? []).slice(0, 4);
+			} catch {
+				// Ignore — preview degrades to empty list.
+			}
+		}
+
+		let stories: GuestHomeStory[] = [];
+		try {
+			const storyRes = await api<Record<string, unknown>[]>('/stories?limit=3&sort=top');
+			if (storyRes.ok) {
+				stories = (storyRes.data ?? []).slice(0, 3).map(mapStoryToGuestHome);
+			}
+		} catch {
+			// Ignore — preview degrades to empty list.
+		}
+
+		guestHomePreview = {
+			topDestinations,
+			opportunities,
+			stories,
+			tools,
+			stats,
+			categories
+		};
+	}
+
+	function asArray<T>(value: unknown): T[] {
+		if (Array.isArray(value)) return value as T[];
+		if (typeof value === 'string') {
+			try {
+				const parsed = JSON.parse(value);
+				if (Array.isArray(parsed)) return parsed as T[];
+			} catch {
+				return [];
+			}
+		}
+		if (value && typeof value === 'object' && !Array.isArray(value)) {
+			const maybe = (value as Record<string, unknown>).data;
+			if (Array.isArray(maybe)) return maybe as T[];
+		}
+		return [];
+	}
+
+	function mapStoryToGuestHome(story: Record<string, unknown>): GuestHomeStory {
+		const bestAdvice = typeof story.best_advice === 'string' ? story.best_advice.trim() : '';
+		const mostUsefulResource = typeof story.most_useful_resource === 'string' ? story.most_useful_resource.trim() : '';
+		const rawBody = typeof story.body === 'string' ? story.body.replace(/<[^>]+>/g, '').slice(0, 160) : '';
+		const title = typeof story.title === 'string' ? story.title : '';
+		const quote = bestAdvice || mostUsefulResource || rawBody || title;
+
+		const profession = typeof story.profession === 'string' ? story.profession : '';
+		const destinationSpaceName = typeof story.destination_space_name === 'string' ? story.destination_space_name : '';
+		const role = [profession, destinationSpaceName].filter(Boolean).join(' • ');
+
+		return {
+			id: typeof story.id === 'string' ? story.id : '',
+			slug: typeof story.slug === 'string' ? story.slug : undefined,
+			title,
+			quote,
+			author_name: typeof story.author_display_name === 'string' ? story.author_display_name : (typeof story.author_name === 'string' ? story.author_name : 'A JapaConnect Member'),
+			author_role: role || undefined,
+			author_avatar_url: (typeof story.author_avatar === 'string' ? story.author_avatar : (typeof story.featured_image_url === 'string' ? story.featured_image_url : null)) as string | null,
+			destination: destinationSpaceName || undefined
+		};
 	}
 
 	function getIcon(name: string): Component | null {
@@ -995,7 +1094,7 @@
 			<main class="flex-1 overflow-y-auto p-4" style="background: var(--color-surface)">
 				<div class="mx-auto shadow-lg" style="width: {deviceWidth}px; max-width: 100%; background: var(--color-background)">
 					{#if resolvedBlocks.length > 0}
-						<LandingRenderer blocks={resolvedBlocks} geoCountry={previewCountry} />
+						<LandingRenderer blocks={resolvedBlocks} geoCountry={previewCountry} guestHome={guestHomePreview} />
 					{:else}
 						<div class="flex h-full flex-col items-center justify-center rounded-xl border-2 border-dashed py-20" style="border-color: var(--color-border)">
 							<Plus class="mb-3 h-8 w-8" style="color: var(--color-muted)" />

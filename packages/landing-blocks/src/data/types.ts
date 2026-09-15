@@ -6,6 +6,8 @@ export interface FetchContext {
   apiBase: string;
   /** Optional auth token for endpoints that require it. */
   token?: string | null;
+  /** Optional CSRF token for mutating public endpoints. */
+  csrfToken?: string | null;
   /** Tenant host header. */
   host?: string;
 }

@@ -19,7 +19,8 @@ import {
 	resolveGeoCopy,
 	resolveString,
 	getGeoTokens,
-	type LandingPage as LandingPageData
+	type LandingPage as LandingPageData,
+	type Block
 } from '@japaconnect/landing-blocks';
 
 const emptyGuestHome: GuestHomeData = {
@@ -71,6 +72,7 @@ export const load: PageServerLoad = async (event) => {
 				loadError: false,
 				landing: null,
 				guestHome: false,
+				hasGuestHomeBlock: false,
 				home: emptyGuestHome,
 				contentCountry: undefined
 			};
@@ -85,6 +87,7 @@ export const load: PageServerLoad = async (event) => {
 				loadError: true,
 				landing: null,
 				guestHome: false,
+				hasGuestHomeBlock: false,
 				hasMore: false,
 				home: emptyGuestHome,
 				contentCountry: undefined
@@ -134,6 +137,8 @@ export const load: PageServerLoad = async (event) => {
 			locale: 'en',
 			literals
 		});
+		const hasGuestHome = (landing.blocks as Block[]).some((b) => b.type === 'guest_home');
+		const home = hasGuestHome ? await buildGuestHome(ctx, event) : emptyGuestHome;
 		return {
 			authed: false,
 			landing: {
@@ -144,61 +149,26 @@ export const load: PageServerLoad = async (event) => {
 			},
 			contentCountry: geoCountry,
 			guestHome: false,
+			hasGuestHomeBlock: hasGuestHome,
 			items: [] as FeedItem[],
 			tab: 'explore' as FeedTab,
 			sort: 'top' as SortValue,
 			hasMore: false,
 			pageSize: PAGE_SIZE,
 			loadError: false,
-			home: emptyGuestHome
+			home
 		};
 	} catch {
 		// No published "homepage" page — render the new default guest homepage.
 		// All marketing data is sourced from public settings (Rule 16); live
 		// content (stories, destinations) comes from the backend API.
-		const parent = await event.parent();
-		const siteSettings = (parent?.siteSettings as Record<string, unknown> | undefined) ?? {};
-
-		const stats = asArray<GuestHomeStat>(siteSettings['landing.stats']);
-		const categories = asArray<GuestHomeCategory>(siteSettings['landing.categories']);
-		const opportunities = asArray<GuestHomeOpportunity>(siteSettings['landing.featured_opportunities']);
-		const tools = asArray<GuestHomeTool>(siteSettings['landing.tools']);
-		let topDestinations = asArray<SpaceSuggestion>(siteSettings['landing.top_destinations']);
-
-		// If no curated top destinations are configured, try the directory API.
-		if (topDestinations.length === 0) {
-			try {
-				const spaceRes = await apiList<SpaceSuggestion>(
-					ctx,
-					`/spaces?level=country&sort=members&page_size=4`
-				);
-				topDestinations = spaceRes.items.slice(0, 4);
-			} catch (err) {
-				console.error('[HOME] top destinations load failed', err);
-			}
-		}
-
-		let stories: GuestHomeStory[] = [];
-		try {
-			const storyRes = await apiList<Story>(ctx, '/stories?limit=3&sort=top');
-			stories = storyRes.items.slice(0, 3).map(mapStoryToGuestHome);
-		} catch (err) {
-			console.error('[HOME] stories load failed', err);
-		}
-
-		const home: GuestHomeData = {
-			topDestinations,
-			opportunities,
-			stories,
-			tools,
-			stats,
-			categories
-		};
+		const home = await buildGuestHome(ctx, event);
 
 		return {
 			authed: false,
 			landing: null,
 			guestHome: true,
+			hasGuestHomeBlock: true,
 			home,
 			contentCountry: geoCountry,
 			items: [] as FeedItem[],
@@ -236,5 +206,46 @@ function mapStoryToGuestHome(story: Story): GuestHomeStory {
 		author_role: role || undefined,
 		author_avatar_url: story.author_avatar ?? story.featured_image_url ?? null,
 		destination: story.destination_space_name
+	};
+}
+
+async function buildGuestHome(
+	ctx: ReturnType<typeof apiContext>,
+	event: Parameters<PageServerLoad>[0]
+): Promise<GuestHomeData> {
+	const parent = await event.parent();
+	const siteSettings = (parent?.siteSettings as Record<string, unknown> | undefined) ?? {};
+
+	const stats = asArray<GuestHomeStat>(siteSettings['landing.stats']);
+	const categories = asArray<GuestHomeCategory>(siteSettings['landing.categories']);
+	const opportunities = asArray<GuestHomeOpportunity>(siteSettings['landing.featured_opportunities']);
+	const tools = asArray<GuestHomeTool>(siteSettings['landing.tools']);
+	let topDestinations = asArray<SpaceSuggestion>(siteSettings['landing.top_destinations']);
+
+	// If no curated top destinations are configured, try the directory API.
+	if (topDestinations.length === 0) {
+		try {
+			const spaceRes = await apiList<SpaceSuggestion>(ctx, `/spaces?level=country&sort=members&page_size=4`);
+			topDestinations = spaceRes.items.slice(0, 4);
+		} catch (err) {
+			console.error('[HOME] top destinations load failed', err);
+		}
+	}
+
+	let stories: GuestHomeStory[] = [];
+	try {
+		const storyRes = await apiList<Story>(ctx, '/stories?limit=3&sort=top');
+		stories = storyRes.items.slice(0, 3).map(mapStoryToGuestHome);
+	} catch (err) {
+		console.error('[HOME] stories load failed', err);
+	}
+
+	return {
+		topDestinations,
+		opportunities,
+		stories,
+		tools,
+		stats,
+		categories
 	};
 }
