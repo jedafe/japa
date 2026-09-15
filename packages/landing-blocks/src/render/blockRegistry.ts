@@ -30,6 +30,18 @@ import ContainerBlock from '../blocks/ContainerBlock.svelte';
 import CustomBlock from '../blocks/CustomBlock.svelte';
 import WidgetBlock from '../blocks/WidgetBlock.svelte';
 import GuestHomeContainerBlock from '../blocks/guest/GuestHomeContainerBlock.svelte';
+import GuestHeroContainerBlock from '../blocks/guest/GuestHeroContainerBlock.svelte';
+import GuestHeroTextBlock from '../blocks/guest/GuestHeroTextBlock.svelte';
+import GuestHeroImageBlock from '../blocks/guest/GuestHeroImageBlock.svelte';
+import GuestHeroStatsBlock from '../blocks/guest/GuestHeroStatsBlock.svelte';
+import GuestHeroDestinationsBlock from '../blocks/guest/GuestHeroDestinationsBlock.svelte';
+import GuestHeroCommunityBlock from '../blocks/guest/GuestHeroCommunityBlock.svelte';
+import GuestCategoriesBlock from '../blocks/guest/GuestCategoriesBlock.svelte';
+import GuestOpportunitiesBlock from '../blocks/guest/GuestOpportunitiesBlock.svelte';
+import GuestStoriesBlock from '../blocks/guest/GuestStoriesBlock.svelte';
+import GuestToolsBlock from '../blocks/guest/GuestToolsBlock.svelte';
+import GuestNewsletterBlock from '../blocks/guest/GuestNewsletterBlock.svelte';
+import GuestFooterBlock from '../blocks/guest/GuestFooterBlock.svelte';
 
 export interface BlockMeta {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -67,6 +79,18 @@ export const blockRegistry: Record<Block['type'], BlockMeta> = {
   media: { component: MediaBlock, icon: 'Image', label: 'Single Media', category: 'media' },
   container: { component: ContainerBlock, icon: 'LayoutPanelTop', label: 'Container', category: 'layout' },
   guest_home: { component: GuestHomeContainerBlock, icon: 'Home', label: 'Guest Home', category: 'guest' },
+  guest_hero: { component: GuestHeroContainerBlock, icon: 'LayoutTemplate', label: 'Hero Container', category: 'guest' },
+  guest_hero_text: { component: GuestHeroTextBlock, icon: 'Type', label: 'Hero Text', category: 'guest' },
+  guest_hero_image: { component: GuestHeroImageBlock, icon: 'Image', label: 'Hero Image', category: 'guest' },
+  guest_hero_stats: { component: GuestHeroStatsBlock, icon: 'BarChart', label: 'Hero Stats', category: 'guest' },
+  guest_hero_destinations: { component: GuestHeroDestinationsBlock, icon: 'MapPin', label: 'Hero Destinations', category: 'guest' },
+  guest_hero_community: { component: GuestHeroCommunityBlock, icon: 'Users', label: 'Hero Community', category: 'guest' },
+  guest_categories: { component: GuestCategoriesBlock, icon: 'Grid2x2', label: 'Guest Categories', category: 'guest' },
+  guest_opportunities: { component: GuestOpportunitiesBlock, icon: 'Briefcase', label: 'Guest Opportunities', category: 'guest' },
+  guest_stories: { component: GuestStoriesBlock, icon: 'BookOpen', label: 'Guest Stories', category: 'guest' },
+  guest_tools: { component: GuestToolsBlock, icon: 'Wrench', label: 'Guest Tools', category: 'guest' },
+  guest_newsletter: { component: GuestNewsletterBlock, icon: 'Mail', label: 'Guest Newsletter', category: 'guest' },
+  guest_footer: { component: GuestFooterBlock, icon: 'PanelBottom', label: 'Guest Footer', category: 'guest' },
   custom: { component: CustomBlock, icon: 'Puzzle', label: 'Custom Block', category: 'custom' },
   widget: { component: WidgetBlock, icon: 'LayoutDashboard', label: 'Widget', category: 'data' },
-} as unknown as Record<Block['type'], BlockMeta>;
+};

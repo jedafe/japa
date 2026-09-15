@@ -29,6 +29,18 @@ import ContainerContentEditor from './ContainerContentEditor.svelte';
 import CustomBlockEditor from './CustomBlockEditor.svelte';
 import WidgetContentEditor from './WidgetContentEditor.svelte';
 import GuestHomeContentEditor from './guest/GuestHomeContentEditor.svelte';
+import GuestHeroContainerContentEditor from './guest/GuestHeroContainerContentEditor.svelte';
+import GuestHeroTextContentEditor from './guest/GuestHeroTextContentEditor.svelte';
+import GuestHeroImageContentEditor from './guest/GuestHeroImageContentEditor.svelte';
+import GuestHeroStatsContentEditor from './guest/GuestHeroStatsContentEditor.svelte';
+import GuestHeroDestinationsContentEditor from './guest/GuestHeroDestinationsContentEditor.svelte';
+import GuestHeroCommunityContentEditor from './guest/GuestHeroCommunityContentEditor.svelte';
+import GuestCategoriesContentEditor from './guest/GuestCategoriesContentEditor.svelte';
+import GuestOpportunitiesContentEditor from './guest/GuestOpportunitiesContentEditor.svelte';
+import GuestStoriesContentEditor from './guest/GuestStoriesContentEditor.svelte';
+import GuestToolsContentEditor from './guest/GuestToolsContentEditor.svelte';
+import GuestNewsletterContentEditor from './guest/GuestNewsletterContentEditor.svelte';
+import GuestFooterContentEditor from './guest/GuestFooterContentEditor.svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
@@ -60,5 +72,17 @@ export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
   tabs: TabsContentEditor,
   media: MediaContentEditor,
   guest_home: GuestHomeContentEditor,
+  guest_hero: GuestHeroContainerContentEditor,
+  guest_hero_text: GuestHeroTextContentEditor,
+  guest_hero_image: GuestHeroImageContentEditor,
+  guest_hero_stats: GuestHeroStatsContentEditor,
+  guest_hero_destinations: GuestHeroDestinationsContentEditor,
+  guest_hero_community: GuestHeroCommunityContentEditor,
+  guest_categories: GuestCategoriesContentEditor,
+  guest_opportunities: GuestOpportunitiesContentEditor,
+  guest_stories: GuestStoriesContentEditor,
+  guest_tools: GuestToolsContentEditor,
+  guest_newsletter: GuestNewsletterContentEditor,
+  guest_footer: GuestFooterContentEditor,
   widget: WidgetContentEditor,
-} as unknown as Record<Block['type'], Component<any>>;
+};
