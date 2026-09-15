@@ -1,16 +1,23 @@
 <script lang="ts">
-  import type { Block } from '../types';
+  import type { Block, GuestHomeData } from '../types';
   import type { FetchContext } from '../data/types';
   import { blockRegistry } from './blockRegistry';
   import BlockShell from '../shell/BlockShell.svelte';
   import { isBlockVisible, isBlockEmpty } from './blockVisibility';
+  import { setGuestHomeData } from '../data/guestHomeContext';
 
   interface Props {
     blocks: Block[];
     fetchCtx?: FetchContext;
     geoCountry?: string;
+    guestHome?: GuestHomeData;
   }
-  let { blocks, fetchCtx, geoCountry }: Props = $props();
+  let { blocks, fetchCtx, geoCountry, guestHome }: Props = $props();
+
+  const guestHomeStore = setGuestHomeData(guestHome);
+  $effect(() => {
+    guestHomeStore.set(guestHome);
+  });
 
   // Generate per-device visibility CSS for top-level blocks.
   // Uses @container queries so they respond to the preview container width
