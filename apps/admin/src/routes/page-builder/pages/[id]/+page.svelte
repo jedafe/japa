@@ -43,7 +43,7 @@
 	import { Button } from '$lib/components/ui/button';
 
 	// Containers that can hold nested children (in addition to the generic container).
-	const CONTAINER_LIKE_TYPES = new Set(['container', 'guest_home', 'guest_hero']);
+	const CONTAINER_LIKE_TYPES = new Set(['container', 'guest_home', 'guest_hero', 'guest_hero_image']);
 	function isContainerLike(b: Block): boolean {
 		return CONTAINER_LIKE_TYPES.has(b.type);
 	}
@@ -401,8 +401,31 @@
 					gap: 'md',
 					children: [
 						{ id: crypto.randomUUID(), type: 'guest_hero_text', visible: true, props: {} },
-						{ id: crypto.randomUUID(), type: 'guest_hero_image', visible: true, props: {} },
+						{
+							id: crypto.randomUUID(),
+							type: 'guest_hero_image',
+							visible: true,
+							props: {
+								children: [
+									{ id: crypto.randomUUID(), type: 'guest_hero_destinations', visible: true, props: {} },
+									{ id: crypto.randomUUID(), type: 'guest_hero_community', visible: true, props: {} },
+								]
+							}
+						},
 						{ id: crypto.randomUUID(), type: 'guest_hero_stats', visible: true, props: {} },
+					]
+				}
+			} as Block;
+		}
+		if (type === 'guest_hero_image') {
+			const id = crypto.randomUUID();
+			return {
+				id,
+				type: 'guest_hero_image',
+				visible: true,
+				label: 'Hero Image',
+				props: {
+					children: [
 						{ id: crypto.randomUUID(), type: 'guest_hero_destinations', visible: true, props: {} },
 						{ id: crypto.randomUUID(), type: 'guest_hero_community', visible: true, props: {} },
 					]

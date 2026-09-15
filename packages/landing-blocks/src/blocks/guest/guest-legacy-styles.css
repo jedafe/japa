@@ -440,11 +440,14 @@
   }
 
   .category-card {
+    display: flex;
+    flex-direction: column;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
     padding: 1.25rem;
     transition: box-shadow 0.15s, transform 0.15s;
+    text-decoration: none;
   }
   .category-card:hover {
     box-shadow: 0 12px 32px rgb(0 0 0 / 0.06);

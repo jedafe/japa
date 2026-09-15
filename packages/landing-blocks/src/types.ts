@@ -802,6 +802,7 @@ export interface GuestHeroImageProps {
   interval?: number;
   dots?: boolean;
   arrows?: boolean;
+  children?: Block[];
 }
 
 /** Props for `guest_hero_stats`. */

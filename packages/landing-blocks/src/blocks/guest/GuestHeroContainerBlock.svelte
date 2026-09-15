@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { GuestHeroContainerProps, Block, BlockStyle } from '../../types';
+  import type { GuestHeroContainerProps, Block } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { blockRegistry } from '../../render/blockRegistry';
   import BlockShell from '../../shell/BlockShell.svelte';
@@ -15,41 +15,33 @@
   let { props, fetchCtx, geoCountry, id = 'guest-hero' }: Props = $props();
 
   const leftTypes = ['guest_hero_text', 'guest_hero_stats'];
-  const rightTypes = ['guest_hero_image', 'guest_hero_destinations', 'guest_hero_community'];
-
-  function defaultStyle(type: string): BlockStyle | undefined {
-    if (type === 'guest_hero_destinations') {
-      return { layout: { position: 'absolute', top: 0, left: 0, z_index: 10 } };
-    }
-    if (type === 'guest_hero_community') {
-      return { layout: { position: 'absolute', bottom: 0, right: 0, z_index: 10 } };
-    }
-    return undefined;
-  }
+  const rightTypes = ['guest_hero_image'];
 
   const defaultChildren: Block[] = $derived([
-    { id: `${id}-text`, type: 'guest_hero_text', visible: true, props: {} },
-    { id: `${id}-image`, type: 'guest_hero_image', visible: true, props: {} },
-    { id: `${id}-stats`, type: 'guest_hero_stats', visible: true, props: {} },
-    { id: `${id}-destinations`, type: 'guest_hero_destinations', visible: true, props: {}, style: defaultStyle('guest_hero_destinations') },
-    { id: `${id}-community`, type: 'guest_hero_community', visible: true, props: {}, style: defaultStyle('guest_hero_community') },
-  ]);
+    { id: `${id}-text`, type: 'guest_hero_text', visible: true, props: {} as any },
+    {
+      id: `${id}-image`,
+      type: 'guest_hero_image',
+      visible: true,
+      props: {
+        children: [
+          { id: `${id}-destinations`, type: 'guest_hero_destinations', visible: true, props: {} as any },
+          { id: `${id}-community`, type: 'guest_hero_community', visible: true, props: {} as any },
+        ]
+      } as any
+    },
+    { id: `${id}-stats`, type: 'guest_hero_stats', visible: true, props: {} as any },
+  ] as Block[]);
 
   const children = $derived(props.children && props.children.length > 0 ? props.children : defaultChildren);
 
   const leftChildren = $derived(children.filter((b) => leftTypes.includes(b.type)));
   const rightChildren = $derived(children.filter((b) => rightTypes.includes(b.type)));
 
-  function mergedStyle(block: Block): BlockStyle | undefined {
-    const ds = defaultStyle(block.type);
-    if (!block.style && !ds) return undefined;
-    return { ...ds, ...block.style };
-  }
-
   function renderableComponent(block: Block) {
     const meta = blockRegistry[block.type];
     if (!meta || !isBlockVisible(block, geoCountry)) return null;
-    return { Component: meta.component, style: mergedStyle(block) };
+    return { Component: meta.component, style: block.style };
   }
 </script>
 
