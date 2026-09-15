@@ -15,9 +15,11 @@
   const logo = $derived(
     props.logo ?? {
       light: '/logos/homepage-logo-light.png',
-      dark: '/logos/homepage-logo-dark.png',
+      dark: '/logos/homepage-logo-dark.png'
     }
   );
+
+  const logoSrc = $derived(logo.dark ?? logo.light ?? '');
 
   const tagline = $derived(
     props.tagline ??
@@ -96,7 +98,7 @@
   <h2 id="guest-footer-heading-{id}" class="sr-only">Footer</h2>
   <div class="guest-footer-inner">
     <div class="guest-footer-brand">
-      <img src={logo.light} alt="JapaConnect" class="footer-logo footer-logo-light" />
+      <img src={logoSrc} alt="JapaConnect" class="footer-logo footer-logo-dark" />
       <p class="footer-tagline">{tagline}</p>
       {#if socials.length > 0}
         <div class="footer-socials">
