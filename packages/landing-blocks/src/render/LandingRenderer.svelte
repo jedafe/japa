@@ -14,7 +14,8 @@
   }
   let { blocks, fetchCtx, geoCountry, guestHome }: Props = $props();
 
-  const guestHomeStore = setGuestHomeData(undefined);
+  // svelte-ignore state_referenced_locally
+  const guestHomeStore = setGuestHomeData(guestHome);
   $effect(() => {
     guestHomeStore.set(guestHome);
   });
