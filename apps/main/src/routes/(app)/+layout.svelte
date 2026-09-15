@@ -136,7 +136,7 @@
 		menu={data.menu}
 	/>
 	{@render children()}
-	{#if !page.data.guestHome}
+	{#if !page.data.guestHome && !page.data.hasGuestHomeBlock}
 		<GuestFooter menu={data.footerMenu} />
 	{/if}
 {:else}

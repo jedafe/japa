@@ -1,8 +1,11 @@
 <script lang="ts">
-  import type { GuestHeroImageProps, MediaRef } from '../../types';
+  import type { GuestHeroImageProps, MediaRef, Block, BlockStyle } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { onMount } from 'svelte';
+  import { blockRegistry } from '../../render/blockRegistry';
+  import BlockShell from '../../shell/BlockShell.svelte';
+  import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
 
   interface Props {
     props: GuestHeroImageProps;
@@ -11,11 +14,18 @@
     id?: string;
   }
 
-  let { props, id = 'guest-hero-image' }: Props = $props();
+  let { props, fetchCtx, geoCountry, id = 'guest-hero-image' }: Props = $props();
 
   const defaultSlides: MediaRef[] = [
     { media_id: 'diaspora-community', url: '/brand/diaspora-community.jpg', alt: 'A confident traveler at the airport' },
   ];
+
+  const defaultChildren: Block[] = $derived([
+    { id: `${id}-destinations`, type: 'guest_hero_destinations', visible: true, props: {}, style: { layout: { position: 'absolute', top: 0, left: 0, z_index: 10 } } },
+    { id: `${id}-community`, type: 'guest_hero_community', visible: true, props: {}, style: { layout: { position: 'absolute', bottom: 0, right: 0, z_index: 10 } } },
+  ]);
+
+  const children = $derived(props.children && props.children.length > 0 ? props.children : defaultChildren);
 
   const slides = $derived(props.slides && props.slides.length > 0 ? props.slides : defaultSlides);
   const autoplay = $derived(props.autoplay ?? false);
@@ -46,6 +56,28 @@
       if (timer) clearInterval(timer);
     };
   });
+
+  function defaultStyle(type: string): BlockStyle | undefined {
+    if (type === 'guest_hero_destinations') {
+      return { layout: { position: 'absolute', top: 0, left: 0, z_index: 10 } };
+    }
+    if (type === 'guest_hero_community') {
+      return { layout: { position: 'absolute', bottom: 0, right: 0, z_index: 10 } };
+    }
+    return undefined;
+  }
+
+  function childStyle(block: Block): BlockStyle | undefined {
+    const ds = defaultStyle(block.type);
+    if (!ds && !block.style) return undefined;
+    return { ...ds, ...block.style };
+  }
+
+  function renderableComponent(block: Block) {
+    const meta = blockRegistry[block.type];
+    if (!meta || !isBlockVisible(block, geoCountry)) return null;
+    return { Component: meta.component, style: childStyle(block) };
+  }
 </script>
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
@@ -59,6 +91,16 @@
         loading={i === 0 ? 'eager' : 'lazy'}
         decoding="async"
       />
+    {/if}
+  {/each}
+
+  {#each children as child (child.id)}
+    {@const r = renderableComponent(child)}
+    {#if r}
+      {@const Component = r.Component}
+      <BlockShell style={r.style} motion={child.motion} background={child.style?.background} hideIfEmpty={child.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(child)}>
+        <Component props={child.props} {fetchCtx} {geoCountry} id={child.id} />
+      </BlockShell>
     {/if}
   {/each}
 

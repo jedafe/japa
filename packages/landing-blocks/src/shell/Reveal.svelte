@@ -46,7 +46,7 @@
   const once = $derived(motion?.once ?? true);
 
   const hiddenClass = $derived(hiddenStates[preset] ?? '');
-  const stateClass = $derived(visible ? visibleState : hiddenClass);
+  const stateClass = $derived(preset === 'none' ? '' : (visible ? visibleState : hiddenClass));
   const transitionStyle = $derived(
     preset === 'none' ? '' :
     `transition: opacity ${durationMs}ms ${easing} ${delayMs}ms, transform ${durationMs}ms ${easing} ${delayMs}ms, filter ${durationMs}ms ${easing} ${delayMs}ms;`
@@ -81,6 +81,6 @@
   });
 </script>
 
-<div bind:this={el} class="{stateClass} will-change-transform" style={transitionStyle}>
+<div bind:this={el} class="{stateClass} {preset === 'none' ? '' : 'will-change-transform'}" style={transitionStyle}>
   {@render children()}
 </div>
