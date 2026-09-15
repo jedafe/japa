@@ -356,6 +356,49 @@
 		if (type === 'widget') {
 			return { id: crypto.randomUUID(), type: 'widget', visible: true, props: { widget_id: '', layout: 'grid', columns: 3, heading: '', view_all_href: '' } } as Block;
 		}
+		if (type === 'guest_home') {
+			const id = crypto.randomUUID();
+			return {
+				id,
+				type: 'guest_home',
+				visible: true,
+				label: 'Guest Home',
+				props: {
+					layout: 'stack',
+					children: [
+						{ id: crypto.randomUUID(), type: 'guest_hero', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_categories', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_opportunities', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_stories', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_tools', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_newsletter', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_footer', visible: true, props: {} },
+					]
+				}
+			} as Block;
+		}
+		if (type === 'guest_hero') {
+			const id = crypto.randomUUID();
+			return {
+				id,
+				type: 'guest_hero',
+				visible: true,
+				label: 'Hero',
+				props: {
+					layout: 'grid',
+					columns: 2,
+					responsive_columns: { tablet: 1, mobile: 1 },
+					gap: 'md',
+					children: [
+						{ id: crypto.randomUUID(), type: 'guest_hero_text', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_hero_image', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_hero_stats', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_hero_destinations', visible: true, props: {} },
+						{ id: crypto.randomUUID(), type: 'guest_hero_community', visible: true, props: {} },
+					]
+				}
+			} as Block;
+		}
 		return { id: crypto.randomUUID(), type: type as Block['type'], visible: true, props: {} } as Block;
 	}
 	function addBlock(type: string): void {
