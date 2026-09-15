@@ -1096,6 +1096,7 @@
 
   .footer-logo {
     height: 6rem;
+    max-width: 13rem;
     width: auto;
   }
 
