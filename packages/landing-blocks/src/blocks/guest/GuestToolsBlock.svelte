@@ -1,6 +1,9 @@
 <script lang="ts">
-  import type { GuestToolsProps } from '../../../types';
-  import type { FetchContext } from '../../../data/types';
+  import type { GuestToolsProps, GuestHomeData, GuestHomeTool } from '../../types';
+  import type { FetchContext } from '../../data/types';
+  import { getGuestHomeData } from '../../data/guestHomeContext';
+  import GuestCardList from './GuestCardList.svelte';
+  import { getLucideIcon } from './guestIconMap';
 
   interface Props {
     props: GuestToolsProps;
@@ -9,9 +12,59 @@
     id?: string;
   }
 
-  let { props, fetchCtx, geoCountry, id }: Props = $props();
+  let { props, id = 'guest-tools' }: Props = $props();
+
+  const guestHomeStore = getGuestHomeData();
+  let guestHome: GuestHomeData | undefined = $state(undefined);
+
+  $effect(() => {
+    if (!guestHomeStore) return;
+    const unsub = guestHomeStore.subscribe((v) => (guestHome = v));
+    return unsub;
+  });
+
+  const items = $derived<GuestHomeTool[]>(
+    props.data_source === 'manual' && props.items
+      ? props.items
+      : (guestHome?.tools ?? [])
+  );
+
+  const visibleItems = $derived(items.slice(0, props.max_items ?? 8));
+  const title = $derived(props.title ?? 'Powerful Tools & Resources');
+  const subtitle = $derived(props.subtitle ?? 'Free tools to help you plan, apply, and succeed.');
+
+  function toolHref(tool: GuestHomeTool): string {
+    return tool.href ?? (tool.slug ? `/tools/${tool.slug}` : '/');
+  }
 </script>
 
-<div data-block="guesttools" class="rounded border border-dashed border-[var(--color-border)] p-4 text-sm text-[var(--color-muted)]">
-  GuestToolsBlock placeholder
-</div>
+<!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
+<GuestCardList
+  {title}
+  {subtitle}
+  view_all_href={props.view_all_href ?? '/tools'}
+  view_all_label="View all tools"
+  layout={props.layout ?? 'grid'}
+  columns={props.columns ?? 4}
+  responsive_columns={props.responsive_columns}
+  gap={props.gap ?? 'md'}
+  card_style={props.card_style ?? 'default'}
+  items={visibleItems}
+  {id}
+>
+  {#snippet card(tool: GuestHomeTool)}
+    <a href={toolHref(tool)} class="tool-card group">
+      <div
+        class="tool-icon"
+        style="background-color: {tool.accent ? `color-mix(in srgb, ${tool.accent} 15%, transparent)` : 'var(--color-surface-subtle)'}; color: {tool.accent ?? 'var(--color-primary)'}"
+      >
+        {@const Icon = getLucideIcon(tool.icon)}
+        {#if Icon}
+          <Icon size={24} />
+        {/if}
+      </div>
+      <h3 class="tool-name">{tool.name}</h3>
+      <p class="tool-description">{tool.description}</p>
+    </a>
+  {/snippet}
+</GuestCardList>
