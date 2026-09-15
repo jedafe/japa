@@ -60,8 +60,9 @@
       {#each leftChildren as block (block.id)}
         {@const r = renderableComponent(block)}
         {#if r}
+          {@const Component = r.Component}
           <BlockShell style={r.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
-            <svelte:component this={r.Component} props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+            <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
           </BlockShell>
         {/if}
       {/each}
@@ -70,8 +71,9 @@
       {#each rightChildren as block (block.id)}
         {@const r = renderableComponent(block)}
         {#if r}
+          {@const Component = r.Component}
           <BlockShell style={r.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
-            <svelte:component this={r.Component} props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+            <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
           </BlockShell>
         {/if}
       {/each}

@@ -16,7 +16,7 @@
   }
 
   function defaultStory(): GuestHomeStory {
-    return { id: crypto.randomUUID(), quote: '', author_name: '', author_role: '', author_avatar_url: '', href: '' };
+    return { id: crypto.randomUUID(), title: '', quote: '', author_name: '', author_role: '', author_avatar_url: '', href: '' };
   }
 
   const dataSource = $derived(props.data_source ?? 'context');

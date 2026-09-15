@@ -44,5 +44,5 @@
 {#if isLegacy}
   <GuestHomeLegacyBlock {props} {guestHome} {fetchCtx} />
 {:else}
-  <ContainerBlock props={{ layout: 'stack', gap: 'none', children: effectiveChildren }} {fetchCtx} {geoCountry} id={id} />
+  <ContainerBlock props={{ layout: 'stack', gap: 'none', columns: 1, children: effectiveChildren }} {fetchCtx} {geoCountry} id={id} />
 {/if}

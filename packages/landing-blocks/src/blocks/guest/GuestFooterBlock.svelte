@@ -38,8 +38,8 @@
       {#if socials.length > 0}
         <div class="footer-socials">
           {#each socials as social (social.url)}
+            {@const Icon = getLucideIcon(social.icon)}
             <a href={social.url} aria-label={social.label} target="_blank" rel="noopener noreferrer">
-              {@const Icon = getLucideIcon(social.icon)}
               {#if Icon}
                 <Icon size={18} />
               {:else}

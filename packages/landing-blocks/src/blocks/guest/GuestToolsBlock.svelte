@@ -15,7 +15,7 @@
   let { props, id = 'guest-tools' }: Props = $props();
 
   const guestHomeStore = getGuestHomeData();
-  let guestHome: GuestHomeData | undefined = $state(undefined);
+  let guestHome = $state<GuestHomeData | undefined>(undefined);
 
   $effect(() => {
     if (!guestHomeStore) return;
@@ -53,12 +53,12 @@
   {id}
 >
   {#snippet card(tool: GuestHomeTool)}
+    {@const Icon = getLucideIcon(tool.icon)}
     <a href={toolHref(tool)} class="tool-card group">
       <div
         class="tool-icon"
         style="background-color: {tool.accent ? `color-mix(in srgb, ${tool.accent} 15%, transparent)` : 'var(--color-surface-subtle)'}; color: {tool.accent ?? 'var(--color-primary)'}"
       >
-        {@const Icon = getLucideIcon(tool.icon)}
         {#if Icon}
           <Icon size={24} />
         {/if}

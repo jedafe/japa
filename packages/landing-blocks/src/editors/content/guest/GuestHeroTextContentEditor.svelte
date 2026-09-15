@@ -37,7 +37,10 @@
   <div class="space-y-2">
     <div class="text-xs font-medium text-[var(--color-muted)]">CTAs</div>
     {#each props.ctas ?? [] as cta, i (i)}
-      <CTAEditor {cta} onchange={(v) => updateCta(i, v)} onremove={() => removeCta(i)} />
+      <div class="space-y-1">
+        <CTAEditor value={cta} onchange={(v) => updateCta(i, v)} />
+        <button type="button" onclick={() => removeCta(i)} class="text-xs text-[var(--color-danger)]">Remove CTA</button>
+      </div>
     {/each}
     <button type="button" onclick={addCta} class="rounded border border-dashed border-[var(--color-border)] px-2 py-1 text-sm text-[var(--color-muted)] hover:bg-[var(--color-surface)]">Add CTA</button>
   </div>

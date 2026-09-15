@@ -16,7 +16,7 @@
   let { props, id = 'guest-categories' }: Props = $props();
 
   const guestHomeStore = getGuestHomeData();
-  let guestHome: GuestHomeData | undefined = $state(undefined);
+  let guestHome = $state<GuestHomeData | undefined>(undefined);
 
   $effect(() => {
     if (!guestHomeStore) return;
@@ -67,9 +67,9 @@
   {id}
 >
   {#snippet card(cat: GuestHomeCategory)}
+    {@const Icon = getLucideIcon(cat.icon)}
     <a href={cat.href} class="category-card group">
       <div class="category-icon {categoryColorClass(cat.color)}">
-        {@const Icon = getLucideIcon(cat.icon)}
         {#if Icon}
           <Icon size={28} />
         {/if}

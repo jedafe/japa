@@ -13,7 +13,7 @@
   let { props, id = 'guest-hero-stats' }: Props = $props();
 
   const guestHomeStore = getGuestHomeData();
-  let guestHome: GuestHomeData | undefined = $state(undefined);
+  let guestHome = $state<GuestHomeData | undefined>(undefined);
 
   $effect(() => {
     if (!guestHomeStore) return;
