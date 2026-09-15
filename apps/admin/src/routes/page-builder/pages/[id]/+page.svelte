@@ -41,6 +41,16 @@
 	} from '@japaconnect/landing-blocks';
 	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
 	import { Button } from '$lib/components/ui/button';
+
+	// Containers that can hold nested children (in addition to the generic container).
+	const CONTAINER_LIKE_TYPES = new Set(['container', 'guest_home', 'guest_hero']);
+	function isContainerLike(b: Block): boolean {
+		return CONTAINER_LIKE_TYPES.has(b.type);
+	}
+	function childrenOf(b: Block): Block[] {
+		return (b.props as { children?: Block[] }).children ?? [];
+	}
+
 	import { Tabs, Dialog } from 'bits-ui';
 	import * as LucideIcons from 'lucide-svelte';
 	import { ArrowLeft, Save, Plus, Search, LayoutTemplate, Rocket, Archive, PanelLeft, PanelRight, PanelTop, Maximize2, Minimize2 } from 'lucide-svelte';
@@ -454,8 +464,8 @@
 	function findBlockInTree(tree: Block[], id: string): Block | null {
 		for (const b of tree) {
 			if (b.id === id) return b;
-			if (b.type === 'container') {
-				const found = findBlockInTree((b.props as ContainerProps).children ?? [], id);
+			if (isContainerLike(b)) {
+				const found = findBlockInTree(childrenOf(b), id);
 				if (found) return found;
 			}
 		}
@@ -466,9 +476,8 @@
 	function updateBlockInTree(tree: Block[], id: string, fn: (b: Block) => Block): Block[] {
 		return tree.map((b) => {
 			if (b.id === id) return fn(b);
-			if (b.type === 'container') {
-				const props = b.props as ContainerProps;
-				return { ...b, props: { ...props, children: updateBlockInTree(props.children ?? [], id, fn) } } as Block;
+			if (isContainerLike(b)) {
+				return { ...b, props: { ...b.props, children: updateBlockInTree(childrenOf(b), id, fn) } } as Block;
 			}
 			return b;
 		});
@@ -480,12 +489,11 @@
 			if (tree[i].id === id) {
 				return { tree: [...tree.slice(0, i), ...tree.slice(i + 1)], removed: tree[i] };
 			}
-			if (tree[i].type === 'container') {
-				const props = tree[i].props as ContainerProps;
-				const result = removeBlockFromTree(props.children ?? [], id);
+			if (isContainerLike(tree[i])) {
+				const result = removeBlockFromTree(childrenOf(tree[i]), id);
 				if (result.removed) {
 					const newTree = [...tree];
-					newTree[i] = { ...tree[i], props: { ...props, children: result.tree } } as Block;
+					newTree[i] = { ...tree[i], props: { ...tree[i].props, children: result.tree } } as Block;
 					return { tree: newTree, removed: result.removed };
 				}
 			}
@@ -496,13 +504,11 @@
 	/** Insert a block into a container's children (found by ID, anywhere in the tree). */
 	function insertIntoContainer(tree: Block[], containerId: string, block: Block): Block[] {
 		return tree.map((b) => {
-			if (b.id === containerId && b.type === 'container') {
-				const props = b.props as ContainerProps;
-				return { ...b, props: { ...props, children: [...(props.children ?? []), block] } } as Block;
+			if (b.id === containerId && isContainerLike(b)) {
+				return { ...b, props: { ...b.props, children: [...childrenOf(b), block] } } as Block;
 			}
-			if (b.type === 'container') {
-				const props = b.props as ContainerProps;
-				return { ...b, props: { ...props, children: insertIntoContainer(props.children ?? [], containerId, block) } } as Block;
+			if (isContainerLike(b)) {
+				return { ...b, props: { ...b.props, children: insertIntoContainer(childrenOf(b), containerId, block) } } as Block;
 			}
 			return b;
 		});
@@ -520,13 +526,12 @@
 	function reorderContainerChild(containerId: string, fromIdx: number, toIdx: number): void {
 		if (fromIdx === toIdx) return;
 		blocks = blocks.map((b) => {
-			if (b.id === containerId && b.type === 'container') {
-				const props = b.props as ContainerProps;
-				const children = [...(props.children ?? [])];
+			if (b.id === containerId && isContainerLike(b)) {
+				const children = [...childrenOf(b)];
 				if (toIdx < 0 || toIdx >= children.length) return b;
 				const [moved] = children.splice(fromIdx, 1);
 				children.splice(toIdx, 0, moved);
-				return { ...b, props: { ...props, children } } as Block;
+				return { ...b, props: { ...b.props, children } } as Block;
 			}
 			return b;
 		});
@@ -536,15 +541,14 @@
 	/** Reorder a child by ID within a container (by container ID + child IDs). */
 	function reorderContainerChildByIds(containerId: string, fromChildId: string, toChildId: string): void {
 		blocks = blocks.map((b) => {
-			if (b.id === containerId && b.type === 'container') {
-				const props = b.props as ContainerProps;
-				const children = [...(props.children ?? [])];
+			if (b.id === containerId && isContainerLike(b)) {
+				const children = [...childrenOf(b)];
 				const fromIdx = children.findIndex((c) => c.id === fromChildId);
 				const toIdx = children.findIndex((c) => c.id === toChildId);
 				if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return b;
 				const [moved] = children.splice(fromIdx, 1);
 				children.splice(toIdx, 0, moved);
-				return { ...b, props: { ...props, children } } as Block;
+				return { ...b, props: { ...b.props, children } } as Block;
 			}
 			return b;
 		});
@@ -554,9 +558,8 @@
 	/** Insert a block into a container at a specific index (before the target child). */
 	function insertIntoContainerAtIndex(containerId: string, block: Block, beforeChildId: string | null): void {
 		blocks = blocks.map((b) => {
-			if (b.id === containerId && b.type === 'container') {
-				const props = b.props as ContainerProps;
-				const children = [...(props.children ?? [])];
+			if (b.id === containerId && isContainerLike(b)) {
+				const children = [...childrenOf(b)];
 				if (beforeChildId) {
 					const idx = children.findIndex((c) => c.id === beforeChildId);
 					if (idx >= 0) children.splice(idx, 0, block);
@@ -564,7 +567,7 @@
 				} else {
 					children.push(block);
 				}
-				return { ...b, props: { ...props, children } } as Block;
+				return { ...b, props: { ...b.props, children } } as Block;
 			}
 			return b;
 		});
@@ -573,9 +576,8 @@
 	/** Remove a child from a container. */
 	function removeContainerChild(containerId: string, childId: string): void {
 		blocks = blocks.map((b) => {
-			if (b.id === containerId && b.type === 'container') {
-				const props = b.props as ContainerProps;
-				return { ...b, props: { ...props, children: (props.children ?? []).filter((c) => c.id !== childId) } } as Block;
+			if (b.id === containerId && isContainerLike(b)) {
+				return { ...b, props: { ...b.props, children: childrenOf(b).filter((c) => c.id !== childId) } } as Block;
 			}
 			return b;
 		});
@@ -585,15 +587,15 @@
 
 	/** Move a child out of a container to the top-level blocks array. */
 	function moveChildToTopLevel(containerId: string, childId: string): void {
-		const container = blocks.find((b) => b.id === containerId && b.type === 'container');
+		const container = blocks.find((b) => b.id === containerId && isContainerLike(b));
 		if (!container) return;
-		const childProps = container.props as ContainerProps;
-		const blockToMove = (childProps.children ?? []).find((c) => c.id === childId);
+		const containerChildren = childrenOf(container);
+		const blockToMove = containerChildren.find((c) => c.id === childId);
 		if (!blockToMove) return;
 		// Remove from container, append to top level.
 		blocks = blocks.map((b) => {
-			if (b.id === containerId && b.type === 'container') {
-				return { ...b, props: { ...childProps, children: (childProps.children ?? []).filter((c) => c.id !== childId) } } as Block;
+			if (b.id === containerId && isContainerLike(b)) {
+				return { ...b, props: { ...b.props, children: containerChildren.filter((c) => c.id !== childId) } } as Block;
 			}
 			return b;
 		});
@@ -1095,22 +1097,22 @@
 						{#each blocks as block, i (block.id)}
 							{@const meta = blockRegistry[block.type]}
 							<SortableSection {block} index={i} selected={selectedBlockId === block.id} {meta} {getIcon} onSelect={() => (selectedBlockId = block.id)} onRemove={() => removeBlock(block.id)} />
-							{#if block.type === 'container'}
+							{#if isContainerLike(block)}
 								<div class="ml-2">
 									<button
 										type="button"
 										onclick={() => toggleContainerExpand(block.id)}
 										class="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] px-2 py-0.5"
 									>
-										{expandedContainers.has(block.id) ? '▼' : '▶'} {(block.props as ContainerProps).children?.length ?? 0} children
+										{expandedContainers.has(block.id) ? '▼' : '▶'} {childrenOf(block).length} children
 									</button>
 								</div>
 								{#if expandedContainers.has(block.id)}
 									<ContainerChildren
 										containerId={block.id}
-										children={(block.props as ContainerProps).children ?? []}
-										layout={(block.props as ContainerProps).layout ?? 'grid'}
-										columns={(block.props as ContainerProps).columns ?? 2}
+										children={childrenOf(block)}
+										layout={((block.props as any).layout) ?? 'grid'}
+										columns={((block.props as any).columns) ?? (block.type === 'guest_hero' ? 2 : 1)}
 										{selectedBlockId}
 										{getIcon}
 										onSelect={(id) => (selectedBlockId = id)}

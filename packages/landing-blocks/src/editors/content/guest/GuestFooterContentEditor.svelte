@@ -17,7 +17,7 @@
   }
 
   function defaultSocial() {
-    return { icon: 'Globe', url: '', label: '' };
+    return { id: crypto.randomUUID(), icon: 'Globe', url: '', label: '' };
   }
 
   function defaultColumn() {
