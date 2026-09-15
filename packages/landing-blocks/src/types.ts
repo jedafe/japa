@@ -565,6 +565,7 @@ export interface GuestHomeDestination {
 
 /** A marketing stat block on the guest landing page. */
 export interface GuestHomeStat {
+  id?: string;
   value: string;
   label: string;
   icon: string;
@@ -878,8 +879,9 @@ export interface GuestNewsletterProps {
 export interface GuestFooterProps {
   logo?: { light?: string; dark?: string };
   tagline?: string;
-  socials?: Array<{ icon: string; url: string; label: string }>;
+  socials?: Array<{ id?: string; icon: string; url: string; label: string }>;
   columns?: Array<{
+    id?: string;
     title: string;
     links: Array<{ label: string; url: string; target?: string }>;
   }>;
