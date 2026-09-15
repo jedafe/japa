@@ -754,6 +754,7 @@ export interface GuestCardListBaseProps {
   title?: string;
   subtitle?: string;
   view_all_href?: string;
+  view_all_label?: string;
   layout?: 'grid' | 'slider';
   columns?: number;
   responsive_columns?: { tablet?: number; mobile?: number };
@@ -851,6 +852,9 @@ export interface GuestOpportunitiesProps extends GuestCardListBaseProps {
 
 /** Props for `guest_stories`. */
 export interface GuestStoriesProps extends GuestCardListBaseProps {
+  eyebrow?: string;
+  cta_label?: string;
+  cta_href?: string;
   data_source?: 'context' | 'manual';
   items?: GuestHomeStory[];
   max_items?: number;

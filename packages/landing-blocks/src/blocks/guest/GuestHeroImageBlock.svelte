@@ -15,14 +15,13 @@
 
   const defaultSlides: MediaRef[] = [
     { media_id: 'diaspora-community', url: '/brand/diaspora-community.jpg', alt: 'A confident traveler at the airport' },
-    { media_id: 'kigali-airplane-window', url: '/brand/kigali-airplane-window.jpg', alt: 'Airplane window view over a new city' },
   ];
 
   const slides = $derived(props.slides && props.slides.length > 0 ? props.slides : defaultSlides);
-  const autoplay = $derived(props.autoplay ?? true);
+  const autoplay = $derived(props.autoplay ?? false);
   const interval = $derived(props.interval ?? 5000);
-  const dots = $derived(props.dots ?? true);
-  const arrows = $derived(props.arrows ?? true);
+  const dots = $derived(props.dots ?? false);
+  const arrows = $derived(props.arrows ?? false);
 
   let index = $state(0);
   let timer: ReturnType<typeof setInterval> | undefined = $state(undefined);

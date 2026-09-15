@@ -56,12 +56,12 @@
 <GuestCardList
   {title}
   {subtitle}
-  view_all_href={props.view_all_href ?? '/explore'}
-  view_all_label="View all"
+  view_all_href={props.view_all_href}
+  view_all_label="View all categories"
   layout={props.layout ?? 'grid'}
-  columns={props.columns ?? 4}
-  responsive_columns={props.responsive_columns}
-  gap={props.gap ?? 'md'}
+  columns={props.columns ?? 5}
+  responsive_columns={props.responsive_columns ?? { tablet: 3, mobile: 1 }}
+  gap={props.gap ?? 'lg'}
   card_style={props.card_style ?? 'default'}
   items={visibleItems}
   {id}
