@@ -127,8 +127,12 @@
 {#if isGuestLanding}
 	<!-- ADR-058 §5 Exception #3: guest landing page — GuestHeader + content + GuestFooter -->
 	<GuestHeader
-		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
-		logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
+		logoUrl={page.data.guestHome
+			? '/logos/homepage-logo-light.png'
+			: (data.siteSettings?.['appearance.logo_url'] as string | undefined)}
+		logoDarkUrl={page.data.guestHome
+			? '/logos/homepage-logo-dark.png'
+			: (data.siteSettings?.['appearance.logo_url_dark'] as string | undefined)}
 		menu={data.menu}
 	/>
 	{@render children()}

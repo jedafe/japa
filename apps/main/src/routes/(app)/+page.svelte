@@ -67,7 +67,7 @@
 
 {#if data.guestHome}
 	<!-- ADR-058 §5 Exception #3: new default guest homepage -->
-	<GuestHomePage home={data.home} siteSettings={data.siteSettings} />
+	<GuestHomePage home={data.home} />
 {:else if data.landing}
 	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page (or default seed) -->
 	<LandingRenderer blocks={data.landing.blocks} geoCountry={data.contentCountry} />

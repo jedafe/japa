@@ -36,10 +36,9 @@
 
 	interface Props {
 		home: GuestHomeData;
-		siteSettings?: Record<string, unknown>;
 	}
 
-	let { home, siteSettings }: Props = $props();
+	let { home }: Props = $props();
 
 	// ---------------------------------------------------------------------------
 	// Newsletter state
@@ -211,9 +210,6 @@
 	const communityStat = $derived<GuestHomeStat | undefined>(
 		home.stats.find((s) => s.label.toLowerCase().includes('community'))
 	);
-
-	const logoUrlLight = $derived((siteSettings?.['appearance.logo_url'] as string | undefined) ?? '');
-	const logoUrlDark = $derived((siteSettings?.['appearance.logo_url_dark'] as string | undefined) ?? '');
 
 	const destinations = $derived(home.topDestinations.slice(0, 4));
 
@@ -580,7 +576,12 @@
 	<h2 id="footer-heading" class="sr-only">{t('landing.home.footer_label', 'Footer')}</h2>
 	<div class="footer-inner">
 		<div class="footer-brand">
-			<ThemeLogo logoUrl={logoUrlLight} logoDarkUrl={logoUrlDark} alt={t('app.name')} class="h-8 w-auto" />
+			<ThemeLogo
+				logoUrl="/logos/homepage-logo-light.png"
+				logoDarkUrl="/logos/homepage-logo-dark.png"
+				alt={t('app.name')}
+				class="h-8 w-auto"
+			/>
 			<p class="footer-tagline">
 				{t(
 					'landing.home.footer_tagline',
