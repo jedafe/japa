@@ -1,9 +1,12 @@
 <script lang="ts">
-  import type { GuestHeroCommunityProps, GuestHomeData } from '../../types';
+  import type { GuestHeroCommunityProps, GuestHomeData, Block, GuestHeroCommunityMemberProps } from '../../types';
   import type { FetchContext } from '../../data/types';
-  import { Users, ArrowRight } from 'lucide-svelte';
+  import { ArrowRight } from 'lucide-svelte';
   import { getGuestHomeData } from '../../data/guestHomeContext';
   import { writable } from 'svelte/store';
+  import { blockRegistry } from '../../render/blockRegistry';
+  import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
+  import BlockShell from '../../shell/BlockShell.svelte';
 
   interface Props {
     props: GuestHeroCommunityProps;
@@ -12,24 +15,67 @@
     id?: string;
   }
 
-  let { props }: Props = $props();
+  let { props, fetchCtx, geoCountry, id }: Props = $props();
 
   const guestHomeStore = $derived(getGuestHomeData() ?? writable<GuestHomeData | undefined>(undefined));
   const guestHome = $derived($guestHomeStore);
 
-  const communityStat = $derived(guestHome?.stats.find((s) => s.label.toLowerCase().includes('community')));
-
-  const value = $derived(props.value ?? communityStat?.value ?? '500K+');
-  const label = $derived(props.label ?? communityStat?.label ?? 'members worldwide');
   const title = $derived(props.title ?? 'Join {value} {label}');
   const subtitle = $derived(props.subtitle ?? 'Your future starts with the right information.');
   const cta = $derived(props.cta);
+  const communityStat = $derived(guestHome?.stats.find((s) => s.label.toLowerCase().includes('community')));
+  const value = $derived(props.value ?? communityStat?.value ?? '500K+');
+  const label = $derived(props.label ?? communityStat?.label ?? 'members worldwide');
 
-  const avatars = $derived(
+  // If children exist without an explicit source, assume manual so the seeded
+  // blocks actually render. When there are no children, fall back to context.
+  const dataSource = $derived(
+    props.data_source ?? (props.children && props.children.length > 0 ? 'manual' : 'context')
+  );
+
+  // Context data list, capped by max_items.
+  const contextItems = $derived(
     (guestHome?.stories ?? [])
       .map((s) => s.author_avatar_url)
-      .filter(Boolean)
-      .slice(0, 3) as string[]
+      .filter((url): url is string => Boolean(url))
+      .slice(0, props.max_items ?? 4)
+  );
+
+  // Manual children (data_source === 'manual') are rendered as-is.
+  const manualChildren = $derived<Block[] | undefined>(
+    dataSource === 'manual' ? props.children : undefined
+  );
+
+  // Context template: the first block in children is cloned once per context item,
+  // with its props merged from the story data. If there is no template, fall
+  // back to legacy rendering.
+  const template = $derived<Block | undefined>(
+    dataSource === 'context' && props.children && props.children.length > 0
+      ? props.children[0]
+      : undefined
+  );
+
+  function cloneTemplate(url: string, index: number): Block {
+    const base = template as Block;
+    const itemProps: GuestHeroCommunityMemberProps = {
+      ...base.props,
+      image_url: url,
+      name: `Member ${index + 1}`,
+    };
+    return { ...base, id: `${base.id}-${index}`, props: itemProps } as Block;
+  }
+
+  const visibleItems = $derived<Block[] | undefined>(
+    dataSource === 'context' && template
+      ? contextItems.map((url, i) => cloneTemplate(url, i))
+      : undefined
+  );
+
+  // Legacy data for non-template, non-manual path.
+  const legacyItems = $derived<string[] | undefined>(
+    manualChildren || visibleItems
+      ? undefined
+      : contextItems
   );
 
   function fmt(template: string, vars: Record<string, string>): string {
@@ -37,19 +83,47 @@
   }
 </script>
 
-<!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
 <div class="floating-card floating-card-community">
   <div class="community-avatars">
-    {#each [0, 1, 2] as i (i)}
-      {@const url = avatars[i]}
-      <div class="community-avatar" style="z-index: {3 - i}; margin-left: {i === 0 ? 0 : '-10px'}">
-        {#if url}
-          <img src={url} alt="" class="community-avatar-img" />
-        {:else}
-          <Users size={16} />
+    {#if manualChildren}
+      {#each manualChildren as block (block.id)}
+        {#if isBlockVisible(block, geoCountry)}
+          {@const meta = blockRegistry[block.type]}
+          {#if meta}
+            <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+              {@const Component = meta.component}
+              {#if block.type === 'custom'}
+                <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+              {:else}
+                <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+              {/if}
+            </BlockShell>
+          {/if}
         {/if}
-      </div>
-    {/each}
+      {/each}
+    {:else if visibleItems}
+      {#each visibleItems as block (block.id)}
+        {#if isBlockVisible(block, geoCountry)}
+          {@const meta = blockRegistry[block.type]}
+          {#if meta}
+            <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+              {@const Component = meta.component}
+              {#if block.type === 'custom'}
+                <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+              {:else}
+                <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+              {/if}
+            </BlockShell>
+          {/if}
+        {/if}
+      {/each}
+    {:else}
+      {#each legacyItems ?? [] as url, i (url + i)}
+        <div class="community-avatar" style="z-index: {4 - i}; margin-left: {i === 0 ? 0 : '-10px'}">
+          <img src={url} alt="" class="community-avatar-img" />
+        </div>
+      {/each}
+    {/if}
   </div>
   <div class="community-body">
     <h3 class="community-title">{fmt(title, { value, label })}</h3>

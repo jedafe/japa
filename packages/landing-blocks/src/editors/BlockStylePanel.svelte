@@ -91,10 +91,49 @@
     onchange({ ...value, responsive: Object.keys(rest).length > 0 ? rest : undefined });
   }
 
+  /** Update one edge of a padding/margin spacing object (string preset vs per-edge object). */
+  function updateSpacingEdge(kind: 'padding' | 'margin', side: 'top' | 'right' | 'bottom' | 'left', raw: string, unit: string) {
+    const current = (g('spacing')[kind] as { top?: string; right?: string; bottom?: string; left?: string } | string | undefined) ?? {};
+    const obj: { top?: string; right?: string; bottom?: string; left?: string } = typeof current === 'string' ? {} : { ...current };
+    if (raw && !Number.isNaN(Number(raw))) {
+      obj[side] = `${Number(raw)}${unit}`;
+    } else {
+      delete obj[side];
+    }
+    if (Object.keys(obj).length === 0) {
+      updateGroup('spacing', { [kind]: undefined });
+    } else {
+      updateGroup('spacing', { [kind]: obj });
+    }
+  }
+
+  /** Parse a dimension value (number or string with unit) for display. */
+  function parseDimension(v: unknown): { value: string; unit: string } {
+    if (typeof v === 'number') return { value: String(v), unit: 'px' };
+    if (typeof v !== 'string' || !v) return { value: '', unit: 'px' };
+    const m = v.match(/^([\d.]+)(px|%|em|rem)$/);
+    if (m) return { value: m[1], unit: m[2] };
+    if (/^[\d.]+$/.test(v)) return { value: v, unit: 'px' };
+    return { value: '', unit: 'px' };
+  }
+
+  function formatDimension(value: string, unit: string): string | undefined {
+    if (!value || Number.isNaN(Number(value))) return undefined;
+    return `${Number(value)}${unit}`;
+  }
+
+  /** Parse a pixel string for numeric input display. */
+  function parsePx(v: string | undefined): number | '' {
+    if (!v) return '';
+    const n = parseFloat(v);
+    return Number.isNaN(n) ? '' : n;
+  }
+
   // ── Option arrays ──
   const positionOpts: Opt[] = [{ value: 'static', label: 'Static' }, { value: 'relative', label: 'Relative' }, { value: 'absolute', label: 'Absolute' }, { value: 'fixed', label: 'Fixed' }, { value: 'sticky', label: 'Sticky' }];
   const zIndexOpts: Opt[] = [{ value: 'auto', label: 'Auto' }, ...[0, 10, 20, 30, 40, 50, 100, 999].map((n) => ({ value: String(n), label: String(n) }))];
   const widthOpts: Opt[] = [{ value: 'auto', label: 'Auto' }, { value: 'full', label: 'Full' }, { value: 'contained', label: 'Contained' }, { value: 'fit', label: 'Fit' }];
+  const heightOpts: Opt[] = [{ value: 'auto', label: 'Auto' }, { value: 'full', label: 'Full' }];
   const displayOpts: Opt[] = [{ value: 'block', label: 'Block' }, { value: 'flex', label: 'Flex' }, { value: 'grid', label: 'Grid' }, { value: 'inline-flex', label: 'Inline Flex' }, { value: 'inline-block', label: 'Inline Block' }, { value: 'hidden', label: 'Hidden' }];
   const flexDirectionOpts: Opt[] = [{ value: 'row', label: 'Row' }, { value: 'column', label: 'Column' }, { value: 'row-reverse', label: 'Row Reverse' }, { value: 'column-reverse', label: 'Column Reverse' }];
   const alignOpts: Opt[] = [{ value: 'start', label: 'Start' }, { value: 'center', label: 'Center' }, { value: 'end', label: 'End' }, { value: 'stretch', label: 'Stretch' }, { value: 'baseline', label: 'Baseline' }];
@@ -118,12 +157,14 @@
   const iconSizeOpts: Opt[] = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'].map((v) => ({ value: v, label: v.toUpperCase() }));
   const shapeOpts: Opt[] = [{ value: 'none', label: 'None' }, { value: 'circle', label: 'Circle' }, { value: 'square', label: 'Square' }, { value: 'rounded', label: 'Rounded' }];
   const iconPositionOpts: Opt[] = [{ value: 'left', label: 'Left' }, { value: 'top', label: 'Top' }, { value: 'right', label: 'Right' }, { value: 'none', label: 'None' }];
+  const unitOpts: Opt[] = [{ value: 'px', label: 'px' }, { value: '%', label: '%' }, { value: 'em', label: 'em' }, { value: 'rem', label: 'rem' }];
 
   // ── Select field configs per group ──
   const layoutFields: Array<{ label: string; key: string; options: Opt[] }> = [
     { label: 'Position', key: 'position', options: positionOpts },
     { label: 'Z-Index', key: 'z_index', options: zIndexOpts },
     { label: 'Width', key: 'width', options: widthOpts },
+    { label: 'Height', key: 'height', options: heightOpts },
     { label: 'Display', key: 'display', options: displayOpts },
     { label: 'Flex Direction', key: 'flex_direction', options: flexDirectionOpts },
     { label: 'Align Items', key: 'align_items', options: alignOpts },
@@ -192,6 +233,43 @@
   </label>
 {/snippet}
 
+{#snippet dim(label: string, group: keyof BlockStyle, field: string, current: unknown, placeholder?: string)}
+  {@const parsed = parseDimension(current)}
+  <label class="block">
+    <span class={labelClass}>{label}</span>
+    <div class="flex gap-2">
+      <input type="number" value={parsed.value} oninput={(e) => updateGroup(group, { [field]: formatDimension(e.currentTarget.value, parsed.unit) })} {placeholder} class={inputClass} />
+      <select class="w-20 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-sm text-[var(--color-text)]" value={parsed.unit} onchange={(e) => updateGroup(group, { [field]: formatDimension(parsed.value, e.currentTarget.value) })}>
+        {#each unitOpts as u}<option value={u.value}>{u.label}</option>{/each}
+      </select>
+    </div>
+  </label>
+{/snippet}
+
+{#snippet spacingEditor(label: string, kind: 'padding' | 'margin', current: unknown)}
+  {@render sel(label, 'spacing', kind, spacingOpts, typeof current === 'string' ? current : '')}
+  <div class="mt-2 grid grid-cols-2 gap-2">
+    {#each ['top', 'right', 'bottom', 'left'] as side}
+      {@const sideValue = typeof current === 'object' && current !== null ? parseDimension((current as Record<string, string>)[side]) : { value: '', unit: 'px' }}
+      <label class="block">
+        <span class={labelClass}>{label} {side}</span>
+        <div class="flex gap-2">
+          <input
+            type="number"
+            class={inputClass}
+            value={sideValue.value}
+            oninput={(e) => updateSpacingEdge(kind, side as 'top' | 'right' | 'bottom' | 'left', e.currentTarget.value, sideValue.unit)}
+            placeholder="px"
+          />
+          <select class="w-20 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-sm text-[var(--color-text)]" value={sideValue.unit} onchange={(e) => updateSpacingEdge(kind, side as 'top' | 'right' | 'bottom' | 'left', sideValue.value, e.currentTarget.value)}>
+            {#each unitOpts as u}<option value={u.value}>{u.label}</option>{/each}
+          </select>
+        </div>
+      </label>
+    {/each}
+  </div>
+{/snippet}
+
 {#snippet rng(label: string, group: keyof BlockStyle, field: string, min: number, max: number, current: unknown, suffix?: string)}
   <label class="block">
     <span class={labelClass}>{label}: {current ?? min}{suffix ?? ''}</span>
@@ -221,6 +299,16 @@
     </Accordion.Header>
     <Accordion.Content class={contentClass}>
       {#each layoutFields as f}{@render sel(f.label, 'layout', f.key, f.options, g('layout')[f.key])}{/each}
+      {@render dim('Top', 'layout', 'top', g('layout')['top'], '0')}
+      {@render dim('Right', 'layout', 'right', g('layout')['right'], '0')}
+      {@render dim('Bottom', 'layout', 'bottom', g('layout')['bottom'], '0')}
+      {@render dim('Left', 'layout', 'left', g('layout')['left'], '0')}
+      {@render dim('Width', 'layout', 'width', g('layout')['width'], '0')}
+      {@render dim('Min Width', 'layout', 'min_width', g('layout')['min_width'], '0')}
+      {@render dim('Max Width', 'layout', 'max_width', g('layout')['max_width'], '0')}
+      {@render dim('Height', 'layout', 'height', g('layout')['height'], '0')}
+      {@render dim('Min Height', 'layout', 'min_height', g('layout')['min_height'], '0')}
+      {@render dim('Max Height', 'layout', 'max_height', g('layout')['max_height'], '0')}
       {@render resetBtn('Layout', ['layout'])}
     </Accordion.Content>
   </Accordion.Item>
@@ -285,8 +373,8 @@
       </Accordion.Trigger>
     </Accordion.Header>
     <Accordion.Content class={contentClass}>
-      {@render sel('Padding', 'spacing', 'padding', spacingOpts, g('spacing')['padding'])}
-      {@render sel('Margin', 'spacing', 'margin', spacingOpts, g('spacing')['margin'])}
+      {@render spacingEditor('Padding', 'padding', g('spacing')['padding'])}
+      {@render spacingEditor('Margin', 'margin', g('spacing')['margin'])}
       {@render resetBtn('Spacing', ['spacing'])}
     </Accordion.Content>
   </Accordion.Item>

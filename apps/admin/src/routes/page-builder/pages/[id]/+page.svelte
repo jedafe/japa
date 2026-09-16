@@ -40,16 +40,8 @@
 		type GuestHomeDestination,
 	} from '@japaconnect/landing-blocks';
 	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
+	import { isContainerLike, childrenOf, getContainerLayout, getContainerColumns, seedAllContainerDefaults, defaultChildrenFor } from '$lib/utils/blocks';
 	import { Button } from '$lib/components/ui/button';
-
-	// Containers that can hold nested children (in addition to the generic container).
-	const CONTAINER_LIKE_TYPES = new Set(['container', 'guest_home', 'guest_hero', 'guest_hero_image']);
-	function isContainerLike(b: Block): boolean {
-		return CONTAINER_LIKE_TYPES.has(b.type);
-	}
-	function childrenOf(b: Block): Block[] {
-		return (b.props as { children?: Block[] }).children ?? [];
-	}
 
 	import { Tabs, Dialog } from 'bits-ui';
 	import * as LucideIcons from 'lucide-svelte';
@@ -126,11 +118,11 @@
 	// DB-driven custom block definitions fetched from the API.
 	let customBlockDefs = $state<CustomBlockDef[]>([]);
 
-	// Auto-expand a container when it's selected so children are visible.
+	// Auto-expand a container-like block when it's selected so children are visible.
 	$effect(() => {
 		if (!selectedBlockId) return;
-		const block = blocks.find((b) => b.id === selectedBlockId);
-		if (block?.type === 'container' && !expandedContainers.has(block.id)) {
+		const block = findBlockInTree(blocks, selectedBlockId);
+		if (block && isContainerLike(block) && !expandedContainers.has(block.id)) {
 			expandedContainers = new Set(expandedContainers).add(block.id);
 		}
 	});
@@ -200,6 +192,25 @@
 		return [];
 	}
 
+	/** Recursively collect all container-like ids under any `guest_home` block. */
+	function collectGuestHomeContainerIds(tree: Block[]): Set<string> {
+		const ids = new Set<string>();
+		function walk(b: Block) {
+			if (b.type === 'guest_home') {
+				collectFromGuestHome(b, ids);
+			} else if (isContainerLike(b)) {
+				for (const child of childrenOf(b)) walk(child);
+			}
+		}
+		function collectFromGuestHome(b: Block, set: Set<string>) {
+			if (!isContainerLike(b)) return;
+			set.add(b.id);
+			for (const child of childrenOf(b)) collectFromGuestHome(child, set);
+		}
+		for (const b of tree) walk(b);
+		return ids;
+	}
+
 	$effect(() => { void load(); });
 
 	async function load() {
@@ -222,7 +233,9 @@
 				pageData = { id: d.id, title: d.title, slug: d.slug, status: d.status, page_type: d.page_type ?? 'custom', theme_id: d.theme_id };
 				// Seed the editor's working copy once, so subsequent server-side
 				// changes don't clobber in-progress edits.
-				blocks = untrack(() => parseBlocks(d.blocks));
+				blocks = untrack(() => seedAllContainerDefaults(parseBlocks(d.blocks)));
+				// Default-expand any Guest Home block and its container descendants.
+				expandedContainers = new Set([...expandedContainers, ...collectGuestHomeContainerIds(blocks)]);
 				pageTitle = untrack(() => d.title);
 				selectedThemeId = d.theme_id ?? '';
 				// Live preview data for the guest homepage block.
@@ -375,15 +388,7 @@
 				label: 'Guest Home',
 				props: {
 					layout: 'stack',
-					children: [
-						{ id: crypto.randomUUID(), type: 'guest_hero', visible: true, props: {} },
-						{ id: crypto.randomUUID(), type: 'guest_categories', visible: true, props: {} },
-						{ id: crypto.randomUUID(), type: 'guest_opportunities', visible: true, props: {} },
-						{ id: crypto.randomUUID(), type: 'guest_stories', visible: true, props: {} },
-						{ id: crypto.randomUUID(), type: 'guest_tools', visible: true, props: {} },
-						{ id: crypto.randomUUID(), type: 'guest_newsletter', visible: true, props: {} },
-						{ id: crypto.randomUUID(), type: 'guest_footer', visible: true, props: {} },
-					]
+					children: defaultChildrenFor('guest_home') ?? []
 				}
 			} as Block;
 		}
@@ -399,21 +404,7 @@
 					columns: 2,
 					responsive_columns: { tablet: 1, mobile: 1 },
 					gap: 'md',
-					children: [
-						{ id: crypto.randomUUID(), type: 'guest_hero_text', visible: true, props: {} },
-						{
-							id: crypto.randomUUID(),
-							type: 'guest_hero_image',
-							visible: true,
-							props: {
-								children: [
-									{ id: crypto.randomUUID(), type: 'guest_hero_destinations', visible: true, props: {} },
-									{ id: crypto.randomUUID(), type: 'guest_hero_community', visible: true, props: {} },
-								]
-							}
-						},
-						{ id: crypto.randomUUID(), type: 'guest_hero_stats', visible: true, props: {} },
-					]
+					children: defaultChildrenFor('guest_hero') ?? []
 				}
 			} as Block;
 		}
@@ -425,10 +416,7 @@
 				visible: true,
 				label: 'Hero Image',
 				props: {
-					children: [
-						{ id: crypto.randomUUID(), type: 'guest_hero_destinations', visible: true, props: {} },
-						{ id: crypto.randomUUID(), type: 'guest_hero_community', visible: true, props: {} },
-					]
+					children: defaultChildrenFor('guest_hero_image') ?? []
 				}
 			} as Block;
 		}
@@ -438,6 +426,9 @@
 		const nb = makeBlock(type);
 		blocks = [...blocks, nb];
 		selectedBlockId = nb.id;
+		if (nb.type === 'guest_home') {
+			expandedContainers = new Set([...expandedContainers, ...collectGuestHomeContainerIds([nb])]);
+		}
 		unsavedChanges = true;
 	}
 	function removeBlock(id: string): void {
@@ -548,81 +539,64 @@
 	/** Reorder a child within a container (by container ID + indices). */
 	function reorderContainerChild(containerId: string, fromIdx: number, toIdx: number): void {
 		if (fromIdx === toIdx) return;
-		blocks = blocks.map((b) => {
-			if (b.id === containerId && isContainerLike(b)) {
-				const children = [...childrenOf(b)];
-				if (toIdx < 0 || toIdx >= children.length) return b;
-				const [moved] = children.splice(fromIdx, 1);
-				children.splice(toIdx, 0, moved);
-				return { ...b, props: { ...b.props, children } } as Block;
-			}
-			return b;
+		blocks = updateBlockInTree(blocks, containerId, (b) => {
+			if (!isContainerLike(b)) return b;
+			const children = [...childrenOf(b)];
+			if (toIdx < 0 || toIdx >= children.length) return b;
+			const [moved] = children.splice(fromIdx, 1);
+			children.splice(toIdx, 0, moved);
+			return { ...b, props: { ...b.props, children } } as Block;
 		});
 		unsavedChanges = true;
 	}
 
 	/** Reorder a child by ID within a container (by container ID + child IDs). */
 	function reorderContainerChildByIds(containerId: string, fromChildId: string, toChildId: string): void {
-		blocks = blocks.map((b) => {
-			if (b.id === containerId && isContainerLike(b)) {
-				const children = [...childrenOf(b)];
-				const fromIdx = children.findIndex((c) => c.id === fromChildId);
-				const toIdx = children.findIndex((c) => c.id === toChildId);
-				if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return b;
-				const [moved] = children.splice(fromIdx, 1);
-				children.splice(toIdx, 0, moved);
-				return { ...b, props: { ...b.props, children } } as Block;
-			}
-			return b;
+		blocks = updateBlockInTree(blocks, containerId, (b) => {
+			if (!isContainerLike(b)) return b;
+			const children = [...childrenOf(b)];
+			const fromIdx = children.findIndex((c) => c.id === fromChildId);
+			const toIdx = children.findIndex((c) => c.id === toChildId);
+			if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return b;
+			const [moved] = children.splice(fromIdx, 1);
+			children.splice(toIdx, 0, moved);
+			return { ...b, props: { ...b.props, children } } as Block;
 		});
 		unsavedChanges = true;
 	}
 
 	/** Insert a block into a container at a specific index (before the target child). */
 	function insertIntoContainerAtIndex(containerId: string, block: Block, beforeChildId: string | null): void {
-		blocks = blocks.map((b) => {
-			if (b.id === containerId && isContainerLike(b)) {
-				const children = [...childrenOf(b)];
-				if (beforeChildId) {
-					const idx = children.findIndex((c) => c.id === beforeChildId);
-					if (idx >= 0) children.splice(idx, 0, block);
-					else children.push(block);
-				} else {
-					children.push(block);
-				}
-				return { ...b, props: { ...b.props, children } } as Block;
+		blocks = updateBlockInTree(blocks, containerId, (b) => {
+			if (!isContainerLike(b)) return b;
+			const children = [...childrenOf(b)];
+			if (beforeChildId) {
+				const idx = children.findIndex((c) => c.id === beforeChildId);
+				if (idx >= 0) children.splice(idx, 0, block);
+				else children.push(block);
+			} else {
+				children.push(block);
 			}
-			return b;
+			return { ...b, props: { ...b.props, children } } as Block;
 		});
 	}
 
 	/** Remove a child from a container. */
 	function removeContainerChild(containerId: string, childId: string): void {
-		blocks = blocks.map((b) => {
-			if (b.id === containerId && isContainerLike(b)) {
-				return { ...b, props: { ...b.props, children: childrenOf(b).filter((c) => c.id !== childId) } } as Block;
-			}
-			return b;
+		blocks = updateBlockInTree(blocks, containerId, (b) => {
+			if (!isContainerLike(b)) return b;
+			return { ...b, props: { ...b.props, children: childrenOf(b).filter((c) => c.id !== childId) } } as Block;
 		});
 		if (selectedBlockId === childId) selectedBlockId = null;
 		unsavedChanges = true;
 	}
 
 	/** Move a child out of a container to the top-level blocks array. */
-	function moveChildToTopLevel(containerId: string, childId: string): void {
-		const container = blocks.find((b) => b.id === containerId && isContainerLike(b));
-		if (!container) return;
-		const containerChildren = childrenOf(container);
-		const blockToMove = containerChildren.find((c) => c.id === childId);
-		if (!blockToMove) return;
-		// Remove from container, append to top level.
-		blocks = blocks.map((b) => {
-			if (b.id === containerId && isContainerLike(b)) {
-				return { ...b, props: { ...b.props, children: containerChildren.filter((c) => c.id !== childId) } } as Block;
-			}
-			return b;
-		});
-		blocks = [...blocks, blockToMove];
+	function moveChildToTopLevel(_containerId: string, childId: string): void {
+		const { tree, removed } = removeBlockFromTree(blocks, childId);
+		if (!removed) return;
+		blocks = [...tree, removed];
+		if (selectedBlockId === childId) selectedBlockId = null;
 		unsavedChanges = true;
 	}
 
@@ -1134,15 +1108,15 @@
 									<ContainerChildren
 										containerId={block.id}
 										children={childrenOf(block)}
-										layout={((block.props as any).layout) ?? 'grid'}
-										columns={((block.props as any).columns) ?? (block.type === 'guest_hero' ? 2 : 1)}
+										layout={getContainerLayout(block)}
+										columns={getContainerColumns(block)}
 										{selectedBlockId}
 										{getIcon}
 										onSelect={(id) => (selectedBlockId = id)}
 										onReorder={reorderContainerChild}
 										onRemove={removeContainerChild}
 										onMoveOut={moveChildToTopLevel}
-										onSpanChange={updateChildSpan}
+										onSpanChange={updateChildSpan} {expandedContainers} toggleExpand={toggleContainerExpand}
 									/>
 								{/if}
 							{/if}

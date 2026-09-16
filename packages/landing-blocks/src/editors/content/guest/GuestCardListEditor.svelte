@@ -60,7 +60,7 @@
     {/each}
     <button
       type="button"
-      onclick={add}
+      onclick={() => onchange([...items, add()])}
       class="flex w-full items-center justify-center gap-1 rounded border border-dashed border-[var(--color-border)] px-2 py-1.5 text-sm text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
     >
       <Plus size={16} />

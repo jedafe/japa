@@ -23,6 +23,8 @@ const contentFields = new Set<string>([
   'thumbnail',
   'icon',
   'poster',
+  'name',
+  'image_url',
 ]);
 
 /** Block types that load their content dynamically. */

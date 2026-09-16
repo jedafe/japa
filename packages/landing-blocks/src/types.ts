@@ -56,15 +56,17 @@ export interface VisibilityRules {
 export interface BlockStyle {
   layout?: {
     position?: 'static' | 'relative' | 'absolute' | 'sticky' | 'fixed';
-    top?: number | 'auto';
-    right?: number | 'auto';
-    bottom?: number | 'auto';
-    left?: number | 'auto';
+    top?: number | 'auto' | string;
+    right?: number | 'auto' | string;
+    bottom?: number | 'auto' | string;
+    left?: number | 'auto' | string;
     z_index?: 'auto' | 0 | 10 | 20 | 30 | 40 | 50 | 100 | 999;
-    width?: 'auto' | 'full' | 'contained' | 'fit' | number;
-    max_width?: number;
-    min_height?: number | 'auto';
-    height?: 'auto' | 'full' | number;
+    width?: 'auto' | 'full' | 'contained' | 'fit' | number | string;
+    min_width?: number | string;
+    max_width?: number | string;
+    min_height?: number | 'auto' | string;
+    height?: 'auto' | 'full' | number | string;
+    max_height?: number | 'auto' | string;
     display?: 'block' | 'flex' | 'grid' | 'inline-flex' | 'inline-block' | 'hidden';
     flex_direction?: 'row' | 'column' | 'row-reverse' | 'column-reverse';
     flex_wrap?: 'nowrap' | 'wrap' | 'wrap-reverse';
@@ -818,8 +820,19 @@ export interface GuestHeroDestinationsProps {
   title?: string;
   see_all_href?: string;
   data_source?: 'context' | 'manual';
+  /** Legacy data array; superseded by `children` for block-based items. */
   items?: GuestHomeDestination[];
+  /** Nested block items used when `data_source` is `manual`. */
+  children?: Block[];
   max_items?: number;
+}
+
+/** Props for a single item inside `guest_hero_destinations`. */
+export interface GuestHeroDestinationItemProps {
+  name?: string;
+  icon_url?: string | null;
+  href?: string;
+  code?: string;
 }
 
 /** Props for `guest_hero_community`. */
@@ -830,6 +843,16 @@ export interface GuestHeroCommunityProps {
   data_source?: 'context' | 'manual';
   value?: string;
   label?: string;
+  /** Nested member blocks used when `data_source` is `manual`. */
+  children?: Block[];
+  max_items?: number;
+}
+
+/** Props for a single member avatar inside `guest_hero_community`. */
+export interface GuestHeroCommunityMemberProps {
+  image_url?: string | null;
+  name?: string;
+  href?: string;
 }
 
 /** Props for `guest_categories`. */
@@ -930,7 +953,9 @@ export type Block =
   | (BaseBlock & { type: 'guest_hero_image'; props: GuestHeroImageProps })
   | (BaseBlock & { type: 'guest_hero_stats'; props: GuestHeroStatsProps })
   | (BaseBlock & { type: 'guest_hero_destinations'; props: GuestHeroDestinationsProps })
+  | (BaseBlock & { type: 'guest_hero_destination_item'; props: GuestHeroDestinationItemProps })
   | (BaseBlock & { type: 'guest_hero_community'; props: GuestHeroCommunityProps })
+  | (BaseBlock & { type: 'guest_hero_community_member'; props: GuestHeroCommunityMemberProps })
   | (BaseBlock & { type: 'guest_categories'; props: GuestCategoriesProps })
   | (BaseBlock & { type: 'guest_opportunities'; props: GuestOpportunitiesProps })
   | (BaseBlock & { type: 'guest_stories'; props: GuestStoriesProps })

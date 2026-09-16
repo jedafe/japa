@@ -2,6 +2,17 @@ import { vi, afterEach } from 'vitest';
 import { cleanup } from '@testing-library/svelte';
 import en from './src/lib/locales/en.json';
 
+// jsdom does not implement ResizeObserver, but @dnd-kit/svelte (sortable
+// drag-and-drop) and floating-ui (bits-ui popovers) read it at import/run time.
+// Provide a constructable stub before any test modules are loaded.
+class ResizeObserverMock {
+	constructor(_callback: ResizeObserverCallback) {}
+	observe = vi.fn();
+	unobserve = vi.fn();
+	disconnect = vi.fn();
+}
+globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
 // Svelte 5 emits non-fatal `derived_inert` warnings from bits-ui / shared
 // components when a derived is read outside a live effect during test teardown.
 // The warning is not a test failure; filter it so the test output stays readable.

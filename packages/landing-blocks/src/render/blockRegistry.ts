@@ -35,7 +35,9 @@ import GuestHeroTextBlock from '../blocks/guest/GuestHeroTextBlock.svelte';
 import GuestHeroImageBlock from '../blocks/guest/GuestHeroImageBlock.svelte';
 import GuestHeroStatsBlock from '../blocks/guest/GuestHeroStatsBlock.svelte';
 import GuestHeroDestinationsBlock from '../blocks/guest/GuestHeroDestinationsBlock.svelte';
+import GuestHeroDestinationItemBlock from '../blocks/guest/GuestHeroDestinationItemBlock.svelte';
 import GuestHeroCommunityBlock from '../blocks/guest/GuestHeroCommunityBlock.svelte';
+import GuestHeroCommunityMemberBlock from '../blocks/guest/GuestHeroCommunityMemberBlock.svelte';
 import GuestCategoriesBlock from '../blocks/guest/GuestCategoriesBlock.svelte';
 import GuestOpportunitiesBlock from '../blocks/guest/GuestOpportunitiesBlock.svelte';
 import GuestStoriesBlock from '../blocks/guest/GuestStoriesBlock.svelte';
@@ -84,7 +86,9 @@ export const blockRegistry: Record<Block['type'], BlockMeta> = {
   guest_hero_image: { component: GuestHeroImageBlock, icon: 'Image', label: 'Hero Image', category: 'guest' },
   guest_hero_stats: { component: GuestHeroStatsBlock, icon: 'BarChart', label: 'Hero Stats', category: 'guest' },
   guest_hero_destinations: { component: GuestHeroDestinationsBlock, icon: 'MapPin', label: 'Hero Destinations', category: 'guest' },
+  guest_hero_destination_item: { component: GuestHeroDestinationItemBlock, icon: 'Globe', label: 'Destination Item', category: 'guest' },
   guest_hero_community: { component: GuestHeroCommunityBlock, icon: 'Users', label: 'Hero Community', category: 'guest' },
+  guest_hero_community_member: { component: GuestHeroCommunityMemberBlock, icon: 'User', label: 'Community Member', category: 'guest' },
   guest_categories: { component: GuestCategoriesBlock, icon: 'Grid2x2', label: 'Guest Categories', category: 'guest' },
   guest_opportunities: { component: GuestOpportunitiesBlock, icon: 'Briefcase', label: 'Guest Opportunities', category: 'guest' },
   guest_stories: { component: GuestStoriesBlock, icon: 'BookOpen', label: 'Guest Stories', category: 'guest' },
