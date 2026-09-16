@@ -98,7 +98,7 @@ func (s *Service) deactivateCurrency(ctx context.Context, code string) error {
 
 // invalidateCurrenciesCache flushes the jc:wallet:currencies:{}
 // cache after any currency CRUD operation (Section 58, Rule 4). Currencies
-// are platform-wide, so the root tenant ID is used.
+// are platform-wide, so the root platform ID is used.
 func (s *Service) invalidateCurrenciesCache(ctx context.Context) {
 	if s.cacheInvalidator == nil {
 		return
@@ -112,12 +112,12 @@ func (s *Service) countSpacesByCurrency(ctx context.Context, code string) (int32
 	return s.store.countSpacesByCurrency(ctx, code)
 }
 
-// listActiveCreditPacks returns all active credit packs for a tenant.
+// listActiveCreditPacks returns all active credit packs for a platform.
 func (s *Service) listActiveCreditPacks(ctx context.Context) ([]gen.CreditPack, error) {
 	return s.store.listActiveCreditPacks(ctx)
 }
 
-// listAllCreditPacks returns all credit packs (including inactive) for a tenant.
+// listAllCreditPacks returns all credit packs (including inactive) for a platform.
 func (s *Service) listAllCreditPacks(ctx context.Context) ([]gen.CreditPack, error) {
 	return s.store.listAllCreditPacks(ctx)
 }

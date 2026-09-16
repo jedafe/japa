@@ -23,7 +23,7 @@ import (
 // result set: q (search by name/slug), level (by hierarchy level), type (by
 // space_type_id), parent (by parent_id), geo (by geo_code), sort
 // (members|followers|posts|name|newest). page_size/page_offset paginate the
-// result. With no filters, all visible spaces for the tenant are returned.
+// result. With no filters, all visible spaces for the platform are returned.
 // SPACES-009/011: the default (no type/parent filter) branch uses SQL-level
 // pagination, search, geo, and sort for performance and spec conformance.
 func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
@@ -335,7 +335,7 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListMySpaces handles GET /api/v1/me/spaces — every space the caller belongs
-// to. Super admins see every active space in the tenant so they can post to
+// to. Super admins see every active space in the platform so they can post to
 // any space without joining it first (Section 03 — admin override).
 func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 
@@ -369,7 +369,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	// ?member_only=1 opts out: it forces the membership-only listing so
 	// consumers that mean "spaces I belong to" (e.g. the LeftNav My spaces
 	// switcher) still get an accurate list for super admins instead of an
-	// arbitrary first page of every space in the tenant.
+	// arbitrary first page of every space in the platform.
 	memberOnly := r.URL.Query().Get("member_only") == "1"
 
 	isSuperAdmin, err := h.Service.IsSuperAdmin(r.Context(), user.UserID)
@@ -736,7 +736,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-002: validate each parent_space_id is a primary space (level IN
-	// country/state/city) within the tenant. Collect the parsed UUIDs for
+	// country/state/city) within the platform. Collect the parsed UUIDs for
 	// linkage after the space is created.
 	parentSpaceUUIDs := make([]pgtype.UUID, 0, len(req.ParentSpaceIDs))
 

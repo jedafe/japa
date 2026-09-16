@@ -136,13 +136,13 @@ func (s *Service) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (
 }
 
 // ListProposed returns a page of sources with status='proposed' for admin
-// review. Tenant-scoped.
+// review. Platform-scoped.
 func (s *Service) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {
 	return s.store.ListProposed(ctx, limit, offset)
 }
 
 // ApproveProposed activates a proposed source (status='active', enabled=true)
-// and records the approver. Tenant-scoped.
+// and records the approver. Platform-scoped.
 func (s *Service) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUID) (Source, error) {
 	src, err := s.store.ApproveProposed(ctx, id, approvedBy)
 	if err != nil {
@@ -212,7 +212,7 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 		return Source{}, fmt.Errorf("sources: propose: %w: invalid domain", errpkg.ErrInvalid)
 	}
 
-	// Public URLs must be unique per tenant.
+	// Public URLs must be unique per platform.
 	if _, err := s.store.GetByURL(ctx, input.SourceURL); err == nil {
 		return Source{}, errpkg.ErrAlreadyExists
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -397,7 +397,7 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, userID pgtype.UUI
 		Category:           "comparison",
 		SourceType:         "comparison_api",
 		SourceKind:         "publisher",
-		TrustLevel:         int16(max(1, min(5, trustLevel))),
+		TrustLevel:         int16(max(1, min(5, trustLevel))), //nolint:gosec // G115: trust level is clamped to 1..5.
 		CrawlMethod:        "api",
 		CrawlFrequency:     "daily",
 		CrawlFrequencyMins: 0,

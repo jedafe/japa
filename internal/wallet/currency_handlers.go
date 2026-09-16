@@ -37,7 +37,7 @@ func (h *Handlers) ListCurrencies(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListCreditPacks handles GET /api/v1/wallet/credit-packs.
-// Returns all active credit packs for the tenant.
+// Returns all active credit packs for the platform.
 func (h *Handlers) ListCreditPacks(w http.ResponseWriter, r *http.Request) {
 
 	packs, err := h.Service.listActiveCreditPacks(r.Context())

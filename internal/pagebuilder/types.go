@@ -2,7 +2,7 @@
 // // Provides database-backed management of blocks, templates, themes, and pages
 // for the drag-and-drop page builder. The static BlockTemplateRegistry in
 // content/block_templates.go supplies the built-in block types; this package
-// manages tenant-customizable blocks, page templates, visual themes, and
+// manages platform-customizable blocks, page templates, visual themes, and
 // published page instances.
 package pagebuilder
 

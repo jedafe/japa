@@ -81,11 +81,11 @@ func (s *profileStore) listByUser(ctx context.Context, userID pgtype.UUID) ([]Co
 	return profiles, nil
 }
 
-// listByTenant returns all non-deleted profiles for the tenant, ordered by default first, then updated_at desc.
-func (s *profileStore) listByTenant(ctx context.Context) ([]ComparisonProfile, error) {
-	rows, err := s.read.ListComparisonProfilesByTenant(ctx)
+// listByPlatform returns all non-deleted profiles for the platform, ordered by default first, then updated_at desc.
+func (s *profileStore) listByPlatform(ctx context.Context) ([]ComparisonProfile, error) {
+	rows, err := s.read.ListComparisonProfiles(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing comparison profiles by tenant: %w", err)
+		return nil, fmt.Errorf("listing comparison profiles by platform: %w", err)
 	}
 
 	profiles := make([]ComparisonProfile, 0, len(rows))
@@ -102,7 +102,7 @@ func (s *profileStore) listByTenant(ctx context.Context) ([]ComparisonProfile, e
 	return profiles, nil
 }
 
-// listTemplates returns all tenant-level profile templates, ordered by title.
+// listTemplates returns all platform-level profile templates, ordered by title.
 func (s *profileStore) listTemplates(ctx context.Context) ([]ComparisonProfile, error) {
 	rows, err := s.read.ListComparisonProfileTemplates(ctx)
 	if err != nil {
@@ -123,7 +123,7 @@ func (s *profileStore) listTemplates(ctx context.Context) ([]ComparisonProfile, 
 	return profiles, nil
 }
 
-// get returns a profile by id and tenant.
+// get returns a profile by id and platform.
 func (s *profileStore) get(ctx context.Context, id pgtype.UUID) (ComparisonProfile, error) {
 	row, err := s.read.GetComparisonProfile(ctx,
 		id,

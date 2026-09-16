@@ -28,7 +28,7 @@ func FromContext(ctx context.Context) *gen.GetSpaceBySlugRow {
 }
 
 // SpaceResolver resolves a space from the {slug} URL parameter and stores
-// it in the request context. It must run after tenant and auth middleware.
+// it in the request context. It must run after platform and auth middleware.
 // If the space is not found, it returns 404. Use this on routes that
 // operate on a specific space identified by slug.
 func SpaceResolver(service *Service) func(http.Handler) http.Handler {

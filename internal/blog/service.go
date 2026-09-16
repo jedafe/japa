@@ -58,10 +58,10 @@ func (s *Service) GetSeriesBySlug(ctx context.Context, slug string) (Series, err
 	return seriesFromRow(row), nil
 }
 
-// ListSeriesByTenant returns paginated public series DTOs for a tenant,
+// ListSeriesByPlatform returns paginated public series DTOs for a platform,
 // optionally filtered by the autocomplete query `q` (L2 — filter now in SQL).
-func (s *Service) ListSeriesByTenant(ctx context.Context, q, contentType string, limit, offset int32) ([]Series, error) {
-	rows, err := s.store.listBlogSeriesByTenant(ctx, q, contentType, limit, offset)
+func (s *Service) ListSeriesByPlatform(ctx context.Context, q, contentType string, limit, offset int32) ([]Series, error) {
+	rows, err := s.store.listBlogSeriesByPlatform(ctx, q, contentType, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -74,10 +74,10 @@ func (s *Service) ListSeriesByTenant(ctx context.Context, q, contentType string,
 	return out, nil
 }
 
-// CountSeriesByTenant returns the total number of tenant-scoped series,
-// respecting the same `q` filter as ListSeriesByTenant.
-func (s *Service) CountSeriesByTenant(ctx context.Context, q, contentType string) (int64, error) {
-	return s.store.countBlogSeriesByTenant(ctx, q, contentType)
+// CountSeriesByPlatform returns the total number of platform-scoped series,
+// respecting the same `q` filter as ListSeriesByPlatform.
+func (s *Service) CountSeriesByPlatform(ctx context.Context, q, contentType string) (int64, error) {
+	return s.store.countBlogSeriesByPlatform(ctx, q, contentType)
 }
 
 // ListSeriesByAuthor returns paginated public series DTOs for an author.
@@ -141,8 +141,8 @@ func (s *Service) DeleteSeries(ctx context.Context, id pgtype.UUID) error {
 // ---------------------------------------------------------------------------
 
 // AddPostToSeries adds a post to a series, auto-appending at the next
-// available position. H7: verifies the content belongs to the same tenant
-// before linking to prevent cross-tenant content linkage. The position is
+// available position. H7: verifies the content belongs to the same platform
+// before linking to prevent cross-platform content linkage. The position is
 // computed server-side (MAX+1) to avoid colliding with the unique constraint
 // on (series_id, position); use ReorderPostsInSeries for reordering.
 func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
@@ -153,36 +153,36 @@ func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID pgtyp
 }
 
 // RemovePostFromSeries removes a post from a series.
-// BUG-003: verifies the series belongs to the caller's tenant before
-// deleting, otherwise an attacker with blog.series.edit in tenant A could
-// remove posts from a series in tenant B by knowing its series_id.
+// BUG-003: verifies the series belongs to the caller's platform before
+// deleting, otherwise an attacker with blog.series.edit in platform A could
+// remove posts from a series in platform B by knowing its series_id.
 func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID pgtype.UUID) error {
 	if _, err := s.store.getBlogSeriesByID(ctx, seriesID); err != nil {
-		return fmt.Errorf("verifying series tenant: %w", err)
+		return fmt.Errorf("verifying series platform: %w", err)
 	}
 
 	return s.store.removePostFromSeries(ctx, seriesID, contentID)
 }
 
 // ListPostsInSeries returns all posts in a series ordered by position.
-// H5: now tenant-scoped and filters soft-deleted contents.
+// H5: now platform-scoped and filters soft-deleted contents.
 func (s *Service) ListPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
 	return s.store.listPostsInSeries(ctx, seriesID)
 }
 
 // GetSeriesForContent returns the series_id for a given content_id, or
 // pgx.ErrNoRows if the content is not part of any series. Used by the
-// editor load to restore the series selector. BUG-009: tenant-scoped.
+// editor load to restore the series selector. BUG-009: platform-scoped.
 func (s *Service) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
 	return s.store.getSeriesForContent(ctx, contentID)
 }
 
 // ReorderPostsInSeries updates the position of a post within a series.
-// BUG-004: verifies the series belongs to the caller's tenant before
-// mutating (same cross-tenant risk as BulkReorderSeriesPosts).
+// BUG-004: verifies the series belongs to the caller's platform before
+// mutating (same cross-platform risk as BulkReorderSeriesPosts).
 func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
 	if _, err := s.store.getBlogSeriesByID(ctx, seriesID); err != nil {
-		return fmt.Errorf("verifying series tenant: %w", err)
+		return fmt.Errorf("verifying series platform: %w", err)
 	}
 
 	return s.store.reorderSeriesPosts(ctx, seriesID, contentID, position)
@@ -190,16 +190,16 @@ func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID 
 
 // BulkReorderSeriesPosts atomically replaces all posts in a series with the
 // given ordered list, eliminating the N+1 round-trip of per-post updates.
-// BUG-004: verifies the series belongs to the caller's tenant before
-// mutating, otherwise an attacker with blog.series.edit in tenant A could
-// wipe and rewrite the post order of a series in tenant B.
+// BUG-004: verifies the series belongs to the caller's platform before
+// mutating, otherwise an attacker with blog.series.edit in platform A could
+// wipe and rewrite the post order of a series in platform B.
 func (s *Service) BulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID, posts []struct {
 	ContentID pgtype.UUID
 	Position  int32
 },
 ) error {
 	if _, err := s.store.getBlogSeriesByID(ctx, seriesID); err != nil {
-		return fmt.Errorf("verifying series tenant: %w", err)
+		return fmt.Errorf("verifying series platform: %w", err)
 	}
 
 	return s.store.bulkReorderSeriesPosts(ctx, seriesID, posts)
@@ -253,7 +253,7 @@ func (s *Service) ListReviewsByContent(ctx context.Context, contentID pgtype.UUI
 	return s.store.listContentReviewsByContent(ctx, contentID)
 }
 
-// ListPendingReviews returns paginated pending reviews for a tenant.
+// ListPendingReviews returns paginated pending reviews for a platform.
 func (s *Service) ListPendingReviews(ctx context.Context, limit, offset int32) ([]gen.ContentReview, error) {
 	return s.store.listPendingContentReviews(ctx, limit, offset)
 }

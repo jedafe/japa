@@ -28,7 +28,7 @@ FROM feature_flags
 WHERE key = $1
 `
 
-// features.sql — Feature Flags queries (global scope after multi-tenancy removal).
+// features.sql — Feature Flags queries (global scope).
 func (q *Queries) GetFeatureFlag(ctx context.Context, key string) (FeatureFlag, error) {
 	row := q.db.QueryRow(ctx, getFeatureFlag, key)
 	var i FeatureFlag

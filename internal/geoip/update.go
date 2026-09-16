@@ -138,7 +138,8 @@ func extractMMDB(r io.Reader, outputPath string) error {
 		}
 
 		if filepath.Ext(header.Name) == ".mmdb" {
-			out, err := os.Create(outputPath) //nolint:gosec // G304: outputPath derived from trusted dbPath config
+			// #nosec G304 // outputPath is the configured GeoIP database path.
+			out, err := os.Create(outputPath)
 			if err != nil {
 				return fmt.Errorf("creating output file: %w", err)
 			}

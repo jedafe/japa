@@ -21,7 +21,7 @@ LIMIT 1;
 -- name: RevokeConsent :exec
 INSERT INTO consent_records (user_id, consent_type, granted, policy_version, ip_address, user_agent) VALUES (@user_id, @consent_type, false, @policy_version, sqlc.narg(ip_address), sqlc.narg(user_agent)) ;
 
--- name: ListConsentsByTenant :many
+-- name: ListConsents :many
 SELECT cr.id, cr.user_id, cr.consent_type, cr.granted, cr.policy_version,
  cr.ip_address, cr.user_agent, cr.created_at,
  u.username, up.display_name
@@ -149,8 +149,8 @@ RETURNING id, user_id, status, download_url, expires_at,
  completed_at, created_at;
 
 -- name: ListPendingDataExportRequests :many
--- BUG-GDPR-002: scoped to the caller's tenant so an admin in tenant A
--- cannot see tenant B's pending export requests (§5.3 cross-tenant bleed).
+-- BUG-GDPR-002: scoped to the caller's platform so an admin in platform A
+-- cannot see platform B's pending export requests (§5.3 cross-platform bleed).
 SELECT id, user_id, status, download_url, expires_at,
  completed_at, created_at
 FROM data_export_requests
@@ -186,8 +186,8 @@ SET progress_step = @progress_step
 WHERE id = @id;
 
 -- name: ListPendingDeletionRequests :many
--- BUG-GDPR-001: scoped to the caller's tenant so an admin in tenant A
--- cannot see tenant B's pending deletion requests (§5.3 cross-tenant bleed).
+-- BUG-GDPR-001: scoped to the caller's platform so an admin in platform A
+-- cannot see platform B's pending deletion requests (§5.3 cross-platform bleed).
 SELECT adr.id, adr.user_id, adr.status, adr.reason, adr.completed_at, adr.created_at, adr.progress_step,
  u.username, up.display_name
 FROM account_deletion_requests adr
@@ -428,7 +428,7 @@ LIMIT 50;
 -- GAP-GDPR-B: re-enqueue stale pending data export requests whose original
 -- enqueue may have been lost (e.g. RequestDataExport's enqueuer.Enqueue
 -- failed and only logged). Mirrors ListStalePendingDeletionRequests.
--- Tenant-scoped at the call site; the sweep iterates all tenants.
+-- Platform-scoped at the call site; the sweep iterates all platforms.
 SELECT id, user_id
 FROM data_export_requests
 WHERE status = 'pending'
@@ -440,7 +440,7 @@ LIMIT 50;
 -- BUG-GDPR-002 fix: COALESCE default must be '0' (immediate), not '30'.
 -- ADR-057 and system-settings-catalog specify gdpr.retention_days
 -- defaults to 0 (no waiting period). The previous '30' fallback caused
--- tenants without the explicit setting to wait 30 days instead of 0.
+-- platforms without the explicit setting to wait 30 days instead of 0.
 SELECT r.id
 FROM account_deletion_requests r
 LEFT JOIN system_settings s ON s.key = 'gdpr.retention_days'
@@ -1285,7 +1285,7 @@ DELETE FROM push_subscriptions WHERE user_id = @user_id;
 
 -- name: GdprExportAttestationCommunityUpdates :one
 -- §97: export attestation_community_updates authored by the user.
--- The table has no the id column; tenant scoping is via the parent
+-- The table has no the id column; platform scoping is via the parent
 -- pathway's the id.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (

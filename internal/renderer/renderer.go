@@ -186,7 +186,7 @@ func validateScriptPath(scriptPath string) (string, error) {
 
 // Render converts ProseMirror JSON to HTML. If the result is cached,
 // it returns the cached version. Otherwise, it shells out to Bun.
-// // The ID scopes the Valkey cache key so one tenant cannot read
+// // The ID scopes the Valkey cache key so one platform cannot read
 // another's rendered fragment (§4.2). The output is sanitized through
 // the shared content.SanitizeHTML allowlist before caching/returning to
 // prevent stored XSS from raw embed HTML or crafted node attributes
@@ -297,7 +297,7 @@ func validateRenderInput(data []byte) error {
 
 // cacheKey generates a Valkey cache key for rendered HTML.
 // Format: jc:render:{}:{content_id}:{updated_at_hash}. The
-// scope prevents cross-tenant cache bleed (§4.2). Uses the
+// scope prevents cross-platform cache bleed (§4.2). Uses the
 // full SHA-256 hash to avoid collision risk from truncation (STD-003).
 func (r *Renderer) cacheKey(contentID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
 	ts := updatedAt.Time.Unix()

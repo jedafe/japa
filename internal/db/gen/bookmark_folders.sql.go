@@ -70,7 +70,7 @@ type GetBookmarkFolderParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-// Validates that a folder belongs to the given user and tenant (BL-013).
+// Validates that a folder belongs to the given user and platform (BL-013).
 func (q *Queries) GetBookmarkFolder(ctx context.Context, arg GetBookmarkFolderParams) (BookmarkFolder, error) {
 	row := q.db.QueryRow(ctx, getBookmarkFolder, arg.ID, arg.UserID)
 	var i BookmarkFolder
@@ -178,7 +178,7 @@ type UpdateBookmarkFolderPositionParams struct {
 
 // BUG-008: sets the position of a single folder. Called in a loop by the
 // reorder handler (PATCH /me/bookmark-folders/reorder) to persist the
-// caller's desired ordering. Scoped to tenant + owner.
+// caller's desired ordering. Scoped to platform + owner.
 func (q *Queries) UpdateBookmarkFolderPosition(ctx context.Context, arg UpdateBookmarkFolderPositionParams) error {
 	_, err := q.db.Exec(ctx, updateBookmarkFolderPosition, arg.Position, arg.ID, arg.UserID)
 	return err

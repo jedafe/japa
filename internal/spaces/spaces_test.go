@@ -321,7 +321,7 @@ func TestIsAllowedCategory(t *testing.T) {
 	}
 }
 
-func _TestListSpaceTypes_NoTenant(t *testing.T) {
+func _TestListSpaceTypes_NoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandlers(nil, nil, nil)

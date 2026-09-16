@@ -64,7 +64,7 @@ return count
 
 // Check runs all pre-flight checks. Returns nil if all pass.
 // Crawl lock is SET NX EX — if the source is already being crawled, returns ErrCrawlLocked.
-// All Valkey keys are tenant-scoped per ADR-112 Amendment 2.
+// All Valkey keys are platform-scoped per ADR-112 Amendment 2.
 // // If any check fails AFTER the lock is acquired (license, rate-limit,
 // robots), the lock is released before returning so the source is not
 // blocked until TTL expiry (BUG-10 fix, §4.3/§6.2). Only ErrCrawlLocked

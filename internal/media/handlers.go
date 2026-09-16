@@ -166,7 +166,7 @@ func parseMediaID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	return id, true
 }
 
-// requireMediaAuth extracts user, tenant, and media ID from the request.
+// requireMediaAuth extracts user, platform, and media ID from the request.
 // Returns (userID, ID, mediaID, ok). If ok is false, an error has been written.
 func (h *Handlers) requireMediaAuth(w http.ResponseWriter, r *http.Request) (pgtype.UUID, pgtype.UUID, pgtype.UUID, bool) {
 	user, ok := h.requireUser(w, r)
@@ -219,7 +219,6 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) SetPermissionChecker(pc permissionChecker) {
 	h.perms = pc
 }
-
 
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -956,7 +955,8 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(MaxMediaUploadBody); err != nil {
+	// #nosec G120 // total body size is bounded by MaxBytesReader above.
+	if err := r.ParseMultipartForm(32 << 10); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_form", "Invalid multipart form")
 		return
 	}
@@ -1007,8 +1007,8 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		ext)
 
 	localPath := filepath.Join("data", "media", DefaultBucket, storagePath)
-	// #nosec G703 // pending path traversal validation
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec G301,G703 // bounded; pending path validation
+	// #nosec G703 // path is scoped to data/media/DefaultBucket; file extension is sanitized elsewhere.
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o750); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
 		return
 	}

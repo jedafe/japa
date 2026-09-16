@@ -451,7 +451,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, periodStart, perio
 	}
 
 	// List all approved instructors via the status filter (no space scope —
-	// the periodic payout run is tenant-wide, not per-university).
+	// the periodic payout run is platform-wide, not per-university).
 	profiles, err := s.store.ListByStatus(ctx, "approved", pgtype.UUID{}, 1000, 0)
 	if err != nil {
 		return fmt.Errorf("university: list instructors for payout: %w", err)
@@ -723,13 +723,13 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, trackID pgty
 // ---------------------------------------------------------------------------
 
 // instructorProfileCacheKey builds jc:university:{}:instructor:{user_id}:profile.
-// Tenant-scoped to prevent cross-tenant data leakage in multi-tenant deployments (BUG-016).
+// Platform-scoped to prevent cross-platform data leakage in multi-platform deployments (BUG-016).
 func instructorProfileCacheKey(userID pgtype.UUID) string {
 	return valkey.MustKey("university::instructor:%s:profile", userID.String())
 }
 
 // trackEnrolledCacheKey builds jc:university:{}:track:{track_id}:enrolled.
-// Tenant-scoped to prevent cross-tenant data leakage (BUG-016).
+// Platform-scoped to prevent cross-platform data leakage (BUG-016).
 func trackEnrolledCacheKey(trackID pgtype.UUID) string {
 	return valkey.MustKey("university::track:%s:enrolled", trackID.String())
 }

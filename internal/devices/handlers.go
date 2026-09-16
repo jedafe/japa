@@ -122,7 +122,7 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 
 // requireAuth resolves the authenticated user from the request context using
 // the auth middleware's UserContextKey (BE-001: the previous private
-// tenantCtxKey/userCtxKey types were never populated by any middleware, so
+// platformCtxKey/userCtxKey types were never populated by any middleware, so
 // every endpoint always returned 401).
 func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())

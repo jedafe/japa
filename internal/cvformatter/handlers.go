@@ -50,7 +50,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -201,7 +200,9 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/form-data") {
 		// File upload path — parse multipart form and extract text.
-		if err := r.ParseMultipartForm(MaxUploadBytes); err != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes)
+		// #nosec G120 // total body size is bounded by MaxBytesReader above.
+		if err := r.ParseMultipartForm(32 << 10); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_form", "Failed to parse multipart form (max 10 MB)")
 			return
 		}
@@ -474,7 +475,6 @@ func (h *Handlers) HandleAdminListStandards(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "cv_formatter_unavailable", "CV formatter not configured")
 		return
@@ -501,7 +501,6 @@ func (h *Handlers) HandleAdminUpsertStandard(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "cv_formatter_unavailable", "CV formatter not configured")

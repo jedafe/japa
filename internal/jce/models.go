@@ -231,7 +231,7 @@ func ptrToNullString(s string) *string {
 	return &s
 }
 
-// DataSource is a tenant-wide registry of authoritative comparison value feeds.
+// DataSource is a platform-wide registry of authoritative comparison value feeds.
 // Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.1.
 type DataSource struct {
 	ID string `json:"id"`

@@ -20,7 +20,7 @@ const (
 )
 
 // deleteByID is a shared helper for DELETE handlers that follow the pattern:
-// require user → require tenant → parse UUID → call delete function → return.
+// require user → require platform → parse UUID → call delete function → return.
 func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, id pgtype.UUID) error) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -526,7 +526,7 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 
 // ListUserBlocks handles GET /admin/spam/user-blocks.
 // Returns offset-paginated user blocks with total/total_pages for DataTable
-// server-side pagination (BUG-010). Tenant-scoped per JEOS §9.
+// server-side pagination (BUG-010). Platform-scoped per JEOS §9.
 func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return

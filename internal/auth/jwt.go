@@ -114,7 +114,7 @@ func (kr *KeyRotation) SetCurrent(kid string) error {
 	return nil
 }
 
-// MintAccessToken creates a signed JWT for the given user and tenant.
+// MintAccessToken creates a signed JWT for the given user and platform.
 // The token expires after the access token TTL configured in system_settings
 // 'auth.session.access_token_ttl_minutes' (default: 15 minutes). Each token gets a
 // unique JTI (JWT ID) for individual revocation support.

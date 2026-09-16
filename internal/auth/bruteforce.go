@@ -43,7 +43,7 @@ func FailWindow(ctx context.Context, reader SettingsReader) time.Duration {
 // to wait if it is not. The identifier should combine both the
 // account (email) and IP address so either can trigger a lockout.
 // maxAttempts and failWindow are read from system_settings to
-// allow admin-configurable lockout policy per tenant.
+// allow admin-configurable lockout policy per platform.
 func CheckLoginAttempt(ctx context.Context, store BruteForceStore, identifier string, maxAttempts int) (allowed bool, retryAfter time.Duration) {
 	count, err := store.GetFailCount(ctx, identifier)
 	if err != nil {

@@ -1,4 +1,4 @@
--- features.sql — Feature Flags queries (global scope after multi-tenancy removal).
+-- features.sql — Feature Flags queries (global scope).
 
 -- name: GetFeatureFlag :one
 SELECT key, enabled, config, updated_at, updated_by

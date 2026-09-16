@@ -66,7 +66,7 @@ func (s *Store) getMenuByID(ctx context.Context, id pgtype.UUID) (gen.Menu, erro
 }
 
 func (s *Store) getMenuBySlug(ctx context.Context, slug string) (gen.Menu, error) {
-	row, err := s.read.GetMenuBySlugForTenant(ctx, slug)
+	row, err := s.read.GetActiveMenuBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.Menu{}, ErrMenuNotFound

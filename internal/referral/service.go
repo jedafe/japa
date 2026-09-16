@@ -51,7 +51,7 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
-// Program represents the referral program settings for a tenant.
+// Program represents the referral program settings for a platform.
 type Program struct {
 	ID pgtype.UUID `json:"id"`
 
@@ -106,7 +106,7 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // Legacy: Referral Program admin settings (referral_programs table)
 // ---------------------------------------------------------------------------
 
-// GetProgram returns the referral program settings for the tenant. If no row
+// GetProgram returns the referral program settings for the platform. If no row
 // exists yet (first admin visit), it seeds a default row using the column
 // defaults from migration 000056 and returns it — so the admin UI always has
 // a program to render instead of a 500.
@@ -134,7 +134,7 @@ func (s *Service) GetProgram(ctx context.Context) (Program, error) {
 	return s.seedDefaultProgram(ctx)
 }
 
-// seedDefaultProgram inserts a default referral_programs row for the tenant
+// seedDefaultProgram inserts a default referral_programs row for the platform
 // and returns it. On a unique-violation race it re-reads the existing row.
 func (s *Service) seedDefaultProgram(ctx context.Context) (Program, error) {
 	var p Program
@@ -174,7 +174,7 @@ func (s *Service) seedDefaultProgram(ctx context.Context) (Program, error) {
 	return p, nil
 }
 
-// UpdateProgram updates the referral program settings for the tenant.
+// UpdateProgram updates the referral program settings for the platform.
 func (s *Service) UpdateProgram(ctx context.Context, referrerRewardCents, refereeRewardCents, maxReferrals, cookieDays *int32, isActive *bool, description *string) (Program, error) {
 	current, err := s.GetProgram(ctx)
 	if err != nil {
@@ -338,8 +338,8 @@ func (s *Service) RecordClick(ctx context.Context, code, sessionID string) error
 		}
 
 		ttl := time.Duration(ttlDays) * 24 * time.Hour
-		// BUG-010 fix: tenant-scope the attribution key (Rule 4, §4.2). The
-		// session_id alone is not globally unique across tenants.
+		// BUG-010 fix: platform-scope the attribution key (Rule 4, §4.2). The
+		// session_id alone is not globally unique across platforms.
 		key := valkey.MustKey("referral_attr:%s", sessionID)
 		if err := s.valkey.Set(ctx, key, code, ttl).Err(); err != nil {
 			slog.Warn("referral: set attribution key failed", "error", err)
@@ -705,7 +705,7 @@ type Referral struct {
 	RefereeDisplayName  *string             `json:"referee_display_name,omitempty"`
 }
 
-// ListReferrals returns all referrals for the tenant (legacy direct pgx).
+// ListReferrals returns all referrals for the platform (legacy direct pgx).
 func (s *Service) ListReferrals(ctx context.Context, limit, offset int32) ([]Referral, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT r.id, r.referrer_id, r.referee_id, r.referral_code, r.status, r.reward_paid_at, r.created_at,

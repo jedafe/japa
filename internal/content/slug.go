@@ -66,7 +66,7 @@ func Slugify(title string) string {
 const MaxSlugAttempts = 100
 
 // EnsureUniqueSlug checks whether the given slug is already in use for the
-// tenant. If it is, a numeric suffix is appended (-2, -3, ...) until a
+// platform. If it is, a numeric suffix is appended (-2, -3, ...) until a
 // unique slug is found. The check is limited to MaxSlugAttempts iterations
 // to prevent infinite loops.
 func (s *Service) EnsureUniqueSlug(ctx context.Context, slug string) (string, error) {

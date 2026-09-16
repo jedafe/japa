@@ -3,6 +3,10 @@
     {
       "path": "internal/ai/(openai|anthropic|xiaomi|devin|cursor|endpoint_validation)\\.go",
       "rules": ["G704"]
+    },
+    {
+      "path": "internal/db/gen/.*\\.go",
+      "rules": ["G101"]
     }
   ]
 }

@@ -15,7 +15,7 @@ SELECT id, name, slug, description, field_group_id, default_priority,
 FROM ticket_types
 WHERE slug = @slug;
 
--- name: ListTicketTypesByTenant :many
+-- name: ListTicketTypes :many
 SELECT id, name, slug, description, field_group_id, default_priority,
  auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
@@ -23,7 +23,7 @@ WHERE (sqlc.narg(is_public)::bool IS NULL OR is_public = sqlc.narg(is_public))
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
--- name: CountTicketTypesByTenant :one
+-- name: CountTicketTypes :one
 SELECT COUNT(*) FROM ticket_types
 WHERE (sqlc.narg(is_public)::bool IS NULL OR is_public = sqlc.narg(is_public));
 
@@ -66,7 +66,7 @@ FROM tickets t
 JOIN ticket_types tt ON tt.id = t.type_id
 WHERE t.id = @id;
 
--- name: ListTicketsByTenant :many
+-- name: ListTickets :many
 SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
  t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
  t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
@@ -231,7 +231,7 @@ SELECT COUNT(*) AS count
 FROM tickets
 WHERE status = @status;
 
--- name: CountTicketsByTenant :one
+-- name: CountTickets :one
 SELECT COUNT(*) FROM tickets
 WHERE (@status::text IS NULL OR status = @status)
  AND (@priority::text IS NULL OR priority = @priority)

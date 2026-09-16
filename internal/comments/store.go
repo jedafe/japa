@@ -699,7 +699,7 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 }
 
 // RemoveCommentVote removes a user's vote and recalculates the score.
-// Tenant-scoped per Guide §4.2/§9 (SEC-001).
+// Platform-scoped per Guide §4.2/§9 (SEC-001).
 func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error {
 	if err := s.write.DeleteCommentVote(ctx, gen.DeleteCommentVoteParams{
 

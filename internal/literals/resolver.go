@@ -22,7 +22,7 @@ var (
 )
 
 // Resolve replaces {{...}} placeholders in text using the provided render context
-// and tenant token definitions. Unknown tokens are left unchanged.
+// and platform token definitions. Unknown tokens are left unchanged.
 func Resolve(ctx context.Context, text string, rc RenderContext, tokens []TemplateLiteral) (string, error) {
 	return resolveWithSeen(ctx, text, rc, tokens, nil), nil
 }

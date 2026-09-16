@@ -38,8 +38,8 @@ func NewService(database *db.DB) *Service {
 // jc:muted_spaces:{}:{user_id}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
-// mutedUsersKey returns the tenant-scoped Valkey key for a user's muted-users
-// SET (BUG-003: previously jc:muted_users:{user_id} without tenant scope).
+// mutedUsersKey returns the platform-scoped Valkey key for a user's muted-users
+// SET (BUG-003: previously jc:muted_users:{user_id} without platform scope).
 func mutedUsersKey(userID pgtype.UUID) string {
 	return valkey.MustKey("muted_users::%s", userID.String())
 }

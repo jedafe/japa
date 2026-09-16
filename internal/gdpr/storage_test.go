@@ -51,10 +51,10 @@ func TestLocalStorageRoundTrip(t *testing.T) {
 		t.Errorf("file content = %q, want %q", got, data)
 	}
 
-	// Verify the file is under the tenant directory (path-traversal guard).
-	tenantDir := filepath.Join(tmp, "")
-	if !strings.HasPrefix(path, tenantDir+string(os.PathSeparator)) {
-		t.Errorf("path %q escapes tenant dir %q", path, tenantDir)
+	// Verify the file is under the platform directory (path-traversal guard).
+	platformDir := filepath.Join(tmp, "")
+	if !strings.HasPrefix(path, platformDir+string(os.PathSeparator)) {
+		t.Errorf("path %q escapes platform dir %q", path, platformDir)
 	}
 }
 

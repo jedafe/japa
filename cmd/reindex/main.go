@@ -1,11 +1,11 @@
-// Command reindex bulk-syncs all tenant entities into the search engine.
+// Command reindex bulk-syncs all platform entities into the search engine.
 // // The per-entity IndexXxx methods only fire on create/update events, so rows
 // that predate the indexer wiring are never indexed without this sweep. Run
 // it after provisioning a fresh search engine instance or after schema/index
 // changes that require a full re-index:
 // //	source .env && go run ./cmd/reindex/
-// // An optional tenant ID argument overrides the default tenant:
-// //	go run ./cmd/reindex/ <tenant-uuid>
+// // An optional platform ID argument overrides the default platform:
+// //	go run ./cmd/reindex/ <platform-uuid>
 package main
 
 import (
@@ -21,7 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/search"
 )
 
-const defaultTenantID = "00000000-0000-0000-0000-000000000001"
+const defaultPlatformID = "00000000-0000-0000-0000-000000000001"
 
 func main() {
 	if err := run(); err != nil {
@@ -36,14 +36,14 @@ func run() error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	tenantStr := defaultTenantID
+	platformStr := defaultPlatformID
 	if len(os.Args) > 1 {
-		tenantStr = os.Args[1]
+		platformStr = os.Args[1]
 	}
 
 	var ()
 	if err := (error)(nil); err != nil {
-		return fmt.Errorf("invalid tenant UUID %q: %w", tenantStr, err)
+		return fmt.Errorf("invalid platform UUID %q: %w", platformStr, err)
 	}
 
 	ctx := context.Background()
@@ -61,7 +61,7 @@ func run() error {
 
 	indexer := search.NewIndexer(searchEngine, gen.New(database.Reader))
 
-	fmt.Printf("reindex: starting bulk reindex for tenant %s\n", tenantStr)
+	fmt.Printf("reindex: starting bulk reindex for platform %s\n", platformStr)
 
 	summary, err := indexer.ReindexAll(ctx)
 	if err != nil {

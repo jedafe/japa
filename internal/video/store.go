@@ -95,7 +95,7 @@ func (s *Store) CreateOrUpdateSource(ctx context.Context, arg gen.CreateOrUpdate
 	}, nil
 }
 
-// GetSourceByURL returns a source by tenant and canonical URL.
+// GetSourceByURL returns a source by platform and canonical URL.
 func (s *Store) GetSourceByURL(ctx context.Context, sourceURL string) (gen.VideoSource, error) {
 	row, err := s.read.GetVideoSourceByURL(ctx,
 
@@ -363,8 +363,8 @@ func (s *Store) ListClaimsByClaimant(ctx context.Context, claimantUserID pgtype.
 }
 
 // ListClaimsForAdmin returns the admin review queue with optional status/claim_type filters, search, and sorting.
-func (s *Store) ListClaimsForAdmin(ctx context.Context, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, error) {
-	rows, err := s.read.ListVideoChannelClaimsByTenant(ctx, gen.ListVideoChannelClaimsByTenantParams{
+func (s *Store) ListClaimsForAdmin(ctx context.Context, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsRow, error) {
+	rows, err := s.read.ListVideoChannelClaims(ctx, gen.ListVideoChannelClaimsParams{
 
 		Status:     status,
 		ClaimType:  claimType,
@@ -383,7 +383,7 @@ func (s *Store) ListClaimsForAdmin(ctx context.Context, status, claimType, q, so
 
 // CountClaimsForAdmin returns the total number of claims for the admin queue filter.
 func (s *Store) CountClaimsForAdmin(ctx context.Context, status, claimType, q string) (int32, error) {
-	total, err := s.read.CountVideoChannelClaimsByTenant(ctx, gen.CountVideoChannelClaimsByTenantParams{
+	total, err := s.read.CountVideoChannelClaims(ctx, gen.CountVideoChannelClaimsParams{
 
 		Status:    status,
 		ClaimType: claimType,
@@ -474,7 +474,7 @@ func (s *Store) UpdateImportJob(ctx context.Context, arg gen.UpdateVideoImportJo
 	return row, nil
 }
 
-// GetUserByUsername looks up a user by tenant and username.
+// GetUserByUsername looks up a user by platform and username.
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (gen.GetUserByUsernameRow, error) {
 	row, err := s.read.GetUserByUsername(ctx,
 
@@ -494,7 +494,7 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (gen.Get
 // GetDefaultSpaceForUser returns the first public or member space the user
 // can access, for attributing auto-published video content.
 func (s *Store) GetDefaultSpaceForUser(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
-	rows, err := s.read.ListSpacesByTenant(ctx,
+	rows, err := s.read.ListSpaces(ctx,
 
 		userID,
 	)

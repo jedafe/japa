@@ -29,7 +29,7 @@ import (
 // honours X-Forwarded-For / X-Real-IP only when the immediate peer is a
 // trusted proxy (JC_TRUSTED_PROXIES) — otherwise a blocked client could
 // unblock itself by sending a spoofed forwarding header. The resolved IP
-// is checked against the tenant's active IP blocks using PostgreSQL's
+// is checked against the platform's active IP blocks using PostgreSQL's
 // <<= inet containment operator.
 func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 	store := NewStoreWithReader(database)
@@ -105,7 +105,7 @@ func RequireNotIPBlocked(blockType string) func(http.Handler) http.Handler {
 
 // CensorMiddleware provides a reusable censor check for content creation
 // and update endpoints. It reads the request body, checks it against
-// the tenant's censored word list, and blocks or flags the request as
+// the platform's censored word list, and blocks or flags the request as
 // appropriate.
 //
 // This middleware is applied per-route via chi's .With() pattern, not

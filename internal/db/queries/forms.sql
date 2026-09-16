@@ -4,7 +4,7 @@
 -- Forms
 -- =====================
 
--- name: ListFormsByTenant :many
+-- name: ListForms :many
 SELECT f.id, f.space_id, f.name, f.slug, f.description, f.is_multi_step,
  f.submit_label, f.success_message, f.status, f.is_system, f.submission_fee_credits, f.created_at,
  s.name AS space_name

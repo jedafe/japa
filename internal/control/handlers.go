@@ -2069,8 +2069,8 @@ func (h *Handlers) GetAuditLogFilters(w http.ResponseWriter, r *http.Request) {
 
 // DeleteAuditLog handles DELETE /api/v1/control/audit-logs/{id}.
 // Hard-deletes a single audit log entry by id. The control panel audit log is
-// a full cross-tenant super-admin view (see ListAuditLogs), so the lookup is
-// not tenant-scoped. Returns 200 even if the row did not exist.
+// a full cross-platform super-admin view (see ListAuditLogs), so the lookup is
+// not platform-scoped. Returns 200 even if the row did not exist.
 func (h *Handlers) DeleteAuditLog(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2227,14 +2227,14 @@ func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
 // Cron / Scheduler CRUD (custom entries stored in Valkey, synced by worker)
 // ---------------------------------------------------------------------------
 
-// cronCustomKey returns the tenant-scoped Valkey key for custom cron jobs.
-// Tenant-scoping (Rule 4 / §4.2 / §9) prevents one tenant's control panel from
-// seeing or mutating another tenant's custom scheduler entries.
+// cronCustomKey returns the platform-scoped Valkey key for custom cron jobs.
+// Platform-scoping (Rule 4 / §4.2 / §9) prevents one platform's control panel from
+// seeing or mutating another platform's custom scheduler entries.
 func cronCustomKey(ctx context.Context) string {
 	return valkey.MustKey("cron:custom:%s", pgtype.UUID{}.String())
 }
 
-// cronPausedKey returns the tenant-scoped Valkey key for paused scheduler entries.
+// cronPausedKey returns the platform-scoped Valkey key for paused scheduler entries.
 func cronPausedKey(ctx context.Context) string {
 	return valkey.MustKey("cron:paused:%s", pgtype.UUID{}.String())
 }
@@ -3052,7 +3052,7 @@ type extensionEntry struct {
 	FeatureFlagKey string `json:"-"`
 	// RolloutPercentage is the gradual rollout percentage (0-100) from the
 	// feature_flags config blob. 100 = fully on, 0 = off, 1-99 = deterministic
-	// per-tenant hash bucketing (BL-013 / Section 42).
+	// per-platform hash bucketing (BL-013 / Section 42).
 	RolloutPercentage int `json:"rollout_percentage"`
 }
 
@@ -3224,7 +3224,7 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 // UpdateExtensionRollout updates the rollout percentage for a feature-flagged
 // extension. Only applies to extensions with a FeatureFlagKey. The percentage
 // is clamped to 0-100. A value of 100 means fully on (no hash bucketing),
-// 0 means off, and 1-99 enables deterministic per-tenant gradual rollout
+// 0 means off, and 1-99 enables deterministic per-platform gradual rollout
 // (BL-013 / Section 42).
 func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")

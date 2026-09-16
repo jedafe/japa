@@ -189,6 +189,31 @@ func (q *Queries) DeleteMenuItem(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const getActiveMenuBySlug = `-- name: GetActiveMenuBySlug :one
+
+SELECT id, slug, name, placement, status, created_at, updated_at
+FROM menus
+WHERE slug = $1 AND status = 'active'
+`
+
+// =====================
+// Public resolution (no platform filter — called from public endpoint)
+// =====================
+func (q *Queries) GetActiveMenuBySlug(ctx context.Context, slug string) (Menu, error) {
+	row := q.db.QueryRow(ctx, getActiveMenuBySlug, slug)
+	var i Menu
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Placement,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getMenuByID = `-- name: GetMenuByID :one
 SELECT id, slug, name, placement, status, created_at, updated_at
 FROM menus
@@ -218,31 +243,6 @@ WHERE slug = $1
 
 func (q *Queries) GetMenuBySlug(ctx context.Context, slug string) (Menu, error) {
 	row := q.db.QueryRow(ctx, getMenuBySlug, slug)
-	var i Menu
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.Placement,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getMenuBySlugForTenant = `-- name: GetMenuBySlugForTenant :one
-
-SELECT id, slug, name, placement, status, created_at, updated_at
-FROM menus
-WHERE slug = $1 AND status = 'active'
-`
-
-// =====================
-// Public resolution (no tenant filter — called from public endpoint)
-// =====================
-func (q *Queries) GetMenuBySlugForTenant(ctx context.Context, slug string) (Menu, error) {
-	row := q.db.QueryRow(ctx, getMenuBySlugForTenant, slug)
 	var i Menu
 	err := row.Scan(
 		&i.ID,

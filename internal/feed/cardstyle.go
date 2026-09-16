@@ -14,7 +14,7 @@ const (
 // DefaultCardStyle applies when no setting is present or a value is invalid.
 const DefaultCardStyle = CardStyleDaily
 
-// CardStyleConfig is a tenant's feed card-style configuration: a default
+// CardStyleConfig is a platform's feed card-style configuration: a default
 // style plus optional per-content-type overrides.
 type CardStyleConfig struct {
 	Default string            `json:"default"`

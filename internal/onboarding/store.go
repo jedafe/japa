@@ -72,7 +72,7 @@ func (s *Store) dismissTour(ctx context.Context, userID pgtype.UUID) error {
 	return nil
 }
 
-// listTemplates returns all onboarding templates for a tenant.
+// listTemplates returns all onboarding templates for a platform.
 func (s *Store) listTemplates(ctx context.Context) ([]gen.OnboardingTemplate, error) {
 	rows, err := s.read.ListOnboardingTemplates(ctx)
 	if err != nil {

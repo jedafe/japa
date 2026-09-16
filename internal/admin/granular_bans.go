@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -48,7 +49,6 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
@@ -69,6 +69,10 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 	seconds, ok := durationMap[input.Duration]
 	if !ok {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_duration", "Duration must be one of: 1h, 2h, 6h, 12h, 1d, 7d, 30d, permanent")
+		return
+	}
+	if seconds < 0 || seconds > math.MaxInt32 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_duration", "Duration out of range")
 		return
 	}
 
@@ -100,11 +104,11 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := h.Queries.CreateOperationBan(ctx, gen.CreateOperationBanParams{
-			UserID: uid,
-
-			Operation:                gen.BanOperation(op),
-			Reason:                   &input.Reason, Column4: // #nosec G115 // value bounded by caller
-			int32(seconds), IssuedBy: actorID,
+			UserID:    uid,
+			Operation: gen.BanOperation(op),
+			Reason:    &input.Reason,
+			Column4:   int32(seconds), //nolint:gosec // G115: seconds is validated against durationMap and math.MaxInt32.
+			IssuedBy:  actorID,
 		}); err != nil {
 			slog.Error("restrict: failed to create operation ban", "error", err, "user_id", uid.String(), "operation", op)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
@@ -258,7 +262,6 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
@@ -339,7 +342,6 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {

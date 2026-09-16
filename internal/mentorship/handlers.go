@@ -105,7 +105,7 @@ func parseOffset(r *http.Request) int32 {
 // Admin Handlers — Mentorship Programs
 // ---------------------------------------------------------------------------
 
-// ListPrograms returns all mentorship programs for the tenant.
+// ListPrograms returns all mentorship programs for the platform.
 // GET /admin/mentorship/programs.
 func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 
@@ -214,7 +214,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 // Admin Handlers — Mentorship Matches
 // ---------------------------------------------------------------------------
 
-// ListMatches returns all mentor-mentee matches for the tenant.
+// ListMatches returns all mentor-mentee matches for the platform.
 // GET /admin/mentorship/matches.
 func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 

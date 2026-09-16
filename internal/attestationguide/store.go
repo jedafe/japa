@@ -66,7 +66,7 @@ func NewStore(database *db.DB) *Store {
 	return &Store{pool: database}
 }
 
-// GetSpaceName returns the name of a space scoped by tenant. It is used by
+// GetSpaceName returns the name of a space scoped by platform. It is used by
 // the service to build human-readable, jurisdiction-specific web research
 // queries. If the space is missing, not valid, or soft-deleted, it returns an
 // empty string with no error.
@@ -514,7 +514,7 @@ RETURNING id, pathway_id, user_id, step_index, fee_estimate, turnaround_days,
 
 // ReviewCommunityUpdate sets the status of a community update to
 // approved or rejected and records the reviewer. The ID scopes
-// the update through its parent pathway to prevent cross-tenant access.
+// the update through its parent pathway to prevent cross-platform access.
 func (s *Store) ReviewCommunityUpdate(ctx context.Context, id, reviewerID pgtype.UUID, status string) error {
 	const q = `
 UPDATE attestation_community_updates u
@@ -593,7 +593,7 @@ WHERE id = $1`
 }
 
 // GetCommunityUpdateByID returns a single attestation_community_updates
-// row by its id, scoped through the parent pathway's tenant.
+// row by its id, scoped through the parent pathway's platform.
 func (s *Store) GetCommunityUpdateByID(ctx context.Context, id pgtype.UUID) (CommunityUpdate, error) {
 	const q = `
 SELECT u.id, u.pathway_id, u.user_id, u.step_index, u.fee_estimate,
@@ -630,7 +630,7 @@ type ListCommunityUpdatesFilter struct {
 }
 
 // ListCommunityUpdates returns a paginated list of attestation_community_updates
-// scoped to the tenant via the parent pathway. Used by the admin moderation
+// scoped to the platform via the parent pathway. Used by the admin moderation
 // queue (GET /admin/attestation/updates — BUG-005).
 func (s *Store) ListCommunityUpdates(ctx context.Context, f ListCommunityUpdatesFilter) ([]CommunityUpdate, int64, error) {
 	var (

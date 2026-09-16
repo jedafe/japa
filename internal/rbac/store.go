@@ -101,7 +101,7 @@ func (s *Store) DeleteGroup(ctx context.Context, slug string) error {
 
 	// Collect member IDs before deletion so we can invalidate their caches
 	// after the group is removed.
-	memberRows, err := s.read.ListUserGroupsByTenant(ctx)
+	memberRows, err := s.read.ListUserGroups(ctx)
 	if err != nil {
 		slog.Warn("rbac: failed to list groups for member lookup", "error", err)
 	}
@@ -136,7 +136,7 @@ func (s *Store) DeleteGroup(ctx context.Context, slug string) error {
 
 // DeleteGroupByID deletes a user group by its UUID. System groups cannot be
 // deleted (the sqlc query enforces is_system = false). The filter
-// prevents cross-tenant deletion. After deletion, it invalidates the
+// prevents cross-platform deletion. After deletion, it invalidates the
 // permission cache for all former members (Rule 6).
 func (s *Store) DeleteGroupByID(ctx context.Context, groupID pgtype.UUID) error {
 	// Collect member IDs before deletion so we can invalidate their caches
@@ -248,17 +248,17 @@ func (s *Store) AssignRoleToGroup(ctx context.Context, groupID, roleID pgtype.UU
 // List / query methods for admin RBAC management
 // ---------------------------------------------------------------------------
 
-// ListGroups returns all user groups for a tenant, ordered by name.
+// ListGroups returns all user groups for a platform, ordered by name.
 // Uses three batch queries (groups, member counts, permissions) instead of
 // per-group N+1 lookups.
 func (s *Store) ListGroups(ctx context.Context) ([]Group, error) {
-	rows, err := s.read.ListUserGroupsByTenant(ctx)
+	rows, err := s.read.ListUserGroups(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing groups: %w", err)
 	}
 
-	// Batch query 1: member counts for all groups in this tenant.
-	memberCountRows, err := s.read.CountGroupMembersByTenant(ctx)
+	// Batch query 1: member counts for all groups in this platform.
+	memberCountRows, err := s.read.CountGroupMembers(ctx)
 	if err != nil {
 		slog.Warn("rbac: failed to batch count group members", "error", err)
 
@@ -270,8 +270,8 @@ func (s *Store) ListGroups(ctx context.Context) ([]Group, error) {
 		memberCounts[r.GroupID] = r.MemberCount
 	}
 
-	// Batch query 2: all permissions for all groups in this tenant.
-	permRows, err := s.read.ListGroupPermissionsByTenant(ctx)
+	// Batch query 2: all permissions for all groups in this platform.
+	permRows, err := s.read.ListGroupPermissions(ctx)
 	if err != nil {
 		slog.Warn("rbac: failed to batch list group permissions", "error", err)
 
@@ -377,7 +377,7 @@ type Role struct {
 	UserCount   int32       `json:"user_count"`
 }
 
-// ListRoles returns all roles for a tenant.
+// ListRoles returns all roles for a platform.
 func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
 	rows, err := s.read.ListAllRoles(ctx)
 	if err != nil {
@@ -409,8 +409,8 @@ func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, of
 		return nil, 0, fmt.Errorf("listing roles paginated: %w", err)
 	}
 
-	// Batch query: all role permissions for this tenant.
-	permRows, err := s.read.ListRolePermissionsByTenant(ctx)
+	// Batch query: all role permissions for this platform.
+	permRows, err := s.read.ListRolePermissions(ctx)
 	if err != nil {
 		slog.Warn("rbac: failed to batch list role permissions", "error", err)
 
@@ -422,8 +422,8 @@ func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, of
 		rolePerms[r.RoleID] = append(rolePerms[r.RoleID], r.Key)
 	}
 
-	// Batch query: group counts per role for this tenant.
-	groupCountRows, err := s.read.CountGroupsByRoleAndTenant(ctx)
+	// Batch query: group counts per role for this platform.
+	groupCountRows, err := s.read.CountGroupsByRole(ctx)
 	if err != nil {
 		slog.Warn("rbac: failed to batch count groups by role", "error", err)
 
@@ -654,7 +654,7 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 }
 
 // UpdateGroup updates a group's name, slug, and description (P5.6).
-// The filter prevents cross-tenant updates.
+// The filter prevents cross-platform updates.
 func (s *Store) UpdateGroup(ctx context.Context, groupID pgtype.UUID, name, slug, description string) error {
 	var descPtr *string
 	if description != "" {
@@ -691,7 +691,7 @@ func (s *Store) IsSystemGroupByID(ctx context.Context, groupID pgtype.UUID) (boo
 // GetGroupByID returns the user group with the given ID, including its
 // current slug, is_system flag, and description. Used by handlers that need
 // to preserve the slug of system groups during updates. The filter
-// prevents cross-tenant reads.
+// prevents cross-platform reads.
 func (s *Store) GetGroupByID(ctx context.Context, groupID pgtype.UUID) (Group, error) {
 	g, err := s.read.GetUserGroupByID(ctx,
 		groupID,

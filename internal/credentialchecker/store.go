@@ -551,7 +551,7 @@ RETURNING id
 
 // UpdatePathway updates the mutable fields on a credential_pathways row.
 // Only non-nil pointers in the input are applied. Returns pgx.ErrNoRows
-// if the row does not exist for the given tenant.
+// if the row does not exist for the given platform.
 func (s *Store) UpdatePathway(ctx context.Context, id pgtype.UUID, input UpdatePathwayInput) error {
 	var (
 		sets   []string
@@ -643,7 +643,7 @@ WHERE id = $%d
 }
 
 // DeletePathway deletes a credential_pathways row by id and .
-// Returns pgx.ErrNoRows if the row does not exist for the tenant.
+// Returns pgx.ErrNoRows if the row does not exist for the platform.
 func (s *Store) DeletePathway(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 DELETE FROM credential_pathways
@@ -664,7 +664,7 @@ WHERE id = $1
 
 // ApprovePathway marks a pathway as HITL-approved: sets hitl_reviewed_by,
 // hitl_reviewed_at = now(), status = 'published', and optional review
-// notes. Returns pgx.ErrNoRows if the row does not exist for the tenant.
+// notes. Returns pgx.ErrNoRows if the row does not exist for the platform.
 func (s *Store) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE credential_pathways

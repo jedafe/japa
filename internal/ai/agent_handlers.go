@@ -78,7 +78,7 @@ type AgentSessionQueries interface {
 
 // ContentAuthorQueries is the subset of gen.Queries the reassign-author
 // handler uses: read the current content row (for field_values + ownership
-// check), verify the target author exists in the tenant, and update
+// check), verify the target author exists in the platform, and update
 // author_id + field_values. *gen.Queries satisfies this.
 type ContentAuthorQueries interface {
 	GetContentByID(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
@@ -557,15 +557,15 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// Verify the target author is a valid user in the same tenant (spec:
-	// "Verify tenant ownership and target author validity"). This prevents
-	// orphaned author_id references and cross-tenant assignments.
+	// Verify the target author is a valid user in the same platform (spec:
+	// "Verify platform ownership and target author validity"). This prevents
+	// orphaned author_id references and cross-platform assignments.
 	if _, err := h.content.GetUserByID(r.Context(),
 
 		newAuthorID,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author", "Target author not found in this tenant")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author", "Target author not found in this platform")
 			return
 		}
 
@@ -576,7 +576,7 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 	}
 
 	// Read the current content row to get field_values for the provenance
-	// merge. GetContentByID is tenant-scoped (defense-in-depth, BUG-014).
+	// merge. GetContentByID is platform-scoped (defense-in-depth, BUG-014).
 	current, err := h.content.GetContentByID(r.Context(), contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -742,7 +742,7 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 // - entity_type "custom_field_value" → custom_field_values.ai_exempt
 // // Ownership for "content" and "custom_field_value" is verified by checking
 // that the content's author_id matches the user (for content) — the SQL
-// queries are tenant-scoped for defense-in-depth.
+// queries are platform-scoped for defense-in-depth.
 func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -859,7 +859,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		// - entity_type "content" → contents.author_id must match user
 		// - entity_type "user"/"user_profile" → entity_id must match user
 		// - other entity types → deny (conservative default)
-		// The SetCustomFieldValueAIExempt query is tenant-scoped via the
+		// The SetCustomFieldValueAIExempt query is platform-scoped via the
 		// custom_fields JOIN for defense-in-depth (BUG-014).
 		entity, err := h.sessions.GetCustomFieldValueEntity(r.Context(), entityID)
 		if err != nil {
@@ -912,7 +912,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 // Task 6.08 — Admin routes
 // ---------------------------------------------------------------------------
 
-// HandleAdminListSessions returns all agent sessions for the tenant,
+// HandleAdminListSessions returns all agent sessions for the platform,
 // paginated, with an optional status filter (?status=running|completed|...).
 func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *http.Request) {
 
@@ -952,7 +952,7 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 	})
 }
 
-// HandleAdminGetSession returns any session in the tenant (not just the
+// HandleAdminGetSession returns any session in the platform (not just the
 // caller's) plus its full tool call audit trail. Admin-only.
 func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http.Request) {
 
@@ -991,7 +991,7 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 }
 
 // HandleAdminToolStats returns per-tool usage statistics (call count,
-// success rate, average latency) for the tenant, optionally filtered by
+// success rate, average latency) for the platform, optionally filtered by
 // date range (?from=YYYY-MM-DD&to=YYYY-MM-DD).
 func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.Request) {
 
@@ -1015,7 +1015,7 @@ func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toolStatsToJSON(stats)})
 }
 
-// HandleAdminCostReport returns a cost breakdown by user for the tenant,
+// HandleAdminCostReport returns a cost breakdown by user for the platform,
 // optionally filtered by date range.
 func (h *AgentHTTPHandlers) HandleAdminCostReport(w http.ResponseWriter, r *http.Request) {
 

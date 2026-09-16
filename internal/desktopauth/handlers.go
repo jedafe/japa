@@ -156,5 +156,6 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	// #nosec G117 // OAuth token response intentionally returns access_token/refresh_token.
 	_ = json.NewEncoder(w).Encode(resp)
 }

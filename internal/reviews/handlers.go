@@ -313,7 +313,7 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListAllReviews handles GET /api/v1/admin/reviews.
-// Admin moderation view: lists all reviews for the tenant (all statuses),
+// Admin moderation view: lists all reviews for the platform (all statuses),
 // regardless of entity or reviewer. Gated by reviews.moderate at the router.
 // Supports ?status=, ?entity_type=, ?page_size=, ?page_offset=.
 // Returns {"data": [...], "total": N} envelope with entity_name resolved.

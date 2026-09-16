@@ -353,7 +353,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 
 			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(userID)}
 		case 4:
-			// (ctx, id, ID, userID) — legacy tenant-aware signature
+			// (ctx, id, ID, userID) — legacy platform-aware signature
 			var idUUID pgtype.UUID
 			if err := idUUID.Scan(id); err != nil {
 				return fmt.Errorf("invalid tool_id: %w", err)
@@ -389,7 +389,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		return nil, fmt.Errorf("method %q has %d outputs", methodName, nOut)
 	}
 
-	// Supported write-method signatures (single-tenant):
+	// Supported write-method signatures (single-platform):
 	// Create: (ctx, input)
 	// Create: (ctx, userID, input)
 	// Update: (ctx, input) -- input contains id

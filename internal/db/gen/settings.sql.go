@@ -54,7 +54,7 @@ const getSettingValue = `-- name: GetSettingValue :one
 SELECT value FROM system_settings WHERE key = $1
 `
 
-// System settings queries (global scope after multi-tenancy removal).
+// System settings queries (global scope).
 func (q *Queries) GetSettingValue(ctx context.Context, key string) ([]byte, error) {
 	row := q.db.QueryRow(ctx, getSettingValue, key)
 	var value []byte

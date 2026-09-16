@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -74,7 +75,11 @@ func (s *dataSourceStore) create(ctx context.Context, userID pgtype.UUID, in Dat
 	}
 
 	if s.sourceRegistry != nil {
-		src, sErr := s.sourceRegistry.CreateAutoForComparison(ctx, userID, &in.SourceName, in.SourceURL, int32(in.TrustLevel))
+		if in.TrustLevel < 0 || in.TrustLevel > math.MaxInt32 {
+			return DataSource{}, errors.New("jce: trust_level out of int32 range")
+		}
+		trust := int32(in.TrustLevel)
+		src, sErr := s.sourceRegistry.CreateAutoForComparison(ctx, userID, &in.SourceName, in.SourceURL, trust)
 		if sErr == nil {
 			params.SourceID = src.ID
 		} else {
@@ -103,7 +108,7 @@ func (s *dataSourceStore) create(ctx context.Context, userID pgtype.UUID, in Dat
 	return toDataSource(row)
 }
 
-// list returns a paginated slice of data sources for the tenant and the total
+// list returns a paginated slice of data sources for the platform and the total
 // count, optionally filtered by entity_type and entity_id.
 func (s *dataSourceStore) list(ctx context.Context, entityType *string, entityID *pgtype.UUID, limit, offset int32) ([]DataSource, int64, error) {
 	eid := pgtype.UUID{}
@@ -145,7 +150,7 @@ func (s *dataSourceStore) list(ctx context.Context, entityType *string, entityID
 	return out, int64(total), nil
 }
 
-// get returns a data source by id and tenant.
+// get returns a data source by id and platform.
 func (s *dataSourceStore) get(ctx context.Context, id pgtype.UUID) (DataSource, error) {
 	row, err := s.read.GetDataSource(ctx,
 		id,
@@ -172,7 +177,7 @@ func (s *dataSourceStore) update(ctx context.Context, id pgtype.UUID, in DataSou
 	return toDataSource(row)
 }
 
-// delete removes a data source by id and tenant.
+// delete removes a data source by id and platform.
 func (s *dataSourceStore) delete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteDataSource(ctx,
 		id,
@@ -498,7 +503,7 @@ func dataSourceUpdateParams(id pgtype.UUID, in DataSourceInput) (gen.UpdateDataS
 	}, nil
 }
 
-// CreateDataSource creates a new data source for the tenant.
+// CreateDataSource creates a new data source for the platform.
 func (s *Service) CreateDataSource(ctx context.Context, in DataSourceInput) (DataSource, error) {
 	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return DataSource{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
@@ -520,7 +525,7 @@ func (s *Service) CreateDataSource(ctx context.Context, in DataSourceInput) (Dat
 	return ds, nil
 }
 
-// ListDataSources returns the tenant's data sources, optionally filtered by entity.
+// ListDataSources returns the platform's data sources, optionally filtered by entity.
 func (s *Service) ListDataSources(ctx context.Context, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
 	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return nil, 0, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
@@ -549,7 +554,7 @@ func (s *Service) ListDataSources(ctx context.Context, entityType *string, entit
 	return s.dataSources.list(ctx, entityType, entityID, limit, offset)
 }
 
-// GetDataSource returns a single data source by id and tenant.
+// GetDataSource returns a single data source by id and platform.
 func (s *Service) GetDataSource(ctx context.Context, id pgtype.UUID) (DataSource, error) {
 	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return DataSource{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
@@ -598,7 +603,7 @@ func (s *Service) UpdateDataSource(ctx context.Context, id pgtype.UUID, in DataS
 	return ds, nil
 }
 
-// DeleteDataSource removes a data source by id and tenant.
+// DeleteDataSource removes a data source by id and platform.
 func (s *Service) DeleteDataSource(ctx context.Context, id pgtype.UUID) error {
 	if !s.featureEnabled(ctx, dataSourcesFeatureFlag) {
 		return fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)

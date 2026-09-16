@@ -1099,7 +1099,7 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": network})
 }
 
-// ListAdNetworks lists all ad networks for the tenant.
+// ListAdNetworks lists all ad networks for the platform.
 func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {

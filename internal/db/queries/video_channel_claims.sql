@@ -44,7 +44,7 @@ WHERE video_author_user_id = @video_author_user_id
  AND claim_type = 'claim'
  AND status IN ('pending', 'approved');
 
--- name: ListVideoChannelClaimsByTenant :many
+-- name: ListVideoChannelClaims :many
 -- Admin queue with optional status/claim_type filters, text search, and sorting.
 SELECT
  vcc.id, vcc.claimant_user_id, vcc.video_author_user_id, vcc.claim_type,
@@ -70,8 +70,8 @@ ORDER BY
  vcc.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
--- name: CountVideoChannelClaimsByTenant :one
--- Total for admin queue pagination (same filters as ListVideoChannelClaimsByTenant).
+-- name: CountVideoChannelClaims :one
+-- Total for admin queue pagination (same filters as ListVideoChannelClaims).
 SELECT COUNT(*)::int AS total
 FROM video_channel_claims vcc
 JOIN users cu ON cu.id = vcc.claimant_user_id

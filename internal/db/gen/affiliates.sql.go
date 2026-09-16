@@ -24,13 +24,13 @@ func (q *Queries) CountActiveLinksByUser(ctx context.Context, userID pgtype.UUID
 	return count, err
 }
 
-const countAffiliateMembersByTenant = `-- name: CountAffiliateMembersByTenant :one
+const countAffiliateMembers = `-- name: CountAffiliateMembers :one
 SELECT COUNT(*) AS count
 FROM affiliate_program_members
 `
 
-func (q *Queries) CountAffiliateMembersByTenant(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countAffiliateMembersByTenant)
+func (q *Queries) CountAffiliateMembers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAffiliateMembers)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -253,7 +253,7 @@ type GetAffiliateCommissionInfoRow struct {
 // Resolves the affiliate member + commission rate for a link code, reading
 // the rate from system_settings (affiliate.commission.*) per Section 56 —
 // the single source of truth. Falls back to the catalog defaults (15/20/10)
-// when a tenant has not configured the rate.
+// when a platform has not configured the rate.
 //
 // V1 behavior (BUG-008): pro_subscription always maps to the pro_monthly
 // rate. The pro_annual rate is configurable but unused in V1 — there is no
@@ -456,7 +456,7 @@ type GetAffiliateProgramStatsRow struct {
 // =====================
 // Returns program-wide totals for the admin overview endpoint
 // GET /admin/affiliate-program (Section 56 Admin management).
-// Tenant-scoped: only counts members/links/events for the given tenant.
+// Platform-scoped: only counts members/links/events for the given platform.
 func (q *Queries) GetAffiliateProgramStats(ctx context.Context) (GetAffiliateProgramStatsRow, error) {
 	row := q.db.QueryRow(ctx, getAffiliateProgramStats)
 	var i GetAffiliateProgramStatsRow
@@ -937,7 +937,7 @@ type ListAffiliateMembersFilteredParams struct {
 }
 
 // Admin list with optional status filter (Section 56 / catalog
-// ?status=active|inactive). Tenant-scoped. NULL status = no filter.
+// ?status=active|inactive). Platform-scoped. NULL status = no filter.
 func (q *Queries) ListAffiliateMembersFiltered(ctx context.Context, arg ListAffiliateMembersFilteredParams) ([]AffiliateProgramMember, error) {
 	rows, err := q.db.Query(ctx, listAffiliateMembersFiltered, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
@@ -1120,7 +1120,7 @@ type ListAllAffiliateLinksFilteredRow struct {
 
 // Admin list with optional user_id / product_type / is_active filters
 // (Section 56 / catalog ?user_id&product_type&status=active|inactive).
-// Tenant-scoped. Joins users for the admin UI's username column. NULL = no
+// Platform-scoped. Joins users for the admin UI's username column. NULL = no
 // filter on that dimension.
 func (q *Queries) ListAllAffiliateLinksFiltered(ctx context.Context, arg ListAllAffiliateLinksFilteredParams) ([]ListAllAffiliateLinksFilteredRow, error) {
 	rows, err := q.db.Query(ctx, listAllAffiliateLinksFiltered,

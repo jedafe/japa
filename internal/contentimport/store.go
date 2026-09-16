@@ -51,7 +51,7 @@ func (s *Store) Create(ctx context.Context, userID pgtype.UUID, sourceType strin
 	return imp, nil
 }
 
-// GetByID returns a single content_imports row scoped to the tenant.
+// GetByID returns a single content_imports row scoped to the platform.
 func (s *Store) GetByID(ctx context.Context, importID pgtype.UUID) (gen.ContentImport, error) {
 	imp, err := s.queries.GetContentImportByID(ctx,
 
@@ -92,7 +92,7 @@ func (s *Store) CountUserImports(ctx context.Context, userID pgtype.UUID) (int64
 	return count, nil
 }
 
-// AdminListImports returns a page of all imports for a tenant, optionally
+// AdminListImports returns a page of all imports for a platform, optionally
 // filtered by status. An empty status string returns all statuses.
 func (s *Store) AdminListImports(ctx context.Context, status string, offset, limit int32) ([]gen.AdminListContentImportsRow, error) {
 	rows, err := s.queries.AdminListContentImports(ctx, gen.AdminListContentImportsParams{
@@ -108,7 +108,7 @@ func (s *Store) AdminListImports(ctx context.Context, status string, offset, lim
 	return rows, nil
 }
 
-// AdminCountImports returns the total number of imports for a tenant,
+// AdminCountImports returns the total number of imports for a platform,
 // optionally filtered by status.
 func (s *Store) AdminCountImports(ctx context.Context, status string) (int64, error) {
 	count, err := s.queries.AdminCountContentImports(ctx,

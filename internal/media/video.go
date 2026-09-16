@@ -64,6 +64,7 @@ func (v *VideoProcessor) Transcode(ctx context.Context, inputPath, outputPath st
 		return fmt.Errorf("transcode: output path validation: %w", err)
 	}
 
+	// #nosec G204 // input/output paths are validated by validateMediaPath.
 	cmd := exec.CommandContext(
 		ctx, "ffmpeg",
 		"-y",            // overwrite output
@@ -106,6 +107,7 @@ func (v *VideoProcessor) GenerateThumbnail(ctx context.Context, inputPath, outpu
 		return fmt.Errorf("thumbnail: output path validation: %w", err)
 	}
 
+	// #nosec G204 // input/output paths are validated by validateMediaPath.
 	cmd := exec.CommandContext(
 		ctx, "ffmpeg",
 		"-y",            // overwrite output
@@ -142,6 +144,7 @@ func (v *VideoProcessor) Compress(ctx context.Context, inputPath, outputPath str
 		return fmt.Errorf("compress: output path validation: %w", err)
 	}
 
+	// #nosec G204 // input/output paths are validated by validateMediaPath.
 	cmd := exec.CommandContext(
 		ctx, "ffmpeg",
 		"-y",            // overwrite output

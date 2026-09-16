@@ -305,3 +305,57 @@ Total: **6–10+ weeks**, depending on how tightly coupled the Phase 1/2 query a
 - `internal/config/settings.go` lines 26-37 and 203-218 — per-tenant settings API.
 - `internal/features/features.go` lines 28-37 and 92-100 — per-tenant feature flags.
 - `/.jeos/conventions/valkey-keys-catalog.md` — tenant-scoped key patterns.
+
+## 2026-09-15 cleanup sweep (post-schema)
+
+A final terminology and dead-code cleanup pass removed the remaining active
+multi-tenant references from the runtime code:
+
+- Deleted the dead Control Panel `/tenants` page, `TenantSettingsDialog`, and
+  `Tenant` type.
+- Removed `tenant_id` / `tenantId` from frontend types, shared package models,
+  and Studio Desktop's local Tauri database.
+- Renamed `tenantHost` to `requestHost` in SvelteKit `app.d.ts`, hooks, and API
+  clients, while keeping actual `Host` / `X-Forwarded-Host` forwarding.
+- Replaced `tenant_unavailable` with `service_unavailable` and reworded JCE
+  messages from tenant-specific to platform-specific language.
+- Removed dead backend `tenant` settings handlers and `t == nil` no-op tenant
+  checks from handlers and middleware.
+- Renamed `ListTenantAdminIDs` to `ListSystemAdminIDs`, `ClearCacheForTenant`
+  to global `ClearCache`, and `UserBelongsToTenant` to `UserExists`.
+- Removed all `requireTenant` / `requireTenantAndUser` / `requireTenantFromContext`
+  stubs from internal packages.
+- Renamed all sqlc query names that contained `ByTenant`, `ForTenant`, or
+  `AndTenant` to platform/global equivalents (e.g. `ListSpacesByTenant` →
+  `ListSpaces`, `GetMenuBySlugForTenant` → `GetActiveMenuBySlug`) and updated
+  every Go call site.
+- Reworded `tenant`/`tenants` to `platform`/`platforms` in backend Go source
+  files, SQL query comments, and generated `internal/db/gen` comments.
+- Rewrote the obsolete `scripts/patch_returning_select.py`,
+  `scripts/fix_gdpr_positional.py`, and `scripts/audit_single_tenant.sql` as
+  no-ops (historical).
+- Updated `scripts/generate_tool_crud_migration.py` so generated `ai_tools`
+  seed migrations no longer reference `tenant_id`.
+- Verified `make sqlc-gen`, `go build ./...`, `go test ./...`, `gosec` on the
+  changed packages, and `go vet` on the changed packages.
+
+A small number of references intentionally remain:
+- `migrations/` files contain historical `tenant_id` columns, seed data, and
+  permission node names required to preserve migration correctness.
+- `docs/` and `.jeos/` design documents describing the original multi-tenant
+  architecture are retained as historical records.
+- `apps/*/src/lib/i18n/fr.json` contains the French word `maintenant`, which is
+  a false positive and is not a tenant reference.
+
+## 2026-09-15 follow-up: clean up full-suite lint
+
+- Removed no-op `append(args)` / `append(tArgs)` / `append(eArgs)` /
+  `append(sArgs)` calls in `internal/digest/store.go` that caused
+  `go vet ./...` warnings.
+- Corrected the argument index (`argIdx := 2` / `argIdx = 2` → `1`) in the
+  same digest queries so space ID placeholders now start at `$1` instead of
+  `$2`.
+- Added `internal/db/gen/.*\.go` G101 exclusions to `.gosec.json` so the
+  generated SQL query string constants are no longer flagged as hardcoded
+  credentials. Run `gosec -conf .gosec.json ./...` to use the project config.
+  `go vet ./...` and `gosec -conf .gosec.json ./...` now both pass.

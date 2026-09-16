@@ -68,7 +68,6 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	q := r.URL.Query().Get("q")
 	kind := r.URL.Query().Get("kind")
 	sort := r.URL.Query().Get("sort")
@@ -148,9 +147,11 @@ func computePagination(page, pageSize int64) (int32, int32) {
 	if offset > maxInt32Value {
 		offset = maxInt32Value
 	}
+	if pageSize > maxInt32Value {
+		pageSize = maxInt32Value
+	}
 
-	//nolint:gosec // offset is bounded to MaxInt32 and pageSize to maxPageSize
-	return int32(offset), int32(pageSize)
+	return int32(offset), int32(pageSize) //nolint:gosec // G115: offset and pageSize are bounded to maxInt32Value before conversion.
 }
 
 // CreateLiteral handles POST /admin/literals.
@@ -158,7 +159,6 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	req, ok := h.parseCreateRequest(w, r)
 	if !ok {
@@ -261,7 +261,6 @@ func (h *Handlers) GetLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid literal ID")
@@ -291,7 +290,6 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	id, existing, ok := h.loadLiteralForUpdate(w, r)
 	if !ok {
@@ -411,7 +409,6 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

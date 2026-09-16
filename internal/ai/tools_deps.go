@@ -30,9 +30,9 @@ import (
 // The signatures match the real content.Service methods 1:1 so the wiring
 // layer can assign the concrete service directly (no adapter needed).
 type ContentService interface {
-	// ListContents returns a tenant-wide text-filtered page of content.
+	// ListContents returns a platform-wide text-filtered page of content.
 	// cursor is a zero/invalid pgtype.Timestamptz for the first page.
-	ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error)
+	ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error)
 	// SearchContentsBySpace returns content within a space whose title
 	// matches the query.
 	SearchContentsBySpace(ctx context.Context, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error)
@@ -61,7 +61,7 @@ type RAGService interface {
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 type ComparisonService interface {
 	// Type definitions.
-	ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error)
+	ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesRow, error)
 	GetComparisonTypeBySlug(ctx context.Context, slug string) (gen.GetComparisonTypeBySlugRow, error)
 	CreateComparisonType(ctx context.Context, input ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error)
 
@@ -227,8 +227,8 @@ type CacheClient interface {
 // Ref: japaconnect-engineering/sections/68-ai-personas.md (ai_personas.user_id).
 type PersonaResolver interface {
 	// GetPersonaUserID returns the backing users.id for the given persona
-	// ID, scoped to the tenant. Returns pgx.ErrNoRows when the persona
-	// does not exist in this tenant.
+	// ID, scoped to the platform. Returns pgx.ErrNoRows when the persona
+	// does not exist in this platform.
 	GetPersonaUserID(ctx context.Context, personaID pgtype.UUID) (pgtype.UUID, error)
 }
 
@@ -254,7 +254,7 @@ type SpacesService interface {
 	GetSpaceByGeoCode(ctx context.Context, countryCode string) (gen.GetSpaceByGeoCodeRow, error)
 	FindSpacesByKeywords(ctx context.Context, keywords []string) ([]gen.FindSpacesByKeywordsRow, error)
 	GetSpace(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
-	ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]gen.ListSpacesByTenantRow, error)
+	ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]gen.ListSpacesRow, error)
 	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
 	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
 }
@@ -747,7 +747,7 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...any) error
 }
 
-// IntelQuerier loads tenant-scoped intelligence sources and records so
+// IntelQuerier loads platform-scoped intelligence sources and records so
 // agent handlers can validate IDs before enqueueing background work.
 // // Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md.
 type IntelQuerier interface {

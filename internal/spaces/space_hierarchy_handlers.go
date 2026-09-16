@@ -46,7 +46,7 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
 		return
 	}
-	// Verify the parent space exists and belongs to the same tenant.
+	// Verify the parent space exists and belongs to the same platform.
 	parent, err := h.Service.GetSpace(r.Context(), parentID)
 	if err != nil {
 		handleServiceError(w, err)

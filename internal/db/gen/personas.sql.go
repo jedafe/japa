@@ -489,7 +489,7 @@ type ListAIPersonasRow struct {
 }
 
 // =====================================================================
-// List personas for a tenant with pagination.
+// List personas for a platform with pagination.
 // =====================================================================
 func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) ([]ListAIPersonasRow, error) {
 	rows, err := q.db.Query(ctx, listAIPersonas,

@@ -36,7 +36,7 @@ type literalListItem struct {
 //
 // OptionalAuth: token keys/labels are display metadata, not sensitive data —
 // the endpoint is public so guest-facing renderers and the composer picker can
-// share it. Results come from the Valkey-cached catalog (jc:literals:{tenant})
+// share it. Results come from the Valkey-cached catalog (jc:literals:{platform})
 // so no per-request DB query runs. ?q= is a case-insensitive substring match
 // on key and label.
 func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {

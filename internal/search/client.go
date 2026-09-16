@@ -3,7 +3,7 @@
 // engine itself sits behind the Engine port (engine.go); Meilisearch is the
 // only driver today (meili.go). Every index uses "id" (a UUID string) as its
 // primary key and exposes as a filterable attribute so searches
-// can be scoped to the requesting tenant — multi-tenancy from day one.
+// can be scoped to the requesting platform. JapaConnect operates as a single platform.
 // // Ref: japaconnect-engineering/sections/13-search.md (Search Engine Port)
 package search
 
@@ -103,7 +103,7 @@ func NewEngine(url, key string) (Engine, error) {
 
 // ensureIndexes applies the index catalog through the Engine port: each
 // index is created (idempotent) with its filterable and sortable attributes
-// so tenant-scoped filtering works. A nil error means the engine accepted
+// so platform-scoped filtering works. A nil error means the engine accepted
 // the schema — some engines apply it asynchronously. A single failure
 // short-circuits so the caller logs one clear warning instead of one per
 // index.

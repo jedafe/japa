@@ -15,7 +15,7 @@ import (
 
 // RobotsPolicy is the parsed robots.txt policy for a domain, cached in
 // Valkey under jc:intel:robots:{}:{domain} (1hr TTL per
-// valkey-keys-catalog, tenant-scoped per ADR-112 Amendment 2).
+// valkey-keys-catalog, platform-scoped per ADR-112 Amendment 2).
 type RobotsPolicy struct {
 	Allowed         bool     `json:"allowed"`
 	CrawlDelaySecs  int      `json:"crawl_delay_secs"`
@@ -25,7 +25,7 @@ type RobotsPolicy struct {
 // RobotsChecker fetches and caches robots.txt policies per domain. It
 // respects the crawl-delay directive and disallow rules. The cache is
 // stored in Valkey under jc:intel:robots:{}:{domain} with a
-// 1-hour TTL (BUG-19 fix, valkey-keys-catalog Section INTEL, tenant-scoped
+// 1-hour TTL (BUG-19 fix, valkey-keys-catalog Section INTEL, platform-scoped
 // per ADR-112 Amendment 2).
 type RobotsChecker struct {
 	rdb    valkeycompat.Cmdable
@@ -45,7 +45,7 @@ func NewRobotsChecker(rdb valkeycompat.Cmdable) *RobotsChecker {
 // from the Valkey cache or by fetching /robots.txt. Returns the policy
 // and nil on success. If robots.txt cannot be fetched (404, network
 // error), the default policy (allow all, no crawl-delay) is returned.
-// The cache key is tenant-scoped per ADR-112 Amendment 2.
+// The cache key is platform-scoped per ADR-112 Amendment 2.
 func (c *RobotsChecker) Check(ctx context.Context, targetURL string) (RobotsPolicy, error) {
 	parsed, err := url.Parse(targetURL)
 	if err != nil {

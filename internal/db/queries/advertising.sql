@@ -55,7 +55,7 @@ RETURNING *;
 SELECT * FROM ad_campaigns
 WHERE id = @id;
 
--- name: ListAdCampaignsByTenant :many
+-- name: ListAdCampaigns :many
 SELECT * FROM ad_campaigns
 
 ORDER BY created_at DESC

@@ -25,7 +25,7 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
-// List returns a paginated list of widget configurations for a tenant.
+// List returns a paginated list of widget configurations for a platform.
 func (s *Store) List(ctx context.Context, q string, page, limit int32) ([]Widget, int64, error) {
 	offset := (page - 1) * limit
 	if offset < 0 {
@@ -77,7 +77,7 @@ func (s *Store) List(ctx context.Context, q string, page, limit int32) ([]Widget
 	return widgets, total, nil
 }
 
-// Get returns a single widget by ID, scoped to the tenant.
+// Get returns a single widget by ID, scoped to the platform.
 func (s *Store) Get(ctx context.Context, id pgtype.UUID) (Widget, error) {
 	var w Widget
 
@@ -98,8 +98,8 @@ func (s *Store) Get(ctx context.Context, id pgtype.UUID) (Widget, error) {
 	return w, nil
 }
 
-// GetPublic returns a single active widget by ID (no tenant scope — public
-// render endpoint resolves tenant from the widget row itself).
+// GetPublic returns a single active widget by ID (no platform scope — public
+// render endpoint resolves platform from the widget row itself).
 func (s *Store) GetPublic(ctx context.Context, id pgtype.UUID) (Widget, error) {
 	var w Widget
 

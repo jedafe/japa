@@ -103,7 +103,7 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
-// FeatureChecker checks whether a feature flag is enabled for a tenant.
+// FeatureChecker checks whether a feature flag is enabled for a platform.
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
 type FeatureChecker interface {
@@ -155,7 +155,7 @@ func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 func (s *Service) SetRBAC(r permissionChecker) { s.rbac = r }
 
 // Enabled checks whether the scam_alert feature is enabled for the given
-// tenant. Delegates to the features.Checker (feature_flags table) when
+// platform. Delegates to the features.Checker (feature_flags table) when
 // available, falling back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {
 	if s.checker != nil {
@@ -347,7 +347,7 @@ func (s *Service) Submit(ctx context.Context, reporterID pgtype.UUID, input Subm
 
 // buildScamReport validates a submit/update input and converts it into a
 // ScamReport value. The caller is responsible for setting ID, ReporterID
-// and Status for create, and for supplying the report id/tenant for update.
+// and Status for create, and for supplying the report id/platform for update.
 func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 	if input.ScamType == "" || input.DestinationSpaceID == "" || input.Description == "" {
 		return ScamReport{}, errors.New("scam_type, destination_space_id, and description are required")

@@ -44,7 +44,7 @@ func (s *Store) getProviderByID(ctx context.Context, id pgtype.UUID) (gen.Affili
 }
 
 func (s *Store) listProviders(ctx context.Context, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
-	rows, err := s.read.ListAffiliateProvidersByTenant(ctx, gen.ListAffiliateProvidersByTenantParams{
+	rows, err := s.read.ListAffiliateProviders(ctx, gen.ListAffiliateProvidersParams{
 
 		IsActive:   isActive,
 		PageLimit:  limit,
@@ -93,8 +93,8 @@ func (s *Store) getCouponByCode(ctx context.Context, code string) (gen.GetCoupon
 	return s.read.GetCouponByCode(ctx, code)
 }
 
-func (s *Store) listCoupons(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsByTenantRow, error) {
-	return s.read.ListCouponsByTenant(ctx, gen.ListCouponsByTenantParams{
+func (s *Store) listCoupons(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsRow, error) {
+	return s.read.ListCoupons(ctx, gen.ListCouponsParams{
 
 		Status:     status,
 		CouponType: couponType,
@@ -105,8 +105,8 @@ func (s *Store) listCoupons(ctx context.Context, status, couponType, search *str
 	})
 }
 
-func (s *Store) listActiveCoupons(ctx context.Context, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsByTenantRow, error) {
-	return s.read.ListActiveCouponsByTenant(ctx, gen.ListActiveCouponsByTenantParams{
+func (s *Store) listActiveCoupons(ctx context.Context, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsRow, error) {
+	return s.read.ListActiveCoupons(ctx, gen.ListActiveCouponsParams{
 
 		ProviderID: providerID,
 		CouponType: couponType,
@@ -142,8 +142,8 @@ func (s *Store) getAffiliateProviderForRender(ctx context.Context, id pgtype.UUI
 
 // ── Count ───────────────────────────────────────────────────────────
 
-func (s *Store) countCouponsByTenant(ctx context.Context) (int64, error) {
-	return s.read.CountCouponsByTenant(ctx)
+func (s *Store) countCouponsByPlatform(ctx context.Context) (int64, error) {
+	return s.read.CountCoupons(ctx)
 }
 
 // ── Affiliate Enhancement Queries (BE-LOW-002) ─────────────────────
@@ -191,7 +191,7 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
 			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
-	case gen.ListAffiliateProvidersByTenantRow:
+	case gen.ListAffiliateProvidersRow:
 		return gen.AffiliateProvider{
 			ID: r.ID, Name: r.Name, Slug: r.Slug,
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,

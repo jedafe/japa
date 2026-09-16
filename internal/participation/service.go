@@ -54,9 +54,9 @@ type EventTracker interface {
 // concrete adapter that calls those services directly. This keeps the
 // participation dependency graph narrow (BUG-010).
 // // Each method is called as the persona's backing user (is_bot=true) and
-// receives the tenant ID, the persona's backing user_id, and the action
+// receives the platform ID, the persona's backing user_id, and the action
 // payload. The methods return the created entity ID (when applicable) and
-// an error. Implementations must tenant-scope every write.
+// an error. Implementations must platform-scope every write.
 type ActionDispatcher interface {
 	// CreateComment posts a comment on targetContentID as the persona.
 	CreateComment(ctx context.Context, personaUserID, targetContentID pgtype.UUID, body []byte) (pgtype.UUID, error)
@@ -227,8 +227,8 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	today := time.Now().UTC().Format("2006-01-02")
 	totalToday := s.getDailyCounter(ctx, personaID, today, "total")
 
-	var tenantUUID pgtype.UUID
-	_ = tenantUUID.Scan("")
+	var platformUUID pgtype.UUID
+	_ = platformUUID.Scan("")
 	globalCap := s.getGlobalDailyCap(ctx)
 	globalToday := s.getGlobalDailyCounter(ctx, today)
 
@@ -469,7 +469,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 	}
 }
 
-// SweepActivePersonas queries all active personas across all tenants and
+// SweepActivePersonas queries all active personas across all platforms and
 // enqueues a persona:run_activity task for each. Called by the periodic
 // scheduler. The sweep interval is controlled by the
 // participation.run_interval_minutes system_settings key (default 60 min)
@@ -516,7 +516,7 @@ func (s *Service) SweepActivePersonas(ctx context.Context) error {
 		return nil
 	}
 
-	// Query all active personas across all tenants.
+	// Query all active personas across all platforms.
 	rows, err := s.db.Reader.Query(ctx, `SELECT id FROM ai_personas WHERE status = 'active'`)
 	if err != nil {
 		return fmt.Errorf("participation: sweep: query active personas: %w", err)
@@ -1057,7 +1057,7 @@ func (s *Service) isEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
-	// Use the default tenant for the global check.
+	// Use the default platform for the global check.
 	return s.settings.GetBoolOr(ctx, "participation.enabled", true)
 }
 

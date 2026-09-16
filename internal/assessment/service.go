@@ -284,7 +284,7 @@ func (s *Service) SetRAGRetriever(r RAGRetriever) { s.rag = r }
 
 // GetActiveAssessment returns the active assessment form with its scoring_config
 // and fields. Returns an error if no active assessment form exists for the
-// tenant.
+// platform.
 func (s *Service) GetActiveAssessment(ctx context.Context) (*AssessmentFormDTO, error) {
 	form, err := s.store.GetActiveAssessmentForm(ctx)
 	if err != nil {

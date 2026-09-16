@@ -87,7 +87,7 @@ func (f *Fetcher) SetSettings(sr fetcherSettingsReader) { f.settings = sr }
 
 // resolveTimeout returns the per-request fetch timeout. When a settings
 // reader is wired, reads `linkpreview.fetch_timeout_seconds` (min 1s, max 120s
-// per catalog) for the given tenant; otherwise falls back to
+// per catalog) for the given platform; otherwise falls back to
 // defaultFetchTimeoutSeconds (SEC-013).
 func (f *Fetcher) resolveTimeout(ctx context.Context) time.Duration {
 	if f.settings == nil {
@@ -106,7 +106,7 @@ func (f *Fetcher) resolveTimeout(ctx context.Context) time.Duration {
 	return time.Duration(secs) * time.Second
 }
 
-// resolveBlacklist returns the domain blacklist for the given tenant. When a
+// resolveBlacklist returns the domain blacklist for the given platform. When a
 // settings reader is wired, reads `content.link_preview.blacklist` (a JSON
 // array) per-request so admin changes take effect immediately (BUG-004). When
 // no settings reader is wired, falls back to the in-memory blacklist set via
@@ -234,7 +234,7 @@ func (f *Fetcher) SetBlacklist(blacklist []string) {
 
 // Fetch retrieves a link preview for the given URL.
 // It checks the cache first, then fetches and parses the page if not cached.
-// The ID is used to resolve per-tenant settings (fetch timeout, domain
+// The ID is used to resolve per-platform settings (fetch timeout, domain
 // blacklist) from system_settings (BUG-002, BUG-004).
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Preview, error) {
 	// Validate URL for SSRF

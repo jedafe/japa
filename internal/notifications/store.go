@@ -253,7 +253,7 @@ func (s *Store) deleteNotificationType(ctx context.Context, key string) error {
 // getUserDisplayName returns a user's display_name (nil when unset).
 // BUG-003: previously passed a zero UUID as , which caused
 // GetUserProfile to return ErrNoRows for every user. Now requires the
-// correct so the tenant-scoped WHERE clause matches.
+// correct so the platform-scoped WHERE clause matches.
 func (s *Store) getUserDisplayName(ctx context.Context, userID pgtype.UUID) (*string, error) {
 	user, err := s.read.GetUserProfile(ctx,
 
@@ -267,7 +267,7 @@ func (s *Store) getUserDisplayName(ctx context.Context, userID pgtype.UUID) (*st
 }
 
 // getUserEmail returns the user's email address for notification email
-// delivery (§35, BUG-003). Tenant-scoped per §04.
+// delivery (§35, BUG-003). Platform-scoped per §04.
 func (s *Store) getUserEmail(ctx context.Context, userID pgtype.UUID) (*string, error) {
 	email, err := s.read.GetUserEmail(ctx,
 

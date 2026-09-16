@@ -18,7 +18,7 @@ FROM blog_series bs
 LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
 WHERE bs.slug = @slug AND bs.deleted_at IS NULL;
 
--- name: ListBlogSeriesByTenant :many
+-- name: ListBlogSeries :many
 SELECT bs.id, bs.title, bs.slug, bs.description, bs.cover_image_id,
  bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
  m.storage_bucket AS cover_storage_bucket,
@@ -49,9 +49,9 @@ WHERE bs.author_user_id = @author_user_id
 ORDER BY bs.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
--- name: CountBlogSeriesByTenant :one
--- Returns the total number of tenant-scoped blog series for pagination meta.
--- L2: mirrors the q filter used by ListBlogSeriesByTenant so the total
+-- name: CountBlogSeries :one
+-- Returns the total number of platform-scoped blog series for pagination meta.
+-- L2: mirrors the q filter used by ListBlogSeries so the total
 -- reflects the active search.
 SELECT COUNT(*)
 FROM blog_series bs
@@ -137,8 +137,8 @@ WHERE series_id = @series_id;
 -- name: GetSeriesForContent :one
 -- Returns the series_id for a given content_id, or no rows if the content
 -- is not part of any series. Used by the editor load to restore the series
--- selector when editing existing content. BUG-009: tenant-scoped to
--- prevent cross-tenant information disclosure.
+-- selector when editing existing content. BUG-009: platform-scoped to
+-- prevent cross-platform information disclosure.
 SELECT bsp.series_id
 FROM blog_series_posts bsp
 JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL

@@ -59,7 +59,7 @@ func (q *Queries) AssignRoleToGroup(ctx context.Context, arg AssignRoleToGroupPa
 	return err
 }
 
-const countGroupMembersByTenant = `-- name: CountGroupMembersByTenant :many
+const countGroupMembers = `-- name: CountGroupMembers :many
 SELECT ug.id AS group_id, COUNT(ugm.user_id)::int AS member_count
 FROM user_groups ug
 LEFT JOIN user_group_memberships ugm ON ugm.group_id = ug.id
@@ -67,20 +67,20 @@ LEFT JOIN user_group_memberships ugm ON ugm.group_id = ug.id
 GROUP BY ug.id
 `
 
-type CountGroupMembersByTenantRow struct {
+type CountGroupMembersRow struct {
 	GroupID     pgtype.UUID `json:"group_id"`
 	MemberCount int32       `json:"member_count"`
 }
 
-func (q *Queries) CountGroupMembersByTenant(ctx context.Context) ([]CountGroupMembersByTenantRow, error) {
-	rows, err := q.db.Query(ctx, countGroupMembersByTenant)
+func (q *Queries) CountGroupMembers(ctx context.Context) ([]CountGroupMembersRow, error) {
+	rows, err := q.db.Query(ctx, countGroupMembers)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CountGroupMembersByTenantRow
+	var items []CountGroupMembersRow
 	for rows.Next() {
-		var i CountGroupMembersByTenantRow
+		var i CountGroupMembersRow
 		if err := rows.Scan(&i.GroupID, &i.MemberCount); err != nil {
 			return nil, err
 		}
@@ -92,7 +92,7 @@ func (q *Queries) CountGroupMembersByTenant(ctx context.Context) ([]CountGroupMe
 	return items, nil
 }
 
-const countGroupsByRoleAndTenant = `-- name: CountGroupsByRoleAndTenant :many
+const countGroupsByRole = `-- name: CountGroupsByRole :many
 SELECT gr.role_id, COUNT(gr.group_id)::int AS group_count
 FROM group_roles gr
 JOIN user_roles ur ON gr.role_id = ur.id
@@ -100,20 +100,20 @@ JOIN user_roles ur ON gr.role_id = ur.id
 GROUP BY gr.role_id
 `
 
-type CountGroupsByRoleAndTenantRow struct {
+type CountGroupsByRoleRow struct {
 	RoleID     pgtype.UUID `json:"role_id"`
 	GroupCount int32       `json:"group_count"`
 }
 
-func (q *Queries) CountGroupsByRoleAndTenant(ctx context.Context) ([]CountGroupsByRoleAndTenantRow, error) {
-	rows, err := q.db.Query(ctx, countGroupsByRoleAndTenant)
+func (q *Queries) CountGroupsByRole(ctx context.Context) ([]CountGroupsByRoleRow, error) {
+	rows, err := q.db.Query(ctx, countGroupsByRole)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CountGroupsByRoleAndTenantRow
+	var items []CountGroupsByRoleRow
 	for rows.Next() {
-		var i CountGroupsByRoleAndTenantRow
+		var i CountGroupsByRoleRow
 		if err := rows.Scan(&i.RoleID, &i.GroupCount); err != nil {
 			return nil, err
 		}
@@ -414,7 +414,7 @@ func (q *Queries) ListGroupMembersWithUser(ctx context.Context, groupID pgtype.U
 	return items, nil
 }
 
-const listGroupPermissionsByTenant = `-- name: ListGroupPermissionsByTenant :many
+const listGroupPermissions = `-- name: ListGroupPermissions :many
 SELECT DISTINCT ug.id AS group_id, p.key
 FROM user_groups ug
 JOIN group_roles gr ON gr.group_id = ug.id
@@ -424,20 +424,20 @@ JOIN permissions p ON rp.permission_id = p.id
 ORDER BY ug.id, p.key
 `
 
-type ListGroupPermissionsByTenantRow struct {
+type ListGroupPermissionsRow struct {
 	GroupID pgtype.UUID `json:"group_id"`
 	Key     string      `json:"key"`
 }
 
-func (q *Queries) ListGroupPermissionsByTenant(ctx context.Context) ([]ListGroupPermissionsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listGroupPermissionsByTenant)
+func (q *Queries) ListGroupPermissions(ctx context.Context) ([]ListGroupPermissionsRow, error) {
+	rows, err := q.db.Query(ctx, listGroupPermissions)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListGroupPermissionsByTenantRow
+	var items []ListGroupPermissionsRow
 	for rows.Next() {
-		var i ListGroupPermissionsByTenantRow
+		var i ListGroupPermissionsRow
 		if err := rows.Scan(&i.GroupID, &i.Key); err != nil {
 			return nil, err
 		}
@@ -507,6 +507,41 @@ func (q *Queries) ListGroupsByRoleID(ctx context.Context, roleID pgtype.UUID) ([
 	return items, nil
 }
 
+const listRolePermissions = `-- name: ListRolePermissions :many
+SELECT rp.role_id, p.key, p.description
+FROM role_permissions rp
+JOIN user_roles ur ON rp.role_id = ur.id
+JOIN permissions p ON rp.permission_id = p.id
+
+ORDER BY rp.role_id, p.key
+`
+
+type ListRolePermissionsRow struct {
+	RoleID      pgtype.UUID `json:"role_id"`
+	Key         string      `json:"key"`
+	Description *string     `json:"description"`
+}
+
+func (q *Queries) ListRolePermissions(ctx context.Context) ([]ListRolePermissionsRow, error) {
+	rows, err := q.db.Query(ctx, listRolePermissions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRolePermissionsRow
+	for rows.Next() {
+		var i ListRolePermissionsRow
+		if err := rows.Scan(&i.RoleID, &i.Key, &i.Description); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRolePermissionsByKey = `-- name: ListRolePermissionsByKey :many
 SELECT p.key, p.description
 FROM role_permissions rp
@@ -530,41 +565,6 @@ func (q *Queries) ListRolePermissionsByKey(ctx context.Context, roleID pgtype.UU
 	for rows.Next() {
 		var i ListRolePermissionsByKeyRow
 		if err := rows.Scan(&i.Key, &i.Description); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRolePermissionsByTenant = `-- name: ListRolePermissionsByTenant :many
-SELECT rp.role_id, p.key, p.description
-FROM role_permissions rp
-JOIN user_roles ur ON rp.role_id = ur.id
-JOIN permissions p ON rp.permission_id = p.id
-
-ORDER BY rp.role_id, p.key
-`
-
-type ListRolePermissionsByTenantRow struct {
-	RoleID      pgtype.UUID `json:"role_id"`
-	Key         string      `json:"key"`
-	Description *string     `json:"description"`
-}
-
-func (q *Queries) ListRolePermissionsByTenant(ctx context.Context) ([]ListRolePermissionsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listRolePermissionsByTenant)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListRolePermissionsByTenantRow
-	for rows.Next() {
-		var i ListRolePermissionsByTenantRow
-		if err := rows.Scan(&i.RoleID, &i.Key, &i.Description); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -615,14 +615,14 @@ func (q *Queries) ListRolesPaginated(ctx context.Context, arg ListRolesPaginated
 	return items, nil
 }
 
-const listUserGroupsByTenant = `-- name: ListUserGroupsByTenant :many
+const listUserGroups = `-- name: ListUserGroups :many
 SELECT id, name, slug, is_system, description
 FROM user_groups
 
 ORDER BY name
 `
 
-type ListUserGroupsByTenantRow struct {
+type ListUserGroupsRow struct {
 	ID          pgtype.UUID `json:"id"`
 	Name        string      `json:"name"`
 	Slug        string      `json:"slug"`
@@ -630,15 +630,15 @@ type ListUserGroupsByTenantRow struct {
 	Description *string     `json:"description"`
 }
 
-func (q *Queries) ListUserGroupsByTenant(ctx context.Context) ([]ListUserGroupsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listUserGroupsByTenant)
+func (q *Queries) ListUserGroups(ctx context.Context) ([]ListUserGroupsRow, error) {
+	rows, err := q.db.Query(ctx, listUserGroups)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListUserGroupsByTenantRow
+	var items []ListUserGroupsRow
 	for rows.Next() {
-		var i ListUserGroupsByTenantRow
+		var i ListUserGroupsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,

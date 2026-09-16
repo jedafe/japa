@@ -68,11 +68,11 @@ type PersonaInput struct {
 	TypeID         string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
 }
 
-// personaEmail builds a deterministic, tenant-scoped internal email for a
+// personaEmail builds a deterministic, platform-scoped internal email for a
 // persona backing account. These accounts never log in (is_bot = true), so
 // the email is an internal identifier, not a deliverable address. The
 // is embedded to avoid UNIQUE( email) collisions when
-// two tenants create personas with the same slug (BUG-008).
+// two platforms create personas with the same slug (BUG-008).
 func personaEmail(slug string) string {
 	return fmt.Sprintf("persona+%s+@bot.internal", slug)
 }
@@ -307,7 +307,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 			}
 		} else if in.VoicePrompt != "" {
 			voiceSlug := in.Slug + "-voice"
-			// If the derived slug already exists in this tenant, append a short
+			// If the derived slug already exists in this platform, append a short
 			// numeric suffix to avoid the unique violation (BUG-PV-001).
 			for attempt := 1; attempt <= 100; attempt++ {
 				if attempt > 1 {
@@ -499,7 +499,7 @@ func (s *Service) GetPersona(ctx context.Context, id pgtype.UUID) (PersonaDetail
 	return detail, nil
 }
 
-// ListPersonas returns a paginated list of personas for a tenant. An empty
+// ListPersonas returns a paginated list of personas for a platform. An empty
 // status returns all statuses; an empty q matches all rows; sort/dir default
 // to created_at DESC.
 func (s *Service) ListPersonas(ctx context.Context, status, q, sort, dir string, limit, offset int32) ([]PersonaListItem, int64, error) {
@@ -922,7 +922,7 @@ func (s *Service) GetVoicePrompt(ctx context.Context, userID, voiceID pgtype.UUI
 	return voice.VoicePrompt, nil
 }
 
-// ListPersonaVoices returns a paginated list of shared voices for a tenant.
+// ListPersonaVoices returns a paginated list of shared voices for a platform.
 func (s *Service) ListPersonaVoices(ctx context.Context, limit, offset int32) ([]PersonaVoice, int64, error) {
 	rows, err := s.store.ListPersonaVoices(ctx, limit, offset)
 	if err != nil {

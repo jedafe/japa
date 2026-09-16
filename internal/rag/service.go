@@ -168,7 +168,7 @@ func (s *Service) PurgeEntity(ctx context.Context, entityType string, entityID p
 }
 
 // PurgeEntityType deletes all chunks for every entity of the given type
-// within a tenant. Used by the admin DELETE /admin/rag/entity/:type/all
+// within a platform. Used by the admin DELETE /admin/rag/entity/:type/all
 // route (the by-type aggregate purge from the dashboard).
 func (s *Service) PurgeEntityType(ctx context.Context, entityType string) error {
 	return s.store.DeleteEmbeddingsByType(ctx, entityType)
@@ -346,7 +346,7 @@ func (s *Service) QueueReindex(ctx context.Context) error {
 	return nil
 }
 
-// reindexForumThreads enumerates all non-deleted forum threads for the tenant
+// reindexForumThreads enumerates all non-deleted forum threads for the platform
 // and re-indexes them into content_embeddings. Fire-and-forget — called in a
 // goroutine from QueueReindex.
 func (s *Service) reindexForumThreads() {
@@ -402,7 +402,7 @@ func (s *Service) reindexForumThreads() {
 	}
 }
 
-// reindexSpaces enumerates all active spaces for the tenant and re-indexes
+// reindexSpaces enumerates all active spaces for the platform and re-indexes
 // them into content_embeddings. Fire-and-forget — called in a goroutine from
 // QueueReindex.
 func (s *Service) reindexSpaces() {
@@ -458,7 +458,7 @@ func (s *Service) reindexSpaces() {
 }
 
 // reindexLearningTracks enumerates all published learning tracks for the
-// tenant and re-indexes them into content_embeddings. Fire-and-forget —
+// platform and re-indexes them into content_embeddings. Fire-and-forget —
 // called in a goroutine from QueueReindex.
 func (s *Service) reindexLearningTracks() {
 	ctx := context.Background()

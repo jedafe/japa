@@ -5,7 +5,7 @@
 //
 //   - spaces.find   — find a space by city name, geo code, or keywords
 //   - spaces.read   — read a single space by ID
-//   - spaces.list   — list spaces for the tenant (viewer-scoped)
+//   - spaces.list   — list spaces for the platform (viewer-scoped)
 //   - spaces.create — create a new space (admin, HITL)
 //   - spaces.update — update an existing space (admin, HITL)
 //
@@ -150,7 +150,7 @@ func SpacesReadHandler(deps *ToolDeps) ToolHandler {
 // spaces.list (task 9.01c)
 // ---------------------------------------------------------------------------
 
-// SpacesListHandler returns a ToolHandler that lists spaces for the tenant.
+// SpacesListHandler returns a ToolHandler that lists spaces for the platform.
 // The list is viewer-scoped (the service filters by the viewer's membership
 // and visibility rules).
 func SpacesListHandler(deps *ToolDeps) ToolHandler {
@@ -522,8 +522,8 @@ func spaceFindByCityRowToMap(s gen.FindCitySpaceByNameRow) map[string]any {
 	return m
 }
 
-// spaceListRowToMap converts a gen.ListSpacesByTenantRow to a JSON-safe map.
-func spaceListRowToMap(s gen.ListSpacesByTenantRow) map[string]any {
+// spaceListRowToMap converts a gen.ListSpacesRow to a JSON-safe map.
+func spaceListRowToMap(s gen.ListSpacesRow) map[string]any {
 	m := map[string]any{
 		"id":             uuidString(s.ID),
 		"parent_id":      uuidString(s.ParentID),

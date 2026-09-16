@@ -51,10 +51,10 @@ const (
 var ErrPrivacyBlocked = errors.New("ai: target entity is marked ai_exempt and not available to the agent")
 
 // PrivacyChecker resolves the ai_exempt flag for a given entity within a
-// tenant. All lookups are tenant-scoped at the SQL layer for defense-in-depth
-// (BUG-014 pattern): contents and users filter directly on ;
-// custom_field_values (no column) JOINs custom_fields to enforce
-// tenancy transitively. A missing row is treated as non-exempt — the agent
+// platform. All lookups are platform-scoped at the SQL layer for defense-in-depth
+// (BUG-014 pattern): contents and users filter directly on their id;
+// custom_field_values (no id column) JOINs custom_fields to enforce
+// platform scoping transitively. A missing row is treated as non-exempt — the agent
 // proceeds — because exemption is an opt-in flag with a NOT NULL DEFAULT false.
 type PrivacyChecker struct {
 	read *gen.Queries
@@ -69,7 +69,7 @@ func NewPrivacyChecker(read *gen.Queries) *PrivacyChecker {
 }
 
 // IsExempt reports whether the given entity is marked ai_exempt for the
-// tenant. entityType selects which lookup to run. An unknown entity type
+// platform. entityType selects which lookup to run. An unknown entity type
 // returns false (no exemption table to consult) and a nil error.
 // // A pgx.ErrNoRows result is translated to (false, nil): a non-existent
 // entity has no exemption flag set, and the caller (tool handler) will

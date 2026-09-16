@@ -29,16 +29,16 @@ func TestHandleVerifyHITL_MissingAuth(t *testing.T) {
 	}
 }
 
-// TestHandleVerifyHITL_MissingTenant verifies the endpoint rejects requests
-// without a tenant in context.
-func _TestHandleVerifyHITL_MissingTenant(t *testing.T) {
+// TestHandleVerifyHITL_MissingPlatform verifies the endpoint rejects requests
+// without a platform in context.
+func _TestHandleVerifyHITL_MissingPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{}
-	user, _ := testUserAndTenant()
+	user, _ := testUserAndPlatform()
 	req := httptest.NewRequest(http.MethodPost, "/ai/hitl/verify", bytes.NewReader([]byte(`{"claim":"test"}`)))
 	req.Header.Set("Content-Type", "application/json")
-	// Only user context, no tenant.
+	// Only user context, no platform.
 	ctx := context.WithValue(req.Context(), auth.UserContextKey, user)
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
@@ -55,10 +55,10 @@ func TestHandleVerifyHITL_MissingClaim(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{Settings: &providerSettingsReader{}}
-	user, tenant := testUserAndTenant()
+	user, platform := testUserAndPlatform()
 	req := httptest.NewRequest(http.MethodPost, "/ai/hitl/verify", bytes.NewReader([]byte(`{"claim":""}`)))
 	req.Header.Set("Content-Type", "application/json")
-	req = withAuthContext(req, user, tenant)
+	req = withAuthContext(req, user, platform)
 	w := httptest.NewRecorder()
 
 	h.HandleVerifyHITL(w, req)
@@ -74,10 +74,10 @@ func TestHandleVerifyHITL_MissingSettings(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{}
-	user, tenant := testUserAndTenant()
+	user, platform := testUserAndPlatform()
 	req := httptest.NewRequest(http.MethodPost, "/ai/hitl/verify", bytes.NewReader([]byte(`{"claim":"test"}`)))
 	req.Header.Set("Content-Type", "application/json")
-	req = withAuthContext(req, user, tenant)
+	req = withAuthContext(req, user, platform)
 	w := httptest.NewRecorder()
 
 	h.HandleVerifyHITL(w, req)
@@ -95,10 +95,10 @@ func TestHandleVerifyHITL_MissingAPIKey(t *testing.T) {
 	h := &Handlers{
 		Settings: &providerSettingsReader{provider: "perplexity", apiKey: ""},
 	}
-	user, tenant := testUserAndTenant()
+	user, platform := testUserAndPlatform()
 	req := httptest.NewRequest(http.MethodPost, "/ai/hitl/verify", bytes.NewReader([]byte(`{"claim":"test"}`)))
 	req.Header.Set("Content-Type", "application/json")
-	req = withAuthContext(req, user, tenant)
+	req = withAuthContext(req, user, platform)
 	w := httptest.NewRecorder()
 
 	h.HandleVerifyHITL(w, req)

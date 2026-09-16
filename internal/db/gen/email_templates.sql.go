@@ -189,7 +189,7 @@ type ListEmailTemplatesRow struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Email Templates — Tenant-customizable transactional emails (ADR-054)
+// Email Templates — Platform-customizable transactional emails (ADR-054)
 func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplatesParams) ([]ListEmailTemplatesRow, error) {
 	rows, err := q.db.Query(ctx, listEmailTemplates,
 		arg.Type,

@@ -10,7 +10,7 @@ SELECT * FROM platform_data_imports
 WHERE id = @id;
 
 -- name: GetPlatformDataImportByID :one
--- Used by the Asynq worker, which does not have tenant context.
+-- Used by the Asynq worker, which does not have platform context.
 SELECT * FROM platform_data_imports
 WHERE id = @id;
 

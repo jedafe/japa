@@ -1,6 +1,6 @@
 // Package ai — tools.go defines the tool registry for AI-powered tools.
 // // The tool registry manages configuration, enablement, and usage tracking
-// for AI tools available to tenants. Each tool has a name, description,
+// for AI tools available to platforms. Each tool has a name, description,
 // category, optional configuration schema, and an enable/disable toggle.
 package ai
 
@@ -49,7 +49,7 @@ func NewToolRegistry(database *db.DB) *ToolRegistry {
 	return &ToolRegistry{db: database}
 }
 
-// ListTools returns all AI tools for the given tenant.
+// ListTools returns all AI tools for the given platform.
 func (r *ToolRegistry) ListTools(ctx context.Context) ([]AITool, error) {
 	rows, err := r.db.Reader.Query(ctx, `
 		SELECT id, name, description, category, config, is_enabled,
@@ -268,7 +268,7 @@ type AllToolUsageStats struct {
 }
 
 // GetAllToolUsageStats returns per-tool usage aggregated across all tools for
-// a tenant within the given period. Used by the admin /ai usage tab when no
+// a platform within the given period. Used by the admin /ai usage tab when no
 // specific tool_id is selected.
 func (r *ToolRegistry) GetAllToolUsageStats(ctx context.Context, since time.Time) ([]AllToolUsageStats, error) {
 	rows, err := r.db.Reader.Query(ctx, `
@@ -321,7 +321,7 @@ func (r *ToolRegistry) RecordUsage(ctx context.Context, toolID pgtype.UUID, user
 	return id, nil
 }
 
-// EnsureTool registers a tool if it doesn't already exist for the tenant.
+// EnsureTool registers a tool if it doesn't already exist for the platform.
 // Returns the tool ID (newly created or existing).
 func (r *ToolRegistry) EnsureTool(ctx context.Context, tool ToolDefinition) (pgtype.UUID, error) {
 	var id pgtype.UUID

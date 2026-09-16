@@ -224,7 +224,7 @@ func (s *Service) StartImport(ctx context.Context, userID pgtype.UUID, sourceTyp
 	return imp, nil
 }
 
-// GetImport returns a single import with its details, scoped to the tenant.
+// GetImport returns a single import with its details, scoped to the platform.
 func (s *Service) GetImport(ctx context.Context, importID pgtype.UUID) (gen.ContentImport, error) {
 	return s.store.GetByID(ctx, importID)
 }
@@ -259,7 +259,7 @@ func (s *Service) ListUserImports(ctx context.Context, userID pgtype.UUID, page,
 	return rows, total, nil
 }
 
-// AdminListImports returns all imports for a tenant, optionally filtered
+// AdminListImports returns all imports for a platform, optionally filtered
 // by status, with pagination. An empty status returns all statuses.
 func (s *Service) AdminListImports(ctx context.Context, status string, page, limit int) ([]gen.AdminListContentImportsRow, int64, error) {
 	if page < 1 {

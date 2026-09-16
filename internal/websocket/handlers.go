@@ -104,7 +104,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	// The upgrade handler resolves tickets from Valkey only, so a failed write
 	// would hand the client a ticket that can never be redeemed. The
 	// is cached alongside the user_id so the upgrade handler does not fall back
-	// to a hardcoded default tenant (Rule 4: Valkey keys must be tenant-scoped).
+	// to a hardcoded default platform (Rule 4: Valkey keys must be platform-scoped).
 	if h.vkClient != nil {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -170,7 +170,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 			if _, ok := fields["the id"]; ok {
 				if scanErr := (error)(nil); scanErr != nil {
-					slog.Error("cached ws ticket holds an invalid tenant id", "error", scanErr, "ticket", ticketStr)
+					slog.Error("cached ws ticket holds an invalid platform id", "error", scanErr, "ticket", ticketStr)
 				}
 			}
 		}
@@ -191,7 +191,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mark ticket as used in DB, validating alongside user_id so a
-	// ticket minted in tenant A cannot be consumed in tenant B (BUG-019).
+	// ticket minted in platform A cannot be consumed in platform B (BUG-019).
 	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")
 		return

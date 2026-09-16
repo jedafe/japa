@@ -185,7 +185,7 @@ func TestRecordConsentInvalidJSON(t *testing.T) {
 	h.RecordConsent(w, r)
 
 	if w.Code != http.StatusServiceUnavailable {
-		// Will fail at tenant resolution first.
-		t.Logf("got status %d (expected failure at tenant resolution)", w.Code)
+		// Will fail at platform resolution first.
+		t.Logf("got status %d (expected failure at platform resolution)", w.Code)
 	}
 }

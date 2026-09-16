@@ -338,7 +338,7 @@ func TestUploadResultJSON(t *testing.T) {
 
 	ur := UploadResult{
 		MediaID:      "abc-123",
-		StoragePath:  "temp/tenant1/file.jpg",
+		StoragePath:  "temp/platform1/file.jpg",
 		PresignedURL: "https://seaweedfs.example.com/upload",
 		ExpiresAt:    "2026-01-01T00:00:00Z",
 	}
@@ -357,8 +357,8 @@ func TestUploadResultJSON(t *testing.T) {
 		t.Errorf("media_id = %v, want abc-123", got["media_id"])
 	}
 
-	if got["storage_path"] != "temp/tenant1/file.jpg" {
-		t.Errorf("storage_path = %v, want temp/tenant1/file.jpg", got["storage_path"])
+	if got["storage_path"] != "temp/platform1/file.jpg" {
+		t.Errorf("storage_path = %v, want temp/platform1/file.jpg", got["storage_path"])
 	}
 }
 
@@ -435,7 +435,7 @@ func TestQuarantinedMediaJSON(t *testing.T) {
 		OriginalFilename: "photo.jpg",
 		MimeType:         "image/jpeg",
 		FileSizeBytes:    1024,
-		StoragePath:      "media/tenant1/photo.jpg",
+		StoragePath:      "media/platform1/photo.jpg",
 		StorageBucket:    "media",
 		Confirmed:        false,
 	}

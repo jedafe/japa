@@ -79,7 +79,7 @@ func WithHousingAIModel(model string) HousingPromoterOption {
 }
 
 // NewHousingPromoter creates a promoter backed by the given store. The
-// ID and authorID identify the tenant and system author stamped onto
+// ID and authorID identify the platform and system author stamped onto
 // the housing_guides projection rows created by the create path.
 func NewHousingPromoter(store HousingStore, authorID pgtype.UUID, opts ...HousingPromoterOption) *HousingPromoter {
 	p := &HousingPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}

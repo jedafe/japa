@@ -1658,7 +1658,7 @@ func bodyHTML(body string) string {
 const maxSlugAttempts = 100
 
 // ensureUniqueSlug appends a numeric suffix to the candidate (-2, -3, ...) until
-// no contents row in the tenant uses the same slug. The optional excludeID
+// no contents row in the platform uses the same slug. The optional excludeID
 // allows an existing content's own slug to be reused during an update. The
 // check includes soft-deleted rows because the unique index on (,
 // slug) is not partial.

@@ -27,14 +27,14 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*) FROM wallet_withdrawals
 WHERE user_id = @user_id;
 
--- name: ListWithdrawalsByTenant :many
+-- name: ListWithdrawals :many
 SELECT * FROM wallet_withdrawals
 WHERE (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
  AND (sqlc.narg(user_id)::uuid IS NULL OR user_id = sqlc.narg(user_id))
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
--- name: CountWithdrawalsByTenant :one
+-- name: CountWithdrawals :one
 SELECT COUNT(*) FROM wallet_withdrawals
 WHERE (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
  AND (sqlc.narg(user_id)::uuid IS NULL OR user_id = sqlc.narg(user_id));
@@ -76,7 +76,7 @@ SET is_default = @is_default,
 WHERE id = @id
 RETURNING *;
 
--- name: ListPayoutProvidersByTenant :many
+-- name: ListPayoutProviders :many
 SELECT * FROM payout_providers
 
 ORDER BY is_default DESC, name;
@@ -100,7 +100,7 @@ RETURNING *;
 DELETE FROM payout_providers
 WHERE id = @id;
 
--- name: ListWithdrawalFeeTiersByTenant :many
+-- name: ListWithdrawalFeeTiers :many
 SELECT * FROM wallet_withdrawal_fee_tiers
 WHERE is_active = true
 ORDER BY position, min_amount;

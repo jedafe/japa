@@ -25,7 +25,7 @@ func (s *Service) ResolveContent(ctx context.Context, c *gen.Content, rc literal
 // ResolveContentFields resolves {{...}} placeholders in the title, body,
 // body_html, meta_title, and meta_description fields of any content-like
 // struct or slice of structs. It works with the various sqlc-generated
-// row types (GetContentBySlugRow, ListContentsByTenantRow, etc.) by using
+// row types (GetContentBySlugRow, ListContentsRow, etc.) by using
 // reflection to find and mutate those fields by name.
 func (s *Service) ResolveContentFields(ctx context.Context, v any, rc literals.RenderContext) error {
 	if v == nil {
@@ -324,6 +324,6 @@ func setStringField(fv reflect.Value, value string, isMeta bool) {
 // Geo fields come from the ADR-064 VisitorContext (profile origin_country /
 // destination_country custom fields, jc_journey_token for guests, GeoIP
 // fallback) and the GeoIP middleware context (detected country name/code).
-func buildRenderContext(r *http.Request, tenantName string) literals.RenderContext {
-	return literals.NewRequestContext(r, tenantName)
+func buildRenderContext(r *http.Request, platformName string) literals.RenderContext {
+	return literals.NewRequestContext(r, platformName)
 }

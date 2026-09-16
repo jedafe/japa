@@ -105,13 +105,13 @@ func (q *Queries) ConfirmMedia(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const countMediaByTenant = `-- name: CountMediaByTenant :one
+const countMedia = `-- name: CountMedia :one
 SELECT COUNT(*)::int AS count FROM media
 WHERE deleted_at IS NULL
 `
 
-func (q *Queries) CountMediaByTenant(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, countMediaByTenant)
+func (q *Queries) CountMedia(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countMedia)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -405,20 +405,20 @@ func (q *Queries) InsertMedia(ctx context.Context, arg InsertMediaParams) (Mediu
 	return i, err
 }
 
-const listMediaByTenant = `-- name: ListMediaByTenant :many
+const listMedia = `-- name: ListMedia :many
 SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
 WHERE deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $1
 `
 
-type ListMediaByTenantParams struct {
+type ListMediaParams struct {
 	PageOffset int32 `json:"page_offset"`
 	PageLimit  int32 `json:"page_limit"`
 }
 
-func (q *Queries) ListMediaByTenant(ctx context.Context, arg ListMediaByTenantParams) ([]Medium, error) {
-	rows, err := q.db.Query(ctx, listMediaByTenant, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListMedia(ctx context.Context, arg ListMediaParams) ([]Medium, error) {
+	rows, err := q.db.Query(ctx, listMedia, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

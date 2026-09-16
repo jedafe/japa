@@ -117,7 +117,7 @@ func (s *Store) DeleteEntityEmbeddings(ctx context.Context, entityType string, e
 }
 
 // DeleteEmbeddingsByType removes all chunks for every entity of the given
-// type within a tenant. Used by the admin by-type aggregate purge.
+// type within a platform. Used by the admin by-type aggregate purge.
 func (s *Store) DeleteEmbeddingsByType(ctx context.Context, entityType string) error {
 	return s.queries.DeleteContentEmbeddingsByType(ctx,
 
@@ -329,7 +329,7 @@ type EntityTypeStats struct {
 	EntityCount int64  `json:"entity_count"`
 }
 
-// GetStats returns aggregate index statistics for a tenant.
+// GetStats returns aggregate index statistics for a platform.
 func (s *Store) GetStats(ctx context.Context) (IndexStats, error) {
 	row, err := s.queries.GetContentEmbeddingStats(ctx)
 	if err != nil {

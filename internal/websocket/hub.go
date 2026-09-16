@@ -100,7 +100,7 @@ func (h *Hub) Unregister(client *Client) {
 }
 
 // removeSpaceSubscriptionsLocked removes the client from every space
-// subscription map it belongs to. The key is tenant-scoped
+// subscription map it belongs to. The key is platform-scoped
 // (spaceSubscriptionKey) so it matches what SubscribeToSpace stores —
 // the previous Unregister used the bare spaceID and never matched,
 // leaking every space subscription on disconnect (§4.3 memory leak).
@@ -255,12 +255,12 @@ func (h *Hub) deliverLocalAll(event WSEvent) {
 	}
 }
 
-// deliverLocalTenant sends an event to every client connected to THIS instance
+// deliverLocalPlatform sends an event to every client connected to THIS instance
 // whose ID matches, only. It does NOT publish to Valkey — see
-// deliverLocalUser for the loop-safety rationale. This is the tenant-scoped
-// counterpart of deliverLocalAll, used for presence so a user in tenant A
-// never receives presence events from tenant B (Rule 4: tenant-scoped).
-func (h *Hub) deliverLocalTenant(event WSEvent) {
+// deliverLocalUser for the loop-safety rationale. This is the platform-scoped
+// counterpart of deliverLocalAll, used for presence so a user in platform A
+// never receives presence events from platform B (Rule 4: platform-scoped).
+func (h *Hub) deliverLocalPlatform(event WSEvent) {
 	h.mu.RLock()
 
 	clients := make([]*Client, 0, len(h.clients))
@@ -275,7 +275,7 @@ func (h *Hub) deliverLocalTenant(event WSEvent) {
 
 	data, err := json.Marshal(event)
 	if err != nil {
-		slog.Error("ws marshal tenant broadcast event", "error", err)
+		slog.Error("ws marshal platform broadcast event", "error", err)
 		return
 	}
 
@@ -283,7 +283,7 @@ func (h *Hub) deliverLocalTenant(event WSEvent) {
 		select {
 		case client.Send <- data:
 		default:
-			slog.Warn("ws client send buffer full, dropping tenant broadcast", "user_id", client.UserID)
+			slog.Warn("ws client send buffer full, dropping platform broadcast", "user_id", client.UserID)
 		}
 	}
 }
@@ -310,8 +310,8 @@ func (h *Hub) IsUserOnline(userID string) bool {
 }
 
 // SubscribeToSpace adds a client to a space's subscribers. The subscription
-// key is scoped to the client's tenant so a cross-tenant space ID collision
-// cannot leak events to subscribers in another tenant (Rule 4: tenant-scoped).
+// key is scoped to the client's platform so a cross-platform space ID collision
+// cannot leak events to subscribers in another platform (Rule 4: platform-scoped).
 func (h *Hub) SubscribeToSpace(client *Client, spaceID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -327,7 +327,7 @@ func (h *Hub) SubscribeToSpace(client *Client, spaceID string) {
 }
 
 // UnsubscribeFromSpace removes a client from a space's subscribers. The
-// subscription key is scoped to the client's tenant (Rule 4: tenant-scoped).
+// subscription key is scoped to the client's platform (Rule 4: platform-scoped).
 func (h *Hub) UnsubscribeFromSpace(client *Client, spaceID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

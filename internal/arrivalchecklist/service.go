@@ -347,7 +347,7 @@ func (s *Service) GetGuide(ctx context.Context, id pgtype.UUID) (GuideDTO, error
 }
 
 // GetGuideItems returns the ordered checklist items for a published guide.
-// The guide must exist, be published, active, and belong to the tenant.
+// The guide must exist, be published, active, and belong to the platform.
 // Public endpoint — never exposes draft/rejected guides (§92, ADR-088).
 func (s *Service) GetGuideItems(ctx context.Context, guideID pgtype.UUID) ([]ChecklistItemDTO, error) {
 	if _, err := s.store.GetPublishedGuideByID(ctx, guideID); err != nil {

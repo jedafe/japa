@@ -31,9 +31,9 @@ func NewService(database *db.DB) *Service {
 	return &Service{read: gen.New(database.Reader), write: gen.New(database.Writer)}
 }
 
-// ListTags returns every tag for the tenant, alphabetically.
-func (s *Service) ListTags(ctx context.Context) ([]gen.ListTagsByTenantRow, error) {
-	tags, err := s.read.ListTagsByTenant(ctx)
+// ListTags returns every tag for the platform, alphabetically.
+func (s *Service) ListTags(ctx context.Context) ([]gen.ListTagsRow, error) {
+	tags, err := s.read.ListTags(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing tags: %w", err)
 	}
@@ -127,7 +127,7 @@ func (s *Service) ResolveTagSlugMap(ctx context.Context, slugs []string) (map[st
 }
 
 // GetOrCreateTagSlugs resolves tag slugs to their IDs, creating any slug that
-// does not yet exist as a new tenant-scoped tag (name = slug, slug = slug).
+// does not yet exist as a new platform-scoped tag (name = slug, slug = slug).
 // This backs the spec-compliant POST /content/{id}/tags { tag_slugs: [] }
 // flow where the composer sends user-typed tag names that may not exist yet
 // (Section 14). Returns a slug→tagID map covering every input slug.
@@ -320,7 +320,7 @@ func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID pgtype.U
 	return nil
 }
 
-// GetUserIDByUsername resolves a username to a user ID within the tenant.
+// GetUserIDByUsername resolves a username to a user ID within the platform.
 func (s *Service) GetUserIDByUsername(ctx context.Context, username string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 

@@ -28,7 +28,7 @@ func withAuthUser(r *http.Request) *http.Request {
 	return r.WithContext(ctx)
 }
 
-func withTenant(r *http.Request) *http.Request {
+func withPlatform(r *http.Request) *http.Request {
 	ctx := r.Context()
 
 	var tid pgtype.UUID
@@ -91,7 +91,7 @@ func TestCreateOrganization_MissingName(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/organizations", body)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	h.CreateOrganization(rr, req)
@@ -108,7 +108,7 @@ func TestCreateOrganization_InvalidJSON(t *testing.T) {
 	h := testHandlers()
 	req := httptest.NewRequest(http.MethodPost, "/organizations", bytes.NewBufferString("not json"))
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	h.CreateOrganization(rr, req)
@@ -127,7 +127,7 @@ func TestUpdateOrganization_InvalidJSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPatch, "/organizations/not-a-uuid", bytes.NewBufferString("not json"))
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -146,7 +146,7 @@ func TestDeleteOrganization_InvalidUUID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/organizations/not-a-uuid", nil)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -187,7 +187,7 @@ func TestInviteMember_MissingEmail(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/organizations/00000000-0000-0000-0000-000000000000/invitations", body)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -204,7 +204,7 @@ func TestClaimOwnership_InvalidJSON(t *testing.T) {
 	h := testHandlers()
 	req := httptest.NewRequest(http.MethodPost, "/claim-ownership", bytes.NewBufferString("not json"))
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	h.ClaimOwnership(rr, req)
@@ -223,7 +223,7 @@ func TestReviewClaim_InvalidJSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPatch, "/claim-ownership/not-a-uuid", bytes.NewBufferString("not json"))
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)

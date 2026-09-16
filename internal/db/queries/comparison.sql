@@ -12,7 +12,7 @@ SELECT id, name, slug, description, icon, field_group_id, item_label, is_system,
 FROM comparison_type_definitions
 WHERE slug = @slug;
 
--- name: ListComparisonTypesByTenant :many
+-- name: ListComparisonTypes :many
 SELECT id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 FROM comparison_type_definitions
 
@@ -241,7 +241,7 @@ ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListComparisonsFilteredAdmin :many
--- Admin list: returns all non-deleted comparison content rows for the tenant,
+-- Admin list: returns all non-deleted comparison content rows for the platform,
 -- optionally filtered by type_id and space_id.
 SELECT DISTINCT c.id, c.author_id, c.space_id, c.content_type,
  c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,

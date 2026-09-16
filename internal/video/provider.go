@@ -46,7 +46,7 @@ type Metadata struct {
 	ChannelBanner  string
 }
 
-// ChannelKey returns a stable, tenant-scoped identifier for the external
+// ChannelKey returns a stable, platform-scoped identifier for the external
 // channel. It is used as the synthetic user's username and is derived from
 // the source platform plus a sanitized channel name.
 func (m *Metadata) ChannelKey() string {

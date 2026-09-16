@@ -24,7 +24,7 @@ func NewHandlers(checker *Checker) *Handlers {
 }
 
 // HandleGetFeatureFlags handles GET /api/v1/feature-flags.
-// Returns all feature flags and their enabled state for the current tenant.
+// Returns all feature flags and their enabled state for the current platform.
 // This endpoint is public (no auth required) because the frontend layout
 // needs flags before the user logs in to render navigation correctly.
 func (h *Handlers) HandleGetFeatureFlags(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +34,7 @@ func (h *Handlers) HandleGetFeatureFlags(w http.ResponseWriter, r *http.Request)
 }
 
 // HandleSetFeatureFlag handles PATCH /admin/feature-flags/{flag_name}.
-// Toggles a feature flag's enabled state for the current tenant.
+// Toggles a feature flag's enabled state for the current platform.
 // Protected by RBAC permission "features.manage".
 func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) {
 
@@ -66,7 +66,7 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// STD-003: clear only the affected tenant's cache, not all tenants.
+	// STD-003: clear only the affected platform's cache, not all platforms.
 	h.checker.ClearCache()
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -77,7 +77,7 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// FeatureFlag is the admin-facing representation of a tenant feature flag.
+// FeatureFlag is the admin-facing representation of a platform feature flag.
 // The storage layer only persists a flag_name → enabled mapping, so the
 // richer fields (name, description, environment, rolloutPercentage) are
 // derived with sensible defaults for the admin UI.
@@ -94,10 +94,10 @@ type FeatureFlag struct {
 }
 
 // ListFeatureFlags handles GET /api/v1/admin/feature-flags.
-// Returns the tenant's feature flags as an array (the public GET /feature-flags
+// Returns the platform's feature flags as an array (the public GET /feature-flags
 // returns a map). Gated by admin.feature_flags.manage at the router so the admin
 // SPA can render a proper list/table. It merges the static Registry keys with
-// any tenant rows (including admin-created keys) so the list is always complete.
+// any platform rows (including admin-created keys) so the list is always complete.
 func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.checker.ListFlagRows(r.Context())
@@ -172,7 +172,7 @@ func applyFlagConfig(flag *FeatureFlag, raw []byte) {
 }
 
 // CreateFeatureFlag handles POST /api/v1/admin/feature-flags.
-// Creates a tenant feature flag (registry key or new admin key) with an initial
+// Creates a platform feature flag (registry key or new admin key) with an initial
 // enabled state and metadata. Gated by admin.feature_flags.manage.
 func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 
@@ -297,7 +297,7 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteFeatureFlag handles DELETE /api/v1/admin/feature-flags/{flag_name}.
-// Removes the tenant's override for the flag; afterwards it reverts to its
+// Removes the platform's override for the flag; afterwards it reverts to its
 // registry Default. Gated by admin.feature_flags.manage.
 func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 

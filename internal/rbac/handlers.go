@@ -112,7 +112,7 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // The {id} parameter is a UUID — consistent with all other group endpoints.
 // System groups are protected by the store layer (is_system = false in the
 // DELETE query) and by an explicit check here. The filter prevents
-// cross-tenant deletion.
+// cross-platform deletion.
 func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
@@ -541,7 +541,7 @@ func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 // System groups cannot have their slug changed — the slug is the resolution
 // key for IsSuperAdmin and other system-group checks. Name, description,
 // and permission updates on system groups are allowed. The filter
-// prevents cross-tenant updates.
+// prevents cross-platform updates.
 func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 
 	groupID, err := parseUUID(chi.URLParam(r, "id"))

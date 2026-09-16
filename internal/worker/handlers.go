@@ -351,7 +351,7 @@ func scheduleScholarshipSyncFromGuide(ctx context.Context, contentID pgtype.UUID
 	}
 }
 
-// scheduleRSSRegenerate enqueues the rss:regenerate task for a tenant so
+// scheduleRSSRegenerate enqueues the rss:regenerate task for a platform so
 // RSS feeds reflect newly published content without waiting for the hourly
 // cron. Fire-and-forget per Rule 8 (RSS-013).
 // // Ref: japaconnect-engineering/sections/26-seo-performance.md
@@ -381,7 +381,7 @@ func requireDB() (*gen.Queries, error) {
 	return gen.New(dbPool.Writer), nil
 }
 
-// resolveBaseURL returns the site base URL for a tenant by checking
+// resolveBaseURL returns the site base URL for a platform by checking
 // system_settings first, then falling back to the JC_SITE_URL env var.
 func resolveBaseURL(ctx context.Context) string {
 	if dbPool == nil {
@@ -1327,7 +1327,7 @@ func entityIndexers(ix SearchIndexer) map[string]func(context.Context, [16]byte)
 // engagementReindexBatchSize is the max number of content documents re-indexed
 // per cron tick. Tunable via the search.engagement_reindex_batch_size system
 // setting (§13). A conservative default keeps each tick fast even on large
-// tenants.
+// platforms.
 const engagementReindexBatchSize = 100
 
 // engagementReindexCursorKey is the Valkey key holding the last-swept
@@ -3139,16 +3139,16 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	generateSitemapForTenant(ctx, baseURL)
+	generateSitemapForPlatform(ctx, baseURL)
 	return nil
 }
 
-// generateSitemapForTenant generates the platform sitemap XML.
+// generateSitemapForPlatform generates the platform sitemap XML.
 // Content is filtered through the Section 43 sitemap quality gates
 // (bots.IsContentIndexableByType) using per-content-type thresholds
 // from system_settings.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func generateSitemapForTenant(ctx context.Context, baseURL string) {
+func generateSitemapForPlatform(ctx context.Context, baseURL string) {
 	slugs, err := gen.New(dbPool.Reader).ListPublishedSlugsForSitemap(ctx)
 	if err != nil {
 		slog.Error("task:sitemap:generate: failed to list content", "error", err)
@@ -3242,7 +3242,7 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	generateRSSForTenant(ctx, baseURL)
+	generateRSSForPlatform(ctx, baseURL)
 	return nil
 }
 
@@ -3250,20 +3250,20 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 // internal/rss.defaultFeedLimit. RSS-008: previously hardcoded as 20 inline.
 const rssFeedLimit = 20
 
-// generateRSSForTenant generates the RSS feed for a single tenant using the
+// generateRSSForPlatform generates the RSS feed for a single platform using the
 // shared sqlc query (ListRSSFeedItems — the same one internal/rss uses for
 // live requests) and caches the rendered XML in Valkey under
 // jc:cache:feed:rss:{} with a 1-hour TTL (VALKEY-002 compliance).
 // The live /feed.xml route can read from this cache to avoid a DB hit on
 // every request. Writing to a local file is removed — it was not
-// multi-tenant safe.
+// multi-platform safe.
 // // RSS-001: also generates a blog-only feed (ListPublishedPostsForRSS) into
 // jc:cache:feed:rss:blog so /api/v1/blog/feed.xml doesn't serve
 // non-blog content from the universal cache.
 // // RSS-011: uses the shared internal/rss/model subpackage for the XML model
 // and rendering helpers — no more local copies that can drift (this drift
 // caused RSS-003: the old local formatRSSTime didn't check IsZero).
-func generateRSSForTenant(ctx context.Context, baseURL string) {
+func generateRSSForPlatform(ctx context.Context, baseURL string) {
 	q := gen.New(dbPool.Reader)
 
 	rows, err := q.ListRSSFeedItems(ctx,
@@ -3301,12 +3301,12 @@ func generateRSSForTenant(ctx context.Context, baseURL string) {
 	// universal cache. Uses ListPublishedPostsForRSS (content_type=blog_post,
 	// auto_hidden=false) — the same query the live blog handler falls back
 	// to on a cache miss.
-	generateBlogRSSForTenant(ctx, q, baseURL)
+	generateBlogRSSForPlatform(ctx, q, baseURL)
 }
 
-// generateBlogRSSForTenant generates the blog-only RSS feed and caches it
+// generateBlogRSSForPlatform generates the blog-only RSS feed and caches it
 // under jc:cache:feed:rss:blog (1hr TTL).
-func generateBlogRSSForTenant(ctx context.Context, q *gen.Queries, baseURL string) {
+func generateBlogRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL string) {
 	rows, err := q.ListPublishedPostsForRSS(ctx,
 
 		rssFeedLimit,
@@ -3694,18 +3694,18 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	scanTenantSecurity(ctx)
+	scanPlatformSecurity(ctx)
 
 	slog.Info("task:security:scan: complete")
 
 	return nil
 }
 
-// scanTenantSecurity runs the security scan for a single tenant: the
+// scanPlatformSecurity runs the security scan for a single platform: the
 // analytics scan (populating security_scan_results) then the ClamAV media
-// scan via the moderation processor. Per-tenant failures are logged and do
+// scan via the moderation processor. Per-platform failures are logged and do
 // not abort the sweep.
-func scanTenantSecurity(ctx context.Context) {
+func scanPlatformSecurity(ctx context.Context) {
 	// 1. Run the analytics security scan (populates security_scan_results).
 	if analyticsProcessor != nil {
 		if err := analyticsProcessor.RunSecurityScan(ctx); err != nil {
@@ -3732,7 +3732,7 @@ func scanTenantSecurity(ctx context.Context) {
 		}
 	}
 
-	slog.Info("task:security:scan: tenant complete", "media_scanned", scanCount)
+	slog.Info("task:security:scan: platform complete", "media_scanned", scanCount)
 }
 
 // HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the platform.
@@ -3815,7 +3815,7 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandleNewsletterDigest compiles and sends a weekly newsletter digest to all
-// active subscribers for the tenant. Fetches recently published content, builds
+// active subscribers for the platform. Fetches recently published content, builds
 // an HTML digest, and sends via the registered email gateway or SMTP fallback.
 func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:newsletter:digest")
@@ -3849,7 +3849,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	// Fetch newsletter subscribers with digest enabled for this tenant.
+	// Fetch newsletter subscribers with digest enabled for this platform.
 	subscribers, err := listDigestSubscribers(ctx)
 	if err != nil {
 		slog.Error("task:newsletter:digest: failed to list subscribers", "error", err)
@@ -3900,7 +3900,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// listDigestSubscribers returns the email addresses of this tenant's
+// listDigestSubscribers returns the email addresses of this platform's
 // subscribers with digest_enabled = true.
 func listDigestSubscribers(ctx context.Context) ([]string, error) {
 	rows, err := dbPool.Reader.Query(ctx, `SELECT email FROM newsletter_subscribers WHERE status = 'subscribed' AND digest_enabled = true`)
@@ -3947,7 +3947,7 @@ func buildDigestBody(ctx context.Context, subject string, digestItems []gen.List
 // Trending & Discovery handlers
 // ---------------------------------------------------------------------------
 
-// HandleComputeTrending recomputes trending snapshots for all tenants.
+// HandleComputeTrending recomputes trending snapshots for all platforms.
 func HandleComputeTrending(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:maintenance:compute_trending")
 
@@ -4499,7 +4499,7 @@ func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 }
 
 // HandleMaintenancePruneAuditLogs deletes audit_logs rows older than the
-// per-tenant 'audit.log_retention_days' system_settings value (default 365).
+// per-platform 'audit.log_retention_days' system_settings value (default 365).
 // Ref: conventions/system-settings-catalog.md (audit.log_retention_days).
 func HandleMaintenancePruneAuditLogs(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_audit_logs — pruning old audit logs")
@@ -4662,7 +4662,7 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:report:notify_admin: %w", err)
 	}
 
-	// Resolve every user with the reports.review permission for this tenant.
+	// Resolve every user with the reports.review permission for this platform.
 	q := gen.New(dbPool.Reader)
 
 	recipients, err := q.ListUserIDsByPermissionKey(ctx,

@@ -256,7 +256,7 @@ LIMIT 1
 }
 
 // GetTreatyByPair returns the tax_treaty_pairs row for a given
-// origin/destination space pair within a tenant.
+// origin/destination space pair within a platform.
 func (s *Store) GetTreatyByPair(ctx context.Context, originSpaceID, destSpaceID pgtype.UUID) (TreatyRow, error) {
 	const q = `
 SELECT t.id, t.origin_space_id, os.name AS origin_space_name,
@@ -768,7 +768,7 @@ WHERE %s
 		return nil, nil, 0, fmt.Errorf("taxcalculator: admin count guides: %w", err)
 	}
 
-	// Fetch all treaty pairs for the tenant so the admin view can show
+	// Fetch all treaty pairs for the platform so the admin view can show
 	// them alongside guides without a second paginated request.
 	treatyQuery := `
 SELECT t.id, t.origin_space_id, os.name AS origin_space_name,

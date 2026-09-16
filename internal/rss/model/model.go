@@ -2,7 +2,7 @@
 // helpers used by internal/rss (live HTTP handlers), internal/blog (blog
 // feed), and internal/worker (rss:regenerate background task).
 //
-// This subpackage intentionally has NO dependency on chi, tenant, net/http,
+// This subpackage intentionally has NO dependency on chi, platform, net/http,
 // or the internal/rss handlers package — only on the standard library,
 // pgtype (for timestamp formatting), and slog (for error logging). This
 // lets the background worker import it without pulling in the HTTP stack.

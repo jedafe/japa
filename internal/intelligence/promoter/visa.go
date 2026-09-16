@@ -79,7 +79,7 @@ func WithVisaAIModel(model string) VisaPromoterOption {
 }
 
 // NewVisaPromoter creates a promoter backed by the given store. The ID
-// and authorID identify the tenant and system author stamped onto the
+// and authorID identify the platform and system author stamped onto the
 // contents guide rows created by the create path.
 func NewVisaPromoter(store VisaStore, authorID pgtype.UUID, opts ...VisaPromoterOption) *VisaPromoter {
 	p := &VisaPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}

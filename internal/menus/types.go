@@ -19,7 +19,7 @@ var (
 	ErrInvalidVisibility = errors.New("invalid visibility; must be all, authenticated, or guest")
 	ErrInvalidStatus     = errors.New("invalid status; must be active or inactive")
 	ErrInvalidTarget     = errors.New("invalid target; must be _self or _blank")
-	ErrDuplicateSlug     = errors.New("menu slug already exists for this tenant")
+	ErrDuplicateSlug     = errors.New("menu slug already exists for this platform")
 )
 
 // Placement defines where the menu appears in the UI.

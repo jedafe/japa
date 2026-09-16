@@ -892,7 +892,7 @@ func (q *Queries) ListComparisonTypeAccess(ctx context.Context, typeID pgtype.UU
 	return items, nil
 }
 
-const listComparisonTypesByTenant = `-- name: ListComparisonTypesByTenant :many
+const listComparisonTypes = `-- name: ListComparisonTypes :many
 SELECT id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 FROM comparison_type_definitions
 
@@ -900,12 +900,12 @@ ORDER BY created_at DESC
 LIMIT $2 OFFSET $1
 `
 
-type ListComparisonTypesByTenantParams struct {
+type ListComparisonTypesParams struct {
 	PageOffset int32 `json:"page_offset"`
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListComparisonTypesByTenantRow struct {
+type ListComparisonTypesRow struct {
 	ID           pgtype.UUID        `json:"id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
@@ -918,15 +918,15 @@ type ListComparisonTypesByTenantRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) ListComparisonTypesByTenant(ctx context.Context, arg ListComparisonTypesByTenantParams) ([]ListComparisonTypesByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonTypesByTenant, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListComparisonTypes(ctx context.Context, arg ListComparisonTypesParams) ([]ListComparisonTypesRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonTypes, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListComparisonTypesByTenantRow
+	var items []ListComparisonTypesRow
 	for rows.Next() {
-		var i ListComparisonTypesByTenantRow
+		var i ListComparisonTypesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -1189,7 +1189,7 @@ type ListComparisonsFilteredAdminRow struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Admin list: returns all non-deleted comparison content rows for the tenant,
+// Admin list: returns all non-deleted comparison content rows for the platform,
 // optionally filtered by type_id and space_id.
 func (q *Queries) ListComparisonsFilteredAdmin(ctx context.Context, arg ListComparisonsFilteredAdminParams) ([]ListComparisonsFilteredAdminRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsFilteredAdmin,

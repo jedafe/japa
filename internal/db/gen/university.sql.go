@@ -785,7 +785,7 @@ SELECT id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source
 WHERE id = $1
 `
 
-// ADR-063 §9: admin audit viewer, single fetch, tenant-scoped.
+// ADR-063 §9: admin audit viewer, single fetch, platform-scoped.
 func (q *Queries) GetRevenueSplitByID(ctx context.Context, id pgtype.UUID) (RevenueSplit, error) {
 	row := q.db.QueryRow(ctx, getRevenueSplitByID, id)
 	var i RevenueSplit
@@ -1871,7 +1871,7 @@ type ListRevenueSplitsRow struct {
 	InstructorName *string            `json:"instructor_name"`
 }
 
-// ADR-063 §9: admin audit viewer, tenant-wide paginated list with optional
+// ADR-063 §9: admin audit viewer, platform-wide paginated list with optional
 // filters. All filters are optional (empty string / NULL = no filter). The
 // date range is half-open [from, to). Ordered by created_at DESC so the most
 // recent revenue events appear first.

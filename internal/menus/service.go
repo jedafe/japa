@@ -21,7 +21,7 @@ type PermissionResolver interface {
 	UserPermissions(ctx context.Context, userID pgtype.UUID) (map[string]bool, error)
 }
 
-// FeatureChecker resolves tenant-level feature flags so the menu resolver can
+// FeatureChecker resolves platform-level feature flags so the menu resolver can
 // prune items tied to disabled features.
 type FeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
@@ -265,7 +265,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, input CreateMenuItemInput)
 	if err := menuID.Scan(input.MenuID); err != nil {
 		return gen.CreateMenuItemRow{}, fmt.Errorf("invalid menu_id: %w", err)
 	}
-	// Verify the parent menu exists and belongs to the tenant before
+	// Verify the parent menu exists and belongs to the platform before
 	// creating the item. Without this, a non-existent menu_id hits the FK
 	// constraint and surfaces as a generic 500 instead of 404 (Rule 5).
 	// Ref: ADR-054.
@@ -379,7 +379,7 @@ func (s *Service) DeleteMenuItem(ctx context.Context, id pgtype.UUID) error {
 	return s.store.deleteMenuItem(ctx, id)
 }
 
-// GetMenuItem returns a single menu item by ID, scoped to the tenant.
+// GetMenuItem returns a single menu item by ID, scoped to the platform.
 // Used by handlers to verify an item belongs to a specific menu before
 // performing scoped operations (update/delete/reorder). Ref: ADR-054.
 func (s *Service) GetMenuItem(ctx context.Context, id pgtype.UUID) (gen.GetMenuItemRow, error) {
@@ -453,7 +453,7 @@ func genMenuItemsToJSON(rows []gen.ListMenuItemsRow) []MenuItem {
 // a non-nil permission_node is shown only if the user holds that permission.
 // Guests skip permission_node pruning (ADR-054: guests need no permission
 // check). Items with a non-empty feature_flag are shown only when the flag is
-// enabled for the tenant. Items with no permission_node are visible to everyone
+// enabled for the platform. Items with no permission_node are visible to everyone
 // per visibility rules.
 func filterMenuItems(ctx context.Context, items []MenuItem, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool, features FeatureChecker) []MenuItem {
 	var filtered []MenuItem
@@ -502,7 +502,7 @@ func filterMenuItems(ctx context.Context, items []MenuItem, userGroupIDs map[str
 			}
 		}
 		// Feature-flag gating: an item with a non-empty feature_flag is shown
-		// only when the flag is enabled for the tenant. The check is performed
+		// only when the flag is enabled for the platform. The check is performed
 		// regardless of auth state because disabled features are hidden from
 		// everyone. Fail closed if the feature checker is unavailable.
 		if item.FeatureFlag != nil && *item.FeatureFlag != "" {

@@ -25,7 +25,7 @@ type freshnessSettings struct {
 	cacheTTLMinutes  int
 }
 
-// loadFreshnessSettings loads the freshness-related system_settings for the tenant.
+// loadFreshnessSettings loads the freshness-related system_settings for the platform.
 func (s *Service) loadFreshnessSettings(ctx context.Context) freshnessSettings {
 	if s.settings == nil {
 		return defaultFreshnessSettings()
@@ -156,7 +156,7 @@ func (s *Service) cellFreshness(
 }
 
 // FreshnessForComparison computes the freshness summary for a comparison.
-// // It loads the comparison matrix, the raw comparison_values rows, and the tenant's
+// // It loads the comparison matrix, the raw comparison_values rows, and the platform's
 // data sources, resolves a source for each cell, and aggregates per-item and overall
 // scores. The result is cached in Valkey under jc:jce:freshness:{}:{content_id}.
 func (s *Service) FreshnessForComparison(ctx context.Context, contentID, userID pgtype.UUID) (FreshnessSummary, error) {

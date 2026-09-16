@@ -36,7 +36,7 @@ SELECT EXISTS (
 `
 
 // Existence check for the public org profile gate: is there an ACTIVE,
-// non-deleted organization with this id in this tenant?
+// non-deleted organization with this id in this platform?
 func (q *Queries) ActiveOrgExistsByID(ctx context.Context, id pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, activeOrgExistsByID, id)
 	var exists bool
@@ -117,7 +117,7 @@ SELECT COUNT(*) FROM organizations
 WHERE owner_user_id = $1 AND deleted_at IS NULL
 `
 
-// Counts active (non-deleted) organizations owned by a user in a tenant.
+// Counts active (non-deleted) organizations owned by a user in a platform.
 // Used by the organizations.max_per_user quantity gate (BUG-015).
 func (q *Queries) CountOrganizationsByOwner(ctx context.Context, ownerUserID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countOrganizationsByOwner, ownerUserID)
@@ -312,7 +312,7 @@ type GetOrgOwnerPublicProfileRow struct {
 // for the public org profile sidebar "Org Leader" widget. Unlike
 // ListPublicOrganizationMembers, this does NOT filter by user.status — the
 // owner is shown even if their account is restricted (they are the org's
-// leader regardless of their own account standing). Tenant-scoped for
+// leader regardless of their own account standing). Platform-scoped for
 // defense-in-depth.
 func (q *Queries) GetOrgOwnerPublicProfile(ctx context.Context, organizationID pgtype.UUID) (GetOrgOwnerPublicProfileRow, error) {
 	row := q.db.QueryRow(ctx, getOrgOwnerPublicProfile, organizationID)
@@ -409,7 +409,7 @@ WHERE id = $1 AND deleted_at IS NULL
 `
 
 // Used by invitation acceptance where the id is not yet known; the org's
-// the id is read from the row and used for subsequent tenant-scoped calls.
+// the id is read from the row and used for subsequent platform-scoped calls.
 func (q *Queries) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (Organization, error) {
 	row := q.db.QueryRow(ctx, getOrganizationByIDOnly, id)
 	var i Organization
@@ -720,7 +720,7 @@ type IncrementOrganizationMemberCountParams struct {
 	MemberCount int32       `json:"member_count"`
 }
 
-// Defense-in-depth: tenant-scoped to prevent cross-tenant count corruption.
+// Defense-in-depth: platform-scoped to prevent cross-platform count corruption.
 func (q *Queries) IncrementOrganizationMemberCount(ctx context.Context, arg IncrementOrganizationMemberCountParams) error {
 	_, err := q.db.Exec(ctx, incrementOrganizationMemberCount, arg.ID, arg.MemberCount)
 	return err
@@ -752,7 +752,7 @@ WHERE oi.organization_id = $1 AND oi.accepted_at IS NULL
 ORDER BY oi.created_at DESC
 `
 
-// Tenant-scoped via the organizations join (defense-in-depth, BUG-005).
+// Platform-scoped via the organizations join (defense-in-depth, BUG-005).
 func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationID pgtype.UUID) ([]OrganizationInvitation, error) {
 	rows, err := q.db.Query(ctx, listOrganizationInvitations, organizationID)
 	if err != nil {
@@ -803,7 +803,7 @@ type ListOrganizationMembersRow struct {
 	AvatarUrl      *string            `json:"avatar_url"`
 }
 
-// Tenant-scoped via the users join (defense-in-depth, BUG-004).
+// Platform-scoped via the users join (defense-in-depth, BUG-004).
 func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID pgtype.UUID) ([]ListOrganizationMembersRow, error) {
 	rows, err := q.db.Query(ctx, listOrganizationMembers, organizationID)
 	if err != nil {
@@ -1249,7 +1249,7 @@ type ListPublicOrganizationMembersRow struct {
 }
 
 // Public Members tab: ACTIVE members only (banned/suspended/deleted users
-// excluded), tenant-scoped via the users join (defense-in-depth). Excludes the
+// excluded), platform-scoped via the users join (defense-in-depth). Excludes the
 // internal invited_by column by projecting only public fields.
 func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, organizationID pgtype.UUID) ([]ListPublicOrganizationMembersRow, error) {
 	rows, err := q.db.Query(ctx, listPublicOrganizationMembers, organizationID)
@@ -1437,7 +1437,7 @@ type TransferOrganizationOwnershipParams struct {
 }
 
 // Transfers an organization's owner_user_id to a new owner (the claimant
-// whose ownership claim was approved). Tenant-scoped for defense-in-depth.
+// whose ownership claim was approved). Platform-scoped for defense-in-depth.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (q *Queries) TransferOrganizationOwnership(ctx context.Context, arg TransferOrganizationOwnershipParams) error {
 	_, err := q.db.Exec(ctx, transferOrganizationOwnership, arg.ID, arg.OwnerUserID)

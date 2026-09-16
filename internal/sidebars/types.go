@@ -21,7 +21,7 @@ var (
 	ErrInvalidVisibility     = errors.New("invalid visibility; must be all, authenticated, or guest")
 	ErrInvalidStatus         = errors.New("invalid status; must be active or inactive")
 	ErrInvalidWidgetType     = errors.New("invalid widget_type; not a registered sidebar widget type")
-	ErrDuplicateSlug         = errors.New("sidebar slug already exists for this tenant/app/position")
+	ErrDuplicateSlug         = errors.New("sidebar slug already exists for this platform/app/position")
 	ErrInvalidPagePattern    = errors.New("invalid page_pattern; must not be empty")
 	// ErrWidgetTypeNotAllowedForApp is returned when a widget type has no
 	// renderer implementation in the sidebar's app (Section 59, ADR-066).

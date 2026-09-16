@@ -120,7 +120,7 @@ func buildPublicPaths() map[string]any {
 
 func spacesPath() map[string]any {
 	return map[string]any{
-		"get": operation("listSpaces", "List public spaces", "Retrieve a paginated list of public spaces visible to the API key's tenant.", []any{"Spaces"}, "api.read.spaces", paginationParams("spaces"), map[string]any{
+		"get": operation("listSpaces", "List public spaces", "Retrieve a paginated list of public spaces visible to the API key's platform.", []any{"Spaces"}, "api.read.spaces", paginationParams("spaces"), map[string]any{
 			"200": paginatedResponse("List of spaces", "Space"),
 			"401": refResponse("Unauthorized"),
 			"429": refResponse("RateLimited"),
@@ -152,7 +152,7 @@ func contentByIDPath() map[string]any {
 
 func contentListPath() map[string]any {
 	return map[string]any{
-		"get": operation("listContent", "List published content", "Retrieve a paginated list of published, public content within the API key's tenant. Drafts, scheduled, and private content are never exposed.", []any{"Content"}, "api.read.content", paginationParams("content"), map[string]any{
+		"get": operation("listContent", "List published content", "Retrieve a paginated list of published, public content within the API key's platform. Drafts, scheduled, and private content are never exposed.", []any{"Content"}, "api.read.content", paginationParams("content"), map[string]any{
 			"200": paginatedResponse("List of published content", "Content"),
 			"401": refResponse("Unauthorized"),
 			"429": refResponse("RateLimited"),
@@ -223,7 +223,7 @@ func searchPath() map[string]any {
 	qp["required"] = true
 
 	return map[string]any{
-		"get": operation("searchContent", "Search content", "Search published content by title within the API key's tenant.", []any{"Search"}, "api.read.content", []any{
+		"get": operation("searchContent", "Search content", "Search published content by title within the API key's platform.", []any{"Search"}, "api.read.content", []any{
 			qp,
 			limitParam(20, 100),
 			offsetParam(),

@@ -9,12 +9,12 @@ WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: GetOrganizationByIDOnly :one
 -- Used by invitation acceptance where the id is not yet known; the org's
--- the id is read from the row and used for subsequent tenant-scoped calls.
+-- the id is read from the row and used for subsequent platform-scoped calls.
 SELECT * FROM organizations
 WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: CountOrganizationsByOwner :one
--- Counts active (non-deleted) organizations owned by a user in a tenant.
+-- Counts active (non-deleted) organizations owned by a user in a platform.
 -- Used by the organizations.max_per_user quantity gate (BUG-015).
 SELECT COUNT(*) FROM organizations
 WHERE owner_user_id = $1 AND deleted_at IS NULL;
@@ -74,7 +74,7 @@ DELETE FROM organization_members
 WHERE organization_id = $1 AND user_id = $2;
 
 -- name: ListOrganizationMembers :many
--- Tenant-scoped via the users join (defense-in-depth, BUG-004).
+-- Platform-scoped via the users join (defense-in-depth, BUG-004).
 SELECT om.*, u.username, up.display_name, up.avatar_url
 FROM organization_members om
 JOIN users u ON u.id = om.user_id
@@ -103,7 +103,7 @@ SELECT * FROM organization_invitations
 WHERE token_hash = $1 AND expires_at > now() AND accepted_at IS NULL;
 
 -- name: ListOrganizationInvitations :many
--- Tenant-scoped via the organizations join (defense-in-depth, BUG-005).
+-- Platform-scoped via the organizations join (defense-in-depth, BUG-005).
 SELECT oi.* FROM organization_invitations oi
 JOIN organizations o ON o.id = oi.organization_id
 WHERE oi.organization_id = $1 AND oi.accepted_at IS NULL
@@ -222,7 +222,7 @@ WHERE id = $1;
 
 -- name: TransferOrganizationOwnership :exec
 -- Transfers an organization's owner_user_id to a new owner (the claimant
--- whose ownership claim was approved). Tenant-scoped for defense-in-depth.
+-- whose ownership claim was approved). Platform-scoped for defense-in-depth.
 -- Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 UPDATE organizations
 SET owner_user_id = $2, updated_at = now()
@@ -244,14 +244,14 @@ SELECT role FROM organization_members
 WHERE organization_id = $1 AND user_id = $2;
 
 -- name: IncrementOrganizationMemberCount :exec
--- Defense-in-depth: tenant-scoped to prevent cross-tenant count corruption.
+-- Defense-in-depth: platform-scoped to prevent cross-platform count corruption.
 UPDATE organizations
 SET member_count = member_count + $2, updated_at = now()
 WHERE id = $1;
 
 -- name: ActiveOrgExistsByID :one
 -- Existence check for the public org profile gate: is there an ACTIVE,
--- non-deleted organization with this id in this tenant?
+-- non-deleted organization with this id in this platform?
 SELECT EXISTS (
  SELECT 1 FROM organizations
  WHERE id = @id
@@ -270,7 +270,7 @@ WHERE slug = @slug
 -- for the public org profile sidebar "Org Leader" widget. Unlike
 -- ListPublicOrganizationMembers, this does NOT filter by user.status — the
 -- owner is shown even if their account is restricted (they are the org's
--- leader regardless of their own account standing). Tenant-scoped for
+-- leader regardless of their own account standing). Platform-scoped for
 -- defense-in-depth.
 SELECT u.id, u.username, up.display_name, up.avatar_url
 FROM organizations o
@@ -280,7 +280,7 @@ WHERE o.id = @organization_id AND o.deleted_at IS NULL;
 
 -- name: ListPublicOrganizationMembers :many
 -- Public Members tab: ACTIVE members only (banned/suspended/deleted users
--- excluded), tenant-scoped via the users join (defense-in-depth). Excludes the
+-- excluded), platform-scoped via the users join (defense-in-depth). Excludes the
 -- internal invited_by column by projecting only public fields.
 SELECT om.organization_id, om.user_id, om.role, om.joined_at,
  u.username, up.display_name, up.avatar_url

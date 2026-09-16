@@ -11,7 +11,7 @@ import (
 // Share Platforms (admin-configurable social media sharing)
 // ---------------------------------------------------------------------------
 
-// ListSharePlatforms returns all share platforms for a tenant, ordered by position.
+// ListSharePlatforms returns all share platforms for a platform, ordered by position.
 func (s *Service) ListSharePlatforms(ctx context.Context) ([]gen.SharePlatform, error) {
 	platforms, err := s.read.ListSharePlatforms(ctx)
 	if err != nil {
@@ -21,7 +21,7 @@ func (s *Service) ListSharePlatforms(ctx context.Context) ([]gen.SharePlatform, 
 	return platforms, nil
 }
 
-// ListEnabledSharePlatforms returns only enabled share platforms for a tenant.
+// ListEnabledSharePlatforms returns only enabled share platforms for a platform.
 func (s *Service) ListEnabledSharePlatforms(ctx context.Context) ([]gen.SharePlatform, error) {
 	platforms, err := s.read.ListEnabledSharePlatforms(ctx)
 	if err != nil {
@@ -69,7 +69,7 @@ func (s *Service) UpdateSharePlatform(ctx context.Context, key, label, icon, url
 	return p, nil
 }
 
-// DeleteSharePlatform removes a share platform by tenant and key.
+// DeleteSharePlatform removes a share platform by platform and key.
 func (s *Service) DeleteSharePlatform(ctx context.Context, key string) error {
 	if err := s.write.DeleteSharePlatform(ctx,
 

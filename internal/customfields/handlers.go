@@ -208,7 +208,7 @@ type fieldSummary struct {
 
 // toFieldSummary converts a gen.CustomField to a fieldSummary, preserving
 // the Options JSONB as raw JSON instead of base64-encoded []byte.
-func toFieldSummary(f gen.ListAllCustomFieldsByTenantRow) fieldSummary {
+func toFieldSummary(f gen.ListAllCustomFieldsRow) fieldSummary {
 	var opts json.RawMessage
 	if f.Options != nil {
 		opts = json.RawMessage(f.Options)
@@ -273,9 +273,9 @@ func (h *Handlers) enrichFieldGroups(
 
 	groups []gen.CustomFieldGroup,
 ) []fieldGroupEnriched {
-	// Bulk-fetch all assignments and fields for the tenant's groups.
-	assignments, _ := h.Service.ListAllAssignmentsByTenant(ctx)
-	allFields, _ := h.Service.ListAllFieldsByTenant(ctx)
+	// Bulk-fetch all assignments and fields for the platform's groups.
+	assignments, _ := h.Service.ListAllAssignmentsByPlatform(ctx)
+	allFields, _ := h.Service.ListAllFieldsByPlatform(ctx)
 
 	// Build lookup maps: group_id → entity_type (from first assignment),
 	// group_id → fields[].
@@ -905,7 +905,7 @@ func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, id
 // — bulk position update across a group's fields, one call per field to
 // Service.UpdateFieldPosition. Mirrors the comparison package's
 // ReorderComparisonItems handler (no new per-field validation beyond ID
-// parsing; the database scopes each update to the given group and tenant).
+// parsing; the database scopes each update to the given group and platform).
 func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1977,7 +1977,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tenant is required even for public submissions so the row is scoped.
+	// Platform is required even for public submissions so the row is scoped.
 
 	// Optional auth: record the submitter when a valid session exists.
 	var userID pgtype.UUID
@@ -3083,7 +3083,7 @@ func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 
 // ListEntityTypes handles GET /custom-field-entity-types — returns available
 // entity types for custom fields, read from the custom_field_entity_types
-// table (tenant-scoped). Falls back to a hardcoded list if the table is
+// table (platform-scoped). Falls back to a hardcoded list if the table is
 // empty (e.g. before the seed migration runs).
 func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 

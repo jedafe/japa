@@ -14,7 +14,7 @@ import (
 // UnreadCounter manages per-user per-space unread post counts using Valkey.
 // Key format: jc:space_unread:{}:{user_id}:{space_id} -> integer
 // Counters are incremented on new post fan-out and reset to 0 on visit.
-// The segment ensures no cross-tenant collision if user IDs are
+// The segment ensures no cross-platform collision if user IDs are
 // not globally unique (Rule 4, §4.2).
 type UnreadCounter struct {
 	rdb valkeycompat.Cmdable
@@ -30,7 +30,7 @@ func NewUnreadCounter(vk *valkey.Client) *UnreadCounter {
 	return &UnreadCounter{rdb: vk.Redis()}
 }
 
-// unreadKey builds the Valkey key for a tenant/user/space unread counter pair.
+// unreadKey builds the Valkey key for a platform/user/space unread counter pair.
 func unreadKey(userID, spaceID pgtype.UUID) string {
 	return valkey.MustKey("space_unread::%s:%s", userID.String(), spaceID.String())
 }

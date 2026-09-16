@@ -6,7 +6,7 @@
 //     and the agent.presearch_full_threshold setting.
 //   - ai_exempt content is excluded from both content search and RAG.
 //   - Graceful degradation when deps are nil.
-//   - Geo-scoped vs tenant-wide search dispatch.
+//   - Geo-scoped vs platform-wide search dispatch.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Pre-Search Behavior)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 5, tasks 5.01-5.03)
@@ -136,7 +136,7 @@ func TestPreSearch_PrivacyFiltersExemptContent(t *testing.T) {
 
 	deps := &ToolDeps{
 		Content: &stubContentService{
-			searchResults: []gen.ListContentsByTenantRow{
+			searchResults: []gen.ListContentsRow{
 				{ID: mustUUID(t, contentID1), Title: "Exempt content", Slug: "exempt", ContentType: "guide"},
 				{ID: mustUUID(t, contentID2), Title: "Public content", Slug: "public", ContentType: "guide"},
 			},
@@ -189,7 +189,7 @@ func TestPreSearch_NoPrivacyChecker(t *testing.T) {
 
 	deps := &ToolDeps{
 		Content: &stubContentService{
-			searchResults: []gen.ListContentsByTenantRow{
+			searchResults: []gen.ListContentsRow{
 				{ID: mustUUID(t, "00000000-0000-0000-0000-000000000001"), Title: "Content", Slug: "c", ContentType: "guide"},
 			},
 		},
@@ -292,7 +292,7 @@ func TestPreSearch_RAGFailureNonFatal(t *testing.T) {
 
 	deps := &ToolDeps{
 		Content: &stubContentService{
-			searchResults: []gen.ListContentsByTenantRow{
+			searchResults: []gen.ListContentsRow{
 				{ID: mustUUID(t, "00000000-0000-0000-0000-000000000001"), Title: "Content", Slug: "c", ContentType: "guide"},
 			},
 		},

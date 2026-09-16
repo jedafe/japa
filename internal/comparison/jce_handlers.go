@@ -158,7 +158,7 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 
 // ListJCEComparisonsAdmin handles GET /api/v1/jce/comparisons/admin.
 //
-// Returns all non-deleted comparison content rows for the tenant (including
+// Returns all non-deleted comparison content rows for the platform (including
 // drafts and private comparisons), filtered by depth, status, visibility, and
 // promoted state. Requires the comparison.edit_any permission (Section 30).
 func (h *Handlers) ListJCEComparisonsAdmin(w http.ResponseWriter, r *http.Request) {

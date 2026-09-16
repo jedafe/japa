@@ -46,7 +46,7 @@ func newScamUpdateRequest(t *testing.T, body map[string]any, withUser bool, id s
 	}
 
 	if err := (error)(nil); err != nil {
-		t.Fatalf("scan tenant id: %v", err)
+		t.Fatalf("scan platform id: %v", err)
 	}
 
 	ctx := t.Context()

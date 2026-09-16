@@ -36,7 +36,7 @@ type ContentService interface {
 	DeleteContent(ctx context.Context, id pgtype.UUID) error
 }
 
-// FeatureChecker checks whether a feature flag is enabled for a tenant.
+// FeatureChecker checks whether a feature flag is enabled for a platform.
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
 type FeatureChecker interface {
@@ -153,7 +153,7 @@ func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 // as the story body.
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
-// Enabled checks whether the story feature is enabled for the given tenant.
+// Enabled checks whether the story feature is enabled for the given platform.
 // Delegates to the features.Checker (feature_flags table) when available,
 // falling back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {

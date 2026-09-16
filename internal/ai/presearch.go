@@ -152,7 +152,7 @@ func NewPreSearcher(deps *ToolDeps) *PreSearcher {
 // PreSearch runs the content search and RAG retrieval against the prompt,
 // excludes ai_exempt content, and classifies the result level.
 //
-// geoSpaceID is optional — when nil, both searches run tenant-wide. When
+// geoSpaceID is optional — when nil, both searches run platform-wide. When
 // provided, the content search is scoped to the space and RAG retrieval is
 // geo-filtered (§103 Geo-Filtered RAG amendment to §69).
 func (p *PreSearcher) PreSearch(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID) (*PreSearchResult, error) {
@@ -196,7 +196,7 @@ func (p *PreSearcher) PreSearch(ctx context.Context, prompt string, geoSpaceID *
 
 // searchContent runs the content search and filters exempt rows. When
 // geoSpaceID is provided the search is space-scoped; otherwise it is
-// tenant-wide.
+// platform-wide.
 func (p *PreSearcher) searchContent(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID) []PreSearchContentItem {
 	filter := visibility.InternalVisibilityFilter(pgtype.UUID{})
 	if geoSpaceID != nil && geoSpaceID.Valid {
@@ -217,9 +217,9 @@ func (p *PreSearcher) searchContent(ctx context.Context, prompt string, geoSpace
 		return nil
 	}
 
-	filtered := filterExemptContentFromTenant(ctx, p.privacy, rows)
+	filtered := filterExemptContentFromPlatform(ctx, p.privacy, rows)
 
-	return toPreSearchItems(contentSearchResultsFromTenant(filtered))
+	return toPreSearchItems(contentSearchResultsFromPlatform(filtered))
 }
 
 // toPreSearchItems converts the content.search result shape to the

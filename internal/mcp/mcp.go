@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/url"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -160,7 +161,10 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, user *auth.Au
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	sessionID := uuid.NewString()
-	postURL := r.URL.Path + "?session_id=" + sessionID
+	postURL := (&url.URL{
+		Path:     r.URL.EscapedPath(),
+		RawQuery: url.Values{"session_id": {sessionID}}.Encode(),
+	}).RequestURI()
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

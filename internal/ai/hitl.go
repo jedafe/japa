@@ -32,7 +32,7 @@ func CreateHITLReview(ctx context.Context, store *Store, review HITLReview) (HIT
 }
 
 // ApproveReview approves a pending HITL review. The ID scopes the
-// update to the caller's tenant (Section 09 multi-tenancy).
+// update to the caller's platform (Section 09 platform scoping).
 func ApproveReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype.UUID) error {
 	if reviewID == (pgtype.UUID{}) {
 		return errors.New("review_id is required")
@@ -46,7 +46,7 @@ func ApproveReview(ctx context.Context, store *Store, reviewID, reviewerID pgtyp
 }
 
 // RejectReview rejects a pending HITL review with a reason. The ID
-// scopes the update to the caller's tenant (Section 09 multi-tenancy).
+// scopes the update to the caller's platform (Section 09 platform scoping).
 func RejectReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype.UUID, reason string) error {
 	if reviewID == (pgtype.UUID{}) {
 		return errors.New("review_id is required")
@@ -63,7 +63,7 @@ func RejectReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype
 	return store.RejectHITLReview(ctx, reviewID, reviewerID, reason)
 }
 
-// ListPendingReviews returns pending HITL reviews for a tenant. When
+// ListPendingReviews returns pending HITL reviews for a platform. When
 // sourceFilter is non-empty, only reviews with that source are returned
 // (e.g. "studio" for the Studio tab, §75 Review Routing).
 func ListPendingReviews(ctx context.Context, store *Store, sourceFilter string, limit, offset int32) ([]HITLReview, error) {

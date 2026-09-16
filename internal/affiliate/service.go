@@ -95,7 +95,7 @@ func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 
 	if s.settings != nil {
 		// ID is zero-valued — affiliate settings are global (
-		// is required by the interface but affiliate config is not per-tenant).
+		// is required by the interface but affiliate config is not per-platform).
 		proMonthly = s.settings.GetFloatOr(ctx, "affiliate.commission.pro_monthly", 15)
 		proAnnual = s.settings.GetFloatOr(ctx, "affiliate.commission.pro_annual", 20)
 		course = s.settings.GetFloatOr(ctx, "affiliate.commission.course", 10)
@@ -133,7 +133,7 @@ func (s *Service) MinAccountDays(ctx context.Context) int {
 	return 30
 }
 
-// lookupUsername returns the username for a user id (tenant-scoped), best
+// lookupUsername returns the username for a user id (platform-scoped), best
 // effort: returns nil when the user is gone (anonymized) so the admin UI can
 // fall back to the id.
 func (s *Service) lookupUsername(ctx context.Context, userID pgtype.UUID) (*string, error) {
@@ -512,7 +512,7 @@ type ProgramStats struct {
 	TotalCommissions string `json:"total_commissions"`
 }
 
-// GetProgramStats returns tenant-scoped program-wide totals for the admin
+// GetProgramStats returns platform-scoped program-wide totals for the admin
 // overview endpoint (Section 56). Money is rendered as a string via
 // formatNumeric to avoid float serialization of pgtype.Numeric.
 func (s *Service) GetProgramStats(ctx context.Context) (*ProgramStats, error) {

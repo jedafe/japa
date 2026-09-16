@@ -191,7 +191,7 @@ func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 // Body: { "folder_ids": ["uuid", "uuid", ...] } — the array order defines
 // the new position (0-indexed). Folders not in the list keep their current
 // position. Unknown/non-owned folder IDs are silently skipped (the UPDATE
-// is tenant+owner scoped). BUG-008: §08 spec supports manual folder ordering.
+// is platform+owner scoped). BUG-008: §08 spec supports manual folder ordering.
 func (h *Handlers) ReorderFolders(w http.ResponseWriter, r *http.Request) {
 
 	user, ok := h.requireUser(w, r)

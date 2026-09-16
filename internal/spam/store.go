@@ -77,7 +77,7 @@ func (s *Store) CreateIPBlock(ctx context.Context, input CreateIPBlockInput) (ge
 	})
 }
 
-// GetIPBlockByCIDR checks if a CIDR is blocked for the given tenant.
+// GetIPBlockByCIDR checks if a CIDR is blocked for the given platform.
 func (s *Store) GetIPBlockByCIDR(ctx context.Context, cidr string) (gen.IpBlock, error) {
 	addr, err := netipParseAddrOrCIDR(cidr)
 	if err != nil {
@@ -90,7 +90,7 @@ func (s *Store) GetIPBlockByCIDR(ctx context.Context, cidr string) (gen.IpBlock,
 	)
 }
 
-// ListIPBlocks returns paginated IP blocks for the given tenant.
+// ListIPBlocks returns paginated IP blocks for the given platform.
 func (s *Store) ListIPBlocks(ctx context.Context, limit int32, cursorCreatedAt pgtype.Timestamptz) ([]gen.IpBlock, error) {
 	return s.queries.ListIPBlocks(ctx, gen.ListIPBlocksParams{
 
@@ -110,7 +110,7 @@ func (s *Store) ListIPBlocksPaginated(ctx context.Context, limit, offset int32, 
 	})
 }
 
-// CountIPBlocks returns the total count of IP blocks for the tenant, optionally
+// CountIPBlocks returns the total count of IP blocks for the platform, optionally
 // filtered by block_type, for DataTable pagination (BUG-010).
 func (s *Store) CountIPBlocks(ctx context.Context, blockType *string) (int32, error) {
 	return s.queries.CountIPBlocks(ctx,
@@ -179,13 +179,13 @@ func (s *Store) UpdateIPBlock(ctx context.Context, id pgtype.UUID, input UpdateI
 	})
 }
 
-// GetActiveIPBlocks returns all non-expired IP blocks for the tenant.
+// GetActiveIPBlocks returns all non-expired IP blocks for the platform.
 func (s *Store) GetActiveIPBlocks(ctx context.Context) ([]gen.IpBlock, error) {
 	return s.queries.GetActiveIPBlocks(ctx)
 }
 
 // IsIPBlocked checks via SQL whether the given IP falls within any
-// active CIDR block for the tenant. This uses PostgreSQL's <<= operator
+// active CIDR block for the platform. This uses PostgreSQL's <<= operator
 // which correctly handles inet containment.
 func (s *Store) IsIPBlocked(ctx context.Context, ip string) (bool, error) {
 	parsedIP, err := netipParseAddrOrCIDR(ip)
@@ -205,7 +205,7 @@ func (s *Store) IsIPBlocked(ctx context.Context, ip string) (bool, error) {
 }
 
 // GetIPBlockTypeForIP returns the most severe block_type matching the given IP
-// for the tenant, or "" if no block matches. 'full' takes priority over
+// for the platform, or "" if no block matches. 'full' takes priority over
 // 'registration'/'posting'/'api'. Per §41, non-full types are scoped to
 // specific route groups rather than blocking all requests (BUG-003).
 func (s *Store) GetIPBlockTypeForIP(ctx context.Context, ip string) (string, error) {
@@ -228,7 +228,7 @@ func (s *Store) GetIPBlockTypeForIP(ctx context.Context, ip string) (string, err
 // --- User Blocks ---
 
 // CreateUserBlock creates a block relationship.
-// Tenant-scoped per JEOS §9 (BUG-006).
+// Platform-scoped per JEOS §9 (BUG-006).
 func (s *Store) CreateUserBlock(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	return s.queries.CreateUserBlock(ctx, gen.CreateUserBlockParams{
 		BlockerID: blockerID,
@@ -237,7 +237,7 @@ func (s *Store) CreateUserBlock(ctx context.Context, blockerID, blockedID pgtype
 }
 
 // DeleteUserBlock removes a block relationship.
-// Tenant-scoped per JEOS §9 (BUG-006).
+// Platform-scoped per JEOS §9 (BUG-006).
 func (s *Store) DeleteUserBlock(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	return s.queries.DeleteUserBlock(ctx, gen.DeleteUserBlockParams{
 		BlockerID: blockerID,
@@ -250,8 +250,8 @@ func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen
 	return s.queries.GetUserBlocks(ctx, blockerID)
 }
 
-// ListAllUserBlocks returns paginated user blocks for the given tenant.
-// Tenant-scoped per JEOS §9 (BUG-001).
+// ListAllUserBlocks returns paginated user blocks for the given platform.
+// Platform-scoped per JEOS §9 (BUG-001).
 func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.ListAllUserBlocksRow, error) {
 	return s.queries.ListAllUserBlocks(ctx,
 
@@ -260,7 +260,7 @@ func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.ListA
 }
 
 // ListAllUserBlocksPaginated returns offset-paginated user blocks for admin
-// DataTable server-side pagination (BUG-010). Tenant-scoped per JEOS §9.
+// DataTable server-side pagination (BUG-010). Platform-scoped per JEOS §9.
 func (s *Store) ListAllUserBlocksPaginated(ctx context.Context, limit, offset int32) ([]gen.ListAllUserBlocksPaginatedRow, error) {
 	return s.queries.ListAllUserBlocksPaginated(ctx, gen.ListAllUserBlocksPaginatedParams{
 
@@ -269,14 +269,14 @@ func (s *Store) ListAllUserBlocksPaginated(ctx context.Context, limit, offset in
 	})
 }
 
-// CountAllUserBlocks returns the total count of user blocks for the tenant,
-// for DataTable pagination (BUG-010). Tenant-scoped.
+// CountAllUserBlocks returns the total count of user blocks for the platform,
+// for DataTable pagination (BUG-010). Platform-scoped.
 func (s *Store) CountAllUserBlocks(ctx context.Context) (int32, error) {
 	return s.queries.CountAllUserBlocks(ctx)
 }
 
 // IsBlocked checks whether user A has blocked user B or vice versa.
-// Tenant-scoped per JEOS §9 (BUG-006).
+// Platform-scoped per JEOS §9 (BUG-006).
 func (s *Store) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
 	result, err := s.queries.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
@@ -308,7 +308,7 @@ func (s *Store) CreateCensoredWord(ctx context.Context, input CreateCensoredWord
 	})
 }
 
-// ListCensoredWords returns all censored words for the given tenant.
+// ListCensoredWords returns all censored words for the given platform.
 func (s *Store) ListCensoredWords(ctx context.Context) ([]gen.CensoredWord, error) {
 	return s.queries.ListCensoredWords(ctx)
 }
@@ -324,7 +324,7 @@ func (s *Store) ListCensoredWordsPaginated(ctx context.Context, limit, offset in
 	})
 }
 
-// CountCensoredWords returns the total count of censored words for the tenant,
+// CountCensoredWords returns the total count of censored words for the platform,
 // optionally filtered by action, for DataTable pagination (BUG-010).
 func (s *Store) CountCensoredWords(ctx context.Context, action *string) (int32, error) {
 	return s.queries.CountCensoredWords(ctx,
@@ -380,7 +380,7 @@ func (s *Store) UpdateCensoredWord(ctx context.Context, id pgtype.UUID, input Up
 
 // GetCensoredWords returns all censored words for cache population.
 func (s *Store) GetCensoredWords(ctx context.Context) ([]gen.CensoredWord, error) {
-	return s.queries.GetCensoredWordsByTenant(ctx)
+	return s.queries.GetCensoredWords(ctx)
 }
 
 // --- Content Hash ---
@@ -394,7 +394,7 @@ func (s *Store) UpdateContentHash(ctx context.Context, contentID pgtype.UUID, ha
 	})
 }
 
-// CheckDuplicateHash checks whether a content hash already exists for the tenant.
+// CheckDuplicateHash checks whether a content hash already exists for the platform.
 func (s *Store) CheckDuplicateHash(ctx context.Context, hash string) (bool, error) {
 	result, err := s.queries.CheckDuplicateHash(ctx,
 

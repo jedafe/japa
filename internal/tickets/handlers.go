@@ -545,7 +545,7 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the ticket belongs to the caller's tenant before mutating.
+	// Verify the ticket belongs to the caller's platform before mutating.
 	if _, err := h.Service.GetTicket(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
@@ -606,7 +606,7 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the ticket belongs to the caller's tenant before mutating.
+	// Verify the ticket belongs to the caller's platform before mutating.
 	if _, err := h.Service.GetTicket(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
@@ -648,7 +648,7 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 
 // GetTicketEvents handles GET /api/v1/admin/tickets/:id/events.
 // Ref: japaconnect-engineering/sections/38-ticket-system.md
-// Verifies the ticket belongs to the caller's tenant before listing events.
+// Verifies the ticket belongs to the caller's platform before listing events.
 func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -665,7 +665,7 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the ticket belongs to the caller's tenant before listing events.
+	// Verify the ticket belongs to the caller's platform before listing events.
 	if _, err := h.Service.GetTicket(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
@@ -776,7 +776,7 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 
 // AddAttachment handles POST /api/v1/me/tickets/:id/attachments.
 // Ref: japaconnect-engineering/sections/38-ticket-system.md
-// Verifies the ticket belongs to the caller's tenant before adding an
+// Verifies the ticket belongs to the caller's platform before adding an
 // attachment.
 func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
@@ -794,7 +794,7 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the ticket belongs to the caller's tenant before mutating.
+	// Verify the ticket belongs to the caller's platform before mutating.
 	if _, err := h.Service.GetTicket(r.Context(), ticketID); err != nil {
 		handleServiceError(w, err)
 		return
@@ -834,7 +834,7 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 
 // ListAttachments handles GET /api/v1/me/tickets/:id/attachments.
 // Ref: japaconnect-engineering/sections/38-ticket-system.md
-// Verifies the ticket belongs to the caller's tenant before listing
+// Verifies the ticket belongs to the caller's platform before listing
 // attachments.
 func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
@@ -852,7 +852,7 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the ticket belongs to the caller's tenant before listing.
+	// Verify the ticket belongs to the caller's platform before listing.
 	if _, err := h.Service.GetTicket(r.Context(), ticketID); err != nil {
 		handleServiceError(w, err)
 		return

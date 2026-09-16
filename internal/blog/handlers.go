@@ -39,7 +39,7 @@ import (
 )
 
 // deleteEntity is a shared helper for DELETE handlers that follow the pattern:
-// require user → require tenant → parse UUID → call delete function → return 204.
+// require user → require platform → parse UUID → call delete function → return 204.
 func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName, entityName string, deleteFn func(ctx context.Context, id pgtype.UUID) error) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -254,7 +254,7 @@ func (h *Handlers) verifyBlogPostContent(ctx context.Context, contentID pgtype.U
 // a content_id that does not belong to a blog_post.
 var errWrongContentType = errors.New("not a blog post")
 
-// enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant (C6).
+// enqueueRSSRegenerate enqueues the rss:regenerate task for a platform (C6).
 // Fire-and-forget: errors are logged but never propagated (Rule 8).
 func (h *Handlers) enqueueRSSRegenerate() {
 	if h.AsynqClient == nil {
@@ -533,7 +533,7 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 
 // ListSeries handles GET /api/v1/blog/series.
 // Supports ?author_id=, ?q=, ?page_size=, ?page_offset=.
-// L2: the q filter is now applied in SQL (ListBlogSeriesByTenant) rather than
+// L2: the q filter is now applied in SQL (ListBlogSeries) rather than
 // in Go memory after fetching all rows.
 // JEOS §24: returns the public Series DTO with cover_image_url and pagination
 // metadata (total, page_size, page_offset).
@@ -574,20 +574,20 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// L2: q filter is now applied in SQL via ListBlogSeriesByTenant.
+	// L2: q filter is now applied in SQL via ListBlogSeries.
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	// §14: optional content_type filter — limits the series directory to
 	// series containing a published item of that type (Featured/Series tabs
 	// on /guides, /stories).
 	contentType := strings.TrimSpace(r.URL.Query().Get("content_type"))
 
-	series, err := h.Service.ListSeriesByTenant(r.Context(), q, contentType, limit, offset)
+	series, err := h.Service.ListSeriesByPlatform(r.Context(), q, contentType, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.CountSeriesByTenant(r.Context(), q, contentType)
+	total, err := h.Service.CountSeriesByPlatform(r.Context(), q, contentType)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -631,7 +631,7 @@ func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the series exists and belongs to this tenant.
+	// Verify the series exists and belongs to this platform.
 	_, err = h.Service.GetSeries(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
@@ -711,7 +711,7 @@ func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // AddPostToSeries handles POST /api/v1/blog/series/{id}/posts.
-// H7: verifies the content belongs to the same tenant before linking.
+// H7: verifies the content belongs to the same platform before linking.
 func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -759,8 +759,8 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 }
 
 // RemovePostFromSeries handles DELETE /api/v1/blog/series/{id}/posts/{postId}.
-// BUG-003: now requires tenant context and the service verifies the series
-// belongs to the caller's tenant before deleting, preventing cross-tenant
+// BUG-003: now requires platform context and the service verifies the series
+// belongs to the caller's platform before deleting, preventing cross-platform
 // post removal by an attacker who knows the series_id.
 func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
@@ -817,8 +817,8 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// BUG-009: pass ID so the query is tenant-scoped, preventing
-	// cross-tenant information disclosure via series membership probing.
+	// BUG-009: pass ID so the query is platform-scoped, preventing
+	// cross-platform information disclosure via series membership probing.
 	seriesID, err := h.Service.GetSeriesForContent(r.Context(), contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -835,8 +835,8 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 }
 
 // ReorderSeriesPosts handles PATCH /api/v1/blog/series/{id}/posts/reorder.
-// BUG-004: now requires tenant context and the service verifies the series
-// belongs to the caller's tenant before mutating, preventing cross-tenant
+// BUG-004: now requires platform context and the service verifies the series
+// belongs to the caller's platform before mutating, preventing cross-platform
 // post reorder by an attacker who knows the series_id.
 func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
@@ -2081,7 +2081,7 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // verifyOwnBlogPost loads the content row for the given id, verifies it is a
-// blog_post in the caller's tenant, and confirms the caller is the author OR a
+// blog_post in the caller's platform, and confirms the caller is the author OR a
 // super admin. Returns the loaded row on success. Used by UpdatePost and
 // DeletePost to enforce the "own" scoping of blog.edit_own (BUG-001/BUG-002:
 // the generic contentHandlers.UpdateContent/DeleteContent do not check

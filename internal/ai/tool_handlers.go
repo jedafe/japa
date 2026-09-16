@@ -53,7 +53,7 @@ func toolWriteError(w http.ResponseWriter, status int, code, message string) {
 // Admin Handlers — AI Tool Registry
 // ---------------------------------------------------------------------------
 
-// ListTools returns all AI tools for the tenant.
+// ListTools returns all AI tools for the platform.
 // GET /admin/ai/tools.
 func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
 

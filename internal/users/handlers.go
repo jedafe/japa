@@ -103,7 +103,7 @@ func (h *Handlers) SetSettings(s geoSettingsReader) {
 }
 
 // SetAuthSettings wires the auth-specific settings reader (implements
-// auth.SettingsReader). Used by ChangePassword to read the tenant's password
+// auth.SettingsReader). Used by ChangePassword to read the platform's password
 // policy from system_settings (auth.password.* keys) instead of hardcoding
 // validation rules. Called once during server setup.
 func (h *Handlers) SetAuthSettings(s auth.SettingsReader) {
@@ -380,7 +380,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// ListPublicUsers handles GET /api/v1/users — public, tenant-scoped, PII-safe.
+// ListPublicUsers handles GET /api/v1/users — public, platform-scoped, PII-safe.
 // Returns active, search-indexable users with follower/following counts. No
 // email, status, last_login_at, or groups are exposed (Section 19 / ADR-014).
 // Query params: q (search by username or display_name), profile_type (optional

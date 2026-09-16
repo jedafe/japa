@@ -95,12 +95,12 @@ ON CONFLICT (user_id, group_id) DO NOTHING;
 -- =====================
 
 -- name: VerifyOrganization :exec
--- Tenant-scoped to prevent cross-tenant verification (BUG-002).
+-- Platform-scoped to prevent cross-platform verification (BUG-002).
 UPDATE organizations SET verified = true, updated_at = now()
 WHERE id = $1;
 
 -- name: UnverifyOrganization :exec
--- Tenant-scoped and clears verification_type (BUG-002, BUG-016).
+-- Platform-scoped and clears verification_type (BUG-002, BUG-016).
 UPDATE organizations SET verified = false, verification_type = NULL, updated_at = now()
 WHERE id = $1;
 

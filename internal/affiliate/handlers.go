@@ -446,7 +446,7 @@ func sanitizeRedirectURL(dest string) string {
 // ListMembersAdmin handles GET /api/v1/admin/affiliate-program/members
 //
 // Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
-// Tenant-scoped, paginated, with an optional ?status filter (catalog). Uses
+// Platform-scoped, paginated, with an optional ?status filter (catalog). Uses
 // the sqlc ListAffiliateMembersFiltered query (no raw SQL, no hardcoded
 // limit). Money is rendered via pgtype.Numeric → string (never float).
 func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
@@ -514,7 +514,7 @@ func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Reques
 // ListAllLinksAdmin handles GET /api/v1/admin/affiliate-links
 //
 // Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
-// Tenant-scoped, paginated, with optional ?user_id&product_type&status filters
+// Platform-scoped, paginated, with optional ?user_id&product_type&status filters
 // (catalog). Uses the sqlc ListAllAffiliateLinksFiltered query (joins users
 // for the username column). Money is rendered via pgtype.Numeric → string.
 func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
@@ -605,7 +605,7 @@ var (
 // Ref: japaconnect-engineering/sections/56-user-affiliate-program.md
 // (Admin management). Returns program-wide totals: total/active members,
 // total links, total clicks, total conversions, total commissions.
-// Tenant-scoped, guarded by affiliate.admin.view.
+// Platform-scoped, guarded by affiliate.admin.view.
 func (h *Handlers) GetProgramStatsAdmin(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.Service.GetProgramStats(r.Context())

@@ -34,7 +34,7 @@ DELETE FROM content_embeddings
 WHERE entity_type = @entity_type AND entity_id = @entity_id;
 
 -- =====================================================================
--- Delete all chunks for every entity of a given type within a tenant.
+-- Delete all chunks for every entity of a given type within a platform.
 -- Used by the admin by-type aggregate purge (DELETE /admin/rag/entity/:type/all).
 -- =====================================================================
 
@@ -196,7 +196,7 @@ FROM content_embeddings
 WHERE entity_type = @entity_type AND entity_id = @entity_id;
 
 -- =====================================================================
--- List all published content IDs for a tenant (for full corpus re-index).
+-- List all published content IDs for a platform (for full corpus re-index).
 -- Only 'published' content is indexed in the RAG layer (Section 69).
 -- =====================================================================
 
@@ -208,7 +208,7 @@ ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- =====================================================================
--- List all non-deleted forum thread IDs for a tenant (for full corpus
+-- List all non-deleted forum thread IDs for a platform (for full corpus
 -- re-index). Forum threads are part of the RAG corpus (ADR-069 §2).
 -- =====================================================================
 
@@ -219,7 +219,7 @@ ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- =====================================================================
--- List all active space IDs for a tenant (for full corpus re-index).
+-- List all active space IDs for a platform (for full corpus re-index).
 -- Spaces are part of the RAG corpus (ADR-069 §2).
 -- =====================================================================
 
@@ -230,7 +230,7 @@ ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- =====================================================================
--- List all published learning track IDs for a tenant (for full corpus
+-- List all published learning track IDs for a platform (for full corpus
 -- re-index). Learning tracks are part of the RAG corpus (ADR-069 §2).
 -- Only published tracks are indexed; learning_tracks has no deleted_at
 -- column (tracks are hard-deleted).

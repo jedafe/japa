@@ -284,7 +284,7 @@ func (s *Service) deleteAdvisorCacheForProfile(ctx context.Context, profileID pg
 }
 
 // deleteJceCacheByPattern deletes all Valkey keys matching a pattern.
-// It is used for tenant-wide invalidations (e.g. data source changes).
+// It is used for platform-wide invalidations (e.g. data source changes).
 func (s *Service) deleteJceCacheByPattern(ctx context.Context, pattern string) {
 	if s.vk == nil {
 		return
@@ -458,7 +458,7 @@ type comparisonTypeGoalConfig struct {
 	GoalFactorMap map[string][]string `json:"goal_factor_map"`
 }
 
-// defaultAllowedGoalKeys returns the built-in goal keys used when no tenant
+// defaultAllowedGoalKeys returns the built-in goal keys used when no platform
 // configuration is available.
 func defaultAllowedGoalKeys() []string {
 	return []string{
@@ -533,11 +533,11 @@ func (s *Service) allowedGoalKeys(ctx context.Context) (map[string]bool, error) 
 	return keys, nil
 }
 
-// factorKeysForTenant returns all factor keys visible to the tenant.
-func (s *Service) factorKeysForTenant(ctx context.Context) (map[string]bool, error) {
+// factorKeysForPlatform returns all factor keys visible to the platform.
+func (s *Service) factorKeysForPlatform(ctx context.Context) (map[string]bool, error) {
 	factors, err := s.factors.listByType(ctx, pgtype.UUID{}, true)
 	if err != nil {
-		return nil, fmt.Errorf("loading tenant factor keys: %w", err)
+		return nil, fmt.Errorf("loading platform factor keys: %w", err)
 	}
 
 	keys := make(map[string]bool, len(factors))
@@ -570,7 +570,7 @@ func (s *Service) validateProfileInput(ctx context.Context, in ComparisonProfile
 		}
 	}
 
-	factorKeys, err := s.factorKeysForTenant(ctx)
+	factorKeys, err := s.factorKeysForPlatform(ctx)
 	if err != nil {
 		return fmt.Errorf("loading factor keys: %w", err)
 	}
@@ -681,9 +681,9 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, userID pgtype.UUI
 	return p, nil
 }
 
-// ListComparisonProfiles returns the caller's profiles plus tenant templates.
+// ListComparisonProfiles returns the caller's profiles plus platform templates.
 // When all is true and the caller has comparison.edit_any, it returns all
-// non-deleted tenant profiles (excluding templates) plus templates.
+// non-deleted platform profiles (excluding templates) plus templates.
 func (s *Service) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
 	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
@@ -697,7 +697,7 @@ func (s *Service) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID
 
 	var err error
 	if all && s.permissionChecker(ctx, userID)("comparison.edit_any") {
-		owned, err = s.profiles.listByTenant(ctx)
+		owned, err = s.profiles.listByPlatform(ctx)
 	} else {
 		owned, err = s.profiles.listByUser(ctx, userID)
 	}
@@ -893,7 +893,7 @@ func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, userID pg
 
 // GetProfileStats returns per-source-space profile counts. When all is true
 // and the caller has comparison.edit_any, it returns aggregate anonymized
-// counts across the tenant.
+// counts across the platform.
 func (s *Service) GetProfileStats(ctx context.Context, userID pgtype.UUID, all bool) ([]ProfileStat, error) {
 	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
@@ -940,7 +940,7 @@ func (s *Service) ListScoreFactors(ctx context.Context, comparisonTypeID pgtype.
 	return factors, nil
 }
 
-// CreateScoreFactor creates a new score factor for the tenant.
+// CreateScoreFactor creates a new score factor for the platform.
 func (s *Service) CreateScoreFactor(ctx context.Context, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
 	_ = userID
 
@@ -998,7 +998,7 @@ func (s *Service) validateScoreFactor(in ScoreFactorInput) error {
 	return nil
 }
 
-// GetScoreFactor returns a score factor by id and tenant.
+// GetScoreFactor returns a score factor by id and platform.
 func (s *Service) GetScoreFactor(ctx context.Context, id pgtype.UUID) (ScoreFactor, error) {
 	if !s.featureEnabled(ctx, "feature.jce.scoring") {
 		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
@@ -1056,7 +1056,7 @@ func (s *Service) UpdateScoreFactor(ctx context.Context, id, userID pgtype.UUID,
 		in.ComparisonTypeID = existing.ComparisonTypeID
 	}
 
-	// If the key or type changed, ensure the new (tenant, type, key) is free.
+	// If the key or type changed, ensure the new (platform, type, key) is free.
 	newTypeID := stringToUUID(ptrString(in.ComparisonTypeID))
 	existingTypeID := stringToUUID(ptrString(existing.ComparisonTypeID))
 

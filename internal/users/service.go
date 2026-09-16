@@ -127,7 +127,7 @@ func NewService(database *db.DB) *Service {
 	}
 }
 
-// GetProfile returns the user profile for the given user within a tenant.
+// GetProfile returns the user profile for the given user within a platform.
 func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProfileResponse, error) {
 	p, err := s.store.getProfile(ctx, userID)
 	if err != nil {
@@ -223,7 +223,7 @@ func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProf
 	}, nil
 }
 
-// GetProfileByUsername returns the user profile for the given username within a tenant.
+// GetProfileByUsername returns the user profile for the given username within a platform.
 func (s *Service) GetProfileByUsername(ctx context.Context, username string) (*UserProfileResponse, error) {
 	p, err := s.store.getUserByUsername(ctx, username)
 	if err != nil {
@@ -254,7 +254,7 @@ func (s *Service) GetProfileByUsername(ctx context.Context, username string) (*U
 }
 
 // GetPublicProfileByUsername returns the lean, PII-safe public profile for
-// the given username within a tenant, restricted to active users. It never
+// the given username within a platform, restricted to active users. It never
 // exposes email, status, last_login_at, or groups (Section 19 / ADR-014).
 // // When the user has opted in via show_points_publicly (Section 28) and a
 // PointsProvider is wired, the response includes the user's Points balance.
@@ -1021,7 +1021,7 @@ func (s *Service) listUserContentInternal(ctx context.Context, userID pgtype.UUI
 
 // GetUserDraft returns the caller's own draft content by ID for the /create
 // composer to restore. Returns pgx.ErrNoRows (→ 404) when the content is
-// missing, not a draft, or owned by another user/tenant. FieldValues is
+// missing, not a draft, or owned by another user/platform. FieldValues is
 // emitted as a json.RawMessage so the JSONB column round-trips as a JSON
 // object.
 func (s *Service) GetUserDraft(ctx context.Context, userID, contentID pgtype.UUID) (*DraftResponse, error) {
@@ -1073,7 +1073,7 @@ func (s *Service) GetUserDraft(ctx context.Context, userID, contentID pgtype.UUI
 // GetUserContent returns the caller's own content by ID (any status) for the
 // /create composer to restore published, scheduled, or draft content for
 // editing. Returns pgx.ErrNoRows (→ 404) when the content is missing or owned
-// by another user/tenant. The response shape is identical to GetUserDraft so
+// by another user/platform. The response shape is identical to GetUserDraft so
 // the composer's ContentRecord consumes it without branching.
 func (s *Service) GetUserContent(ctx context.Context, userID, contentID pgtype.UUID) (*DraftResponse, error) {
 	row, err := s.store.getUserContent(ctx, userID, contentID)
@@ -1084,12 +1084,12 @@ func (s *Service) GetUserContent(ctx context.Context, userID, contentID pgtype.U
 	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.VideoSourceID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.GuideCategory, row.JourneyStage, row.VisaRoute, row.SourceCountry, row.TargetCountry, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
-// GetContentForEditor returns any content by ID within the tenant (no author
+// GetContentForEditor returns any content by ID within the platform (no author
 // filter) for super-admins or users with the RBAC `content.edit` permission
 // who need to edit content they don't own. The handler is responsible for
 // checking permissions before calling this — it is NOT author-scoped.
 // Returns pgx.ErrNoRows (→ 404) when the content is missing or belongs to a
-// different tenant. The response shape is identical to GetUserContent.
+// different platform. The response shape is identical to GetUserContent.
 func (s *Service) GetContentForEditor(ctx context.Context, contentID pgtype.UUID) (*DraftResponse, error) {
 	row, err := s.store.getContentByIDForEditor(ctx, contentID)
 	if err != nil {
@@ -1273,9 +1273,9 @@ func (s *Service) CreateBookmark(ctx context.Context, userID, entityID, folderID
 	return bm, nil
 }
 
-// DeleteBookmarkByID removes a single bookmark by its row ID. Tenant + owner
+// DeleteBookmarkByID removes a single bookmark by its row ID. Platform + owner
 // scoped — returns ErrNotFound when the bookmark doesn't exist or belongs to
-// another user/tenant. Works polymorphically across all entity types in the
+// another user/platform. Works polymorphically across all entity types in the
 // unified bookmarks table (§08/§50).
 func (s *Service) DeleteBookmarkByID(ctx context.Context, id, userID pgtype.UUID) error {
 	affected, err := s.store.write.DeleteBookmarkByID(ctx, gen.DeleteBookmarkByIDParams{
@@ -1521,7 +1521,7 @@ func (s *Service) UpdateProfileType(ctx context.Context, userID pgtype.UUID, pro
 }
 
 // ActiveUserExists reports whether an active user with this id exists in the
-// tenant. Used by the public profile gate to 404 non-active users.
+// platform. Used by the public profile gate to 404 non-active users.
 func (s *Service) ActiveUserExists(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	return s.store.activeUserExistsByID(ctx, userID)
 }
@@ -1629,8 +1629,8 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 						return nil, ErrUsernameCooldown
 					}
 				}
-				// Check uniqueness within the tenant.
-				count, err := s.store.usernameExistsForTenantTx(ctx, q, userID, newUsername)
+				// Check uniqueness within the platform.
+				count, err := s.store.usernameExistsForPlatformTx(ctx, q, userID, newUsername)
 				if err != nil {
 					return nil, fmt.Errorf("checking username uniqueness: %w", err)
 				}
@@ -1655,8 +1655,8 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 			}
 
 			if newEmail != acct.Email {
-				// Check uniqueness within the tenant.
-				count, err := s.store.emailExistsForTenantTx(ctx, q, userID, newEmail)
+				// Check uniqueness within the platform.
+				count, err := s.store.emailExistsForPlatformTx(ctx, q, userID, newEmail)
 				if err != nil {
 					return nil, fmt.Errorf("checking email uniqueness: %w", err)
 				}
@@ -1703,7 +1703,7 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 
 // EnsureSyntheticUser returns an existing synthetic user by username or creates
 // one with the supplied channel metadata. It is used by the video import flow
-// to represent external channels as tenant-scoped users.
+// to represent external channels as platform-scoped users.
 func (s *Service) EnsureSyntheticUser(ctx context.Context, input SyntheticUserInput) (pgtype.UUID, error) {
 	var userID pgtype.UUID
 

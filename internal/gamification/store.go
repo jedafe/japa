@@ -38,7 +38,7 @@ func NewStore(database *db.DB) *Store {
 // Badge Definitions
 // =====================================================================
 
-// ListBadgeDefinitions lists badge definitions for a tenant, optionally
+// ListBadgeDefinitions lists badge definitions for a platform, optionally
 // filtering to active only.
 func (s *Store) ListBadgeDefinitions(ctx context.Context, activeOnly bool) ([]gen.BadgeDefinition, error) {
 	return s.queries.ListBadgeDefinitions(ctx,
@@ -71,7 +71,7 @@ func (s *Store) ListBadgeDefinitionsPaginated(ctx context.Context, activeOnly bo
 	return rows, total, nil
 }
 
-// GetBadgeDefinitionByID fetches a single badge definition by ID within a tenant.
+// GetBadgeDefinitionByID fetches a single badge definition by ID within a platform.
 func (s *Store) GetBadgeDefinitionByID(ctx context.Context, id pgtype.UUID) (gen.BadgeDefinition, error) {
 	return s.queries.GetBadgeDefinitionByID(ctx,
 
@@ -142,7 +142,7 @@ func (s *Store) ListActiveChallenges(ctx context.Context) ([]gen.ChallengeDefini
 	return s.queries.ListActiveChallenges(ctx)
 }
 
-// ListAllChallenges lists all challenges for a tenant (admin view), paginated.
+// ListAllChallenges lists all challenges for a platform (admin view), paginated.
 func (s *Store) ListAllChallenges(ctx context.Context, limit, offset int32) ([]gen.ChallengeDefinition, int64, error) {
 	rows, err := s.queries.ListAllChallenges(ctx, gen.ListAllChallengesParams{
 
@@ -161,7 +161,7 @@ func (s *Store) ListAllChallenges(ctx context.Context, limit, offset int32) ([]g
 	return rows, total, nil
 }
 
-// GetChallengeByID fetches a single challenge definition by ID within a tenant.
+// GetChallengeByID fetches a single challenge definition by ID within a platform.
 func (s *Store) GetChallengeByID(ctx context.Context, id pgtype.UUID) (gen.ChallengeDefinition, error) {
 	return s.queries.GetChallengeByID(ctx,
 

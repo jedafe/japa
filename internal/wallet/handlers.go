@@ -333,7 +333,7 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 // Member-facing, read-only view of the conversion rate and minimum convertible
 // points so the Wallet settings page can display the effective rate without
 // requiring the admin `wallet.admin.settings.manage` node. Reuses the same
-// service resolution path as the admin endpoint (per-tenant wallet_settings
+// service resolution path as the admin endpoint (per-platform wallet_settings
 // row → global system_settings → compiled defaults), returning the same
 // envelope shape (`{ settings, min_convert_points }`) the frontend already
 // reads.

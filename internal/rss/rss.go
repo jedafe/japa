@@ -1,7 +1,7 @@
 // Package rss provides RSS feed handlers for JapaConnect content.
 // // The handlers query published content from the database and render
 // standard RSS 2.0 XML. All feeds are public (no auth required) and
-// tenant-scoped via the tenant middleware.
+// platform-scoped via the platform middleware.
 // // The shared RSS 2.0 XML model lives in internal/rss/model — imported by
 // this package, internal/blog, and internal/worker so all three render
 // feeds identically (RSS-011).
@@ -106,6 +106,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
 			w.Header().Set("X-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
+			// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
 			_, _ = w.Write([]byte(cached))
 
 			return
@@ -147,6 +148,7 @@ func (h *Handlers) serveCachedOrLive(
 			w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
 			w.Header().Set("X-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
+			// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
 			_, _ = w.Write([]byte(cached))
 
 			return
@@ -172,6 +174,7 @@ func (h *Handlers) serveCachedOrLive(
 	w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
 	w.Header().Set("X-Cache", "MISS")
 	w.WriteHeader(http.StatusOK)
+	// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
 	_, _ = w.Write(xmlBytes)
 }
 
@@ -357,6 +360,7 @@ func serveRSSFeed(w http.ResponseWriter, title, link, description string, items 
 		return
 	}
 
+	// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
 	if _, err := w.Write(xmlBytes); err != nil {
 		slog.Error("rss: write xml", "error", err)
 	}

@@ -1,6 +1,6 @@
 // Package i18n — Service layer with in-memory + distributed Valkey cache for
 // translation lookups.
-// // The service maintains a per-tenant, per-locale cache that is lazily loaded
+// // The service maintains a per-platform, per-locale cache that is lazily loaded
 // on first access and refreshed on mutation. The cache stores key→value maps
 // for fast O(1) lookups from the frontend public API endpoint.
 // // Two cache layers are used (Section 18 / VALKEY-002):
@@ -33,7 +33,7 @@ type cacheEntry struct {
 	loadedAt time.Time
 }
 
-// cacheKey is a composite key of tenant + locale.
+// cacheKey is a composite key of platform + locale.
 type cacheKey struct {
 	locale string
 }
@@ -71,7 +71,7 @@ func NewService(database *db.DB) *Service {
 // VALKEY-002). Keys: jc:cache:i18n:{}:{locale}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
-// l2Key returns the Valkey L2 cache key for a tenant+locale.
+// l2Key returns the Valkey L2 cache key for a platform+locale.
 func l2Key(locale string) string {
 	return valkey.MustKey("cache:i18n::%s", locale)
 }
@@ -246,7 +246,7 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (gen.Translation,
 	return s.store.GetByID(ctx, id)
 }
 
-// ListLocales returns all distinct locales for a tenant.
+// ListLocales returns all distinct locales for a platform.
 func (s *Service) ListLocales(ctx context.Context) ([]string, error) {
 	return s.store.ListLocales(ctx)
 }
@@ -256,7 +256,7 @@ func (s *Service) Counts(ctx context.Context) ([]gen.CountTranslationsByLocaleRo
 	return s.store.CountByLocale(ctx)
 }
 
-// RefreshCache forces a full reload of all translations for a tenant into
+// RefreshCache forces a full reload of all translations for a platform into
 // the in-memory cache. Call after bulk imports or migration events.
 func (s *Service) RefreshCache(ctx context.Context) error {
 	locales, err := s.store.ListLocales(ctx)

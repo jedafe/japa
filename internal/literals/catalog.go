@@ -16,12 +16,12 @@ import (
 const (
 	catalogCacheTTL    = 5 * time.Minute
 	catalogKeyTemplate = "literals:%s"
-	// CatalogMaxLimit is the upper bound on active literals loaded for a tenant.
+	// CatalogMaxLimit is the upper bound on active literals loaded for a platform.
 	// It is exported so fallback loaders can use the same cap.
 	CatalogMaxLimit = 10000
 )
 
-// Catalog caches and resolves active tenant template literals.
+// Catalog caches and resolves active platform template literals.
 type Catalog struct {
 	queries *gen.Queries
 	valkey  valkeycompat.Cmdable
@@ -35,7 +35,7 @@ func NewCatalog(queries *gen.Queries, valkey valkeycompat.Cmdable) *Catalog {
 	}
 }
 
-// GetActive returns all active template literals for a tenant, preferring the
+// GetActive returns all active template literals for a platform, preferring the
 // Valkey cache. Cache failures are best-effort and never return an error.
 func (c *Catalog) GetActive(ctx context.Context) ([]TemplateLiteral, error) {
 	if c.valkey != nil {
@@ -95,11 +95,11 @@ func (c *Catalog) GetActive(ctx context.Context) ([]TemplateLiteral, error) {
 	return lits, nil
 }
 
-// ResolveMap resolves every active template literal for a tenant into a flat
+// ResolveMap resolves every active template literal for a platform into a flat
 // map. Static literals can reference other active literals. Expression failures
 // fall back to the literal's fallback value, or omit the key when no fallback
 // is configured. Built-in variables are included in the map so the frontend
-// resolver can use bare tokens such as {{Current_Year}} without each tenant
+// resolver can use bare tokens such as {{Current_Year}} without each platform
 // having to redefine them.
 func (c *Catalog) ResolveMap(ctx context.Context, rc RenderContext) (map[string]string, error) {
 	tokens, err := c.GetActive(ctx)
@@ -178,7 +178,7 @@ func addBuiltinVars(out map[string]string, env *expr.Env) {
 	}
 }
 
-// Invalidate removes the cached active literal list for a tenant.
+// Invalidate removes the cached active literal list for a platform.
 func (c *Catalog) Invalidate(ctx context.Context) error {
 	if c.valkey == nil {
 		return nil

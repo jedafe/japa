@@ -59,10 +59,10 @@ func validUUID() pgtype.UUID {
 	return pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
 }
 
-// reqWithTenantAndVisitor builds a GET /recommendations request with the
-// tenant and a VisitorContext injected into the context (mirrors what the
-// tenant + visitor middleware set in production).
-func reqWithTenantAndVisitor(vc visitor.VisitorContext, query string) *http.Request {
+// reqWithPlatformAndVisitor builds a GET /recommendations request with the
+// platform and a VisitorContext injected into the context (mirrors what the
+// platform + visitor middleware set in production).
+func reqWithPlatformAndVisitor(vc visitor.VisitorContext, query string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/recommendations?"+query, nil)
 	ctx := context.WithValue(req.Context(), struct{}{}, &struct {
 		ID   pgtype.UUID
@@ -332,7 +332,7 @@ func TestResolveCacheTTL_NilSettingsDefault(t *testing.T) {
 func runRecommendations(t *testing.T, h *Handlers, vc visitor.VisitorContext, query string) RecommendationResponse {
 	t.Helper()
 
-	req := reqWithTenantAndVisitor(vc, query)
+	req := reqWithPlatformAndVisitor(vc, query)
 	rec := httptest.NewRecorder()
 	h.GetRecommendations(rec, req)
 
@@ -407,7 +407,7 @@ func TestGetRecommendations_ArraysNeverNull(t *testing.T) {
 		}},
 		trending: mockTrending{},
 	}
-	req := reqWithTenantAndVisitor(visitor.VisitorContext{Archetype: visitor.ArchetypeGlobalTraveler}, "limit=5")
+	req := reqWithPlatformAndVisitor(visitor.VisitorContext{Archetype: visitor.ArchetypeGlobalTraveler}, "limit=5")
 	rec := httptest.NewRecorder()
 	h.GetRecommendations(rec, req)
 
@@ -438,7 +438,7 @@ func TestGetRecommendations_LimitTruncatesTools(t *testing.T) {
 	}
 }
 
-func _TestGetRecommendations_TenantUnavailable(t *testing.T) {
+func _TestGetRecommendations_PlatformUnavailable(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{}

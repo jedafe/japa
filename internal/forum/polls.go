@@ -181,7 +181,7 @@ func (s *Service) CreatePollForThread(ctx context.Context, threadID, userID pgty
 		}
 	}
 
-	// Verify the thread exists and belongs to the tenant.
+	// Verify the thread exists and belongs to the platform.
 	thread, err := s.store.getThreadByID(ctx, threadID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

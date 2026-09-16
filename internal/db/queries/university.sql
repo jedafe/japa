@@ -408,12 +408,12 @@ WHERE instructor_id = @instructor_id
  AND created_at >= @period_start AND created_at < @period_end;
 
 -- name: GetRevenueSplitByID :one
--- ADR-063 §9: admin audit viewer, single fetch, tenant-scoped.
+-- ADR-063 §9: admin audit viewer, single fetch, platform-scoped.
 SELECT * FROM revenue_splits
 WHERE id = @id;
 
 -- name: ListRevenueSplits :many
--- ADR-063 §9: admin audit viewer, tenant-wide paginated list with optional
+-- ADR-063 §9: admin audit viewer, platform-wide paginated list with optional
 -- filters. All filters are optional (empty string / NULL = no filter). The
 -- date range is half-open [from, to). Ordered by created_at DESC so the most
 -- recent revenue events appear first.

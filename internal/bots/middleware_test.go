@@ -9,7 +9,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-func _TestBotDetectionMiddleware_NoTenant(t *testing.T) {
+func _TestBotDetectionMiddleware_NoPlatform(t *testing.T) {
 	t.Parallel()
 
 	store := &Store{}
@@ -31,7 +31,7 @@ func _TestBotDetectionMiddleware_NoTenant(t *testing.T) {
 	}
 
 	if info := BotInfoFromContext(req.Context()); info != nil {
-		t.Error("expected nil bot info without tenant")
+		t.Error("expected nil bot info without platform")
 	}
 }
 

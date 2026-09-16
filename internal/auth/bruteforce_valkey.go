@@ -23,7 +23,7 @@ type ValkeyBruteForceStore struct {
 
 // NewValkeyBruteForceStore creates a Valkey-backed brute-force store.
 // failWindow is the TTL for failure counters — use DefaultFailWindow
-// when the tenant-specific value is unavailable.
+// when the platform-specific value is unavailable.
 func NewValkeyBruteForceStore(rdb valkeycompat.Cmdable, failWindow time.Duration) *ValkeyBruteForceStore {
 	return &ValkeyBruteForceStore{rdb: rdb, failWindow: failWindow}
 }

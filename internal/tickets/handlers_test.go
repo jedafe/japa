@@ -121,11 +121,11 @@ func TestCreateTicketHandlerMissingBody(t *testing.T) {
 
 	w := httptest.NewRecorder()
 
-	// This will fail because there's no tenant/user in context,
+	// This will fail because there's no platform/user in context,
 	// but we're testing the handler structure.
 	h.CreateTicket(w, req)
 
-	// Should return unauthorized or service unavailable (no tenant/user).
+	// Should return unauthorized or service unavailable (no platform/user).
 	if w.Code == http.StatusOK {
 		t.Error("expected non-OK status for missing context")
 	}

@@ -50,7 +50,7 @@ type MediaManager interface {
 	// GetMedia returns the stored media record so the caller can derive the
 	// serve URL from its storage bucket/path.
 	GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error)
-	// MaxUploadBytes returns the tenant's configured upload size cap.
+	// MaxUploadBytes returns the platform's configured upload size cap.
 	MaxUploadBytes(ctx context.Context) int64
 }
 
@@ -145,7 +145,7 @@ const (
 	sortDirectionDesc    = "desc"
 )
 
-// IsEnabled returns true when the video feature is enabled for the tenant.
+// IsEnabled returns true when the video feature is enabled for the platform.
 func (s *Service) IsEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
@@ -154,7 +154,7 @@ func (s *Service) IsEnabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "video.enabled", true)
 }
 
-// isPlatformAllowed checks the tenant's video.import.allowed_platforms setting.
+// isPlatformAllowed checks the platform's video.import.allowed_platforms setting.
 // An unparseable value is treated as the default allowlist.
 func (s *Service) isPlatformAllowed(ctx context.Context, platform string) bool {
 	if s.settings == nil {
@@ -364,12 +364,12 @@ func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filen
 	return ResolveResult{Source: source, EmbedJSON: buildEmbedJSON(source.ID, metadata)}, nil
 }
 
-// GetSourceByID returns a single active video source in the tenant.
+// GetSourceByID returns a single active video source in the platform.
 func (s *Service) GetSourceByID(ctx context.Context, id pgtype.UUID) (gen.VideoSource, error) {
 	return s.store.GetSourceByID(ctx, id)
 }
 
-// MaxUploadBytes returns the tenant's configured upload size cap in bytes.
+// MaxUploadBytes returns the platform's configured upload size cap in bytes.
 func (s *Service) MaxUploadBytes(ctx context.Context) int64 {
 	return s.media.MaxUploadBytes(ctx)
 }
@@ -651,7 +651,7 @@ func (s *Service) ListClaimsByUser(ctx context.Context, claimantUserID pgtype.UU
 }
 
 // ListClaimsForAdmin returns the admin review queue with pagination.
-func (s *Service) ListClaimsForAdmin(ctx context.Context, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, int32, error) {
+func (s *Service) ListClaimsForAdmin(ctx context.Context, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsRow, int32, error) {
 	status = strings.TrimSpace(strings.ToLower(status))
 	claimType = strings.TrimSpace(strings.ToLower(claimType))
 	q = strings.TrimSpace(q)

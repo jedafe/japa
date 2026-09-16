@@ -18,7 +18,7 @@ SELECT id, name, slug, description, provider_type, logo_media_id,
 FROM affiliate_providers
 WHERE slug = @slug;
 
--- name: ListAffiliateProvidersByTenant :many
+-- name: ListAffiliateProviders :many
 SELECT id, name, slug, description, provider_type, logo_media_id,
  base_url, tracking_param, tracking_value, commission_rate,
  is_active, is_featured, author_commission_pct, created_at, updated_at
@@ -79,7 +79,7 @@ FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.code = @code;
 
--- name: ListCouponsByTenant :many
+-- name: ListCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -94,7 +94,7 @@ WHERE (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
--- name: ListActiveCouponsByTenant :many
+-- name: ListActiveCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -184,9 +184,9 @@ WHERE coupon_id = @coupon_id AND event_type = @event_type;
 -- =====================
 
 -- name: GetCouponForRender :one
--- BE-LOW-001: tenant-scoped so a render request cannot resolve a coupon
--- from another tenant. The InternalGuard on the render routes is defense-
--- in-depth; this query is the primary tenant isolation control.
+-- BE-LOW-001: platform-scoped so a render request cannot resolve a coupon
+-- from another platform. The InternalGuard on the render routes is defense-
+-- in-depth; this query is the primary platform isolation control.
 SELECT c.id, c.title, c.code, c.discount_type, c.discount_value,
  c.referral_url, c.status, c.expires_at,
  ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
@@ -195,12 +195,12 @@ LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.id = @id;
 
 -- name: GetAffiliateProviderForRender :one
--- BE-LOW-001: tenant-scoped render resolution.
+-- BE-LOW-001: platform-scoped render resolution.
 SELECT id, base_url, tracking_param, tracking_value, is_active
 FROM affiliate_providers
 WHERE id = @id AND is_active = true;
 
--- name: CountCouponsByTenant :one
+-- name: CountCoupons :one
 SELECT COUNT(*) AS count
 FROM coupons
 ;

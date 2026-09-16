@@ -21,7 +21,7 @@ const (
 	defaultExcessiveAPIKeysThreshold = 20
 )
 
-// getSettingInt reads an int system_setting for the tenant, returning the
+// getSettingInt reads an int system_setting for the platform, returning the
 // fallback default when the settings reader is nil or the key is absent.
 // This satisfies Rule 3 (no hardcoded config) while remaining testable.
 func (s *Service) getSettingInt(ctx context.Context, key string, fallback int) int {

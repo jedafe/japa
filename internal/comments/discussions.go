@@ -103,7 +103,7 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 	var createdThread gen.CreateContentRow
 
 	if input.ThreadID.Valid {
-		// Validate the existing thread exists in the same tenant before linking.
+		// Validate the existing thread exists in the same platform before linking.
 		if _, err := s.read.GetContentByID(ctx,
 			input.ThreadID,
 		); err != nil {

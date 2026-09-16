@@ -176,7 +176,7 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID pgtype.UUI
 // Subscriber Operations
 // ---------------------------------------------------------------------------
 
-// ListSubscribersFiltered returns newsletter subscribers for the tenant,
+// ListSubscribersFiltered returns newsletter subscribers for the platform,
 // optionally filtered by status and email search (§62 admin route
 // ?status=&search=). Uses the AdminListSubscribers sqlc query.
 func (s *Service) ListSubscribersFiltered(ctx context.Context, status, search string, limit, offset int32) ([]gen.NewsletterSubscriber, error) {
@@ -415,7 +415,7 @@ func (s *Service) Unsubscribe(ctx context.Context, email string) error {
 // UnsubscribeByToken unsubscribes a subscriber via a one-click unsubscribe
 // token. The token is single-use: it is deleted after a successful
 // unsubscribe. The UnsubscribeByID query is a :one returning the updated
-// row, so a tenant mismatch (token belongs to a different tenant's
+// row, so a platform mismatch (token belongs to a different platform's
 // subscriber) yields a "no rows" error rather than a silent no-op (§62).
 func (s *Service) UnsubscribeByToken(ctx context.Context, token string) error {
 	tokenRow, err := s.queries.GetUnsubscribeToken(ctx, token)
@@ -427,7 +427,7 @@ func (s *Service) UnsubscribeByToken(ctx context.Context, token string) error {
 
 		tokenRow.SubscriberID,
 	); err != nil {
-		return fmt.Errorf("newsletter: unsubscribe by id (tenant mismatch or not found): %w", err)
+		return fmt.Errorf("newsletter: unsubscribe by id (platform mismatch or not found): %w", err)
 	}
 
 	// Delete the token to enforce single-use semantics. A failure here means

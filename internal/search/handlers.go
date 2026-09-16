@@ -173,9 +173,9 @@ type SearchResponse struct { //nolint:revive // stuttering type name preserved f
 }
 
 // Search handles GET /api/v1/search?q=...&type=...&limit=20.
-// // It resolves the authenticated user and tenant from the request context,
+// // It resolves the authenticated user and platform from the request context,
 // validates the query and limit, then runs a multi-index engine search
-// scoped to the tenant. The optional type parameter filters which indexes
+// scoped to the platform. The optional type parameter filters which indexes
 // are queried. Results are logged to search_analytics asynchronously.
 func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// OptionalAuth: guests can search published content (Phase 10.01 public
@@ -237,8 +237,8 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read-through Valkey cache (jc:cache:search:*, BUG-010). The cache key
-	// includes the tenant, query hash, type filter, and limit so identical
-	// queries from the same tenant are served from cache. Uses distributed
+	// includes the platform, query hash, type filter, and limit so identical
+	// queries from the same platform are served from cache. Uses distributed
 	// lock stampede protection (BUG-008) to prevent thundering herd on
 	// popular queries.
 	cacheKey := searchCacheKey(query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"))
@@ -339,7 +339,7 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 
 // runMultiSearch queries the posts, spaces, users, forum_threads, and tags
 // indexes in a single engine multi-search call, scoped to the given
-// tenant. It returns the flattened, type-tagged results.
+// platform. It returns the flattened, type-tagged results.
 func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int) ([]SearchResult, error) {
 	return h.runMultiSearchFiltered(ctx, query, limit, 0, nil, "", "", nil)
 }

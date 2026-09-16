@@ -18,7 +18,7 @@ type docPageHit struct {
 }
 
 // DocPagesSearchAdapter implements docs.DocPagesSearcher using the search
-// engine. It searches the doc_pages index scoped to the requesting tenant
+// engine. It searches the doc_pages index scoped to the requesting platform
 // and audience set, returning lightweight search results for the docs nav
 // and search UI.
 type DocPagesSearchAdapter struct {
@@ -33,7 +33,7 @@ func NewDocPagesSearchAdapter(engine Engine) *DocPagesSearchAdapter {
 }
 
 // SearchDocPages searches the doc_pages index for published pages matching the
-// query, scoped to the tenant and audience list. Empty query returns all
+// query, scoped to the platform and audience list. Empty query returns all
 // published pages in the audiences (limited by limit).
 func (a *DocPagesSearchAdapter) SearchDocPages(ctx context.Context, query string, audiences []string, limit int32) ([]docs.DocSearchResult, error) {
 	if a.engine == nil {

@@ -708,7 +708,7 @@ func (q *Queries) ListComparisonProfileTemplates(ctx context.Context) ([]Compari
 	return items, nil
 }
 
-const listComparisonProfilesByTenant = `-- name: ListComparisonProfilesByTenant :many
+const listComparisonProfiles = `-- name: ListComparisonProfiles :many
 SELECT id, user_id, title, source_space_id, target_space_ids,
  goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
@@ -716,8 +716,8 @@ WHERE deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC
 `
 
-func (q *Queries) ListComparisonProfilesByTenant(ctx context.Context) ([]ComparisonProfile, error) {
-	rows, err := q.db.Query(ctx, listComparisonProfilesByTenant)
+func (q *Queries) ListComparisonProfiles(ctx context.Context) ([]ComparisonProfile, error) {
+	rows, err := q.db.Query(ctx, listComparisonProfiles)
 	if err != nil {
 		return nil, err
 	}

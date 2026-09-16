@@ -179,7 +179,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminListJoinRequests handles GET /api/v1/admin/join-requests — all
-// pending join requests across every space in the admin's tenant. Each row is
+// pending join requests across every space in the admin's platform. Each row is
 // given a composite id (space_id::user_id) so the panel can target a specific
 // request for approval/rejection.
 func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request) {

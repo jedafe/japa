@@ -52,7 +52,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
@@ -107,7 +106,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 // Legacy Admin Handlers — Referral Program
 // ---------------------------------------------------------------------------
 
-// GetProgram returns the referral program settings for the tenant.
+// GetProgram returns the referral program settings for the platform.
 // GET /admin/referral/program.
 func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 
@@ -151,7 +150,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
-// ListReferrals returns all referrals for the tenant (legacy).
+// ListReferrals returns all referrals for the platform (legacy).
 // GET /admin/referral/referrals.
 func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 
@@ -250,6 +249,7 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	// redirect still resolves the code but does not track clicks or set the
 	// attribution cookie — the user is simply sent to the homepage.
 	if !h.Service.Enabled(r.Context()) {
+		// #nosec G710 // same-origin redirect to /?ref=code; URL always starts with "/".
 		http.Redirect(w, r, "/?ref="+code, http.StatusFound)
 		return
 	}
@@ -278,8 +278,10 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   30 * 24 * 60 * 60,
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+	// #nosec G710 // same-origin redirect to /?ref=code; URL always starts with "/".
 	http.Redirect(w, r, "/?ref="+code, http.StatusFound)
 }
 

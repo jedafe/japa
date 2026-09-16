@@ -54,7 +54,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case strings.TrimSpace(req.Username) != "":
-		// Resolve username → user_id within the tenant (Rule 2 — sqlc query,
+		// Resolve username → user_id within the platform (Rule 2 — sqlc query,
 		// no raw SQL). Lets the space owner assign a moderator by handle
 		// without first looking up the UUID.
 		var usernameErr error

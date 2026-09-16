@@ -288,7 +288,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	}
 
 	// Try cache first. cacheKey is empty when the anonymous visitor has no
-	// tenant context (BUG-V001: we skip caching rather than risk cross-tenant
+	// platform context (BUG-V001: we skip caching rather than risk cross-platform
 	// bleed on an unscoped key).
 	if res.rdb != nil && cacheKey != "" {
 		if cached, err := res.rdb.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {

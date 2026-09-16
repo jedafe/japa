@@ -97,7 +97,7 @@ type ListEmbassiesFilter struct {
 }
 
 // ListEmbassies returns a paginated list of monitored embassies for a
-// tenant, optionally filtered by destination space. When ActiveOnly is
+// platform, optionally filtered by destination space. When ActiveOnly is
 // true only rows with is_active = true are returned.
 func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]EmbassyRow, int64, error) {
 	var (
@@ -213,7 +213,7 @@ WHERE %s
 }
 
 // GetEmbassyBySlug returns a single monitored embassy by its slug within
-// the tenant.
+// the platform.
 func (s *Store) GetEmbassyBySlug(ctx context.Context, slug string) (EmbassyRow, error) {
 	const q = `
 SELECT e.id, e.destination_space_id, sp.name AS dest_space_name,
@@ -653,7 +653,7 @@ RETURNING id, user_id, destination_space_id, embassy_slug, visa_category,
 // DeleteAlert soft-deletes an appointment_alerts row (Rule 11 — no hard
 // delete of user content in V1 app code; only account:deletion_cleanup may
 // hard-delete). Returns pgx.ErrNoRows if the row does not exist, is already
-// soft-deleted, or belongs to a different tenant.
+// soft-deleted, or belongs to a different platform.
 func (s *Store) DeleteAlert(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE appointment_alerts
@@ -699,7 +699,7 @@ WHERE deleted_at IS NULL
 }
 
 // ListActiveAlertsByEmbassySlug returns all active (non-deleted, status =
-// 'active') appointment_alerts for a given embassy_slug within a tenant.
+// 'active') appointment_alerts for a given embassy_slug within a platform.
 // Used by DispatchAlerts to notify users when availability is detected
 // (§91, ADR-099). Only alerts whose date range covers the current date
 // are returned.
@@ -851,7 +851,7 @@ ORDER BY e.last_polled_at ASC NULLS FIRST
 }
 
 // GetEmbassyByID returns a single monitored embassy by its PK within the
-// tenant. Used by PollEmbassy to load the booking_url and slug.
+// platform. Used by PollEmbassy to load the booking_url and slug.
 func (s *Store) GetEmbassyByID(ctx context.Context, id pgtype.UUID) (EmbassyRow, error) {
 	return s.getEmbassyByID(ctx, id)
 }

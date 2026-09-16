@@ -199,7 +199,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id pgtype.UUID, sourcePath
 		return gen.Redirect{}, err
 	}
 
-	// no tenant
+	// no platform
 	// Invalidate the new source_path.
 	s.invalidateValkeyCache(ctx, sourcePath)
 	// Invalidate the old source_path if it changed.
@@ -263,7 +263,7 @@ func (s *Service) BulkAction(ctx context.Context, input BulkActionInput) error {
 		return fmt.Errorf("fetching redirects for bulk action: %w", err)
 	}
 
-	// no tenant
+	// no platform
 
 	switch input.Action {
 	case "activate":

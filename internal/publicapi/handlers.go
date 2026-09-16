@@ -3,7 +3,6 @@ package publicapi
 import (
 	"encoding/json"
 	"errors"
-	"math"
 	"net/http"
 	"strconv"
 
@@ -50,7 +49,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -69,11 +67,11 @@ func parsePageSize(r *http.Request, defaultSize, maxSize int32) int32 {
 	ps := defaultSize
 
 	if v := r.URL.Query().Get("page_size"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			if n > int(maxSize) {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
+			if n > int64(maxSize) {
 				ps = maxSize
 			} else {
-				ps = int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+				ps = int32(n)
 			}
 		}
 	}
@@ -83,12 +81,8 @@ func parsePageSize(r *http.Request, defaultSize, maxSize int32) int32 {
 
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			if n > math.MaxInt32 {
-				return math.MaxInt32
-			}
-
-			return int32(n) //nolint:gosec // G109: bounded by MaxInt32 check above
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n >= 0 {
+			return int32(n)
 		}
 	}
 
@@ -574,7 +568,7 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 // Public API Resource Handlers (Section 47 — api.japaconnect.com)
 // ---------------------------------------------------------------------------
 // These are read-only endpoints exposed to external integrations via API key auth.
-// They proxy to the same underlying data as the tenant-scoped internal API but
+// They proxy to the same underlying data as the platform-scoped internal API but
 // return a simplified, stable response shape suitable for third-party consumers.
 
 // GetContentByID handles GET /api/v1/content/:id — returns a single content item.
@@ -622,7 +616,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Queries.ListSpacesByTenant(r.Context(),
+	spaces, err := h.Queries.ListSpaces(r.Context(),
 
 		pgtype.UUID{}, // public API key has no user context → NULL → public spaces only
 	)
@@ -667,8 +661,8 @@ func (h *Handlers) GetSpaceBySlug(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListTags handles GET /api/v1/tags — returns a paginated list of tags.
-// Uses ListTagsPaginated (BUG-010 fix: ListTagsByTenant returned ALL tags
-// with no pagination — unbounded response for large tenants).
+// Uses ListTagsPaginated (BUG-010 fix: ListTags returned ALL tags
+// with no pagination — unbounded response for large platforms).
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -802,7 +796,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListContent handles GET /api/v1/public/content — returns a paginated list
-// of published, public content within the API key's tenant.
+// of published, public content within the API key's platform.
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	if h.Service == nil {
@@ -965,7 +959,7 @@ func parseTrendingWindow(r *http.Request) string {
 }
 
 // GetTrendingContentHandler handles GET /api/v1/trending/content — returns
-// trending content snapshots for the API key's tenant.
+// trending content snapshots for the API key's platform.
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {

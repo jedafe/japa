@@ -145,7 +145,7 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 //
 // BUG-004: the uploaderID parameter enforces that only the user who
 // initiated the upload can confirm it. Without this, any authenticated
-// user in the same tenant could confirm another user's media ID by
+// user in the same platform could confirm another user's media ID by
 // guessing it. The presigned URL is single-use, but the confirm endpoint
 // itself must be uploader-scoped per §34 two-step upload.
 func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.UUID) error {
@@ -268,22 +268,25 @@ func openLocalFile(bucket, path string) (io.ReadCloser, error) {
 var openFile = defaultOpenFile
 
 func defaultOpenFile(path string) (io.ReadCloser, error) {
-	return os.Open(path) //nolint:gosec // G304: path derived from validated media storage config
+	if err := validateMediaPath(path); err != nil {
+		return nil, err
+	}
+	return os.Open(path) // #nosec G304 // path validated by validateMediaPath
 }
 
-// getMediaForScan retrieves a media item by ID without tenant filtering.
-// This is used by background workers that operate across all tenants.
+// getMediaForScan retrieves a media item by ID without platform filtering.
+// This is used by background workers that operate across all platforms.
 func (s *Service) getMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {
 	return s.store.GetMediaForScan(ctx, mediaID)
 }
 
-// confirmMediaByID marks a media item as confirmed, scoped to tenant.
+// confirmMediaByID marks a media item as confirmed, scoped to platform.
 // Used by the background scan processor.
 func (s *Service) confirmMediaByID(ctx context.Context, mediaID []byte) error {
 	return s.store.ConfirmMediaByID(ctx, mediaID)
 }
 
-// rejectMediaByID quarantines a media item, scoped to tenant.
+// rejectMediaByID quarantines a media item, scoped to platform.
 // This gives admins a chance to review false positives before removal.
 func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, virusName string) error {
 	return s.store.QuarantineMedia(ctx, mediaID, virusName)
@@ -315,7 +318,7 @@ func (s *Service) AdminUpdateStatus(ctx context.Context, mediaID, reviewerID pgt
 	})
 }
 
-// ListQuarantined returns all quarantined media items for a tenant.
+// ListQuarantined returns all quarantined media items for a platform.
 func (s *Service) ListQuarantined(ctx context.Context, limit, offset int32) ([]QuarantinedMedia, error) {
 	return s.store.ListQuarantined(ctx, limit, offset)
 }
@@ -713,12 +716,13 @@ func storeLocalMediaFile(bucket, storagePath string, body []byte) error {
 		return fmt.Errorf("resolving local media path: %w", err)
 	}
 
-	//nolint:gosec // G301: bounded
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
+	// #nosec G301 // media directories are created inside the configured storage root.
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return fmt.Errorf("creating media directory: %w", err)
 	}
 
-	if err := os.WriteFile(localPath, body, 0o644); err != nil { //nolint:gosec // G306: media files are meant to be world-readable via ServeMedia
+	// #nosec G306 // media files are meant to be world-readable via ServeMedia.
+	if err := os.WriteFile(localPath, body, 0o644); err != nil {
 		return fmt.Errorf("writing media file: %w", err)
 	}
 

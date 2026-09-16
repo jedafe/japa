@@ -175,7 +175,7 @@ func TestListRevenueSplitsFilterDefaults(t *testing.T) {
 	t.Parallel()
 
 	// A bare request (no filters) must produce a filter that lets every
-	// tenant row through — the SQL uses `@x IS NULL OR col = @x`, so zero
+	// platform row through — the SQL uses `@x IS NULL OR col = @x`, so zero
 	// pgtype values mean "no filter".
 	req := httptest.NewRequest(http.MethodGet, "/admin/university/revenue-splits", nil)
 	f := ListRevenueSplitsFilter{

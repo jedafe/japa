@@ -160,7 +160,7 @@ func (s *Service) ListMyReports(ctx context.Context, reporterUserID pgtype.UUID,
 	return reports, nil
 }
 
-// CountReports returns the total number of reports for the tenant (respecting
+// CountReports returns the total number of reports for the platform (respecting
 // optional status and entity_type filters) so callers can paginate.
 func (s *Service) CountReports(ctx context.Context, status, entityType, q *string) (int32, error) {
 	var total int32
@@ -193,7 +193,7 @@ func (s *Service) CountReports(ctx context.Context, status, entityType, q *strin
 	return total, nil
 }
 
-// ListReports returns all reports for the tenant (admin), optionally
+// ListReports returns all reports for the platform (admin), optionally
 // filtered by status and/or entity_type.
 func (s *Service) ListReports(ctx context.Context, status, entityType, q *string, limit, offset int32) ([]gen.ListReportsRow, error) {
 	reports, err := s.read.ListReports(ctx, gen.ListReportsParams{

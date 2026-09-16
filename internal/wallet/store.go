@@ -152,18 +152,18 @@ func (s *Store) updateActivityRuleByID(ctx context.Context, p gen.UpdateActivity
 	return row, nil
 }
 
-func (s *Store) listActivityRulesByTenant(ctx context.Context, limit, offset int32) ([]gen.ActivityPointRule, error) {
+func (s *Store) listActivityRulesByPlatform(ctx context.Context, limit, offset int32) ([]gen.ActivityPointRule, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListActivityRulesByTenant(ctx, gen.ListActivityRulesByTenantParams{
+	rows, err := s.read.ListActivityRules(ctx, gen.ListActivityRulesParams{
 
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing activity rules by tenant: %w", err)
+		return nil, fmt.Errorf("listing activity rules by platform: %w", err)
 	}
 
 	return rows, nil
@@ -395,7 +395,7 @@ func (s *Store) getCurrencyByCountryCode(ctx context.Context, geoCode string) (s
 // Credit Packs
 // ---------------------------------------------------------------------------
 
-// listActiveCreditPacks returns all active credit packs for a tenant.
+// listActiveCreditPacks returns all active credit packs for a platform.
 func (s *Store) listActiveCreditPacks(ctx context.Context) ([]gen.CreditPack, error) {
 	rows, err := s.read.ListActiveCreditPacks(ctx)
 	if err != nil {
@@ -405,7 +405,7 @@ func (s *Store) listActiveCreditPacks(ctx context.Context) ([]gen.CreditPack, er
 	return rows, nil
 }
 
-// listAllCreditPacks returns all credit packs (including inactive) for a tenant.
+// listAllCreditPacks returns all credit packs (including inactive) for a platform.
 func (s *Store) listAllCreditPacks(ctx context.Context) ([]gen.CreditPack, error) {
 	rows, err := s.read.ListAllCreditPacks(ctx)
 	if err != nil {

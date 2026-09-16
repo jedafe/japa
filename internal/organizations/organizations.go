@@ -88,7 +88,7 @@ type SettingsReader interface {
 }
 
 // webhookEmitter fans an organization.* / claim.* event out to all subscribed
-// webhook endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
+// webhook endpoints for the platform (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
 	EmitEvent(ctx context.Context, eventType string, payload any)
 }
@@ -231,7 +231,7 @@ func orgListCacheKey(page int32) string {
 	return valkey.MustKey("org:list::%d", page)
 }
 
-// InvalidateOrgCache flushes all cached org entries for a tenant. Call after
+// InvalidateOrgCache flushes all cached org entries for a platform. Call after
 // any org CRUD mutation (create, update, delete, verify, unverify).
 func (s *Service) InvalidateOrgCache(ctx context.Context) {
 	if s.vk == nil {
@@ -239,7 +239,7 @@ func (s *Service) InvalidateOrgCache(ctx context.Context) {
 	}
 
 	prefix := valkey.MustKey("org:*::*")
-	// Also flush the list cache for this tenant.
+	// Also flush the list cache for this platform.
 	listPrefix := valkey.MustKey("org:list::*")
 
 	for _, pattern := range []string{prefix, listPrefix} {
@@ -266,7 +266,7 @@ func (s *Service) InvalidateOrgCache(ctx context.Context) {
 
 // InvalidateOrgCacheByCmdable is a standalone invalidation function for
 // callers (e.g. admin handlers) that have a valkeycompat.Cmdable but not a
-// reference to the org Service. It flushes all jc:org:* keys for the tenant.
+// reference to the org Service. It flushes all jc:org:* keys for the platform.
 func InvalidateOrgCacheByCmdable(ctx context.Context, vk valkeycompat.Cmdable) {
 	if vk == nil {
 		return

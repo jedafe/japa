@@ -1,5 +1,5 @@
 -- name: ListTemplateLiterals :many
--- Returns all template literals for a tenant with optional search and active filter.
+-- Returns all template literals for a platform with optional search and active filter.
 SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE deleted_at IS NULL

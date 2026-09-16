@@ -1,10 +1,10 @@
--- name: ListCustomFieldGroupsByTenant :many
+-- name: ListCustomFieldGroups :many
 SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 
 ORDER BY created_at DESC, id DESC;
 
--- name: ListCustomFieldGroupsByTenantAndEntityClass :many
+-- name: ListCustomFieldGroupsAndEntityClass :many
 SELECT DISTINCT cfg.id, cfg.name, cfg.slug, cfg.description,
  cfg.is_system, cfg.created_at
 FROM custom_field_groups cfg
@@ -40,7 +40,7 @@ WHERE id = @id AND is_system = false;
 -- name: CountCustomFieldValuesByGroup :one
 -- BUG-008: counts custom_field_values referencing any field in the given
 -- group, so DeleteFieldGroup can reject deletion when the group is in use.
--- Tenant-scoped via the JOIN to custom_fields.
+-- Platform-scoped via the JOIN to custom_fields.
 SELECT count(*)::bigint
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
@@ -58,8 +58,8 @@ FROM custom_fields
 WHERE group_id = @group_id
 ORDER BY position ASC, created_at ASC;
 
--- name: ListAllCustomFieldsByTenant :many
--- All fields for all groups belonging to a tenant, used to enrich
+-- name: ListAllCustomFields :many
+-- All fields for all groups belonging to a platform, used to enrich
 -- ListFieldGroups with fields[] without N+1 per-group field lookups.
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
@@ -76,7 +76,7 @@ FROM custom_fields
 WHERE id = @id;
 
 -- name: GetCustomFieldByKey :one
--- ADR-064a: Looks up a system custom field by its key within a tenant.
+-- ADR-064a: Looks up a system custom field by its key within a platform.
 -- Used by the users service to resolve field IDs for origin_country and
 -- destination_country when saving geo profile fields.
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
@@ -122,8 +122,8 @@ FROM custom_field_group_assignments
 WHERE entity_class = @entity_class
 ORDER BY position ASC;
 
--- name: ListAssignmentsByTenantGroups :many
--- All assignments for groups belonging to a tenant, used to enrich
+-- name: ListAllGroupAssignments :many
+-- All assignments for groups belonging to a platform, used to enrich
 -- ListFieldGroups with entity_type without N+1 per-group assignment lookups.
 SELECT cfga.id, cfga.group_id, cfga.entity_class, cfga.entity_id, cfga.position, cfga.created_at
 FROM custom_field_group_assignments cfga
@@ -171,9 +171,9 @@ WHERE field_id = @field_id AND user_group_id = @user_group_id;
 -- =====================
 
 -- name: GetCustomFieldValue :one
--- BUG-014: JOIN custom_fields to enforce tenant scoping at the SQL layer
+-- BUG-014: JOIN custom_fields to enforce platform scoping at the SQL layer
 -- (defense-in-depth). The custom_field_values table has no the id column;
--- tenancy is enforced transitively via field_id → custom_fields.the id.
+-- platform scoping is enforced transitively via field_id → custom_fields.the id.
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
  cfv.created_at, cfv.updated_at, cfv.ai_exempt
@@ -182,7 +182,7 @@ JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.field_id = @field_id AND cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id;
 
 -- name: ListCustomFieldValuesByEntity :many
--- BUG-014: JOIN custom_fields to enforce tenant scoping at the SQL layer.
+-- BUG-014: JOIN custom_fields to enforce platform scoping at the SQL layer.
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
  cfv.created_at, cfv.updated_at, cfv.ai_exempt
@@ -194,7 +194,7 @@ WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id;
 -- BUG-017: push the visible-field-ID filter into SQL instead of fetching
 -- all values and filtering in Go. The visible_field_ids array is the set
 -- of field IDs the user is allowed to view per field-level RBAC.
--- Also BUG-014: tenant-scoped via JOIN to custom_fields.
+-- Also BUG-014: platform-scoped via JOIN to custom_fields.
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
  cfv.created_at, cfv.updated_at, cfv.ai_exempt
@@ -209,7 +209,7 @@ WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
 -- a single row carries both the stored value and the metadata needed to
 -- render it. Filtered to show_in_frontend = true so admin-only fields never
 -- leak to public surfaces (e.g. the /universities/{slug} About facts grid,
--- Section 39). Tenant-scoped via the JOIN (BUG-014). Ordered by the field's
+-- Section 39). Platform-scoped via the JOIN (BUG-014). Ordered by the field's
 -- group position for stable display ordering.
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
@@ -240,7 +240,7 @@ RETURNING id, field_id, entity_type, entity_id, value_text, value_number,
  value_bool, value_date, value_json, created_at, updated_at, ai_exempt;
 
 -- name: DeleteCustomFieldValue :exec
--- BUG-014: tenant scoping via a subquery check on custom_fields.the id.
+-- BUG-014: platform scoping via a subquery check on custom_fields.the id.
 DELETE FROM custom_field_values
 WHERE field_id = @field_id AND entity_type = @entity_type AND entity_id = @entity_id
  AND EXISTS (SELECT 1 FROM custom_fields cf WHERE cf.id = custom_field_values.field_id);

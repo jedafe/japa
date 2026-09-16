@@ -36,7 +36,6 @@ TOOLS = [
     ("travel_provider", "Travel Providers", "community", "travel_provider.manage"),
 ]
 
-TENANT_ID = "00000000-0000-0000-0000-000000000001"
 SUPER_ADMIN_GROUP = "00000000-0000-0000-0000-000000000010"
 
 
@@ -126,9 +125,9 @@ def main():
                 desc = f"Assign/update the geo scope of an existing {label} record."
             config = json.dumps(create_config(tool_type, label, action), separators=(",", ":"))
             lines.append(
-                f"INSERT INTO ai_tools (tenant_id, name, description, category, config, is_enabled, required_permission)"
-                f" VALUES ('{TENANT_ID}', '{fn}', '{desc}', 'agent_{category}', '{config}'::jsonb, true, '{perm}')"
-                f" ON CONFLICT (tenant_id, name) DO UPDATE SET"
+                f"INSERT INTO ai_tools (name, description, category, config, is_enabled, required_permission)"
+                f" VALUES ('{fn}', '{desc}', 'agent_{category}', '{config}'::jsonb, true, '{perm}')"
+                f" ON CONFLICT (name) DO UPDATE SET"
                 f" description = EXCLUDED.description,"
                 f" category = EXCLUDED.category,"
                 f" config = EXCLUDED.config,"

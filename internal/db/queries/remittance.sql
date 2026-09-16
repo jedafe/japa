@@ -137,7 +137,7 @@ WHERE send_currency = @send_currency
  AND is_active = true
  AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours');
 
--- name: ListAllActiveAlertsForTenant :many
+-- name: ListAllActiveAlerts :many
 SELECT * FROM remittance_rate_alerts
 WHERE is_active = true
  AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')

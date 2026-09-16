@@ -1581,7 +1581,7 @@ type GetSpaceModeratorParams struct {
 	UserID  pgtype.UUID `json:"user_id"`
 }
 
-// SPACES-015: tenant-scoped for defense-in-depth.
+// SPACES-015: platform-scoped for defense-in-depth.
 func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorParams) (SpaceModerator, error) {
 	row := q.db.QueryRow(ctx, getSpaceModerator, arg.SpaceID, arg.UserID)
 	var i SpaceModerator
@@ -1784,7 +1784,7 @@ type ListAllSpaceJoinRequestsRow struct {
 	SpaceName   *string            `json:"space_name"`
 }
 
-// Admin-wide pending join requests across every space in the admin's tenant.
+// Admin-wide pending join requests across every space in the admin's platform.
 // space_id is included so the admin panel can build a composite request id
 // (space_id::user_id) for the approve/reject endpoints.
 func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context) ([]ListAllSpaceJoinRequestsRow, error) {
@@ -1847,7 +1847,7 @@ type ListAllSpacesForAdminRow struct {
 	IsPrimary   *bool       `json:"is_primary"`
 }
 
-// Returns every active space in the tenant with no visibility or membership
+// Returns every active space in the platform with no visibility or membership
 // filter. Used by GET /me/spaces when the caller is a super_admin so they can
 // post to any space without joining it first (Section 03 — admin override).
 // Selects the lean fields and flags the caller's primary geo space.
@@ -2131,15 +2131,15 @@ func (q *Queries) ListDistinctSubregions(ctx context.Context, region *string) ([
 	return items, nil
 }
 
-const listPermissionPresetsByTenant = `-- name: ListPermissionPresetsByTenant :many
+const listPermissionPresets = `-- name: ListPermissionPresets :many
 SELECT id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 FROM space_permission_presets
 
 ORDER BY created_at ASC, id ASC
 `
 
-func (q *Queries) ListPermissionPresetsByTenant(ctx context.Context) ([]SpacePermissionPreset, error) {
-	rows, err := q.db.Query(ctx, listPermissionPresetsByTenant)
+func (q *Queries) ListPermissionPresets(ctx context.Context) ([]SpacePermissionPreset, error) {
+	rows, err := q.db.Query(ctx, listPermissionPresets)
 	if err != nil {
 		return nil, err
 	}
@@ -2427,7 +2427,7 @@ type ListSpaceModeratorsRow struct {
 	UserDisplayName  *string            `json:"user_display_name"`
 }
 
-// SPACES-015: tenant-scoped for defense-in-depth.
+// SPACES-015: platform-scoped for defense-in-depth.
 func (q *Queries) ListSpaceModerators(ctx context.Context, spaceID pgtype.UUID) ([]ListSpaceModeratorsRow, error) {
 	rows, err := q.db.Query(ctx, listSpaceModerators, spaceID)
 	if err != nil {
@@ -2496,7 +2496,7 @@ func (q *Queries) ListSpaceRulesBySpace(ctx context.Context, spaceID pgtype.UUID
 	return items, nil
 }
 
-const listSpaceTypesByTenant = `-- name: ListSpaceTypesByTenant :many
+const listSpaceTypes = `-- name: ListSpaceTypes :many
 
 SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
@@ -2507,8 +2507,8 @@ ORDER BY created_at ASC, id ASC
 // =====================
 // Space Types
 // =====================
-func (q *Queries) ListSpaceTypesByTenant(ctx context.Context) ([]SpaceType, error) {
-	rows, err := q.db.Query(ctx, listSpaceTypesByTenant)
+func (q *Queries) ListSpaceTypes(ctx context.Context) ([]SpaceType, error) {
+	rows, err := q.db.Query(ctx, listSpaceTypes)
 	if err != nil {
 		return nil, err
 	}
@@ -2538,7 +2538,7 @@ func (q *Queries) ListSpaceTypesByTenant(ctx context.Context) ([]SpaceType, erro
 	return items, nil
 }
 
-const listSpaceTypesByTenantFiltered = `-- name: ListSpaceTypesByTenantFiltered :many
+const listSpaceTypesFiltered = `-- name: ListSpaceTypesFiltered :many
 SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%')
@@ -2547,7 +2547,7 @@ WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '
 ORDER BY created_at ASC, id ASC
 `
 
-type ListSpaceTypesByTenantFilteredParams struct {
+type ListSpaceTypesFilteredParams struct {
 	Search         string `json:"search"`
 	CategoryFilter string `json:"category_filter"`
 	SelectableOnly bool   `json:"selectable_only"`
@@ -2556,8 +2556,8 @@ type ListSpaceTypesByTenantFilteredParams struct {
 // Supports optional search (q), category filter, and a selectable-only flag
 // for the admin panel and the member space-creation flow. Pass empty strings
 // and false booleans to skip filters.
-func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSpaceTypesByTenantFilteredParams) ([]SpaceType, error) {
-	rows, err := q.db.Query(ctx, listSpaceTypesByTenantFiltered, arg.Search, arg.CategoryFilter, arg.SelectableOnly)
+func (q *Queries) ListSpaceTypesFiltered(ctx context.Context, arg ListSpaceTypesFilteredParams) ([]SpaceType, error) {
+	rows, err := q.db.Query(ctx, listSpaceTypesFiltered, arg.Search, arg.CategoryFilter, arg.SelectableOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -2576,6 +2576,107 @@ func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSp
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Category,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaces = `-- name: ListSpaces :many
+
+SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+ s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+ s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+ s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+ s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+WHERE s.deleted_at IS NULL
+ AND (
+ s.visibility = 'public'
+ OR (
+ $1::uuid IS NOT NULL
+ AND EXISTS (
+ SELECT 1 FROM space_members sm
+ WHERE sm.space_id = s.id AND sm.user_id = $1::uuid AND sm.status = 'approved'
+ )
+ )
+ )
+ORDER BY s.created_at DESC, s.id DESC
+`
+
+type ListSpacesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+// =====================
+// Spaces
+// =====================
+// Public discovery list. Filters by visibility so unauthenticated callers
+// only see public spaces; authenticated callers also see members/private
+// spaces they belong to (Section 05 line 272, §9 platform scoping).
+// Pass @viewer_user_id as NULL for unauthenticated requests.
+func (q *Queries) ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]ListSpacesRow, error) {
+	rows, err := q.db.Query(ctx, listSpaces, viewerUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpacesRow
+	for rows.Next() {
+		var i ListSpacesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -2763,7 +2864,7 @@ type ListSpacesByLevelRow struct {
 	CurrencyCode   *string            `json:"currency_code"`
 }
 
-// SPACES-001: apply the same visibility filter as ListSpacesByTenant so
+// SPACES-001: apply the same visibility filter as ListSpaces so
 // unauthenticated callers only see public spaces; authenticated callers
 // also see members/private spaces they belong to (Section 05 line 272).
 // Pass @viewer_user_id as NULL for unauthenticated requests.
@@ -3252,107 +3353,6 @@ func (q *Queries) ListSpacesByParentPaginated(ctx context.Context, arg ListSpace
 	return items, nil
 }
 
-const listSpacesByTenant = `-- name: ListSpacesByTenant :many
-
-SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
- s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
- s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
- s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
-FROM spaces s
-WHERE s.deleted_at IS NULL
- AND (
- s.visibility = 'public'
- OR (
- $1::uuid IS NOT NULL
- AND EXISTS (
- SELECT 1 FROM space_members sm
- WHERE sm.space_id = s.id AND sm.user_id = $1::uuid AND sm.status = 'approved'
- )
- )
- )
-ORDER BY s.created_at DESC, s.id DESC
-`
-
-type ListSpacesByTenantRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-}
-
-// =====================
-// Spaces
-// =====================
-// Public discovery list. Filters by visibility so unauthenticated callers
-// only see public spaces; authenticated callers also see members/private
-// spaces they belong to (Section 05 line 272, §9 multi-tenancy).
-// Pass @viewer_user_id as NULL for unauthenticated requests.
-func (q *Queries) ListSpacesByTenant(ctx context.Context, viewerUserID pgtype.UUID) ([]ListSpacesByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listSpacesByTenant, viewerUserID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListSpacesByTenantRow
-	for rows.Next() {
-		var i ListSpacesByTenantRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.ParentID,
-			&i.SpaceTypeID,
-			&i.Name,
-			&i.Slug,
-			&i.Description,
-			&i.WikiContent,
-			&i.LogoMediaID,
-			&i.HeaderImageID,
-			&i.GeoCode,
-			&i.Level,
-			&i.MemberCount,
-			&i.PostCount,
-			&i.FollowerCount,
-			&i.Visibility,
-			&i.PostingPerm,
-			&i.ReplyingPerm,
-			&i.CommentingPerm,
-			&i.JoiningPerm,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
-			&i.CurrencyCode,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listSpacesByType = `-- name: ListSpacesByType :many
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
@@ -3405,7 +3405,7 @@ type ListSpacesByTypeRow struct {
 	CurrencyCode   *string            `json:"currency_code"`
 }
 
-// SPACES-001: apply the same visibility filter as ListSpacesByTenant.
+// SPACES-001: apply the same visibility filter as ListSpaces.
 func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypeParams) ([]ListSpacesByTypeRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByType, arg.SpaceTypeID, arg.ViewerUserID)
 	if err != nil {
@@ -3672,7 +3672,7 @@ type ListSpacesPaginatedRow struct {
 // SPACES-009/011: SQL-level paginated discovery list with search, geo,
 // level, region, subregion, space_type, joined-only, and sort support.
 // Replaces the in-memory filter+paginate in the ListSpaces handler.
-// Visibility filter matches ListSpacesByTenant.
+// Visibility filter matches ListSpaces.
 // sort accepts: ” (default → newest), 'name' (A–Z), 'members', 'followers',
 // 'posts' (all numeric DESC), 'activity' (most recently updated). Unknown
 // values fall back to newest. §05 line 319: sort=members|activity|newest.
@@ -3931,7 +3931,7 @@ type RemoveSpaceModeratorParams struct {
 	UserID  pgtype.UUID `json:"user_id"`
 }
 
-// SPACES-015: tenant-scoped for defense-in-depth.
+// SPACES-015: platform-scoped for defense-in-depth.
 func (q *Queries) RemoveSpaceModerator(ctx context.Context, arg RemoveSpaceModeratorParams) error {
 	_, err := q.db.Exec(ctx, removeSpaceModerator, arg.SpaceID, arg.UserID)
 	return err
@@ -4432,7 +4432,7 @@ type UpdateSpaceSlugRow struct {
 
 // Updates only the slug of a space. Separate from UpdateSpace (which does not
 // touch slug) so university/space admin handlers can rename the slug without
-// rewriting every other column. Tenant-scoped, soft-delete-aware. The
+// rewriting every other column. Platform-scoped, soft-delete-aware. The
 // UNIQUE(slug) constraint rejects a collision with a 23505 error
 // the caller maps to a 409.
 func (q *Queries) UpdateSpaceSlug(ctx context.Context, arg UpdateSpaceSlugParams) (UpdateSpaceSlugRow, error) {

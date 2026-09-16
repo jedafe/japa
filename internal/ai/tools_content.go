@@ -3,7 +3,7 @@
 //
 // Tools implemented here (Phase 4, tasks 4.01-4.04):
 //
-//   - content.search         — tenant-wide or space-scoped text search of contents
+//   - content.search         — platform-wide or space-scoped text search of contents
 //   - content.read           — read a content record + its non-exempt custom field values
 //   - content.create         — create new content with _ai_provenance metadata
 //   - content.update         — update existing content fields
@@ -20,7 +20,7 @@
 // so they register a PrivacyTargetFunc that extracts the content_id from
 // the arguments. The executor's privacy gate blocks the call before
 // dispatch when the content is ai_exempt. content.search returns a result
-// set — the ListContentsByTenant and SearchContentsBySpace queries do not
+// set — the ListContents and SearchContentsBySpace queries do not
 // filter ai_exempt at the SQL layer, so the handler filters exempt content
 // post-query using the PrivacyExemptionChecker. content.create has no
 // privacy target (it creates new data, not reads existing).
@@ -127,10 +127,10 @@ type contentSearchArgs struct {
 // ContentSearchHandler returns a ToolHandler that searches site content.
 // When geo_space_id is provided, the search is scoped to that space via
 // content.Service.SearchContentsBySpace; otherwise it falls back to the
-// tenant-wide content.Service.ListContents text filter (first page, no
+// platform-wide content.Service.ListContents text filter (first page, no
 // cursor — the agent loop does not paginate).
 //
-// Privacy: the ListContentsByTenant and SearchContentsBySpace queries do
+// Privacy: the ListContents and SearchContentsBySpace queries do
 // not filter ai_exempt at the SQL layer (the ai_exempt column is not in
 // their WHERE clause). The handler filters exempt content post-query using
 // the PrivacyExemptionChecker. When deps.Privacy is nil, no filtering is
@@ -178,7 +178,7 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 			}), nil
 		}
 
-		// Tenant-wide text search (first page — zero cursor).
+		// Platform-wide text search (first page — zero cursor).
 		filter := visibility.InternalVisibilityFilter(userID)
 
 		results, err := deps.Content.ListContents(ctx, a.Query, pgtype.Timestamptz{}, a.Limit, filter)
@@ -186,10 +186,10 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("content_search_failed", err.Error()), nil
 		}
 
-		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, results)
+		filtered := filterExemptContentFromPlatform(ctx, deps.Privacy, results)
 
 		return successToolResult(map[string]any{
-			"results":    contentSearchResultsFromTenant(filtered),
+			"results":    contentSearchResultsFromPlatform(filtered),
 			"total":      len(filtered),
 			"geo_scoped": false,
 		}), nil
@@ -200,14 +200,14 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 // (not a single entity), so no PrivacyTargetFunc is registered. Exempt
 // content is filtered post-query by filterExemptContentFrom* helpers.
 
-// filterExemptContentFromTenant strips ai_exempt content from tenant-wide
+// filterExemptContentFromPlatform strips ai_exempt content from platform-wide
 // search results. When the privacy checker is nil, no filtering is applied.
-func filterExemptContentFromTenant(ctx context.Context, privacy PrivacyExemptionChecker, rows []gen.ListContentsByTenantRow) []gen.ListContentsByTenantRow {
+func filterExemptContentFromPlatform(ctx context.Context, privacy PrivacyExemptionChecker, rows []gen.ListContentsRow) []gen.ListContentsRow {
 	if privacy == nil {
 		return rows
 	}
 
-	out := make([]gen.ListContentsByTenantRow, 0, len(rows))
+	out := make([]gen.ListContentsRow, 0, len(rows))
 
 	for _, r := range rows {
 		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, r.ID)
@@ -256,7 +256,7 @@ type contentSearchResult struct {
 	CreatedAt   string `json:"created_at,omitempty"`
 }
 
-func contentSearchResultsFromTenant(rows []gen.ListContentsByTenantRow) []contentSearchResult {
+func contentSearchResultsFromPlatform(rows []gen.ListContentsRow) []contentSearchResult {
 	out := make([]contentSearchResult, 0, len(rows))
 
 	for _, r := range rows {
@@ -1085,7 +1085,7 @@ func ContentUpdatePrivacyTarget(ctx context.Context, args json.RawMessage) (Priv
 // ---------------------------------------------------------------------------
 
 // GuideCategoriesListHandler returns a ToolHandler that lists the
-// admin-configured guide categories for the tenant, including the slug,
+// admin-configured guide categories for the platform, including the slug,
 // label, and the associated custom field group ID (so the agent can then
 // call custom_fields.list to discover the category's fields).
 //
@@ -1125,7 +1125,7 @@ func GuideCategoriesListHandler(deps *ToolDeps) ToolHandler {
 // ---------------------------------------------------------------------------
 
 // ContentTypesListHandler returns a ToolHandler that lists the valid
-// content types for the tenant, including each type's label, whether it
+// content types for the platform, including each type's label, whether it
 // has categories (guide), which tool to use for category discovery, and
 // the entity_class the agent should pass to custom_field_groups.list to
 // find the type's structured custom field group.
@@ -1347,7 +1347,7 @@ type contentListArgs struct {
 }
 
 // ContentListHandler returns a ToolHandler that lists content by type.
-// When content_type is empty, it falls back to the tenant-wide list
+// When content_type is empty, it falls back to the platform-wide list
 // (deps.Content.ListContents). Exempt content is filtered post-query.
 func ContentListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
@@ -1386,7 +1386,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 			}), nil
 		}
 
-		// Tenant-wide listing via ContentService (Phase 4).
+		// Platform-wide listing via ContentService (Phase 4).
 		filter := visibility.InternalVisibilityFilter(userID)
 
 		if deps.Content == nil {
@@ -1398,10 +1398,10 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("content_list_failed", err.Error()), nil
 		}
 
-		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, results)
+		filtered := filterExemptContentFromPlatform(ctx, deps.Privacy, results)
 
 		return successToolResult(map[string]any{
-			"results": contentSearchResultsFromTenant(filtered),
+			"results": contentSearchResultsFromPlatform(filtered),
 			"total":   len(filtered),
 		}), nil
 	}

@@ -49,7 +49,7 @@ SELECT id, endpoint_id, event_id, event_type, payload,
 FROM webhook_deliveries
 WHERE id = @id;
 
--- name: GetWebhookDeliveryForTenant :one
+-- name: GetWebhookDeliveryForPlatform :one
 SELECT id, endpoint_id, event_id, event_type, payload,
  status, attempts, last_error, next_attempt_at, last_response_code, last_response_body,
  delivered_at, created_at

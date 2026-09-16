@@ -137,7 +137,7 @@ type GenerateDraftResponse struct {
 	PageID  string `json:"page_id"`
 }
 
-// FeatureChecker checks whether a feature flag is enabled for a tenant.
+// FeatureChecker checks whether a feature flag is enabled for a platform.
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
 type FeatureChecker interface {
@@ -176,7 +176,7 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 // SetDispatcher injects the AI Gateway dispatcher for draft generation.
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
-// Enabled checks whether the wiki feature is enabled for the given tenant.
+// Enabled checks whether the wiki feature is enabled for the given platform.
 // Delegates to the features.Checker (feature_flags table) when available,
 // falling back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {
@@ -425,7 +425,7 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 	}
 
 	// B6: acquire the per-user-per-page edit lock. SET NX EX 5m.
-	// Tenant-scoped per Rule 4 (VALKEY-004): jc:wiki_edit_lock:{}:{page_id}:{user_id}
+	// Platform-scoped per Rule 4 (VALKEY-004): jc:wiki_edit_lock:{}:{page_id}:{user_id}
 	lockKey := valkey.MustKey("wiki_edit_lock::%s:%s", page.ID.String(), userID.String())
 	if s.vk != nil {
 		acquired, lerr := s.vk.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()

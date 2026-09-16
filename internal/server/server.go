@@ -671,7 +671,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 		slog.Info("link preview: blacklist loaded from system_settings", "count", len(blacklist))
 	} else {
-		slog.Warn("link preview: could not resolve default tenant for blacklist", "error", err)
+		slog.Warn("link preview: could not resolve default platform for blacklist", "error", err)
 	}
 
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
@@ -752,7 +752,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Currency resolver for geo-aware currency resolution at checkout
 	// (Section 58, ADR-065). The default currency is read from
 	// system_settings wallet.default_currency (fallback NGN). The default
-	// tenant ID is used because this read happens at boot time, outside any
+	// platform ID is used because this read happens at boot time, outside any
 	// request context. The resolver also has SetDefaultCurrency for
 	// hot-reload when the setting changes.
 	defaultCurrency := settingsService.GetStringOr(context.Background(), "wallet.default_currency", "NGN")
@@ -831,7 +831,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
 	couponService := coupons.NewServiceWithEnqueuer(database, taskEnqueuer)
-	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{tenant} caching (§55)
+	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{platform} caching (§55)
 	couponHandlers := coupons.NewHandlers(couponService)
 
 	// Wire the coupon service into the renderer for render-time coupon_embed
@@ -887,7 +887,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	sidebarService := sidebars.NewServiceWithPerms(database, vkClient.Redis(), rbacResolver)
 	sidebarHandlers := sidebars.NewHandlers(sidebarService)
 
-	// Email Templates — Tenant-customizable transactional emails (ADR-055).
+	// Email Templates — Platform-customizable transactional emails (ADR-055).
 	emailTemplatesService := emailtemplates.NewService(database)
 	emailTemplatesHandlers := emailtemplates.NewHandlers(emailTemplatesService, asynqClient)
 	emailTemplatesHandlers.SetRedisClient(vkClient.Redis())
@@ -899,7 +899,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Redirect middleware (ADR-056) — resolves admin-managed URL redirects
 	// before the request reaches route handlers. Runs on the root router
-	// (after standard middleware + IP block) but before Tenant/Auth groups.
+	// (after standard middleware + IP block) but before Platform/Auth groups.
 	// Skips /api/, /health, /ready, and /seaweedfs/ paths.
 	r.Use(redirects.Middleware(redirectsService, nil))
 
@@ -924,7 +924,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// package-level media.MediaURL so all callers (tags, blog, feed, widgets,
 	// seo) honour the system_setting without each needing a *media.Service.
 	// Section 34 — CDN & S3-Compatible Object Storage. Resolved against the
-	// default tenant because the CDN prefix is platform-wide.
+	// default platform because the CDN prefix is platform-wide.
 	media.SetCDNBaseURLResolver(func() string {
 		return settingsService.GetStringOr(context.Background(), "media.cdn.base_url", "")
 	})
@@ -987,7 +987,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 	formTriggerDispatcher.SetNotifyAdmin(func(ctx context.Context, title, body, actionURL string) error {
 		// Fan out an in-app notification to every active user in the
-		// tenant's system super_admin group (Section 06 notify_admin
+		// platform's system super_admin group (Section 06 notify_admin
 		// trigger). Best-effort: a failure for one admin does not abort
 		// the others; the first error is returned so the trigger
 		// dispatcher can log it.
@@ -1439,7 +1439,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Mobile push device registration + admin push test.
 	devicesStore := devices.NewStore(database)
 	devicesService := devices.NewService(devicesStore, settingsService)
-	// Wire the FCM/APNs CompositeDispatcher. It reads credentials per-tenant
+	// Wire the FCM/APNs CompositeDispatcher. It reads credentials per-platform
 	// from system_settings (hot-reloadable per Rule 3). When credentials are
 	// not configured, Dispatch returns a clear error per-token (§77).
 	devicesService.SetDispatcher(devices.NewCompositeDispatcher(settingsService))
@@ -1573,27 +1573,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceResolver.Register("mentor", resolver.NewMentorResolver(mentorshipService))
 	jceResolver.Register("remittance", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "remittance", Table: "remittance_providers", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
-		DescColumn: "website_url", TenantColumn: "", ActiveWhere: "t.is_active = true",
+		DescColumn: "website_url", PlatformColumn: "", ActiveWhere: "t.is_active = true",
 	}))
 	jceResolver.Register("organization", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "organization", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
-		DescColumn: "description", TenantColumn: "", ActiveWhere: "t.verified = true",
+		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verified = true",
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
 	}))
 	jceResolver.Register("bank", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "bank", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
-		DescColumn: "description", TenantColumn: "", ActiveWhere: "t.verified = true",
+		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verified = true",
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
 	}))
 	jceResolver.Register("job", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "job", Table: "intel_jobs", IDColumn: "id", TitleColumn: "title", SlugColumn: "",
-		DescColumn: "description", TenantColumn: "", ActiveWhere: "t.verification_status = 'verified'",
+		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verification_status = 'verified'",
 		GeoSpaceIDColumn: "country_space_id", CountryColumn: "country", TagsColumn: "skills",
 	}))
 	jceResolver.Register("job_listing", resolver.NewJobListingResolver(contentService))
 	jceResolver.Register("travel", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "travel", Table: "travel_providers", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
-		DescColumn: "", TenantColumn: "", ActiveWhere: "t.is_active = true",
+		DescColumn: "", PlatformColumn: "", ActiveWhere: "t.is_active = true",
 	}))
 	comparisonService.SetResolver(jceResolver)
 
@@ -1665,7 +1665,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the intelligence store into the Studio handlers so the
 	// create-job endpoint can validate intel_record_id ownership (ADR-076
 	// Amendment 1). Without this, the Promote-to-Studio flow accepts
-	// intel_record_id values without verifying they belong to the tenant.
+	// intel_record_id values without verifying they belong to the platform.
 	studioHandlers.SetIntelStore(intelStores)
 
 	// Wire the Studio review hook into the admin moderation handler so
@@ -2020,8 +2020,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// source has no explicit persona_id. Falls back to the super admin user
 	// if the setting is missing or the persona lookup fails — the fallback
 	// must be a valid users(id) row to avoid the FK violation on
-	// contents.author_id (BUG: the prior code passed a default tenant UUID, which
-	// is a tenant UUID, not a user UUID).
+	// contents.author_id (BUG: the prior code passed a default platform UUID, which
+	// is a platform UUID, not a user UUID).
 	var intelDefaultAuthorID pgtype.UUID
 
 	if personaIDStr := settingsService.GetStringOr(context.Background(), "intel.default_persona_id", ""); personaIDStr != "" {
@@ -2195,7 +2195,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	usersService.SetAuthSettings(settingsService)
 	usersHandlers := users.NewHandlers(usersService, contentService)
 	// Wire the RBAC resolver so GetMyContent can fall back to a
-	// tenant-scoped (non-author-scoped) fetch for super-admins and users
+	// platform-scoped (non-author-scoped) fetch for super-admins and users
 	// with the `content.edit` permission node.
 	usersHandlers.SetPermissionResolver(rbacResolver)
 	// Wire the RBAC permission lister so GetMyProfile surfaces the caller's
@@ -2206,7 +2206,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// ADR-064a: wire settings for configurable Nominatim URL/timeout
 	// (Rule 3: no hardcoded URLs or limits).
 	usersHandlers.SetSettings(settingsService)
-	// Wire auth settings so ChangePassword enforces the tenant's password
+	// Wire auth settings so ChangePassword enforces the platform's password
 	// policy (auth.password.* keys) from system_settings instead of
 	// hardcoding validation rules (Rule 3).
 	usersHandlers.SetAuthSettings(settingsService)
@@ -2339,18 +2339,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Load DB-backed provider configs and register them with the dispatcher.
 	// This runs AFTER env-var providers are registered above, so DB configs
 	// take priority (LoadAndRegisterProviders clears and re-registers
-	// categories that have DB-backed providers). The default tenant is used
-	// for the initial load; per-tenant reload happens on config changes.
+	// categories that have DB-backed providers). The default platform is used
+	// for the initial load; per-platform reload happens on config changes.
 	if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher); err != nil {
 		slog.Warn("ai: loading db-backed providers at startup", "error", err)
 	}
 
-	// Infrastructure routes bypass tenant middleware
+	// Infrastructure routes bypass platform middleware
 	r.Get("/health", h.HealthCheck)
 	r.Get("/ready", h.ReadinessCheck)
 
 	// Public bot-facing endpoints (robots.txt and llms.txt)
-	// These require tenant resolution but no authentication.
+	// These require platform resolution but no authentication.
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return next })
 		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient))
@@ -2363,7 +2363,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/sitemap-users.xml", sitemapHandler.ServeUsersSitemap)
 		r.Get("/sitemap-images.xml", sitemapHandler.ServeImagesSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
-		// Universal RSS feeds (public — no auth required, tenant-scoped)
+		// Universal RSS feeds (public — no auth required, platform-scoped)
 		rssHandlers := rsspkg.NewHandlers(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName)
 		rssHandlers.SetRedis(vkClient.Redis())
 		r.Get("/feed.xml", rssHandlers.HandleFeed)
@@ -2371,7 +2371,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/tags/{slug}/feed.xml", rssHandlers.HandleTagFeed)
 		r.Get("/users/{username}/feed.xml", rssHandlers.HandleUserFeed)
 
-		// Public settings endpoint (no auth required, tenant-scoped)
+		// Public settings endpoint (no auth required, platform-scoped)
 		r.Get("/site/settings/public", configHandlers.GetPublicSettings)
 
 		// SeaweedFS upload fallback — dev-only presigned URL PUT handler.
@@ -2388,7 +2388,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/docs/openapi.json", docsHandlers.OpenAPIHandler)
 	})
 
-	// API routes go through tenant resolution
+	// API routes go through platform resolution
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return next })
 		r.Route("/api/v1", func(r chi.Router) {
@@ -2448,7 +2448,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Bot detection middleware — identifies known bots from User-Agent
 			// and stores bot info in request context for downstream handlers.
-			// Runs after tenant middleware (needs tenant context) but before
+			// Runs after platform middleware (needs platform context) but before
 			// route handlers.
 			r.Use(bots.BotDetectionMiddleware(botStore, vkClient))
 
@@ -2496,7 +2496,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// VisitorContext resolver (ADR-064) — resolves the effective
 			// content country for geo-aware feed/search personalization. Runs
-			// after GeoIP (line 105), tenant, and soft-auth so it can use all
+			// after GeoIP (line 105), platform, and soft-auth so it can use all
 			// three sources. Priority: ?geo= param → user preference → GeoIP →
 			// "NG" default. Cached in Valkey at jc:visitor:ctx:{session_id} (30m
 			// TTL, falls back to jc:visitor:ctx:user:{user_id} for legacy tokens
@@ -2514,7 +2514,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Also registered outside /api/v1 at /site/settings/public for bot/SSR use.
 			r.Get("/site/settings/public", configHandlers.GetPublicSettings)
 
-			// Auth routes (public - no auth required, tenant-scoped)
+			// Auth routes (public - no auth required, platform-scoped)
 			// Tight rate limit to throttle brute-force attempts.
 			r.Route("/auth", func(r chi.Router) {
 				r.Use(mw.RateLimit(vkClient.Redis(), "tight"))
@@ -2693,7 +2693,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin field-group routes — the same underlying handlers as the
 			// /custom-field-groups block above, mounted a second time under
 			// /admin per catalog (an admin-facing management surface distinct
-			// from the tenant-scoped API the SPA consumes at the bare paths).
+			// from the platform-scoped API the SPA consumes at the bare paths).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
 				Get("/admin/field-groups", cfHandlers.ListFieldGroups)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
@@ -3006,7 +3006,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Related Content (Section 14 — Content System API, pgvector cosine similarity)
 			// BUG-FIX: public read so the /blog/[slug] "Related" section renders
-			// for guest visitors. The handler only requires a tenant.
+			// for guest visitors. The handler only requires a platform.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{id}/related", contentHandlers.GetRelatedContent)
 
 			// Singular reaction action routes (catalog lines 259-260). The
@@ -4089,7 +4089,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
 				Delete("/admin/reports/{id}", reportsHandlers.DeleteReport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.consents.view")).
-				Get("/admin/consents", gdprHandlers.ListConsentsByTenant)
+				Get("/admin/consents", gdprHandlers.ListConsents)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.consents.delete")).
 				Delete("/admin/consents/{id}", gdprHandlers.DeleteConsent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
@@ -4406,7 +4406,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/search", searchHandlers.SearchSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/search", searchHandlers.SearchTag)
 
-			// Template literals picker — public read of active tenant tokens for
+			// Template literals picker — public read of active platform tokens for
 			// the composer `{{` trigger. Returns key/label/description metadata
 			// only (never the raw expression value). Served from the cached
 			// catalog (jc:literals:{}). Ref: §14 + template-literals ADR.
@@ -4430,7 +4430,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/tags/{id}", tagsHandlers.UpdateTag)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Delete("/admin/tags/{id}", tagsHandlers.DeleteTag)
-			// Admin tag listing (reuses the tenant-scoped ListTags handler).
+			// Admin tag listing (reuses the platform-scoped ListTags handler).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Get("/admin/tags", tagsHandlers.ListTags)
 			// Tag moderators (Section 49).
@@ -5405,8 +5405,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/organizations/{id}/invitations", orgHandlers.AdminListInvitations)
 
 			// Task 12: Spaces admin extras
-			// Admin spaces CRUD (reuses the tenant-scoped space handlers; the
-			// admin's resolved tenant scopes the listing).
+			// Admin spaces CRUD (reuses the platform-scoped space handlers; the
+			// admin's resolved platform scopes the listing).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
 				Get("/admin/spaces", spaceHandlers.AdminListSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
@@ -5421,7 +5421,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/spaces/{id}", spaceHandlers.DeleteSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Get("/admin/spaces/{id}/join-requests", spaceHandlers.ListJoinRequests)
-			// Admin-wide join requests (across all spaces in the admin tenant).
+			// Admin-wide join requests (across all spaces in the admin platform).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Get("/admin/join-requests", spaceHandlers.AdminListJoinRequests)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
@@ -5668,7 +5668,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
 				Get("/users/{id}/analytics", usersHandlers.GetUserAnalytics)
 			// Public profile Posts tab — author-scoped published+public content (was
-			// wired to ListContent, which ignored {id} and returned all tenant content).
+			// wired to ListContent, which ignored {id} and returned all platform content).
 			// Public per Section 32; gated to 404 non-active users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
 				Get("/users/{id}/content", contentHandlers.ListByAuthor)
@@ -6671,7 +6671,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// NOTE: These are registered inside the existing /api/v1 group above.
 
 	// Super-admin Control Panel routes (Section 21).
-	// Tenant-scoped, requires auth + control.panel.access permission.
+	// Platform-scoped, requires auth + control.panel.access permission.
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return next })
 		r.Use(auth.RequireAuth(kr, vkClient.Redis()))

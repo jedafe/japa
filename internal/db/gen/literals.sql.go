@@ -173,7 +173,7 @@ type ListTemplateLiteralsParams struct {
 	PageLimit  int32  `json:"page_limit"`
 }
 
-// Returns all template literals for a tenant with optional search and active filter.
+// Returns all template literals for a platform with optional search and active filter.
 func (q *Queries) ListTemplateLiterals(ctx context.Context, arg ListTemplateLiteralsParams) ([]TemplateLiteral, error) {
 	rows, err := q.db.Query(ctx, listTemplateLiterals,
 		arg.Search,

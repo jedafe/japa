@@ -252,7 +252,7 @@ func (s *Store) AdminUpdateScholarship(ctx context.Context, arg gen.UpdateSchola
 
 // AdminDeleteScholarship deletes a scholarship record and soft-deletes the
 // guide content row it referenced (Rule 11 — user content is soft-deleted, never
-// hard-deleted). The ID is stamped into the query params for tenant
+// hard-deleted). The ID is stamped into the query params for platform
 // isolation. The guide content row is soft-deleted so it stops appearing in the
 // finder and content listings without losing audit history.
 func (s *Store) AdminDeleteScholarship(ctx context.Context, id pgtype.UUID) error {
@@ -336,7 +336,7 @@ func rawJSONB(r json.RawMessage) []byte {
 	return []byte(r)
 }
 
-// UpdateScholarship applies a tenant-scoped partial update to a scholarship
+// UpdateScholarship applies a platform-scoped partial update to a scholarship
 // projection row. Only non-nil/non-zero fields in the input are written. The
 // updated row is returned.
 // strField returns the dereferenced value when p is non-nil.
@@ -429,7 +429,7 @@ func sliceField[T any](s []T) (any, bool) {
 	return s, true
 }
 
-// UpdateScholarship applies a tenant-scoped partial update to a scholarship
+// UpdateScholarship applies a platform-scoped partial update to a scholarship
 // projection row. Only non-nil/non-zero fields in the input are written. The
 // updated row is returned.
 func (s *Store) UpdateScholarship(ctx context.Context, id pgtype.UUID, in UpdateScholarshipInput) (gen.Scholarship, error) {
@@ -525,7 +525,7 @@ func (s *Store) UpdateScholarship(ctx context.Context, id pgtype.UUID, in Update
 }
 
 // DeleteScholarship removes a scholarship projection row and soft-deletes the
-// linked guide content row for tenant isolation.
+// linked guide content row for platform isolation.
 func (s *Store) DeleteScholarship(ctx context.Context, id pgtype.UUID) error {
 	sch, err := s.queries.GetScholarship(ctx,
 

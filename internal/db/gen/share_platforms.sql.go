@@ -134,7 +134,7 @@ FROM share_platforms
 ORDER BY position ASC, label ASC
 `
 
-// Returns all share platforms for a tenant, ordered by position.
+// Returns all share platforms for a platform, ordered by position.
 func (q *Queries) ListSharePlatforms(ctx context.Context) ([]SharePlatform, error) {
 	rows, err := q.db.Query(ctx, listSharePlatforms)
 	if err != nil {

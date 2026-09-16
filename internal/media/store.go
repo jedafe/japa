@@ -130,19 +130,19 @@ func (s *Store) ListMediaByUploader(ctx context.Context, uploaderID pgtype.UUID,
 	return items, nil
 }
 
-// ListMediaByTenant returns all non-deleted media for a tenant.
-func (s *Store) ListMediaByTenant(ctx context.Context, limit, offset int32) ([]gen.Medium, error) {
+// ListMedia returns all non-deleted media for a platform.
+func (s *Store) ListMedia(ctx context.Context, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	items, err := s.read.ListMediaByTenant(ctx, gen.ListMediaByTenantParams{
+	items, err := s.read.ListMedia(ctx, gen.ListMediaParams{
 
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing media by tenant: %w", err)
+		return nil, fmt.Errorf("listing media by platform: %w", err)
 	}
 
 	return items, nil
@@ -199,11 +199,11 @@ func (s *Store) CountMediaByUploader(ctx context.Context, uploaderID pgtype.UUID
 	return count, nil
 }
 
-// CountMediaByTenant returns the count of all non-deleted media for a tenant.
-func (s *Store) CountMediaByTenant(ctx context.Context) (int32, error) {
-	count, err := s.read.CountMediaByTenant(ctx)
+// CountMedia returns the count of all non-deleted media for a platform.
+func (s *Store) CountMedia(ctx context.Context) (int32, error) {
+	count, err := s.read.CountMedia(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("counting media by tenant: %w", err)
+		return 0, fmt.Errorf("counting media by platform: %w", err)
 	}
 
 	return count, nil
@@ -428,9 +428,9 @@ func (s *Store) UpdateMediaStoragePath(ctx context.Context, id pgtype.UUID, stor
 }
 
 // GetMediaForScan retrieves a media item by ID with its .
-// Used by background workers that operate across all tenants — the
+// Used by background workers that operate across all platforms — the
 // returned from this read is threaded into subsequent write operations
-// (ConfirmMediaByID, QuarantineMedia) to prevent cross-tenant modification.
+// (ConfirmMediaByID, QuarantineMedia) to prevent cross-platform modification.
 func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {
 	var row ScanMediaRow
 
@@ -446,7 +446,7 @@ func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaR
 	return row, nil
 }
 
-// ConfirmMediaByID marks a media item as confirmed, scoped to tenant.
+// ConfirmMediaByID marks a media item as confirmed, scoped to platform.
 // Used by the background scan processor after a clean virus scan.
 func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte) error {
 	_, err := s.writePool.Exec(ctx, `
@@ -475,7 +475,7 @@ func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, virusName s
 	return nil
 }
 
-// QuarantineMedia marks a media item as quarantined, scoped to tenant.
+// QuarantineMedia marks a media item as quarantined, scoped to platform.
 // This allows admins to review false positives before permanent removal.
 func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, reason string) error {
 	_, err := s.writePool.Exec(ctx, `
@@ -524,7 +524,7 @@ func (s *Store) AdminUpdateStatus(ctx context.Context, params gen.AdminUpdateMed
 	return nil
 }
 
-// ListQuarantined returns all quarantined media items for a tenant.
+// ListQuarantined returns all quarantined media items for a platform.
 func (s *Store) ListQuarantined(ctx context.Context, limit, offset int32) ([]QuarantinedMedia, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize

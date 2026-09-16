@@ -62,7 +62,7 @@ type Handlers struct {
 	StudioHook          StudioReviewHook
 	DefaultFolderSetter auth.DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 	TierManager         auth.TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
-	Catalog             *literals.Catalog          // Optional — caches active tenant literals and resolves maps.
+	Catalog             *literals.Catalog          // Optional — caches active platform literals and resolves maps.
 }
 
 // SetTierManager injects the tier manager used to assign the regular tier on

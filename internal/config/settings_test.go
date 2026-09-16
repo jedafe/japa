@@ -91,7 +91,7 @@ func TestParseIntRoundTrip(t *testing.T) {
 }
 
 // TestSettingsCacheInvalidation verifies InvalidateSettings clears the
-// in-memory cache for a specific tenant.
+// in-memory cache for a specific platform.
 func TestSettingsCacheInvalidation(t *testing.T) {
 	t.Parallel()
 

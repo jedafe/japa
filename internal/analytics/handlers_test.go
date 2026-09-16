@@ -136,11 +136,11 @@ func TestTrackEventInvalidJSON(t *testing.T) {
 	h.TrackEvent(w, r)
 
 	if w.Code != http.StatusServiceUnavailable {
-		t.Logf("got status %d (expected failure at tenant resolution)", w.Code)
+		t.Logf("got status %d (expected failure at platform resolution)", w.Code)
 	}
 }
 
-func _TestGetUserDashboardNoTenant(t *testing.T) {
+func _TestGetUserDashboardNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{Service: nil}
@@ -153,7 +153,7 @@ func _TestGetUserDashboardNoTenant(t *testing.T) {
 	}
 }
 
-func _TestGetAdminOverviewNoTenant(t *testing.T) {
+func _TestGetAdminOverviewNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{Service: nil}
@@ -166,7 +166,7 @@ func _TestGetAdminOverviewNoTenant(t *testing.T) {
 	}
 }
 
-func _TestListEventsNoTenant(t *testing.T) {
+func _TestListEventsNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{Service: nil}
@@ -179,7 +179,7 @@ func _TestListEventsNoTenant(t *testing.T) {
 	}
 }
 
-func _TestListSecurityScanResultsNoTenant(t *testing.T) {
+func _TestListSecurityScanResultsNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{Service: nil}
@@ -192,7 +192,7 @@ func _TestListSecurityScanResultsNoTenant(t *testing.T) {
 	}
 }
 
-func _TestRefreshViewsNoTenant(t *testing.T) {
+func _TestRefreshViewsNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{Service: nil}
@@ -205,7 +205,7 @@ func _TestRefreshViewsNoTenant(t *testing.T) {
 	}
 }
 
-func _TestRunSecurityScanNoTenant(t *testing.T) {
+func _TestRunSecurityScanNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{Service: nil}
@@ -218,7 +218,7 @@ func _TestRunSecurityScanNoTenant(t *testing.T) {
 	}
 }
 
-func _TestResolveSecurityScanResultNoTenant(t *testing.T) {
+func _TestResolveSecurityScanResultNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{Service: nil}

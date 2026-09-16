@@ -16,7 +16,7 @@ JOIN user_groups ug ON ug.id = ugm.group_id
 WHERE ugm.user_id = @user_id;
 
 -- name: GetTierGroupID :one
--- Returns the UUID of a tier group (members/pro/business) for a tenant.
+-- Returns the UUID of a tier group (members/pro/business) for a platform.
 SELECT id FROM user_groups
 WHERE slug = @slug;
 

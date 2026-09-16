@@ -168,8 +168,8 @@ type CreateScholarshipParams struct {
 // sqlc queries for the scholarships projection table (intelligence system).
 // Ref: ADR-112, docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
 //
-// All queries are tenant-scoped (ADR-112 Amendment 2). Every query filters
-// by the id to guarantee data isolation across tenants.
+// All queries are platform-scoped (ADR-112 Amendment 2). Every query filters
+// by the id to guarantee data isolation across platforms.
 func (q *Queries) CreateScholarship(ctx context.Context, arg CreateScholarshipParams) (Scholarship, error) {
 	row := q.db.QueryRow(ctx, createScholarship,
 		arg.IntelRecordID,

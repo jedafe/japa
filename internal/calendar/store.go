@@ -289,7 +289,7 @@ func (s *Store) SubscribersForEntry(ctx context.Context, entry CalendarEntry) ([
 	return users, nil
 }
 
-// GetEntry returns a single published calendar entry by id and tenant.
+// GetEntry returns a single published calendar entry by id and platform.
 func (s *Store) GetEntry(ctx context.Context, id pgtype.UUID) (CalendarEntry, error) {
 	row, err := s.read.CalendarGetEntry(ctx,
 		id,

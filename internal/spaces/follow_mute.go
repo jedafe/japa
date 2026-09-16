@@ -61,7 +61,7 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, userID, spaceID pgtype.
 
 // MuteSpace mutes a space and invalidates the
 // jc:muted_spaces:{}:{user_id} Valkey cache (Section 52 /
-// VALKEY-001, BUG-003: tenant-scoped).
+// VALKEY-001, BUG-003: platform-scoped).
 func (s *Service) MuteSpace(ctx context.Context, userID, spaceID pgtype.UUID) error {
 	if err := s.write.MuteSpace(ctx, gen.MuteSpaceParams{
 
@@ -78,7 +78,7 @@ func (s *Service) MuteSpace(ctx context.Context, userID, spaceID pgtype.UUID) er
 
 // UnmuteSpace removes a space mute and invalidates the
 // jc:muted_spaces:{}:{user_id} Valkey cache (Section 52 /
-// VALKEY-001, BUG-003: tenant-scoped).
+// VALKEY-001, BUG-003: platform-scoped).
 func (s *Service) UnmuteSpace(ctx context.Context, userID, spaceID pgtype.UUID) error {
 	if err := s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
 

@@ -41,7 +41,7 @@ func (s *Store) getUserCreatedAt(ctx context.Context, userID pgtype.UUID) (pgtyp
 	return row.CreatedAt, nil
 }
 
-// lookupUsername returns the username for a user id (tenant-scoped). Returns
+// lookupUsername returns the username for a user id (platform-scoped). Returns
 // nil when the user no longer exists (e.g. anonymized) so the admin UI shows
 // the id fallback rather than erroring.
 func (s *Store) lookupUsername(ctx context.Context, userID pgtype.UUID) (*string, error) {
@@ -106,7 +106,7 @@ func (s *Store) listAllLinks(ctx context.Context, limit, offset int32) ([]gen.Us
 }
 
 // listMembersFiltered is the admin list with an optional status filter
-// (Section 56 / catalog ?status). Tenant-scoped, paginated.
+// (Section 56 / catalog ?status). Platform-scoped, paginated.
 func (s *Store) listMembersFiltered(ctx context.Context, status *string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
 	return s.read.ListAffiliateMembersFiltered(ctx, gen.ListAffiliateMembersFilteredParams{
 		Status: status, PageLimit: limit, PageOffset: offset,
@@ -115,12 +115,12 @@ func (s *Store) listMembersFiltered(ctx context.Context, status *string, limit, 
 
 // listAllLinksFiltered is the admin list with optional user_id / product_type
 // / is_active filters (Section 56 / catalog ?user_id&product_type&status).
-// Tenant-scoped, paginated, and joins users for the username column.
+// Platform-scoped, paginated, and joins users for the username column.
 func (s *Store) listAllLinksFiltered(ctx context.Context, params gen.ListAllAffiliateLinksFilteredParams) ([]gen.ListAllAffiliateLinksFilteredRow, error) {
 	return s.read.ListAllAffiliateLinksFiltered(ctx, params)
 }
 
-// deactivateLinkAdmin deactivates a link by id + tenant (admin scope, no
+// deactivateLinkAdmin deactivates a link by id + platform (admin scope, no
 // ownership check). Soft-delete only — retained for audit (Section 56).
 func (s *Store) deactivateLinkAdmin(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeactivateAffiliateLinkAdmin(ctx,
@@ -180,7 +180,7 @@ func (s *Store) getRecentEvents(ctx context.Context, userID pgtype.UUID, limit i
 
 // getProgramStats returns program-wide totals for the admin overview
 // endpoint GET /admin/affiliate-program (Section 56 Admin management).
-// Tenant-scoped.
+// Platform-scoped.
 func (s *Store) getProgramStats(ctx context.Context) (gen.GetAffiliateProgramStatsRow, error) {
 	return s.read.GetAffiliateProgramStats(ctx)
 }

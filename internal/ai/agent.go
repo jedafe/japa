@@ -945,7 +945,7 @@ func (h *AgentHandler) cancelSession(ctx context.Context, session gen.AiAgentSes
 // setSessionState writes the session state to Valkey for cancellation
 // checks. The key jc:agent:session:{}:{session_id} is set to
 // "running" with a 5-minute TTL. The cancel endpoint (Phase 6) sets it to
-// "cancelled". Tenant-scoping prevents cross-tenant session cancellation
+// "cancelled". Platform-scoping prevents cross-platform session cancellation
 // (Rule 4 defense-in-depth, complementing the DB ownership check).
 func (h *AgentHandler) setSessionState(ctx context.Context, sessionID pgtype.UUID) {
 	if h.cache == nil {

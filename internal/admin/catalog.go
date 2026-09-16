@@ -19,7 +19,7 @@ type CatalogOption struct {
 // adminCatalogs is the source of truth for domain-specific option lists used
 // in the admin panel. Each catalog is keyed by a dot-separated name of the
 // form `<entity>.<option>` (e.g. "spaces.status", "tickets.priority").
-// Values that are static domain enums live here; values that are per-tenant
+// Values that are static domain enums live here; values that are per-platform
 // are merged at request time.
 var adminCatalogs = map[string][]CatalogOption{
 	"spaces.status": {

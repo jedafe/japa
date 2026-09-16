@@ -186,7 +186,7 @@ func (s *Service) GetImport(ctx context.Context, id pgtype.UUID) (gen.PlatformDa
 	return s.store.Get(ctx, id)
 }
 
-// ListImports returns paginated imports for a tenant.
+// ListImports returns paginated imports for a platform.
 func (s *Service) ListImports(ctx context.Context, status string, page, limit int) ([]gen.PlatformDataImport, int64, error) {
 	offset := int32((page - 1) * limit) // #nosec
 

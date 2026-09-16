@@ -706,7 +706,7 @@ UPDATE organizations SET verified = false, verification_type = NULL, updated_at 
 WHERE id = $1
 `
 
-// Tenant-scoped and clears verification_type (BUG-002, BUG-016).
+// Platform-scoped and clears verification_type (BUG-002, BUG-016).
 func (q *Queries) UnverifyOrganization(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, unverifyOrganization, id)
 	return err
@@ -753,7 +753,7 @@ WHERE id = $1
 // =====================
 // Organization Verification
 // =====================
-// Tenant-scoped to prevent cross-tenant verification (BUG-002).
+// Platform-scoped to prevent cross-platform verification (BUG-002).
 func (q *Queries) VerifyOrganization(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, verifyOrganization, id)
 	return err

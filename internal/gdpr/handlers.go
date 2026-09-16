@@ -398,14 +398,14 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": logs})
 }
 
-// ListConsentsByTenant handles GET /api/v1/admin/consents.
-func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) {
+// ListConsents handles GET /api/v1/admin/consents.
+func (h *Handlers) ListConsents(w http.ResponseWriter, r *http.Request) {
 
 	consentType := r.URL.Query().Get("type")
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 
-	records, err := h.Service.ListConsentsByTenantWithQuery(r.Context(), consentType, r.URL.Query().Get("q"), limit, offset)
+	records, err := h.Service.ListConsentsWithQuery(r.Context(), consentType, r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -470,9 +470,9 @@ func (s *Service) DeleteConsent(ctx context.Context, id pgtype.UUID) (gen.Consen
 	return s.store.deleteConsent(ctx, id)
 }
 
-// ListConsentsByTenantWithQuery lists consent records with an optional `q` filter.
-func (s *Service) ListConsentsByTenantWithQuery(ctx context.Context, consentType, q string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
-	return s.store.listConsentsByTenantFiltered(ctx, consentType, q, limit, offset)
+// ListConsentsWithQuery lists consent records with an optional `q` filter.
+func (s *Service) ListConsentsWithQuery(ctx context.Context, consentType, q string, limit, offset int32) ([]gen.ListConsentsRow, error) {
+	return s.store.listConsentsByPlatformFiltered(ctx, consentType, q, limit, offset)
 }
 
 // ListAuditLogsWithQuery lists audit logs with an optional `q` filter.

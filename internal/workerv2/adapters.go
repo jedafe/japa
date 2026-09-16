@@ -62,7 +62,7 @@ func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, erro
 	return int(n), nil
 }
 
-// NotifyApplicationStatus looks up the application's tenant and notifies the
+// NotifyApplicationStatus looks up the application's platform and notifies the
 // applicant of a status change. The status change already happened in the
 // HTTP handler before the task was enqueued; this method only sends the
 // notification (§63, ADR-081).
@@ -150,7 +150,7 @@ func (a *ImportAdapter) lookupImport(ctx context.Context, id pgtype.UUID) (impor
 	return r, nil
 }
 
-// ProcessSource resolves the import's tenant and delegates to the service.
+// ProcessSource resolves the import's platform and delegates to the service.
 func (a *ImportAdapter) ProcessSource(ctx context.Context, importID pgtype.UUID) error {
 	r, err := a.lookupImport(ctx, importID)
 	if err != nil {
@@ -186,7 +186,7 @@ func NewAssessmentAdapter(svc *assessment.Service, database *db.DB, notifSvc *no
 	return &AssessmentAdapter{svc: svc, db: database, notif: notifSvc}
 }
 
-// ScoreSubmission resolves the submission's tenant, user, and field_values
+// ScoreSubmission resolves the submission's platform, user, and field_values
 // from form_submissions, then runs the scoring engine which writes the
 // assessment_results row. The result does not exist yet at enqueue time —
 // scoring creates it (§71). After scoring, an assessment_complete
@@ -352,7 +352,7 @@ func NewRemittanceAdapter(svc *remittance.Service, database *db.DB) *RemittanceA
 	return &RemittanceAdapter{svc: svc, db: database}
 }
 
-// FetchRates resolves the provider's tenant and performs the actual rate
+// FetchRates resolves the provider's platform and performs the actual rate
 // fetch by calling the provider's API adapter, inserting rate rows, and
 // invalidating the corridor cache (ADR-075 §2). This is the task-handler
 // entry point — it does NOT re-enqueue the fetch task (which would create
@@ -472,12 +472,12 @@ func NewAdsSelfServeAdapter(svc *adsselfserve.Service, database *db.DB) *AdsSelf
 	return &AdsSelfServeAdapter{svc: svc, db: database}
 }
 
-// RefundCampaignCredits resolves the campaign's tenant and refunds credits.
+// RefundCampaignCredits resolves the campaign's platform and refunds credits.
 func (a *AdsSelfServeAdapter) RefundCampaignCredits(ctx context.Context, campaignID pgtype.UUID) error {
 	return a.svc.RefundCampaignCredits(ctx, campaignID)
 }
 
-// NotifyCampaignStatus resolves the campaign's tenant and notifies the
+// NotifyCampaignStatus resolves the campaign's platform and notifies the
 // advertiser of the review decision (approved/rejected).
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks).
 func (a *AdsSelfServeAdapter) NotifyCampaignStatus(ctx context.Context, campaignID pgtype.UUID) error {
@@ -490,7 +490,7 @@ func (a *AdsSelfServeAdapter) NotifyCampaignStatus(ctx context.Context, campaign
 
 // PushAdapter adapts the devices.Service to the PushProcessor
 // interface. The Asynq payload carries notification_id + device_token_id;
-// the adapter resolves the user and tenant from the device token, then
+// the adapter resolves the user and platform from the device token, then
 // delegates to the service's SendPush.
 type PushAdapter struct {
 	svc *devices.Service
@@ -502,7 +502,7 @@ func NewPushAdapter(svc *devices.Service, database *db.DB) *PushAdapter {
 	return &PushAdapter{svc: svc, db: database}
 }
 
-// SendPush resolves the device token's tenant and user, then sends the push
+// SendPush resolves the device token's platform and user, then sends the push
 // notification. The notification payload is loaded from the notifications table.
 func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenID pgtype.UUID) error {
 	var userID pgtype.UUID

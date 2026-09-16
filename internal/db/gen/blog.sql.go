@@ -53,22 +53,7 @@ func (q *Queries) BulkUpdateFeaturedOrder(ctx context.Context, arg BulkUpdateFea
 	return err
 }
 
-const countBlogSeriesByAuthor = `-- name: CountBlogSeriesByAuthor :one
-SELECT COUNT(*)
-FROM blog_series bs
-WHERE bs.author_user_id = $1
- AND bs.deleted_at IS NULL
-`
-
-// Returns the total number of blog series for a given author.
-func (q *Queries) CountBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countBlogSeriesByAuthor, authorUserID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countBlogSeriesByTenant = `-- name: CountBlogSeriesByTenant :one
+const countBlogSeries = `-- name: CountBlogSeries :one
 SELECT COUNT(*)
 FROM blog_series bs
 WHERE bs.deleted_at IS NULL
@@ -80,16 +65,31 @@ WHERE bs.deleted_at IS NULL
  ))
 `
 
-type CountBlogSeriesByTenantParams struct {
+type CountBlogSeriesParams struct {
 	Q           string `json:"q"`
 	ContentType string `json:"content_type"`
 }
 
-// Returns the total number of tenant-scoped blog series for pagination meta.
-// L2: mirrors the q filter used by ListBlogSeriesByTenant so the total
+// Returns the total number of platform-scoped blog series for pagination meta.
+// L2: mirrors the q filter used by ListBlogSeries so the total
 // reflects the active search.
-func (q *Queries) CountBlogSeriesByTenant(ctx context.Context, arg CountBlogSeriesByTenantParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countBlogSeriesByTenant, arg.Q, arg.ContentType)
+func (q *Queries) CountBlogSeries(ctx context.Context, arg CountBlogSeriesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countBlogSeries, arg.Q, arg.ContentType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countBlogSeriesByAuthor = `-- name: CountBlogSeriesByAuthor :one
+SELECT COUNT(*)
+FROM blog_series bs
+WHERE bs.author_user_id = $1
+ AND bs.deleted_at IS NULL
+`
+
+// Returns the total number of blog series for a given author.
+func (q *Queries) CountBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countBlogSeriesByAuthor, authorUserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -618,8 +618,8 @@ WHERE bsp.content_id = $1
 
 // Returns the series_id for a given content_id, or no rows if the content
 // is not part of any series. Used by the editor load to restore the series
-// selector when editing existing content. BUG-009: tenant-scoped to
-// prevent cross-tenant information disclosure.
+// selector when editing existing content. BUG-009: platform-scoped to
+// prevent cross-platform information disclosure.
 func (q *Queries) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, getSeriesForContent, contentID)
 	var series_id pgtype.UUID
@@ -777,6 +777,86 @@ func (q *Queries) ListAdminBlogPosts(ctx context.Context, arg ListAdminBlogPosts
 	return items, nil
 }
 
+const listBlogSeries = `-- name: ListBlogSeries :many
+SELECT bs.id, bs.title, bs.slug, bs.description, bs.cover_image_id,
+ bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path
+FROM blog_series bs
+LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
+WHERE bs.deleted_at IS NULL
+ AND ($1::text IS NULL OR bs.title ILIKE '%' || $1 || '%' OR bs.slug ILIKE '%' || $1 || '%')
+ -- §14 generic featured/series tabs: optional content_type filter limits the
+ -- series directory to series containing a published item of that type.
+ AND ($2::text = '' OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp2
+ JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+ WHERE bsp2.series_id = bs.id AND pc.content_type = $2::text
+ ))
+ORDER BY bs.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListBlogSeriesParams struct {
+	Q           string `json:"q"`
+	ContentType string `json:"content_type"`
+	PageOffset  int32  `json:"page_offset"`
+	PageLimit   int32  `json:"page_limit"`
+}
+
+type ListBlogSeriesRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Description        *string            `json:"description"`
+	CoverImageID       pgtype.UUID        `json:"cover_image_id"`
+	AuthorUserID       pgtype.UUID        `json:"author_user_id"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+}
+
+func (q *Queries) ListBlogSeries(ctx context.Context, arg ListBlogSeriesParams) ([]ListBlogSeriesRow, error) {
+	rows, err := q.db.Query(ctx, listBlogSeries,
+		arg.Q,
+		arg.ContentType,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBlogSeriesRow
+	for rows.Next() {
+		var i ListBlogSeriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Description,
+			&i.CoverImageID,
+			&i.AuthorUserID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBlogSeriesByAuthor = `-- name: ListBlogSeriesByAuthor :many
 SELECT bs.id, bs.title, bs.slug, bs.description, bs.cover_image_id,
  bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
@@ -820,86 +900,6 @@ func (q *Queries) ListBlogSeriesByAuthor(ctx context.Context, arg ListBlogSeries
 	var items []ListBlogSeriesByAuthorRow
 	for rows.Next() {
 		var i ListBlogSeriesByAuthorRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Slug,
-			&i.Description,
-			&i.CoverImageID,
-			&i.AuthorUserID,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
-			&i.CoverStorageBucket,
-			&i.CoverStoragePath,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listBlogSeriesByTenant = `-- name: ListBlogSeriesByTenant :many
-SELECT bs.id, bs.title, bs.slug, bs.description, bs.cover_image_id,
- bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
- m.storage_bucket AS cover_storage_bucket,
- m.storage_path AS cover_storage_path
-FROM blog_series bs
-LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
-WHERE bs.deleted_at IS NULL
- AND ($1::text IS NULL OR bs.title ILIKE '%' || $1 || '%' OR bs.slug ILIKE '%' || $1 || '%')
- -- §14 generic featured/series tabs: optional content_type filter limits the
- -- series directory to series containing a published item of that type.
- AND ($2::text = '' OR EXISTS (
- SELECT 1 FROM blog_series_posts bsp2
- JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
- WHERE bsp2.series_id = bs.id AND pc.content_type = $2::text
- ))
-ORDER BY bs.created_at DESC
-LIMIT $4 OFFSET $3
-`
-
-type ListBlogSeriesByTenantParams struct {
-	Q           string `json:"q"`
-	ContentType string `json:"content_type"`
-	PageOffset  int32  `json:"page_offset"`
-	PageLimit   int32  `json:"page_limit"`
-}
-
-type ListBlogSeriesByTenantRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	Description        *string            `json:"description"`
-	CoverImageID       pgtype.UUID        `json:"cover_image_id"`
-	AuthorUserID       pgtype.UUID        `json:"author_user_id"`
-	Status             string             `json:"status"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-}
-
-func (q *Queries) ListBlogSeriesByTenant(ctx context.Context, arg ListBlogSeriesByTenantParams) ([]ListBlogSeriesByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listBlogSeriesByTenant,
-		arg.Q,
-		arg.ContentType,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListBlogSeriesByTenantRow
-	for rows.Next() {
-		var i ListBlogSeriesByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,

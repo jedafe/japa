@@ -43,7 +43,7 @@ WHERE author_user_id = @author_user_id
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
 
--- name: ListForumThreadsByTenant :many
+-- name: ListForumThreads :many
 SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
  vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
@@ -98,7 +98,7 @@ LEFT JOIN user_profiles sup ON sup.user_id = ft.solved_by_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.slug = @slug AND ft.deleted_at IS NULL;
 
--- name: ListForumThreadsByTenantWithDetails :many
+-- name: ListForumThreadsWithDetails :many
 SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
  ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
@@ -666,8 +666,8 @@ SELECT view_count FROM forum_replies WHERE id = @reply_id;
 -- name: GetForumThreadSpaceIDByID :one
 SELECT space_id FROM forum_threads WHERE id = @id AND deleted_at IS NULL;
 
--- name: GetForumThreadTenantAndSpaceByID :one
--- Returns the tenant and space for a thread without requiring a tenant filter.
+-- name: GetForumThreadAndSpaceByID :one
+-- Returns the platform and space for a thread without requiring a platform filter.
 -- Used by background/WS paths that only have the thread_id (e.g. poll broadcasts).
 SELECT space_id FROM forum_threads WHERE id = @id AND deleted_at IS NULL;
 

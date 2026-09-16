@@ -189,7 +189,7 @@ func forumThreadFromListTagRow(r gen.ListForumThreadsByTagRow) gen.ForumThread {
 	}
 }
 
-func forumThreadFromListTenantRow(r gen.ListForumThreadsByTenantRow) gen.ForumThread {
+func forumThreadFromListPlatformRow(r gen.ListForumThreadsRow) gen.ForumThread {
 	return gen.ForumThread{
 		ID: r.ID,
 
@@ -257,7 +257,7 @@ func (s *Store) createThread(ctx context.Context, p gen.CreateForumThreadParams)
 	return forumThreadFromCreateRow(t), nil
 }
 
-// getThreadByID returns a thread by ID and tenant.
+// getThreadByID returns a thread by ID and platform.
 func (s *Store) getThreadByID(ctx context.Context, id pgtype.UUID) (gen.ForumThread, error) {
 	t, err := s.read.GetForumThreadByID(ctx, id)
 	if err != nil {
@@ -267,7 +267,7 @@ func (s *Store) getThreadByID(ctx context.Context, id pgtype.UUID) (gen.ForumThr
 	return forumThreadFromByIDRow(t), nil
 }
 
-// getThreadBySlug returns a thread by slug and tenant.
+// getThreadBySlug returns a thread by slug and platform.
 func (s *Store) getThreadBySlug(ctx context.Context, slug string) (gen.ForumThread, error) {
 	t, err := s.read.GetForumThreadBySlug(ctx, slug)
 	if err != nil {
@@ -325,24 +325,24 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUI
 	return threads, nil
 }
 
-// listThreadsByTenant returns all paginated threads for a tenant (public listing).
-func (s *Store) listThreadsByTenant(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+// listThreadsByPlatform returns all paginated threads for a platform (public listing).
+func (s *Store) listThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListForumThreadsByTenant(ctx, gen.ListForumThreadsByTenantParams{
+	rows, err := s.read.ListForumThreads(ctx, gen.ListForumThreadsParams{
 
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing forum threads by tenant: %w", err)
+		return nil, fmt.Errorf("listing forum threads by platform: %w", err)
 	}
 
 	threads := make([]gen.ForumThread, len(rows))
 	for i, r := range rows {
-		threads[i] = forumThreadFromListTenantRow(r)
+		threads[i] = forumThreadFromListPlatformRow(r)
 	}
 
 	return threads, nil
@@ -477,7 +477,7 @@ func (s *Store) createReply(ctx context.Context, p gen.CreateForumReplyParams) (
 	return r, nil
 }
 
-// getReplyByID returns a reply by ID and tenant.
+// getReplyByID returns a reply by ID and platform.
 func (s *Store) getReplyByID(ctx context.Context, id pgtype.UUID) (gen.ForumReply, error) {
 	r, err := s.read.GetForumReplyByID(ctx, id)
 	if err != nil {
@@ -783,7 +783,7 @@ func (s *Store) createTag(ctx context.Context, p gen.CreateForumTagParams) (gen.
 	return t, nil
 }
 
-// getTagByID returns a tag by ID and tenant.
+// getTagByID returns a tag by ID and platform.
 func (s *Store) getTagByID(ctx context.Context, id pgtype.UUID) (gen.ForumTag, error) {
 	t, err := s.read.GetForumTagByID(ctx, id)
 	if err != nil {
@@ -793,7 +793,7 @@ func (s *Store) getTagByID(ctx context.Context, id pgtype.UUID) (gen.ForumTag, e
 	return t, nil
 }
 
-// getTagBySlug returns a tag by slug and tenant.
+// getTagBySlug returns a tag by slug and platform.
 func (s *Store) getTagBySlug(ctx context.Context, slug string) (gen.ForumTag, error) {
 	t, err := s.read.GetForumTagBySlug(ctx, slug)
 	if err != nil {
@@ -1075,13 +1075,13 @@ func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string) (ge
 	return row, nil
 }
 
-// listThreadsByTenantWithDetails returns paginated threads with author + space.
-func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
+// listThreadsByPlatformWithDetails returns paginated threads with author + space.
+func (s *Store) listThreadsByPlatformWithDetails(ctx context.Context, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListForumThreadsByTenantWithDetails(ctx, gen.ListForumThreadsByTenantWithDetailsParams{
+	rows, err := s.read.ListForumThreadsWithDetails(ctx, gen.ListForumThreadsWithDetailsParams{
 
 		Solved:          solved,
 		SortBy:          sortBy,
@@ -1091,7 +1091,7 @@ func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, solved *bool
 		PageLimit:       limit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing forum threads by tenant with details: %w", err)
+		return nil, fmt.Errorf("listing forum threads by platform with details: %w", err)
 	}
 
 	return rows, nil
@@ -1178,8 +1178,8 @@ func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID pgty
 	return rows, nil
 }
 
-// getThreadSpaceIDByID returns the space_id for a thread by ID (no tenant
-// scope — used for WebSocket broadcasts where tenant is not available).
+// getThreadSpaceIDByID returns the space_id for a thread by ID (no platform
+// scope — used for WebSocket broadcasts where platform is not available).
 func (s *Store) getThreadSpaceIDByID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
 	spaceID, err := s.read.GetForumThreadSpaceIDByID(ctx, id)
 	if err != nil {
@@ -1190,9 +1190,9 @@ func (s *Store) getThreadSpaceIDByID(ctx context.Context, id pgtype.UUID) (pgtyp
 }
 
 // getThreadSpaceByID returns the space for a thread by ID without requiring a
-// tenant filter. Used for WebSocket broadcasts.
+// platform filter. Used for WebSocket broadcasts.
 func (s *Store) getThreadSpaceByID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
-	spaceID, err := s.read.GetForumThreadTenantAndSpaceByID(ctx, id)
+	spaceID, err := s.read.GetForumThreadAndSpaceByID(ctx, id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting thread space by ID: %w", err)
 	}

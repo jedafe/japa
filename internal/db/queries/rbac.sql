@@ -32,20 +32,20 @@ ON CONFLICT (user_id, group_id) DO NOTHING;
 DELETE FROM user_group_memberships
 WHERE user_id = @user_id AND group_id = @group_id;
 
--- name: ListUserGroupsByTenant :many
+-- name: ListUserGroups :many
 SELECT id, name, slug, is_system, description
 FROM user_groups
 
 ORDER BY name;
 
--- name: CountGroupMembersByTenant :many
+-- name: CountGroupMembers :many
 SELECT ug.id AS group_id, COUNT(ugm.user_id)::int AS member_count
 FROM user_groups ug
 LEFT JOIN user_group_memberships ugm ON ugm.group_id = ug.id
 
 GROUP BY ug.id;
 
--- name: ListGroupPermissionsByTenant :many
+-- name: ListGroupPermissions :many
 SELECT DISTINCT ug.id AS group_id, p.key
 FROM user_groups ug
 JOIN group_roles gr ON gr.group_id = ug.id
@@ -92,7 +92,7 @@ SELECT COUNT(*)::int AS count
 FROM user_roles
 WHERE (@search::text = '' OR name ILIKE '%' || @search || '%');
 
--- name: ListRolePermissionsByTenant :many
+-- name: ListRolePermissions :many
 SELECT rp.role_id, p.key, p.description
 FROM role_permissions rp
 JOIN user_roles ur ON rp.role_id = ur.id
@@ -100,7 +100,7 @@ JOIN permissions p ON rp.permission_id = p.id
 
 ORDER BY rp.role_id, p.key;
 
--- name: CountGroupsByRoleAndTenant :many
+-- name: CountGroupsByRole :many
 SELECT gr.role_id, COUNT(gr.group_id)::int AS group_count
 FROM group_roles gr
 JOIN user_roles ur ON gr.role_id = ur.id

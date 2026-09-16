@@ -132,7 +132,7 @@ func (s *Store) listReviewsByEntityWithAuthor(ctx context.Context, entityType st
 	return rows, nil
 }
 
-// listReviews returns all reviews for a tenant (admin moderation view).
+// listReviews returns all reviews for a platform (admin moderation view).
 // Unlike ListReviewsByEntity/ListReviewsByReviewer it is not scoped to an
 // entity or reviewer and includes all statuses, so moderators can see
 // pending/flagged reviews too.
@@ -153,7 +153,7 @@ func (s *Store) listReviews(ctx context.Context, limit, offset int32) ([]gen.Rev
 	return rows, nil
 }
 
-// listAdminReviews returns all reviews for a tenant (admin moderation view)
+// listAdminReviews returns all reviews for a platform (admin moderation view)
 // with resolved entity names via polymorphic lookup.
 func (s *Store) listAdminReviews(ctx context.Context, limit, offset int32) ([]gen.ListAdminReviewsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
@@ -192,7 +192,7 @@ func (s *Store) listAdminReviewsFiltered(ctx context.Context, status, entityType
 	return rows, nil
 }
 
-// countAdminReviews returns the total count of reviews for a tenant.
+// countAdminReviews returns the total count of reviews for a platform.
 func (s *Store) countAdminReviews(ctx context.Context) (int32, error) {
 	return s.read.CountAdminReviews(ctx)
 }

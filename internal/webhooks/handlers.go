@@ -82,7 +82,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 // Admin CRUD Handlers
 // ---------------------------------------------------------------------------
 
-// ListWebhooks returns all webhook endpoints for the tenant.
+// ListWebhooks returns all webhook endpoints for the platform.
 // GET /admin/webhooks.
 func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 
@@ -311,7 +311,7 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 // plus a reviewed set of additional non-PII business events. User/DM/moderation
 // events that carry PII are intentionally excluded (BUG-008).
 //
-// Tenants can override this via the `webhooks.event_catalog` system setting
+// Platforms can override this via the `webhooks.event_catalog` system setting
 // (BUG-009), which is a JSON array of {key,label,description} objects.
 //
 // Ref: japaconnect-engineering/sections/12-webhooks.md.
@@ -354,12 +354,12 @@ type eventCatalogEntry struct {
 
 // ListWebhookEvents handles GET /webhook-events — returns available webhook
 // event types. Scoped to non-PII business events per §12 (BUG-008). The
-// catalog can be overridden per-tenant via the `webhooks.event_catalog`
+// catalog can be overridden per-platform via the `webhooks.event_catalog`
 // system setting (BUG-009).
 func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	entries := defaultWebhookEventEntries()
 
-	// Check for a tenant-specific override via the webhooks.event_catalog
+	// Check for a platform-specific override via the webhooks.event_catalog
 	// system setting (BUG-009). If the setting is empty or invalid, fall
 	// back to the built-in default catalog.
 	if h.Service != nil && h.Service.settings != nil {

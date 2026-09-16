@@ -84,13 +84,13 @@ SELECT COALESCE(
 -- =====================
 
 -- name: CreateUserBlock :exec
--- Tenant-scoped per JEOS §9 (BUG-006).
+-- Platform-scoped per JEOS §9 (BUG-006).
 INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)
 
 ON CONFLICT (blocker_id, blocked_id) DO NOTHING;
 
 -- name: DeleteUserBlock :exec
--- Tenant-scoped per JEOS §9 (BUG-006).
+-- Platform-scoped per JEOS §9 (BUG-006).
 DELETE FROM user_blocks
 WHERE blocker_id = $1 AND blocked_id = $2;
 
@@ -101,7 +101,7 @@ WHERE blocker_id = $1
 ORDER BY created_at DESC;
 
 -- name: ListBlockedUsers :many
--- Tenant-scoped blocked-users list with profile enrichment (BUG-003, BUG-004).
+-- Platform-scoped blocked-users list with profile enrichment (BUG-003, BUG-004).
 -- Ref: japaconnect-engineering/sections/41-spam-content-safety.md
 SELECT ub.blocked_id, ub.created_at,
  u.username,
@@ -115,7 +115,7 @@ ORDER BY ub.created_at DESC
 LIMIT $2 OFFSET $3;
 
 -- name: ListAllUserBlocks :many
--- Tenant-scoped per JEOS §9 (BUG-001). Admin list must not cross tenants.
+-- Platform-scoped per JEOS §9 (BUG-001). Admin list must not cross platforms.
 SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
  bu.username AS blocker_username, bp.display_name AS blocker_display_name,
  buu.username AS blocked_username, bpp.display_name AS blocked_display_name
@@ -130,7 +130,7 @@ LIMIT $1;
 
 -- name: ListAllUserBlocksPaginated :many
 -- Offset-based paginated admin list for DataTable server-side pagination
--- (BUG-010). Tenant-scoped per JEOS §9.
+-- (BUG-010). Platform-scoped per JEOS §9.
 SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
  bu.username AS blocker_username, bp.display_name AS blocker_display_name,
  buu.username AS blocked_username, bpp.display_name AS blocked_display_name
@@ -144,13 +144,13 @@ ORDER BY ub.created_at DESC, ub.blocker_id DESC
 LIMIT $1 OFFSET $2;
 
 -- name: CountAllUserBlocks :one
--- Total count for admin DataTable pagination (BUG-010). Tenant-scoped.
+-- Total count for admin DataTable pagination (BUG-010). Platform-scoped.
 SELECT COUNT(*)::int AS count
 FROM user_blocks
 ;
 
 -- name: IsBlocked :one
--- Tenant-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
+-- Platform-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
 SELECT EXISTS(
  SELECT 1 FROM user_blocks
  WHERE ((blocker_id = $1 AND blocked_id = $2)
@@ -166,7 +166,7 @@ SELECT EXISTS(
 
 -- name: DeleteFollowsBetweenUsers :exec
 -- Removes follow rows in both directions between two users
--- (entity_type='user'). Tenant-scoped per JEOS §9.
+-- (entity_type='user'). Platform-scoped per JEOS §9.
 DELETE FROM follows
 WHERE entity_type = 'user'
  AND ((follower_id = $1 AND entity_id = $2)
@@ -175,7 +175,7 @@ WHERE entity_type = 'user'
 -- name: DeclinePendingDMRequestsBetweenUsers :exec
 -- Marks pending DM requests between the two users as declined. Soft-updates
 -- the status + resolved_at rather than hard-deleting (the request row is
--- needed for audit). Tenant-scoped per JEOS §9.
+-- needed for audit). Platform-scoped per JEOS §9.
 UPDATE dm_requests
 SET status = 'declined', resolved_at = now()
 WHERE status = 'pending'
@@ -227,7 +227,7 @@ SET pattern = @pattern, action = @action, replacement = sqlc.narg(replacement)
 WHERE id = @id
 RETURNING id, pattern, action, replacement, created_at;
 
--- name: GetCensoredWordsByTenant :many
+-- name: GetCensoredWords :many
 SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 ;

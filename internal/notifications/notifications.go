@@ -219,7 +219,7 @@ func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, acti
 
 // enqueuePushDeliveryWithCtx is the context-aware variant of enqueuePushDelivery.
 // BUG-006: previously enqueuePushDelivery used context.Background() and a zero
-// UUID tenant for the settings lookup, losing tenant context. This variant
+// UUID platform for the settings lookup, losing platform context. This variant
 // accepts the request context so the settings provider can scope the lookup
 // and the operation respects cancellation/deadline.
 func (s *Service) enqueuePushDeliveryWithCtx(ctx context.Context, recipientID pgtype.UUID, title, body, actionURL string) {

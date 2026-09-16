@@ -26,7 +26,7 @@ import (
 
 const defaultPageSize int32 = 20
 
-// exploreCacheTTL is the TTL for jc:explore:{tenant}:{geo}:{page} (Section 53).
+// exploreCacheTTL is the TTL for jc:explore:{platform}:{geo}:{page} (Section 53).
 const exploreCacheTTL = 15 * time.Minute
 
 // toInt32 converts an int to int32 without overflow. It clamps to
@@ -190,7 +190,7 @@ func parseSort(r *http.Request) string {
 // ---------------------------------------------------------------------------
 
 // GetExploreFeed handles GET /api/v1/feed/explore — public, no auth required.
-// BUG-006: caches results in Valkey (jc:explore:{tenant}:{geo}:{page}, Section 53, TTL 15min).
+// BUG-006: caches results in Valkey (jc:explore:{platform}:{geo}:{page}, Section 53, TTL 15min).
 // Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 

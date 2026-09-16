@@ -151,7 +151,7 @@ func (q *Queries) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (GetWe
 	return i, err
 }
 
-const getWebhookDeliveryForTenant = `-- name: GetWebhookDeliveryForTenant :one
+const getWebhookDeliveryForPlatform = `-- name: GetWebhookDeliveryForPlatform :one
 SELECT id, endpoint_id, event_id, event_type, payload,
  status, attempts, last_error, next_attempt_at, last_response_code, last_response_body,
  delivered_at, created_at
@@ -159,7 +159,7 @@ FROM webhook_deliveries
 WHERE id = $1
 `
 
-type GetWebhookDeliveryForTenantRow struct {
+type GetWebhookDeliveryForPlatformRow struct {
 	ID               pgtype.UUID        `json:"id"`
 	EndpointID       pgtype.UUID        `json:"endpoint_id"`
 	EventID          pgtype.UUID        `json:"event_id"`
@@ -175,9 +175,9 @@ type GetWebhookDeliveryForTenantRow struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GetWebhookDeliveryForTenant(ctx context.Context, id pgtype.UUID) (GetWebhookDeliveryForTenantRow, error) {
-	row := q.db.QueryRow(ctx, getWebhookDeliveryForTenant, id)
-	var i GetWebhookDeliveryForTenantRow
+func (q *Queries) GetWebhookDeliveryForPlatform(ctx context.Context, id pgtype.UUID) (GetWebhookDeliveryForPlatformRow, error) {
+	row := q.db.QueryRow(ctx, getWebhookDeliveryForPlatform, id)
+	var i GetWebhookDeliveryForPlatformRow
 	err := row.Scan(
 		&i.ID,
 		&i.EndpointID,

@@ -38,7 +38,7 @@ func TestNewHandlers(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Search — no auth context (guests are allowed, but tenant is required)
+// Search — no auth context (guests are allowed, but platform is required)
 // ---------------------------------------------------------------------------
 
 func _TestSearch_NoAuthContext(t *testing.T) {
@@ -46,7 +46,7 @@ func _TestSearch_NoAuthContext(t *testing.T) {
 
 	// Search uses OptionalAuth so guests can search published content
 	// (Phase 10.01). Without any context set, the handler falls through
-	// to the tenant check and returns 503 service_unavailable — it does
+	// to the platform check and returns 503 service_unavailable — it does
 	// NOT return 401 because auth is optional.
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test", nil)
@@ -69,10 +69,10 @@ func _TestSearch_NoAuthContext(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Search — missing tenant
+// Search — missing platform
 // ---------------------------------------------------------------------------
 
-func _TestSearch_TenantUnavailable(t *testing.T) {
+func _TestSearch_PlatformUnavailable(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandlers(nil)
@@ -107,7 +107,7 @@ func TestSearch_MissingQuery(t *testing.T) {
 
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Search(rr, req)
@@ -135,7 +135,7 @@ func TestSearch_ValidQueryDefaultLimit(t *testing.T) {
 
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=nigeria", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Search(rr, req)
@@ -186,7 +186,7 @@ func TestSearch_ValidQueryCustomLimit(t *testing.T) {
 
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=lagos&limit=5", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Search(rr, req)
@@ -205,7 +205,7 @@ func TestSearch_InvalidLimitFallback(t *testing.T) {
 
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test&limit=abc", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Search(rr, req)
@@ -224,7 +224,7 @@ func TestSearch_OutOfRangeLimitFallback(t *testing.T) {
 
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test&limit=200", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Search(rr, req)
@@ -243,7 +243,7 @@ func TestSearch_ZeroLimitFallback(t *testing.T) {
 
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test&limit=0", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Search(rr, req)
@@ -262,7 +262,7 @@ func TestSearch_NegativeLimitFallback(t *testing.T) {
 
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test&limit=-5", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Search(rr, req)
@@ -407,8 +407,8 @@ func withAuthCtxDirect(r *http.Request, user *auth.AuthenticatedUser) *http.Requ
 	return r.WithContext(&authValueCtx{Context: r.Context(), key: auth.UserContextKey, val: user})
 }
 
-// withAuthAndTenant injects both auth user and tenant into the request context.
-func withAuthAndTenant(t *testing.T, r *http.Request) *http.Request {
+// withAuthAndPlatform injects both auth user and platform into the request context.
+func withAuthAndPlatform(t *testing.T, r *http.Request) *http.Request {
 	t.Helper()
 
 	user := &auth.AuthenticatedUser{
@@ -420,7 +420,7 @@ func withAuthAndTenant(t *testing.T, r *http.Request) *http.Request {
 		Slug string
 	}{
 		ID:   mustUUID(t, "00000000-0000-0000-0000-000000000001"),
-		Name: "Test Tenant",
+		Name: "Test Platform",
 		Slug: "test",
 	}
 

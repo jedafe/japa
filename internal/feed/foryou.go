@@ -16,7 +16,7 @@ import (
 
 // rankingWeights holds the hot-reloadable scoring weights for the For-You
 // feed. Defaults are preserved in defaultRankingWeights and can be overridden
-// per tenant via system_settings (Rule 3).
+// per platform via system_settings (Rule 3).
 type rankingWeights struct {
 	Velocity      float64
 	Author        float64

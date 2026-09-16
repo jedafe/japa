@@ -106,13 +106,43 @@ func (q *Queries) CloseTicket(ctx context.Context, id pgtype.UUID) (Ticket, erro
 	return i, err
 }
 
-const countTicketTypesByTenant = `-- name: CountTicketTypesByTenant :one
+const countTicketTypes = `-- name: CountTicketTypes :one
 SELECT COUNT(*) FROM ticket_types
 WHERE ($1::bool IS NULL OR is_public = $1)
 `
 
-func (q *Queries) CountTicketTypesByTenant(ctx context.Context, isPublic *bool) (int64, error) {
-	row := q.db.QueryRow(ctx, countTicketTypesByTenant, isPublic)
+func (q *Queries) CountTicketTypes(ctx context.Context, isPublic *bool) (int64, error) {
+	row := q.db.QueryRow(ctx, countTicketTypes, isPublic)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTickets = `-- name: CountTickets :one
+SELECT COUNT(*) FROM tickets
+WHERE ($1::text IS NULL OR status = $1)
+ AND ($2::text IS NULL OR priority = $2)
+ AND ($3::uuid IS NULL OR type_id = $3)
+ AND ($4::uuid IS NULL OR assigned_to = $4)
+ AND ($5::text IS NULL OR subject ILIKE '%' || $5 || '%')
+`
+
+type CountTicketsParams struct {
+	Status     string      `json:"status"`
+	Priority   string      `json:"priority"`
+	TypeID     pgtype.UUID `json:"type_id"`
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	Search     string      `json:"search"`
+}
+
+func (q *Queries) CountTickets(ctx context.Context, arg CountTicketsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTickets,
+		arg.Status,
+		arg.Priority,
+		arg.TypeID,
+		arg.AssignedTo,
+		arg.Search,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -126,36 +156,6 @@ WHERE status = $1
 
 func (q *Queries) CountTicketsByStatus(ctx context.Context, status string) (int64, error) {
 	row := q.db.QueryRow(ctx, countTicketsByStatus, status)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countTicketsByTenant = `-- name: CountTicketsByTenant :one
-SELECT COUNT(*) FROM tickets
-WHERE ($1::text IS NULL OR status = $1)
- AND ($2::text IS NULL OR priority = $2)
- AND ($3::uuid IS NULL OR type_id = $3)
- AND ($4::uuid IS NULL OR assigned_to = $4)
- AND ($5::text IS NULL OR subject ILIKE '%' || $5 || '%')
-`
-
-type CountTicketsByTenantParams struct {
-	Status     string      `json:"status"`
-	Priority   string      `json:"priority"`
-	TypeID     pgtype.UUID `json:"type_id"`
-	AssignedTo pgtype.UUID `json:"assigned_to"`
-	Search     string      `json:"search"`
-}
-
-func (q *Queries) CountTicketsByTenant(ctx context.Context, arg CountTicketsByTenantParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countTicketsByTenant,
-		arg.Status,
-		arg.Priority,
-		arg.TypeID,
-		arg.AssignedTo,
-		arg.Search,
-	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -741,7 +741,7 @@ func (q *Queries) ListTicketEvents(ctx context.Context, ticketID pgtype.UUID) ([
 	return items, nil
 }
 
-const listTicketTypesByTenant = `-- name: ListTicketTypesByTenant :many
+const listTicketTypes = `-- name: ListTicketTypes :many
 SELECT id, name, slug, description, field_group_id, default_priority,
  auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
@@ -750,14 +750,14 @@ ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
 `
 
-type ListTicketTypesByTenantParams struct {
+type ListTicketTypesParams struct {
 	IsPublic   *bool `json:"is_public"`
 	PageOffset int32 `json:"page_offset"`
 	PageLimit  int32 `json:"page_limit"`
 }
 
-func (q *Queries) ListTicketTypesByTenant(ctx context.Context, arg ListTicketTypesByTenantParams) ([]TicketType, error) {
-	rows, err := q.db.Query(ctx, listTicketTypesByTenant, arg.IsPublic, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListTicketTypes(ctx context.Context, arg ListTicketTypesParams) ([]TicketType, error) {
+	rows, err := q.db.Query(ctx, listTicketTypes, arg.IsPublic, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -778,6 +778,103 @@ func (q *Queries) ListTicketTypesByTenant(ctx context.Context, arg ListTicketTyp
 			&i.IsSystem,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTickets = `-- name: ListTickets :many
+SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
+ t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
+ t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
+ t.created_at, t.updated_at,
+ tt.name AS type_name, tt.slug AS type_slug
+FROM tickets t
+JOIN ticket_types tt ON tt.id = t.type_id
+WHERE ($1::text IS NULL OR t.status = $1)
+ AND ($2::text IS NULL OR t.priority = $2)
+ AND ($3::uuid IS NULL OR t.type_id = $3)
+ AND ($4::uuid IS NULL OR t.assigned_to = $4)
+ AND ($5::text IS NULL OR t.subject ILIKE '%' || $5 || '%')
+ORDER BY t.created_at DESC
+LIMIT $7 OFFSET $6
+`
+
+type ListTicketsParams struct {
+	Status     string      `json:"status"`
+	Priority   string      `json:"priority"`
+	TypeID     pgtype.UUID `json:"type_id"`
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	Search     string      `json:"search"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListTicketsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TypeID          pgtype.UUID        `json:"type_id"`
+	Subject         string             `json:"subject"`
+	Description     string             `json:"description"`
+	Status          string             `json:"status"`
+	Priority        string             `json:"priority"`
+	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
+	SubmitterEmail  *string            `json:"submitter_email"`
+	AssignedTo      pgtype.UUID        `json:"assigned_to"`
+	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
+	ResolutionNote  *string            `json:"resolution_note"`
+	FieldValues     []byte             `json:"field_values"`
+	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
+	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
+	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	TypeName        string             `json:"type_name"`
+	TypeSlug        string             `json:"type_slug"`
+}
+
+func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]ListTicketsRow, error) {
+	rows, err := q.db.Query(ctx, listTickets,
+		arg.Status,
+		arg.Priority,
+		arg.TypeID,
+		arg.AssignedTo,
+		arg.Search,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTicketsRow
+	for rows.Next() {
+		var i ListTicketsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TypeID,
+			&i.Subject,
+			&i.Description,
+			&i.Status,
+			&i.Priority,
+			&i.SubmitterUserID,
+			&i.SubmitterEmail,
+			&i.AssignedTo,
+			&i.AssignedGroupID,
+			&i.ResolutionNote,
+			&i.FieldValues,
+			&i.SlaBreachAt,
+			&i.ResolvedAt,
+			&i.ClosedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TypeName,
+			&i.TypeSlug,
 		); err != nil {
 			return nil, err
 		}
@@ -846,103 +943,6 @@ func (q *Queries) ListTicketsBySubmitter(ctx context.Context, arg ListTicketsByS
 	var items []ListTicketsBySubmitterRow
 	for rows.Next() {
 		var i ListTicketsBySubmitterRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.TypeID,
-			&i.Subject,
-			&i.Description,
-			&i.Status,
-			&i.Priority,
-			&i.SubmitterUserID,
-			&i.SubmitterEmail,
-			&i.AssignedTo,
-			&i.AssignedGroupID,
-			&i.ResolutionNote,
-			&i.FieldValues,
-			&i.SlaBreachAt,
-			&i.ResolvedAt,
-			&i.ClosedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.TypeName,
-			&i.TypeSlug,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTicketsByTenant = `-- name: ListTicketsByTenant :many
-SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
- t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
- t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
- t.created_at, t.updated_at,
- tt.name AS type_name, tt.slug AS type_slug
-FROM tickets t
-JOIN ticket_types tt ON tt.id = t.type_id
-WHERE ($1::text IS NULL OR t.status = $1)
- AND ($2::text IS NULL OR t.priority = $2)
- AND ($3::uuid IS NULL OR t.type_id = $3)
- AND ($4::uuid IS NULL OR t.assigned_to = $4)
- AND ($5::text IS NULL OR t.subject ILIKE '%' || $5 || '%')
-ORDER BY t.created_at DESC
-LIMIT $7 OFFSET $6
-`
-
-type ListTicketsByTenantParams struct {
-	Status     string      `json:"status"`
-	Priority   string      `json:"priority"`
-	TypeID     pgtype.UUID `json:"type_id"`
-	AssignedTo pgtype.UUID `json:"assigned_to"`
-	Search     string      `json:"search"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
-}
-
-type ListTicketsByTenantRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	Subject         string             `json:"subject"`
-	Description     string             `json:"description"`
-	Status          string             `json:"status"`
-	Priority        string             `json:"priority"`
-	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
-	SubmitterEmail  *string            `json:"submitter_email"`
-	AssignedTo      pgtype.UUID        `json:"assigned_to"`
-	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
-	ResolutionNote  *string            `json:"resolution_note"`
-	FieldValues     []byte             `json:"field_values"`
-	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
-	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
-	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	TypeName        string             `json:"type_name"`
-	TypeSlug        string             `json:"type_slug"`
-}
-
-func (q *Queries) ListTicketsByTenant(ctx context.Context, arg ListTicketsByTenantParams) ([]ListTicketsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listTicketsByTenant,
-		arg.Status,
-		arg.Priority,
-		arg.TypeID,
-		arg.AssignedTo,
-		arg.Search,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListTicketsByTenantRow
-	for rows.Next() {
-		var i ListTicketsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TypeID,

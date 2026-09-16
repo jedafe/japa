@@ -632,7 +632,7 @@ type customFieldGroupsListArgs struct {
 }
 
 // CustomFieldGroupsListHandler returns a ToolHandler that lists custom
-// field groups for the tenant, optionally filtered by entity_class.
+// field groups for the platform, optionally filtered by entity_class.
 // Read-only — no privacy target.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Custom field tools).

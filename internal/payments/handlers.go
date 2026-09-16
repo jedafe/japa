@@ -645,7 +645,7 @@ func resolveNOWPaymentsStatus(event WebhookEvent) string {
 // // The event ID is the dedup key for payment_webhook_events
 // (UNIQUE(provider, event_id)), so it MUST be unique per logical event.
 // Falling back to the bare event type (e.g. "charge.success") is unsafe —
-// every charge.success in the tenant would collide and the second payment
+// every charge.success in the platform would collide and the second payment
 // would be silently skipped (BUG-007). Returning the bare transaction
 // reference is equally unsafe — Paystack sends multiple event types for the
 // same transaction (charge.success then refund.processed), and they would
@@ -775,7 +775,7 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 
 // GetPayment handles GET /api/v1/me/payments/{id}.
 // The route is user-scoped (/me/) so the payment must belong to the
-// authenticated user — without this check any user in the tenant could
+// authenticated user — without this check any user in the platform could
 // read another user's payment details by ID enumeration (BUG-P004).
 func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -811,7 +811,7 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 
 // RefundPayment handles POST /api/v1/payments/{id}/refund.
 // Gated by payments.refund (admin-only). Verifies the payment exists in
-// the tenant and is in a refundable state (succeeded) before creating
+// the platform and is in a refundable state (succeeded) before creating
 // the refund record (BUG-P008, BUG-P009).
 func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
@@ -829,9 +829,9 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the payment exists in this tenant and is refundable.
+	// Verify the payment exists in this platform and is refundable.
 	// Without this check, a refund could be created for a payment in
-	// another tenant (BUG-P008) or for a payment that was never
+	// another platform (BUG-P008) or for a payment that was never
 	// succeeded (BUG-P009).
 	payment, err := h.Service.GetPayment(r.Context(), id)
 	if err != nil {
@@ -1426,7 +1426,7 @@ func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) 
 
 // DeleteSubscription handles DELETE /subscriptions/:id.
 // Verifies the subscription belongs to the authenticated user before
-// soft-deleting — without this check any user in the tenant could delete
+// soft-deleting — without this check any user in the platform could delete
 // another user's subscription by ID enumeration (BUG-P003).
 func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

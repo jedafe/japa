@@ -38,7 +38,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // DocsListHandler returns a ToolHandler that lists all documentation pages
-// for the tenant (any status, any audience — the agent needs the full
+// for the platform (any status, any audience — the agent needs the full
 // catalog for admin operations).
 func DocsListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {

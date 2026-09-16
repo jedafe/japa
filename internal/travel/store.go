@@ -45,7 +45,7 @@ func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvider
 	return s.queries.UpdateTravelProvider(ctx, arg)
 }
 
-// DeleteProvider deletes a travel provider row by id and tenant.
+// DeleteProvider deletes a travel provider row by id and platform.
 func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM travel_providers WHERE id = $1`, id)
 	if err != nil {
@@ -59,7 +59,7 @@ func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// GetProviderByID fetches a single provider by ID within a tenant.
+// GetProviderByID fetches a single provider by ID within a platform.
 func (s *Store) GetProviderByID(ctx context.Context, id pgtype.UUID) (gen.TravelProvider, error) {
 	return s.queries.GetTravelProviderByID(ctx,
 
@@ -77,7 +77,7 @@ func (s *Store) GetActiveProvider(ctx context.Context, providerType string) (gen
 	)
 }
 
-// ListProviders lists travel providers for a tenant with optional search and
+// ListProviders lists travel providers for a platform with optional search and
 // filters. isActiveFilter is tri-state: "true" = only active, "false" = only
 // inactive, "" = all. q is an ILIKE search on name/slug (empty = no filter).
 // providerType filters by exact type (empty = all).

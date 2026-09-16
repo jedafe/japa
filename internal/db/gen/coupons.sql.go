@@ -48,6 +48,18 @@ func (q *Queries) CountCouponEventsByType(ctx context.Context, arg CountCouponEv
 	return count, err
 }
 
+const countCoupons = `-- name: CountCoupons :one
+SELECT COUNT(*) AS count
+FROM coupons
+`
+
+func (q *Queries) CountCoupons(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countCoupons)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countCouponsByProvider = `-- name: CountCouponsByProvider :one
 SELECT COUNT(*) AS count
 FROM coupons
@@ -56,18 +68,6 @@ WHERE provider_id = $1
 
 func (q *Queries) CountCouponsByProvider(ctx context.Context, providerID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countCouponsByProvider, providerID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countCouponsByTenant = `-- name: CountCouponsByTenant :one
-SELECT COUNT(*) AS count
-FROM coupons
-`
-
-func (q *Queries) CountCouponsByTenant(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countCouponsByTenant)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -417,7 +417,7 @@ type GetAffiliateProviderForRenderRow struct {
 	IsActive      bool        `json:"is_active"`
 }
 
-// BE-LOW-001: tenant-scoped render resolution.
+// BE-LOW-001: platform-scoped render resolution.
 func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, id pgtype.UUID) (GetAffiliateProviderForRenderRow, error) {
 	row := q.db.QueryRow(ctx, getAffiliateProviderForRender, id)
 	var i GetAffiliateProviderForRenderRow
@@ -594,9 +594,9 @@ type GetCouponForRenderRow struct {
 // =====================
 // Render Helpers
 // =====================
-// BE-LOW-001: tenant-scoped so a render request cannot resolve a coupon
-// from another tenant. The InternalGuard on the render routes is defense-
-// in-depth; this query is the primary tenant isolation control.
+// BE-LOW-001: platform-scoped so a render request cannot resolve a coupon
+// from another platform. The InternalGuard on the render routes is defense-
+// in-depth; this query is the primary platform isolation control.
 func (q *Queries) GetCouponForRender(ctx context.Context, id pgtype.UUID) (GetCouponForRenderRow, error) {
 	row := q.db.QueryRow(ctx, getCouponForRender, id)
 	var i GetCouponForRenderRow
@@ -626,7 +626,7 @@ func (q *Queries) InvalidateCouponCache(ctx context.Context) error {
 	return err
 }
 
-const listActiveCouponsByTenant = `-- name: ListActiveCouponsByTenant :many
+const listActiveCoupons = `-- name: ListActiveCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -643,7 +643,7 @@ ORDER BY c.created_at DESC
 LIMIT $5 OFFSET $4
 `
 
-type ListActiveCouponsByTenantParams struct {
+type ListActiveCouponsParams struct {
 	ProviderID pgtype.UUID `json:"provider_id"`
 	CouponType *string     `json:"coupon_type"`
 	Search     *string     `json:"search"`
@@ -651,7 +651,7 @@ type ListActiveCouponsByTenantParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-type ListActiveCouponsByTenantRow struct {
+type ListActiveCouponsRow struct {
 	ID                  pgtype.UUID        `json:"id"`
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
@@ -677,8 +677,8 @@ type ListActiveCouponsByTenantRow struct {
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
 }
 
-func (q *Queries) ListActiveCouponsByTenant(ctx context.Context, arg ListActiveCouponsByTenantParams) ([]ListActiveCouponsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listActiveCouponsByTenant,
+func (q *Queries) ListActiveCoupons(ctx context.Context, arg ListActiveCouponsParams) ([]ListActiveCouponsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveCoupons,
 		arg.ProviderID,
 		arg.CouponType,
 		arg.Search,
@@ -689,9 +689,9 @@ func (q *Queries) ListActiveCouponsByTenant(ctx context.Context, arg ListActiveC
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListActiveCouponsByTenantRow
+	var items []ListActiveCouponsRow
 	for rows.Next() {
-		var i ListActiveCouponsByTenantRow
+		var i ListActiveCouponsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProviderID,
@@ -727,7 +727,7 @@ func (q *Queries) ListActiveCouponsByTenant(ctx context.Context, arg ListActiveC
 	return items, nil
 }
 
-const listAffiliateProvidersByTenant = `-- name: ListAffiliateProvidersByTenant :many
+const listAffiliateProviders = `-- name: ListAffiliateProviders :many
 SELECT id, name, slug, description, provider_type, logo_media_id,
  base_url, tracking_param, tracking_value, commission_rate,
  is_active, is_featured, author_commission_pct, created_at, updated_at
@@ -737,13 +737,13 @@ ORDER BY name ASC
 LIMIT $3 OFFSET $2
 `
 
-type ListAffiliateProvidersByTenantParams struct {
+type ListAffiliateProvidersParams struct {
 	IsActive   bool  `json:"is_active"`
 	PageOffset int32 `json:"page_offset"`
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListAffiliateProvidersByTenantRow struct {
+type ListAffiliateProvidersRow struct {
 	ID                  pgtype.UUID        `json:"id"`
 	Name                string             `json:"name"`
 	Slug                string             `json:"slug"`
@@ -761,15 +761,15 @@ type ListAffiliateProvidersByTenantRow struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListAffiliateProvidersByTenant(ctx context.Context, arg ListAffiliateProvidersByTenantParams) ([]ListAffiliateProvidersByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listAffiliateProvidersByTenant, arg.IsActive, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListAffiliateProviders(ctx context.Context, arg ListAffiliateProvidersParams) ([]ListAffiliateProvidersRow, error) {
+	rows, err := q.db.Query(ctx, listAffiliateProviders, arg.IsActive, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAffiliateProvidersByTenantRow
+	var items []ListAffiliateProvidersRow
 	for rows.Next() {
-		var i ListAffiliateProvidersByTenantRow
+		var i ListAffiliateProvidersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -845,7 +845,7 @@ func (q *Queries) ListCouponEvents(ctx context.Context, arg ListCouponEventsPara
 	return items, nil
 }
 
-const listCouponsByTenant = `-- name: ListCouponsByTenant :many
+const listCoupons = `-- name: ListCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -861,7 +861,7 @@ ORDER BY c.created_at DESC
 LIMIT $6 OFFSET $5
 `
 
-type ListCouponsByTenantParams struct {
+type ListCouponsParams struct {
 	Status     *string     `json:"status"`
 	CouponType *string     `json:"coupon_type"`
 	ProviderID pgtype.UUID `json:"provider_id"`
@@ -870,7 +870,7 @@ type ListCouponsByTenantParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-type ListCouponsByTenantRow struct {
+type ListCouponsRow struct {
 	ID                  pgtype.UUID        `json:"id"`
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
@@ -896,8 +896,8 @@ type ListCouponsByTenantRow struct {
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
 }
 
-func (q *Queries) ListCouponsByTenant(ctx context.Context, arg ListCouponsByTenantParams) ([]ListCouponsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listCouponsByTenant,
+func (q *Queries) ListCoupons(ctx context.Context, arg ListCouponsParams) ([]ListCouponsRow, error) {
+	rows, err := q.db.Query(ctx, listCoupons,
 		arg.Status,
 		arg.CouponType,
 		arg.ProviderID,
@@ -909,9 +909,9 @@ func (q *Queries) ListCouponsByTenant(ctx context.Context, arg ListCouponsByTena
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListCouponsByTenantRow
+	var items []ListCouponsRow
 	for rows.Next() {
-		var i ListCouponsByTenantRow
+		var i ListCouponsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProviderID,

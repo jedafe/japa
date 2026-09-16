@@ -44,7 +44,7 @@ SET total_conversions = total_conversions + 1,
  total_earned_credits = total_earned_credits + @commission
 WHERE user_id = @user_id;
 
--- name: CountAffiliateMembersByTenant :one
+-- name: CountAffiliateMembers :one
 SELECT COUNT(*) AS count
 FROM affiliate_program_members
 ;
@@ -125,7 +125,7 @@ WHERE id = @id;
 
 -- name: ListAffiliateMembersFiltered :many
 -- Admin list with optional status filter (Section 56 / catalog
--- ?status=active|inactive). Tenant-scoped. NULL status = no filter.
+-- ?status=active|inactive). Platform-scoped. NULL status = no filter.
 SELECT user_id, enrolled_at, status, total_clicks,
  total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
@@ -136,7 +136,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListAllAffiliateLinksFiltered :many
 -- Admin list with optional user_id / product_type / is_active filters
 -- (Section 56 / catalog ?user_id&product_type&status=active|inactive).
--- Tenant-scoped. Joins users for the admin UI's username column. NULL = no
+-- Platform-scoped. Joins users for the admin UI's username column. NULL = no
 -- filter on that dimension.
 SELECT ual.id, ual.user_id, ual.product_type, ual.product_id,
  ual.code, ual.description, ual.destination_url, ual.click_count,
@@ -220,7 +220,7 @@ LIMIT @page_limit;
 -- name: GetAffiliateProgramStats :one
 -- Returns program-wide totals for the admin overview endpoint
 -- GET /admin/affiliate-program (Section 56 Admin management).
--- Tenant-scoped: only counts members/links/events for the given tenant.
+-- Platform-scoped: only counts members/links/events for the given platform.
 SELECT
  (SELECT COUNT(*) FROM affiliate_program_members apm ) AS total_members,
  (SELECT COUNT(*) FROM affiliate_program_members apm WHERE apm.status = 'active') AS active_members,
@@ -277,7 +277,7 @@ LIMIT 1;
 -- Resolves the affiliate member + commission rate for a link code, reading
 -- the rate from system_settings (affiliate.commission.*) per Section 56 —
 -- the single source of truth. Falls back to the catalog defaults (15/20/10)
--- when a tenant has not configured the rate.
+-- when a platform has not configured the rate.
 --
 -- V1 behavior (BUG-008): pro_subscription always maps to the pro_monthly
 -- rate. The pro_annual rate is configurable but unused in V1 — there is no

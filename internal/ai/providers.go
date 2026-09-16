@@ -108,7 +108,7 @@ func (s *ProviderStore) scanProviderConfig(row interface {
 	return pc, nil
 }
 
-// ListProviders returns all AI provider configs for a tenant, ordered by
+// ListProviders returns all AI provider configs for a platform, ordered by
 // priority ascending then name.
 func (s *ProviderStore) ListProviders(ctx context.Context) ([]ProviderConfig, error) {
 	rows, err := s.read.Query(ctx, `
@@ -137,7 +137,7 @@ func (s *ProviderStore) ListProviders(ctx context.Context) ([]ProviderConfig, er
 	return providers, rows.Err()
 }
 
-// GetProvider returns a single AI provider config by ID, scoped to the tenant.
+// GetProvider returns a single AI provider config by ID, scoped to the platform.
 func (s *ProviderStore) GetProvider(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
 	row := s.read.QueryRow(ctx, `
 		SELECT id, name, provider_type, api_key_encrypted,
@@ -272,7 +272,7 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 	return s.scanProviderConfig(row)
 }
 
-// DeleteProvider removes a provider config by ID, scoped to the tenant.
+// DeleteProvider removes a provider config by ID, scoped to the platform.
 func (s *ProviderStore) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.write.Exec(ctx, `DELETE FROM ai_providers WHERE id = $1`, id)
 	if err != nil {

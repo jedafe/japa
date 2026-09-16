@@ -49,7 +49,7 @@ func TestTagModeratorsIntegration(t *testing.T) {
 		database.Writer.Exec(ctx, `DELETE FROM tag_moderators `)
 		database.Writer.Exec(ctx, `DELETE FROM tags WHERE id=$1`, tagID)
 		database.Writer.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
-		database.Writer.Exec(ctx, `DELETE FROM tenants WHERE id=$1`)
+		database.Writer.Exec(ctx, `DELETE FROM platforms WHERE id=$1`)
 	})
 
 	// Add.

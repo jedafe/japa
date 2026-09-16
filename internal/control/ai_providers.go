@@ -39,7 +39,7 @@ func buildValidSet(items []string) map[string]bool {
 }
 
 // ListAIProviders handles GET /control/ai-providers.
-// Returns all AI provider configs for the tenant. API keys are masked.
+// Returns all AI provider configs for the platform. API keys are masked.
 func (h *Handlers) ListAIProviders(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
 	if !ok {

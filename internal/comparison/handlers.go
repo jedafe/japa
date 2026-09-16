@@ -234,7 +234,7 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListComparisons handles GET /api/v1/comparisons — a public page of
-// published, publicly-visible comparison content rows for the tenant,
+// published, publicly-visible comparison content rows for the platform,
 // optionally filtered by type and space_id (Section 30, BUG-007/BUG-008).
 // No authentication required; the SQL layer filters to status='published'
 // AND visibility='public' so drafts/private comparisons are never exposed.
@@ -292,7 +292,7 @@ func (h *Handlers) buildListComparisonsFilter(r *http.Request) (ListComparisonsF
 }
 
 // ListComparisonsAdmin handles GET /api/v1/comparisons/admin.
-// // Returns all non-deleted comparison content rows for the tenant (including
+// // Returns all non-deleted comparison content rows for the platform (including
 // drafts and private comparisons), optionally filtered by type and space_id.
 // Requires the comparison.edit_any permission (Section 30).
 func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) {

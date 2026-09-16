@@ -6,7 +6,7 @@ import (
 	"github.com/jedafe/japa/internal/literals/expr"
 )
 
-// TemplateLiteral is the runtime model for a tenant token definition.
+// TemplateLiteral is the runtime model for a platform token definition.
 type TemplateLiteral struct {
 	ID string
 
@@ -29,11 +29,11 @@ type RenderContext struct {
 	SourceCode         string
 	DestinationCountry string
 	DestinationCode    string
-	TenantName         string
+	PlatformName         string
 }
 
 // reservedKeys are built-in variable and function names that cannot be
-// shadowed by tenant-defined template literal keys.
+// shadowed by platform-defined template literal keys.
 var reservedKeys = map[string]struct{}{
 	"Now":                 {},
 	"Current_Year":        {},
@@ -44,7 +44,7 @@ var reservedKeys = map[string]struct{}{
 	"Source_Code":         {},
 	"Destination_Country": {},
 	"Destination_Code":    {},
-	"Tenant_Name":         {},
+	"Platform_Name":         {},
 	"Locale":              {},
 	"adjective":           {},
 	"year":                {},
@@ -73,7 +73,7 @@ func (rc RenderContext) ToEnv() *expr.Env {
 	env.Vars["Source_Code"] = rc.SourceCode
 	env.Vars["Destination_Country"] = rc.DestinationCountry
 	env.Vars["Destination_Code"] = rc.DestinationCode
-	env.Vars["Tenant_Name"] = rc.TenantName
+	env.Vars["Platform_Name"] = rc.PlatformName
 	env.Vars["Locale"] = rc.Locale
 
 	return env

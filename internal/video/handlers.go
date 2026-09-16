@@ -21,7 +21,7 @@ const (
 	// Files larger than this are spooled to temporary disk files by net/http.
 	maxMultipartMemory = 32 << 20
 	// hardMaxUploadBytes is the absolute cap on a single video upload, regardless
-	// of the tenant-configured media upload limit, to prevent memory exhaustion.
+	// of the platform-configured media upload limit, to prevent memory exhaustion.
 	hardMaxUploadBytes = 1 << 30
 )
 
@@ -204,7 +204,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetByID handles GET /api/v1/videos/{id} — public read of a single video
-// source in the tenant so the video content single page can render the
+// source in the platform so the video content single page can render the
 // embed. Non-existent IDs return 404.
 func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
 

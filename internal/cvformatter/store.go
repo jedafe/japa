@@ -253,9 +253,9 @@ WHERE destination_space_id = $1
 }
 
 // DeleteStandard deletes a cv_standards row by id, scoped to the space's
-// tenant. Because cv_standards has no column, tenant isolation is
+// platform. Because cv_standards has no column, platform isolation is
 // enforced by joining spaces on destination_space_id. Returns pgx.ErrNoRows
-// if the row does not exist or does not belong to the tenant.
+// if the row does not exist or does not belong to the platform.
 func (s *Store) DeleteStandard(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 DELETE FROM cv_standards cs
