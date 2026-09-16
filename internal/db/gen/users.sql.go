@@ -19,7 +19,7 @@ SELECT EXISTS (
 `
 
 // Existence check for the public profile gate: is there an ACTIVE user with
-// this id in this tenant? Non-active (banned/suspended/deleted) or missing → false.
+// this id in this platform? Non-active (banned/suspended/deleted) or missing → false.
 func (q *Queries) ActiveUserExistsByID(ctx context.Context, id pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, activeUserExistsByID, id)
 	var exists bool
@@ -99,7 +99,7 @@ type CountUserContentRow struct {
 // Analytics counts (Section 40: BUG-012 — replace row iteration with SQL COUNT)
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 // ---------------------------------------------------------------------------
-// Counts the user's content by status within the tenant.
+// Counts the user's content by status within the platform.
 func (q *Queries) CountUserContent(ctx context.Context, userID pgtype.UUID) (CountUserContentRow, error) {
 	row := q.db.QueryRow(ctx, countUserContent, userID)
 	var i CountUserContentRow
@@ -336,11 +336,11 @@ type GetContentByIDForEditorRow struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Returns any content by ID within the tenant (no author filter). Used by
+// Returns any content by ID within the platform (no author filter). Used by
 // GET /api/v1/me/content/{id} as a fallback when the caller is a super-admin
 // or holds the RBAC `content.edit` permission but is not the content owner.
 // Mirrors the GetUserContent column set so the response shape is identical.
-// A missing row or a different tenant's content resolves to pgx.ErrNoRows → 404.
+// A missing row or a different platform's content resolves to pgx.ErrNoRows → 404.
 func (q *Queries) GetContentByIDForEditor(ctx context.Context, id pgtype.UUID) (GetContentByIDForEditorRow, error) {
 	row := q.db.QueryRow(ctx, getContentByIDForEditor, id)
 	var i GetContentByIDForEditorRow
@@ -744,12 +744,12 @@ type GetUserContentRow struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Returns the caller's own content by ID (tenant + author scoped, any
+// Returns the caller's own content by ID (platform + author scoped, any
 // status). Used by GET /api/v1/me/content/{id} so the /create composer can
 // restore published, scheduled, or draft content for editing — the
 // status='draft'-scoped /me/drafts/{id} route only covers drafts. Mirrors
 // the GetUserDraft column set so the response shape is identical. A missing
-// row or content owned by another user/tenant resolves to pgx.ErrNoRows → 404.
+// row or content owned by another user/platform resolves to pgx.ErrNoRows → 404.
 func (q *Queries) GetUserContent(ctx context.Context, arg GetUserContentParams) (GetUserContentRow, error) {
 	row := q.db.QueryRow(ctx, getUserContent, arg.ID, arg.AuthorID)
 	var i GetUserContentRow
@@ -1111,7 +1111,7 @@ type GetUserDraftRow struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Returns the caller's own draft content by ID (tenant + author scoped,
+// Returns the caller's own draft content by ID (platform + author scoped,
 // status = 'draft'). Used by the /create composer to restore an existing
 // draft for editing via GET /api/v1/me/drafts/{id}. Mirrors the column set
 // of GetContentByID so the response shape matches GET /content/{slug}.
@@ -1166,7 +1166,7 @@ SELECT email FROM users WHERE id = $1
 `
 
 // Returns the user's email address for notification email delivery (§35).
-// Tenant-scoped per §04.
+// Platform-scoped per §04.
 func (q *Queries) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
 	row := q.db.QueryRow(ctx, getUserEmail, userID)
 	var email string
@@ -2044,7 +2044,7 @@ type ListUserBookmarksRow struct {
 // space→spaces, tag→tags, learning_track→learning_tracks,
 // doc_page→doc_pages). Unknown types get NULL title/slug; the frontend
 // falls back to the entity_id.
-// Tenant-scoped (BL-006), optional folder_id filter (BL-002), and optional
+// Platform-scoped (BL-006), optional folder_id filter (BL-002), and optional
 // entity_type filter (so the learn app can request only learning entities).
 func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksParams) ([]ListUserBookmarksRow, error) {
 	rows, err := q.db.Query(ctx, listUserBookmarks,

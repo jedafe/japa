@@ -12,7 +12,7 @@ import (
 )
 
 func TestGetCatalog(t *testing.T) {
-	// Build a minimal router with the catalog route, injecting a valid tenant.
+	// Build a minimal router with the catalog route, injecting a valid platform.
 	r := chi.NewRouter()
 	h := NewHandlers()
 	r.Get("/catalogs/{name}", h.GetCatalog)
@@ -71,7 +71,7 @@ func TestGetCatalog(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/catalogs/"+tt.catalog, nil)
-			// Simulate tenant middleware by injecting a valid tenant.
+			// Simulate platform middleware by injecting a valid platform.
 			tctx := context.WithValue(
 				req.Context(),
 				struct{}{},

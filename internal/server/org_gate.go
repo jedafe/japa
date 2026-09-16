@@ -11,7 +11,7 @@ import (
 )
 
 // requireActiveOrgByID gates public org profile tabs keyed by {id}: it 404s
-// unless {id} is an ACTIVE, non-deleted org in the request's tenant. Shared
+// unless {id} is an ACTIVE, non-deleted org in the request's platform. Shared
 // enforcement point mirroring requireActiveProfileUser. (The header route keys
 // by {slug} and self-404s via GetPublicOrganizationBySlug instead.)
 func requireActiveOrgByID(orgSvc *organizations.Service) func(http.Handler) http.Handler {

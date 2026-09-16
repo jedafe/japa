@@ -9,7 +9,7 @@ ALTER TABLE menu_items
     ADD COLUMN feature_flag text;
 
 COMMENT ON COLUMN menu_items.feature_flag IS
-    'Optional feature flag key (feature_flags.key). If set, the item is shown only when the flag is enabled for the tenant.';
+    'Optional feature flag key (feature_flags.key). If set, the item is shown only when the flag is enabled on this platform.';
 
 -- Seed feature flags for the default dashboard_rail menu so the rail respects
 -- the platform feature registry (internal/features/registry.go).

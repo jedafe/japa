@@ -705,7 +705,7 @@ func TestSourceToDirectoryEntry(t *testing.T) {
 // --- nil-dependency graceful degradation tests (503 intel_unavailable) ---
 //
 // Every handler checks its required dependency up front and returns 503
-// before touching the store/service or requiring tenant/user context, so a
+// before touching the store/service or requiring platform/user context, so a
 // bare &Handlers{} (all deps nil) is sufficient — no context plumbing is
 // needed for these cases.
 
@@ -782,7 +782,7 @@ func TestHandleReviewReject_NilStores(t *testing.T) {
 
 func TestHandleSourcesDirectory_NilSources(t *testing.T) {
 	t.Parallel()
-	// HandleSourcesDirectory does not require a tenant (public directory),
+	// HandleSourcesDirectory does not require a platform (public directory),
 	// so only the nil intelSources check matters here.
 	h := &Handlers{}
 	rr := httptest.NewRecorder()

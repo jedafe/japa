@@ -367,7 +367,7 @@ WHERE id = $1;
 
 -- name: DeleteSecurityScanResult :exec
 -- Deletes a single scan finding. Used by the control panel to clear
--- resolved findings from the audit view. Tenant-scoped for safety.
+-- resolved findings from the audit view. Platform-scoped for safety.
 DELETE FROM security_scan_results
 WHERE id = $1;
 

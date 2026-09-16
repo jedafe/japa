@@ -67,7 +67,7 @@ const contentSlugExists = `-- name: ContentSlugExists :one
 SELECT EXISTS(SELECT 1 FROM contents WHERE slug = $1)
 `
 
-// Returns true if any contents row (including soft-deleted) in the tenant
+// Returns true if any contents row (including soft-deleted) in the platform
 // uses the given slug. The unique index on (slug) is not partial,
 // so a slug held by a deleted row is still unavailable.
 func (q *Queries) ContentSlugExists(ctx context.Context, slug string) (bool, error) {
@@ -128,7 +128,7 @@ WHERE c.author_id = $1
  AND c.deleted_at IS NULL
 `
 
-// Counts published, non-deleted content by the given author in a tenant.
+// Counts published, non-deleted content by the given author in a platform.
 // Used by the spam pipeline's new-user link restriction (§41 Layer 3) to
 // determine whether a user has passed the "first N posts" threshold.
 func (q *Queries) CountPostsByAuthor(ctx context.Context, authorID pgtype.UUID) (int32, error) {
@@ -522,7 +522,7 @@ type DeleteBookmarkByIDParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-// Deletes a single bookmark by its row ID, scoped to tenant + owner.
+// Deletes a single bookmark by its row ID, scoped to platform + owner.
 // Used by DELETE /me/bookmarks/{id} — the polymorphic remove endpoint that
 // works regardless of entity_type (content, forum_thread, space, comment, etc.).
 func (q *Queries) DeleteBookmarkByID(ctx context.Context, arg DeleteBookmarkByIDParams) (int64, error) {
@@ -2310,7 +2310,7 @@ type ListContentIDsScoredSinceParams struct {
 }
 
 // Returns content IDs whose content_scores.last_scored_at is newer than the
-// given cursor, joined to contents for tenant scoping. Used by the §13
+// given cursor, joined to contents for platform scoping. Used by the §13
 // batched engagement-score re-index cron to find content whose search index
 // document needs refreshing without re-indexing on every engagement event.
 // Limits to @batch_size rows ordered by last_scored_at ascending so the
@@ -2416,6 +2416,162 @@ func (q *Queries) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([
 	return items, nil
 }
 
+const listContents = `-- name: ListContents :many
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($1::boolean AND $2::boolean)
+ OR (c.author_id = $3::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $4::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $3::uuid OR $2::boolean))
+ )
+ )
+ )
+ AND ($5::text IS NULL OR c.title ILIKE '%' || $5 || '%' OR c.slug ILIKE '%' || $5 || '%' OR c.body ILIKE '%' || $5 || '%')
+ AND (c.created_at < $6 OR ($6 IS NULL))
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $7
+`
+
+type ListContentsParams struct {
+	CanSeeUnpublished bool               `json:"can_see_unpublished"`
+	CanSeePrivate     bool               `json:"can_see_private"`
+	RequesterID       pgtype.UUID        `json:"requester_id"`
+	CanSeeMembers     bool               `json:"can_see_members"`
+	Q                 string             `json:"q"`
+	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
+	PageLimit         int32              `json:"page_limit"`
+}
+
+type ListContentsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	BodyHtml          string             `json:"body_html"`
+	FieldValues       []byte             `json:"field_values"`
+	ContentHash       *string            `json:"content_hash"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl      *string            `json:"canonical_url"`
+	MetaTitle         *string            `json:"meta_title"`
+	MetaDescription   *string            `json:"meta_description"`
+	OgImageUrl        *string            `json:"og_image_url"`
+	SeoIndexable      bool               `json:"seo_indexable"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	IsLocked          bool               `json:"is_locked"`
+	IsPinned          bool               `json:"is_pinned"`
+	ReadTimeMinutes   int32              `json:"read_time_minutes"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	ShareCount        int32              `json:"share_count"`
+	ReshareCount      int32              `json:"reshare_count"`
+	PublishAt         pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory     *string            `json:"guide_category"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
+	Purpose           interface{}        `json:"purpose"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	SpaceName         *string            `json:"space_name"`
+}
+
+func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]ListContentsRow, error) {
+	rows, err := q.db.Query(ctx, listContents,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
+		arg.Q,
+		arg.CursorCreatedAt,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContentsRow
+	for rows.Next() {
+		var i ListContentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.Purpose,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.SpaceName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listContentsByIDs = `-- name: ListContentsByIDs :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
@@ -2502,7 +2658,7 @@ type ListContentsByIDsRow struct {
 }
 
 // Fetches content rows by a list of IDs with the same JOINed enrichment
-// as ListContentsByTenant. Used by the Meilisearch search integration:
+// as ListContents. Used by the Meilisearch search integration:
 // when ?q= is present, the handler queries Meilisearch for matching IDs,
 // then uses this query to fetch the full rows with author/space names.
 // Ref: docs/PERFORMANCE_AUDIT.md §4 (Search Offload)
@@ -2872,162 +3028,6 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 	var items []ListContentsBySpaceRow
 	for rows.Next() {
 		var i ListContentsBySpaceRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.AuthorID,
-			&i.SpaceID,
-			&i.ContentType,
-			&i.Title,
-			&i.Slug,
-			&i.Body,
-			&i.BodyHtml,
-			&i.FieldValues,
-			&i.ContentHash,
-			&i.GeoSpaceID,
-			&i.HeaderImageID,
-			&i.FeaturedImageID,
-			&i.CanonicalUrl,
-			&i.MetaTitle,
-			&i.MetaDescription,
-			&i.OgImageUrl,
-			&i.SeoIndexable,
-			&i.Status,
-			&i.Visibility,
-			&i.IsLocked,
-			&i.IsPinned,
-			&i.ReadTimeMinutes,
-			&i.ViewCount,
-			&i.CommentCount,
-			&i.ShareCount,
-			&i.ReshareCount,
-			&i.PublishAt,
-			&i.PublishedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.GuideCategory,
-			&i.JourneyStage,
-			&i.VisaRoute,
-			&i.SourceCountry,
-			&i.TargetCountry,
-			&i.Purpose,
-			&i.AuthorUsername,
-			&i.AuthorDisplayName,
-			&i.SpaceName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listContentsByTenant = `-- name: ListContentsByTenant :many
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
- c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
- c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
- c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
- c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
- c.field_values->>'purpose' AS purpose,
- u.username AS author_username, up.display_name AS author_display_name,
- s.name AS space_name
-FROM contents c
-LEFT JOIN users u ON u.id = c.author_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id
-LEFT JOIN spaces s ON s.id = c.space_id
-WHERE c.deleted_at IS NULL
- AND c.auto_hidden = false
- AND (
- ($1::boolean AND $2::boolean)
- OR (c.author_id = $3::uuid AND c.author_id IS NOT NULL)
- OR (
- c.status = 'published'
- AND (
- c.visibility = 'public'
- OR (c.visibility = 'members' AND $4::boolean)
- OR (c.visibility = 'private' AND (c.author_id = $3::uuid OR $2::boolean))
- )
- )
- )
- AND ($5::text IS NULL OR c.title ILIKE '%' || $5 || '%' OR c.slug ILIKE '%' || $5 || '%' OR c.body ILIKE '%' || $5 || '%')
- AND (c.created_at < $6 OR ($6 IS NULL))
-ORDER BY c.created_at DESC, c.id DESC
-LIMIT $7
-`
-
-type ListContentsByTenantParams struct {
-	CanSeeUnpublished bool               `json:"can_see_unpublished"`
-	CanSeePrivate     bool               `json:"can_see_private"`
-	RequesterID       pgtype.UUID        `json:"requester_id"`
-	CanSeeMembers     bool               `json:"can_see_members"`
-	Q                 string             `json:"q"`
-	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
-	PageLimit         int32              `json:"page_limit"`
-}
-
-type ListContentsByTenantRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              string             `json:"body"`
-	BodyHtml          string             `json:"body_html"`
-	FieldValues       []byte             `json:"field_values"`
-	ContentHash       *string            `json:"content_hash"`
-	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl      *string            `json:"canonical_url"`
-	MetaTitle         *string            `json:"meta_title"`
-	MetaDescription   *string            `json:"meta_description"`
-	OgImageUrl        *string            `json:"og_image_url"`
-	SeoIndexable      bool               `json:"seo_indexable"`
-	Status            string             `json:"status"`
-	Visibility        string             `json:"visibility"`
-	IsLocked          bool               `json:"is_locked"`
-	IsPinned          bool               `json:"is_pinned"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ShareCount        int32              `json:"share_count"`
-	ReshareCount      int32              `json:"reshare_count"`
-	PublishAt         pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory     *string            `json:"guide_category"`
-	JourneyStage      *string            `json:"journey_stage"`
-	VisaRoute         *string            `json:"visa_route"`
-	SourceCountry     *string            `json:"source_country"`
-	TargetCountry     *string            `json:"target_country"`
-	Purpose           interface{}        `json:"purpose"`
-	AuthorUsername    *string            `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	SpaceName         *string            `json:"space_name"`
-}
-
-func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTenantParams) ([]ListContentsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listContentsByTenant,
-		arg.CanSeeUnpublished,
-		arg.CanSeePrivate,
-		arg.RequesterID,
-		arg.CanSeeMembers,
-		arg.Q,
-		arg.CursorCreatedAt,
-		arg.PageLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListContentsByTenantRow
-	for rows.Next() {
-		var i ListContentsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.AuthorID,
@@ -4255,7 +4255,7 @@ type ReassignSingleContentAuthorRow struct {
 // Updates a single content row's author_id and field_values in one
 // statement. The caller (agent handler) reads the current field_values,
 // merges the _ai_provenance.author_assigned_by / author_assignment_reason
-// metadata in Go, and passes the full updated JSONB here. Tenant-scoped
+// metadata in Go, and passes the full updated JSONB here. Platform-scoped
 // for defense-in-depth (BUG-014). Distinct from gdpr.sql's
 // ReassignContentAuthor (:exec bulk reassign on user deletion).
 func (q *Queries) ReassignSingleContentAuthor(ctx context.Context, arg ReassignSingleContentAuthorParams) (ReassignSingleContentAuthorRow, error) {

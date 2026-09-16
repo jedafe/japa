@@ -250,8 +250,8 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	// Calculate new balance
 	newBalance := currentBalance + int64(rule.PointValue)
 
-	// Create idempotency key from event. Include tenant and user to avoid
-	// cross-tenant collisions (ADR-004, Section 28).
+	// Create idempotency key from event. Include platform and user to avoid
+	// cross-platform collisions (ADR-004, Section 28).
 	idempotencyKey := fmt.Sprintf("activity::%s:%s:%s", event.UserID.String(), event.ActivityKey, event.Reference)
 
 	// Insert ledger entry
@@ -367,7 +367,7 @@ type ConvertPointsToCreditsInput struct {
 }
 
 // ConvertPointsToCredits converts points to credits at the configured rate.
-// The rate is resolved in priority order: (1) per-tenant wallet_settings row,
+// The rate is resolved in priority order: (1) per-platform wallet_settings row,
 // (2) global system_settings key wallet.points_to_credit_rate, (3) compiled-in
 // DefaultPointsToCreditsRate (AUDIT-BE2-SETTING-007). The minimum convertible
 // amount is enforced from wallet.min_convert_points (AUDIT-BE2-SETTING-008).
@@ -391,7 +391,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, userID pgtype.UUID
 	rate := int32(DefaultPointsToCreditsRate)
 
 	if err == nil && settings.PointsToCreditsRate != nil && *settings.PointsToCreditsRate > 0 {
-		// (1) per-tenant wallet_settings row takes precedence.
+		// (1) per-platform wallet_settings row takes precedence.
 		rate = *settings.PointsToCreditsRate
 	} else if s.settings != nil {
 		// (2) fall back to global system_settings (AUDIT-BE2-SETTING-007).
@@ -703,8 +703,8 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 	return newBalance, nil
 }
 
-// GetWalletSettings returns wallet settings for a tenant.
-// If no per-tenant wallet_settings row exists yet, the conversion rate is
+// GetWalletSettings returns wallet settings for a platform.
+// If no per-platform wallet_settings row exists yet, the conversion rate is
 // resolved from the global system_settings key wallet.points_to_credit_rate
 // (a float: credits-per-point, e.g. 0.001 = 1000 points per credit) and
 // inverted to the integer "points per credit" rate the ledger uses, falling
@@ -765,7 +765,7 @@ type UpdateWalletSettingsInput struct {
 	EnableEarning       bool
 }
 
-// UpdateWalletSettings updates wallet settings for a tenant.
+// UpdateWalletSettings updates wallet settings for a platform.
 func (s *Service) UpdateWalletSettings(ctx context.Context, input UpdateWalletSettingsInput) (gen.WalletSetting, error) {
 	if input.PointsToCreditsRate <= 0 {
 		return gen.WalletSetting{}, errors.New("points_to_credits_rate must be positive")
@@ -774,9 +774,9 @@ func (s *Service) UpdateWalletSettings(ctx context.Context, input UpdateWalletSe
 	return s.store.upsertWalletSettings(ctx, input.PointsToCreditsRate, input.DailyEarningCap, input.EnableEarning)
 }
 
-// ListActivityRules returns activity rules for a tenant.
+// ListActivityRules returns activity rules for a platform.
 func (s *Service) ListActivityRules(ctx context.Context, limit, offset int32) ([]gen.ActivityPointRule, error) {
-	return s.store.listActivityRulesByTenant(ctx, limit, offset)
+	return s.store.listActivityRulesByPlatform(ctx, limit, offset)
 }
 
 // CreateOrUpdateActivityRuleInput holds parameters for creating/updating an activity rule.

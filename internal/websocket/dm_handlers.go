@@ -247,7 +247,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Record the creation for the spam rate-limit layer (BUG-004). Without
-	// this the jc:spam:rate:{tenant}:{user} sorted set is never populated and
+	// this the jc:spam:rate:{platform}:{user} sorted set is never populated and
 	// the rate_limit scoring layer always returns 0.
 	if h.spamPipeline != nil {
 		h.spamPipeline.RecordContentCreation(r.Context(), user.UserID)

@@ -91,15 +91,15 @@ type permCacheInvalidator interface {
 }
 
 // webhookEmitter fans a forum.* event out to all subscribed webhook
-// endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
+// endpoints for the platform (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
 	EmitEvent(ctx context.Context, eventType string, payload any)
 }
 
 // spaceBroadcaster publishes a live update to a space's WebSocket room
 // (Section 10). Used for poll/vote count live updates. The ID scopes
-// the subscription so cross-tenant space ID collisions cannot leak events
-// (Rule 4: tenant-scoped). Ref: Section 08.
+// the subscription so cross-platform space ID collisions cannot leak events
+// (Rule 4: platform-scoped). Ref: Section 08.
 type spaceBroadcaster interface {
 	BroadcastToSpace(spaceID string, event WSEvent)
 }

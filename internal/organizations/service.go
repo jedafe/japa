@@ -119,7 +119,7 @@ func (s *Service) CreateOrganization(ctx context.Context, userID pgtype.UUID, in
 	// Quantity gate: per-tier organizations.max_per_user.{tier} (0 = disabled,
 	// -1 = unlimited, N = cap). Falls back to the legacy
 	// organizations.max_per_user key for backward compatibility. If neither is
-	// configured, the default is unlimited so unseeded tenants are not blocked.
+	// configured, the default is unlimited so unseeded platforms are not blocked.
 	// Ref: §unified-tiers, japaconnect-engineering/conventions/system-settings-catalog.md
 	if s.settings != nil {
 		tier := "regular"
@@ -210,7 +210,7 @@ func (s *Service) CreateOrganization(ctx context.Context, userID pgtype.UUID, in
 	s.InvalidateOrgCache(ctx)
 
 	// v2 source directory: auto-create an intel_sources row for the organization
-	// when the tenant setting is enabled (default false).
+	// when the platform setting is enabled (default false).
 	if s.sources != nil && s.sourceAutoCreateEnabled(ctx) {
 		category := "community_organisation"
 		if org.OrgType == "university" {
@@ -437,7 +437,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, invitedBy pgtype.UUID
 }
 
 // ListInvitations returns pending invitations for an organization.
-// Tenant-scoped for defense-in-depth (BUG-005).
+// Platform-scoped for defense-in-depth (BUG-005).
 func (s *Service) ListInvitations(ctx context.Context, orgID, userID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
 	role, err := s.store.GetMemberRole(ctx, orgID, userID)
 	if err != nil {
@@ -487,7 +487,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 		return "", fmt.Errorf("finding invitation: %w", err)
 	}
 
-	// Fetch the org to get its for the tenant-scoped member-count update.
+	// Fetch the org to get its for the platform-scoped member-count update.
 	org, err := s.store.GetOrganizationByIDOnly(ctx, inv.OrganizationID)
 	if err != nil {
 		return "", fmt.Errorf("finding organization: %w", err)
@@ -592,7 +592,7 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 		return fmt.Errorf("%w: user is already a member", errpkg.ErrAlreadyExists)
 	}
 
-	// Fetch the org for the tenant-scoped member-count update (read before tx).
+	// Fetch the org for the platform-scoped member-count update (read before tx).
 	_, err = s.store.GetOrganizationByIDOnly(ctx, orgID)
 	if err != nil {
 		return fmt.Errorf("finding organization: %w", err)
@@ -664,7 +664,7 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 		return fmt.Errorf("%w: cannot remove the owner", errpkg.ErrForbidden)
 	}
 
-	// Fetch the org for tenant-scoped member-count update.
+	// Fetch the org for platform-scoped member-count update.
 	_, err = s.store.GetOrganizationByIDOnly(ctx, orgID)
 	if err != nil {
 		return fmt.Errorf("finding organization: %w", err)
@@ -700,7 +700,7 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 	return nil
 }
 
-// ListMembers returns all members of an organization. Tenant-scoped for
+// ListMembers returns all members of an organization. Platform-scoped for
 // defense-in-depth (BUG-004).
 func (s *Service) ListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
 	return s.store.ListMembers(ctx, orgID)
@@ -954,7 +954,7 @@ func (s *Service) UnverifyOrganization(ctx context.Context, id, adminID pgtype.U
 }
 
 // ActiveOrgExists reports whether an ACTIVE, non-deleted org with this id
-// exists in the tenant. Powers the public profile gate.
+// exists in the platform. Powers the public profile gate.
 func (s *Service) ActiveOrgExists(ctx context.Context, id pgtype.UUID) (bool, error) {
 	return s.store.ActiveOrgExistsByID(ctx, id)
 }
@@ -1080,13 +1080,13 @@ func (s *Service) AdminDeleteOrganization(ctx context.Context, id pgtype.UUID) e
 }
 
 // AdminListMembers lists members of an organisation (no membership check).
-// Tenant-scoped for defense-in-depth (BUG-004/005).
+// Platform-scoped for defense-in-depth (BUG-004/005).
 func (s *Service) AdminListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
 	return s.store.ListMembers(ctx, orgID)
 }
 
 // AdminListInvitations lists invitations for an organisation (no membership check).
-// Tenant-scoped for defense-in-depth (BUG-005).
+// Platform-scoped for defense-in-depth (BUG-005).
 func (s *Service) AdminListInvitations(ctx context.Context, orgID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
 	return s.store.ListInvitations(ctx, orgID)
 }

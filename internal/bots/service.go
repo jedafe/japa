@@ -36,7 +36,7 @@ func NewServiceWithValkey(store *Store, rdb *valkey.Client) *Service {
 }
 
 // invalidateCaches flushes the robots.txt, llms.txt, and bot_list caches for
-// the given tenant so the next request regenerates them from the updated
+// the given platform so the next request regenerates them from the updated
 // bot registry.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (s *Service) invalidateCaches(ctx context.Context) {
@@ -111,7 +111,7 @@ func safeInt32(v int) int32 {
 // Known Bots CRUD
 // ---------------------------------------------------------------------------
 
-// CreateKnownBot adds a new bot to the registry for the given tenant.
+// CreateKnownBot adds a new bot to the registry for the given platform.
 func (s *Service) CreateKnownBot(ctx context.Context, input CreateKnownBotInput) (BotResponse, error) {
 	bot, err := s.store.createKnownBot(ctx, gen.CreateKnownBotParams{
 
@@ -131,7 +131,7 @@ func (s *Service) CreateKnownBot(ctx context.Context, input CreateKnownBotInput)
 	return botToResponse(bot), nil
 }
 
-// GetKnownBotByID returns a single bot by ID for the given tenant.
+// GetKnownBotByID returns a single bot by ID for the given platform.
 func (s *Service) GetKnownBotByID(ctx context.Context, botID pgtype.UUID) (BotResponse, error) {
 	bot, err := s.store.getKnownBotByID(ctx, botID)
 	if err != nil {
@@ -141,7 +141,7 @@ func (s *Service) GetKnownBotByID(ctx context.Context, botID pgtype.UUID) (BotRe
 	return botToResponse(bot), nil
 }
 
-// ListKnownBots returns bots for the tenant, optionally filtered by bot_type,
+// ListKnownBots returns bots for the platform, optionally filtered by bot_type,
 // with offset pagination (page_size/page_offset).
 func (s *Service) ListKnownBots(ctx context.Context, botType string, pageSize, offset int32) ([]BotResponse, error) {
 	bots, err := s.store.listKnownBots(ctx, botType, pageSize, offset)
@@ -164,7 +164,7 @@ type ListKnownBotsResult struct {
 	TotalPages int           `json:"total_pages"`
 }
 
-// ListKnownBotsWithCount returns bots for the tenant with pagination metadata
+// ListKnownBotsWithCount returns bots for the platform with pagination metadata
 // (total count and total_pages). The frontend DataTable uses these for
 // server-side pagination.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.

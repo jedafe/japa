@@ -28,7 +28,7 @@ type ChangePasswordRequest struct {
 }
 
 // ChangePassword handles POST /api/v1/me/change-password.
-// Validates the current password, enforces the tenant's password policy
+// Validates the current password, enforces the platform's password policy
 // (from system_settings), checks password history, hashes with bcrypt cost 12,
 // records the new hash in password_history, and invalidates all sessions
 // to force re-login on all devices.
@@ -520,7 +520,7 @@ func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
 // /create composer can restore it for editing. The /me/drafts/{id} route is
 // restricted to status='draft'; this route covers the rest.
 //
-// For non-owners, the handler falls back to a tenant-scoped (non-author-
+// For non-owners, the handler falls back to a platform-scoped (non-author-
 // scoped) fetch when the caller is a super-admin or holds the RBAC
 // `content.edit` permission node. This lets editors fix content they don't
 // own. The backend still enforces the actual permission on PATCH /content/{id}.
@@ -557,7 +557,7 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Author-scoped fetch returned 404. Fall back to the tenant-scoped
+	// Author-scoped fetch returned 404. Fall back to the platform-scoped
 	// fetch only for super-admins or users with the `content.edit_any`
 	// permission node. Without a permResolver, fail closed (404).
 	if h.permResolver == nil {
@@ -730,7 +730,7 @@ func (h *Handlers) CreateMyBookmark(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMyBookmark handles DELETE /api/v1/me/bookmarks/{id}.
 // Removes a bookmark by its row ID — polymorphic, works for any entity_type
-// (content, forum_thread, space, comment, learning_track, etc.). Tenant +
+// (content, forum_thread, space, comment, learning_track, etc.). Platform +
 // owner scoped; returns 404 if the bookmark doesn't exist or belongs to
 // another user.
 func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {

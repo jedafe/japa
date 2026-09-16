@@ -1,4 +1,4 @@
-.PHONY: build run test test-integration migrate docker-up docker-down sqlc-gen lint lint-fix lint-changed fmt vet check clean
+.PHONY: build run test test-integration migrate docker-up docker-down sqlc-gen lint lint-fix lint-changed fmt vet gosec check clean
 
 # Go binary path (for tools installed via go install)
 GOBIN := $(shell go env GOPATH)/bin
@@ -57,6 +57,10 @@ fmt:
 # Vet the code
 vet:
 	go vet ./...
+
+# Run gosec security scanner with project config
+gosec:
+	gosec -conf .gosec.json ./...
 
 # Run all checks (build, vet, lint, test)
 check: build vet lint test

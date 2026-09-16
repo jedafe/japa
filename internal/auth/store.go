@@ -34,7 +34,7 @@ func (s *DBStore) Queries() *gen.Queries {
 	return s.write
 }
 
-// GetUserByEmail looks up a user by email within a tenant.
+// GetUserByEmail looks up a user by email within a platform.
 func (s *DBStore) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	row, err := s.read.GetUserByEmail(ctx,
 

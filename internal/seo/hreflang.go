@@ -26,7 +26,7 @@ type hreflangSettingsReader interface {
 var FallbackLanguages = []string{"en", "fr"}
 
 // ResolveLanguages reads i18n.enabled_languages from system_settings for the
-// given tenant and returns the parsed language list. Falls back to
+// given platform and returns the parsed language list. Falls back to
 // FallbackLanguages when the reader is nil or the setting is empty.
 // Use this instead of the old hardcoded DefaultLanguages so the hreflang set
 // matches the active language selector (Rule 3 — no hardcoded config).

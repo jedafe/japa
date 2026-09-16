@@ -50,7 +50,7 @@ func (a *WorkerAdapter) ProcessAITask(ctx context.Context, taskType, prompt, mod
 
 	// Apply the global humanization setting to background generation. There is
 	// no per-request override here (the task payload is a flat prompt string),
-	// so the global ai.humanize.* setting alone decides. The zero tenant UUID
+	// so the global ai.humanize.* setting alone decides. The zero platform UUID
 	// matches the global-setting read pattern used by participation.isEnabled.
 	if a.settings != nil {
 		enabled := a.settings.GetBoolOr(ctx, "ai.humanize.enabled", false)

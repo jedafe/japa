@@ -1,4 +1,4 @@
--- System settings queries (global scope after multi-tenancy removal).
+-- System settings queries (global scope).
 
 -- name: GetSettingValue :one
 SELECT value FROM system_settings WHERE key = $1;

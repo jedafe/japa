@@ -45,7 +45,7 @@ type FollowingInfo struct {
 const joiningPermOpen = "open"
 
 // ErrEntityNotFound is returned by ToggleFollow when the target entity does
-// not exist (or does not belong to the caller's tenant). The polymorphic
+// not exist (or does not belong to the caller's platform). The polymorphic
 // follows.entity_id column has no FK constraint, so without this check a
 // follow row can be inserted for a non-existent entity (data integrity).
 var ErrEntityNotFound = errors.New("entity not found")
@@ -68,7 +68,7 @@ func (s *Service) ToggleFollow(ctx context.Context, followerID pgtype.UUID, enti
 		return false, errors.New("cannot follow yourself")
 	}
 
-	// Validate the target entity exists in the caller's tenant before
+	// Validate the target entity exists in the caller's platform before
 	// inserting a follow row. The polymorphic entity_id has no FK, so
 	// without this check a follow row can dangle for a non-existent entity.
 	if err := s.validateEntityExists(ctx, entityType, entityId); err != nil {
@@ -469,7 +469,7 @@ func (s *Service) updateFollowerCount(ctx context.Context, entityType string, en
 }
 
 // validateEntityExists checks that the target entity exists in the caller's
-// tenant before a follow row is inserted. The polymorphic follows.entity_id
+// platform before a follow row is inserted. The polymorphic follows.entity_id
 // column has no FK constraint, so without this check a follow row can dangle
 // for a non-existent entity. Returns ErrEntityNotFound when the entity does
 // not exist.

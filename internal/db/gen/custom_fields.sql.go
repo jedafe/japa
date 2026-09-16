@@ -53,7 +53,7 @@ WHERE cf.group_id = $1
 
 // BUG-008: counts custom_field_values referencing any field in the given
 // group, so DeleteFieldGroup can reject deletion when the group is in use.
-// Tenant-scoped via the JOIN to custom_fields.
+// Platform-scoped via the JOIN to custom_fields.
 func (q *Queries) CountCustomFieldValuesByGroup(ctx context.Context, groupID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countCustomFieldValuesByGroup, groupID)
 	var column_1 int64
@@ -261,7 +261,7 @@ type DeleteCustomFieldValueParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-// BUG-014: tenant scoping via a subquery check on custom_fields.the id.
+// BUG-014: platform scoping via a subquery check on custom_fields.the id.
 func (q *Queries) DeleteCustomFieldValue(ctx context.Context, arg DeleteCustomFieldValueParams) error {
 	_, err := q.db.Exec(ctx, deleteCustomFieldValue, arg.FieldID, arg.EntityType, arg.EntityID)
 	return err
@@ -388,7 +388,7 @@ type GetCustomFieldByKeyRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
-// ADR-064a: Looks up a system custom field by its key within a tenant.
+// ADR-064a: Looks up a system custom field by its key within a platform.
 // Used by the users service to resolve field IDs for origin_country and
 // destination_country when saving geo profile fields.
 func (q *Queries) GetCustomFieldByKey(ctx context.Context, key string) (GetCustomFieldByKeyRow, error) {
@@ -475,9 +475,9 @@ type GetCustomFieldValueParams struct {
 // =====================
 // Field Values
 // =====================
-// BUG-014: JOIN custom_fields to enforce tenant scoping at the SQL layer
+// BUG-014: JOIN custom_fields to enforce platform scoping at the SQL layer
 // (defense-in-depth). The custom_field_values table has no the id column;
-// tenancy is enforced transitively via field_id → custom_fields.the id.
+// platform scoping is enforced transitively via field_id → custom_fields.the id.
 func (q *Queries) GetCustomFieldValue(ctx context.Context, arg GetCustomFieldValueParams) (CustomFieldValue, error) {
 	row := q.db.QueryRow(ctx, getCustomFieldValue, arg.FieldID, arg.EntityType, arg.EntityID)
 	var i CustomFieldValue
@@ -498,7 +498,7 @@ func (q *Queries) GetCustomFieldValue(ctx context.Context, arg GetCustomFieldVal
 	return i, err
 }
 
-const listAllCustomFieldsByTenant = `-- name: ListAllCustomFieldsByTenant :many
+const listAllCustomFields = `-- name: ListAllCustomFields :many
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
  filterable, sortable, searchable, position, created_at
@@ -507,7 +507,7 @@ FROM custom_fields
 ORDER BY group_id, position ASC, created_at ASC
 `
 
-type ListAllCustomFieldsByTenantRow struct {
+type ListAllCustomFieldsRow struct {
 	ID             pgtype.UUID        `json:"id"`
 	GroupID        pgtype.UUID        `json:"group_id"`
 	Label          string             `json:"label"`
@@ -527,17 +527,17 @@ type ListAllCustomFieldsByTenantRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
-// All fields for all groups belonging to a tenant, used to enrich
+// All fields for all groups belonging to a platform, used to enrich
 // ListFieldGroups with fields[] without N+1 per-group field lookups.
-func (q *Queries) ListAllCustomFieldsByTenant(ctx context.Context) ([]ListAllCustomFieldsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listAllCustomFieldsByTenant)
+func (q *Queries) ListAllCustomFields(ctx context.Context) ([]ListAllCustomFieldsRow, error) {
+	rows, err := q.db.Query(ctx, listAllCustomFields)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAllCustomFieldsByTenantRow
+	var items []ListAllCustomFieldsRow
 	for rows.Next() {
-		var i ListAllCustomFieldsByTenantRow
+		var i ListAllCustomFieldsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.GroupID,
@@ -554,6 +554,43 @@ func (q *Queries) ListAllCustomFieldsByTenant(ctx context.Context) ([]ListAllCus
 			&i.Filterable,
 			&i.Sortable,
 			&i.Searchable,
+			&i.Position,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllGroupAssignments = `-- name: ListAllGroupAssignments :many
+SELECT cfga.id, cfga.group_id, cfga.entity_class, cfga.entity_id, cfga.position, cfga.created_at
+FROM custom_field_group_assignments cfga
+JOIN custom_field_groups cfg ON cfga.group_id = cfg.id
+
+ORDER BY cfga.position ASC
+`
+
+// All assignments for groups belonging to a platform, used to enrich
+// ListFieldGroups with entity_type without N+1 per-group assignment lookups.
+func (q *Queries) ListAllGroupAssignments(ctx context.Context) ([]CustomFieldGroupAssignment, error) {
+	rows, err := q.db.Query(ctx, listAllGroupAssignments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomFieldGroupAssignment
+	for rows.Next() {
+		var i CustomFieldGroupAssignment
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.EntityClass,
+			&i.EntityID,
 			&i.Position,
 			&i.CreatedAt,
 		); err != nil {
@@ -605,52 +642,15 @@ func (q *Queries) ListAssignmentsByEntityClass(ctx context.Context, entityClass 
 	return items, nil
 }
 
-const listAssignmentsByTenantGroups = `-- name: ListAssignmentsByTenantGroups :many
-SELECT cfga.id, cfga.group_id, cfga.entity_class, cfga.entity_id, cfga.position, cfga.created_at
-FROM custom_field_group_assignments cfga
-JOIN custom_field_groups cfg ON cfga.group_id = cfg.id
-
-ORDER BY cfga.position ASC
-`
-
-// All assignments for groups belonging to a tenant, used to enrich
-// ListFieldGroups with entity_type without N+1 per-group assignment lookups.
-func (q *Queries) ListAssignmentsByTenantGroups(ctx context.Context) ([]CustomFieldGroupAssignment, error) {
-	rows, err := q.db.Query(ctx, listAssignmentsByTenantGroups)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []CustomFieldGroupAssignment
-	for rows.Next() {
-		var i CustomFieldGroupAssignment
-		if err := rows.Scan(
-			&i.ID,
-			&i.GroupID,
-			&i.EntityClass,
-			&i.EntityID,
-			&i.Position,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listCustomFieldGroupsByTenant = `-- name: ListCustomFieldGroupsByTenant :many
+const listCustomFieldGroups = `-- name: ListCustomFieldGroups :many
 SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 
 ORDER BY created_at DESC, id DESC
 `
 
-func (q *Queries) ListCustomFieldGroupsByTenant(ctx context.Context) ([]CustomFieldGroup, error) {
-	rows, err := q.db.Query(ctx, listCustomFieldGroupsByTenant)
+func (q *Queries) ListCustomFieldGroups(ctx context.Context) ([]CustomFieldGroup, error) {
+	rows, err := q.db.Query(ctx, listCustomFieldGroups)
 	if err != nil {
 		return nil, err
 	}
@@ -676,7 +676,7 @@ func (q *Queries) ListCustomFieldGroupsByTenant(ctx context.Context) ([]CustomFi
 	return items, nil
 }
 
-const listCustomFieldGroupsByTenantAndEntityClass = `-- name: ListCustomFieldGroupsByTenantAndEntityClass :many
+const listCustomFieldGroupsAndEntityClass = `-- name: ListCustomFieldGroupsAndEntityClass :many
 SELECT DISTINCT cfg.id, cfg.name, cfg.slug, cfg.description,
  cfg.is_system, cfg.created_at
 FROM custom_field_groups cfg
@@ -685,8 +685,8 @@ WHERE cfga.entity_class = $1
 ORDER BY cfg.created_at DESC, cfg.id DESC
 `
 
-func (q *Queries) ListCustomFieldGroupsByTenantAndEntityClass(ctx context.Context, entityClass string) ([]CustomFieldGroup, error) {
-	rows, err := q.db.Query(ctx, listCustomFieldGroupsByTenantAndEntityClass, entityClass)
+func (q *Queries) ListCustomFieldGroupsAndEntityClass(ctx context.Context, entityClass string) ([]CustomFieldGroup, error) {
+	rows, err := q.db.Query(ctx, listCustomFieldGroupsAndEntityClass, entityClass)
 	if err != nil {
 		return nil, err
 	}
@@ -726,7 +726,7 @@ type ListCustomFieldValuesByEntityParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-// BUG-014: JOIN custom_fields to enforce tenant scoping at the SQL layer.
+// BUG-014: JOIN custom_fields to enforce platform scoping at the SQL layer.
 func (q *Queries) ListCustomFieldValuesByEntity(ctx context.Context, arg ListCustomFieldValuesByEntityParams) ([]CustomFieldValue, error) {
 	rows, err := q.db.Query(ctx, listCustomFieldValuesByEntity, arg.EntityType, arg.EntityID)
 	if err != nil {
@@ -779,7 +779,7 @@ type ListCustomFieldValuesByEntityForUserParams struct {
 // BUG-017: push the visible-field-ID filter into SQL instead of fetching
 // all values and filtering in Go. The visible_field_ids array is the set
 // of field IDs the user is allowed to view per field-level RBAC.
-// Also BUG-014: tenant-scoped via JOIN to custom_fields.
+// Also BUG-014: platform-scoped via JOIN to custom_fields.
 func (q *Queries) ListCustomFieldValuesByEntityForUser(ctx context.Context, arg ListCustomFieldValuesByEntityForUserParams) ([]CustomFieldValue, error) {
 	rows, err := q.db.Query(ctx, listCustomFieldValuesByEntityForUser, arg.EntityType, arg.EntityID, arg.VisibleFieldIds)
 	if err != nil {
@@ -855,7 +855,7 @@ type ListCustomFieldValuesWithDefsByEntityRow struct {
 // a single row carries both the stored value and the metadata needed to
 // render it. Filtered to show_in_frontend = true so admin-only fields never
 // leak to public surfaces (e.g. the /universities/{slug} About facts grid,
-// Section 39). Tenant-scoped via the JOIN (BUG-014). Ordered by the field's
+// Section 39). Platform-scoped via the JOIN (BUG-014). Ordered by the field's
 // group position for stable display ordering.
 func (q *Queries) ListCustomFieldValuesWithDefsByEntity(ctx context.Context, arg ListCustomFieldValuesWithDefsByEntityParams) ([]ListCustomFieldValuesWithDefsByEntityRow, error) {
 	rows, err := q.db.Query(ctx, listCustomFieldValuesWithDefsByEntity, arg.EntityType, arg.EntityID)

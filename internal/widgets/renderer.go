@@ -272,7 +272,7 @@ func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawM
 	return json.Marshal(items)
 }
 
-// renderTrendingTags returns the most-used tags for the tenant.
+// renderTrendingTags returns the most-used tags for the platform.
 func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
 

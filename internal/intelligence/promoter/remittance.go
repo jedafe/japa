@@ -84,7 +84,7 @@ func WithRemittanceClock(fn func() time.Time) RemittancePromoterOption {
 }
 
 // NewRemittancePromoter creates a promoter backed by the given store. The
-// ID identifies the tenant stamped onto the remittance_rates rows
+// ID identifies the platform stamped onto the remittance_rates rows
 // created by the create path. No authorID is needed because remittance does
 // not create a contents guide row.
 func NewRemittancePromoter(store RemittanceStore, authorID pgtype.UUID, opts ...RemittancePromoterOption) *RemittancePromoter {

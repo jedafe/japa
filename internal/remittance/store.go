@@ -47,7 +47,7 @@ func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateRemittanceProv
 	return s.queries.UpdateRemittanceProvider(ctx, arg)
 }
 
-// GetProviderByID fetches a single provider by ID within a tenant.
+// GetProviderByID fetches a single provider by ID within a platform.
 func (s *Store) GetProviderByID(ctx context.Context, id pgtype.UUID) (gen.RemittanceProvider, error) {
 	return s.queries.GetRemittanceProviderByID(ctx,
 
@@ -113,7 +113,7 @@ func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// ListProviders lists providers for a tenant, optionally filtering to active only.
+// ListProviders lists providers for a platform, optionally filtering to active only.
 func (s *Store) ListProviders(ctx context.Context, activeOnly bool) ([]gen.RemittanceProvider, error) {
 	return s.queries.ListRemittanceProviders(ctx,
 
@@ -218,11 +218,11 @@ func (s *Store) ListActiveAlertsForCorridor(ctx context.Context, sendCurrency, r
 	})
 }
 
-// ListAllActiveAlertsForTenant returns all active alerts for a tenant that are
+// ListAllActiveAlerts returns all active alerts for a platform that are
 // eligible for notification (last_triggered_at is null or > 24h ago). Used by
 // the remittance:check_alerts task to evaluate every corridor in one pass.
-func (s *Store) ListAllActiveAlertsForTenant(ctx context.Context) ([]gen.RemittanceRateAlert, error) {
-	return s.queries.ListAllActiveAlertsForTenant(ctx)
+func (s *Store) ListAllActiveAlerts(ctx context.Context) ([]gen.RemittanceRateAlert, error) {
+	return s.queries.ListAllActiveAlerts(ctx)
 }
 
 // MarkAlertTriggered sets last_triggered_at to now() for the given alert.
@@ -258,7 +258,7 @@ type UpdateRateStoreInput struct {
 	SourceURL       *string     `json:"source_url,omitempty"`
 }
 
-// GetRateByID returns a single remittance rate by id and tenant.
+// GetRateByID returns a single remittance rate by id and platform.
 func (s *Store) GetRateByID(ctx context.Context, id pgtype.UUID) (gen.RemittanceRate, error) {
 	const q = `
 SELECT id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct,
@@ -282,7 +282,7 @@ WHERE id = $1
 	return r, nil
 }
 
-// UpdateRate updates a remittance_rate row by id and tenant, returning the row.
+// UpdateRate updates a remittance_rate row by id and platform, returning the row.
 func (s *Store) UpdateRate(ctx context.Context, id pgtype.UUID, in UpdateRateStoreInput) (gen.RemittanceRate, error) {
 	existing, err := s.GetRateByID(ctx, id)
 	if err != nil {
@@ -382,7 +382,7 @@ func (s *Store) UpdateRate(ctx context.Context, id pgtype.UUID, in UpdateRateSto
 	return r, nil
 }
 
-// DeleteRate deletes a remittance_rate row by id and tenant.
+// DeleteRate deletes a remittance_rate row by id and platform.
 func (s *Store) DeleteRate(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM remittance_rates WHERE id = $1`, id)
 	if err != nil {

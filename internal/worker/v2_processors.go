@@ -69,7 +69,7 @@ type RemittanceProcessor interface {
 	// FetchRates fetches rates for a single provider (admin-triggered).
 	FetchRates(ctx context.Context, providerID pgtype.UUID) error
 	// FetchAllRates iterates all active API-sourced providers across all
-	// tenants (scheduler-triggered sweep). Returns the number of providers
+	// platforms (scheduler-triggered sweep). Returns the number of providers
 	// processed.
 	FetchAllRates(ctx context.Context) (int, error)
 	CheckAlerts(ctx context.Context) (int, error)
@@ -244,7 +244,7 @@ type ScamAlertProcessor interface {
 // table from shared, non-deleted visa_timelines + their milestones (nightly,
 // low queue). PromptUpdate sends a weekly nudge to members with in-progress
 // timelines (weekly, low queue). Both run in cron mode (no payload) and
-// iterate all tenants inside the processor.
+// iterate all platforms inside the processor.
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md.
 type VisaTimelineProcessor interface {
 	RefreshStats(ctx context.Context) (int64, error)
@@ -624,7 +624,7 @@ func HandleScholarshipCheckDeadlines(ctx context.Context, _ *asynq.Task) error {
 
 // HandleRemittanceFetchRates fetches live rates for a provider (§74).
 // When called by the cron scheduler with an empty payload, it iterates all
-// active API-sourced providers across all tenants. When called with a
+// active API-sourced providers across all platforms. When called with a
 // provider_id (admin manual trigger), it fetches only that provider.
 func HandleRemittanceFetchRates(ctx context.Context, t *asynq.Task) error {
 	if remittanceProcessor == nil {
@@ -1087,7 +1087,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 // draft/review digest edition whose 1-hour admin review window has elapsed
 // (scheduled_for <= now()) and enqueues digest:send_email per edition. The
 // processor is nil-safe (skips when no DigestProcessor is registered). The
-// task carries no payload — it sweeps all tenants in a single UPDATE.
+// task carries no payload — it sweeps all platforms in a single UPDATE.
 // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func HandleDigestAutoPublish(ctx context.Context, _ *asynq.Task) error {
 	if digestProcessor == nil {
@@ -1200,7 +1200,7 @@ func HandleScamAlertNotifySubscribers(ctx context.Context, t *asynq.Task) error 
 // HandleVisaTimelineRefreshStats recomputes the visa_processing_stats
 // aggregate table from shared, non-deleted visa_timelines and their
 // milestones (§83, ADR-091). Runs nightly on the low queue in cron mode
-// (no payload); the processor iterates all tenants internally.
+// (no payload); the processor iterates all platforms internally.
 func HandleVisaTimelineRefreshStats(ctx context.Context, _ *asynq.Task) error {
 	return countTask(ctx, "visa_timeline:refresh_stats", "refreshed stat rows", visaTimelineProcessor != nil,
 		func(ctx context.Context) (int64, error) { return visaTimelineProcessor.RefreshStats(ctx) })
@@ -1209,7 +1209,7 @@ func HandleVisaTimelineRefreshStats(ctx context.Context, _ *asynq.Task) error {
 // HandleVisaTimelinePromptUpdate sends a weekly nudge to members with
 // in-progress visa timelines (no decision/visa_issued milestone) prompting
 // them to add a milestone (§83, ADR-091). Runs weekly on the low queue in
-// cron mode (no payload); the processor iterates all tenants internally.
+// cron mode (no payload); the processor iterates all platforms internally.
 func HandleVisaTimelinePromptUpdate(ctx context.Context, _ *asynq.Task) error {
 	return countTask(ctx, "visa_timeline:prompt_update", "sent prompts", visaTimelineProcessor != nil,
 		func(ctx context.Context) (int64, error) { return visaTimelineProcessor.PromptUpdate(ctx) })

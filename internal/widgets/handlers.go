@@ -169,7 +169,7 @@ func (h *Handlers) DeleteWidget(w http.ResponseWriter, r *http.Request) {
 // rendered widget data, Valkey-cached by the widget's cache_ttl_secs.
 // Sets X-Cache: HIT or X-Cache: MISS response header.
 func (h *Handlers) RenderWidget(w http.ResponseWriter, r *http.Request) {
-	// Public endpoint — no tenant required (widget is resolved
+	// Public endpoint — no platform required (widget is resolved
 	// row itself). No auth required per Section 16.
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {

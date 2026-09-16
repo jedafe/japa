@@ -315,7 +315,7 @@ func (p *SpamPipeline) checkContentHash(ctx context.Context, req SpamCheckReques
 	return name, 0.0, nil
 }
 
-// checkCensoredWords runs the content against the tenant's censored word list.
+// checkCensoredWords runs the content against the platform's censored word list.
 func (p *SpamPipeline) checkCensoredWords(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "censored_words"
 

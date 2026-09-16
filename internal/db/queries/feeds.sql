@@ -658,7 +658,7 @@ LIMIT 20;
 
 -- name: PruneOldFeeds :exec
 -- Intentionally global (no the id filter): this is a retention prune that
--- runs weekly across all tenants. Ref: Section 32, asynq-tasks catalog.
+-- runs weekly across the platform. Ref: Section 32, asynq-tasks catalog.
 DELETE FROM feeds WHERE created_at < now() - interval '30 days';
 
 -- name: ListSourcesByContentIDs :many

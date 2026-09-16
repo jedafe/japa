@@ -34,8 +34,8 @@ import (
 var ErrOrgPostForbidden = errors.New("not authorized to post as this organization")
 
 // ErrDuplicateContent is returned when an insert or update would produce a
-// row with a content_hash that already exists for the same tenant (Rule 12 /
-// BL-006). The unique index idx_contents_tenant_content_hash is the ultimate
+// row with a content_hash that already exists for the same platform (Rule 12 /
+// BL-006). The unique index idx_contents_platform_content_hash is the ultimate
 // guard, but this explicit pre-check yields a clean 409 instead of a raw
 // 23505 violation.
 var ErrDuplicateContent = errors.New("duplicate content: a post with this content already exists")
@@ -51,7 +51,7 @@ var ErrEditWindowExpired = errors.New("edit window has expired")
 var ErrMissingPrimarySpace = errors.New("content requires a primary space")
 
 // ErrInvalidSpace is returned when a content space assignment references a
-// space that does not exist in the content's tenant (BUG-018).
+// space that does not exist in the content's platform (BUG-018).
 var ErrInvalidSpace = errors.New("invalid space for content")
 
 // ErrNotSpaceMember is returned when a user tries to assign a space they
@@ -220,7 +220,7 @@ const DefaultPageSize = 20
 const MaxPageSize = 100
 
 // webhookEmitter fans a content.* event out to all subscribed webhook
-// endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
+// endpoints for the platform (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
 	EmitEvent(ctx context.Context, eventType string, payload any)
 }

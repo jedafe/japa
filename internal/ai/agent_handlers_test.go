@@ -4,7 +4,7 @@
 // Tests verify:
 //   - SSE streaming: headers, event format, channel drain.
 //   - Capabilities: RBAC-filtered catalog + geo context.
-//   - Session history: pagination, tenant/user scoping.
+//   - Session history: pagination, platform/user scoping.
 //   - Session detail: ownership enforcement, tool call inclusion.
 //   - Session cancellation: ownership, already-completed conflict, Valkey flag.
 //   - Authorship reassignment: provenance merge, ownership, UUID validation.
@@ -269,25 +269,25 @@ func (c *stubCache) Set(_ context.Context, key, value string, _ int) error {
 // Test helpers
 // ---------------------------------------------------------------------------
 
-// testTenant is a minimal test stand-in for the removed tenant type.
-type testTenant struct {
+// testPlatform is a minimal test stand-in for the removed platform type.
+type testPlatform struct {
 	ID   pgtype.UUID
 	Name string
 	Slug string
 }
 
-// testUserAndTenant creates a test user + tenant and returns them.
-func testUserAndTenant() (*auth.AuthenticatedUser, *testTenant) {
+// testUserAndPlatform creates a test user + platform and returns them.
+func testUserAndPlatform() (*auth.AuthenticatedUser, *testPlatform) {
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	tid := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 
 	return &auth.AuthenticatedUser{UserID: uid, SessionID: "test-jti"},
-		&testTenant{ID: tid, Name: "Test", Slug: "test"}
+		&testPlatform{ID: tid, Name: "Test", Slug: "test"}
 }
 
-// withAuthContext returns a request with the user + tenant injected into
-// the context, simulating what RequireAuth + tenant middleware do.
-func withAuthContext(r *http.Request, user *auth.AuthenticatedUser, t *testTenant) *http.Request {
+// withAuthContext returns a request with the user + platform injected into
+// the context, simulating what RequireAuth + platform middleware do.
+func withAuthContext(r *http.Request, user *auth.AuthenticatedUser, t *testPlatform) *http.Request {
 	ctx := context.WithValue(r.Context(), auth.UserContextKey, user)
 	ctx = context.WithValue(ctx, struct{}{}, t)
 
@@ -355,7 +355,7 @@ func TestHandleAgent_NoAuth(t *testing.T) {
 func TestHandleAgent_EmptyPrompt(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{"prompt":""}`))
 	req = withAuthContext(req, user, tn)
@@ -375,7 +375,7 @@ func TestHandleAgent_EmptyPrompt(t *testing.T) {
 func TestHandleAgent_InvalidJSON(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{bad`))
 	req = withAuthContext(req, user, tn)
@@ -390,7 +390,7 @@ func TestHandleAgent_InvalidJSON(t *testing.T) {
 func TestHandleAgent_SSEHeaders(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{"prompt":"hello"}`))
 	req = withAuthContext(req, user, tn)
@@ -415,7 +415,7 @@ func TestHandleAgent_SSEHeaders(t *testing.T) {
 func TestHandleAgent_SSEEventFormat(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{"prompt":"hello"}`))
 	req = withAuthContext(req, user, tn)
@@ -453,7 +453,7 @@ func TestHandleAgent_SSEEventFormat(t *testing.T) {
 func TestHandleListSessions_Pagination(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	// Seed 3 sessions for the user.
 	for range 3 {
@@ -508,7 +508,7 @@ func TestHandleListSessions_NoAuth(t *testing.T) {
 func TestHandleListSessions_UserScoping(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	otherUser := randomUUID()
 
 	// Seed a session for a different user.
@@ -555,7 +555,7 @@ func TestHandleListSessions_UserScoping(t *testing.T) {
 func TestHandleGetSession_NotFound(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	// Use chi router to set URL params.
 	r := chi.NewRouter()
@@ -579,7 +579,7 @@ func TestHandleGetSession_NotFound(t *testing.T) {
 func TestHandleGetSession_WithToolCalls(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
@@ -626,7 +626,7 @@ func TestHandleGetSession_WithToolCalls(t *testing.T) {
 func TestHandleGetSession_OwnershipEnforced(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	// A session owned by a different user.
 	otherUID := pgtype.UUID{Bytes: [16]byte{8}, Valid: true}
@@ -654,7 +654,7 @@ func TestHandleGetSession_OwnershipEnforced(t *testing.T) {
 func TestHandleGetSession_InvalidUUID(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	r := chi.NewRouter()
 	r.Get("/ai/agent/sessions/{id}", h.HandleGetSession)
@@ -681,7 +681,7 @@ func TestHandleGetSession_InvalidUUID(t *testing.T) {
 func TestHandleCancelSession_Success(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, cache := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
@@ -712,7 +712,7 @@ func TestHandleCancelSession_Success(t *testing.T) {
 func TestHandleCancelSession_AlreadyCompleted(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
@@ -743,7 +743,7 @@ func TestHandleCancelSession_AlreadyCompleted(t *testing.T) {
 func TestHandleCancelSession_NotOwner(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	otherUID := pgtype.UUID{Bytes: [16]byte{8}, Valid: true}
 	sessID := randomUUID()
@@ -775,7 +775,7 @@ func TestHandleCancelSession_NotOwner(t *testing.T) {
 func TestHandleCancelSession_RaceCompleted(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
@@ -813,7 +813,7 @@ func TestHandleCancelSession_RaceCompleted(t *testing.T) {
 func TestHandleReassignAuthor_Success(t *testing.T) {
 	t.Parallel()
 	h, _, content, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	contentID := randomUUID()
 	content.contents[contentID.String()] = gen.GetContentByIDRow{
@@ -871,7 +871,7 @@ func TestHandleReassignAuthor_Success(t *testing.T) {
 func TestHandleReassignAuthor_ContentNotFound(t *testing.T) {
 	t.Parallel()
 	h, _, content, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	newAuthorID := randomUUID()
 	// Seed the author so the validity check passes; the content lookup
@@ -903,7 +903,7 @@ func TestHandleReassignAuthor_ContentNotFound(t *testing.T) {
 func TestHandleReassignAuthor_InvalidAuthor(t *testing.T) {
 	t.Parallel()
 	h, _, content, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	contentID := randomUUID()
 	content.contents[contentID.String()] = gen.GetContentByIDRow{
@@ -936,7 +936,7 @@ func TestHandleReassignAuthor_InvalidAuthor(t *testing.T) {
 func TestHandleReassignAuthor_MissingNewAuthorID(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	r := chi.NewRouter()
 	r.Post("/content/{id}/reassign-author", h.HandleReassignAuthor)
@@ -955,7 +955,7 @@ func TestHandleReassignAuthor_MissingNewAuthorID(t *testing.T) {
 func TestHandleReassignAuthor_InvalidUUID(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	r := chi.NewRouter()
 	r.Post("/content/{id}/reassign-author", h.HandleReassignAuthor)
@@ -1036,7 +1036,7 @@ func TestMergeAuthorProvenance_PreservesExistingFields(t *testing.T) {
 func TestHandleGetAIPrivacy_Success(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	sessions.userExempt = true
 
 	req := httptest.NewRequest(http.MethodGet, "/me/ai-privacy", nil)
@@ -1064,7 +1064,7 @@ func TestHandleGetAIPrivacy_Success(t *testing.T) {
 func TestHandleSetAIPrivacy_Profile(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	body := bytes.NewBufferString(`{"entity_type":"profile","entity_id":"` + user.UserID.String() + `","ai_exempt":true}`)
 	req := httptest.NewRequest(http.MethodPut, "/me/ai-privacy", body)
@@ -1080,7 +1080,7 @@ func TestHandleSetAIPrivacy_Profile(t *testing.T) {
 func TestHandleSetAIPrivacy_ProfileNotOwner(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	otherID := randomUUID()
 
 	body := bytes.NewBufferString(`{"entity_type":"profile","entity_id":"` + otherID.String() + `","ai_exempt":true}`)
@@ -1102,7 +1102,7 @@ func TestHandleSetAIPrivacy_ProfileNotOwner(t *testing.T) {
 func TestHandleSetAIPrivacy_ContentNotOwner(t *testing.T) {
 	t.Parallel()
 	h, _, content, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	otherUID := pgtype.UUID{Bytes: [16]byte{8}, Valid: true}
 
 	contentID := randomUUID()
@@ -1126,7 +1126,7 @@ func TestHandleSetAIPrivacy_ContentNotOwner(t *testing.T) {
 func TestHandleSetAIPrivacy_CFV_UserEntityOwner(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	cfvID := randomUUID()
 	sessions.cfvEntities[cfvID.String()] = gen.GetCustomFieldValueEntityRow{
@@ -1148,7 +1148,7 @@ func TestHandleSetAIPrivacy_CFV_UserEntityOwner(t *testing.T) {
 func TestHandleSetAIPrivacy_CFV_UserEntityNotOwner(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	otherUID := pgtype.UUID{Bytes: [16]byte{8}, Valid: true}
 
 	cfvID := randomUUID()
@@ -1176,7 +1176,7 @@ func TestHandleSetAIPrivacy_CFV_UserEntityNotOwner(t *testing.T) {
 func TestHandleSetAIPrivacy_CFV_ContentEntityOwner(t *testing.T) {
 	t.Parallel()
 	h, sessions, content, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	contentID := randomUUID()
 	content.contents[contentID.String()] = gen.GetContentByIDRow{
@@ -1205,7 +1205,7 @@ func TestHandleSetAIPrivacy_CFV_ContentEntityOwner(t *testing.T) {
 func TestHandleSetAIPrivacy_CFV_ContentEntityNotOwner(t *testing.T) {
 	t.Parallel()
 	h, sessions, content, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	otherUID := pgtype.UUID{Bytes: [16]byte{8}, Valid: true}
 
 	contentID := randomUUID()
@@ -1235,7 +1235,7 @@ func TestHandleSetAIPrivacy_CFV_ContentEntityNotOwner(t *testing.T) {
 func TestHandleSetAIPrivacy_CFV_NotFound(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	cfvID := randomUUID()
 	// Don't seed cfvEntities — the lookup should return ErrNoRows.
@@ -1259,7 +1259,7 @@ func TestHandleSetAIPrivacy_CFV_NotFound(t *testing.T) {
 func TestHandleSetAIPrivacy_CFV_UnknownEntityType(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	cfvID := randomUUID()
 	sessions.cfvEntities[cfvID.String()] = gen.GetCustomFieldValueEntityRow{
@@ -1281,7 +1281,7 @@ func TestHandleSetAIPrivacy_CFV_UnknownEntityType(t *testing.T) {
 func TestHandleSetAIPrivacy_InvalidEntityType(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	body := bytes.NewBufferString(`{"entity_type":"invalid","entity_id":"` + user.UserID.String() + `","ai_exempt":true}`)
 	req := httptest.NewRequest(http.MethodPut, "/me/ai-privacy", body)
@@ -1302,7 +1302,7 @@ func TestHandleSetAIPrivacy_InvalidEntityType(t *testing.T) {
 func TestHandleSetAIPrivacy_MissingEntityID(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	body := bytes.NewBufferString(`{"entity_type":"profile","ai_exempt":true}`)
 	req := httptest.NewRequest(http.MethodPut, "/me/ai-privacy", body)
@@ -1322,9 +1322,9 @@ func TestHandleSetAIPrivacy_MissingEntityID(t *testing.T) {
 func TestHandleAdminListSessions_Success(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
-	// Seed sessions for the tenant.
+	// Seed sessions for the platform.
 	for range 2 {
 		id := randomUUID()
 		sessions.sessions[id.String()] = gen.AiAgentSession{
@@ -1361,7 +1361,7 @@ func TestHandleAdminListSessions_Success(t *testing.T) {
 func TestHandleAdminListSessions_StatusFilter(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	sessions.sessions[randomUUID().String()] = gen.AiAgentSession{ID: randomUUID(), UserID: user.UserID, Status: "running"}
 	sessions.sessions[randomUUID().String()] = gen.AiAgentSession{ID: randomUUID(), UserID: user.UserID, Status: "completed"}
@@ -1387,7 +1387,7 @@ func TestHandleAdminListSessions_StatusFilter(t *testing.T) {
 func TestHandleAdminGetSession_Success(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
@@ -1428,7 +1428,7 @@ func TestHandleAdminGetSession_Success(t *testing.T) {
 func TestHandleAdminGetSession_NotFound(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	r := chi.NewRouter()
 	r.Get("/admin/agent/sessions/{id}", h.HandleAdminGetSession)
@@ -1446,7 +1446,7 @@ func TestHandleAdminGetSession_NotFound(t *testing.T) {
 func TestHandleAdminToolStats_Success(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	sessions.toolStats = []gen.GetAgentToolStatsRow{
 		{ToolName: "content.search", TotalCalls: 10, SuccessCount: 8, ErrorCount: 2},
@@ -1479,7 +1479,7 @@ func TestHandleAdminToolStats_Success(t *testing.T) {
 func TestHandleAdminToolStats_DateRange(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/agent/tool-stats?from=2024-01-01&to=2024-12-31", nil)
 	req = withAuthContext(req, user, tn)
@@ -1494,7 +1494,7 @@ func TestHandleAdminToolStats_DateRange(t *testing.T) {
 func TestHandleAdminToolStats_InvalidDateRange(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/agent/tool-stats?from=not-a-date", nil)
 	req = withAuthContext(req, user, tn)
@@ -1509,7 +1509,7 @@ func TestHandleAdminToolStats_InvalidDateRange(t *testing.T) {
 func TestHandleAdminCostReport_Success(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 
 	username := "testuser"
 	sessions.costReport = []gen.GetAgentCostReportRow{

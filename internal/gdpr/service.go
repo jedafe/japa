@@ -190,7 +190,7 @@ var validConsentTypes = []string{
 }
 
 // GetConsentConfig returns the valid consent types and the current privacy
-// policy version for the tenant. The policy version is sourced from
+// policy version for the platform. The policy version is sourced from
 // system_settings key "gdpr.policy_version" (default "1.0") so admins can
 // bump it without a code change (BUG-016).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
@@ -232,9 +232,9 @@ func (s *Service) RevokeConsent(ctx context.Context, userID pgtype.UUID, consent
 	})
 }
 
-// ListConsentsByTenant returns consent records for admin compliance reports.
-func (s *Service) ListConsentsByTenant(ctx context.Context, consentType string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
-	return s.store.listConsentsByTenant(ctx, consentType, limit, offset)
+// ListConsents returns consent records for admin compliance reports.
+func (s *Service) ListConsents(ctx context.Context, consentType string, limit, offset int32) ([]gen.ListConsentsRow, error) {
+	return s.store.listConsentsByPlatform(ctx, consentType, limit, offset)
 }
 
 // ---------------------------------------------------------------------------
@@ -397,8 +397,8 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 }
 
 // ListPendingDataExportRequests returns pending export requests for the
-// caller's tenant (BUG-GDPR-002: tenant-scoped so an admin in tenant A
-// cannot see tenant B's pending export requests, §5.3 cross-tenant bleed).
+// caller's platform (BUG-GDPR-002: platform-scoped so an admin in platform A
+// cannot see platform B's pending export requests, §5.3 cross-platform bleed).
 func (s *Service) ListPendingDataExportRequests(ctx context.Context, limit int32) ([]gen.DataExportRequest, error) {
 	return s.store.listPendingDataExportRequests(ctx, limit)
 }
@@ -1476,7 +1476,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// has last_reviewed_by uuid REFERENCES users(id) with no ON DELETE clause.
 		// Without this, the HardDeleteUser DELETE fails with a FK violation for
 		// any admin who has approved/published doc pages. The doc pages themselves
-		// are retained (they are tenant content, not user PII). Ref: §44; ADR-014.
+		// are retained (they are platform content, not user PII). Ref: §44; ADR-014.
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE doc_pages SET last_reviewed_by = NULL
 			WHERE last_reviewed_by = $1
@@ -1488,7 +1488,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// Section 16) has created_by uuid REFERENCES users(id) with no ON DELETE
 		// clause (migration 000055). Without this, the HardDeleteUser DELETE
 		// fails with a FK violation for any admin who has created page-builder
-		// pages. The pages themselves are retained (they are tenant CMS content,
+		// pages. The pages themselves are retained (they are platform CMS content,
 		// not user PII). Ref: §16; §15 GDPR erasure.
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE pages SET created_by = NULL
@@ -1513,7 +1513,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// However, webhook_deliveries.payload may contain user PII (e.g. event
 		// payloads referencing the user). Delete deliveries whose payload
 		// contains the user's UUID so PII does not survive erasure. The
-		// webhook_endpoints themselves are tenant config and survive with
+		// webhook_endpoints themselves are platform config and survive with
 		// created_by nullified. Ref: §12; §15 GDPR erasure.
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM webhook_deliveries
@@ -1835,7 +1835,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// (polymorphic entity_type/entity_id), so ON DELETE CASCADE does not
 		// fire. The thread body may contain PII (the user's words), so it
 		// must be removed on erasure. Spaces and learning_tracks are
-		// tenant-owned content (no author_user_id column) and are not
+		// platform-owned content (no author_user_id column) and are not
 		// purged here — they are not user PII.
 		// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
 		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
@@ -1982,8 +1982,8 @@ func (s *Service) HardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 }
 
 // ListPendingDeletionRequests returns pending deletion requests for the
-// caller's tenant (BUG-GDPR-001: tenant-scoped so an admin in tenant A
-// cannot see tenant B's pending deletion requests, §5.3 cross-tenant bleed).
+// caller's platform (BUG-GDPR-001: platform-scoped so an admin in platform A
+// cannot see platform B's pending deletion requests, §5.3 cross-platform bleed).
 func (s *Service) ListPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.ListPendingDeletionRequestsRow, error) {
 	return s.store.listPendingDeletionRequests(ctx, limit)
 }

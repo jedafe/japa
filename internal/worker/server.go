@@ -136,9 +136,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Weekly newsletter digest — day/hour from newsletter.digest_day and
 	// newsletter.digest_hour_utc system_settings (§62, ADR-080 §5), falling
 	// back to JC_NEWSLETTER_DIGEST_DAY / JC_NEWSLETTER_DIGEST_HOUR_UTC env
-	// vars, then to the spec defaults (Monday 08:00 UTC). The per-tenant
-	// settings are read from the global tenant (super-admin) row; individual
-	// tenants override via the env vars or SchedulerCronSpecs config.
+	// vars, then to the spec defaults (Monday 08:00 UTC). The per-platform
+	// settings are read from the global platform (super-admin) row; individual
+	// platforms override via the env vars or SchedulerCronSpecs config.
 	schedule(newsletterDigestCronSpec(), TypeNewsletterDigest, 7*24*time.Hour)
 
 	// Daily sitemap generation — 02:00 UTC.
@@ -149,7 +149,7 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// Daily scholarship deadline-reminder sweep — 05:00 UTC (§73, ADR-073).
 	// Offset from other daily tasks to spread Redis load. The handler
-	// iterates tenants, finds saved scholarships whose application_deadline
+	// iterates platforms, finds saved scholarships whose application_deadline
 	// is within remind_before_days, dispatches a notification per match,
 	// and marks the reminder as sent.
 	schedule("0 5 * * *", TypeScholarshipCheckDeadlines, 24*time.Hour)
@@ -225,7 +225,7 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// Weekly community digest generation — Sunday 22:00 UTC (§84, ADR-092).
 	// Assembles a new digest edition from platform analytics (top threads,
-	// new members, events, featured story, poll) for each active tenant.
+	// new members, events, featured story, poll) for each active platform.
 	// The edition enters the 1-hour admin review window before auto-publish.
 	// Low queue.
 	schedule("0 22 * * 0", TypeDigestGenerate, 7*24*time.Hour)
@@ -258,9 +258,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// Remittance rate fetch — every 30 min (§74, ADR-075 §8).
 	// The cron spec can be overridden via JC_SCHEDULER_CRON_REMITTANCE_FETCH_RATES.
-	// The per-tenant fetch interval (remittance.fetch_interval_minutes) is
+	// The per-platform fetch interval (remittance.fetch_interval_minutes) is
 	// enforced inside the handler — the scheduler fires globally every 30 min
-	// and the handler skips tenants whose interval hasn't elapsed.
+	// and the handler skips platforms whose interval hasn't elapsed.
 	schedule("*/30 * * * *", TypeRemittanceFetchRates, 30*time.Minute)
 
 	// Remittance alert check — every 30 min (§74, ADR-075 §4).
@@ -283,7 +283,7 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// Japa University — monthly payout aggregation sweep (ADR-063 §6).
 	// Runs on the 1st of each month at 00:00 UTC. The handler tolerates an
-	// empty (cron-mode) and iterates all active tenants, rolling
+	// empty (cron-mode) and iterates all active platforms, rolling
 	// open revenue_splits into instructor_payouts rows for the previous
 	// calendar month. The cadence matches the university.payout_schedule
 	// system_setting default ("monthly"); a future weekly cadence would add

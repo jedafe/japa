@@ -272,7 +272,7 @@ func TestActivityPolicy_DefaultRoundTrip(t *testing.T) {
 // therefore the default profile type resolution must run). This is the
 // core of the BUG-007 fix: resolveDefaultTypeID must NOT be called when
 // every input supplies an explicit type_id, so provisioning succeeds on
-// tenants that lack the 'contributor'/'columnist' default types.
+// platforms that lack the 'contributor'/'columnist' default types.
 func TestProvisionPersonas_NeedsDefaultLogic(t *testing.T) {
 	tests := []struct {
 		name     string

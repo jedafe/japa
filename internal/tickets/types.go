@@ -118,7 +118,7 @@ const (
 
 // ListTicketsResponse is the paginated response for listing tickets.
 type ListTicketsResponse struct {
-	Tickets    []gen.ListTicketsByTenantRow `json:"tickets"`
+	Tickets    []gen.ListTicketsRow `json:"tickets"`
 	Total      int64                        `json:"total"`
 	Page       int32                        `json:"page"`
 	TotalPages int32                        `json:"total_pages"`

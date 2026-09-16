@@ -129,7 +129,7 @@ func (s *Store) CreateBatch(ctx context.Context, createdBy pgtype.UUID, name str
 	return b, err
 }
 
-// GetJob fetches a single job by ID within a tenant.
+// GetJob fetches a single job by ID within a platform.
 func (s *Store) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 	var j Job
 	err := s.db.Reader.QueryRow(ctx, `
@@ -361,7 +361,7 @@ func (s *Store) UpdateJobPublished(ctx context.Context, id, draftContentID pgtyp
 	return err
 }
 
-// ListBatches lists batches for a tenant.
+// ListBatches lists batches for a platform.
 func (s *Store) ListBatches(ctx context.Context, limit, offset int32) ([]Batch, int64, error) {
 	rows, err := s.db.Reader.Query(ctx, `SELECT id, name, description, created_by, created_at
 		 FROM studio_batches  ORDER BY created_at DESC
@@ -388,7 +388,7 @@ func (s *Store) ListBatches(ctx context.Context, limit, offset int32) ([]Batch, 
 	return batches, total, rows.Err()
 }
 
-// GetBatch fetches a single batch by ID within a tenant.
+// GetBatch fetches a single batch by ID within a platform.
 func (s *Store) GetBatch(ctx context.Context, id pgtype.UUID) (Batch, error) {
 	var b Batch
 	err := s.db.Reader.QueryRow(ctx, `SELECT id, name, description, created_by, created_at
@@ -503,7 +503,7 @@ type StudioStats struct {
 	AvgReviewH  float64 `json:"avg_review_hours"`
 }
 
-// GetStats returns aggregate studio stats for a tenant.
+// GetStats returns aggregate studio stats for a platform.
 func (s *Store) GetStats(ctx context.Context) (StudioStats, error) {
 	var st StudioStats
 	err := s.db.Reader.QueryRow(ctx, `
@@ -532,7 +532,7 @@ func (s *Store) GetStats(ctx context.Context) (StudioStats, error) {
 }
 
 // CountActiveJobs returns the number of jobs in 'queued' or 'generating' status
-// for a tenant. Used to enforce studio.max_concurrent_jobs (ADR-076, §75).
+// for a platform. Used to enforce studio.max_concurrent_jobs (ADR-076, §75).
 func (s *Store) CountActiveJobs(ctx context.Context) (int, error) {
 	var count int
 	err := s.db.Reader.QueryRow(ctx, `SELECT count(*) FROM studio_jobs WHERE status IN ('queued','generating')`).Scan(&count)

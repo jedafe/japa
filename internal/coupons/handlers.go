@@ -137,7 +137,7 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
-	// Verify the coupon exists (tenant-scoped) before recording the event so
+	// Verify the coupon exists (platform-scoped) before recording the event so
 	// a missing coupon returns 404 instead of an FK-violation 500 (BUG-013).
 	if _, err := h.Service.GetCoupon(r.Context(), id); err != nil {
 		handleServiceError(w, err)
@@ -425,8 +425,8 @@ func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
 // ── Render Helpers ──────────────────────────────────────────────────
 
 // RenderCoupon handles GET /api/v1/render/coupon/:id
-// BE-LOW-001: tenant-scoped — the tenant context from the request ensures
-// a render request cannot resolve a coupon from another tenant.
+// BE-LOW-001: platform-scoped — the platform context from the request ensures
+// a render request cannot resolve a coupon from another platform.
 func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
@@ -445,8 +445,8 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 }
 
 // RenderAffiliateLink handles GET /api/v1/render/affiliate-link
-// BE-LOW-001: tenant-scoped — the tenant context from the request ensures
-// a render request cannot resolve a provider from another tenant.
+// BE-LOW-001: platform-scoped — the platform context from the request ensures
+// a render request cannot resolve a provider from another platform.
 func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
 
 	providerIDStr := r.URL.Query().Get("provider_id")

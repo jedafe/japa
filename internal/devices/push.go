@@ -4,7 +4,7 @@
 // APNs (Apple Push Notification service) PushDispatcher implementations, plus
 // a CompositeDispatcher that routes by platform.
 //
-// Credentials are read from system_settings per-tenant (hot-reloadable per
+// Credentials are read from system_settings per-platform (hot-reloadable per
 // Rule 3):
 //   - push.apns_key_id         — APNs key ID (10-char hex)
 //   - push.apns_team_id        — Apple Team ID (10-char hex)
@@ -75,7 +75,7 @@ type fcmState struct {
 }
 
 // NewCompositeDispatcher creates a dispatcher that reads FCM/APNs credentials
-// from system_settings per-tenant on each dispatch. The settings cache
+// from system_settings per-platform on each dispatch. The settings cache
 // (5-min TTL in config.Settings) prevents per-request DB lookups.
 func NewCompositeDispatcher(settings settingReader) *CompositeDispatcher {
 	return &CompositeDispatcher{

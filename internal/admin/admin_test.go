@@ -44,8 +44,8 @@ func (c *multiValueCtx) Value(key any) any {
 	return c.Context.Value(key)
 }
 
-// withAuthAndTenant injects both auth user and tenant into the request context.
-func withAuthAndTenant(t *testing.T, r *http.Request) *http.Request {
+// withAuthAndPlatform injects both auth user and platform into the request context.
+func withAuthAndPlatform(t *testing.T, r *http.Request) *http.Request {
 	t.Helper()
 
 	user := &auth.AuthenticatedUser{
@@ -57,7 +57,7 @@ func withAuthAndTenant(t *testing.T, r *http.Request) *http.Request {
 		Slug string
 	}{
 		ID:   mustUUID(t, "00000000-0000-0000-0000-000000000001"),
-		Name: "Test Tenant",
+		Name: "Test Platform",
 		Slug: "test",
 	}
 
@@ -70,7 +70,7 @@ func withAuthAndTenant(t *testing.T, r *http.Request) *http.Request {
 	})
 }
 
-// withAuthOnly injects only an auth user (no tenant) into the request context.
+// withAuthOnly injects only an auth user (no platform) into the request context.
 func withAuthOnly(t *testing.T, r *http.Request) *http.Request {
 	t.Helper()
 
@@ -138,10 +138,10 @@ func TestListSettings_Unauthorized(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ListSettings — tenant unavailable
+// ListSettings — platform unavailable
 // ---------------------------------------------------------------------------
 
-func _TestListSettings_TenantUnavailable(t *testing.T) {
+func _TestListSettings_PlatformUnavailable(t *testing.T) {
 	t.Parallel()
 
 	h := newHandlers()
@@ -165,7 +165,7 @@ func TestListSettings_DBError(t *testing.T) {
 
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodGet, "/admin/settings", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	// h.DB is nil, so h.DB.Reader.Query will panic with nil pointer dereference.
@@ -197,10 +197,10 @@ func TestUpdateSettings_Unauthorized(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// UpdateSettings — tenant unavailable
+// UpdateSettings — platform unavailable
 // ---------------------------------------------------------------------------
 
-func _TestUpdateSettings_TenantUnavailable(t *testing.T) {
+func _TestUpdateSettings_PlatformUnavailable(t *testing.T) {
 	t.Parallel()
 
 	h := newHandlers()
@@ -224,7 +224,7 @@ func TestUpdateSettings_MissingCategory(t *testing.T) {
 
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPut, "/admin/settings/", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	req = withChiURLParam(req, "category", "")
 	rr := httptest.NewRecorder()
 
@@ -253,7 +253,7 @@ func TestUpdateSettings_InvalidCategory(t *testing.T) {
 
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPut, "/admin/settings/nonexistent", strings.NewReader(`{"key":"val"}`))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	req = withChiURLParam(req, "category", "nonexistent")
 	rr := httptest.NewRecorder()
 
@@ -282,7 +282,7 @@ func TestUpdateSettings_InvalidJSON(t *testing.T) {
 
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPut, "/admin/settings/general", strings.NewReader("not json"))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	req = withChiURLParam(req, "category", "general")
 	rr := httptest.NewRecorder()
 
@@ -311,7 +311,7 @@ func TestUpdateSettings_EmptyBody(t *testing.T) {
 
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPut, "/admin/settings/general", strings.NewReader(`{}`))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	req = withChiURLParam(req, "category", "general")
 	rr := httptest.NewRecorder()
 
@@ -341,7 +341,7 @@ func TestUpdateSettings_UnknownKey(t *testing.T) {
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPut, "/admin/settings/general",
 		strings.NewReader(`{"nonexistent_key": "value"}`))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	req = withChiURLParam(req, "category", "general")
 	rr := httptest.NewRecorder()
 
@@ -364,7 +364,7 @@ func TestUpdateSettings_ValidKeyDBError(t *testing.T) {
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPut, "/admin/settings/general",
 		strings.NewReader(`{"site_name": "New Name"}`))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	req = withChiURLParam(req, "category", "general")
 	rr := httptest.NewRecorder()
 
@@ -397,10 +397,10 @@ func TestListModeration_Unauthorized(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ListModeration — tenant unavailable
+// ListModeration — platform unavailable
 // ---------------------------------------------------------------------------
 
-func _TestListModeration_TenantUnavailable(t *testing.T) {
+func _TestListModeration_PlatformUnavailable(t *testing.T) {
 	t.Parallel()
 
 	h := newHandlers()
@@ -424,7 +424,7 @@ func TestListModeration_DBUnavailable(t *testing.T) {
 
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodGet, "/admin/moderation", nil)
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.ListModeration(rr, req)
@@ -454,10 +454,10 @@ func TestBulkModeration_Unauthorized(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// BulkModeration — tenant unavailable
+// BulkModeration — platform unavailable
 // ---------------------------------------------------------------------------
 
-func _TestBulkModeration_TenantUnavailable(t *testing.T) {
+func _TestBulkModeration_PlatformUnavailable(t *testing.T) {
 	t.Parallel()
 
 	h := newHandlers()
@@ -482,7 +482,7 @@ func TestBulkModeration_EmptyActions(t *testing.T) {
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPost, "/admin/moderation/bulk",
 		strings.NewReader(`{"actions":[]}`))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.BulkModeration(rr, req)
@@ -511,10 +511,10 @@ func TestAppealModeration_Unauthorized(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AppealModeration — tenant unavailable
+// AppealModeration — platform unavailable
 // ---------------------------------------------------------------------------
 
-func _TestAppealModeration_TenantUnavailable(t *testing.T) {
+func _TestAppealModeration_PlatformUnavailable(t *testing.T) {
 	t.Parallel()
 
 	h := newHandlers()
@@ -539,7 +539,7 @@ func TestAppealModeration_MissingID(t *testing.T) {
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPost, "/admin/moderation/abc123/appeal",
 		strings.NewReader(`{"type":"review"}`))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.AppealModeration(rr, req)
@@ -569,10 +569,10 @@ func TestBroadcast_Unauthorized(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Broadcast — tenant unavailable
+// Broadcast — platform unavailable
 // ---------------------------------------------------------------------------
 
-func _TestBroadcast_TenantUnavailable(t *testing.T) {
+func _TestBroadcast_PlatformUnavailable(t *testing.T) {
 	t.Parallel()
 
 	h := newHandlers()
@@ -598,7 +598,7 @@ func TestBroadcast_InvalidJSON(t *testing.T) {
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPost, "/admin/broadcast",
 		strings.NewReader("not json"))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Broadcast(rr, req)
@@ -627,7 +627,7 @@ func TestBroadcast_MissingSubject(t *testing.T) {
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPost, "/admin/broadcast",
 		strings.NewReader(`{"body":"hello"}`))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Broadcast(rr, req)
@@ -646,7 +646,7 @@ func TestBroadcast_EmptyBody(t *testing.T) {
 
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodPost, "/admin/broadcast", strings.NewReader(`{}`))
-	req = withAuthAndTenant(t, req)
+	req = withAuthAndPlatform(t, req)
 	rr := httptest.NewRecorder()
 
 	h.Broadcast(rr, req)

@@ -28,7 +28,7 @@ func (s stubFeatureChecker) IsEnabled(ctx context.Context, key string) bool {
 
 var _ features.FeatureChecker = stubFeatureChecker{}
 
-func testTenantAndUser(t *testing.T) (pgtype.UUID, pgtype.UUID) {
+func testPlatformAndUser(t *testing.T) (pgtype.UUID, pgtype.UUID) {
 	t.Helper()
 
 	var userID pgtype.UUID
@@ -87,7 +87,7 @@ func assertRoute404(t *testing.T, handler http.HandlerFunc, method, path, body s
 		body = "{}"
 	}
 
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	r := newRequest(t, method, path, body, userID)
 	w := httptest.NewRecorder()
 	handler(w, r)
@@ -321,7 +321,7 @@ func TestHandlers_ListProfiles_Happy(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/profiles", h.ListProfiles)
 
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/profiles", "", userID)
 	rec := httptest.NewRecorder()
 
@@ -351,7 +351,7 @@ func TestHandlers_GetComparisonScore_InvalidProfileID(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/comparisons/{id}/score", h.GetComparisonScore)
 
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	path := fmt.Sprintf("/jce/comparisons/%s/score?profile_id=not-a-uuid", uuid.New().String())
 	req := newAuthenticatedRequest(t, http.MethodGet, path, "", userID)
 	rec := httptest.NewRecorder()
@@ -384,7 +384,7 @@ func TestHandlers_ListRecommendations_InvalidProfileID(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/comparisons/{id}/recommendations", h.ListRecommendations)
 
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	path := fmt.Sprintf("/jce/comparisons/%s/recommendations?profile_id=malformed-uuid", uuid.New().String())
 	req := newAuthenticatedRequest(t, http.MethodGet, path, "", userID)
 	rec := httptest.NewRecorder()
@@ -417,7 +417,7 @@ func TestHandlers_ScoreComparison_InvalidProfileID(t *testing.T) {
 	r := chi.NewRouter()
 	r.Post("/jce/comparisons/{id}/score", h.ScoreComparison)
 
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	path := fmt.Sprintf("/jce/comparisons/%s/score", uuid.New().String())
 	body := `{"profile_id":"not-a-uuid","force":true}`
 	req := newAuthenticatedRequest(t, http.MethodPost, path, body, userID)
@@ -469,7 +469,7 @@ func TestHandlers_FeatureDisabled_Advisor(t *testing.T) {
 }
 
 func TestHandlers_ListDataSources_Happy(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
 		dataSources: []DataSource{
@@ -509,7 +509,7 @@ func TestHandlers_ListDataSources_Happy(t *testing.T) {
 }
 
 func TestHandlers_CreateDataSource_InvalidSourceKind(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
 
@@ -541,7 +541,7 @@ func TestHandlers_CreateDataSource_InvalidSourceKind(t *testing.T) {
 }
 
 func TestHandlers_CreateDataSource_InvalidEntityID(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
 
@@ -573,7 +573,7 @@ func TestHandlers_CreateDataSource_InvalidEntityID(t *testing.T) {
 }
 
 func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
 
@@ -626,7 +626,7 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 }
 
 func TestHandlers_GetFreshness_Happy(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
@@ -670,7 +670,7 @@ func TestHandlers_GetFreshness_Happy(t *testing.T) {
 }
 
 func TestHandlers_RefreshComparison_Happy(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
@@ -712,7 +712,7 @@ func TestHandlers_RefreshComparison_Happy(t *testing.T) {
 }
 
 func TestHandlers_RefreshComparison_InvalidSourceKind(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
@@ -745,7 +745,7 @@ func TestHandlers_RefreshComparison_InvalidSourceKind(t *testing.T) {
 }
 
 func TestHandlers_ListIngestionJobs_Happy(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
@@ -780,7 +780,7 @@ func TestHandlers_ListIngestionJobs_Happy(t *testing.T) {
 }
 
 func TestHandlers_Analyze_Happy(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	contentID := uuid.New().String()
 	profileID := uuid.New().String()
 	fs := &fakeService{
@@ -825,7 +825,7 @@ func TestHandlers_Analyze_Happy(t *testing.T) {
 }
 
 func TestHandlers_Explain_InvalidItemID(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
@@ -858,7 +858,7 @@ func TestHandlers_Explain_InvalidItemID(t *testing.T) {
 }
 
 func TestHandlers_StreamAdvisor_Happy(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
@@ -897,7 +897,7 @@ func TestHandlers_StreamAdvisor_Happy(t *testing.T) {
 }
 
 func TestHandlers_StreamAdvisor_MissingQuestion(t *testing.T) {
-	_, userID := testTenantAndUser(t)
+	_, userID := testPlatformAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)

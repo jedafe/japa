@@ -1006,9 +1006,9 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID [16]byte) error {
 // Bulk Reindex
 // ---------------------------------------------------------------------------
 
-// reindexBatchSize is the page size used when iterating tenant-wide entity
+// reindexBatchSize is the page size used when iterating platform-wide entity
 // lists during a bulk reindex. Chosen large enough that a typical dev/staging
-// tenant completes in a handful of round-trips, small enough to keep each
+// platform completes in a handful of round-trips, small enough to keep each
 // query result set bounded.
 const reindexBatchSize = 500
 
@@ -1026,7 +1026,7 @@ type ReindexSummary struct {
 	Errors        int `json:"errors"`
 }
 
-// ReindexAll iterates every entity for the given tenant and upserts it into
+// ReindexAll iterates every entity for the given platform and upserts it into
 // the corresponding search index. This is the bootstrap/backfill path
 // for indexes that were provisioned after data already existed — the
 // per-entity IndexXxx methods only fire on create/update events, so rows
@@ -1049,7 +1049,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	contentCursor := pgtype.Timestamptz{}
 
 	for {
-		rows, err := ix.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
+		rows, err := ix.read.ListContents(ctx, gen.ListContentsParams{
 
 			Q:               "",
 			CursorCreatedAt: contentCursor,
@@ -1077,7 +1077,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 			break
 		}
 		// Advance cursor — the last row's created_at (if present) drives the
-		// next page. ListContentsByTenant orders by created_at DESC.
+		// next page. ListContents orders by created_at DESC.
 		last := rows[len(rows)-1]
 		contentCursor = last.CreatedAt
 	}
@@ -1086,7 +1086,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	threadCursor := pgtype.Timestamptz{}
 
 	for {
-		rows, err := ix.read.ListForumThreadsByTenant(ctx, gen.ListForumThreadsByTenantParams{
+		rows, err := ix.read.ListForumThreads(ctx, gen.ListForumThreadsParams{
 
 			CursorCreatedAt: threadCursor,
 			PageLimit:       reindexBatchSize,
@@ -1281,7 +1281,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 		}
 	}
 
-	// Doc pages — single query returns all for the tenant.
+	// Doc pages — single query returns all for the platform.
 	docRows, err := ix.read.ListAllDocPages(ctx)
 	if err != nil {
 		slog.Warn("search:reindex: listing doc pages failed", "error", err)

@@ -541,6 +541,72 @@ func (q *Queries) ListFormSubmissionsByForm(ctx context.Context, arg ListFormSub
 	return items, nil
 }
 
+const listForms = `-- name: ListForms :many
+
+
+SELECT f.id, f.space_id, f.name, f.slug, f.description, f.is_multi_step,
+ f.submit_label, f.success_message, f.status, f.is_system, f.submission_fee_credits, f.created_at,
+ s.name AS space_name
+FROM forms f
+LEFT JOIN spaces s ON s.id = f.space_id
+
+ORDER BY f.created_at DESC, f.id DESC
+`
+
+type ListFormsRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	IsMultiStep          bool               `json:"is_multi_step"`
+	SubmitLabel          string             `json:"submit_label"`
+	SuccessMessage       *string            `json:"success_message"`
+	Status               string             `json:"status"`
+	IsSystem             bool               `json:"is_system"`
+	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	SpaceName            *string            `json:"space_name"`
+}
+
+// Form, form step, and form submission queries.
+// =====================
+// Forms
+// =====================
+func (q *Queries) ListForms(ctx context.Context) ([]ListFormsRow, error) {
+	rows, err := q.db.Query(ctx, listForms)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFormsRow
+	for rows.Next() {
+		var i ListFormsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SpaceID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.IsMultiStep,
+			&i.SubmitLabel,
+			&i.SuccessMessage,
+			&i.Status,
+			&i.IsSystem,
+			&i.SubmissionFeeCredits,
+			&i.CreatedAt,
+			&i.SpaceName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFormsBySpace = `-- name: ListFormsBySpace :many
 SELECT f.id, f.space_id, f.name, f.slug, f.description,
  f.is_multi_step, f.submit_label, f.success_message, f.status,
@@ -595,72 +661,6 @@ func (q *Queries) ListFormsBySpace(ctx context.Context, spaceID pgtype.UUID) ([]
 			&i.SubmissionFeeCredits,
 			&i.CreatedAt,
 			&i.SubmissionCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listFormsByTenant = `-- name: ListFormsByTenant :many
-
-
-SELECT f.id, f.space_id, f.name, f.slug, f.description, f.is_multi_step,
- f.submit_label, f.success_message, f.status, f.is_system, f.submission_fee_credits, f.created_at,
- s.name AS space_name
-FROM forms f
-LEFT JOIN spaces s ON s.id = f.space_id
-
-ORDER BY f.created_at DESC, f.id DESC
-`
-
-type ListFormsByTenantRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	SpaceID              pgtype.UUID        `json:"space_id"`
-	Name                 string             `json:"name"`
-	Slug                 string             `json:"slug"`
-	Description          *string            `json:"description"`
-	IsMultiStep          bool               `json:"is_multi_step"`
-	SubmitLabel          string             `json:"submit_label"`
-	SuccessMessage       *string            `json:"success_message"`
-	Status               string             `json:"status"`
-	IsSystem             bool               `json:"is_system"`
-	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	SpaceName            *string            `json:"space_name"`
-}
-
-// Form, form step, and form submission queries.
-// =====================
-// Forms
-// =====================
-func (q *Queries) ListFormsByTenant(ctx context.Context) ([]ListFormsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listFormsByTenant)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListFormsByTenantRow
-	for rows.Next() {
-		var i ListFormsByTenantRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.SpaceID,
-			&i.Name,
-			&i.Slug,
-			&i.Description,
-			&i.IsMultiStep,
-			&i.SubmitLabel,
-			&i.SuccessMessage,
-			&i.Status,
-			&i.IsSystem,
-			&i.SubmissionFeeCredits,
-			&i.CreatedAt,
-			&i.SpaceName,
 		); err != nil {
 			return nil, err
 		}

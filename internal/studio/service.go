@@ -49,7 +49,7 @@ type HITLReview struct {
 	Status      string
 }
 
-// HITLReviewReader loads a single HITL review by tenant + id.
+// HITLReviewReader loads a single HITL review by platform + id.
 type HITLReviewReader interface {
 	GetHITLReview(ctx context.Context, reviewID pgtype.UUID) (HITLReview, error)
 }
@@ -268,7 +268,7 @@ func (s *Service) CancelJob(ctx context.Context, id pgtype.UUID) error {
 	return s.store.DeleteJob(ctx, id)
 }
 
-// ListBatches lists batches for a tenant.
+// ListBatches lists batches for a platform.
 func (s *Service) ListBatches(ctx context.Context, limit, offset int32) ([]Batch, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50

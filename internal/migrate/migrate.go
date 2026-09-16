@@ -185,7 +185,8 @@ func ApplyPending(ctx context.Context, pool *pgxpool.Pool, dir string) ([]string
 			continue
 		}
 
-		content, err := os.ReadFile(file) //nolint:gosec // G304: migration files from trusted repo directory
+		// #nosec G304 // migration files are loaded from a trusted, configured repo directory.
+		content, err := os.ReadFile(file)
 		if err != nil {
 			return nil, fmt.Errorf("reading migration %s: %w", name, err)
 		}

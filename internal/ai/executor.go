@@ -207,7 +207,7 @@ func (r *ToolHandlerRegistry) RegisterConfig(functionName string, cfg ToolConfig
 	r.configs[functionName] = loadedTool{config: cfg, requiredPermission: requiredPermission, toolID: toolID}
 }
 
-// LoadFromDB loads enabled ai_tools rows for the tenant, parses each row's
+// LoadFromDB loads enabled ai_tools rows for the platform, parses each row's
 // config JSONB into a ToolConfig, and registers the config. The Go handlers
 // are registered separately via RegisterHandler (the table stores a handler
 // *reference* string, not the function itself). Tools whose config JSONB
@@ -408,7 +408,7 @@ func WithWriteQueries(q *gen.Queries) ExecutorOption {
 
 // ExecuteParams carries the per-call context the executor needs that is not
 // part of the ToolCall itself: the owning session (for the
-// ai_agent_tool_calls.session_id FK) and the calling user + tenant.
+// ai_agent_tool_calls.session_id FK) and the calling user + platform.
 type ExecuteParams struct {
 	Call      ToolCall
 	SessionID pgtype.UUID

@@ -111,7 +111,7 @@ SELECT id, name, import_type, format, status, file_url, total_rows, imported_row
 WHERE id = $1
 `
 
-// Used by the Asynq worker, which does not have tenant context.
+// Used by the Asynq worker, which does not have platform context.
 func (q *Queries) GetPlatformDataImportByID(ctx context.Context, id pgtype.UUID) (PlatformDataImport, error) {
 	row := q.db.QueryRow(ctx, getPlatformDataImportByID, id)
 	var i PlatformDataImport

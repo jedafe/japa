@@ -1,4 +1,4 @@
--- name: ListTagsByTenant :many
+-- name: ListTags :many
 SELECT t.id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
  t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
  t.field_values, t.created_at, t.updated_at,

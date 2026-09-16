@@ -286,8 +286,8 @@ type CreateIntelSourceParams struct {
 // sqlc queries for the intelligence spine tables.
 // Ref: ADR-112, docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
 //
-// All queries are tenant-scoped (ADR-112 Amendment 2). Every query filters
-// by the id to guarantee data isolation across tenants.
+// All queries are platform-scoped (ADR-112 Amendment 2). Every query filters
+// by the id to guarantee data isolation across platforms.
 func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourceParams) (IntelSource, error) {
 	row := q.db.QueryRow(ctx, createIntelSource,
 		arg.Name,

@@ -215,7 +215,7 @@ func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, userID pgtype.UUI
 	return nil
 }
 
-// GetUserByEmail looks up a user by email within a tenant.
+// GetUserByEmail looks up a user by email within a platform.
 // Delegates to the auth DBStore query pattern.
 func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	query := `

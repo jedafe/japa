@@ -117,7 +117,7 @@ WHERE uploader_user_id = @uploader_user_id AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
--- name: ListMediaByTenant :many
+-- name: ListMedia :many
 SELECT * FROM media
 WHERE deleted_at IS NULL
 ORDER BY created_at DESC
@@ -146,7 +146,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*)::int AS count FROM media
 WHERE uploader_user_id = @uploader_user_id AND deleted_at IS NULL;
 
--- name: CountMediaByTenant :one
+-- name: CountMedia :one
 SELECT COUNT(*)::int AS count FROM media
 WHERE deleted_at IS NULL;
 

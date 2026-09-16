@@ -1,4 +1,4 @@
--- name: ListPermissionPresetsByTenant :many
+-- name: ListPermissionPresets :many
 SELECT id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 FROM space_permission_presets
 
@@ -20,13 +20,13 @@ RETURNING id, name, visibility, posting_perm, replying_perm, commenting_perm, jo
 -- Space Types
 -- =====================
 
--- name: ListSpaceTypesByTenant :many
+-- name: ListSpaceTypes :many
 SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 
 ORDER BY created_at ASC, id ASC;
 
--- name: ListSpaceTypesByTenantFiltered :many
+-- name: ListSpaceTypesFiltered :many
 -- Supports optional search (q), category filter, and a selectable-only flag
 -- for the admin panel and the member space-creation flow. Pass empty strings
 -- and false booleans to skip filters.
@@ -67,10 +67,10 @@ WHERE id = @id AND is_system = false;
 -- Spaces
 -- =====================
 
--- name: ListSpacesByTenant :many
+-- name: ListSpaces :many
 -- Public discovery list. Filters by visibility so unauthenticated callers
 -- only see public spaces; authenticated callers also see members/private
--- spaces they belong to (Section 05 line 272, §9 multi-tenancy).
+-- spaces they belong to (Section 05 line 272, §9 platform scoping).
 -- Pass @viewer_user_id as NULL for unauthenticated requests.
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
@@ -95,7 +95,7 @@ ORDER BY s.created_at DESC, s.id DESC;
 -- SPACES-009/011: SQL-level paginated discovery list with search, geo,
 -- level, region, subregion, space_type, joined-only, and sort support.
 -- Replaces the in-memory filter+paginate in the ListSpaces handler.
--- Visibility filter matches ListSpacesByTenant.
+-- Visibility filter matches ListSpaces.
 -- sort accepts: '' (default → newest), 'name' (A–Z), 'members', 'followers',
 -- 'posts' (all numeric DESC), 'activity' (most recently updated). Unknown
 -- values fall back to newest. §05 line 319: sort=members|activity|newest.
@@ -180,7 +180,7 @@ WHERE s.deleted_at IS NULL
  );
 
 -- name: ListSpacesByLevel :many
--- SPACES-001: apply the same visibility filter as ListSpacesByTenant so
+-- SPACES-001: apply the same visibility filter as ListSpaces so
 -- unauthenticated callers only see public spaces; authenticated callers
 -- also see members/private spaces they belong to (Section 05 line 272).
 -- Pass @viewer_user_id as NULL for unauthenticated requests.
@@ -203,7 +203,7 @@ WHERE spaces.level = @level AND deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListSpacesByType :many
--- SPACES-001: apply the same visibility filter as ListSpacesByTenant.
+-- SPACES-001: apply the same visibility filter as ListSpaces.
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
@@ -540,7 +540,7 @@ ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) 
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: ListAllSpacesForAdmin :many
--- Returns every active space in the tenant with no visibility or membership
+-- Returns every active space in the platform with no visibility or membership
 -- filter. Used by GET /me/spaces when the caller is a super_admin so they can
 -- post to any space without joining it first (Section 03 — admin override).
 -- Selects the lean fields and flags the caller's primary geo space.
@@ -731,7 +731,7 @@ RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
 -- name: UpdateSpaceSlug :one
 -- Updates only the slug of a space. Separate from UpdateSpace (which does not
 -- touch slug) so university/space admin handlers can rename the slug without
--- rewriting every other column. Tenant-scoped, soft-delete-aware. The
+-- rewriting every other column. Platform-scoped, soft-delete-aware. The
 -- UNIQUE(slug) constraint rejects a collision with a 23505 error
 -- the caller maps to a 409.
 UPDATE spaces SET slug = @slug, updated_at = now()
@@ -852,12 +852,12 @@ INSERT INTO space_moderators (space_id, user_id, assigned_by, assigned_by_user_i
 ON CONFLICT (space_id, user_id) DO NOTHING;
 
 -- name: RemoveSpaceModerator :exec
--- SPACES-015: tenant-scoped for defense-in-depth.
+-- SPACES-015: platform-scoped for defense-in-depth.
 DELETE FROM space_moderators
 WHERE space_id = @space_id AND user_id = @user_id;
 
 -- name: ListSpaceModerators :many
--- SPACES-015: tenant-scoped for defense-in-depth.
+-- SPACES-015: platform-scoped for defense-in-depth.
 SELECT sm.id, sm.space_id, sm.user_id, sm.assigned_by,
  sm.assigned_by_user_id, sm.created_at,
  u.username AS user_username, up.display_name AS user_display_name
@@ -868,7 +868,7 @@ WHERE sm.space_id = @space_id
 ORDER BY sm.created_at ASC;
 
 -- name: GetSpaceModerator :one
--- SPACES-015: tenant-scoped for defense-in-depth.
+-- SPACES-015: platform-scoped for defense-in-depth.
 SELECT id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
 FROM space_moderators
 WHERE space_id = @space_id AND user_id = @user_id;
@@ -967,7 +967,7 @@ WHERE sm.space_id = @space_id AND sm.status = 'pending'
 ORDER BY sm.joined_at ASC;
 
 -- name: ListAllSpaceJoinRequests :many
--- Admin-wide pending join requests across every space in the admin's tenant.
+-- Admin-wide pending join requests across every space in the admin's platform.
 -- space_id is included so the admin panel can build a composite request id
 -- (space_id::user_id) for the approve/reject endpoints.
 SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status,

@@ -23,7 +23,7 @@ const sidebarResolveCacheTTL = 5 * time.Minute
 
 // sidebarResolveCachePrefix is the Valkey key prefix for cached sidebar
 // resolution results. Per Rule 4 + valkey-keys-catalog, all keys use the
-// jc: prefix and are tenant-scoped.
+// jc: prefix and are platform-scoped.
 const sidebarResolveCachePrefix = "jc:sidebar:resolve:"
 
 // PermissionResolver resolves a user's full permission set in one call.
@@ -272,7 +272,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, sidebarID pgtype.UUID
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
 	}
 
-	// Verify the sidebar exists and is in this tenant — previously an unknown
+	// Verify the sidebar exists and is in this platform — previously an unknown
 	// sidebar_id fell through to the FK constraint and surfaced as a 500.
 	// The sidebar's app also scopes which widget types may be added: a type
 	// with no renderer implementation on that app would render as a dead
@@ -345,9 +345,9 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID pgtype.
 		return gen.SidebarWidget{}, ErrInvalidStatus
 	}
 	// Verify the widget exists and belongs to the sidebar in the URL path,
-	// preventing a within-tenant IDOR where a widget from sidebar B could be
+	// preventing a within-platform IDOR where a widget from sidebar B could be
 	// mutated via /admin/sidebars/{sidebarA_id}/widgets/{widgetB_id}.
-	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
+	// Ref: Bug Hunter's Guide §5.3 (RBAC & Platform-Boundary Escapes).
 	existing, err := s.store.getSidebarWidget(ctx, id)
 	if err != nil {
 		return gen.SidebarWidget{}, err
@@ -407,7 +407,7 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID pgtype.
 // DeleteSidebarWidget is an exported method.
 func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID pgtype.UUID) error {
 	// Verify the widget exists and belongs to the sidebar in the URL path.
-	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
+	// Ref: Bug Hunter's Guide §5.3 (RBAC & Platform-Boundary Escapes).
 	existing, err := s.store.getSidebarWidget(ctx, id)
 	if err != nil {
 		return err
@@ -455,9 +455,9 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID pgtype.UU
 		sortOrders[i] = int32(item.SortOrder)
 	}
 	// Verify every widget belongs to the sidebar in the URL path, preventing
-	// a within-tenant IDOR where widgets from other sidebars could be
+	// a within-platform IDOR where widgets from other sidebars could be
 	// reordered via /admin/sidebars/{sidebarA_id}/widgets/reorder.
-	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
+	// Ref: Bug Hunter's Guide §5.3 (RBAC & Platform-Boundary Escapes).
 	for i := range ids {
 		w, err := s.store.getSidebarWidget(ctx, ids[i])
 		if err != nil {
@@ -686,7 +686,7 @@ func sidebarResolveCacheKey(app, position, requestPath string, isAuthenticated b
 }
 
 // invalidateResolveCache flushes all cached sidebar resolution results for a
-// tenant. Called after every sidebar/widget CRUD mutation. Ref: Section 59 §5.
+// platform. Called after every sidebar/widget CRUD mutation. Ref: Section 59 §5.
 func (s *Service) invalidateResolveCache(ctx context.Context) {
 	if s.vk == nil {
 		return

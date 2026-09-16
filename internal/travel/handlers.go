@@ -241,7 +241,7 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandlePublicListProviders handles GET /api/v1/travel/providers — list active
-// travel providers for the current tenant. Public, no auth required.
+// travel providers for the current platform. Public, no auth required.
 func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil {

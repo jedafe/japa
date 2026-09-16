@@ -386,18 +386,18 @@ func (s *Service) cacheTTL(ctx context.Context) time.Duration {
 // ---------------------------------------------------------------------------
 
 // searchCacheKey builds the Valkey key for a cached search result. The hash
-// is over the canonical JSON of the search params plus the tenant ID, so
-// identical queries within a tenant hit the cache while identical queries
-// across tenants stay isolated (ADR-085 §3, jc:travel:search:{hash};
-// Rule 4 — all keys tenant-scoped).
+// is over the canonical JSON of the search params plus the platform ID, so
+// identical queries within a platform hit the cache while identical queries
+// across platforms stay isolated (ADR-085 §3, jc:travel:search:{hash};
+// Rule 4 — all keys platform-scoped).
 func searchCacheKey(params interface{}) string {
-	return valkey.MustKey("travel:search:%s", hashTenantQuery(params))
+	return valkey.MustKey("travel:search:%s", hashPlatformQuery(params))
 }
 
-// hashTenantQuery produces a SHA-256 hash over the tenant ID and the canonical
-// JSON of params. Including the tenant ID prevents cross-tenant cache
-// collisions when two tenants issue identical searches.
-func hashTenantQuery(params interface{}) string {
+// hashPlatformQuery produces a SHA-256 hash over the platform ID and the canonical
+// JSON of params. Including the platform ID prevents cross-platform cache
+// collisions when two platforms issue identical searches.
+func hashPlatformQuery(params interface{}) string {
 	return HashSearchQuery(struct {
 		Params any `json:"params"`
 	}{Params: params})
@@ -710,7 +710,7 @@ func (s *Service) GetActiveProvider(ctx context.Context, providerType string) (P
 }
 
 // CreateProvider creates a new travel provider (admin). Invalidates the
-// tenant's search result cache so new searches use the new provider.
+// platform's search result cache so new searches use the new provider.
 func (s *Service) CreateProvider(ctx context.Context, arg gen.CreateTravelProviderParams) (ProviderInfo, error) {
 	if arg.ProviderType != ProviderTypeFlight && arg.ProviderType != ProviderTypeHotel && arg.ProviderType != ProviderTypeBoth {
 		return ProviderInfo{}, fmt.Errorf("travel: invalid provider_type %q", arg.ProviderType)
@@ -727,7 +727,7 @@ func (s *Service) CreateProvider(ctx context.Context, arg gen.CreateTravelProvid
 }
 
 // UpdateProvider updates a travel provider's mutable fields (admin).
-// Invalidates the tenant's search result cache so new searches reflect the
+// Invalidates the platform's search result cache so new searches reflect the
 // updated provider config (affiliate params, api_config, is_active).
 func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProviderParams) (ProviderInfo, error) {
 	if arg.ProviderType != nil && *arg.ProviderType != ProviderTypeFlight && *arg.ProviderType != ProviderTypeHotel && *arg.ProviderType != ProviderTypeBoth {
@@ -745,7 +745,7 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvid
 }
 
 // DeleteProvider deletes a travel provider by id (admin).
-// Invalidates the tenant's search result cache so searches no longer use a
+// Invalidates the platform's search result cache so searches no longer use a
 // deleted provider.
 func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	if err := s.store.DeleteProvider(ctx, id); err != nil {
@@ -757,7 +757,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// invalidateSearchCache flushes all cached travel search results for a tenant.
+// invalidateSearchCache flushes all cached travel search results for a platform.
 // Uses SCAN (not KEYS) to find jc:travel:search:* keys and batch-deletes them.
 // Best-effort: errors are logged but do not fail the caller's operation.
 func (s *Service) invalidateSearchCache(ctx context.Context) {
@@ -793,7 +793,7 @@ func (s *Service) invalidateSearchCache(ctx context.Context) {
 	}
 }
 
-// ListProviders lists travel providers for a tenant (admin). isActiveFilter
+// ListProviders lists travel providers for a platform (admin). isActiveFilter
 // is tri-state: "true" = only active, "false" = only inactive, "" = all. q
 // is an ILIKE search on name/slug (empty = no filter).
 func (s *Service) ListProviders(ctx context.Context, isActiveFilter, providerType, q string) ([]ProviderInfo, error) {
@@ -810,7 +810,7 @@ func (s *Service) ListProviders(ctx context.Context, isActiveFilter, providerTyp
 	return providers, nil
 }
 
-// ListPublicProviders lists active travel providers for a tenant in a
+// ListPublicProviders lists active travel providers for a platform in a
 // public-safe shape. Only active providers are returned, and affiliate/api
 // config are omitted.
 func (s *Service) ListPublicProviders(ctx context.Context) ([]PublicProviderInfo, error) {

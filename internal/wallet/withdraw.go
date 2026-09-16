@@ -402,7 +402,7 @@ func (s *Service) resolveWithdrawalCurrency(ctx context.Context, userID pgtype.U
 // calculateWithdrawalFee resolves the first matching active fee tier and
 // returns the fee amount, basis, and rate.
 func (s *Service) calculateWithdrawalFee(ctx context.Context, creditAmount, fiatAmount int64) (int64, string, float64, error) {
-	tiers, err := s.store.read.ListWithdrawalFeeTiersByTenant(ctx)
+	tiers, err := s.store.read.ListWithdrawalFeeTiers(ctx)
 	if err != nil {
 		return 0, "", 0, fmt.Errorf("loading fee tiers: %w", err)
 	}
@@ -862,7 +862,7 @@ func (s *Service) ListWithdrawalMethods(ctx context.Context, userID pgtype.UUID)
 	)
 }
 
-// AdminListWithdrawals returns a paginated list of withdrawals for a tenant.
+// AdminListWithdrawals returns a paginated list of withdrawals for a platform.
 func (s *Service) AdminListWithdrawals(ctx context.Context, status, userID string, limit, offset int32) ([]gen.WalletWithdrawal, int64, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -883,7 +883,7 @@ func (s *Service) AdminListWithdrawals(ctx context.Context, status, userID strin
 		userIDArg = pgtype.UUID{}
 	}
 
-	withdrawals, err := s.store.read.ListWithdrawalsByTenant(ctx, gen.ListWithdrawalsByTenantParams{
+	withdrawals, err := s.store.read.ListWithdrawals(ctx, gen.ListWithdrawalsParams{
 
 		Status:     statusArg,
 		UserID:     userIDArg,
@@ -894,7 +894,7 @@ func (s *Service) AdminListWithdrawals(ctx context.Context, status, userID strin
 		return nil, 0, fmt.Errorf("listing withdrawals: %w", err)
 	}
 
-	count, err := s.store.read.CountWithdrawalsByTenant(ctx, gen.CountWithdrawalsByTenantParams{
+	count, err := s.store.read.CountWithdrawals(ctx, gen.CountWithdrawalsParams{
 
 		Status: statusArg,
 		UserID: userIDArg,

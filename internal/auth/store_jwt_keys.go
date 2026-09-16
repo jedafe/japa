@@ -20,7 +20,7 @@ type JWTKeyRow struct {
 // JWTKeyStore provides DB-backed persistence for JWT signing keys.
 // It uses raw SQL (same pattern as store_totp_oauth.go) rather than
 // sqlc-generated code because the jwt_signing_keys table is global
-// (not tenant-scoped) and managed outside the normal sqlc query set.
+// (not platform-scoped) and managed outside the normal sqlc query set.
 type JWTKeyStore struct {
 	db *db.DB
 }

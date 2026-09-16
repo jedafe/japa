@@ -474,7 +474,7 @@ SELECT id, mentor_id, mentee_id, status, goals, destination_space_id, responded_
 WHERE id = $1
 `
 
-// Get a single connection by ID (within tenant).
+// Get a single connection by ID (within the platform).
 func (q *Queries) GetMentorshipConnection(ctx context.Context, id pgtype.UUID) (MentorshipConnection, error) {
 	row := q.db.QueryRow(ctx, getMentorshipConnection, id)
 	var i MentorshipConnection

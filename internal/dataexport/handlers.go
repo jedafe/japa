@@ -249,7 +249,7 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 
 // HandleDownloadExport handles GET /api/v1/admin/data-exports/:id/download —
 // serves the generated export file. The export must be completed and the
-// caller's tenant must match the export's tenant. Gated by gdpr.data_exports.view.
+// caller's platform must match the export's platform. Gated by gdpr.data_exports.view.
 func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
 	if !ok {

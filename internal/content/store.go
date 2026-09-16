@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -173,7 +174,7 @@ func contentGeoFromFieldValues(fieldValues []byte) (source, target string) {
 // written through the generic contents pipeline (/create composer, AI tools)
 // so the Story Wall and its origin/destination/visa/profession filters keep
 // working regardless of the submission surface (§79). Source/target country
-// codes or names resolve to the tenant's country-level geo spaces; the
+// codes or names resolve to the platform's country-level geo spaces; the
 // structured fields come from field_values (the story_fields group). The
 // wall requires a destination — when none resolves, the meta row is skipped
 // until a destination is provided.
@@ -262,12 +263,12 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 	var year *int16
 	switch v := fv["relocation_year"].(type) {
 	case float64:
-		if v > 0 {
+		if v > 0 && v <= math.MaxInt16 {
 			y := int16(v)
 			year = &y
 		}
 	case string:
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 16); err == nil && n > 0 {
 			y := int16(n)
 			year = &y
 		}
@@ -364,7 +365,7 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 }
 
 // CreateContent creates a new content row, ensuring slug uniqueness within
-// the tenant. If the provided slug is empty, one is derived from the title.
+// the platform. If the provided slug is empty, one is derived from the title.
 // The content hash and read time are computed automatically from the body.
 func (s *Service) CreateContent(ctx context.Context, input CreateContentInput) (gen.CreateContentRow, error) {
 	content, err := s.createContent(ctx, s.read, s.write, input)
@@ -637,7 +638,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	return content, nil
 }
 
-// GetContent returns the content with the given ID, scoped to the tenant.
+// GetContent returns the content with the given ID, scoped to the platform.
 func (s *Service) GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	content, err := s.read.GetContentByID(ctx,
 		id,
@@ -650,7 +651,7 @@ func (s *Service) GetContent(ctx context.Context, id pgtype.UUID) (gen.GetConten
 }
 
 // GetContentBySlug returns the content matching the given slug, scoped to
-// the tenant.
+// the platform.
 func (s *Service) GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error) {
 	content, err := s.read.GetContentBySlug(ctx,
 		slug,
@@ -692,18 +693,18 @@ func (s *Service) GetContentDetailBySlugAndType(ctx context.Context, contentType
 	return content, nil
 }
 
-// ListContents returns a page of content for the given tenant, newest first.
+// ListContents returns a page of content for the given platform, newest first.
 // Pass a zero-value CursorCreatedAt for the first page. When q is non-empty,
 // results are filtered by case-insensitive match on title, slug, or body.
 // Visibility is gated by the supplied filter.
-func (s *Service) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error) {
+func (s *Service) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
-	contents, err := s.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
+	contents, err := s.read.ListContents(ctx, gen.ListContentsParams{
 
 		Q:                 q,
 		CursorCreatedAt:   cursor,
@@ -1139,8 +1140,8 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	}
 
 	// Duplicate-content pre-check (Rule 12 / BL-006): if a content_hash is
-	// supplied, verify no other row in this tenant already has it. The unique
-	// index idx_contents_tenant_content_hash is the ultimate guard, but this
+	// supplied, verify no other row in this platform already has it. The unique
+	// index idx_contents_platform_content_hash is the ultimate guard, but this
 	// yields a clean 409 duplicate_content instead of a raw 23505 violation.
 	if input.ContentHash != nil && *input.ContentHash != "" {
 		if _, err := s.read.GetContentByHash(ctx, gen.GetContentByHashParams{
@@ -1474,7 +1475,7 @@ func (s *Service) EnsureContentScore(ctx context.Context, contentID pgtype.UUID)
 	return nil
 }
 
-// DeleteContent soft-deletes a content row, scoped to the tenant.
+// DeleteContent soft-deletes a content row, scoped to the platform.
 func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 	// Fetch the row before soft-deleting so the webhook payload can carry
 	// the slug/title/author (the deleted_at filter would hide it after).
@@ -1508,7 +1509,7 @@ func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 // ---------------------------------------------------------------------------
 
 // ListContentRevisions returns the full revision history for a content row,
-// newest first. Tenant-scoped for defense-in-depth (BUG-012).
+// newest first. Platform-scoped for defense-in-depth (BUG-012).
 func (s *Service) ListContentRevisions(ctx context.Context, contentID pgtype.UUID) ([]gen.ContentRevision, error) {
 	revisions, err := s.read.ListContentRevisions(ctx,
 
@@ -1521,7 +1522,7 @@ func (s *Service) ListContentRevisions(ctx context.Context, contentID pgtype.UUI
 	return revisions, nil
 }
 
-// GetContentRevision returns a specific revision by ID. Tenant-scoped for
+// GetContentRevision returns a specific revision by ID. Platform-scoped for
 // defense-in-depth (BUG-012).
 func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.UUID) (gen.ContentRevision, error) {
 	revision, err := s.read.GetContentRevision(ctx, gen.GetContentRevisionParams{
@@ -1612,7 +1613,7 @@ func (s *Service) IsContentPinned(ctx context.Context, spaceID, contentID pgtype
 // Reactions
 // ---------------------------------------------------------------------------
 
-// ListReactionTypes returns all reaction types for a tenant, ordered by position.
+// ListReactionTypes returns all reaction types for a platform, ordered by position.
 func (s *Service) ListReactionTypes(ctx context.Context) ([]gen.ReactionType, error) {
 	types, err := s.read.ListReactionTypes(ctx)
 	if err != nil {
@@ -1622,7 +1623,7 @@ func (s *Service) ListReactionTypes(ctx context.Context) ([]gen.ReactionType, er
 	return types, nil
 }
 
-// GetReactionType returns a single reaction type by tenant and key.
+// GetReactionType returns a single reaction type by platform and key.
 func (s *Service) GetReactionType(ctx context.Context, key string) (gen.ReactionType, error) {
 	rt, err := s.read.GetReactionType(ctx,
 
@@ -1636,7 +1637,7 @@ func (s *Service) GetReactionType(ctx context.Context, key string) (gen.Reaction
 }
 
 // CreateReactionType creates a new reaction type with the given key, emoji,
-// label, and position for a specific tenant.
+// label, and position for a specific platform.
 func (s *Service) CreateReactionType(ctx context.Context, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
 	rt, err := s.write.CreateReactionType(ctx, gen.CreateReactionTypeParams{
 
@@ -1653,7 +1654,7 @@ func (s *Service) CreateReactionType(ctx context.Context, key, emoji, label stri
 	return rt, nil
 }
 
-// UpdateReactionType updates an existing reaction type by tenant and key.
+// UpdateReactionType updates an existing reaction type by platform and key.
 func (s *Service) UpdateReactionType(ctx context.Context, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
 	rt, err := s.write.UpdateReactionType(ctx, gen.UpdateReactionTypeParams{
 		Emoji:    emoji,
@@ -1670,7 +1671,7 @@ func (s *Service) UpdateReactionType(ctx context.Context, key, emoji, label stri
 	return rt, nil
 }
 
-// DeleteReactionType removes a reaction type by tenant and key. Existing reactions
+// DeleteReactionType removes a reaction type by platform and key. Existing reactions
 // referencing the key are cascade-deleted by the FK constraint.
 func (s *Service) DeleteReactionType(ctx context.Context, key string) error {
 	if err := s.write.DeleteReactionType(ctx,
@@ -1763,7 +1764,7 @@ func (s *Service) GetUserReactions(ctx context.Context, entityType string, entit
 // ---------------------------------------------------------------------------
 
 // GetJSONLDTemplate returns the active JSON-LD template for a content type
-// within a tenant.
+// within a platform.
 func (s *Service) GetJSONLDTemplate(ctx context.Context, contentType string) (gen.ContentTypeJsonldTemplate, error) {
 	tmpl, err := s.read.GetJSONLDTemplate(ctx,
 
@@ -1799,7 +1800,7 @@ func (s *Service) ResolveJSONLD(ctx context.Context, contentType string, fields 
 	return body, nil
 }
 
-// ListJSONLDTemplates returns all JSON-LD templates for a tenant, optionally
+// ListJSONLDTemplates returns all JSON-LD templates for a platform, optionally
 // filtered by q (matches content_type or template body).
 func (s *Service) ListJSONLDTemplates(ctx context.Context, q pgtype.Text) ([]gen.ContentTypeJsonldTemplate, error) {
 	templates, err := s.read.ListJSONLDTemplates(ctx, q.String)
@@ -1811,7 +1812,7 @@ func (s *Service) ListJSONLDTemplates(ctx context.Context, q pgtype.Text) ([]gen
 }
 
 // UpsertJSONLDTemplate creates or updates a JSON-LD template for a content
-// type within a tenant.
+// type within a platform.
 func (s *Service) UpsertJSONLDTemplate(ctx context.Context, contentType string, template []byte, isActive bool) (gen.ContentTypeJsonldTemplate, error) {
 	tmpl, err := s.write.UpsertJSONLDTemplate(ctx, gen.UpsertJSONLDTemplateParams{
 
@@ -1826,7 +1827,7 @@ func (s *Service) UpsertJSONLDTemplate(ctx context.Context, contentType string, 
 	return tmpl, nil
 }
 
-// DeleteJSONLDTemplate removes a JSON-LD template by ID, scoped to tenant.
+// DeleteJSONLDTemplate removes a JSON-LD template by ID, scoped to platform.
 func (s *Service) DeleteJSONLDTemplate(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteJSONLDTemplate(ctx,
 		id,
@@ -2053,7 +2054,7 @@ func (s *Service) CreateBookmark(ctx context.Context, userID pgtype.UUID, entity
 }
 
 // SetBookmarkFolder moves an existing bookmark into a folder (BL-011).
-// Pass a zero pgtype.UUID to unfile the bookmark. Tenant-scoped for
+// Pass a zero pgtype.UUID to unfile the bookmark. Platform-scoped for
 // defense-in-depth (BE-05).
 func (s *Service) SetBookmarkFolder(ctx context.Context, userID pgtype.UUID, entityType string, entityID, folderID pgtype.UUID) error {
 	if err := s.write.SetBookmarkFolder(ctx, gen.SetBookmarkFolderParams{
@@ -2070,7 +2071,7 @@ func (s *Service) SetBookmarkFolder(ctx context.Context, userID pgtype.UUID, ent
 }
 
 // ValidateFolderOwnership checks that a bookmark folder belongs to the given
-// user and tenant. Returns nil if the folder exists and is owned by the user.
+// user and platform. Returns nil if the folder exists and is owned by the user.
 // Returns ErrNotFound if the folder does not exist or is owned by another user.
 // A zero/invalid folderID is treated as "unfiled" and returns nil (BL-013).
 func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, userID pgtype.UUID) error {
@@ -2091,7 +2092,7 @@ func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, userID 
 }
 
 // RemoveBookmark deletes a user's bookmark for the given entity.
-// Tenant-scoped for defense-in-depth (BE-05).
+// Platform-scoped for defense-in-depth (BE-05).
 func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.DeleteBookmark(ctx, gen.DeleteBookmarkParams{
 
@@ -2176,13 +2177,13 @@ func (s *Service) GetContentSpaces(ctx context.Context, contentID pgtype.UUID) (
 // content item. The primary space is mirrored on contents.space_id and
 // contents.geo_space_id for backward-compatible queries, and a
 // content_spaces row is inserted for each assigned space (exactly one with
-// is_primary = true). All space IDs are verified to exist in the tenant
+// is_primary = true). All space IDs are verified to exist in the platform
 // before the transaction commits (BUG-018). The entire operation runs in a
 // transaction.
 func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, primarySpaceID pgtype.UUID, additionalSpaceIDs []pgtype.UUID, bypassSpaceCheck bool) error {
 	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		// Validate that the primary and all additional spaces exist in
-		// this tenant before mutating anything (BUG-018).
+		// this platform before mutating anything (BUG-018).
 		spaceIDs := append([]pgtype.UUID{primarySpaceID}, additionalSpaceIDs...)
 		for _, sid := range spaceIDs {
 			if !sid.Valid {

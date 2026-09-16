@@ -42,8 +42,8 @@ const (
 	maxPageSize     int32 = 100
 )
 
-// extractTenant extracts the tenant ID from the request context.
-func extractTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+// extractPlatform extracts the platform ID from the request context.
+func extractPlatform(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	return pgtype.UUID{}, true
 }
 
@@ -60,7 +60,7 @@ func requireID(w http.ResponseWriter, r *http.Request, paramName, entityName str
 
 // getByID is a shared helper for GET /{entity}/{id} handlers.
 func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, fetchFn func(ctx context.Context, id pgtype.UUID) (T, error)) {
-	_, ok := extractTenant(w, r)
+	_, ok := extractPlatform(w, r)
 	if !ok {
 		return
 	}
@@ -81,7 +81,7 @@ func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, f
 
 // deleteByID is a shared helper for DELETE /{entity}/{id} handlers.
 func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, id pgtype.UUID) error) {
-	_, ok := extractTenant(w, r)
+	_, ok := extractPlatform(w, r)
 	if !ok {
 		return
 	}
@@ -342,7 +342,7 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListSubscribers returns all newsletter subscribers for the tenant,
+// ListSubscribers returns all newsletter subscribers for the platform,
 // optionally filtered by ?status= (subscribed|unsubscribed|bounced|complained).
 // GET /admin/newsletter/subscribers.
 func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
@@ -395,7 +395,7 @@ func (h *Handlers) DeleteSubscriber(w http.ResponseWriter, r *http.Request) {
 // Admin Handlers — Newsletter Campaigns
 // ---------------------------------------------------------------------------
 
-// ListCampaigns returns newsletter campaigns for the tenant with pagination.
+// ListCampaigns returns newsletter campaigns for the platform with pagination.
 // GET /admin/newsletter/campaigns?page_size=&offset=&status=
 // Returns the standard paginated envelope {items, total, total_pages} so the
 // admin DataTable can render serverSide pagination (§22, ADR-080 §3).

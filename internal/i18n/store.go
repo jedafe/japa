@@ -66,7 +66,7 @@ func (s *Store) Get(ctx context.Context, locale, key string) (gen.Translation, e
 	return row, nil
 }
 
-// ListLocales returns all distinct locales for a tenant.
+// ListLocales returns all distinct locales for a platform.
 func (s *Store) ListLocales(ctx context.Context) ([]string, error) {
 	locales, err := s.read.ListTranslationLocales(ctx)
 	if err != nil {

@@ -63,7 +63,7 @@ LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.id = @id;
 
 -- =====================================================================
--- List personas for a tenant with pagination.
+-- List personas for a platform with pagination.
 -- =====================================================================
 
 -- name: ListAIPersonas :many

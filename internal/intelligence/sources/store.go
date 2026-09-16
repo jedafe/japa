@@ -14,9 +14,9 @@ import (
 // It follows the same pattern as internal/scholarships/store.go: a thin
 // adapter that wraps each generated call with the "sources: <op>: %w"
 // error prefix so callers get a consistent, traceable error chain.
-// // All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
+// // All queries are platform-scoped (ADR-112 Amendment 2). Every wrapper method
 // takes a ID pgtype.UUID as its first argument (after ctx) and stamps it
-// into the sqlc query params, guaranteeing data isolation across tenants
+// into the sqlc query params, guaranteeing data isolation across platforms
 // regardless of what the caller populated in the params struct.
 type Store struct {
 	queries *gen.Queries
@@ -211,7 +211,7 @@ func (s *Store) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (So
 }
 
 // ListProposed returns a page of sources with status='proposed' for admin
-// review. Tenant-scoped.
+// review. Platform-scoped.
 func (s *Store) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {
 	rows, err := s.queries.ListProposedIntelSources(ctx, gen.ListProposedIntelSourcesParams{
 
@@ -279,7 +279,7 @@ func (s *Store) IsSourceBlocked(ctx context.Context, blockerID, sourceID pgtype.
 }
 
 // ApproveProposed activates a proposed source (status='active', enabled=true)
-// and records the approver. Tenant-scoped.
+// and records the approver. Platform-scoped.
 func (s *Store) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUID) (Source, error) {
 	row, err := s.queries.ApproveProposedIntelSource(ctx, gen.ApproveProposedIntelSourceParams{
 

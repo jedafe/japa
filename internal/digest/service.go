@@ -48,7 +48,7 @@ type EmailDispatcher interface {
 	Dispatch(ctx context.Context, req email.EmailRequest) (email.EmailResponse, error)
 }
 
-// FeatureChecker checks whether a feature flag is enabled for a tenant.
+// FeatureChecker checks whether a feature flag is enabled for a platform.
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
 type FeatureChecker interface {
@@ -117,7 +117,7 @@ func (s *Service) SetEmailDispatcher(d EmailDispatcher) { s.emailDispatcher = d 
 // instead of system_settings. Falls back to system_settings when nil.
 func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 
-// Enabled checks whether the digest feature is enabled for the given tenant.
+// Enabled checks whether the digest feature is enabled for the given platform.
 // Delegates to the features.Checker (feature_flags table) when available,
 // falling back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {
@@ -141,7 +141,7 @@ func (s *Service) EmailEnabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "digest.email", false)
 }
 
-// GetLatest returns the most recently published edition for a tenant
+// GetLatest returns the most recently published edition for a platform
 // (and optionally a space).
 func (s *Service) GetLatest(ctx context.Context, spaceID pgtype.UUID) (DigestEditionDetailDTO, error) {
 	edition, err := s.store.GetLatestPublished(ctx, spaceID)
@@ -311,20 +311,20 @@ func (s *Service) AdminGenerate(ctx context.Context) (string, error) {
 // assembles a new digest edition from platform analytics (top threads, new
 // members, upcoming events, featured story) and stores it in draft status
 // for the admin review window. When ID is the zero UUID (cron mode),
-// it iterates all active tenants. When spaceID is valid, the edition is
-// scoped to that Space; otherwise it is tenant-wide.
+// it iterates all active platforms. When spaceID is valid, the edition is
+// scoped to that Space; otherwise it is platform-wide.
 // // This method satisfies the worker.DigestProcessor interface. It is
 // idempotent per ( space_id, cadence, week) — a duplicate
 // generate within the same week overwrites the existing draft rather than
 // creating a second one (the admin review window handles the rest).
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) GenerateEdition(ctx context.Context, spaceID pgtype.UUID) error {
-	return s.generateForTenant(ctx, spaceID)
+	return s.generateForPlatform(ctx, spaceID)
 }
 
-// generateForTenant assembles and stores a single digest edition for one
-// tenant (and optionally one Space).
-func (s *Service) generateForTenant(ctx context.Context, spaceID pgtype.UUID) error {
+// generateForPlatform assembles and stores a single digest edition for one
+// platform (and optionally one Space).
+func (s *Service) generateForPlatform(ctx context.Context, spaceID pgtype.UUID) error {
 	if !s.Enabled(ctx) {
 		slog.Info("task:digest:generate: feature disabled, skipping")
 		return nil
@@ -481,7 +481,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 	return nil
 }
 
-// resolveBaseURL returns the tenant's site base URL from system_settings,
+// resolveBaseURL returns the platform's site base URL from system_settings,
 // falling back to the JC_SITE_URL env var (mirrors worker.resolveBaseURL).
 func (s *Service) resolveBaseURL(ctx context.Context) string {
 	if s.settings != nil {

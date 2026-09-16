@@ -145,7 +145,7 @@ func TestDBResolverResolveByID(t *testing.T) {
 		TitleColumn:  "name",
 		SlugColumn:   "slug",
 		DescColumn:   "website_url",
-		TenantColumn: "",
+		PlatformColumn: "",
 		ActiveWhere:  "t.is_active = true",
 	})
 
@@ -188,7 +188,7 @@ func TestDBResolverResolveBySlug(t *testing.T) {
 		TitleColumn:  "name",
 		SlugColumn:   "slug",
 		DescColumn:   "description",
-		TenantColumn: "",
+		PlatformColumn: "",
 		ActiveWhere:  "t.verified = true",
 	})
 
@@ -248,7 +248,7 @@ func TestDBResolverSearch(t *testing.T) {
 		IDColumn:     "id",
 		TitleColumn:  "name",
 		SlugColumn:   "slug",
-		TenantColumn: "",
+		PlatformColumn: "",
 	})
 
 	items, err := r.Search(t.Context(), "remit", nil, 10, 0)

@@ -119,12 +119,12 @@ func (s *Store) getCampaignStats(ctx context.Context, campaignID pgtype.UUID) (m
 // Ad Campaigns
 // ---------------------------------------------------------------------------
 
-func (s *Store) listAdCampaignsByTenant(ctx context.Context, limit, offset int32) ([]AdCampaign, error) {
+func (s *Store) listAdCampaignsByPlatform(ctx context.Context, limit, offset int32) ([]AdCampaign, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	return s.queries.ListAdCampaignsByTenant(ctx, gen.ListAdCampaignsByTenantParams{
+	return s.queries.ListAdCampaigns(ctx, gen.ListAdCampaignsParams{
 
 		PageLimit:  limit,
 		PageOffset: offset,

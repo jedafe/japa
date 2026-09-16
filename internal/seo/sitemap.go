@@ -57,7 +57,7 @@ func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings site
 	return &SitemapHandler{queries: queries, reader: reader, settings: settings, vkClient: vkClient, siteURL: siteURL, imgproxyBaseURL: imgproxyBaseURL}
 }
 
-// sitemapCacheKey builds the tenant-scoped Valkey cache key for a sitemap
+// sitemapCacheKey builds the platform-scoped Valkey cache key for a sitemap
 // sub-file. Pattern: jc:cache:sitemap:{}:{type}
 // (valkey-keys-catalog.md). type is "content", "spaces", "tags", "users",
 // "images", or "index".
@@ -106,7 +106,7 @@ type sitemapCacheInvalidator interface {
 	Del(ctx context.Context, keys ...string) *valkeycompat.IntCmd
 }
 
-// InvalidateSitemapCache deletes all cached sitemap XML for a tenant. Called
+// InvalidateSitemapCache deletes all cached sitemap XML for a platform. Called
 // by the sitemap:generate Asynq task after pre-generating fresh sitemaps so
 // the on-demand handlers serve the new content on next request.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
@@ -135,7 +135,7 @@ func (h *SitemapHandler) baseURL(r *http.Request) string {
 }
 
 // sitemapQualityConfig reads the seo.sitemap.* thresholds from system_settings
-// for the given tenant, falling back to spec defaults when the settings reader
+// for the given platform, falling back to spec defaults when the settings reader
 // is unavailable or a key is unset.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) sitemapQualityConfig(ctx context.Context) bots.SitemapQualityConfig {

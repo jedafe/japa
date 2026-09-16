@@ -31,13 +31,13 @@ type Mention struct {
 
 // BlockChecker determines whether user A has blocked user B.
 // Returns true if the blocker has blocked the blocked.
-// Tenant-scoped per JEOS §9 (BUG-006).
+// Platform-scoped per JEOS §9 (BUG-006).
 type BlockChecker interface {
 	IsBlocked(ctx context.Context, blockerID, blockedID pgtype.UUID) (bool, error)
 }
 
 // SpaceMemberChecker determines whether a user is a member of a space.
-// Tenant-scoped per Section 04 (BUG-005).
+// Platform-scoped per Section 04 (BUG-005).
 type SpaceMemberChecker interface {
 	IsMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 }
@@ -199,7 +199,7 @@ func FilterMentions(
 		}
 
 		// Skip if post is in a private space and mentioned user is not a member.
-		// Tenant-scoped per Section 04 (BUG-005).
+		// Platform-scoped per Section 04 (BUG-005).
 		if isPrivateSpace && memberChecker != nil {
 			isMember, err := memberChecker.IsMember(ctx, spaceID, m.ID)
 			if err != nil {

@@ -34,20 +34,20 @@ func (s *Store) Create(ctx context.Context, params gen.CreatePlatformDataImportP
 	return s.queries.CreatePlatformDataImport(ctx, params)
 }
 
-// Get retrieves a single import by ID within a tenant.
+// Get retrieves a single import by ID within a platform.
 func (s *Store) Get(ctx context.Context, id pgtype.UUID) (gen.PlatformDataImport, error) {
 	return s.queries.GetPlatformDataImport(ctx,
 		id,
 	)
 }
 
-// GetByID retrieves a single import by ID only (no tenant filter).
-// Used by the Asynq worker, which does not have tenant context.
+// GetByID retrieves a single import by ID only (no platform filter).
+// Used by the Asynq worker, which does not have platform context.
 func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (gen.PlatformDataImport, error) {
 	return s.queries.GetPlatformDataImportByID(ctx, id)
 }
 
-// List returns paginated imports for a tenant, optionally filtered by status.
+// List returns paginated imports for a platform, optionally filtered by status.
 func (s *Store) List(ctx context.Context, status string, limit, offset int32) ([]gen.PlatformDataImport, error) {
 	return s.queries.ListPlatformDataImports(ctx, gen.ListPlatformDataImportsParams{
 
@@ -57,7 +57,7 @@ func (s *Store) List(ctx context.Context, status string, limit, offset int32) ([
 	})
 }
 
-// Count returns the total number of imports for a tenant, optionally filtered.
+// Count returns the total number of imports for a platform, optionally filtered.
 func (s *Store) Count(ctx context.Context, status string) (int64, error) {
 	return s.queries.CountPlatformDataImports(ctx,
 

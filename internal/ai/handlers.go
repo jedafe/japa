@@ -175,10 +175,10 @@ func (h *Handlers) resolveVoicePrompt(ctx context.Context, userID pgtype.UUID, v
 // applyModelAndVoice resolves and validates a per-request model/voice override
 // and mutates payload. It writes a 400 error to w and returns false on
 // validation failure. Pass defaultKey as the system_settings key for the
-// tenant/category default (e.g. "ai.model.default.content_generation").
+// platform/category default (e.g. "ai.model.default.content_generation").
 // // Note: assist endpoints (improve, summarize, translate, generate-tags,
 // generate-og, draft) share the "content_generation" category so a single
-// tenant default model can power all content assistant surfaces.
+// platform default model can power all content assistant surfaces.
 func (h *Handlers) applyModelAndVoice(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -722,7 +722,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// DOC-014: deterministic task ID so repeated identical generation requests
-		// de-duplicate. Keyed by tenant + audience + slug (or title hash when no slug provided).
+		// de-duplicate. Keyed by platform + audience + slug (or title hash when no slug provided).
 		idSeed := slug
 		if idSeed == "" {
 			sum := sha256.Sum256([]byte(title))
@@ -2193,7 +2193,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
-// HandleListPendingHITL lists pending HITL reviews for the current tenant.
+// HandleListPendingHITL lists pending HITL reviews for the current platform.
 func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
 	if !ok {
@@ -2271,7 +2271,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 }
 
 // HandleApproveHITL approves a pending HITL review. The review is scoped to
-// the caller's tenant to prevent cross-tenant approve (Section 09).
+// the caller's platform to prevent cross-platform approve (Section 09).
 func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -2321,7 +2321,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleRejectHITL rejects a pending HITL review with a reason. The review is
-// scoped to the caller's tenant to prevent cross-tenant reject (Section 09).
+// scoped to the caller's platform to prevent cross-platform reject (Section 09).
 func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -2378,7 +2378,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 // HITL Verification Handler
 // ---------------------------------------------------------------------------
 
-// HandleVerifyHITL grounds a claim using the tenant's configured external
+// HandleVerifyHITL grounds a claim using the platform's configured external
 // search provider (Perplexity, Tavily, or Brave). It is intended for human
 // reviewers to verify a factual claim in a guide, comparison, or other
 // AI-generated content before approval.
@@ -2482,8 +2482,8 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Tenant scoping (§9, ADR-027): verify the target user belongs to the
-	// admin's tenant before exposing their Honcho memory. Prevents cross-tenant
+	// Platform scoping (§9, ADR-027): verify the target user belongs to the
+	// admin's platform before exposing their Honcho memory. Prevents cross-platform
 	// AI-context access.
 	if h.Store == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "store_unavailable", "User store not configured")
@@ -2549,8 +2549,8 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Tenant scoping (§9, ADR-027): verify the target user belongs to the
-	// admin's tenant before deleting their Honcho memory entry.
+	// Platform scoping (§9, ADR-027): verify the target user belongs to the
+	// admin's platform before deleting their Honcho memory entry.
 	if h.Store == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "store_unavailable", "User store not configured")
 		return
@@ -2583,7 +2583,7 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 // Admin AI Usage Handler (Section 20 — admin AI usage monitoring)
 // ---------------------------------------------------------------------------
 
-// HandleGetAIUsage returns aggregated AI usage for the tenant.
+// HandleGetAIUsage returns aggregated AI usage for the platform.
 // GET /admin/ai/usage?period=7d|30d&provider=openai|ollama.
 // Returns the Section 20 contract: { total_cost_usd, tokens_used, by_task_type }.
 func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {

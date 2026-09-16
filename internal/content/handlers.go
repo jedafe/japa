@@ -84,7 +84,7 @@ type Handlers struct {
 	guideCategoryLister GuideCategoryLister  // nil disables guide category listing
 }
 
-// TagSlugResolver resolves tag slugs to tag IDs within a tenant (Section 14).
+// TagSlugResolver resolves tag slugs to tag IDs within a platform (Section 14).
 // Implemented by tags.Service to avoid an import cycle (tags imports content).
 type TagSlugResolver interface {
 	ResolveTagSlugs(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error)
@@ -133,7 +133,7 @@ type GuideCategory struct {
 	Label string
 }
 
-// GuideCategoryLister lists guide categories for a tenant. Implemented by
+// GuideCategoryLister lists guide categories for a platform. Implemented by
 // an adapter in server.go wrapping customfields.Service to avoid an import
 // cycle (customfields cannot import content).
 type GuideCategoryLister interface {
@@ -341,7 +341,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, contentID, selectedSpac
 	}
 
 	// Auto-assignment is system-driven, so bypass the per-user membership
-	// check while keeping the tenant-level space validation.
+	// check while keeping the platform-level space validation.
 	if err := h.Service.UpdateContentSpaces(ctx, contentID, pgtype.UUID{}, primarySpaceID, additionalIDs, true); err != nil {
 		slog.Warn("content: auto-assign UpdateContentSpaces failed", "content_id", contentID.String(), "error", err)
 		return selectedSpaceID
@@ -558,7 +558,7 @@ func (h *Handlers) enqueueFanOutTask(contentID, authorID, spaceID pgtype.UUID, c
 	}
 }
 
-// enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant so the
+// enqueueRSSRegenerate enqueues the rss:regenerate task for a platform so the
 // universal + blog RSS feeds reflect newly published content without waiting
 // for the hourly cron. Fire-and-forget per Rule 8 (RSS-013).
 // // Ref: japaconnect-engineering/sections/26-seo-performance.md
@@ -926,7 +926,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// body_html (the Tiptap editor always produces HTML, never plain text).
 	// Without this, body is always "" → ComputeContentHash("") is the same
 	// for every empty-body draft → unique constraint violation on
-	// idx_contents_tenant_content_hash (Rule 12 / §41 spam prevention).
+	// idx_contents_platform_content_hash (Rule 12 / §41 spam prevention).
 	body := input.Body
 	if body == "" && input.BodyHtml != "" {
 		body = SanitizeText(input.BodyHtml)
@@ -1084,7 +1084,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Record the creation for the spam rate-limit layer (BUG-004). Without
-	// this the jc:spam:rate:{tenant}:{user} sorted set is never populated and
+	// this the jc:spam:rate:{platform}:{user} sorted set is never populated and
 	// the rate_limit scoring layer always returns 0.
 	if h.SpamPipeline != nil {
 		h.SpamPipeline.RecordContentCreation(r.Context(), user.UserID)
@@ -2217,7 +2217,7 @@ func (h *Handlers) enqueueScheduledPublish(contentID pgtype.UUID, publishAt time
 // ---------------------------------------------------------------------------
 
 // ListRevisions handles GET /api/v1/content/{id}/revisions.
-// Tenant-scoped and permission-gated (BUG-012).
+// Platform-scoped and permission-gated (BUG-012).
 func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
@@ -2233,7 +2233,7 @@ func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Defense-in-depth: confirm the content exists and the requester can see it
-	// in this tenant (BUG-012 closes the tenant-scoping gap on the query itself).
+	// in this platform (BUG-012 closes the platform-scoping gap on the query itself).
 	_, err = h.Service.GetContent(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
@@ -2627,7 +2627,7 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 
 // DeleteJSONLDTemplate handles DELETE /api/v1/content/jsonld-templates/{id}.
 // It removes a single JSON-LD template by its primary key, scoped to the
-// caller's tenant (§21 missing CRUD leg, §26 RBAC CRUD completeness).
+// caller's platform (§21 missing CRUD leg, §26 RBAC CRUD completeness).
 func (h *Handlers) DeleteJSONLDTemplate(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
@@ -2682,7 +2682,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Validate folder ownership (BL-013): the folder must belong to the
-		// caller and tenant before associating a bookmark with it.
+		// caller and platform before associating a bookmark with it.
 		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, user.UserID); err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
 			return
@@ -2874,7 +2874,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Get-or-create: user-typed slugs that don't exist yet are auto-
-		// created as tenant-scoped tags (Section 14 — composer flow).
+		// created as platform-scoped tags (Section 14 — composer flow).
 		slugMap, err := h.tagResolver.GetOrCreateTagSlugs(r.Context(), input.TagSlugs)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_slugs", "One or more tag slugs could not be resolved")
@@ -2940,7 +2940,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 // RemoveContentTag handles DELETE /api/v1/content/{id}/tags/{tagId}.
 // The {tagId} path segment accepts either a tag UUID or a tag slug. UUID is
 // tried first (zero allocations); if it fails and a tag slug resolver is
-// wired, the slug is resolved to a tag UUID within the tenant (Section 14).
+// wired, the slug is resolved to a tag UUID within the platform (Section 14).
 func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -3317,7 +3317,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the content exists and belongs to the caller's tenant.
+	// Verify the content exists and belongs to the caller's platform.
 	// BUG-005: the author may update spaces; content.edit_any holders may too.
 	existing, err := h.Service.GetContent(r.Context(), contentID)
 	if err != nil {
@@ -3356,7 +3356,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidSpace):
 			errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_space",
-				"One or more space IDs do not belong to this tenant")
+				"One or more space IDs do not belong to this platform")
 		case errors.Is(err, ErrNotSpaceMember):
 			errpkg.WriteError(w, http.StatusForbidden, "not_space_member",
 				"You must be a member of each assigned space")

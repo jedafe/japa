@@ -67,7 +67,7 @@ func (s *Store) listKnownBots(ctx context.Context, botType string, pageSize, off
 	return rows, nil
 }
 
-// countKnownBots returns the total number of bots for the tenant, optionally
+// countKnownBots returns the total number of bots for the platform, optionally
 // filtered by bot_type. Used for pagination metadata in the list handler.
 func (s *Store) countKnownBots(ctx context.Context, botType string) (int64, error) {
 	count, err := s.read.CountKnownBots(ctx,
@@ -99,7 +99,7 @@ func (s *Store) deleteKnownBot(ctx context.Context, id pgtype.UUID) error {
 }
 
 // getBotsByUserAgent matches an incoming User-Agent string against all
-// known bot patterns for the tenant. Returns all matching bots ordered
+// known bot patterns for the platform. Returns all matching bots ordered
 // by specificity (longer patterns first).
 //
 //nolint:unused // reserved for future features
@@ -149,8 +149,8 @@ func matchBotsByUserAgent(bots []gen.KnownBot, userAgent string) []KnownBot {
 }
 
 // GetBotsByUserAgent returns all known bots matching the given User-Agent
-// string for the specified tenant. Uses in-memory matching after fetching
-// all bots for the tenant.
+// string for the specified platform. Uses in-memory matching after fetching
+// all bots for the platform.
 //
 
 // GetBotsByUserAgent is an exported method.
@@ -163,7 +163,7 @@ func (s *Store) GetBotsByUserAgent(ctx context.Context, userAgent string) ([]Kno
 	return matchBotsByUserAgent(bots, userAgent), nil
 }
 
-// GetAllBots returns all known bots for the tenant (for robots.txt generation).
+// GetAllBots returns all known bots for the platform (for robots.txt generation).
 //
 
 // GetAllBots is an exported method.
@@ -228,7 +228,7 @@ func (s *Store) GetLLMsData(ctx context.Context) (LLMsData, error) {
 		recentPosts = append(recentPosts, Link{Title: p.Title, URL: contentURLPath(p.ContentType, p.Slug)})
 	}
 
-	tags, err := s.read.ListTagsByTenant(ctx)
+	tags, err := s.read.ListTags(ctx)
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing tags for llms: %w", err)
 	}
@@ -238,7 +238,7 @@ func (s *Store) GetLLMsData(ctx context.Context) (LLMsData, error) {
 		tagLinks = append(tagLinks, Link{Title: tg.Name, URL: "/tags/" + tg.Slug})
 	}
 
-	spaces, err := s.read.ListSpacesByTenant(ctx,
+	spaces, err := s.read.ListSpaces(ctx,
 
 		pgtype.UUID{},
 	)

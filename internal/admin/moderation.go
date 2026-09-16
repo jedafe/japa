@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -43,7 +44,6 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	if h.DB == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
@@ -275,13 +275,12 @@ func labelForModerationType(v string) string {
 
 // GetModerationOptions handles GET /api/v1/admin/moderation/options.
 // Returns the canonical status and content_type (entity_type) options for the
-// moderation queue, including tenant-specific entity types from the reviews
+// moderation queue, including platform-specific entity types from the reviews
 // table (Rule 16).
 func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	statuses := []ModerationOption{
 		{Value: "pending", Label: "Pending"},
@@ -495,7 +494,6 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	var req struct {
 		Actions []struct {
 			ID     string `json:"id"`
@@ -578,7 +576,6 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	var req struct {
 		ID   string `json:"id"`
 		Type string `json:"type"` // "review"
@@ -638,7 +635,7 @@ type BroadcastRequest struct {
 }
 
 // Broadcast handles POST /api/v1/admin/broadcast.
-// Creates a system_announcement notification for all users in the tenant.
+// Creates a system_announcement notification for all users in the platform.
 func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -713,7 +710,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 }
 
 // broadcastToAllUsers inserts a system_announcement notification for every
-// active user in the tenant. Returns the count of notifications created.
+// active user in the platform. Returns the count of notifications created.
 func (h *Handlers) broadcastToAllUsers(ctx context.Context, senderID pgtype.UUID, title, body string) (int, error) {
 	return h.broadcastToScopedUsers(ctx, senderID, title, body, "all", "")
 }
@@ -818,10 +815,15 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if input.Days < 0 || input.Days > math.MaxInt32 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_days", "days out of range")
+		return
+	}
+
 	err := h.Queries.CreateUserBan(ctx, gen.CreateUserBanParams{
-		UserID: uid,
-		Reason: &input.Reason, Column3: // #nosec G115 // value bounded by caller
-		int32(input.Days),
+		UserID:  uid,
+		Reason:  &input.Reason,
+		Column3: int32(input.Days),
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
@@ -1100,7 +1102,6 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -1136,7 +1137,6 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
-
 
 	user, ok := requireUser(w, r)
 	if !ok {

@@ -104,9 +104,9 @@ func (s *Service) GetCampaign(ctx context.Context, id pgtype.UUID) (AdCampaign, 
 	)
 }
 
-// ListCampaigns returns all campaigns for a tenant.
+// ListCampaigns returns all campaigns for a platform.
 func (s *Service) ListCampaigns(ctx context.Context, limit, offset int32) ([]AdCampaign, error) {
-	return s.store.listAdCampaignsByTenant(ctx, limit, offset)
+	return s.store.listAdCampaignsByPlatform(ctx, limit, offset)
 }
 
 // ActivateCampaign sets a campaign to active status.
@@ -344,7 +344,7 @@ func (s *Service) IngestAdEvents(ctx context.Context, events []IngestAdEventInpu
 // List Slot Types
 // ---------------------------------------------------------------------------
 
-// ListSlotTypes returns all slot types for a tenant.
+// ListSlotTypes returns all slot types for a platform.
 func (s *Service) ListSlotTypes(ctx context.Context, limit, offset int32) ([]AdSlotType, error) {
 	return s.store.listAdSlotTypes(ctx, limit, offset)
 }
@@ -444,7 +444,7 @@ func (s *Service) ListBoosts(ctx context.Context, organizationID pgtype.UUID) ([
 	)
 }
 
-// ListActiveBoosts returns all currently active boosts for a tenant.
+// ListActiveBoosts returns all currently active boosts for a platform.
 func (s *Service) ListActiveBoosts(ctx context.Context) ([]gen.ListActiveBoostsRow, error) {
 	return s.store.Queries().ListActiveBoosts(ctx)
 }

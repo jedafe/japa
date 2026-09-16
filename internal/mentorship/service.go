@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -80,7 +81,7 @@ func NewService(database *db.DB) *Service {
 	}
 }
 
-// ListPrograms returns all mentorship programs for the tenant with aggregate counts.
+// ListPrograms returns all mentorship programs for the platform with aggregate counts.
 func (s *Service) ListPrograms(ctx context.Context, limit, offset int32) ([]ProgramWithCounts, error) {
 	rows, err := s.read.ListMentorshipProgramsWithCounts(ctx, gen.ListMentorshipProgramsWithCountsParams{
 
@@ -174,7 +175,7 @@ func (s *Service) UpdateProgram(ctx context.Context, id pgtype.UUID, name, descr
 	return Program(row), nil
 }
 
-// ListMatches returns all mentor-mentee matches for the tenant with resolved names.
+// ListMatches returns all mentor-mentee matches for the platform with resolved names.
 func (s *Service) ListMatches(ctx context.Context, limit, offset int32) ([]Match, error) {
 	rows, err := s.read.ListMentorshipMatches(ctx, gen.ListMentorshipMatchesParams{
 
@@ -362,8 +363,8 @@ func (s *Service) SetSettingsProvider(sp SettingsProvider) { s.settings = sp }
 func (s *Service) mentorMaxCapacity(ctx context.Context) int32 {
 	maxCap := int32(10) // catalog default for mentorship.max_capacity (§102)
 	if s.settings != nil {
-		if v, err := s.settings.GetSettingInt(ctx, "mentorship.max_capacity"); err == nil && v > 0 {
-			maxCap = int32(v)
+		if v, err := s.settings.GetSettingInt(ctx, "mentorship.max_capacity"); err == nil && v > 0 && v <= math.MaxInt32 {
+			maxCap = int32(v) //nolint:gosec // G115: v is checked against math.MaxInt32.
 		}
 	}
 	return maxCap
@@ -580,7 +581,7 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 }
 
 // SearchMentors returns mentors whose username or display name matches the
-// query, scoped to the tenant.
+// query, scoped to the platform.
 func (s *Service) SearchMentors(ctx context.Context, query string, limit int32) ([]MentorSummary, error) {
 	if limit <= 0 {
 		limit = 20

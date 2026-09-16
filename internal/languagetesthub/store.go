@@ -2,12 +2,12 @@
 // (§99, ADR-107).
 // // The package manages four tables created by migration 000339:
 // language_tests (the canonical list of tests: IELTS, OET, TOEFL, PTE,
-// CELPIP, Goethe, DELF, other), language_test_requirements (per-tenant
+// CELPIP, Goethe, DELF, other), language_test_requirements (per-platform
 // minimum-score requirements keyed by destination space + visa category +
 // test), language_test_resources (curated prep resources per test), and
 // language_score_stories (user-submitted score stories). It uses direct
 // pgx queries because these are new tables without sqlc-generated queries
-// yet. Tenancy uses tenants(id); geo entities use spaces(id) per ADR-053.
+// yet. Platform scoping uses spaces(id); geo entities use spaces(id) per ADR-053.
 // // Ref: japaconnect-engineering/sections/99-language-test-hub.md
 // //	japaconnect-engineering/adr/ADR-107-language-test-hub.md
 package languagetesthub
@@ -577,7 +577,7 @@ type UpdateRequirementInput struct {
 }
 
 // GetRequirementByID returns a single language_test_requirements row
-// by id, scoped to a tenant, with test and destination-space joins.
+// by id, scoped to a platform, with test and destination-space joins.
 func (s *Store) GetRequirementByID(ctx context.Context, id pgtype.UUID) (RequirementRow, error) {
 	const q = `
 SELECT r.id, r.destination_space_id, ds.name AS dest_space_name,
@@ -614,7 +614,7 @@ LIMIT 1
 	return r, nil
 }
 
-// UpdateRequirement applies a tenant-scoped partial update to a
+// UpdateRequirement applies a platform-scoped partial update to a
 // language_test_requirements row. Only non-nil/valid fields in the input
 // are changed. It returns the updated row.
 func (s *Store) UpdateRequirement(ctx context.Context, id pgtype.UUID, in UpdateRequirementInput) (RequirementRow, error) {
@@ -739,7 +739,7 @@ RETURNING id, destination_space_id, visa_category, test_id,
 }
 
 // DeleteRequirement deletes a language_test_requirements row by id,
-// scoped to a tenant.
+// scoped to a platform.
 func (s *Store) DeleteRequirement(ctx context.Context, id pgtype.UUID) error {
 	const q = `DELETE FROM language_test_requirements WHERE id = $1`
 

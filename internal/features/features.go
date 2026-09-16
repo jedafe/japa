@@ -25,7 +25,7 @@ const flagCacheTTL = 5 * time.Minute
 const flagCacheKeyPrefix = "jc:flags:"
 
 // FeatureChecker is the interface for checking whether a feature flag is
-// enabled for a given tenant. Services that need to verify their own feature
+// enabled for a given platform. Services that need to verify their own feature
 // flag (e.g. story.Service.Enabled) should accept this interface rather than
 // reading system_settings directly, so that feature_flags remains the single
 // source of truth for feature reachability.
@@ -33,7 +33,7 @@ type FeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
 }
 
-// Checker resolves whether a feature is enabled for a given tenant.
+// Checker resolves whether a feature is enabled for a given platform.
 // It uses a two-tier cache: L1 (in-memory, 60s TTL for fast eviction) and
 // L2 (Valkey, 5min TTL for cross-instance consistency). When Valkey is
 // unavailable, it gracefully degrades to L1-only operation.
@@ -88,7 +88,7 @@ func (c *Checker) Close() {
 	})
 }
 
-// IsEnabled checks if a feature is enabled for the tenant in context.
+// IsEnabled checks if a feature is enabled for the platform in context.
 // If the feature_flags table has no row for the key, the registry default
 // is used. The result is cached in L1 (in-memory) and L2 (Valkey).
 // Lookup order: L1 → L2 → DB. Results are cached at both layers.
@@ -128,8 +128,8 @@ func (c *Checker) IsEnabled(ctx context.Context, key string) bool {
 // queryEnabled queries the database for the feature flag. When the flag is
 // enabled and its config carries a rollout_percentage between 0 and 100
 // (exclusive), a deterministic hash of (ID, key) decides whether this
-// tenant falls inside the rollout cohort (BL-013 / Section 42). This gives a
-// stable per-tenant-per-flag result: the same tenant always sees the same
+// platform falls inside the rollout cohort (BL-013 / Section 42). This gives a
+// stable per-platform-per-flag result: the same platform always sees the same
 // outcome for a given flag until the percentage or enabled state changes.
 // Returns (default, ErrNoRows) when the flag is not set so the caller can
 // distinguish "not set" from a real DB error.
@@ -318,8 +318,8 @@ func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
 }
 
 // GetAllEnabled returns a map of all feature keys to their enabled state
-// for the given tenant. Used by the frontend layout to get all flags at once.
-// Fetches all tenant flag rows in a single DB query instead of issuing one
+// for the given platform. Used by the frontend layout to get all flags at once.
+// Fetches all platform flag rows in a single DB query instead of issuing one
 // query per registry key (eliminates the N+1 pattern on cold cache).
 func (c *Checker) GetAllEnabled(ctx context.Context) map[string]bool {
 	result := make(map[string]bool)
@@ -465,7 +465,7 @@ func (c *Checker) ListFlagRows(ctx context.Context) ([]FlagRow, error) {
 	return out, rows.Err()
 }
 
-// FlagRow is a raw feature_flags table row for a tenant.
+// FlagRow is a raw feature_flags table row for a platform.
 type FlagRow struct {
 	Key       string
 	Enabled   bool
@@ -542,7 +542,7 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percenta
 
 // Gate is HTTP middleware that checks if a feature is enabled.
 // If disabled, returns 404 with {"error":{"code":"feature_disabled","message":"..."}}.
-// This MUST be used inside the tenant middleware group so tenant
+// This MUST be used inside the platform middleware group so platform
 // context is available.
 func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

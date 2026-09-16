@@ -161,9 +161,9 @@ func exportJSONSlice[P any](
 	return decodeJSONSlice(data)
 }
 
-// exportJSONSliceNoTenant is like exportJSONSlice but for queries that
+// exportJSONSliceNoPlatform is like exportJSONSlice but for queries that
 // take only a userID (no column on the target table).
-func exportJSONSliceNoTenant(
+func exportJSONSliceNoPlatform(
 	ctx context.Context,
 	query func(context.Context, pgtype.UUID) (interface{}, error),
 	userID pgtype.UUID,
@@ -197,7 +197,7 @@ func (s *Store) gdprExportUserContentShares(ctx context.Context, userID pgtype.U
 }
 
 func (s *Store) gdprExportUserContentViews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSliceNoTenant(ctx, s.read.GdprExportUserContentViews, userID)
+	return exportJSONSliceNoPlatform(ctx, s.read.GdprExportUserContentViews, userID)
 }
 
 // GdprDeleteUserContentViews deletes all user_content_views rows for the
@@ -317,9 +317,9 @@ func (s *Store) gdprExportUserMentorSessions(ctx context.Context, userID pgtype.
 
 // gdprExportUserMentorReviews exports §102 mentor_reviews rows written by
 // the user (ADR-110). mentor_reviews has no column, so this uses
-// the no-tenant variant.
+// the no-platform variant.
 func (s *Store) gdprExportUserMentorReviews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSliceNoTenant(ctx, s.read.GdprExportUserMentorReviews, userID)
+	return exportJSONSliceNoPlatform(ctx, s.read.GdprExportUserMentorReviews, userID)
 }
 
 func (s *Store) gdprExportUserOrganizations(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
@@ -516,7 +516,7 @@ func (s *Store) gdprExportUserDMSettings(ctx context.Context, userID pgtype.UUID
 // blocked. The user_blocks table gained a column in migration
 // 000293 (BUG-006), but the export query takes only user_id because user
 // IDs are globally unique UUIDs and the export is user-scoped, not
-// tenant-scoped.
+// platform-scoped.
 func (s *Store) gdprExportUserBlocks(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	data, err := s.read.GdprExportUserBlocks(ctx, userID)
 	if err != nil {
@@ -546,12 +546,12 @@ func (s *Store) revokeConsent(ctx context.Context, p gen.RevokeConsentParams) er
 	return nil
 }
 
-func (s *Store) listConsentsByTenant(ctx context.Context, consentType string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
+func (s *Store) listConsentsByPlatform(ctx context.Context, consentType string, limit, offset int32) ([]gen.ListConsentsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListConsentsByTenant(ctx, gen.ListConsentsByTenantParams{
+	rows, err := s.read.ListConsents(ctx, gen.ListConsentsParams{
 
 		ConsentType: consentType,
 		Q:           "",
@@ -559,18 +559,18 @@ func (s *Store) listConsentsByTenant(ctx context.Context, consentType string, li
 		PageOffset:  offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing consents by tenant: %w", err)
+		return nil, fmt.Errorf("listing consents by platform: %w", err)
 	}
 
 	return rows, nil
 }
 
-func (s *Store) listConsentsByTenantFiltered(ctx context.Context, consentType, q string, limit, offset int32) ([]gen.ListConsentsByTenantRow, error) {
+func (s *Store) listConsentsByPlatformFiltered(ctx context.Context, consentType, q string, limit, offset int32) ([]gen.ListConsentsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListConsentsByTenant(ctx, gen.ListConsentsByTenantParams{
+	rows, err := s.read.ListConsents(ctx, gen.ListConsentsParams{
 
 		ConsentType: consentType,
 		Q:           q,
@@ -578,7 +578,7 @@ func (s *Store) listConsentsByTenantFiltered(ctx context.Context, consentType, q
 		PageOffset:  offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing consents by tenant: %w", err)
+		return nil, fmt.Errorf("listing consents by platform: %w", err)
 	}
 
 	return rows, nil

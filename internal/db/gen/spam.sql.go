@@ -32,7 +32,7 @@ SELECT COUNT(*)::int AS count
 FROM user_blocks
 `
 
-// Total count for admin DataTable pagination (BUG-010). Tenant-scoped.
+// Total count for admin DataTable pagination (BUG-010). Platform-scoped.
 func (q *Queries) CountAllUserBlocks(ctx context.Context) (int32, error) {
 	row := q.db.QueryRow(ctx, countAllUserBlocks)
 	var count int32
@@ -147,7 +147,7 @@ type CreateUserBlockParams struct {
 // =====================
 // User Blocks
 // =====================
-// Tenant-scoped per JEOS §9 (BUG-006).
+// Platform-scoped per JEOS §9 (BUG-006).
 func (q *Queries) CreateUserBlock(ctx context.Context, arg CreateUserBlockParams) error {
 	_, err := q.db.Exec(ctx, createUserBlock, arg.BlockerID, arg.BlockedID)
 	return err
@@ -168,7 +168,7 @@ type DeclinePendingDMRequestsBetweenUsersParams struct {
 
 // Marks pending DM requests between the two users as declined. Soft-updates
 // the status + resolved_at rather than hard-deleting (the request row is
-// needed for audit). Tenant-scoped per JEOS §9.
+// needed for audit). Platform-scoped per JEOS §9.
 func (q *Queries) DeclinePendingDMRequestsBetweenUsers(ctx context.Context, arg DeclinePendingDMRequestsBetweenUsersParams) error {
 	_, err := q.db.Exec(ctx, declinePendingDMRequestsBetweenUsers, arg.RequesterID, arg.RecipientID)
 	return err
@@ -204,7 +204,7 @@ type DeleteFollowsBetweenUsersParams struct {
 // executed in the same transaction as CreateUserBlock.
 // =====================
 // Removes follow rows in both directions between two users
-// (entity_type='user'). Tenant-scoped per JEOS §9.
+// (entity_type='user'). Platform-scoped per JEOS §9.
 func (q *Queries) DeleteFollowsBetweenUsers(ctx context.Context, arg DeleteFollowsBetweenUsersParams) error {
 	_, err := q.db.Exec(ctx, deleteFollowsBetweenUsers, arg.FollowerID, arg.EntityID)
 	return err
@@ -230,7 +230,7 @@ type DeleteUserBlockParams struct {
 	BlockedID pgtype.UUID `json:"blocked_id"`
 }
 
-// Tenant-scoped per JEOS §9 (BUG-006).
+// Platform-scoped per JEOS §9 (BUG-006).
 func (q *Queries) DeleteUserBlock(ctx context.Context, arg DeleteUserBlockParams) error {
 	_, err := q.db.Exec(ctx, deleteUserBlock, arg.BlockerID, arg.BlockedID)
 	return err
@@ -289,13 +289,13 @@ func (q *Queries) GetCensoredWordByID(ctx context.Context, id pgtype.UUID) (Cens
 	return i, err
 }
 
-const getCensoredWordsByTenant = `-- name: GetCensoredWordsByTenant :many
+const getCensoredWords = `-- name: GetCensoredWords :many
 SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 `
 
-func (q *Queries) GetCensoredWordsByTenant(ctx context.Context) ([]CensoredWord, error) {
-	rows, err := q.db.Query(ctx, getCensoredWordsByTenant)
+func (q *Queries) GetCensoredWords(ctx context.Context) ([]CensoredWord, error) {
+	rows, err := q.db.Query(ctx, getCensoredWords)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +431,7 @@ type IsBlockedParams struct {
 	BlockedID pgtype.UUID `json:"blocked_id"`
 }
 
-// Tenant-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
+// Platform-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
 func (q *Queries) IsBlocked(ctx context.Context, arg IsBlockedParams) (bool, error) {
 	row := q.db.QueryRow(ctx, isBlocked, arg.BlockerID, arg.BlockedID)
 	var blocked bool
@@ -478,7 +478,7 @@ type ListAllUserBlocksRow struct {
 	BlockedDisplayName *string            `json:"blocked_display_name"`
 }
 
-// Tenant-scoped per JEOS §9 (BUG-001). Admin list must not cross tenants.
+// Platform-scoped per JEOS §9 (BUG-001). Admin list must not cross platforms.
 func (q *Queries) ListAllUserBlocks(ctx context.Context, limit int32) ([]ListAllUserBlocksRow, error) {
 	rows, err := q.db.Query(ctx, listAllUserBlocks, limit)
 	if err != nil {
@@ -537,7 +537,7 @@ type ListAllUserBlocksPaginatedRow struct {
 }
 
 // Offset-based paginated admin list for DataTable server-side pagination
-// (BUG-010). Tenant-scoped per JEOS §9.
+// (BUG-010). Platform-scoped per JEOS §9.
 func (q *Queries) ListAllUserBlocksPaginated(ctx context.Context, arg ListAllUserBlocksPaginatedParams) ([]ListAllUserBlocksPaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listAllUserBlocksPaginated, arg.Limit, arg.Offset)
 	if err != nil {
@@ -593,7 +593,7 @@ type ListBlockedUsersRow struct {
 	AvatarUrl   string             `json:"avatar_url"`
 }
 
-// Tenant-scoped blocked-users list with profile enrichment (BUG-003, BUG-004).
+// Platform-scoped blocked-users list with profile enrichment (BUG-003, BUG-004).
 // Ref: japaconnect-engineering/sections/41-spam-content-safety.md
 func (q *Queries) ListBlockedUsers(ctx context.Context, arg ListBlockedUsersParams) ([]ListBlockedUsersRow, error) {
 	rows, err := q.db.Query(ctx, listBlockedUsers, arg.BlockerID, arg.Limit, arg.Offset)

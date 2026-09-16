@@ -28,7 +28,7 @@ func withAuthUser(r *http.Request) *http.Request {
 	return r.WithContext(ctx)
 }
 
-func withTenant(r *http.Request) *http.Request {
+func withPlatform(r *http.Request) *http.Request {
 	ctx := r.Context()
 
 	var tid pgtype.UUID
@@ -73,7 +73,7 @@ func TestChangePassword_MissingBody(t *testing.T) {
 	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodPost, "/me/change-password", nil)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	h.ChangePassword(rr, req)
@@ -94,7 +94,7 @@ func TestChangePassword_EmptyFields(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/me/change-password", body)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	h.ChangePassword(rr, req)
@@ -115,7 +115,7 @@ func TestChangePassword_ShortPassword(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/me/change-password", body)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	h.ChangePassword(rr, req)
@@ -149,7 +149,7 @@ func TestUpdatePrivacy_InvalidBody(t *testing.T) {
 	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodPatch, "/me/privacy", bytes.NewBufferString("not json"))
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	h.UpdatePrivacy(rr, req)
@@ -173,7 +173,7 @@ func TestRevokeSession_InvalidID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/me/sessions/not-a-uuid", nil)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -213,7 +213,7 @@ func TestDeactivateAccount_MissingPassword(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/me/deactivate", body)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	h.DeactivateAccount(rr, req)
@@ -241,12 +241,12 @@ func TestGetMyDraft_Unauthorized(t *testing.T) {
 	}
 }
 
-func _TestGetMyDraft_NoTenant(t *testing.T) {
+func _TestGetMyDraft_NoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/me/drafts/22222222-2222-2222-2222-222222222222", nil)
-	req = withAuthUser(req) // authenticated but no tenant in context
+	req = withAuthUser(req) // authenticated but no platform in context
 
 	rr := httptest.NewRecorder()
 	h.GetMyDraft(rr, req)
@@ -266,7 +266,7 @@ func TestGetMyDraft_InvalidID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/me/drafts/not-a-uuid", nil)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -308,12 +308,12 @@ func TestGetMyContent_Unauthorized(t *testing.T) {
 	}
 }
 
-func _TestGetMyContent_NoTenant(t *testing.T) {
+func _TestGetMyContent_NoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandlers(testService(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/me/content/22222222-2222-2222-2222-222222222222", nil)
-	req = withAuthUser(req) // authenticated but no tenant in context
+	req = withAuthUser(req) // authenticated but no platform in context
 
 	rr := httptest.NewRecorder()
 	h.GetMyContent(rr, req)
@@ -333,7 +333,7 @@ func TestGetMyContent_InvalidID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/me/content/not-a-uuid", nil)
 	req = withAuthUser(req)
-	req = withTenant(req)
+	req = withPlatform(req)
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)

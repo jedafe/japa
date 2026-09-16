@@ -51,12 +51,12 @@ func (s *Store) getComparisonTypeBySlug(ctx context.Context, slug string) (gen.G
 	return row, nil
 }
 
-func (s *Store) listComparisonTypesByTenant(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
+func (s *Store) listComparisonTypesByPlatform(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListComparisonTypesByTenant(ctx, gen.ListComparisonTypesByTenantParams{
+	rows, err := s.read.ListComparisonTypes(ctx, gen.ListComparisonTypesParams{
 
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -328,7 +328,7 @@ func (s *Store) listComparisonsFiltered(ctx context.Context, p gen.ListCompariso
 }
 
 // listComparisonsFilteredAdmin returns all non-deleted comparison content rows
-// for the tenant, optionally filtered by type_id and space_id.
+// for the platform, optionally filtered by type_id and space_id.
 func (s *Store) listComparisonsFilteredAdmin(ctx context.Context, p gen.ListComparisonsFilteredAdminParams) ([]gen.ListComparisonsFilteredAdminRow, error) {
 	rows, err := s.read.ListComparisonsFilteredAdmin(ctx, p)
 	if err != nil {

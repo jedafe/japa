@@ -47,7 +47,7 @@ type VisaGuideField struct {
 // ListPublishedVisaGuideFields queries published visa guides and their
 // custom_field_values for the requested field keys (e.g.
 // destination_country, visa_type, required_documents). The query joins
-// contents with custom_field_values + custom_fields so tenancy is enforced
+// contents with custom_field_values + custom_fields so platform scoping is enforced
 // transitively via custom_fields. (BUG-014 pattern).
 func (s *Store) ListPublishedVisaGuideFields(ctx context.Context, fieldKeys []string) ([]VisaGuideField, error) {
 	if len(fieldKeys) == 0 {
@@ -107,7 +107,7 @@ type CountrySpace struct {
 	Slug string
 }
 
-// ListCountrySpaces returns all country-level Geo Spaces for the tenant,
+// ListCountrySpaces returns all country-level Geo Spaces for the platform,
 // ordered by name. Used to populate the origin selector (§70 step 1).
 func (s *Store) ListCountrySpaces(ctx context.Context) ([]CountrySpace, error) {
 	const q = `

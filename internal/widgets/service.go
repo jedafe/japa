@@ -29,12 +29,12 @@ func (s *Service) SetRedis(r valkeycompat.Cmdable) {
 	s.redis = r
 }
 
-// List returns a paginated list of widgets for a tenant.
+// List returns a paginated list of widgets for a platform.
 func (s *Service) List(ctx context.Context, q string, page, limit int32) ([]Widget, int64, error) {
 	return s.store.List(ctx, q, page, limit)
 }
 
-// Get returns a single widget by ID, scoped to the tenant.
+// Get returns a single widget by ID, scoped to the platform.
 func (s *Service) Get(ctx context.Context, id pgtype.UUID) (Widget, error) {
 	return s.store.Get(ctx, id)
 }

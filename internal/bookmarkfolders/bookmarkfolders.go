@@ -183,9 +183,9 @@ func (s *Service) DeleteFolder(ctx context.Context, id, userID pgtype.UUID) erro
 
 // ReorderFolders sets the position of each folder by its index in the
 // folderIDs slice (BUG-008: §08 spec supports manual folder ordering via
-// the position column). All folderIDs must belong to the caller + tenant;
+// the position column). All folderIDs must belong to the caller + platform;
 // an unknown ID is silently skipped (defense-in-depth — the UPDATE is
-// tenant+owner scoped). Positions are 0-indexed.
+// platform+owner scoped). Positions are 0-indexed.
 func (s *Service) ReorderFolders(ctx context.Context, userID pgtype.UUID, folderIDs []pgtype.UUID) error {
 	for i, fid := range folderIDs {
 		if err := s.write.UpdateBookmarkFolderPosition(ctx, gen.UpdateBookmarkFolderPositionParams{

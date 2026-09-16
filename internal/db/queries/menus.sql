@@ -112,10 +112,10 @@ FROM (
 WHERE menu_items.id = u.id;
 
 -- =====================
--- Public resolution (no tenant filter — called from public endpoint)
+-- Public resolution (no platform filter — called from public endpoint)
 -- =====================
 
--- name: GetMenuBySlugForTenant :one
+-- name: GetActiveMenuBySlug :one
 SELECT id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE slug = @slug AND status = 'active';

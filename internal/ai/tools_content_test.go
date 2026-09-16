@@ -28,7 +28,7 @@ import (
 
 // stubContentService implements ContentService for testing.
 type stubContentService struct {
-	searchResults      []gen.ListContentsByTenantRow
+	searchResults      []gen.ListContentsRow
 	searchErr          error
 	spaceSearchResults []gen.SearchContentsBySpaceRow
 	spaceSearchErr     error
@@ -36,7 +36,7 @@ type stubContentService struct {
 	getContentErr      error
 }
 
-func (s *stubContentService) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error) {
+func (s *stubContentService) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error) {
 	return s.searchResults, s.searchErr
 }
 
@@ -152,12 +152,12 @@ func parseToolResult(t *testing.T, tr *ToolResult) map[string]any {
 // content.search (task 4.01)
 // ---------------------------------------------------------------------------
 
-func TestContentSearchHandler_TenantWide(t *testing.T) {
+func TestContentSearchHandler_PlatformWide(t *testing.T) {
 	t.Parallel()
 
 	deps := &ToolDeps{
 		Content: &stubContentService{
-			searchResults: []gen.ListContentsByTenantRow{
+			searchResults: []gen.ListContentsRow{
 				{ID: mustUUID(t, "00000000-0000-0000-0000-000000000001"), Title: "TUM Guide", Slug: "tum-guide", ContentType: "article", Status: "published"},
 			},
 		},
@@ -220,7 +220,7 @@ func TestContentSearchHandler_PrivacyFiltersExempt(t *testing.T) {
 	// exempt. The handler should filter it out.
 	deps := &ToolDeps{
 		Content: &stubContentService{
-			searchResults: []gen.ListContentsByTenantRow{
+			searchResults: []gen.ListContentsRow{
 				{ID: mustUUID(t, "00000000-0000-0000-0000-000000000001"), Title: "Exempt", Slug: "exempt", ContentType: "article", Status: "published"},
 				{ID: mustUUID(t, "00000000-0000-0000-0000-000000000002"), Title: "Public", Slug: "public", ContentType: "article", Status: "published"},
 			},
@@ -262,7 +262,7 @@ func TestContentSearchHandler_NoPrivacyChecker(t *testing.T) {
 	// When Privacy is nil, no filtering is applied — all results pass through.
 	deps := &ToolDeps{
 		Content: &stubContentService{
-			searchResults: []gen.ListContentsByTenantRow{
+			searchResults: []gen.ListContentsRow{
 				{ID: mustUUID(t, "00000000-0000-0000-0000-000000000001"), Title: "A", Slug: "a", ContentType: "article", Status: "published"},
 				{ID: mustUUID(t, "00000000-0000-0000-0000-000000000002"), Title: "B", Slug: "b", ContentType: "article", Status: "published"},
 			},

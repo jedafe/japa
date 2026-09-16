@@ -57,12 +57,12 @@ func validationError(msg string) error {
 // Block operations
 // ---------------------------------------------------------------------------
 
-// ListBlocks returns all blocks for a tenant, optionally filtered by q.
+// ListBlocks returns all blocks for a platform, optionally filtered by q.
 func (s *Service) ListBlocks(ctx context.Context, q string, page, limit int32) ([]Block, int64, error) {
 	return s.store.ListBlocks(ctx, q, page, limit)
 }
 
-// GetBlock returns a single block by ID, scoped to the tenant.
+// GetBlock returns a single block by ID, scoped to the platform.
 func (s *Service) GetBlock(ctx context.Context, id pgtype.UUID) (Block, error) {
 	return s.store.GetBlock(ctx, id)
 }
@@ -110,12 +110,12 @@ func (s *Service) DeleteBlock(ctx context.Context, id pgtype.UUID) error {
 // Template operations
 // ---------------------------------------------------------------------------
 
-// ListTemplates returns all templates for a tenant, optionally filtered by q and category.
+// ListTemplates returns all templates for a platform, optionally filtered by q and category.
 func (s *Service) ListTemplates(ctx context.Context, q, category string, page, limit int32) ([]Template, int64, error) {
 	return s.store.ListTemplates(ctx, q, category, page, limit)
 }
 
-// GetTemplate returns a single template by ID, scoped to the tenant.
+// GetTemplate returns a single template by ID, scoped to the platform.
 func (s *Service) GetTemplate(ctx context.Context, id pgtype.UUID) (Template, error) {
 	return s.store.GetTemplate(ctx, id)
 }
@@ -159,12 +159,12 @@ func (s *Service) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
 // Theme operations
 // ---------------------------------------------------------------------------
 
-// ListThemes returns all themes for a tenant, optionally filtered by q.
+// ListThemes returns all themes for a platform, optionally filtered by q.
 func (s *Service) ListThemes(ctx context.Context, q string, page, limit int32) ([]Theme, int64, error) {
 	return s.store.ListThemes(ctx, q, page, limit)
 }
 
-// GetTheme returns a single theme by ID, scoped to the tenant.
+// GetTheme returns a single theme by ID, scoped to the platform.
 func (s *Service) GetTheme(ctx context.Context, id pgtype.UUID) (Theme, error) {
 	return s.store.GetTheme(ctx, id)
 }
@@ -196,7 +196,7 @@ func (s *Service) DeleteTheme(ctx context.Context, id pgtype.UUID) error {
 	return s.store.DeleteTheme(ctx, id)
 }
 
-// SetDefaultTheme sets a theme as the default for the tenant.
+// SetDefaultTheme sets a theme as the default for the platform.
 func (s *Service) SetDefaultTheme(ctx context.Context, id pgtype.UUID) error {
 	return s.store.SetDefaultTheme(ctx, id)
 }
@@ -205,7 +205,7 @@ func (s *Service) SetDefaultTheme(ctx context.Context, id pgtype.UUID) error {
 // Page operations
 // ---------------------------------------------------------------------------
 
-// ListPages returns a paginated list of pages for a tenant, optionally
+// ListPages returns a paginated list of pages for a platform, optionally
 // narrowed by f. page is 1-based; limit is the page size.
 func (s *Service) ListPages(ctx context.Context, f PageListFilter, page, limit int32) ([]Page, int64, error) {
 	return s.store.ListPages(ctx, f, page, limit)
@@ -216,7 +216,7 @@ func (s *Service) ListPublishedPages(ctx context.Context) ([]Page, error) {
 	return s.store.ListPublishedPages(ctx)
 }
 
-// GetPage returns a single page by ID, scoped to the tenant.
+// GetPage returns a single page by ID, scoped to the platform.
 func (s *Service) GetPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 	return s.store.GetPage(ctx, id)
 }
@@ -308,8 +308,8 @@ func (s *Service) DuplicatePage(ctx context.Context, id, createdBy pgtype.UUID) 
 		return Page{}, err
 	}
 
-	// Derive a tenant-unique slug: {src.Slug}-copy, -copy-2, -copy-3, ...
-	// Bounded to 1000 attempts to guarantee termination even if a tenant has
+	// Derive a platform-unique slug: {src.Slug}-copy, -copy-2, -copy-3, ...
+	// Bounded to 1000 attempts to guarantee termination even if a platform has
 	// somehow filled the -copy-N namespace.
 	base := src.Slug
 	if base == "" {

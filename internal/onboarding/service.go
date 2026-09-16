@@ -967,7 +967,7 @@ const (
 	keyPromotedTags   = "onboarding.promoted_tags"
 )
 
-// ListTemplates returns all onboarding templates for the tenant.
+// ListTemplates returns all onboarding templates for the platform.
 //
 // NOTE: Templates CRUD is wired (route catalog + admin API) but the wizard
 // flow does not yet consume the active template to drive step definitions —
@@ -1032,7 +1032,7 @@ func (s *Service) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
 	return s.store.deleteTemplate(ctx, id)
 }
 
-// GetAdminSettings returns the tenant's onboarding configuration as exposed
+// GetAdminSettings returns the platform's onboarding configuration as exposed
 // on the admin Onboarding Settings surface (Section 09 — minimum-count fields
 // and promoted-entities picker). Reads the six onboarding.* system_settings
 // keys and assembles them into OnboardingAdminSettings. Missing keys fall
@@ -1071,7 +1071,7 @@ func (s *Service) GetAdminSettings(ctx context.Context) (*OnboardingAdminSetting
 	return settings, nil
 }
 
-// UpdateAdminSettings applies a partial update to the tenant's onboarding
+// UpdateAdminSettings applies a partial update to the platform's onboarding
 // configuration. Only fields present in the request body are written; nil
 // fields preserve the existing value. All writes are applied atomically via
 // UpdateSettingsBatch so the admin never observes a half-applied config.

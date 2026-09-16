@@ -110,5 +110,5 @@ func writeBanResponse(w http.ResponseWriter, expiresAt *time.Time) {
 		resp["expires_at"] = expiresAt.Format(time.RFC3339)
 	}
 
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }

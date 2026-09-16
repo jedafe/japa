@@ -38,9 +38,9 @@ func TestHandleUserFeed_MissingUsername(t *testing.T) {
 	}
 }
 
-// TestHandleUserFeed_MissingTenant verifies the handler returns 503
-// when no tenant ID is present in the request context.
-func _TestHandleUserFeed_MissingTenant(t *testing.T) {
+// TestHandleUserFeed_MissingPlatform verifies the handler returns 503
+// when no platform ID is present in the request context.
+func _TestHandleUserFeed_MissingPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := newTestHandlers()
@@ -57,9 +57,9 @@ func _TestHandleUserFeed_MissingTenant(t *testing.T) {
 	}
 }
 
-// _TestHandleUserFeed_InvalidTenant is disabled: single-tenant handlers no
-// longer reject requests for a missing tenant ID.
-func _TestHandleUserFeed_InvalidTenant(t *testing.T) {
+// _TestHandleUserFeed_InvalidPlatform is disabled: single-platform handlers no
+// longer reject requests for a missing platform ID.
+func _TestHandleUserFeed_InvalidPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := newTestHandlers()
@@ -76,9 +76,9 @@ func _TestHandleUserFeed_InvalidTenant(t *testing.T) {
 	}
 }
 
-// TestHandleFeed_MissingTenant verifies the universal feed handler
-// returns 503 when no tenant ID is in the context.
-func _TestHandleFeed_MissingTenant(t *testing.T) {
+// TestHandleFeed_MissingPlatform verifies the universal feed handler
+// returns 503 when no platform ID is in the context.
+func _TestHandleFeed_MissingPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := newTestHandlers()

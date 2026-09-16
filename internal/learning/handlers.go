@@ -51,7 +51,7 @@ type settingsReader interface {
 }
 
 // Handlers exposes HTTP endpoints for the learning platform. Each handler
-// reads tenant context from the request, parses input, delegates to the
+// reads platform context from the request, parses input, delegates to the
 // store, and writes a JSON response. Guard clauses at the top of every
 // handler keep the happy path un-indented.
 type Handlers struct {
@@ -163,7 +163,7 @@ func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID pgtype.UUID) {
 // Public / authenticated user endpoints
 // ---------------------------------------------------------------------------
 
-// ListPublishedTracks returns all published tracks for the current tenant.
+// ListPublishedTracks returns all published tracks for the current platform.
 func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
 
 
@@ -304,7 +304,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the lesson exists and belongs to this tenant.
+	// Verify the lesson exists and belongs to this platform.
 	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
@@ -399,7 +399,7 @@ func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request
 // Admin endpoints (require learning.admin.manage permission)
 // ---------------------------------------------------------------------------
 
-// ListAllTracks returns every track for the tenant (admin view).
+// ListAllTracks returns every track for the platform (admin view).
 func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
 
 

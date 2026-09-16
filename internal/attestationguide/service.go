@@ -642,7 +642,7 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes
 // pathway. Auth required (attestation_guide.update permission). Only
 // published, active pathways accept community updates (BUG-002).
 func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, userID pgtype.UUID, input CreateCommunityUpdateInput) (CommunityUpdateDTO, error) {
-	// Verify the pathway exists, belongs to the tenant, and is published +
+	// Verify the pathway exists, belongs to the platform, and is published +
 	// active (BUG-002: no updates on draft/ai_draft/pending/rejected pathways).
 	if _, err := s.store.GetPublishedPathwayByID(ctx, pathwayID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

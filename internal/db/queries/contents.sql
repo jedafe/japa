@@ -224,12 +224,12 @@ GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url;
 
 -- name: ContentSlugExists :one
--- Returns true if any contents row (including soft-deleted) in the tenant
+-- Returns true if any contents row (including soft-deleted) in the platform
 -- uses the given slug. The unique index on (slug) is not partial,
 -- so a slug held by a deleted row is still unavailable.
 SELECT EXISTS(SELECT 1 FROM contents WHERE slug = @slug);
 
--- name: ListContentsByTenant :many
+-- name: ListContents :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
@@ -264,7 +264,7 @@ LIMIT @page_limit;
 
 -- name: ListContentsByIDs :many
 -- Fetches content rows by a list of IDs with the same JOINed enrichment
--- as ListContentsByTenant. Used by the Meilisearch search integration:
+-- as ListContents. Used by the Meilisearch search integration:
 -- when ?q= is present, the handler queries Meilisearch for matching IDs,
 -- then uses this query to fetch the full rows with author/space names.
 -- Ref: docs/PERFORMANCE_AUDIT.md §4 (Search Offload)
@@ -632,7 +632,7 @@ WHERE intel_source_id = @intel_source_id
 -- Updates a single content row's author_id and field_values in one
 -- statement. The caller (agent handler) reads the current field_values,
 -- merges the _ai_provenance.author_assigned_by / author_assignment_reason
--- metadata in Go, and passes the full updated JSONB here. Tenant-scoped
+-- metadata in Go, and passes the full updated JSONB here. Platform-scoped
 -- for defense-in-depth (BUG-014). Distinct from gdpr.sql's
 -- ReassignContentAuthor (:exec bulk reassign on user deletion).
 UPDATE contents
@@ -838,7 +838,7 @@ WHERE content_id = @content_id;
 
 -- name: ListContentIDsScoredSince :many
 -- Returns content IDs whose content_scores.last_scored_at is newer than the
--- given cursor, joined to contents for tenant scoping. Used by the §13
+-- given cursor, joined to contents for platform scoping. Used by the §13
 -- batched engagement-score re-index cron to find content whose search index
 -- document needs refreshing without re-indexing on every engagement event.
 -- Limits to @batch_size rows ordered by last_scored_at ascending so the
@@ -996,7 +996,7 @@ DELETE FROM bookmarks
 WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
 -- name: DeleteBookmarkByID :execrows
--- Deletes a single bookmark by its row ID, scoped to tenant + owner.
+-- Deletes a single bookmark by its row ID, scoped to platform + owner.
 -- Used by DELETE /me/bookmarks/{id} — the polymorphic remove endpoint that
 -- works regardless of entity_type (content, forum_thread, space, comment, etc.).
 DELETE FROM bookmarks
@@ -1272,7 +1272,7 @@ FROM users u
 WHERE u.id = @author_id;
 
 -- name: CountPostsByAuthor :one
--- Counts published, non-deleted content by the given author in a tenant.
+-- Counts published, non-deleted content by the given author in a platform.
 -- Used by the spam pipeline's new-user link restriction (§41 Layer 3) to
 -- determine whether a user has passed the "first N posts" threshold.
 SELECT COUNT(*)::int AS count

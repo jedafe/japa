@@ -2254,7 +2254,7 @@ type MenuItem struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	RequiredGroupIds []byte             `json:"required_group_ids"`
-	// Optional feature flag key (feature_flags.key). If set, the item is shown only when the flag is enabled for the tenant.
+	// Optional feature flag key (feature_flags.key). If set, the item is shown only when the flag is enabled on this platform.
 	FeatureFlag *string `json:"feature_flag"`
 }
 

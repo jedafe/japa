@@ -53,12 +53,12 @@ func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string) (gen.GetBl
 	return row, nil
 }
 
-func (s *Store) listBlogSeriesByTenant(ctx context.Context, q, contentType string, limit, offset int32) ([]gen.ListBlogSeriesByTenantRow, error) {
+func (s *Store) listBlogSeriesByPlatform(ctx context.Context, q, contentType string, limit, offset int32) ([]gen.ListBlogSeriesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListBlogSeriesByTenant(ctx, gen.ListBlogSeriesByTenantParams{
+	rows, err := s.read.ListBlogSeries(ctx, gen.ListBlogSeriesParams{
 
 		Q:           q,
 		ContentType: contentType,
@@ -66,7 +66,7 @@ func (s *Store) listBlogSeriesByTenant(ctx context.Context, q, contentType strin
 		PageOffset:  offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing blog series by tenant: %w", err)
+		return nil, fmt.Errorf("listing blog series by platform: %w", err)
 	}
 
 	return rows, nil
@@ -90,14 +90,14 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.
 	return rows, nil
 }
 
-func (s *Store) countBlogSeriesByTenant(ctx context.Context, q, contentType string) (int64, error) {
-	count, err := s.read.CountBlogSeriesByTenant(ctx, gen.CountBlogSeriesByTenantParams{
+func (s *Store) countBlogSeriesByPlatform(ctx context.Context, q, contentType string) (int64, error) {
+	count, err := s.read.CountBlogSeries(ctx, gen.CountBlogSeriesParams{
 
 		Q:           q,
 		ContentType: contentType,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("counting blog series by tenant: %w", err)
+		return 0, fmt.Errorf("counting blog series by platform: %w", err)
 	}
 
 	return count, nil
@@ -169,7 +169,7 @@ func (s *Store) listPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]
 // getSeriesForContent returns the series_id for a given content_id, or
 // pg.ErrNoRows if the content is not part of any series. Used by the editor
 // load to restore the series selector when editing existing content.
-// BUG-009: tenant-scoped to prevent cross-tenant information disclosure.
+// BUG-009: platform-scoped to prevent cross-platform information disclosure.
 func (s *Store) getSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
 	return s.read.GetSeriesForContent(ctx,
 		contentID,
@@ -443,7 +443,7 @@ func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, items []struct {
 // getBlogPostDetail returns a single blog post with author, avatar, featured
 // image, space name, tags, and series navigation (C4).
 // Authors can view their own drafts; super-admins can view any post in the
-// tenant for moderation. Ref: japaconnect-engineering/sections/24-blog-extension.md.
+// platform for moderation. Ref: japaconnect-engineering/sections/24-blog-extension.md.
 func (s *Store) getBlogPostDetail(ctx context.Context, slug string, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
 	row, err := s.read.GetBlogPostDetail(ctx, gen.GetBlogPostDetailParams{
 		Slug: slug,

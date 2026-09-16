@@ -178,16 +178,16 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	contentType := parseContentTypePtr(r) // BUG-007
 
-	// Try Valkey cache (jc:trending:content:{tenant}:{geo}:{window}, Section 53, TTL 30min).
+	// Try Valkey cache (jc:trending:content:{platform}:{geo}:{window}, Section 53, TTL 30min).
 	// Include content_type in the cache key when filtering.
 	// Uses distributed lock stampede protection (BUG-008).
 	//
 	// The cache always stores maxLimit rows; per-request ?limit= is applied
 	// by truncating after the cache lookup so that different limit values
 	// share one cache entry (no limit-suffix collision).
-	tenantStr := ""
+	platformStr := ""
 
-	cacheKey := vkcache.MustKey("trending:content:%s:%s:%s", tenantStr, geoCode, window)
+	cacheKey := vkcache.MustKey("trending:content:%s:%s:%s", platformStr, geoCode, window)
 	if contentType != nil {
 		cacheKey += ":" + *contentType
 	}
@@ -253,15 +253,15 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
 
-	// Valkey cache (jc:trending:tags:{tenant}:{geo}:{window}, Section 53, TTL 30min).
+	// Valkey cache (jc:trending:tags:{platform}:{geo}:{window}, Section 53, TTL 30min).
 	// window is included because the SQL filters by window; omitting it
 	// caused different ?window= values to collide on the same cache entry
 	// and return stale data.
 	//
 	// The cache always stores maxLimit rows; per-request ?limit= is applied
 	// by truncating after the cache lookup.
-	tenantStr := ""
-	cacheKey := vkcache.MustKey("trending:tags:%s:%s:%s", tenantStr, geoCode, window)
+	platformStr := ""
+	cacheKey := vkcache.MustKey("trending:tags:%s:%s:%s", platformStr, geoCode, window)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingTagsRow, error) {
 		rows, err := h.Store.GetTrendingTags(ctx, window, geoCode, maxLimit)
@@ -307,7 +307,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	level := parseLevelPtr(r) // BUG-008
 
-	// Try Valkey cache (jc:trending:spaces:{tenant}:{geo}:{window}, Section 53, TTL 30min).
+	// Try Valkey cache (jc:trending:spaces:{platform}:{geo}:{window}, Section 53, TTL 30min).
 	// window is included because the SQL filters by window; omitting it
 	// caused different ?window= values to collide on the same cache entry
 	// and return stale data. level is included when filtering.
@@ -315,9 +315,9 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	//
 	// The cache always stores maxLimit rows; per-request ?limit= is applied
 	// by truncating after the cache lookup.
-	tenantStr := ""
+	platformStr := ""
 
-	cacheKey := vkcache.MustKey("trending:spaces:%s:%s:%s", tenantStr, geoCode, window)
+	cacheKey := vkcache.MustKey("trending:spaces:%s:%s:%s", platformStr, geoCode, window)
 	if level != nil {
 		cacheKey += ":" + *level
 	}

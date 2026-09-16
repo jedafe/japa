@@ -34,7 +34,7 @@ const (
 )
 
 // webhookEmitter fans a review.* event out to all subscribed webhook
-// endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
+// endpoints for the platform (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
 	EmitEvent(ctx context.Context, eventType string, payload any)
 }

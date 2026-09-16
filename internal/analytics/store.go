@@ -170,7 +170,7 @@ func (s *Store) ResolveSecurityScanResult(ctx context.Context, id pgtype.UUID) e
 	)
 }
 
-// DeleteSecurityScanResult permanently deletes a finding (tenant-scoped).
+// DeleteSecurityScanResult permanently deletes a finding (platform-scoped).
 func (s *Store) DeleteSecurityScanResult(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteSecurityScanResult(ctx,
 		id,
@@ -197,7 +197,7 @@ func (s *Store) GetContentVolumeOverTime(ctx context.Context, startDate, endDate
 	return s.read.GetContentVolumeOverTime(ctx, gen.GetContentVolumeOverTimeParams{Column1: nullableTimestamptzPtr(startDate), Column2: nullableTimestamptzPtr(endDate)})
 }
 
-// GetTotalUsers returns the total number of users for a tenant.
+// GetTotalUsers returns the total number of users for a platform.
 func (s *Store) GetTotalUsers(ctx context.Context) (int32, error) {
 	return s.read.GetTotalUsers(ctx)
 }

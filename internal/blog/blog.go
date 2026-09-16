@@ -85,7 +85,7 @@ func seriesFromRow(row any) Series {
 			UpdatedAt:     r.UpdatedAt,
 			DeletedAt:     r.DeletedAt,
 		}
-	case gen.ListBlogSeriesByTenantRow:
+	case gen.ListBlogSeriesRow:
 		return Series{
 			ID: r.ID,
 

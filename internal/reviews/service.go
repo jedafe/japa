@@ -104,13 +104,13 @@ func (s *Service) ListReviewsByReviewer(ctx context.Context, reviewerUserID pgty
 	return s.store.listReviewsByReviewer(ctx, reviewerUserID, limit, offset)
 }
 
-// ListReviews returns all reviews for a tenant (admin moderation view),
+// ListReviews returns all reviews for a platform (admin moderation view),
 // regardless of entity or reviewer and including all statuses.
 func (s *Service) ListReviews(ctx context.Context, limit, offset int32) ([]gen.Review, error) {
 	return s.store.listReviews(ctx, limit, offset)
 }
 
-// ListAdminReviews returns all reviews for a tenant (admin moderation view)
+// ListAdminReviews returns all reviews for a platform (admin moderation view)
 // with resolved entity names.
 func (s *Service) ListAdminReviews(ctx context.Context, limit, offset int32) ([]gen.ListAdminReviewsRow, error) {
 	return s.store.listAdminReviews(ctx, limit, offset)
@@ -121,7 +121,7 @@ func (s *Service) ListAdminReviewsFiltered(ctx context.Context, status, entityTy
 	return s.store.listAdminReviewsFiltered(ctx, status, entityType, limit, offset)
 }
 
-// CountAdminReviews returns the total review count for a tenant.
+// CountAdminReviews returns the total review count for a platform.
 func (s *Service) CountAdminReviews(ctx context.Context) (int32, error) {
 	return s.store.countAdminReviews(ctx)
 }

@@ -411,7 +411,7 @@ WHERE destination_space_id = $1
 
 // GetReportForNotification returns the report's destination_space_id and
 // reporter_id for the notify_subscribers task. Returns pgx.ErrNoRows if
-// the report does not exist or does not belong to the tenant.
+// the report does not exist or does not belong to the platform.
 func (s *Store) GetReportForNotification(ctx context.Context, id pgtype.UUID) (destSpaceID, reporterID pgtype.UUID, scamType, description string, err error) {
 	err = s.pool.Reader.QueryRow(ctx, `
 SELECT destination_space_id, reporter_id, scam_type, description

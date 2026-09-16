@@ -354,8 +354,8 @@ func withGeoContext(r *http.Request, gc GeoContext) *http.Request {
 	return r.WithContext(ctx)
 }
 
-// withTenant injects a Tenant into the request context.
-func withTenant(r *http.Request) *http.Request {
+// withPlatform injects a Platform into the request context.
+func withPlatform(r *http.Request) *http.Request {
 	t := &struct {
 		ID   pgtype.UUID
 		Name string
@@ -418,7 +418,7 @@ func TestHandleGeoMe_Valid(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/me", nil)
 	req = withGeoContext(req, gc)
-	req = withTenant(req)
+	req = withPlatform(req)
 	rec := httptest.NewRecorder()
 
 	h.HandleGeoMe(rec, req)
@@ -508,7 +508,7 @@ func TestHandleGeoMe_SuggestedSpaces(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/me", nil)
 	req = withGeoContext(req, gc)
-	req = withTenant(req)
+	req = withPlatform(req)
 	rec := httptest.NewRecorder()
 
 	h.HandleGeoMe(rec, req)
@@ -662,7 +662,7 @@ func TestHandleGeoDetect_Valid(t *testing.T) {
 	}
 }
 
-func _TestHandleListCountries_NoTenant(t *testing.T) {
+func _TestHandleListCountries_NoPlatform(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandlers(&Reader{}, &mockSpacesService{})
@@ -705,7 +705,7 @@ func TestHandleListCountries_Valid(t *testing.T) {
 	h := NewHandlers(&Reader{}, svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/countries", nil)
-	req = withTenant(req)
+	req = withPlatform(req)
 	rec := httptest.NewRecorder()
 
 	h.HandleListCountries(rec, req)

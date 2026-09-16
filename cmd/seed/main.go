@@ -88,7 +88,7 @@ func run() error {
 
 	defer database.Close()
 
-	// Parse the tenant ID once.
+	// Parse the platform ID once.
 	tid := parseUUID("")
 
 	// ── Check if admin already exists (idempotent) ─────────────────────
@@ -607,7 +607,7 @@ func seedForumContent(ctx context.Context, database *db.DB, tid pgtype.UUID, use
 		{title: "Canadian healthcare for new immigrants", slug: "demo-forum-thread-5", body: "Does anyone know how long I have to wait for OHIP coverage after arriving in Ontario? I have a chronic condition that needs monitoring.", spaceIdx: 3, authorIdx: 5, solved: true, forumTagIdx: 4, replies: 2},
 		{title: "Dealing with discrimination at work", slug: "demo-forum-thread-6", body: "I've been experiencing subtle discrimination at my workplace. How do you handle this without risking your job or visa status?", spaceIdx: 2, authorIdx: 6, solved: false, forumTagIdx: 5, replies: 4},
 		{title: "Best remittance service for US to Nigeria", slug: "demo-forum-thread-7", body: "Which service gives the best exchange rate for sending money to Nigeria from the US? I've been using WorldRemit but looking for alternatives.", spaceIdx: 2, authorIdx: 7, solved: false, forumTagIdx: 3, replies: 3},
-		{title: "Navigating the UK housing market", slug: "demo-forum-thread-8", body: "Looking for advice on renting in the UK as a new immigrant. What should I know about tenancy agreements, deposits, and tenant rights?", spaceIdx: 1, authorIdx: 1, solved: false, forumTagIdx: 4, replies: 2},
+		{title: "Navigating the UK housing market", slug: "demo-forum-thread-8", body: "Looking for advice on renting in the UK as a new immigrant. What should I know about tenancy agreements, deposits, and platform rights?", spaceIdx: 1, authorIdx: 1, solved: false, forumTagIdx: 4, replies: 2},
 		{title: "Canadian citizenship application timeline", slug: "demo-forum-thread-9", body: "How long did it take you to get Canadian citizenship after PR? I'm approaching my 3-year mark and wondering about the process.", spaceIdx: 3, authorIdx: 2, solved: false, forumTagIdx: 0, replies: 3},
 		{title: "Starting a business in the US as a Nigerian", slug: "demo-forum-thread-10", body: "I want to start a tech consulting business in the US. What visa options are available? Can I use my H1B to start a side business?", spaceIdx: 2, authorIdx: 3, solved: false, forumTagIdx: 2, replies: 4},
 		{title: "Mental health support for immigrants", slug: "demo-forum-thread-11", body: "Feeling overwhelmed and homesick. Does anyone know of culturally sensitive therapists who understand the immigrant experience?", spaceIdx: 0, authorIdx: 4, solved: false, forumTagIdx: 5, replies: 3},
@@ -1107,7 +1107,7 @@ func seedLearning(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs
 			difficulty:  "beginner",
 			modules: []moduleDef{
 				{title: "Renting in the UK", slug: "demo-module-7a", lessons: []lessonDef{
-					{title: "Tenant Rights", slug: "demo-lesson-7a-i", content: "Know your rights as a tenant..."},
+					{title: "Platform Rights", slug: "demo-lesson-7a-i", content: "Know your rights as a platform..."},
 					{title: "Deposit Protection", slug: "demo-lesson-7a-ii", content: "How deposit protection works..."},
 				}},
 				{title: "Buying Property", slug: "demo-module-7b", lessons: []lessonDef{
@@ -1370,7 +1370,7 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 	return nil
 }
 
-// getSpaceIDs returns all space IDs for the tenant.
+// getSpaceIDs returns all space IDs for the platform.
 func getSpaceIDs(ctx context.Context, database *db.DB, tid pgtype.UUID) ([]pgtype.UUID, error) {
 	rows, err := database.Reader.Query(ctx, `SELECT id FROM spaces  ORDER BY created_at`)
 	if err != nil {

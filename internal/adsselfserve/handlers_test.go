@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// withTenant injects a placeholder into the request context.
-func withTenant(r *http.Request) *http.Request {
+// withPlatform injects a placeholder into the request context.
+func withPlatform(r *http.Request) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(),
 		struct{}{}, &struct {
 			ID   pgtype.UUID
@@ -24,9 +24,9 @@ func withTenant(r *http.Request) *http.Request {
 		}{ID: pgtype.UUID{}}))
 }
 
-// TestHandleListSlots_NoTenant_503 verifies that the slots endpoint requires
-// a resolved tenant (returns 503 when tenant middleware has not run).
-func _TestHandleListSlots_NoTenant_503(t *testing.T) {
+// TestHandleListSlots_NoPlatform_503 verifies that the slots endpoint requires
+// a resolved platform (returns 503 when platform middleware has not run).
+func _TestHandleListSlots_NoPlatform_503(t *testing.T) {
 	h := NewHandlers(&Service{})
 	req := httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/slots", nil)
 	rr := httptest.NewRecorder()
@@ -38,10 +38,10 @@ func _TestHandleListSlots_NoTenant_503(t *testing.T) {
 }
 
 // TestHandleListSlots_NoAuth_401 verifies that the slots endpoint requires
-// auth when a tenant is present but no user is authenticated.
+// auth when a platform is present but no user is authenticated.
 func TestHandleListSlots_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
-	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/slots", nil))
+	req := withPlatform(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/slots", nil))
 	rr := httptest.NewRecorder()
 	h.HandleListSlots(rr, req)
 
@@ -53,7 +53,7 @@ func TestHandleListSlots_NoAuth_401(t *testing.T) {
 // TestHandleCreateCampaign_NoAuth_401 verifies that campaign creation requires auth.
 func TestHandleCreateCampaign_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
-	req := withTenant(httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil))
+	req := withPlatform(httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil))
 	rr := httptest.NewRecorder()
 	h.HandleCreateCampaign(rr, req)
 
@@ -68,7 +68,7 @@ func TestHandleListCampaigns_NoAuth_401(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns", h.HandleListCampaigns)
 
-	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil))
+	req := withPlatform(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 
@@ -83,7 +83,7 @@ func TestHandleGetCampaign_NoAuth_401(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns/{id}", h.HandleGetCampaign)
 
-	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002", nil))
+	req := withPlatform(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 
@@ -98,7 +98,7 @@ func TestHandlePauseCampaign_NoAuth_401(t *testing.T) {
 	r := chi.NewRouter()
 	r.Post("/org/{org_id}/ads/campaigns/{id}/pause", h.HandlePauseCampaign)
 
-	req := withTenant(httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/pause", nil))
+	req := withPlatform(httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/pause", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 
@@ -113,7 +113,7 @@ func TestHandleGetStats_NoAuth_401(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns/{id}/stats", h.HandleGetStats)
 
-	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/stats", nil))
+	req := withPlatform(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/stats", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 

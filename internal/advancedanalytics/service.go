@@ -100,7 +100,7 @@ func (s *Service) GetNewsletterEngagement(ctx context.Context, limit int) ([]gen
 		limit = 20
 	}
 
-	return s.store.NewsletterEngagement(ctx, int32(limit))
+	return s.store.NewsletterEngagement(ctx, int32(limit)) //nolint:gosec // G115: limit is clamped to 1..100.
 }
 
 // GetSubscriberGrowth returns newsletter subscriber counts per list.
@@ -139,7 +139,7 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 
 		headers := []string{"content_id", "title", "slug", "content_type", "total_views", "total_reactions", "total_comments", "engagement_score"}
 
-		return writeCSV(headers, func(w *csv.Writer) {
+		csvStr, err := writeCSV(headers, func(w *csv.Writer) error {
 			for _, r := range rows {
 				title := ""
 				if r.Title != nil {
@@ -156,15 +156,22 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					contentType = *r.ContentType
 				}
 
-				w.Write([]string{
+				if err := w.Write([]string{
 					r.ContentID.String(), title, slug, contentType,
 					strconv.FormatInt(r.TotalViews, 10),
 					strconv.FormatInt(r.TotalReactions, 10),
 					strconv.FormatInt(r.TotalComments, 10),
 					strconv.FormatInt(int64(r.EngagementScore), 10),
-				})
+				}); err != nil {
+					return err
+				}
 			}
-		}), headers, nil
+			return nil
+		})
+		if err != nil {
+			return "", nil, err
+		}
+		return csvStr, headers, nil
 
 	case "revenue_streams":
 		rows, err := s.GetRevenueStreams(ctx, period)
@@ -174,22 +181,29 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 
 		headers := []string{"month", "subscription_revenue", "course_revenue", "ad_revenue", "credit_revenue"}
 
-		return writeCSV(headers, func(w *csv.Writer) {
+		csvStr, err := writeCSV(headers, func(w *csv.Writer) error {
 			for _, r := range rows {
 				monthStr := ""
 				if r.Month.Valid {
 					monthStr = r.Month.Time.Format("2006-01-02")
 				}
 
-				w.Write([]string{
+				if err := w.Write([]string{
 					monthStr,
 					strconv.FormatInt(r.SubscriptionRevenue, 10),
 					strconv.FormatInt(r.CourseRevenue, 10),
 					strconv.FormatInt(r.AdRevenue, 10),
 					strconv.FormatInt(r.CreditRevenue, 10),
-				})
+				}); err != nil {
+					return err
+				}
 			}
-		}), headers, nil
+			return nil
+		})
+		if err != nil {
+			return "", nil, err
+		}
+		return csvStr, headers, nil
 
 	case "ad_performance":
 		rows, err := s.GetAdPerformance(ctx, "", 100)
@@ -199,17 +213,24 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 
 		headers := []string{"campaign_id", "campaign_name", "status", "impressions", "clicks", "ctr", "spent"}
 
-		return writeCSV(headers, func(w *csv.Writer) {
+		csvStr, err := writeCSV(headers, func(w *csv.Writer) error {
 			for _, r := range rows {
-				w.Write([]string{
+				if err := w.Write([]string{
 					r.CampaignID.String(), r.CampaignName, r.Status,
 					strconv.FormatInt(r.Impressions, 10),
 					strconv.FormatInt(r.Clicks, 10),
 					strconv.FormatInt(int64(r.Ctr), 10),
 					strconv.FormatInt(r.Spent, 10),
-				})
+				}); err != nil {
+					return err
+				}
 			}
-		}), headers, nil
+			return nil
+		})
+		if err != nil {
+			return "", nil, err
+		}
+		return csvStr, headers, nil
 
 	case "newsletter":
 		campaigns, err := s.GetNewsletterEngagement(ctx, 100)
@@ -219,23 +240,30 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 
 		headers := []string{"campaign_id", "campaign_name", "subject", "sent_at", "total_sent", "total_opened", "total_clicked", "open_rate", "click_rate"}
 
-		return writeCSV(headers, func(w *csv.Writer) {
+		csvStr, err := writeCSV(headers, func(w *csv.Writer) error {
 			for _, r := range campaigns {
 				sentAt := ""
 				if r.SentAt.Valid {
 					sentAt = r.SentAt.Time.Format(time.RFC3339)
 				}
 
-				w.Write([]string{
+				if err := w.Write([]string{
 					r.CampaignID.String(), r.CampaignName, r.Subject, sentAt,
 					strconv.FormatInt(r.TotalSent, 10),
 					strconv.FormatInt(r.TotalOpened, 10),
 					strconv.FormatInt(r.TotalClicked, 10),
 					strconv.FormatInt(int64(r.OpenRate), 10),
 					strconv.FormatInt(int64(r.ClickRate), 10),
-				})
+				}); err != nil {
+					return err
+				}
 			}
-		}), headers, nil
+			return nil
+		})
+		if err != nil {
+			return "", nil, err
+		}
+		return csvStr, headers, nil
 
 	case "retention":
 		cohorts, err := s.GetRetentionCohorts(ctx, 100)
@@ -245,14 +273,14 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 
 		headers := []string{"cohort_date", "cohort_size", "retained_d1", "retained_d7", "retained_d30", "d1_rate", "d7_rate", "d30_rate"}
 
-		return writeCSV(headers, func(w *csv.Writer) {
+		csvStr, err := writeCSV(headers, func(w *csv.Writer) error {
 			for _, r := range cohorts {
 				cohortDate := ""
 				if r.CohortDate.Valid {
 					cohortDate = r.CohortDate.Time.Format("2006-01-02")
 				}
 
-				w.Write([]string{
+				if err := w.Write([]string{
 					cohortDate,
 					strconv.FormatInt(r.CohortSize, 10),
 					strconv.FormatInt(r.RetainedD1, 10),
@@ -261,9 +289,16 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					strconv.FormatInt(int64(r.D1Rate), 10),
 					strconv.FormatInt(int64(r.D7Rate), 10),
 					strconv.FormatInt(int64(r.D30Rate), 10),
-				})
+				}); err != nil {
+					return err
+				}
 			}
-		}), headers, nil
+			return nil
+		})
+		if err != nil {
+			return "", nil, err
+		}
+		return csvStr, headers, nil
 
 	default:
 		return "", nil, fmt.Errorf("advancedanalytics: unknown export metric: %s", metric)
@@ -271,14 +306,21 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 }
 
 // writeCSV builds a CSV string with proper escaping using encoding/csv.
-func writeCSV(headers []string, writeRows func(w *csv.Writer)) string {
+func writeCSV(headers []string, writeRows func(w *csv.Writer) error) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
-	_ = w.Write(headers)
-	writeRows(w)
+	if err := w.Write(headers); err != nil {
+		return "", fmt.Errorf("advancedanalytics: writing CSV headers: %w", err)
+	}
+	if err := writeRows(w); err != nil {
+		return "", fmt.Errorf("advancedanalytics: writing CSV rows: %w", err)
+	}
 	w.Flush()
+	if err := w.Error(); err != nil {
+		return "", fmt.Errorf("advancedanalytics: flushing CSV: %w", err)
+	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // --- HTTP Handlers ---
@@ -444,6 +486,7 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename="+metric+"_export.csv")
 	w.WriteHeader(http.StatusOK)
+	// #nosec G705 // CSV output is generated by encoding/csv which escapes fields; not an XSS vector.
 	_, _ = w.Write([]byte(csvData))
 }
 

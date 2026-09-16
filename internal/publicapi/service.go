@@ -114,8 +114,8 @@ func (s *Store) listByUser(ctx context.Context, userID pgtype.UUID) ([]apiKeyRow
 	return result, rows.Err()
 }
 
-// listAll returns all API keys for the current tenant (admin view).
-// Tenant-scoped to prevent cross-tenant data bleed (PUB-005).
+// listAll returns all API keys for the current platform (admin view).
+// Platform-scoped to prevent cross-platform data bleed (PUB-005).
 func (s *Store) listAll(ctx context.Context, limit, offset int32) ([]apiKeyRow, error) {
 	rows, err := s.dbPool.Query(ctx, `
 		SELECT id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
@@ -145,7 +145,7 @@ func (s *Store) listAll(ctx context.Context, limit, offset int32) ([]apiKeyRow, 
 }
 
 // setStatus updates the status of an API key (active/suspended/revoked).
-// Tenant-scoped to prevent cross-tenant modification (PUB-003).
+// Platform-scoped to prevent cross-platform modification (PUB-003).
 func (s *Store) setStatus(ctx context.Context, keyID pgtype.UUID, status string) error {
 	_, err := s.dbPool.Exec(ctx, `
 		UPDATE api_keys SET status = $1, updated_at = now()
@@ -377,7 +377,7 @@ var apiKeyUpdateColumns = map[string]string{
 // column allowlist. Returns (rowsAffected, error) so the caller can map a
 // zero count to 404. The query is built from apiKeyUpdateColumns only — no
 // user-supplied column names ever reach the SQL string.
-// Tenant-scoped to prevent cross-tenant modification (PUB-004).
+// Platform-scoped to prevent cross-platform modification (PUB-004).
 func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fields APIKeyUpdateFields) (int64, error) {
 	provided := map[string]any{
 		"name":            fields.Name,
@@ -534,11 +534,11 @@ func (s *Service) ValidateAPIKey(ctx context.Context, key string) (*APIKeyContex
 	}
 
 	// Increment usage (fire-and-forget — don't fail the request on counter errors).
-	// Per Section 47 lines 116–119: usage update runs in a goroutine with
-	// context.Background() so it never blocks the request path (PUB-008).
-	go func(keyID pgtype.UUID) {
-		_ = s.store.incrementUsage(context.Background(), keyID)
-	}(row.ID)
+	// Per Section 47 lines 116–119: usage update runs in a goroutine with a
+	// detached request context so it never blocks the request path (PUB-008).
+	go func(ctx context.Context, keyID pgtype.UUID) {
+		_ = s.store.incrementUsage(ctx, keyID)
+	}(context.WithoutCancel(ctx), row.ID)
 
 	return &APIKeyContext{
 		KeyID:  row.ID,
@@ -615,7 +615,7 @@ func (s *Service) UnsuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error 
 }
 
 // DeleteAPIKey permanently deletes an API key (super_admin only).
-// Tenant-scoped to prevent cross-tenant destruction (PUB-002).
+// Platform-scoped to prevent cross-platform destruction (PUB-002).
 func (s *Service) DeleteAPIKey(ctx context.Context, keyID pgtype.UUID) error {
 	tag, err := s.store.dbPool.Exec(ctx, `
 		DELETE FROM api_keys WHERE id = $1
@@ -632,7 +632,7 @@ func (s *Service) DeleteAPIKey(ctx context.Context, keyID pgtype.UUID) error {
 }
 
 // DeleteAPIKeys permanently deletes multiple API keys (super_admin only).
-// Tenant-scoped to prevent cross-tenant destruction (PUB-002).
+// Platform-scoped to prevent cross-platform destruction (PUB-002).
 func (s *Service) DeleteAPIKeys(ctx context.Context, keyIDs []pgtype.UUID) error {
 	if len(keyIDs) == 0 {
 		return nil

@@ -139,7 +139,7 @@ func (h *Handlers) HandleStatuses(w http.ResponseWriter, r *http.Request) {
 // HandleSaveScholarship saves a scholarship to the user's tracker.
 // POST /me/scholarships/{id}/save.
 func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request) {
-	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	// Auth before platform: an unauthenticated request must get 401, not 503.
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -186,7 +186,7 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 // HandleUpdateSavedScholarship updates a saved scholarship's status/notes.
 // PATCH /me/scholarships/{id}.
 func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.Request) {
-	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	// Auth before platform: an unauthenticated request must get 401, not 503.
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -224,7 +224,7 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 // HandleDeleteSavedScholarship removes a scholarship from the tracker.
 // DELETE /me/scholarships/{id}.
 func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.Request) {
-	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	// Auth before platform: an unauthenticated request must get 401, not 503.
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -250,7 +250,7 @@ func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.R
 // HandleListSavedScholarships lists the user's saved scholarships.
 // GET /me/scholarships.
 func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Request) {
-	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	// Auth before platform: an unauthenticated request must get 401, not 503.
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -289,7 +289,7 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 // and the per-status distribution).
 // GET /admin/scholarships/stats.
 func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.Request) {
-	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	// Auth before platform: an unauthenticated request must get 401, not 503.
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -306,7 +306,7 @@ func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.
 // handleAdminReport runs the shared auth + pagination + report flow used by
 // the admin scholarship report endpoints.
 func handleAdminReport[T any](w http.ResponseWriter, r *http.Request, report func(ctx context.Context, page, limit int) ([]T, error)) {
-	// Auth before tenant: an unauthenticated request must get 401, not 503.
+	// Auth before platform: an unauthenticated request must get 401, not 503.
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}

@@ -32,7 +32,7 @@ type AIGateway interface {
 // // When a Valkey client is provided via WithCache, extraction results are
 // cached under jc:intel:extraction_cache:{}:{content_hash} (24hr
 // TTL) so identical source content skips the LLM call on subsequent crawls
-// (BUG-18 fix, valkey-keys-catalog Section INTEL, tenant-scoped per
+// (BUG-18 fix, valkey-keys-catalog Section INTEL, platform-scoped per
 // ADR-112 Amendment 2).
 type Extractor struct {
 	gateway     AIGateway
@@ -84,7 +84,7 @@ func WithCategory(c string) ExtractorOption {
 // source content (by SHA-256 hash) skips the LLM call and returns the
 // cached extraction result. The cache key is
 // jc:intel:extraction_cache:{}:{content_hash} with a 24hr TTL
-// per valkey-keys-catalog Section INTEL (BUG-18 fix, tenant-scoped per
+// per valkey-keys-catalog Section INTEL (BUG-18 fix, platform-scoped per
 // ADR-112 Amendment 2).
 func WithCache(rdb valkeycompat.Cmdable) ExtractorOption {
 	return func(e *Extractor) { e.rdb = rdb }
@@ -124,7 +124,7 @@ type ExtractResult struct {
 // // When a Valkey client is configured (via WithCache), the extraction result
 // is cached under jc:intel:extraction_cache:{}:{content_hash}
 // (24hr TTL) so identical source content skips the LLM call on subsequent
-// crawls (BUG-18 fix, valkey-keys-catalog Section INTEL, tenant-scoped per
+// crawls (BUG-18 fix, valkey-keys-catalog Section INTEL, platform-scoped per
 // ADR-112 Amendment 2).
 func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, sourceURL, sourceType, sourceText string) (ExtractResult, error) {
 	// Check extraction cache (BUG-18 fix). The cache key is the SHA-256 of
@@ -253,7 +253,7 @@ func (e *Extractor) cachedExtraction(ctx context.Context, schema schemas.EntityS
 // The key is jc:intel:extraction_cache:{}:{content_hash} where
 // content_hash is the SHA-256 of the entity type + source text, ensuring
 // identical content across re-crawls hits the cache. The scopes
-// the cache per tenant (ADR-112 Amendment 2).
+// the cache per platform (ADR-112 Amendment 2).
 func (e *Extractor) extractionCacheKey(entityType, sourceText string) string {
 	h := sha256.Sum256([]byte(entityType + ":" + sourceText))
 	return "jc:intel:extraction_cache:" + pgtype.UUID{}.String() + ":" + hex.EncodeToString(h[:])

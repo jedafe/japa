@@ -31,14 +31,14 @@ func TestHandleDraft_ValidBlogPost(t *testing.T) {
 	disp := NewDispatcher()
 	disp.RegisterProvider("content_generation", &mockProvider{})
 	h := &Handlers{Dispatcher: disp}
-	user, tenant := testUserAndTenant()
+	user, platform := testUserAndPlatform()
 	body, _ := json.Marshal(map[string]any{
 		"content_type": "blog_post",
 		"title":        "My journey",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req = withAuthContext(req, user, tenant)
+	req = withAuthContext(req, user, platform)
 	w := httptest.NewRecorder()
 
 	h.HandleDraft(w, req)
@@ -75,7 +75,7 @@ func TestHandleDraft_ReturnsBodyAndTitle(t *testing.T) {
 	disp.RegisterProvider("content_generation", provider)
 	h := &Handlers{Dispatcher: disp}
 
-	user, tenant := testUserAndTenant()
+	user, platform := testUserAndPlatform()
 	body, _ := json.Marshal(map[string]any{
 		"content_type": "blog_post",
 		"title":        "Draft Title",
@@ -83,7 +83,7 @@ func TestHandleDraft_ReturnsBodyAndTitle(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req = withAuthContext(req, user, tenant)
+	req = withAuthContext(req, user, platform)
 	w := httptest.NewRecorder()
 
 	h.HandleDraft(w, req)
@@ -117,10 +117,10 @@ func TestHandleDraft_MissingContentType(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{}
-	user, tenant := testUserAndTenant()
+	user, platform := testUserAndPlatform()
 	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader([]byte(`{"title":"x"}`)))
 	req.Header.Set("Content-Type", "application/json")
-	req = withAuthContext(req, user, tenant)
+	req = withAuthContext(req, user, platform)
 	w := httptest.NewRecorder()
 
 	h.HandleDraft(w, req)
@@ -147,7 +147,7 @@ func TestHandleDraft_HumanizeOverride(t *testing.T) {
 	disp := NewDispatcher()
 	disp.RegisterProvider("content_generation", provider)
 	h := &Handlers{Dispatcher: disp}
-	user, tenant := testUserAndTenant()
+	user, platform := testUserAndPlatform()
 	body, _ := json.Marshal(map[string]any{
 		"content_type":   "blog_post",
 		"title":          "t",
@@ -156,7 +156,7 @@ func TestHandleDraft_HumanizeOverride(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req = withAuthContext(req, user, tenant)
+	req = withAuthContext(req, user, platform)
 	w := httptest.NewRecorder()
 
 	h.HandleDraft(w, req)

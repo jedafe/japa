@@ -30,7 +30,7 @@ import (
 
 // CouponResolver resolves a coupon ID to its render-time representation.
 // Implemented by coupons.Service. The ID scopes the lookup so a render
-// request cannot resolve a coupon from another tenant (BE-LOW-001).
+// request cannot resolve a coupon from another platform (BE-LOW-001).
 type CouponResolver interface {
 	ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*CouponRenderResult, error)
 }
@@ -65,7 +65,7 @@ type AffiliateLinkRenderResult struct {
 // resolveCouponEmbedsAndAffiliateLinks post-processes the rendered HTML to
 // resolve coupon_embed placeholders and rewrite affiliate link hrefs (§55 P4).
 // The ID scopes all resolver lookups so a render request cannot resolve
-// a coupon or provider from another tenant (BE-LOW-001). Best-effort:
+// a coupon or provider from another platform (BE-LOW-001). Best-effort:
 // resolution failures are logged and the original placeholder/link is left
 // in place.
 func resolveCouponEmbedsAndAffiliateLinks(ctx context.Context, input string, couponResolver CouponResolver, affiliateResolver AffiliateLinkResolver) string {

@@ -275,7 +275,7 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetAdminSettings handles GET /admin/onboarding/settings.
-// Returns the tenant's onboarding configuration (minimum counts + promoted
+// Returns the platform's onboarding configuration (minimum counts + promoted
 // entities). Ref: Section 09 — admin Onboarding Settings surface.
 func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
 

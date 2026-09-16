@@ -48,8 +48,8 @@ func (s *Store) CreateWSTicket(ctx context.Context, userID pgtype.UUID) (gen.Cre
 }
 
 // UseWSTicket marks a ticket as used and returns it if valid. The
-// is validated alongside the user_id so a ticket minted in tenant A cannot be
-// consumed in tenant B context (Rule 4: tenant-scoped validation).
+// is validated alongside the user_id so a ticket minted in platform A cannot be
+// consumed in platform B context (Rule 4: platform-scoped validation).
 func (s *Store) UseWSTicket(ctx context.Context, id, userID pgtype.UUID) (gen.WsTicket, error) {
 	return s.write.UseWSTicket(ctx, gen.UseWSTicketParams{
 		ID:     id,
@@ -85,7 +85,7 @@ func (s *DMStore) GetConversationByParticipants(ctx context.Context, userA, user
 	})
 }
 
-// GetConversationByID returns a conversation by ID and tenant.
+// GetConversationByID returns a conversation by ID and platform.
 func (s *DMStore) GetConversationByID(ctx context.Context, id pgtype.UUID) (gen.DmConversation, error) {
 	return s.read.GetConversationByID(ctx,
 		id,
@@ -175,7 +175,7 @@ func (s *DMStore) ResetUnreadCount(ctx context.Context, conversationID, userID p
 }
 
 // GetMessageRequest returns a message request for a conversation, scoped
-// to the tenant (Rule 4).
+// to the platform (Rule 4).
 func (s *DMStore) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (gen.DmRequest, error) {
 	return s.read.GetMessageRequest(ctx,
 		conversationID,
@@ -184,7 +184,7 @@ func (s *DMStore) GetMessageRequest(ctx context.Context, conversationID pgtype.U
 
 // CreateMessageRequest creates a pending message request with the actual
 // requester and recipient IDs (not derived from conversation participant
-// ordering). Tenant-scoped (Rule 4).
+// ordering). Platform-scoped (Rule 4).
 func (s *DMStore) CreateMessageRequest(ctx context.Context, requesterID, recipientID, conversationID pgtype.UUID, previewMessage string) error {
 	return s.write.CreateMessageRequest(ctx, gen.CreateMessageRequestParams{
 
@@ -196,7 +196,7 @@ func (s *DMStore) CreateMessageRequest(ctx context.Context, requesterID, recipie
 }
 
 // UpdateMessageRequestStatus updates the status of a message request,
-// scoped to the tenant (Rule 4).
+// scoped to the platform (Rule 4).
 func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, conversationID pgtype.UUID, status string) error {
 	return s.write.UpdateMessageRequestStatus(ctx, gen.UpdateMessageRequestStatusParams{
 		ConversationID: conversationID,
@@ -232,7 +232,7 @@ func (s *DMStore) GetUserDMPrivacy(ctx context.Context, userID pgtype.UUID) (str
 
 // IsBlocked returns true if either user has blocked the other (bidirectional
 // check per Section 48). Wraps the sqlc-generated IsBlocked query.
-// Tenant-scoped per JEOS §9 (BUG-006).
+// Platform-scoped per JEOS §9 (BUG-006).
 func (s *DMStore) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
 	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
@@ -634,8 +634,8 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 }
 
 // MarkAsRead marks messages as read and resets unread count. The ID
-// scopes the update so a cross-tenant conversation ID cannot be modified
-// (BUG-009, Rule 4: tenant-scoped). After resetting the DB column, the
+// scopes the update so a cross-platform conversation ID cannot be modified
+// (BUG-009, Rule 4: platform-scoped). After resetting the DB column, the
 // Valkey badge counter jc:dm_total_unread:{user_id} is recalculated from
 // the sum of all conversation unread counts (Section 48).
 func (s *DMService) MarkAsRead(ctx context.Context, conversationID, userID pgtype.UUID) error {
@@ -657,7 +657,7 @@ func (s *DMService) MarkAsRead(ctx context.Context, conversationID, userID pgtyp
 // Only the RECIPIENT of the request may take action — the requester cannot
 // accept their own outgoing request (BUG-005).
 func (s *DMService) HandleMessageRequest(ctx context.Context, conversationID, userID pgtype.UUID, action string) error {
-	// Look up the message request, scoped to the tenant (Rule 4).
+	// Look up the message request, scoped to the platform (Rule 4).
 	dmReq, err := s.store.GetMessageRequest(ctx, conversationID)
 	if err != nil {
 		return fmt.Errorf("looking up message request: %w", err)
@@ -828,7 +828,7 @@ func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, ini
 }
 
 // GetOtherParticipant returns the ID of the other participant in a
-// conversation, scoped to the tenant. Returns an error if the conversation
+// conversation, scoped to the platform. Returns an error if the conversation
 // doesn't exist or the given user is not a participant. Used by the typing
 // indicator path (Section 10) to route typing events to the correct
 // recipient without exposing conversation membership to non-participants.

@@ -583,7 +583,7 @@ UPDATE wiki_pages SET %s WHERE id = $%d
 }
 
 // GetSpaceBySlug resolves a destination (country/state/city) space slug to its
-// ID and level within a tenant. Returns pgx.ErrNoRows if the space does not
+// ID and level within a platform. Returns pgx.ErrNoRows if the space does not
 // exist or is not a destination space.
 func (s *Store) GetSpaceBySlug(ctx context.Context, spaceSlug string) (pgtype.UUID, string, error) {
 	var id pgtype.UUID
@@ -607,7 +607,7 @@ LIMIT 1`, spaceSlug).Scan(&id, &level)
 }
 
 // GetSpaceByID resolves a destination (country/state/city) space ID to its
-// slug and level within a tenant. Returns pgx.ErrNoRows if the space does not
+// slug and level within a platform. Returns pgx.ErrNoRows if the space does not
 // exist or is not a destination space.
 func (s *Store) GetSpaceByID(ctx context.Context, spaceID pgtype.UUID) (slug, level string, err error) {
 	err = s.pool.Reader.QueryRow(ctx, `

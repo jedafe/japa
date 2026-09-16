@@ -360,20 +360,20 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 	return i, err
 }
 
-const listActivityRulesByTenant = `-- name: ListActivityRulesByTenant :many
+const listActivityRules = `-- name: ListActivityRules :many
 SELECT id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
 
 ORDER BY activity_key ASC
 LIMIT $2 OFFSET $1
 `
 
-type ListActivityRulesByTenantParams struct {
+type ListActivityRulesParams struct {
 	PageOffset int32 `json:"page_offset"`
 	PageLimit  int32 `json:"page_limit"`
 }
 
-func (q *Queries) ListActivityRulesByTenant(ctx context.Context, arg ListActivityRulesByTenantParams) ([]ActivityPointRule, error) {
-	rows, err := q.db.Query(ctx, listActivityRulesByTenant, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListActivityRules(ctx context.Context, arg ListActivityRulesParams) ([]ActivityPointRule, error) {
+	rows, err := q.db.Query(ctx, listActivityRules, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

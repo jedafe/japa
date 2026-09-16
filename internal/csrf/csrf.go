@@ -48,6 +48,7 @@ func SetCookie(w http.ResponseWriter, domain string, secure bool) {
 		return
 	}
 
+	// #nosec G124 // CSRF double-submit cookie is intentionally readable by the SPA.
 	http.SetCookie(w, &http.Cookie{
 		Name:   CookieName,
 		Value:  token,
@@ -246,6 +247,7 @@ func TokenHandler(domain string, secure bool) http.HandlerFunc {
 			return
 		}
 
+		// #nosec G124 // CSRF double-submit cookie is intentionally readable by the SPA.
 		http.SetCookie(w, &http.Cookie{
 			Name:     CookieName,
 			Value:    token,

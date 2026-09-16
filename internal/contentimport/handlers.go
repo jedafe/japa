@@ -364,7 +364,7 @@ func (h *Handlers) HandleAdminStartImport(w http.ResponseWriter, r *http.Request
 }
 
 // HandleAdminListImports handles GET /api/v1/admin/imports — list all
-// imports for the tenant with optional status filter. Gated by
+// imports for the platform with optional status filter. Gated by
 // import.manage (admin).
 func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {

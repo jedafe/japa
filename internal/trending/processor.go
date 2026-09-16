@@ -114,7 +114,7 @@ func (sc scoringConfig) expiryForWindow(window string) time.Duration {
 	return time.Duration(hours) * time.Hour
 }
 
-// Processor computes trending snapshots for all tenants.
+// Processor computes trending snapshots for all platforms.
 type Processor struct {
 	db       *db.DB
 	logger   *slog.Logger
@@ -142,7 +142,7 @@ func (p *Processor) ComputeTrending(ctx context.Context) error {
 
 	p.logger.Info("trending: compute_trending starting")
 
-	totalSnapshots, err := p.computeForTenant(ctx)
+	totalSnapshots, err := p.computeForPlatform(ctx)
 	if err != nil {
 		p.logger.Error("trending: failed", "error", err)
 		return err
@@ -163,12 +163,12 @@ func (p *Processor) ComputeSuggestions(_ context.Context) error {
 	return nil
 }
 
-// computeForTenant deletes expired snapshots and computes new ones.
+// computeForPlatform deletes expired snapshots and computes new ones.
 // BUG-001: computes both global (NULL geo_code) and per-country snapshots.
-func (p *Processor) computeForTenant(ctx context.Context) (int64, error) {
+func (p *Processor) computeForPlatform(ctx context.Context) (int64, error) {
 	sc := p.loadScoringConfig(ctx)
 
-	// Delete expired snapshots for this tenant.
+	// Delete expired snapshots for this platform.
 	_, err := p.db.Writer.Exec(ctx, `
 		DELETE FROM trending_snapshots
 		WHERE expires_at < now()

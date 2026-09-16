@@ -340,15 +340,15 @@ func (s *Service) IsManualRateStale(fetchedAt time.Time) bool {
 // Cache key builders
 // ---------------------------------------------------------------------------
 
-// ratesCacheKey builds the tenant-scoped Valkey key for cached latest rates
-// of a corridor. Tenant scoping prevents cross-tenant data bleed (Rule 4,
+// ratesCacheKey builds the platform-scoped Valkey key for cached latest rates
+// of a corridor. Platform scoping prevents cross-platform data bleed (Rule 4,
 // §4.2). Ref: conventions/valkey-keys-catalog.md (jc:remit:rates).
 func ratesCacheKey(sendCurrency, receiveCurrency string) string {
 	return valkey.MustKey("remit:rates::%s:%s", sendCurrency, receiveCurrency)
 }
 
-// bestCacheKey builds the tenant-scoped Valkey key for the cached best rate
-// of a corridor. Tenant scoping prevents cross-tenant data bleed (Rule 4,
+// bestCacheKey builds the platform-scoped Valkey key for the cached best rate
+// of a corridor. Platform scoping prevents cross-platform data bleed (Rule 4,
 // §4.2). Ref: conventions/valkey-keys-catalog.md (jc:remit:best).
 func bestCacheKey(sendCurrency, receiveCurrency string) string {
 	return valkey.MustKey("remit:best::%s:%s", sendCurrency, receiveCurrency)
@@ -359,7 +359,7 @@ func bestCacheKey(sendCurrency, receiveCurrency string) string {
 // ---------------------------------------------------------------------------
 
 // GetRates returns the latest rates for a corridor across all active
-// providers. Results are cached in Valkey (jc:remit:rates:{tenant}:{send}:{receive},
+// providers. Results are cached in Valkey (jc:remit:rates:{platform}:{send}:{receive},
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency string) ([]RateInfo, error) {
 	if !s.IsEnabled(ctx) {
@@ -435,7 +435,7 @@ func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency st
 }
 
 // GetBestRate returns the provider with the best (highest) effective rate for
-// a corridor. Results are cached in Valkey (jc:remit:best:{tenant}:{send}:{receive},
+// a corridor. Results are cached in Valkey (jc:remit:best:{platform}:{send}:{receive},
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetBestRate(ctx context.Context, sendCurrency, receiveCurrency string) (*BestRate, error) {
 	if !s.IsEnabled(ctx) {
@@ -1069,7 +1069,7 @@ func (s *Service) PruneOldRates(ctx context.Context, cutoffDate time.Time) error
 	return s.store.PruneOldRates(ctx, cutoffDate)
 }
 
-// InvalidateRateCache deletes the tenant-scoped Valkey cache keys for a
+// InvalidateRateCache deletes the platform-scoped Valkey cache keys for a
 // corridor. Called after every successful rate fetch (API or manual insert).
 func (s *Service) InvalidateRateCache(ctx context.Context, sendCurrency, receiveCurrency string) {
 	if s.cache == nil {
@@ -1142,7 +1142,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, providerID pgtype.UUID
 		return fmt.Errorf("remittance: fetch provider rates: decrypt config: %w", err)
 	}
 
-	// Fetch all configured corridors for this tenant so the provider adapter
+	// Fetch all configured corridors for this platform so the provider adapter
 	// can fetch rates for each one.
 	corridors, err := s.GetCorridors(ctx)
 	if err != nil {
@@ -1201,7 +1201,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, providerID pgtype.UUID
 }
 
 // FetchAllProviderRates iterates all active API-sourced providers for a
-// tenant and fetches their rates. Called by the scheduler sweep. Manual
+// platform and fetches their rates. Called by the scheduler sweep. Manual
 // providers are skipped. Returns the number of providers processed.
 // Ref: ADR-075 §2, §8.
 func (s *Service) FetchAllProviderRates(ctx context.Context) (int, error) {
@@ -1228,7 +1228,7 @@ func (s *Service) FetchAllProviderRates(ctx context.Context) (int, error) {
 	return total, nil
 }
 
-// CheckAndDispatchAlerts evaluates all active alerts for a tenant against the
+// CheckAndDispatchAlerts evaluates all active alerts for a platform against the
 // current best rate for each corridor. When an alert's threshold is met
 // (rate above/below target) and the 24-hour debounce window has elapsed, a
 // notification is dispatched and the alert's last_triggered_at is updated
@@ -1238,10 +1238,10 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context) (int, error) {
 		return 0, errors.New("remittance: no notifier configured")
 	}
 
-	// Query all active alerts for this tenant that are eligible for
+	// Query all active alerts for this platform that are eligible for
 	// notification (last_triggered_at is null or > 24h ago). Group by
 	// corridor so we fetch the best rate once per corridor.
-	alerts, err := s.store.ListAllActiveAlertsForTenant(ctx)
+	alerts, err := s.store.ListAllActiveAlerts(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("remittance: check alerts: list alerts: %w", err)
 	}

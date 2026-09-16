@@ -299,7 +299,7 @@ func (s *Store) cancelSubscription(ctx context.Context, id pgtype.UUID) (gen.Sub
 }
 
 // reactivateSubscription reactivates the caller's most recently canceled
-// subscription for the tenant. The subquery in the sqlc query already scopes
+// subscription for the platform. The subquery in the sqlc query already scopes
 // by (user_id, , status='canceled'), so we only forward the params.
 func (s *Store) reactivateSubscription(ctx context.Context, userID pgtype.UUID) (gen.Subscription, error) {
 	row, err := s.write.ReactivateSubscription(ctx,

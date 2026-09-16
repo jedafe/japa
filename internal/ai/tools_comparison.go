@@ -46,7 +46,7 @@ type comparisonTypesListArgs struct {
 }
 
 // ComparisonTypesListHandler returns a ToolHandler that lists comparison
-// type definitions for the tenant. The LLM uses this to discover existing
+// type definitions for the platform. The LLM uses this to discover existing
 // types (Tier 1 + Tier 2 classification) before deciding whether to create
 // a new type (Tier 3).
 func ComparisonTypesListHandler(deps *ToolDeps) ToolHandler {

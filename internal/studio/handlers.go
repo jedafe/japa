@@ -26,7 +26,7 @@ type personaLister interface {
 
 // intelRecordGetter is the subset of the intelligence store needed to
 // validate that an intel_record_id provided to the create-job API exists
-// and belongs to the same tenant.
+// and belongs to the same platform.
 type intelRecordGetter interface {
 	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
 }
@@ -160,7 +160,7 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	// Approach B: validate intel_record_id if provided (optional field).
 	if in.IntelRecordID.Valid && h.intelStore != nil {
 		if _, err := h.intelStore.GetIntelRecord(r.Context(), in.IntelRecordID); err != nil {
-			h.writeError(w, http.StatusBadRequest, "intel_record_not_found", "intel_record_id does not exist or does not belong to this tenant")
+			h.writeError(w, http.StatusBadRequest, "intel_record_not_found", "intel_record_id does not exist or does not belong to this platform")
 			return
 		}
 	}

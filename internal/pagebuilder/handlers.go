@@ -710,7 +710,7 @@ func (h *Handlers) resolvePageLiterals(r *http.Request) map[string]string {
 		return map[string]string{}
 	}
 
-	// ADR-064: geo/locale/tenant fields come from the request's VisitorContext
+	// ADR-064: geo/locale/platform fields come from the request's VisitorContext
 	// + GeoIP + Accept-Language via the shared request-context constructor.
 	rc := literals.NewRequestContext(r, "")
 

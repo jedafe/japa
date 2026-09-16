@@ -83,8 +83,8 @@ type GenerateDraftResponse struct {
 
 // GetDocPageBySlug returns a published page by audience and slug. Checks the
 // Valkey cache first (jc:cache:page:docs:{audience}:{slug}:{}, TTL 5min)
-// and falls back to the DB on miss (VALKEY-003). Cache key is tenant-scoped
-// to prevent cross-tenant data bleed (Rule 4, §4.2).
+// and falls back to the DB on miss (VALKEY-003). Cache key is platform-scoped
+// to prevent cross-platform data bleed (Rule 4, §4.2).
 func (s *Service) GetDocPageBySlug(ctx context.Context, audience, slug string) (*DocPage, error) {
 	cacheKey := valkey.MustKey("cache:page:docs:%s:%s:", audience, slug)
 	if s.cache != nil {
@@ -206,7 +206,7 @@ func (s *Service) ListAllDocPages(ctx context.Context) ([]DocPage, error) {
 // GetDocNav returns the published-pages navigation tree grouped by audience,
 // filtered to only the specified audiences. Checks the Valkey cache first
 // (jc:cache:page:docs:nav:{}, TTL 10min) and falls back to the DB
-// on miss (VALKEY-003). Cache key is tenant-scoped (Rule 4, §4.2).
+// on miss (VALKEY-003). Cache key is platform-scoped (Rule 4, §4.2).
 func (s *Service) GetDocNav(ctx context.Context, allowedAudiences []string) ([]DocNavTree, error) {
 	cacheKey := valkey.MustKey("cache:page:docs:nav:")
 	if s.cache != nil {
@@ -475,7 +475,7 @@ func collectText(node any, b *strings.Builder) {
 
 // invalidateCache clears the docs nav cache and optionally a specific page
 // cache after create/update/delete operations (VALKEY-003). All keys are
-// tenant-scoped to prevent cross-tenant cache bleed (Rule 4, §4.2).
+// platform-scoped to prevent cross-platform cache bleed (Rule 4, §4.2).
 // Best-effort: errors are logged.
 func (s *Service) invalidateCache(ctx context.Context, audience, slug string) {
 	if s.cache == nil {
@@ -493,7 +493,7 @@ func (s *Service) invalidateCache(ctx context.Context, audience, slug string) {
 }
 
 // invalidateAllPageCaches flushes the nav cache and all page caches for a
-// tenant. Used after update/delete when we don't know the specific page's
+// platform. Used after update/delete when we don't know the specific page's
 // audience+slug (BUG-016 fix — stale page content after update).
 func (s *Service) invalidateAllPageCaches(ctx context.Context) {
 	if s.cache == nil {
@@ -504,7 +504,7 @@ func (s *Service) invalidateAllPageCaches(ctx context.Context) {
 	if err := s.cache.Del(ctx, navKey).Err(); err != nil {
 		slog.Warn("docs: failed to invalidate nav cache", "key", navKey, "error", err)
 	}
-	// Best-effort: scan and delete all page caches for this tenant.
+	// Best-effort: scan and delete all page caches for this platform.
 	// Pattern: jc:cache:page:docs:*:*:{}
 	pattern := valkey.MustKey("cache:page:docs:*:*:")
 

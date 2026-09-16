@@ -455,7 +455,7 @@ func (q *Queries) ListTagModerators(ctx context.Context, tagID pgtype.UUID) ([]L
 	return items, nil
 }
 
-const listTagsByTenant = `-- name: ListTagsByTenant :many
+const listTags = `-- name: ListTags :many
 SELECT t.id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
  t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
  t.field_values, t.created_at, t.updated_at,
@@ -468,7 +468,7 @@ LEFT JOIN media cm ON cm.id = t.cover_media_id
 ORDER BY t.name
 `
 
-type ListTagsByTenantRow struct {
+type ListTagsRow struct {
 	ID                 pgtype.UUID        `json:"id"`
 	Name               string             `json:"name"`
 	Slug               string             `json:"slug"`
@@ -489,15 +489,15 @@ type ListTagsByTenantRow struct {
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 }
 
-func (q *Queries) ListTagsByTenant(ctx context.Context) ([]ListTagsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listTagsByTenant)
+func (q *Queries) ListTags(ctx context.Context) ([]ListTagsRow, error) {
+	rows, err := q.db.Query(ctx, listTags)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListTagsByTenantRow
+	var items []ListTagsRow
 	for rows.Next() {
-		var i ListTagsByTenantRow
+		var i ListTagsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,

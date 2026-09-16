@@ -29,7 +29,7 @@ func NewStore(database *db.DB) *Store {
 // Blocks CRUD
 // ---------------------------------------------------------------------------
 
-// ListBlocks returns a paginated list of blocks for a tenant, ordered by name.
+// ListBlocks returns a paginated list of blocks for a platform, ordered by name.
 // page is 1-based; limit is the page size. Returns the items and the total row
 // count (before pagination) so the handler can compute total_pages.
 func (s *Store) ListBlocks(ctx context.Context, q string, page, limit int32) ([]Block, int64, error) {
@@ -86,7 +86,7 @@ func (s *Store) ListBlocks(ctx context.Context, q string, page, limit int32) ([]
 	return blocks, total, nil
 }
 
-// GetBlock returns a single block by ID, scoped to the tenant.
+// GetBlock returns a single block by ID, scoped to the platform.
 func (s *Store) GetBlock(ctx context.Context, id pgtype.UUID) (Block, error) {
 	var b Block
 
@@ -198,7 +198,7 @@ func (s *Store) DeleteBlock(ctx context.Context, id pgtype.UUID) error {
 // Templates CRUD
 // ---------------------------------------------------------------------------
 
-// ListTemplates returns a paginated list of templates for a tenant, optionally
+// ListTemplates returns a paginated list of templates for a platform, optionally
 // filtered by q and category. page is 1-based; limit is the page size.
 func (s *Store) ListTemplates(ctx context.Context, q, category string, page, limit int32) ([]Template, int64, error) {
 	offset := (page - 1) * limit
@@ -254,7 +254,7 @@ func (s *Store) ListTemplates(ctx context.Context, q, category string, page, lim
 	return templates, total, nil
 }
 
-// GetTemplate returns a single template by ID, scoped to the tenant.
+// GetTemplate returns a single template by ID, scoped to the platform.
 func (s *Store) GetTemplate(ctx context.Context, id pgtype.UUID) (Template, error) {
 	var t Template
 
@@ -352,7 +352,7 @@ func (s *Store) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
 // Themes CRUD
 // ---------------------------------------------------------------------------
 
-// ListThemes returns a paginated list of themes for a tenant, ordered by name.
+// ListThemes returns a paginated list of themes for a platform, ordered by name.
 func (s *Store) ListThemes(ctx context.Context, q string, page, limit int32) ([]Theme, int64, error) {
 	offset := (page - 1) * limit
 	if offset < 0 {
@@ -408,7 +408,7 @@ func (s *Store) ListThemes(ctx context.Context, q string, page, limit int32) ([]
 	return themes, total, nil
 }
 
-// GetTheme returns a single theme by ID, scoped to the tenant.
+// GetTheme returns a single theme by ID, scoped to the platform.
 func (s *Store) GetTheme(ctx context.Context, id pgtype.UUID) (Theme, error) {
 	var t Theme
 
@@ -528,7 +528,7 @@ func (s *Store) DeleteTheme(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// SetDefaultTheme clears the default flag for all themes in the tenant,
+// SetDefaultTheme clears the default flag for all themes in the platform,
 // then sets the given theme as default.
 func (s *Store) SetDefaultTheme(ctx context.Context, id pgtype.UUID) error {
 	tx, err := s.writer.Begin(ctx)
@@ -571,7 +571,7 @@ type PageListFilter struct {
 	Status   string // exact match on status
 }
 
-// ListPages returns a paginated list of pages for a tenant, ordered by
+// ListPages returns a paginated list of pages for a platform, ordered by
 // created_at DESC, optionally narrowed by the supplied filter.
 func (s *Store) ListPages(ctx context.Context, f PageListFilter, page, limit int32) ([]Page, int64, error) {
 	offset := (page - 1) * limit
@@ -668,7 +668,7 @@ func (s *Store) ListPublishedPages(ctx context.Context) ([]Page, error) {
 	return pages, rows.Err()
 }
 
-// GetPage returns a single page by ID, scoped to the tenant.
+// GetPage returns a single page by ID, scoped to the platform.
 func (s *Store) GetPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 	var p Page
 
@@ -715,7 +715,7 @@ func (s *Store) GetPageBySlug(ctx context.Context, slug string) (Page, error) {
 }
 
 // SlugExists reports whether any page (any status) already uses slug for this
-// tenant. Used by DuplicatePage to derive a unique slug for the copy.
+// platform. Used by DuplicatePage to derive a unique slug for the copy.
 func (s *Store) SlugExists(ctx context.Context, slug string) (bool, error) {
 	var exists bool
 

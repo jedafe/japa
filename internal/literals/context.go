@@ -11,14 +11,14 @@ import (
 )
 
 // NewRequestContext builds a RenderContext for the current HTTP request:
-// UTC now, Accept-Language primary tag, tenant name/id, and the geo fields
+// UTC now, Accept-Language primary tag, platform name/id, and the geo fields
 // filled by FillRequestContext. Use this in any handler that renders
 // {{...}} placeholders so all surfaces resolve identically.
-func NewRequestContext(r *http.Request, tenantName string) RenderContext {
+func NewRequestContext(r *http.Request, platformName string) RenderContext {
 	rc := RenderContext{
 		Now:        time.Now().UTC(),
 		Locale:     requestLocale(r),
-		TenantName: tenantName,
+		PlatformName: platformName,
 	}
 	FillRequestContext(r, &rc)
 

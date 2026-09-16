@@ -278,7 +278,7 @@ func TestUnmarshalCacheEmptyCountryDefaultsToNG(t *testing.T) {
 	t.Parallel()
 
 	// A cached JSON entry with an empty ContentCountry (edge case) must
-	// fall back to the configured default (NG when no settings/tenant).
+	// fall back to the configured default (NG when no settings/platform).
 	res := NewResolver(nil, nil, nil)
 	b, _ := json.Marshal(VisitorContext{Source: "archetype"})
 

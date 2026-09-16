@@ -16,7 +16,7 @@ import (
 
 // ContentSearchAdapter implements content.ContentSearcher using the search
 // engine. It searches the posts index (contents table) scoped to the
-// requesting tenant and returns matching content IDs for subsequent
+// requesting platform and returns matching content IDs for subsequent
 // PostgreSQL enrichment.
 type ContentSearchAdapter struct {
 	engine Engine
@@ -29,7 +29,7 @@ func NewContentSearchAdapter(engine Engine) *ContentSearchAdapter {
 }
 
 // SearchContentIDs searches the posts index for content matching the query,
-// scoped to the given tenant, and returns the matching content IDs.
+// scoped to the given platform, and returns the matching content IDs.
 func (a *ContentSearchAdapter) SearchContentIDs(ctx context.Context, query string, limit int) ([]pgtype.UUID, error) {
 	if a.engine == nil {
 		return nil, errors.New("search engine not configured")

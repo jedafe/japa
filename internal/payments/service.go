@@ -576,7 +576,7 @@ func (s *Service) GetDiscountCode(ctx context.Context, code string) (gen.Discoun
 	return s.store.getDiscountCodeByCode(ctx, code)
 }
 
-// ListDiscountCodes returns all discount codes for a tenant.
+// ListDiscountCodes returns all discount codes for a platform.
 func (s *Service) ListDiscountCodes(ctx context.Context, limit, offset int32) ([]gen.DiscountCode, error) {
 	return s.store.listDiscountCodes(ctx, limit, offset)
 }

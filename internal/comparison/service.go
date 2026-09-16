@@ -205,7 +205,7 @@ func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string) (Com
 //
 //nolint:revive // Public type name already used by callers; rename would be a breaking change.
 type ComparisonTypeListItem struct {
-	gen.ListComparisonTypesByTenantRow
+	gen.ListComparisonTypesRow
 	FieldCount int32 `json:"field_count"`
 	ItemCount  int32 `json:"item_count"`
 }
@@ -238,12 +238,12 @@ func (i ComparisonTypeListItem) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// ListComparisonTypesWithCounts returns all comparison types for a tenant,
+// ListComparisonTypesWithCounts returns all comparison types for a platform,
 // each enriched with its field count (dimensions) and item count.
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, limit, offset int32) ([]ComparisonTypeListItem, error) {
-	types, err := s.store.listComparisonTypesByTenant(ctx, limit, offset)
+	types, err := s.store.listComparisonTypesByPlatform(ctx, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, limit, offs
 		}
 
 		items = append(items, ComparisonTypeListItem{
-			ListComparisonTypesByTenantRow: td,
+			ListComparisonTypesRow: td,
 			FieldCount:                     fieldCount,
 			ItemCount:                      itemCount,
 		})
@@ -277,9 +277,9 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, limit, offs
 	return items, nil
 }
 
-// ListComparisonTypes returns all comparison types for a tenant.
-func (s *Service) ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
-	return s.store.listComparisonTypesByTenant(ctx, limit, offset)
+// ListComparisonTypes returns all comparison types for a platform.
+func (s *Service) ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesRow, error) {
+	return s.store.listComparisonTypesByPlatform(ctx, limit, offset)
 }
 
 // ComparisonItemInput is a single item passed by the create wizard.
@@ -350,7 +350,7 @@ type autoDimensionHints struct {
 	Groups  []autoDimensionHintGroup `json:"groups"`
 }
 
-// defaultAutoDimensionHintsJSON is the built-in fallback used when the tenant
+// defaultAutoDimensionHintsJSON is the built-in fallback used when the platform
 // has not configured comparison.auto_dimension_hints. Admins can override the
 // heuristic via system_settings without a deploy.
 const defaultAutoDimensionHintsJSON = `{"default":["Overview","Key features","Pros","Cons","Overall rating"],"groups":[{"hints":["price","cost","plan","package","version","edition","model"],"dimensions":["Price","Value for money"],"prepend":true},{"hints":["course","university","school","program","degree","certification"],"dimensions":["Curriculum","Duration","Cost","Accreditation"],"prepend":false}]}`
@@ -760,7 +760,7 @@ func (s *Service) ResolveComparisonContentID(ctx context.Context, identifier str
 		return id, nil
 	}
 
-	// Slug path: look up the content row by slug, scoped to the tenant.
+	// Slug path: look up the content row by slug, scoped to the platform.
 	contentRow, err := s.contentSvc.GetContentBySlug(ctx, identifier)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("resolving comparison identifier %q: %w", identifier, err)
@@ -945,8 +945,8 @@ type SetComparisonTypeAccessInput struct {
 }
 
 // SetComparisonTypeAccess upserts access permissions for a user group on a type.
-// The type is first verified to belong to the caller's tenant so a guessed or
-// leaked type_id UUID cannot read/write another tenant's access rows.
+// The type is first verified to belong to the caller's platform so a guessed or
+// leaked type_id UUID cannot read/write another platform's access rows.
 func (s *Service) SetComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID, input SetComparisonTypeAccessInput) error {
 	if _, err := s.store.getComparisonTypeByID(ctx, typeID); err != nil {
 		return fmt.Errorf("verifying comparison type ownership: %w", err)
@@ -962,7 +962,7 @@ func (s *Service) SetComparisonTypeAccess(ctx context.Context, typeID pgtype.UUI
 }
 
 // ListComparisonTypeAccess returns all access entries for a type. The type is
-// first verified to belong to the caller's tenant (cross-tenant guard).
+// first verified to belong to the caller's platform (cross-platform guard).
 func (s *Service) ListComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID) ([]gen.ListComparisonTypeAccessRow, error) {
 	if _, err := s.store.getComparisonTypeByID(ctx, typeID); err != nil {
 		return nil, fmt.Errorf("verifying comparison type ownership: %w", err)
@@ -1498,7 +1498,7 @@ type ListComparisonsFilter struct {
 	Offset     int32
 }
 
-// ListComparisons returns a page of comparison content rows for the tenant,
+// ListComparisons returns a page of comparison content rows for the platform,
 // optionally filtered by type_id and space_id (Section 30, BUG-007/BUG-008).
 // Pagination is offset-based per conventions/api-response-format.md.
 func (s *Service) ListComparisons(ctx context.Context, f ListComparisonsFilter) ([]gen.ListComparisonsFilteredRow, error) {
@@ -1520,7 +1520,7 @@ func (s *Service) ListComparisons(ctx context.Context, f ListComparisonsFilter) 
 }
 
 // ListComparisonsAdmin returns all non-deleted comparison content rows for the
-// tenant, optionally filtered by type_id, space_id, depth, status, and visibility.
+// platform, optionally filtered by type_id, space_id, depth, status, and visibility.
 // This is used by the admin comparison manager and includes drafts, private, and
 // unpublished rows. It uses the JCE filtered list so depth and promoted_from
 // metadata are available.

@@ -328,7 +328,7 @@ func (h *Handlers) suggestedSpaces(r *http.Request, geo GeoContext) []SuggestedS
 		}
 	}
 
-	// 2. City space by name (case-insensitive, tenant-scoped).
+	// 2. City space by name (case-insensitive, platform-scoped).
 	if geo.City != "" {
 		city, err := h.spaces.FindCitySpaceByName(ctx, geo.City)
 		if err == nil {

@@ -550,7 +550,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 // ListThreads handles GET /api/v1/forum/threads.
 // Supports ?space_id=, ?author_id=, ?tag_id=, ?page_size=, ?cursor_created_at=,
 // ?sort=latest|top and ?solved=true|false.
-// Public: when no user is present, lists all public threads for the tenant.
+// Public: when no user is present, lists all public threads for the platform.
 func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
@@ -666,18 +666,18 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	default:
-		// List all public threads for the tenant regardless of auth — the
+		// List all public threads for the platform regardless of auth — the
 		// forum index shows everybody's threads. Callers wanting their own
 		// threads pass author_id explicitly. Uses the WithDetails variant so
 		// the frontend receives joined author + space data in one response.
-		threads, err := h.Service.ListThreadsByTenantWithDetails(r.Context(), solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		threads, err := h.Service.ListThreadsByPlatformWithDetails(r.Context(), solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
 		if threads == nil {
-			threads = []gen.ListForumThreadsByTenantWithDetailsRow{}
+			threads = []gen.ListForumThreadsWithDetailsRow{}
 		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})

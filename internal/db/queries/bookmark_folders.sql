@@ -31,7 +31,7 @@ DELETE FROM bookmark_folders
 WHERE id = @id AND user_id = @user_id;
 
 -- name: GetBookmarkFolder :one
--- Validates that a folder belongs to the given user and tenant (BL-013).
+-- Validates that a folder belongs to the given user and platform (BL-013).
 SELECT id, user_id, name, created_at, updated_at, position
 FROM bookmark_folders
 WHERE id = @id AND user_id = @user_id;
@@ -39,7 +39,7 @@ WHERE id = @id AND user_id = @user_id;
 -- name: UpdateBookmarkFolderPosition :exec
 -- BUG-008: sets the position of a single folder. Called in a loop by the
 -- reorder handler (PATCH /me/bookmark-folders/reorder) to persist the
--- caller's desired ordering. Scoped to tenant + owner.
+-- caller's desired ordering. Scoped to platform + owner.
 UPDATE bookmark_folders
 SET position = @position, updated_at = now()
 WHERE id = @id AND user_id = @user_id;

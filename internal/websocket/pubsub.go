@@ -15,7 +15,7 @@ const PubSubChannel = "jc:ws:broadcast"
 
 // PubSubMessage wraps a WSEvent with routing metadata for cross-instance
 // delivery. When an event is published to Valkey, the bridge attaches the
-// target user or space ID (and the tenant ID for space-scoped delivery) so
+// target user or space ID (and the platform ID for space-scoped delivery) so
 // that receiving instances can dispatch it to the correct local subscribers.
 type PubSubMessage struct {
 	Type          string      `json:"type"`

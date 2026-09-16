@@ -65,7 +65,7 @@ type CustomFieldsService interface {
 	// show_in_frontend = true — the display-ready shape used by the public
 	// /universities/{slug} About facts grid (Section 39).
 	ListFieldValuesWithDefsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error)
-	// GetCustomFieldByKey looks up a field definition by key within a tenant.
+	// GetCustomFieldByKey looks up a field definition by key within a platform.
 	// Used to resolve the deterministic initials field without hard-coding UUIDs.
 	GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error)
 	// UpsertFieldValue stores or updates a single custom field value on an entity.
@@ -160,7 +160,6 @@ func (h *Handlers) enqueueFetchLogo(ctx context.Context, spaceID, uploadedBy pgt
 		slog.Warn("universities: enqueue fetch_logo", "space_id", spaceID.String(), "error", err)
 	}
 }
-
 
 // resolveLogoURL resolves a space's logo_media_id to an imgproxy-signed URL
 // via the media service. Returns an empty string when no logo is set, the
@@ -1033,7 +1032,9 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request) {
 
 	// 10 MB upload cap — matches media.max_upload_mb default for a CSV.
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	// #nosec G120 // total body size is bounded by MaxBytesReader above.
+	if err := r.ParseMultipartForm(32 << 10); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_upload", "Failed to parse upload (max 10 MB)")
 		return
 	}

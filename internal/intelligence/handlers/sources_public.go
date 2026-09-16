@@ -115,7 +115,7 @@ type collectionQuery struct {
 }
 
 // HandleListSourceCollections returns the curated directory sections for the
-// current tenant. Manual collections read source_collection_items; query-based
+// current platform. Manual collections read source_collection_items; query-based
 // collections execute stored filters against ListPublicSources.
 //
 // GET /api/v1/sources/collections

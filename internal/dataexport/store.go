@@ -35,20 +35,20 @@ func (s *Store) Create(ctx context.Context, params gen.CreatePlatformDataExportP
 	return s.queries.CreatePlatformDataExport(ctx, params)
 }
 
-// Get retrieves a single export by ID within a tenant.
+// Get retrieves a single export by ID within a platform.
 func (s *Store) Get(ctx context.Context, id pgtype.UUID) (gen.PlatformDataExport, error) {
 	return s.queries.GetPlatformDataExport(ctx,
 		id,
 	)
 }
 
-// GetByID retrieves a single export by ID only (no tenant filter).
-// Used by the Asynq worker, which does not have tenant context.
+// GetByID retrieves a single export by ID only (no platform filter).
+// Used by the Asynq worker, which does not have platform context.
 func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (gen.PlatformDataExport, error) {
 	return s.queries.GetPlatformDataExportByID(ctx, id)
 }
 
-// List returns paginated exports for a tenant, optionally filtered by status.
+// List returns paginated exports for a platform, optionally filtered by status.
 func (s *Store) List(ctx context.Context, status string, limit, offset int32) ([]gen.PlatformDataExport, error) {
 	return s.queries.ListPlatformDataExports(ctx, gen.ListPlatformDataExportsParams{
 
@@ -58,7 +58,7 @@ func (s *Store) List(ctx context.Context, status string, limit, offset int32) ([
 	})
 }
 
-// Count returns the total number of exports for a tenant, optionally filtered.
+// Count returns the total number of exports for a platform, optionally filtered.
 func (s *Store) Count(ctx context.Context, status string) (int64, error) {
 	return s.queries.CountPlatformDataExports(ctx,
 

@@ -17,7 +17,7 @@ func NewService(store *Store) *Service {
 	return &Service{store: store}
 }
 
-// SearchOfferings returns published course offerings for a tenant, optionally
+// SearchOfferings returns published course offerings for a platform, optionally
 // filtered by university and/or search query.
 func (s *Service) SearchOfferings(ctx context.Context, universityID pgtype.UUID, query string, limit, offset int32) ([]CourseOffering, error) {
 	return s.store.SearchOfferings(ctx, universityID, query, limit, offset)
@@ -33,7 +33,7 @@ func (s *Service) GetOfferingByID(ctx context.Context, id pgtype.UUID) (CourseOf
 	return offering, nil
 }
 
-// GetOfferingBySlug returns a course offering by its tenant-scoped slug.
+// GetOfferingBySlug returns a course offering by its platform-scoped slug.
 func (s *Service) GetOfferingBySlug(ctx context.Context, slug string) (CourseOffering, error) {
 	offering, err := s.store.GetOfferingBySlug(ctx, slug)
 	if err != nil {

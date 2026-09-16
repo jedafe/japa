@@ -4,7 +4,7 @@
 // table. When a feature is disabled, its API routes return 404 (not 403, to
 // avoid revealing the feature exists), and frontend nav items are hidden.
 //
-// Core features (auth, RBAC, multi-tenancy, basic content creation, media
+// Core features (auth, RBAC, organization scoping, basic content creation, media
 // upload) are NOT feature-flagged - they always exist.
 package features
 

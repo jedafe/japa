@@ -98,7 +98,7 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 }
 
 // ApproveHITLReview sets the review status to 'approved' with the reviewer identity.
-// The filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
+// The filter prevents cross-platform approve/reject (Section 09 platform scoping).
 func (s *Store) ApproveHITLReview(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
@@ -117,7 +117,7 @@ func (s *Store) ApproveHITLReview(ctx context.Context, reviewID, reviewerID pgty
 }
 
 // RejectHITLReview sets the review status to 'rejected' with a reason.
-// The filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
+// The filter prevents cross-platform approve/reject (Section 09 platform scoping).
 func (s *Store) RejectHITLReview(ctx context.Context, reviewID, reviewerID pgtype.UUID, reason string) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
@@ -135,7 +135,7 @@ func (s *Store) RejectHITLReview(ctx context.Context, reviewID, reviewerID pgtyp
 	return nil
 }
 
-// ListPendingHITLReviews returns pending reviews for a tenant with offset
+// ListPendingHITLReviews returns pending reviews for a platform with offset
 // pagination. When sourceFilter is non-empty, only reviews with that source
 // are returned (e.g. "studio" for the Studio tab, §75 Review Routing).
 func (s *Store) ListPendingHITLReviews(ctx context.Context, sourceFilter string, limit, offset int32) ([]HITLReview, error) {
@@ -187,7 +187,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, sourceFilter string,
 	return reviews, nil
 }
 
-// GetHITLReview returns a single HITL review by tenant + review ID. Used by
+// GetHITLReview returns a single HITL review by platform + review ID. Used by
 // the Studio review hook to discover target_table for tool-table drafts.
 func (s *Store) GetHITLReview(ctx context.Context, reviewID pgtype.UUID) (HITLReview, error) {
 	var r HITLReview
@@ -205,7 +205,7 @@ func (s *Store) GetHITLReview(ctx context.Context, reviewID pgtype.UUID) (HITLRe
 }
 
 // CountPendingHITLReviews returns the total count of pending reviews for a
-// tenant (used for pagination metadata in the admin HITL queue). When
+// platform (used for pagination metadata in the admin HITL queue). When
 // sourceFilter is non-empty, only reviews with that source are counted.
 func (s *Store) CountPendingHITLReviews(ctx context.Context, sourceFilter string) (int64, error) {
 	var total int64
@@ -260,7 +260,7 @@ type AIUsageByProvider struct {
 	Calls        int64   `json:"calls"`
 }
 
-// GetAIUsageSummary returns aggregated AI usage for a tenant within the given
+// GetAIUsageSummary returns aggregated AI usage for a platform within the given
 // period. periodDays <= 0 defaults to 30. An optional provider filter limits
 // the summary to a single provider (empty string = all providers).
 func (s *Store) GetAIUsageSummary(ctx context.Context, periodDays int, provider string) (AIUsageSummary, error) {

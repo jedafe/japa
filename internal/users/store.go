@@ -131,7 +131,7 @@ func (s *Store) findCountrySpace(ctx context.Context, countryCode string) (pgtyp
 	return space.ID, nil
 }
 
-// isValidGeoSpace checks that a space exists, belongs to the tenant, and is
+// isValidGeoSpace checks that a space exists, belongs to the platform, and is
 // a geo space (level = country/state/city). Used by the POST /me/location
 // handler to validate direct space_id selections (ADR-064a security check).
 func (s *Store) isValidGeoSpace(ctx context.Context, spaceID pgtype.UUID) bool {
@@ -408,7 +408,7 @@ func (s *Store) upsertPreferencesTx(ctx context.Context, q *gen.Queries, userID 
 	return nil
 }
 
-// listUsers returns a paginated list of users for a tenant, optionally filtered by search, status, and group.
+// listUsers returns a paginated list of users for a platform, optionally filtered by search, status, and group.
 func (s *Store) listUsers(ctx context.Context, search, status, groupSlug string, limit, offset int32) ([]gen.ListUsersRow, error) {
 	rows, err := s.read.ListUsers(ctx, gen.ListUsersParams{
 
@@ -461,7 +461,7 @@ func (s *Store) countPublicUsers(ctx context.Context, search, profileType string
 	return count, nil
 }
 
-// countUsers returns the total count of users for a tenant, optionally filtered by search, status, and group.
+// countUsers returns the total count of users for a platform, optionally filtered by search, status, and group.
 func (s *Store) countUsers(ctx context.Context, search, status, groupSlug string) (int32, error) {
 	count, err := s.read.CountUsers(ctx, gen.CountUsersParams{
 
@@ -655,9 +655,9 @@ func (s *Store) listUserContent(ctx context.Context, userID pgtype.UUID, status,
 }
 
 // getUserDraft returns the caller's own draft content by ID, scoped to the
-// tenant and author and restricted to status='draft'. Returns pgx.ErrNoRows
+// platform and author and restricted to status='draft'. Returns pgx.ErrNoRows
 // when the content does not exist, is not a draft, or belongs to another
-// user/tenant — the handler maps that to 404.
+// user/platform — the handler maps that to 404.
 func (s *Store) getUserDraft(ctx context.Context, userID, contentID pgtype.UUID) (gen.GetUserDraftRow, error) {
 	return s.read.GetUserDraft(ctx, gen.GetUserDraftParams{
 		ID: contentID,
@@ -667,10 +667,10 @@ func (s *Store) getUserDraft(ctx context.Context, userID, contentID pgtype.UUID)
 }
 
 // getUserContent returns the caller's own content by ID, scoped to the
-// tenant and author with no status filter (covers published, scheduled, and
+// platform and author with no status filter (covers published, scheduled, and
 // draft). Used by GET /me/content/{id} so the /create composer can restore
 // any of the caller's own content for editing. Returns pgx.ErrNoRows when
-// the content is missing or owned by another user/tenant → 404.
+// the content is missing or owned by another user/platform → 404.
 func (s *Store) getUserContent(ctx context.Context, userID, contentID pgtype.UUID) (gen.GetUserContentRow, error) {
 	return s.read.GetUserContent(ctx, gen.GetUserContentParams{
 		ID: contentID,
@@ -679,11 +679,11 @@ func (s *Store) getUserContent(ctx context.Context, userID, contentID pgtype.UUI
 	})
 }
 
-// getContentByIDForEditor returns any content by ID within the tenant (no
+// getContentByIDForEditor returns any content by ID within the platform (no
 // author filter). Used by GET /me/content/{id} as a fallback when the caller
 // is a super-admin or holds the RBAC `content.edit` permission but is not
 // the content owner. Returns pgx.ErrNoRows when the content is missing or
-// belongs to a different tenant → 404.
+// belongs to a different platform → 404.
 func (s *Store) getContentByIDForEditor(ctx context.Context, contentID pgtype.UUID) (gen.GetContentByIDForEditorRow, error) {
 	return s.read.GetContentByIDForEditor(ctx,
 		contentID,
@@ -717,7 +717,7 @@ func (s *Store) SoftDeleteUser(ctx context.Context, userID pgtype.UUID) error {
 }
 
 // activeUserExistsByID reports whether an ACTIVE user with this id exists in
-// the tenant. Used by the public profile gate.
+// the platform. Used by the public profile gate.
 func (s *Store) activeUserExistsByID(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	return s.read.ActiveUserExistsByID(ctx,
 
@@ -830,9 +830,9 @@ func (s *Store) updateEmailTx(ctx context.Context, q *gen.Queries, userID pgtype
 	})
 }
 
-// emailExistsForTenant returns the count of other users in the tenant with
+// emailExistsForPlatform returns the count of other users in the platform with
 // the given email (0 = available).
-func (s *Store) emailExistsForTenant(ctx context.Context, userID pgtype.UUID, email string) (int32, error) {
+func (s *Store) emailExistsForPlatform(ctx context.Context, userID pgtype.UUID, email string) (int32, error) {
 	return s.write.EmailExists(ctx, gen.EmailExistsParams{
 
 		Email: email,
@@ -840,9 +840,9 @@ func (s *Store) emailExistsForTenant(ctx context.Context, userID pgtype.UUID, em
 	})
 }
 
-// emailExistsForTenantTx is the transaction-scoped variant of
-// emailExistsForTenant.
-func (s *Store) emailExistsForTenantTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, email string) (int32, error) {
+// emailExistsForPlatformTx is the transaction-scoped variant of
+// emailExistsForPlatform.
+func (s *Store) emailExistsForPlatformTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, email string) (int32, error) {
 	return q.EmailExists(ctx, gen.EmailExistsParams{
 
 		Email: email,
@@ -850,9 +850,9 @@ func (s *Store) emailExistsForTenantTx(ctx context.Context, q *gen.Queries, user
 	})
 }
 
-// usernameExistsForTenant returns the count of other users in the tenant with
+// usernameExistsForPlatform returns the count of other users in the platform with
 // the given username (0 = available).
-func (s *Store) usernameExistsForTenant(ctx context.Context, userID pgtype.UUID, username string) (int32, error) {
+func (s *Store) usernameExistsForPlatform(ctx context.Context, userID pgtype.UUID, username string) (int32, error) {
 	return s.write.UsernameExists(ctx, gen.UsernameExistsParams{
 
 		Username: username,
@@ -860,9 +860,9 @@ func (s *Store) usernameExistsForTenant(ctx context.Context, userID pgtype.UUID,
 	})
 }
 
-// usernameExistsForTenantTx is the transaction-scoped variant of
-// usernameExistsForTenant.
-func (s *Store) usernameExistsForTenantTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, username string) (int32, error) {
+// usernameExistsForPlatformTx is the transaction-scoped variant of
+// usernameExistsForPlatform.
+func (s *Store) usernameExistsForPlatformTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, username string) (int32, error) {
 	return q.UsernameExists(ctx, gen.UsernameExistsParams{
 
 		Username: username,

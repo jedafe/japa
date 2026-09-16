@@ -176,7 +176,7 @@ func toIngestionJob(row gen.ComparisonDataIngestionJob) (IngestionJob, error) {
 	return job, nil
 }
 
-// GetIngestionJob returns a single ingestion job by id and tenant.
+// GetIngestionJob returns a single ingestion job by id and platform.
 func (s *Service) GetIngestionJob(ctx context.Context, id pgtype.UUID) (IngestionJob, error) {
 	return s.ingestion.get(ctx, id)
 }
@@ -192,7 +192,7 @@ func (s *Service) ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, 
 // progress it returns the existing pending job instead.
 func (s *Service) RefreshComparison(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
 	if !contentID.Valid || !false {
-		return IngestionJob{}, fmt.Errorf("%w: content and tenant ids are required", errpkg.ErrInvalid)
+		return IngestionJob{}, fmt.Errorf("%w: content and platform ids are required", errpkg.ErrInvalid)
 	}
 
 	if !s.featureEnabled(ctx, refreshFeatureFlag) {
@@ -363,7 +363,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, contentID, jobID pgt
 	}
 
 	if len(sources) == 0 {
-		procErrs = append(procErrs, "no data sources registered for tenant")
+		procErrs = append(procErrs, "no data sources registered for platform")
 		return nil
 	}
 
@@ -773,8 +773,8 @@ func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) 
 	}
 
 	// Global/platform defaults for the sweep window and batch size. Individual
-	// tenants can override via the same keys if the settings layer supports
-	// tenant-specific values, but the sweep itself is run once per instance.
+	// platforms can override via the same keys if the settings layer supports
+	// platform-specific values, but the sweep itself is run once per instance.
 	sweepHours := 24
 	sweepLimit := 1000
 

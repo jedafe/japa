@@ -1,7 +1,7 @@
 // Package bots implements Bot & Crawler Management for JapaConnect (Section 43).
 //
 // Three-layer architecture:
-//   - Known Bots registry (admin-configurable per tenant)
+//   - Known Bots registry (admin-configurable per platform)
 //   - Dynamic robots.txt generation from the bot registry
 //   - Bot detection middleware that identifies incoming crawlers
 //

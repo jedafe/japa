@@ -24,9 +24,9 @@ type DBConfig struct {
 	TitleColumn  string
 	SlugColumn   string // optional; empty means no slug search
 	DescColumn   string // optional; empty means no description
-	TenantColumn string // optional; empty means no tenant filter
-	TenantJoin   string // optional JOIN clause (e.g. "JOIN contents c ON c.id = t.guide_id")
-	TenantWhere  string // optional predicate when TenantJoin is used
+	PlatformColumn string // optional; empty means no platform filter
+	PlatformJoin   string // optional JOIN clause (e.g. "JOIN contents c ON c.id = t.guide_id")
+	PlatformWhere  string // optional predicate when PlatformJoin is used
 	ActiveWhere  string // optional SQL predicate (e.g. "t.is_active = true" or "t.status = 'published'")
 
 	// Optional personalization metadata columns for Sub-spec 2 Smart Compare.
@@ -236,7 +236,7 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any)
 
 	query := fmt.Sprintf(
 		"SELECT %s FROM %s t %s WHERE %s LIMIT 1",
-		strings.Join(cols, ", "), table, r.cfg.TenantJoin, where,
+		strings.Join(cols, ", "), table, r.cfg.PlatformJoin, where,
 	)
 
 	rv := &dbRowValues{}
@@ -347,7 +347,7 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 
 	querySQL := fmt.Sprintf(
 		"SELECT %s FROM %s t %s WHERE %s ORDER BY t.%s LIMIT $%d OFFSET $%d",
-		strings.Join(cols, ", "), table, r.cfg.TenantJoin, where, titleCol, len(args)+1, len(args)+2,
+		strings.Join(cols, ", "), table, r.cfg.PlatformJoin, where, titleCol, len(args)+1, len(args)+2,
 	)
 
 	args = append(args, limit, offset)
@@ -376,7 +376,7 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 	return out, nil
 }
 
-// whereClause is a no-op now that tenant scoping has been removed. It keeps
+// whereClause is a no-op now that platform scoping has been removed. It keeps
 // the function shape so existing callers still compile.
 func (r *DBResolver) whereClause() (string, []any, error) {
 	return "", nil, nil

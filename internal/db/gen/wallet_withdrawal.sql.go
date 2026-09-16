@@ -11,19 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countWithdrawalsByTenant = `-- name: CountWithdrawalsByTenant :one
+const countWithdrawals = `-- name: CountWithdrawals :one
 SELECT COUNT(*) FROM wallet_withdrawals
 WHERE ($1::text IS NULL OR status = $1)
  AND ($2::uuid IS NULL OR user_id = $2)
 `
 
-type CountWithdrawalsByTenantParams struct {
+type CountWithdrawalsParams struct {
 	Status *string     `json:"status"`
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-func (q *Queries) CountWithdrawalsByTenant(ctx context.Context, arg CountWithdrawalsByTenantParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countWithdrawalsByTenant, arg.Status, arg.UserID)
+func (q *Queries) CountWithdrawals(ctx context.Context, arg CountWithdrawalsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countWithdrawals, arg.Status, arg.UserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -359,14 +359,14 @@ func (q *Queries) InsertWithdrawalMethod(ctx context.Context, arg InsertWithdraw
 	return i, err
 }
 
-const listPayoutProvidersByTenant = `-- name: ListPayoutProvidersByTenant :many
+const listPayoutProviders = `-- name: ListPayoutProviders :many
 SELECT id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at FROM payout_providers
 
 ORDER BY is_default DESC, name
 `
 
-func (q *Queries) ListPayoutProvidersByTenant(ctx context.Context) ([]PayoutProvider, error) {
-	rows, err := q.db.Query(ctx, listPayoutProvidersByTenant)
+func (q *Queries) ListPayoutProviders(ctx context.Context) ([]PayoutProvider, error) {
+	rows, err := q.db.Query(ctx, listPayoutProviders)
 	if err != nil {
 		return nil, err
 	}
@@ -395,14 +395,14 @@ func (q *Queries) ListPayoutProvidersByTenant(ctx context.Context) ([]PayoutProv
 	return items, nil
 }
 
-const listWithdrawalFeeTiersByTenant = `-- name: ListWithdrawalFeeTiersByTenant :many
+const listWithdrawalFeeTiers = `-- name: ListWithdrawalFeeTiers :many
 SELECT id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at FROM wallet_withdrawal_fee_tiers
 WHERE is_active = true
 ORDER BY position, min_amount
 `
 
-func (q *Queries) ListWithdrawalFeeTiersByTenant(ctx context.Context) ([]WalletWithdrawalFeeTier, error) {
-	rows, err := q.db.Query(ctx, listWithdrawalFeeTiersByTenant)
+func (q *Queries) ListWithdrawalFeeTiers(ctx context.Context) ([]WalletWithdrawalFeeTier, error) {
+	rows, err := q.db.Query(ctx, listWithdrawalFeeTiers)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +471,7 @@ func (q *Queries) ListWithdrawalMethodsByUser(ctx context.Context, userID pgtype
 	return items, nil
 }
 
-const listWithdrawalsByTenant = `-- name: ListWithdrawalsByTenant :many
+const listWithdrawals = `-- name: ListWithdrawals :many
 SELECT id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
 WHERE ($1::text IS NULL OR status = $1)
  AND ($2::uuid IS NULL OR user_id = $2)
@@ -479,15 +479,15 @@ ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
 `
 
-type ListWithdrawalsByTenantParams struct {
+type ListWithdrawalsParams struct {
 	Status     *string     `json:"status"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListWithdrawalsByTenant(ctx context.Context, arg ListWithdrawalsByTenantParams) ([]WalletWithdrawal, error) {
-	rows, err := q.db.Query(ctx, listWithdrawalsByTenant,
+func (q *Queries) ListWithdrawals(ctx context.Context, arg ListWithdrawalsParams) ([]WalletWithdrawal, error) {
+	rows, err := q.db.Query(ctx, listWithdrawals,
 		arg.Status,
 		arg.UserID,
 		arg.PageOffset,

@@ -259,7 +259,7 @@ func (s *Service) SetCache(rdb valkeycompat.Cmdable) {
 }
 
 // GetCustomFieldByKey looks up a custom field definition by its key within
-// a tenant. Used by the organizations handler to read the org_type select
+// a platform. Used by the organizations handler to read the org_type select
 // field's options from the custom field system (Section 07 + 08).
 func (s *Service) GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error) {
 	return s.read.GetCustomFieldByKey(ctx,
@@ -267,7 +267,7 @@ func (s *Service) GetCustomFieldByKey(ctx context.Context, key string) (gen.GetC
 	)
 }
 
-// ListGuideCategories returns all guide categories for a tenant. Guide
+// ListGuideCategories returns all guide categories for a platform. Guide
 // categories are stored in custom_field_entity_types with value prefix
 // 'guide_category:'. The slug is the part after the prefix. Also enriches
 // each category with its field group ID so the admin panel can link to the

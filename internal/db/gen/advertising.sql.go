@@ -793,20 +793,20 @@ func (q *Queries) ListActiveCampaignsBySlot(ctx context.Context, arg ListActiveC
 	return items, nil
 }
 
-const listAdCampaignsByTenant = `-- name: ListAdCampaignsByTenant :many
+const listAdCampaigns = `-- name: ListAdCampaigns :many
 SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
 
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $1
 `
 
-type ListAdCampaignsByTenantParams struct {
+type ListAdCampaignsParams struct {
 	PageOffset int32 `json:"page_offset"`
 	PageLimit  int32 `json:"page_limit"`
 }
 
-func (q *Queries) ListAdCampaignsByTenant(ctx context.Context, arg ListAdCampaignsByTenantParams) ([]AdCampaign, error) {
-	rows, err := q.db.Query(ctx, listAdCampaignsByTenant, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListAdCampaigns(ctx context.Context, arg ListAdCampaignsParams) ([]AdCampaign, error) {
+	rows, err := q.db.Query(ctx, listAdCampaigns, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

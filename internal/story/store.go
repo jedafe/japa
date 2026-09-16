@@ -223,7 +223,7 @@ func (s *Store) GetCountrySpaceGeoCode(ctx context.Context, spaceID pgtype.UUID)
 // an "additional" space (the generic UpdateContentSpaces preserves additional
 // rows, which is correct for multi-space content but not for stories).
 func (s *Store) PruneContentSpacesExcept(ctx context.Context, contentID, keepSpaceID pgtype.UUID) error {
-	// content_spaces has no column — the tenant scope is enforced
+	// content_spaces has no column — the platform scope is enforced
 	// by joining through contents.
 	const q = `DELETE FROM content_spaces
 WHERE content_id = $1 AND space_id <> $2

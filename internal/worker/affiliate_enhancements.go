@@ -90,7 +90,7 @@ func HandleAffiliateCreditAuthorCommission(ctx context.Context, t *asynq.Task) e
 }
 
 // creditAuthorCommissionTx credits the author's wallet via the immutable
-// ledger inside a tx holding pg_advisory_xact_lock(tenant:user) to serialize
+// ledger inside a tx holding pg_advisory_xact_lock(platform:user) to serialize
 // concurrent balance mutations, then marks the commission credited in the
 // same tx (idempotent guard: only updates rows still flagged credited=false).
 func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCommissionForCreditRow, amountKobo int64) error {

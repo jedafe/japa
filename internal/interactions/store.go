@@ -13,7 +13,7 @@ import (
 // line 147: "block a user (also cancels any DM/follow)". The block insert,
 // follow deletion (both directions), and pending DM request decline run in a
 // single transaction so a partial failure leaves no orphaned follow/DM.
-// Tenant-scoped per JEOS §9 (BUG-006). Ref: §41 — POST /users/:id/block.
+// Platform-scoped per JEOS §9 (BUG-006). Ref: §41 — POST /users/:id/block.
 func (s *Service) BlockUser(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	if blockerID == blockedID {
 		return errors.New("cannot block yourself")
@@ -59,7 +59,7 @@ func (s *Service) BlockUser(ctx context.Context, blockerID, blockedID pgtype.UUI
 }
 
 // UnblockUser idempotently removes a user block. Returns nil if not blocked.
-// Tenant-scoped per JEOS §9 (BUG-006). Ref: §41 — DELETE /users/:id/block.
+// Platform-scoped per JEOS §9 (BUG-006). Ref: §41 — DELETE /users/:id/block.
 func (s *Service) UnblockUser(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	if blockerID == blockedID {
 		return errors.New("cannot block yourself")
@@ -80,7 +80,7 @@ type BlockedUserInfo struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-// ListBlockedUsers returns users blocked by the given user, tenant-scoped
+// ListBlockedUsers returns users blocked by the given user, platform-scoped
 // with profile enrichment (BUG-003, BUG-004).
 // Ref: japaconnect-engineering/sections/41-spam-content-safety.md.
 func (s *Service) ListBlockedUsers(ctx context.Context, blockerID pgtype.UUID, limit, offset int32) ([]BlockedUserInfo, error) {
@@ -109,7 +109,7 @@ func (s *Service) ListBlockedUsers(ctx context.Context, blockerID pgtype.UUID, l
 }
 
 // IsBlocked returns true if either user has blocked the other.
-// Tenant-scoped per JEOS §9 (BUG-006).
+// Platform-scoped per JEOS §9 (BUG-006).
 func (s *Service) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
 	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
@@ -123,7 +123,7 @@ func (s *Service) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool
 
 // MuteUser mutes a user. Returns true if muted, false if already muted (idempotent).
 // Invalidates the jc:muted_users:{}:{user_id} Valkey cache (Section 52
-// / VALKEY-001, BUG-003: tenant-scoped).
+// / VALKEY-001, BUG-003: platform-scoped).
 func (s *Service) MuteUser(ctx context.Context, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.MuteUser(ctx, gen.MuteUserParams{
 
@@ -140,7 +140,7 @@ func (s *Service) MuteUser(ctx context.Context, userID, mutedUserID pgtype.UUID)
 
 // UnmuteUser removes a mute.
 // Invalidates the jc:muted_users:{}:{user_id} Valkey cache (Section 52
-// / VALKEY-001, BUG-003: tenant-scoped).
+// / VALKEY-001, BUG-003: platform-scoped).
 func (s *Service) UnmuteUser(ctx context.Context, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.UnmuteUser(ctx, gen.UnmuteUserParams{
 

@@ -163,7 +163,7 @@ func (s *Store) AdminListJobApplications(ctx context.Context, status string, pag
 }
 
 // AdminCountJobApplications returns the total number of applications for a
-// tenant, optionally filtered by status.
+// platform, optionally filtered by status.
 func (s *Store) AdminCountJobApplications(ctx context.Context, status string) (int64, error) {
 	return s.queries.AdminCountJobApplications(ctx,
 

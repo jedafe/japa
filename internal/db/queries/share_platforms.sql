@@ -1,5 +1,5 @@
 -- name: ListSharePlatforms :many
--- Returns all share platforms for a tenant, ordered by position.
+-- Returns all share platforms for a platform, ordered by position.
 SELECT id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 FROM share_platforms
 

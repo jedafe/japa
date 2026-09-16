@@ -209,7 +209,7 @@ func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 
 // GetAdminOverview handles GET /api/v1/admin/analytics/overview.
 // Uses read-through Valkey cache (jc:cache:analytics:*, BUG-010) with a 5-min
-// TTL. The cache key includes the tenant and time period so different windows
+// TTL. The cache key includes the platform and time period so different windows
 // don't collide. Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 
@@ -374,7 +374,7 @@ func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Requ
 
 // DeleteSecurityScanResult handles DELETE /api/v1/admin/analytics/security/{id}.
 // Permanently removes a scan finding (typically a resolved one) from the
-// control panel audit view. Tenant-scoped.
+// control panel audit view. Platform-scoped.
 func (h *Handlers) DeleteSecurityScanResult(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
@@ -416,8 +416,8 @@ func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
 // HandleCacheFlush handles POST /api/v1/admin/analytics/cache/flush.
 // Accepts an optional {"scope": "..."} body to limit which cache partition
 // is flushed. Defaults to FlushAll when scope is empty or missing.
-// BUG-ANALYTICS-11 fix: passes tenant ID to the flusher so non-FlushAll
-// scopes are restricted to the caller's tenant keys.
+// BUG-ANALYTICS-11 fix: passes platform ID to the flusher so non-FlushAll
+// scopes are restricted to the caller's platform keys.
 func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 	if h.CacheFlusher == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "cache_unavailable", "Cache flusher not configured")

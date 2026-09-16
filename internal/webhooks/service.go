@@ -98,7 +98,7 @@ func generateEventID() (pgtype.UUID, error) {
 // Admin CRUD — Webhook Endpoints
 // ---------------------------------------------------------------------------
 
-// ListEndpoints returns all webhook endpoints for the given tenant.
+// ListEndpoints returns all webhook endpoints for the given platform.
 func (s *Service) ListEndpoints(ctx context.Context) ([]WebhookEndpointResponse, error) {
 	rows, err := s.store.ListEndpoints(ctx)
 	if err != nil {
@@ -240,7 +240,7 @@ func (s *Service) VerifyEndpoint(ctx context.Context, id pgtype.UUID) error {
 
 // TestEndpoint sends a test event to a webhook endpoint and records the delivery.
 func (s *Service) TestEndpoint(ctx context.Context, endpointID pgtype.UUID, eventType string) (pgtype.UUID, error) {
-	// Verify the endpoint exists and belongs to this tenant.
+	// Verify the endpoint exists and belongs to this platform.
 	endpoint, err := s.store.GetEndpoint(ctx, endpointID)
 	if err != nil {
 		return pgtype.UUID{}, err
@@ -465,7 +465,7 @@ func (s *Service) CreateDelivery(ctx context.Context, endpointID, eventID pgtype
 	return s.store.CreateDelivery(ctx, endpointID, eventID, eventType, payloadJSON)
 }
 
-// EmitEvent dispatches a webhook event to all active endpoints for the tenant
+// EmitEvent dispatches a webhook event to all active endpoints for the platform
 // that subscribe to the given event type. For each matching endpoint it
 // creates a pending delivery row and enqueues the Asynq webhook_delivery
 // task. This is the canonical entry point for feature services to fire

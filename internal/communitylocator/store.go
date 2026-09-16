@@ -216,7 +216,7 @@ type UpdateOrgInput struct {
 	HitlReviewedNotes    *string             `json:"hitl_reviewed_notes,omitempty"`
 }
 
-// UpdateOrg applies a tenant-scoped partial update to a community
+// UpdateOrg applies a platform-scoped partial update to a community
 // organisation. Only non-nil input fields are written; the updated row is
 // re-fetched and returned.
 func (s *Store) UpdateOrg(ctx context.Context, id pgtype.UUID, in UpdateOrgInput) (OrgRow, error) {

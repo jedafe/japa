@@ -12,7 +12,7 @@ const maxPathLength = 2048
 // Middleware returns a Chi middleware that resolves admin-managed URL redirects
 // (ADR-056) before the request reaches route handlers. It runs early in the
 // chain — after the standard middleware (RequestID, Recovery, Logger, Security,
-// CORS) and IP block middleware, but before the Tenant/Auth middleware groups.
+// CORS) and IP block middleware, but before the Platform/Auth middleware groups.
 //
 // Requests that do not match a redirect rule pass through unchanged.
 //

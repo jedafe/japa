@@ -6,7 +6,7 @@
 // manually or generated as AI drafts by the Content Agent and reviewed
 // via a human-in-the-loop approval step. The package provides public
 // browse endpoints (selector + guide items) and admin CRUD/HITL
-// endpoints. Tenancy uses tenants(id); destination geo entities use
+// endpoints. Platform scoping uses spaces(id); destination geo entities use
 // spaces(id).
 // // Ref: japaconnect-engineering/sections/92-arrival-checklist.md
 // //	japaconnect-engineering/adr/ADR-100-arrival-checklist.md
@@ -61,7 +61,7 @@ func NewStore(database *db.DB) *Store {
 	return &Store{pool: database}
 }
 
-// GetSpaceName returns the name of a space scoped by tenant. It is used by
+// GetSpaceName returns the name of a space scoped by platform. It is used by
 // the service to build human-readable, destination-specific web research
 // queries. If the space is missing, not valid, or soft-deleted, it returns an
 // empty string with no error.

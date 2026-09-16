@@ -42,7 +42,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // GetActiveAssessmentForm returns the active assessment form
-// (form_type='assessment', status='active') for the tenant.
+// (form_type='assessment', status='active') for the platform.
 func (s *Store) GetActiveAssessmentForm(ctx context.Context) (gen.Form, error) {
 	form, err := s.queries.GetActiveAssessmentForm(ctx)
 	if err != nil {
@@ -225,7 +225,7 @@ type AdminListAssessmentResultsFilter struct {
 }
 
 // AdminListAssessmentResults returns all users' assessment results for the
-// tenant, paginated, filterable by score range, and sortable by a whitelisted
+// platform, paginated, filterable by score range, and sortable by a whitelisted
 // column. Admin-only. Uses a hand-written query (not sqlc) so the ORDER BY
 // clause can be built from a sanitized sort key + direction.
 func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAssessmentResultsFilter) ([]AdminListAssessmentResultsRow, int64, error) {
@@ -346,7 +346,7 @@ LIMIT $%d OFFSET $%d`,
 }
 
 // AdminCountAssessmentResults returns the total count of assessment results
-// for the tenant, optionally filtered by score range. Admin-only.
+// for the platform, optionally filtered by score range. Admin-only.
 func (s *Store) AdminCountAssessmentResults(ctx context.Context, minScore, maxScore int32) (int64, error) {
 	count, err := s.queries.AdminCountAssessmentResults(ctx, gen.AdminCountAssessmentResultsParams{
 
@@ -603,7 +603,7 @@ func (s *Store) DeleteAssessmentForm(ctx context.Context, id pgtype.UUID) error 
 }
 
 // GetAssessmentFormByID returns a full forms row including form_type and
-// scoring_config for the given tenant and id.
+// scoring_config for the given platform and id.
 func (s *Store) GetAssessmentFormByID(ctx context.Context, id pgtype.UUID) (gen.Form, error) {
 	const q = `
 SELECT id, name, slug, description, is_multi_step, submit_label,

@@ -120,9 +120,9 @@ func (s *Service) GetTicketTypeBySlug(ctx context.Context, slug string) (gen.Tic
 	return s.store.getTicketTypeBySlug(ctx, slug)
 }
 
-// ListTicketTypes returns all ticket types for a tenant.
+// ListTicketTypes returns all ticket types for a platform.
 func (s *Service) ListTicketTypes(ctx context.Context, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
-	return s.store.listTicketTypesByTenant(ctx, limit, offset, isPublic)
+	return s.store.listTicketTypesByPlatform(ctx, limit, offset, isPublic)
 }
 
 // UpdateTicketTypeInput holds parameters for updating a ticket type.
@@ -307,7 +307,7 @@ func (s *Service) GetTicket(ctx context.Context, id pgtype.UUID) (gen.GetTicketB
 
 // ListTickets returns tickets for admin view with filters.
 func (s *Service) ListTickets(ctx context.Context, status, priority string, typeID, assignedTo pgtype.UUID, search string, limit, offset int32) (ListTicketsResponse, error) {
-	return s.store.listTicketsByTenant(ctx, gen.ListTicketsByTenantParams{
+	return s.store.listTicketsByPlatform(ctx, gen.ListTicketsParams{
 
 		Status:     status,
 		Priority:   priority,

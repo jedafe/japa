@@ -35,7 +35,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // ListAdSlotTypes returns the active ad slot types (with flat_rate) available
-// to self-serve advertisers for the given tenant.
+// to self-serve advertisers for the given platform.
 func (s *Store) ListAdSlotTypes(ctx context.Context) ([]gen.AdSlotType, error) {
 	rows, err := s.queries.ListAdSlotTypesForSelfServe(ctx)
 	if err != nil {

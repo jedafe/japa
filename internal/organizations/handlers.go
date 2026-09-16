@@ -39,7 +39,7 @@ type JSONLDResolver interface {
 	ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
-// CustomFieldLookup resolves a custom field definition by key within a tenant.
+// CustomFieldLookup resolves a custom field definition by key within a platform.
 // Used by /organizations/meta to read the org_type select field's options
 // from the custom field system instead of a dedicated table.
 type CustomFieldLookup interface {

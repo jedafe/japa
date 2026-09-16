@@ -68,7 +68,7 @@ func RequireAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handl
 
 			var ()
 			if err := (error)(nil); err != nil {
-				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid tenant ID")
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid platform ID")
 				return
 			}
 

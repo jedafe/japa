@@ -6,7 +6,7 @@
 // accommodation_type). A NULL city_space_id denotes a country-level
 // guide. The package provides public filtered listing, single-guide
 // retrieval, admin CRUD, Content Agent draft generation, and HITL
-// approval. Tenancy uses tenants(id); destination/city geo entities use
+// approval. Platform scoping uses spaces(id); destination/city geo entities use
 // spaces(id) per ADR-053.
 //
 // Ref: japaconnect-engineering/sections/96-housing-guide.md
@@ -56,7 +56,7 @@ func NewStore(database *db.DB) *Store {
 	return &Store{pool: database}
 }
 
-// GetSpaceName returns the name of a space scoped by tenant. It is used by
+// GetSpaceName returns the name of a space scoped by platform. It is used by
 // the service to build human-readable, location-specific web research queries.
 // If the space is missing, not valid, or soft-deleted, it returns an empty
 // string with no error.

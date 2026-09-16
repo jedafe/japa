@@ -1270,7 +1270,7 @@ func (e *Engine) canScoreContent(ctx context.Context, cmp gen.GetComparisonBySlu
 }
 
 // canUseProfile decides whether a profile may be used for scoring by the caller.
-// Templates are public within the tenant; private profiles are restricted to
+// Templates are public within the platform; private profiles are restricted to
 // their owner or callers with comparison.edit_any.
 func (e *Engine) canUseProfile(profile jce.ComparisonProfile, userID *string, check func(string) bool) bool {
 	if profile.IsTemplate {

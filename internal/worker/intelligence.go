@@ -295,8 +295,8 @@ func HandleIntelScheduleCrawls(ctx context.Context, _ *asynq.Task) error {
 		return nil
 	}
 
-	// BUG-12 fix: check intel.enabled toggle. Settings are tenant-scoped
-	// per ADR-112 Amendment 2; the default tenant is used for the cron.
+	// BUG-12 fix: check intel.enabled toggle. Settings are platform-scoped
+	// per ADR-112 Amendment 2; the default platform is used for the cron.
 	if appSettings != nil {
 		enabled := appSettings.GetBoolOr(ctx, "intel.enabled", true)
 		if !enabled {
@@ -707,7 +707,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 // intelPersistExtractedRecords persists one intel_record per extraction
 // result and enqueues a dedup task for each.
-func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype.UUID, entityType, tenantStr string, results []IntelExtractResult) error {
+func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult) error {
 	for i, result := range results {
 		record, err := intelStores.CreateIntelRecord(ctx, gen.CreateIntelRecordParams{
 			SourceID:          sourceID,
@@ -1275,11 +1275,11 @@ func HandleIntelRefreshFreshness(ctx context.Context, _ *asynq.Task) error {
 		return nil
 	}
 
-	// No payload — processes all stale records for the default tenant.
-	// Per ADR-112 Amendment 2, all intelligence data is tenant-scoped. The
-	// cron runs per-tenant; in a single-tenant deployment the default tenant
-	// is used. Multi-tenant deployments would enqueue one refresh task per
-	// tenant.
+	// No payload — processes all stale records for the default platform.
+	// Per ADR-112 Amendment 2, all intelligence data is platform-scoped. The
+	// cron runs per-platform; in a single-platform deployment the default platform
+	// is used. Multi-platform deployments would enqueue one refresh task per
+	// platform.
 	stale, err := intelStores.ListStaleIntelRecords(ctx, 500)
 	if err != nil {
 		return fmt.Errorf("task:intel:refresh_freshness: list stale: %w", err)

@@ -11,7 +11,7 @@ WHERE user_id = @user_id
  AND deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC;
 
--- name: ListComparisonProfilesByTenant :many
+-- name: ListComparisonProfiles :many
 SELECT id, user_id, title, source_space_id, target_space_ids,
  goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles

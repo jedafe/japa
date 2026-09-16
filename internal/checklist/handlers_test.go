@@ -87,26 +87,26 @@ func TestHandleAdminCompletionStats_Unauthorized(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Public route tests — selector and get-items require a tenant (503 without
+// Public route tests — selector and get-items require a platform (503 without
 // one) but NOT authentication.
 // ---------------------------------------------------------------------------
 
-// TestHandleSelector_NoTenant verifies the public selector endpoint requires
-// a tenant context (returns 503, not 401 — it is anonymous-accessible).
-func _TestHandleSelector_NoTenant(t *testing.T) {
+// TestHandleSelector_NoPlatform verifies the public selector endpoint requires
+// a platform context (returns 503, not 401 — it is anonymous-accessible).
+func _TestHandleSelector_NoPlatform(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/checklist/selector", nil)
 	rr := httptest.NewRecorder()
 	h.HandleSelector(rr, req)
 
 	if rr.Code != http.StatusServiceUnavailable {
-		t.Errorf("HandleSelector without tenant = %d, want %d (service_unavailable)", rr.Code, http.StatusServiceUnavailable)
+		t.Errorf("HandleSelector without platform = %d, want %d (service_unavailable)", rr.Code, http.StatusServiceUnavailable)
 	}
 }
 
-// TestHandleGetItems_NoTenant verifies the public get-items endpoint requires
-// a tenant context.
-func _TestHandleGetItems_NoTenant(t *testing.T) {
+// TestHandleGetItems_NoPlatform verifies the public get-items endpoint requires
+// a platform context.
+func _TestHandleGetItems_NoPlatform(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet,
 		"/checklist/00000000-0000-0000-0000-000000000000", nil)
@@ -114,7 +114,7 @@ func _TestHandleGetItems_NoTenant(t *testing.T) {
 	h.HandleGetItems(rr, req)
 
 	if rr.Code != http.StatusServiceUnavailable {
-		t.Errorf("HandleGetItems without tenant = %d, want %d (service_unavailable)", rr.Code, http.StatusServiceUnavailable)
+		t.Errorf("HandleGetItems without platform = %d, want %d (service_unavailable)", rr.Code, http.StatusServiceUnavailable)
 	}
 }
 

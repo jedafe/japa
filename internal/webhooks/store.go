@@ -154,8 +154,8 @@ func deliveryFromGetRow(row gen.GetWebhookDeliveryRow) WebhookDelivery {
 	}
 }
 
-// deliveryFromGetForTenantRow converts a GetWebhookDeliveryForTenantRow.
-func deliveryFromGetForTenantRow(row gen.GetWebhookDeliveryForTenantRow) WebhookDelivery {
+// deliveryFromGetForPlatformRow converts a GetWebhookDeliveryForPlatformRow.
+func deliveryFromGetForPlatformRow(row gen.GetWebhookDeliveryForPlatformRow) WebhookDelivery {
 	return WebhookDelivery{
 		ID: row.ID, EndpointID: row.EndpointID,
 		EventID: row.EventID, EventType: row.EventType, Payload: row.Payload,
@@ -182,7 +182,7 @@ func deliveryFromListRow(row gen.ListWebhookDeliveriesRow) WebhookDelivery {
 // Endpoints
 // ---------------------------------------------------------------------------
 
-// ListEndpoints returns all webhook endpoints for the given tenant, newest first.
+// ListEndpoints returns all webhook endpoints for the given platform, newest first.
 func (s *Store) ListEndpoints(ctx context.Context) ([]WebhookEndpointWithSecret, error) {
 	rows, err := s.read.ListWebhookEndpoints(ctx)
 	if err != nil {
@@ -197,7 +197,7 @@ func (s *Store) ListEndpoints(ctx context.Context) ([]WebhookEndpointWithSecret,
 	return endpoints, nil
 }
 
-// GetEndpoint returns a tenant-scoped webhook endpoint by ID.
+// GetEndpoint returns a platform-scoped webhook endpoint by ID.
 func (s *Store) GetEndpoint(ctx context.Context, id pgtype.UUID) (WebhookEndpointWithSecret, error) {
 	row, err := s.read.GetWebhookEndpoint(ctx, id)
 	if err != nil {
@@ -300,7 +300,7 @@ func (s *Store) DeleteEndpoint(ctx context.Context, id pgtype.UUID) error {
 }
 
 // GetWebhookEndpoint fetches an endpoint configuration by ID (worker path — no
-// tenant scope; the delivery row already pins the tenant). The secret is
+// platform scope; the delivery row already pins the platform). The secret is
 // decrypted from its at-rest encrypted form (BUG-016). If the secret is not
 // yet encrypted (legacy plaintext from before migration 000363), it is
 // re-encrypted and updated in-place (graceful migration).
@@ -359,7 +359,7 @@ func (s *Store) CreateDelivery(ctx context.Context, endpointID, eventID pgtype.U
 	return id, nil
 }
 
-// GetWebhookDelivery fetches a delivery row by ID (worker path — no tenant scope).
+// GetWebhookDelivery fetches a delivery row by ID (worker path — no platform scope).
 func (s *Store) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (WebhookDelivery, error) {
 	row, err := s.read.GetWebhookDelivery(ctx, id)
 	if err != nil {
@@ -369,14 +369,14 @@ func (s *Store) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (Webhook
 	return deliveryFromGetRow(row), nil
 }
 
-// GetDelivery returns a tenant-scoped delivery record.
+// GetDelivery returns a platform-scoped delivery record.
 func (s *Store) GetDelivery(ctx context.Context, deliveryID pgtype.UUID) (WebhookDelivery, error) {
-	row, err := s.read.GetWebhookDeliveryForTenant(ctx, deliveryID)
+	row, err := s.read.GetWebhookDeliveryForPlatform(ctx, deliveryID)
 	if err != nil {
 		return WebhookDelivery{}, fmt.Errorf("get delivery: %w", err)
 	}
 
-	return deliveryFromGetForTenantRow(row), nil
+	return deliveryFromGetForPlatformRow(row), nil
 }
 
 // ListDeliveries returns delivery records for a specific endpoint, newest first.

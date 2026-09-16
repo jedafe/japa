@@ -239,7 +239,7 @@ type agentComparisonAdapter struct {
 	svc *comparison.Service
 }
 
-func (a *agentComparisonAdapter) ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
+func (a *agentComparisonAdapter) ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesRow, error) {
 	return a.svc.ListComparisonTypes(ctx, limit, offset)
 }
 
@@ -1499,7 +1499,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 }
 
 // resolveRegenerationPersona picks the persona to use for a regeneration.
-// Preference: field_values._ai_provenance.ai_persona_id, then the tenant's
+// Preference: field_values._ai_provenance.ai_persona_id, then the platform's
 // studio.default_persona_id setting. The returned persona row carries the
 // backing user_id that will be stamped as the author.
 func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Context, existing gen.GetContentByIDRow) (gen.GetAIPersonaByIDRow, pgtype.UUID, error) {
@@ -2202,7 +2202,7 @@ func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context) ([]ai.C
 		return nil, err
 	}
 
-	assignments, err := a.cf.ListAllAssignmentsByTenant(ctx)
+	assignments, err := a.cf.ListAllAssignmentsByPlatform(ctx)
 	if err != nil {
 		return nil, err
 	}

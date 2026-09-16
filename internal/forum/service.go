@@ -168,9 +168,9 @@ func (s *Service) ListThreadsByAuthor(ctx context.Context, authorUserID pgtype.U
 	return s.store.listThreadsByAuthor(ctx, authorUserID, cursorCreatedAt, limit)
 }
 
-// ListThreadsByTenant returns all paginated threads for a tenant (public listing).
-func (s *Service) ListThreadsByTenant(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsByTenant(ctx, cursorCreatedAt, limit)
+// ListThreadsByPlatform returns all paginated threads for a platform (public listing).
+func (s *Service) ListThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsByPlatform(ctx, cursorCreatedAt, limit)
 }
 
 // ListThreadsByTag returns paginated threads for a tag.
@@ -808,10 +808,10 @@ func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID pgtype.UUI
 	)
 }
 
-// ListThreadsByTenantWithDetails returns paginated threads with author + space.
+// ListThreadsByPlatformWithDetails returns paginated threads with author + space.
 // BUG-011: supports ?solved and ?sort=top|latest filters and keyset cursors.
-func (s *Service) ListThreadsByTenantWithDetails(ctx context.Context, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
-	return s.store.listThreadsByTenantWithDetails(ctx, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
+func (s *Service) ListThreadsByPlatformWithDetails(ctx context.Context, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsWithDetailsRow, error) {
+	return s.store.listThreadsByPlatformWithDetails(ctx, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // amaRequiresApproval parses an ama_config JSONB blob and returns true if

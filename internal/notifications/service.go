@@ -86,7 +86,7 @@ func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.U
 	if s.settings != nil {
 		batchWindowMinutes = s.settings.GetIntOr(ctx, "notifications.batch_window_minutes", batchWindowMinutes)
 	}
-	// BUG-001: pass so the batch window carries tenant context
+	// BUG-001: pass so the batch window carries platform context
 	// through to DispatchBatch, which needs it for the notifications insert.
 	if err := s.store.createBatchWindow(ctx, gen.CreateBatchWindowParams{
 

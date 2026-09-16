@@ -59,7 +59,7 @@ func NewLocalStorage(root string) *LocalStorage {
 	return &LocalStorage{root: root}
 }
 
-func (ls *LocalStorage) dirForTenant() (string, error) {
+func (ls *LocalStorage) dirForPlatform() (string, error) {
 	abs, err := filepath.Abs(ls.root)
 	if err != nil {
 		return "", fmt.Errorf("resolving gdpr export root: %w", err)
@@ -75,7 +75,7 @@ func (ls *LocalStorage) dirForTenant() (string, error) {
 
 // Store implements Storage.
 func (ls *LocalStorage) Store(_ context.Context, requestID pgtype.UUID, mimeType string, data []byte) (string, int64, error) {
-	dir, err := ls.dirForTenant()
+	dir, err := ls.dirForPlatform()
 	if err != nil {
 		return "", 0, err
 	}
@@ -101,14 +101,14 @@ func (ls *LocalStorage) Store(_ context.Context, requestID pgtype.UUID, mimeType
 
 // GetPath implements Storage.
 func (ls *LocalStorage) GetPath(requestID pgtype.UUID) (string, error) {
-	dir, err := ls.dirForTenant()
+	dir, err := ls.dirForPlatform()
 	if err != nil {
 		return "", err
 	}
 
 	filename := exportFilename(requestID)
 	full := filepath.Join(dir, filename)
-	// Path-traversal guard: ensure the resolved path stays under the tenant dir.
+	// Path-traversal guard: ensure the resolved path stays under the platform dir.
 	abs, err := filepath.Abs(full)
 	if err != nil {
 		return "", err

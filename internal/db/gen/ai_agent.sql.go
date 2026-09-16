@@ -298,7 +298,7 @@ type GetAgentCostReportRow struct {
 }
 
 // Cost breakdown by user for the admin cost report. Joins
-// ai_agent_sessions to users to surface the username. Filters by tenant
+// ai_agent_sessions to users to surface the username. Filters by platform
 // and an optional date range. estimated_cost is numeric(10,4); we cast to
 // double precision for JSON-friendly aggregation.
 func (q *Queries) GetAgentCostReport(ctx context.Context, arg GetAgentCostReportParams) ([]GetAgentCostReportRow, error) {
@@ -453,7 +453,7 @@ type GetAgentToolStatsRow struct {
 // Admin aggregates (Phase 6 — GET /admin/agent/tool-stats, cost-report).
 // =====================================================================
 // Per-tool usage statistics: call count, success rate, average latency.
-// Filters by tenant and an optional date range (from_date / to_date, both
+// Filters by platform and an optional date range (from_date / to_date, both
 // nullable). Success rate is the fraction of calls with status = 'success'.
 func (q *Queries) GetAgentToolStats(ctx context.Context, arg GetAgentToolStatsParams) ([]GetAgentToolStatsRow, error) {
 	rows, err := q.db.Query(ctx, getAgentToolStats, arg.FromDate, arg.ToDate)
@@ -494,10 +494,10 @@ WHERE id = $1
 // =====================================================================
 // Privacy exemption lookups (§103 Privacy Exemption Columns).
 // The PrivacyChecker calls these to decide whether the AI may read/write
-// a given entity. All three are tenant-scoped at the SQL layer for
+// a given entity. All three are platform-scoped at the SQL layer for
 // defense-in-depth (BUG-014 pattern): contents and users filter directly
 // on the id; custom_field_values has no the id column, so the lookup
-// JOINs custom_fields to enforce tenancy transitively (same pattern as
+// JOINs custom_fields to enforce platform scoping transitively (same pattern as
 // GetCustomFieldValue above).
 // =====================================================================
 func (q *Queries) GetContentAIExempt(ctx context.Context, id pgtype.UUID) (bool, error) {
@@ -534,7 +534,7 @@ type GetCustomFieldValueEntityRow struct {
 }
 
 // Returns the entity_type and entity_id for a custom_field_values row,
-// tenant-scoped via the custom_fields JOIN. Used by the PUT /me/ai-privacy
+// platform-scoped via the custom_fields JOIN. Used by the PUT /me/ai-privacy
 // handler to verify that the calling user owns the entity the field value
 // is attached to before allowing them to set ai_exempt.
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Privacy Exemption)
@@ -720,7 +720,7 @@ type SetContentAIExemptRow struct {
 // only set the flag on their OWN data; the handler enforces ownership
 // (entity ID == authenticated user ID for "profile", or entity author ==
 // user for "content"/"custom_field_value") before calling these. All three
-// are tenant-scoped at the SQL layer for defense-in-depth (BUG-014).
+// are platform-scoped at the SQL layer for defense-in-depth (BUG-014).
 // =====================================================================
 func (q *Queries) SetContentAIExempt(ctx context.Context, arg SetContentAIExemptParams) (SetContentAIExemptRow, error) {
 	row := q.db.QueryRow(ctx, setContentAIExempt, arg.AiExempt, arg.ID)
@@ -750,7 +750,7 @@ type SetCustomFieldValueAIExemptRow struct {
 }
 
 // custom_field_values has no the id column; JOIN custom_fields to
-// enforce tenancy transitively (same pattern as GetCustomFieldValueAIExempt).
+// enforce platform scoping transitively (same pattern as GetCustomFieldValueAIExempt).
 func (q *Queries) SetCustomFieldValueAIExempt(ctx context.Context, arg SetCustomFieldValueAIExemptParams) (SetCustomFieldValueAIExemptRow, error) {
 	row := q.db.QueryRow(ctx, setCustomFieldValueAIExempt, arg.AiExempt, arg.ID)
 	var i SetCustomFieldValueAIExemptRow

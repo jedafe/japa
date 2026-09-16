@@ -473,7 +473,7 @@ func (s *Service) RetryMyImportJob(ctx context.Context, userID, id pgtype.UUID) 
 	return s.RetryImportJob(ctx, id, userID)
 }
 
-// GetImportJob returns a single import job scoped to the user and tenant.
+// GetImportJob returns a single import job scoped to the user and platform.
 func (s *Service) GetImportJob(ctx context.Context, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
 	if !s.IsEnabled(ctx) {
 		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled

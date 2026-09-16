@@ -36,7 +36,7 @@ const ocrExecTimeout = 120 * time.Second
 // // When a Valkey client is provided via NewOCRFetcherWithCache, OCR results
 // are cached under jc:intel:ocr_cache:{}:{content_hash} (30d TTL)
 // so identical documents are not re-OCRed (BUG-17 fix,
-// valkey-keys-catalog Section INTEL, tenant-scoped per ADR-112 Amendment 2).
+// valkey-keys-catalog Section INTEL, platform-scoped per ADR-112 Amendment 2).
 type OCRFetcher struct {
 	tesseractBin string
 	pdftoppmBin  string
@@ -52,7 +52,7 @@ func NewOCRFetcher() *OCRFetcher {
 // NewOCRFetcherWithCache returns an OCRFetcher with Valkey-backed OCR
 // result caching. The content hash of the PDF body is used as the cache
 // key so identical documents skip the expensive OCR step (BUG-17 fix).
-// The cache key is tenant-scoped per ADR-112 Amendment 2.
+// The cache key is platform-scoped per ADR-112 Amendment 2.
 func NewOCRFetcherWithCache(rdb valkeycompat.Cmdable) *OCRFetcher {
 	return &OCRFetcher{tesseractBin: "tesseract", pdftoppmBin: "pdftoppm", rdb: rdb}
 }
@@ -76,7 +76,7 @@ func (f *OCRFetcher) Available() bool {
 // // When a Valkey client is configured, the OCR result is cached under
 // jc:intel:ocr_cache:{}:{content_hash} (30d TTL) so identical
 // documents skip the expensive OCR step on subsequent crawls (BUG-17 fix,
-// tenant-scoped per ADR-112 Amendment 2).
+// platform-scoped per ADR-112 Amendment 2).
 func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 	if !f.Available() {
 		return "", errors.New("ocr: tesseract/pdftoppm not installed")

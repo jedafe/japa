@@ -124,7 +124,7 @@ func (s *Service) Enabled(ctx context.Context) bool {
 }
 
 // ErrDuplicateSlug is returned when a submission's slug already exists for
-// the tenant. The handler maps this to 409 duplicate_slug.
+// the platform. The handler maps this to 409 duplicate_slug.
 var ErrDuplicateSlug = errors.New("duplicate slug")
 
 // validOrgTypes is the allow-list of organisation types per §101.

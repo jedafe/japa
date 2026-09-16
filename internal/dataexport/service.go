@@ -54,7 +54,7 @@ func NewLocalStorage(root string) *LocalStorage {
 	return &LocalStorage{root: root}
 }
 
-func (ls *LocalStorage) dirForTenant() (string, error) {
+func (ls *LocalStorage) dirForPlatform() (string, error) {
 	abs, err := filepath.Abs(ls.root)
 	if err != nil {
 		return "", fmt.Errorf("resolving export root: %w", err)
@@ -70,7 +70,7 @@ func (ls *LocalStorage) dirForTenant() (string, error) {
 
 // Store is an exported method.
 func (ls *LocalStorage) Store(_ context.Context, exportID pgtype.UUID, filename, mimeType string, data []byte) (string, int64, error) {
-	dir, err := ls.dirForTenant()
+	dir, err := ls.dirForPlatform()
 	if err != nil {
 		return "", 0, err
 	}
@@ -91,15 +91,15 @@ func (ls *LocalStorage) Store(_ context.Context, exportID pgtype.UUID, filename,
 	return url, info.Size(), nil
 }
 
-// GetPath returns the local filesystem path for a tenant's export file.
+// GetPath returns the local filesystem path for a platform's export file.
 func (ls *LocalStorage) GetPath(exportID pgtype.UUID, filename string) (string, error) {
-	dir, err := ls.dirForTenant()
+	dir, err := ls.dirForPlatform()
 	if err != nil {
 		return "", err
 	}
 
 	full := filepath.Join(dir, filename)
-	// Path-traversal guard: ensure the resolved path stays under the tenant dir.
+	// Path-traversal guard: ensure the resolved path stays under the platform dir.
 	abs, err := filepath.Abs(full)
 	if err != nil {
 		return "", err
@@ -219,7 +219,7 @@ func (s *Service) GetExport(ctx context.Context, id pgtype.UUID) (gen.PlatformDa
 	return s.store.Get(ctx, id)
 }
 
-// ListExports returns paginated exports for a tenant.
+// ListExports returns paginated exports for a platform.
 func (s *Service) ListExports(ctx context.Context, status string, page, limit int) ([]gen.PlatformDataExport, int64, error) {
 	offset := int32((page - 1) * limit) // #nosec
 
@@ -366,7 +366,7 @@ func (s *Service) collectData(ctx context.Context, exportType string, includeMet
 }
 
 // buildExportQuery returns the SQL query and args for the given export type.
-// Each query is tenant-scoped. When includeMetadata is false, only the
+// Each query is platform-scoped. When includeMetadata is false, only the
 // business-data columns are selected (no timestamps/IDs).
 // // Metadata columns are table-prefixed per export type because every JOIN
 // query touches two tables that both have id/created_at/updated_at — a bare

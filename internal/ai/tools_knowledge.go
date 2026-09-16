@@ -255,8 +255,8 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 }
 
 // externalSearchCacheKey builds jc:agent:external:{hash} where hash is the
-// SHA-256 of the + query + limit. Tenant-scoping prevents
-// cross-tenant cache sharing of external search results (Rule 4, §4.2).
+// SHA-256 of the + query + limit. Platform-scoping prevents
+// cross-platform cache sharing of external search results (Rule 4, §4.2).
 // Per the Valkey keys catalog (Rule 4).
 func externalSearchCacheKey(query string, limit int32) string {
 	h := sha256.Sum256([]byte(fmt.Sprintf(":%s:%d", query, limit)))
@@ -289,7 +289,7 @@ var (
 )
 
 // SearchWeb performs a web search using the configured external search
-// provider (tavily, brave, or perplexity) for the tenant. It is exported so
+// provider (tavily, brave, or perplexity) for the platform. It is exported so
 // non-agent callers (e.g. guide services) can reuse the same provider wiring
 // and API-key management. The cache is the caller's responsibility.
 func SearchWeb(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error) {

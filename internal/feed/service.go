@@ -346,17 +346,17 @@ func (s *Service) UpdateContentScore(ctx context.Context, contentID pgtype.UUID,
 	})
 }
 
-// DeleteFeedItemsByContent removes all feed rows for a content ID (tenant-scoped).
+// DeleteFeedItemsByContent removes all feed rows for a content ID (platform-scoped).
 func (s *Service) DeleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
 	return s.store.deleteFeedItemsByContent(ctx, contentID)
 }
 
-// DeleteFeedItemsByUser removes all feed rows for a user (tenant-scoped).
+// DeleteFeedItemsByUser removes all feed rows for a user (platform-scoped).
 func (s *Service) DeleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
 	return s.store.deleteFeedItemsByUser(ctx, userID)
 }
 
-// GetFeedItemCount returns the total number of feed items for a user (tenant-scoped).
+// GetFeedItemCount returns the total number of feed items for a user (platform-scoped).
 func (s *Service) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int, error) {
 	count, err := s.store.getFeedItemCount(ctx, userID)
 	if err != nil {
@@ -1057,7 +1057,7 @@ func (s *Service) loadAffinity(
 // the geo country/region for the bounded geo boost and the journey signals
 // (destination, stage, visa, roadmap) for journey-aware ranking. A nil vc
 // disables both features and falls back to the follow/velocity/recency mix.
-// The geo boost is also disabled when the tenant setting
+// The geo boost is also disabled when the platform setting
 // geo_personalization.enabled is false (Section 32 L147–149).
 func (s *Service) GetForYouFeed(
 	ctx context.Context, userID pgtype.UUID, sortMode string, limit, offset int32,
@@ -1100,7 +1100,7 @@ func (s *Service) GetForYouFeed(
 	}
 
 	// Load scoring weights from system_settings. Defaults are provided by
-	// defaultRankingWeights() so new tenants work without explicit config.
+	// defaultRankingWeights() so new platforms work without explicit config.
 	w := defaultRankingWeights()
 	if s.settings != nil {
 		w.Velocity = s.settings.GetFloatOr(ctx, "feed.for_you_weight_velocity", w.Velocity)

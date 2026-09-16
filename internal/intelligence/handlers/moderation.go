@@ -86,8 +86,8 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// OptionalAuth: tenant may or may not be present. When absent, fall
-	// back to the default tenant so the public directory still renders.
+	// OptionalAuth: platform may or may not be present. When absent, fall
+	// back to the default platform so the public directory still renders.
 
 	if !false {
 
@@ -623,7 +623,7 @@ func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleIntelGetByID is the shared skeleton for the GET-by-id intel handlers:
-// check intelStores, resolve tenant, scan the {id} path param, load the
+// check intelStores, resolve platform, scan the {id} path param, load the
 // domain row, and write the response. getByID loads the row and toResp maps
 // it to the JSON response shape.
 func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Request, notFoundMsg, entityName string, getByID func(ctx context.Context, id pgtype.UUID) (E, error), toResp func(E) interface{}) {

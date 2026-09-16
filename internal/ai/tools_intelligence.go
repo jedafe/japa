@@ -5,7 +5,7 @@
 // - record.update_now resolve a record or source and enqueue fetch
 // - content.regenerate_from_source enqueue content:regenerate_from_source
 // // All handlers validate the underlying entity before enqueueing and return
-// a queued task reference to the agent. Tenant scoping is enforced by the
+// a queued task reference to the agent. Platform scoping is enforced by the
 // executor's RBAC gate and by the gen.Queries predicates.
 // // Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Catalog Expansion)

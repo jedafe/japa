@@ -265,7 +265,7 @@ WHERE mentor_id = @mentor_id
 LIMIT 1;
 
 -- name: GetMentorshipConnection :one
--- Get a single connection by ID (within tenant).
+-- Get a single connection by ID (within the platform).
 SELECT * FROM mentorship_connections
 WHERE id = @id;
 

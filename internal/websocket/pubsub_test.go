@@ -485,7 +485,7 @@ func (m *mockBridge) Publish(event WSEvent, userID, spaceID string) {
 // Ensure mockBridge satisfies the implicit interface at compile time.
 var _ = (*mockBridge)(nil)
 
-func TestDispatchTenantBroadcastDoesNotRepublish(t *testing.T) {
+func TestDispatchPlatformBroadcastDoesNotRepublish(t *testing.T) {
 	t.Parallel()
 
 	hub := NewHub()

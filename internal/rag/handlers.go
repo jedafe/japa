@@ -123,7 +123,7 @@ func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 //
 // The :id parameter accepts either a UUID (purges a single entity) or the
 // sentinel "all" (purges every embedding for the given entity_type within
-// the tenant). The "all" sentinel supports the admin dashboard's by-type
+// the platform). The "all" sentinel supports the admin dashboard's by-type
 // aggregate purge, which operates at the entity-type level, not the
 // individual-entity level.
 func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {

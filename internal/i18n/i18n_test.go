@@ -129,7 +129,7 @@ func TestWriteError(t *testing.T) {
 // Handler context tests (no DB, just context guards)
 // ---------------------------------------------------------------------------
 
-func _TestUpsertHandlerNoTenant(t *testing.T) {
+func _TestUpsertHandlerNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
@@ -145,7 +145,7 @@ func _TestUpsertHandlerNoTenant(t *testing.T) {
 	}
 }
 
-func _TestGetLocaleTranslationsNoTenant(t *testing.T) {
+func _TestGetLocaleTranslationsNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
@@ -161,7 +161,7 @@ func _TestGetLocaleTranslationsNoTenant(t *testing.T) {
 	}
 }
 
-func _TestListLocalesNoTenant(t *testing.T) {
+func _TestListLocalesNoPlatform(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}

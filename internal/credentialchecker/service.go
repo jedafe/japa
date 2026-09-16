@@ -480,7 +480,7 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 	return pathwayRowToDTO(row), nil
 }
 
-// DeletePathway deletes a credential pathway by id for the tenant.
+// DeletePathway deletes a credential pathway by id for the platform.
 func (s *Service) DeletePathway(ctx context.Context, id pgtype.UUID) error {
 	if err := s.store.DeletePathway(ctx, id); err != nil {
 		return fmt.Errorf("credentialchecker: delete pathway: %w", err)

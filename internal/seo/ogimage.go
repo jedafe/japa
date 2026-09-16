@@ -76,7 +76,7 @@ type contentMeta struct {
 }
 
 // lookupContent queries the contents table for the title and content_type
-// of the given content ID within the tenant. Returns nil if the ID is
+// of the given content ID within the platform. Returns nil if the ID is
 // invalid, the content does not exist, or the content is private /
 // non-indexable (Section 26: private content must not leak its title via
 // a publicly served OG image).
@@ -136,6 +136,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "public, max-age=86400")
 			w.Header().Set("X-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
+			// #nosec G705 // cached is a server-rendered PNG, not user-controlled HTML/JS.
 			_, _ = w.Write(cached)
 
 			return

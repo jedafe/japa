@@ -18,7 +18,7 @@ func NewHandlers(settings *Settings) *Handlers {
 }
 
 // GetPublicSettings handles GET /site/settings/public.
-// Returns all settings marked as public for the current tenant.
+// Returns all settings marked as public for the current platform.
 func (h *Handlers) GetPublicSettings(w http.ResponseWriter, r *http.Request) {
 	settings, err := h.Settings.GetPublicSettings(r.Context())
 	if err != nil {

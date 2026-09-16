@@ -308,7 +308,7 @@ func (s *Service) RunCampaign(ctx context.Context, userID, campaignID pgtype.UUI
 	return batch, createdJobs, nil
 }
 
-// ListCampaigns returns a paginated list of campaigns for a tenant.
+// ListCampaigns returns a paginated list of campaigns for a platform.
 func (s *Service) ListCampaigns(ctx context.Context, f CampaignListFilter) ([]Campaign, int64, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50
@@ -564,7 +564,7 @@ func (s *Service) buildPersonaPool(ctx context.Context, campaign gen.ContentCamp
 		}
 
 		if len(rows) != len(campaign.PersonaPool) {
-			return nil, fmt.Errorf("campaign: %w: one or more persona_pool ids are not active or do not belong to this tenant", errpkg.ErrInvalid)
+			return nil, fmt.Errorf("campaign: %w: one or more persona_pool ids are not active or do not belong to this platform", errpkg.ErrInvalid)
 		}
 
 		for _, r := range rows {
@@ -745,7 +745,7 @@ func (s *Service) validateTargetSpace(ctx context.Context, id string) error {
 	}
 
 	if !exists {
-		return fmt.Errorf("campaign: %w: target space %s does not exist or does not belong to this tenant", errpkg.ErrInvalid, id)
+		return fmt.Errorf("campaign: %w: target space %s does not exist or does not belong to this platform", errpkg.ErrInvalid, id)
 	}
 
 	return nil
@@ -786,7 +786,7 @@ func (s *Service) validatePlanTargetSpaces(ctx context.Context, campaign gen.Con
 		}
 
 		if !exists {
-			return fmt.Errorf("campaign: %w: target space %s does not exist or does not belong to this tenant", errpkg.ErrInvalid, sid)
+			return fmt.Errorf("campaign: %w: target space %s does not exist or does not belong to this platform", errpkg.ErrInvalid, sid)
 		}
 	}
 

@@ -123,7 +123,7 @@ RETURNING id, user_id, origin_space_id, destination_space_id,
 	return out, nil
 }
 
-// GetTimeline retrieves a single non-deleted timeline by id within a tenant.
+// GetTimeline retrieves a single non-deleted timeline by id within a platform.
 func (s *Store) GetTimeline(ctx context.Context, id pgtype.UUID) (Timeline, error) {
 	const q = `
 SELECT id, user_id, origin_space_id, destination_space_id,
@@ -152,7 +152,7 @@ WHERE id = $1 AND deleted_at IS NULL
 }
 
 // ListUserTimelines returns all non-deleted timelines owned by a user within
-// a tenant, newest first.
+// a platform, newest first.
 func (s *Store) ListUserTimelines(ctx context.Context, userID pgtype.UUID) ([]Timeline, error) {
 	// Join milestones via COALESCE(LATERAL json_agg, '[]') so the API can
 	// return timelines with their milestones in a single round-trip (§83
@@ -223,7 +223,7 @@ type StoreUpdateTimelineInput struct {
 }
 
 // UpdateTimeline updates the outcome/share toggle (and optional consulate /
-// application method) on a non-deleted timeline within a tenant.
+// application method) on a non-deleted timeline within a platform.
 func (s *Store) UpdateTimeline(ctx context.Context, id pgtype.UUID, input StoreUpdateTimelineInput) error {
 	var (
 		sets   []string
@@ -333,7 +333,7 @@ type StoreUpdateMilestoneInput struct {
 	Notes         *string
 }
 
-// UpdateMilestone edits a milestone within a tenant.
+// UpdateMilestone edits a milestone within a platform.
 func (s *Store) UpdateMilestone(ctx context.Context, milestoneID pgtype.UUID, input StoreUpdateMilestoneInput) error {
 	var (
 		sets   []string
@@ -735,7 +735,7 @@ func (s *Store) RefreshStats(ctx context.Context) (int64, error) {
 	// Compute processing spans per timeline. A span is the number of days
 	// between the earliest "applied" milestone and the latest
 	// "decision"/"visa_issued" milestone. Timelines sharing the same
-	// (tenant, origin, dest, visa_category, consulate) are bucketed by
+	// (platform, origin, dest, visa_category, consulate) are bucketed by
 	// the month of the decision date.
 	const q = `
 WITH spans AS (
@@ -1008,7 +1008,7 @@ type UpdateProcessingTimeInput struct {
 	P90Days            *float64
 }
 
-// UpdateProcessingTime updates a visa_processing_stats row within a tenant.
+// UpdateProcessingTime updates a visa_processing_stats row within a platform.
 func (s *Store) UpdateProcessingTime(ctx context.Context, id pgtype.UUID, in UpdateProcessingTimeInput) (ProcessingStat, error) {
 	var (
 		sets   []string
@@ -1103,7 +1103,7 @@ func (s *Store) UpdateProcessingTime(ctx context.Context, id pgtype.UUID, in Upd
 	return r, nil
 }
 
-// GetStatByID returns a single visa_processing_stats row by id and tenant.
+// GetStatByID returns a single visa_processing_stats row by id and platform.
 func (s *Store) GetStatByID(ctx context.Context, id pgtype.UUID) (ProcessingStat, error) {
 	const q = `
 SELECT id, origin_space_id, destination_space_id, visa_category,
@@ -1127,7 +1127,7 @@ WHERE id = $1
 	return r, nil
 }
 
-// DeleteProcessingTime deletes a visa_processing_stats row within a tenant.
+// DeleteProcessingTime deletes a visa_processing_stats row within a platform.
 func (s *Store) DeleteProcessingTime(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM visa_processing_stats WHERE id = $1`, id)
 	if err != nil {

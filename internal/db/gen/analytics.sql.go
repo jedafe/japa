@@ -230,7 +230,7 @@ WHERE id = $1
 `
 
 // Deletes a single scan finding. Used by the control panel to clear
-// resolved findings from the audit view. Tenant-scoped for safety.
+// resolved findings from the audit view. Platform-scoped for safety.
 func (q *Queries) DeleteSecurityScanResult(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteSecurityScanResult, id)
 	return err

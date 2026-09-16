@@ -16,7 +16,7 @@ import (
 // Public read operations
 // ---------------------------------------------------------------------------
 
-// ListBadges returns all active badge definitions for a tenant. Returns
+// ListBadges returns all active badge definitions for a platform. Returns
 // ErrGamificationDisabled when gamification.badges_enabled is off.
 func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
 	if !s.badgesEnabled(ctx) {

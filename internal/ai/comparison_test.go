@@ -37,7 +37,7 @@ import (
 
 // stubComparisonService implements ComparisonService for tests.
 type stubComparisonService struct {
-	types       []gen.ListComparisonTypesByTenantRow
+	types       []gen.ListComparisonTypesRow
 	typeBySlug  map[string]gen.GetComparisonTypeBySlugRow
 	createdType gen.CreateComparisonTypeRow
 
@@ -64,7 +64,7 @@ func newStubComparisonService() *stubComparisonService {
 	}
 }
 
-func (s *stubComparisonService) ListComparisonTypes(_ context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
+func (s *stubComparisonService) ListComparisonTypes(_ context.Context, limit, offset int32) ([]gen.ListComparisonTypesRow, error) {
 	return s.types, nil
 }
 
@@ -632,7 +632,7 @@ func TestComparisonTypesListHandler_Success(t *testing.T) {
 	t.Parallel()
 
 	svc := newStubComparisonService()
-	svc.types = []gen.ListComparisonTypesByTenantRow{
+	svc.types = []gen.ListComparisonTypesRow{
 		{ID: mustUUID(t, "00000000-0000-0000-0000-000000000001"), Name: "Universities", Slug: "universities", ItemLabel: "University", IsSystem: true},
 	}
 	deps := &ToolDeps{Comparison: svc}
@@ -1162,7 +1162,7 @@ func TestHandleCompareEntities_UnstructuredTier(t *testing.T) {
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
 	h.engine = engine
 
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	body := `{"entity_type":"nonexistent","entity_ids":["TUM","Stuttgart"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/compare-entities", strings.NewReader(body))
 	req = withAuthContext(req, user, tn)
@@ -1202,7 +1202,7 @@ func TestHandleCompareEntities_UnstructuredTier(t *testing.T) {
 func TestHandleCompareEntities_MissingEntityType(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	body := `{"entity_ids":["x"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/compare-entities", strings.NewReader(body))
 	req = withAuthContext(req, user, tn)
@@ -1223,7 +1223,7 @@ func TestHandleCompareEntities_MissingEntityType(t *testing.T) {
 func TestHandleCompareEntities_MissingEntityIDs(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	body := `{"entity_type":"universities"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/compare-entities", strings.NewReader(body))
 	req = withAuthContext(req, user, tn)
@@ -1240,7 +1240,7 @@ func TestHandleCompareEntities_EngineNotConfigured(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
 	// h.engine is nil by default
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	body := `{"entity_type":"x","entity_ids":["a"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/compare-entities", strings.NewReader(body))
 	req = withAuthContext(req, user, tn)
@@ -1268,7 +1268,7 @@ func TestHandleCompareEntities_StructuredTier(t *testing.T) {
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
 	h.engine = engine
 
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	body := `{"entity_type":"universities","entity_ids":["TUM","Stuttgart"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/compare-entities", strings.NewReader(body))
 	req = withAuthContext(req, user, tn)
@@ -1322,7 +1322,7 @@ func TestHandleCompareEntities_CreatePost_Tier3(t *testing.T) {
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
 	h.engine = engine
 
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	body := `{"entity_type":"nonexistent","entity_ids":["TUM","Stuttgart"],"create_post":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/compare-entities", strings.NewReader(body))
 	req = withAuthContext(req, user, tn)
@@ -1380,7 +1380,7 @@ func TestHandleCompareEntities_NoAuth(t *testing.T) {
 func TestHandleCompareEntities_InvalidJSON(t *testing.T) {
 	t.Parallel()
 	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndTenant()
+	user, tn := testUserAndPlatform()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/compare-entities", strings.NewReader(`{invalid`))
 	req = withAuthContext(req, user, tn)
 	rr := httptest.NewRecorder()

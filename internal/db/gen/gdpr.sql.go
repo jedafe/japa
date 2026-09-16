@@ -1062,7 +1062,7 @@ FROM (
 `
 
 // §97: export attestation_community_updates authored by the user.
-// The table has no the id column; tenant scoping is via the parent
+// The table has no the id column; platform scoping is via the parent
 // pathway's the id.
 func (q *Queries) GdprExportAttestationCommunityUpdates(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportAttestationCommunityUpdates, userID)
@@ -2678,7 +2678,7 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 	return items, nil
 }
 
-const listConsentsByTenant = `-- name: ListConsentsByTenant :many
+const listConsents = `-- name: ListConsents :many
 SELECT cr.id, cr.user_id, cr.consent_type, cr.granted, cr.policy_version,
  cr.ip_address, cr.user_agent, cr.created_at,
  u.username, up.display_name
@@ -2691,14 +2691,14 @@ ORDER BY cr.created_at DESC
 LIMIT $4 OFFSET $3
 `
 
-type ListConsentsByTenantParams struct {
+type ListConsentsParams struct {
 	ConsentType string `json:"consent_type"`
 	Q           string `json:"q"`
 	PageOffset  int32  `json:"page_offset"`
 	PageLimit   int32  `json:"page_limit"`
 }
 
-type ListConsentsByTenantRow struct {
+type ListConsentsRow struct {
 	ID            pgtype.UUID        `json:"id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	ConsentType   string             `json:"consent_type"`
@@ -2711,8 +2711,8 @@ type ListConsentsByTenantRow struct {
 	DisplayName   *string            `json:"display_name"`
 }
 
-func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTenantParams) ([]ListConsentsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listConsentsByTenant,
+func (q *Queries) ListConsents(ctx context.Context, arg ListConsentsParams) ([]ListConsentsRow, error) {
+	rows, err := q.db.Query(ctx, listConsents,
 		arg.ConsentType,
 		arg.Q,
 		arg.PageOffset,
@@ -2722,9 +2722,9 @@ func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTe
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListConsentsByTenantRow
+	var items []ListConsentsRow
 	for rows.Next() {
-		var i ListConsentsByTenantRow
+		var i ListConsentsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -2790,8 +2790,8 @@ ORDER BY created_at ASC
 LIMIT $1
 `
 
-// BUG-GDPR-002: scoped to the caller's tenant so an admin in tenant A
-// cannot see tenant B's pending export requests (§5.3 cross-tenant bleed).
+// BUG-GDPR-002: scoped to the caller's platform so an admin in platform A
+// cannot see platform B's pending export requests (§5.3 cross-platform bleed).
 func (q *Queries) ListPendingDataExportRequests(ctx context.Context, pageLimit int32) ([]DataExportRequest, error) {
 	rows, err := q.db.Query(ctx, listPendingDataExportRequests, pageLimit)
 	if err != nil {
@@ -2843,8 +2843,8 @@ type ListPendingDeletionRequestsRow struct {
 	DisplayName  *string            `json:"display_name"`
 }
 
-// BUG-GDPR-001: scoped to the caller's tenant so an admin in tenant A
-// cannot see tenant B's pending deletion requests (§5.3 cross-tenant bleed).
+// BUG-GDPR-001: scoped to the caller's platform so an admin in platform A
+// cannot see platform B's pending deletion requests (§5.3 cross-platform bleed).
 func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int32) ([]ListPendingDeletionRequestsRow, error) {
 	rows, err := q.db.Query(ctx, listPendingDeletionRequests, pageLimit)
 	if err != nil {
@@ -2888,7 +2888,7 @@ LIMIT 100
 // BUG-GDPR-002 fix: COALESCE default must be '0' (immediate), not '30'.
 // ADR-057 and system-settings-catalog specify gdpr.retention_days
 // defaults to 0 (no waiting period). The previous '30' fallback caused
-// tenants without the explicit setting to wait 30 days instead of 0.
+// platforms without the explicit setting to wait 30 days instead of 0.
 func (q *Queries) ListRetentionWaitElapsed(ctx context.Context) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listRetentionWaitElapsed)
 	if err != nil {
@@ -2926,7 +2926,7 @@ type ListStalePendingDataExportRequestsRow struct {
 // GAP-GDPR-B: re-enqueue stale pending data export requests whose original
 // enqueue may have been lost (e.g. RequestDataExport's enqueuer.Enqueue
 // failed and only logged). Mirrors ListStalePendingDeletionRequests.
-// Tenant-scoped at the call site; the sweep iterates all tenants.
+// Platform-scoped at the call site; the sweep iterates all platforms.
 func (q *Queries) ListStalePendingDataExportRequests(ctx context.Context) ([]ListStalePendingDataExportRequestsRow, error) {
 	rows, err := q.db.Query(ctx, listStalePendingDataExportRequests)
 	if err != nil {

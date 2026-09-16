@@ -49,7 +49,7 @@ func (h *AdminHandlers) RegisterRoutes(r chi.Router) {
 		Post("/admin/video-import-jobs/{id}/retry", h.RetryImportJob)
 }
 
-// adminListQueryFunc loads a tenant-scoped, paginated list for an admin endpoint.
+// adminListQueryFunc loads a platform-scoped, paginated list for an admin endpoint.
 type adminListQueryFunc func(ctx context.Context, status, typeFilter, q, sort, dir string, limit, offset int32) (any, int32, error)
 
 // runAdminList is the shared boilerplate for admin list endpoints.

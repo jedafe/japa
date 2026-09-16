@@ -27,7 +27,7 @@ func (q *Queries) CountOpenVideoChannelClaimsByAuthor(ctx context.Context, video
 	return count, err
 }
 
-const countVideoChannelClaimsByTenant = `-- name: CountVideoChannelClaimsByTenant :one
+const countVideoChannelClaims = `-- name: CountVideoChannelClaims :one
 SELECT COUNT(*)::int AS total
 FROM video_channel_claims vcc
 JOIN users cu ON cu.id = vcc.claimant_user_id
@@ -39,15 +39,15 @@ WHERE ($1::text = '' OR vcc.status = $1)
  OR vcc.resolution_note ILIKE '%' || $3 || '%')
 `
 
-type CountVideoChannelClaimsByTenantParams struct {
+type CountVideoChannelClaimsParams struct {
 	Status    string `json:"status"`
 	ClaimType string `json:"claim_type"`
 	Q         string `json:"q"`
 }
 
-// Total for admin queue pagination (same filters as ListVideoChannelClaimsByTenant).
-func (q *Queries) CountVideoChannelClaimsByTenant(ctx context.Context, arg CountVideoChannelClaimsByTenantParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countVideoChannelClaimsByTenant, arg.Status, arg.ClaimType, arg.Q)
+// Total for admin queue pagination (same filters as ListVideoChannelClaims).
+func (q *Queries) CountVideoChannelClaims(ctx context.Context, arg CountVideoChannelClaimsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countVideoChannelClaims, arg.Status, arg.ClaimType, arg.Q)
 	var total int32
 	err := row.Scan(&total)
 	return total, err
@@ -128,6 +128,103 @@ func (q *Queries) GetVideoChannelClaimByID(ctx context.Context, id pgtype.UUID) 
 		&i.VideoSourceID,
 	)
 	return i, err
+}
+
+const listVideoChannelClaims = `-- name: ListVideoChannelClaims :many
+SELECT
+ vcc.id, vcc.claimant_user_id, vcc.video_author_user_id, vcc.claim_type,
+ vcc.evidence_url, vcc.notes, vcc.status, vcc.reviewed_by, vcc.resolution_note, vcc.created_at, vcc.resolved_at,
+ vcc.video_source_id,
+ cu.username AS claimant_username,
+ au.username AS author_username
+FROM video_channel_claims vcc
+JOIN users cu ON cu.id = vcc.claimant_user_id
+JOIN users au ON au.id = vcc.video_author_user_id
+WHERE ($1::text = '' OR vcc.status = $1)
+ AND ($2::text = '' OR vcc.claim_type = $2)
+ AND ($3::text = '' OR cu.username ILIKE '%' || $3 || '%' OR au.username ILIKE '%' || $3 || '%'
+ OR vcc.notes ILIKE '%' || $3 || '%' OR vcc.evidence_url ILIKE '%' || $3 || '%'
+ OR vcc.resolution_note ILIKE '%' || $3 || '%')
+ORDER BY
+ CASE WHEN $4 = 'created_at' AND $5 = 'asc' THEN vcc.created_at END ASC NULLS LAST,
+ CASE WHEN $4 = 'created_at' AND $5 = 'desc' THEN vcc.created_at END DESC NULLS FIRST,
+ CASE WHEN $4 = 'status' AND $5 = 'asc' THEN vcc.status END ASC NULLS LAST,
+ CASE WHEN $4 = 'status' AND $5 = 'desc' THEN vcc.status END DESC NULLS FIRST,
+ CASE WHEN $4 = 'claim_type' AND $5 = 'asc' THEN vcc.claim_type END ASC NULLS LAST,
+ CASE WHEN $4 = 'claim_type' AND $5 = 'desc' THEN vcc.claim_type END DESC NULLS FIRST,
+ vcc.created_at DESC
+LIMIT $7 OFFSET $6
+`
+
+type ListVideoChannelClaimsParams struct {
+	Status     string      `json:"status"`
+	ClaimType  string      `json:"claim_type"`
+	Q          string      `json:"q"`
+	Sort       interface{} `json:"sort"`
+	Dir        interface{} `json:"dir"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListVideoChannelClaimsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	ClaimantUserID    pgtype.UUID        `json:"claimant_user_id"`
+	VideoAuthorUserID pgtype.UUID        `json:"video_author_user_id"`
+	ClaimType         string             `json:"claim_type"`
+	EvidenceUrl       *string            `json:"evidence_url"`
+	Notes             *string            `json:"notes"`
+	Status            string             `json:"status"`
+	ReviewedBy        pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote    *string            `json:"resolution_note"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
+	VideoSourceID     pgtype.UUID        `json:"video_source_id"`
+	ClaimantUsername  string             `json:"claimant_username"`
+	AuthorUsername    string             `json:"author_username"`
+}
+
+// Admin queue with optional status/claim_type filters, text search, and sorting.
+func (q *Queries) ListVideoChannelClaims(ctx context.Context, arg ListVideoChannelClaimsParams) ([]ListVideoChannelClaimsRow, error) {
+	rows, err := q.db.Query(ctx, listVideoChannelClaims,
+		arg.Status,
+		arg.ClaimType,
+		arg.Q,
+		arg.Sort,
+		arg.Dir,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVideoChannelClaimsRow
+	for rows.Next() {
+		var i ListVideoChannelClaimsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClaimantUserID,
+			&i.VideoAuthorUserID,
+			&i.ClaimType,
+			&i.EvidenceUrl,
+			&i.Notes,
+			&i.Status,
+			&i.ReviewedBy,
+			&i.ResolutionNote,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+			&i.VideoSourceID,
+			&i.ClaimantUsername,
+			&i.AuthorUsername,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listVideoChannelClaimsByAuthor = `-- name: ListVideoChannelClaimsByAuthor :many
@@ -220,103 +317,6 @@ func (q *Queries) ListVideoChannelClaimsByClaimant(ctx context.Context, arg List
 			&i.CreatedAt,
 			&i.ResolvedAt,
 			&i.VideoSourceID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listVideoChannelClaimsByTenant = `-- name: ListVideoChannelClaimsByTenant :many
-SELECT
- vcc.id, vcc.claimant_user_id, vcc.video_author_user_id, vcc.claim_type,
- vcc.evidence_url, vcc.notes, vcc.status, vcc.reviewed_by, vcc.resolution_note, vcc.created_at, vcc.resolved_at,
- vcc.video_source_id,
- cu.username AS claimant_username,
- au.username AS author_username
-FROM video_channel_claims vcc
-JOIN users cu ON cu.id = vcc.claimant_user_id
-JOIN users au ON au.id = vcc.video_author_user_id
-WHERE ($1::text = '' OR vcc.status = $1)
- AND ($2::text = '' OR vcc.claim_type = $2)
- AND ($3::text = '' OR cu.username ILIKE '%' || $3 || '%' OR au.username ILIKE '%' || $3 || '%'
- OR vcc.notes ILIKE '%' || $3 || '%' OR vcc.evidence_url ILIKE '%' || $3 || '%'
- OR vcc.resolution_note ILIKE '%' || $3 || '%')
-ORDER BY
- CASE WHEN $4 = 'created_at' AND $5 = 'asc' THEN vcc.created_at END ASC NULLS LAST,
- CASE WHEN $4 = 'created_at' AND $5 = 'desc' THEN vcc.created_at END DESC NULLS FIRST,
- CASE WHEN $4 = 'status' AND $5 = 'asc' THEN vcc.status END ASC NULLS LAST,
- CASE WHEN $4 = 'status' AND $5 = 'desc' THEN vcc.status END DESC NULLS FIRST,
- CASE WHEN $4 = 'claim_type' AND $5 = 'asc' THEN vcc.claim_type END ASC NULLS LAST,
- CASE WHEN $4 = 'claim_type' AND $5 = 'desc' THEN vcc.claim_type END DESC NULLS FIRST,
- vcc.created_at DESC
-LIMIT $7 OFFSET $6
-`
-
-type ListVideoChannelClaimsByTenantParams struct {
-	Status     string      `json:"status"`
-	ClaimType  string      `json:"claim_type"`
-	Q          string      `json:"q"`
-	Sort       interface{} `json:"sort"`
-	Dir        interface{} `json:"dir"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
-}
-
-type ListVideoChannelClaimsByTenantRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ClaimantUserID    pgtype.UUID        `json:"claimant_user_id"`
-	VideoAuthorUserID pgtype.UUID        `json:"video_author_user_id"`
-	ClaimType         string             `json:"claim_type"`
-	EvidenceUrl       *string            `json:"evidence_url"`
-	Notes             *string            `json:"notes"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote    *string            `json:"resolution_note"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
-	VideoSourceID     pgtype.UUID        `json:"video_source_id"`
-	ClaimantUsername  string             `json:"claimant_username"`
-	AuthorUsername    string             `json:"author_username"`
-}
-
-// Admin queue with optional status/claim_type filters, text search, and sorting.
-func (q *Queries) ListVideoChannelClaimsByTenant(ctx context.Context, arg ListVideoChannelClaimsByTenantParams) ([]ListVideoChannelClaimsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listVideoChannelClaimsByTenant,
-		arg.Status,
-		arg.ClaimType,
-		arg.Q,
-		arg.Sort,
-		arg.Dir,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListVideoChannelClaimsByTenantRow
-	for rows.Next() {
-		var i ListVideoChannelClaimsByTenantRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.ClaimantUserID,
-			&i.VideoAuthorUserID,
-			&i.ClaimType,
-			&i.EvidenceUrl,
-			&i.Notes,
-			&i.Status,
-			&i.ReviewedBy,
-			&i.ResolutionNote,
-			&i.CreatedAt,
-			&i.ResolvedAt,
-			&i.VideoSourceID,
-			&i.ClaimantUsername,
-			&i.AuthorUsername,
 		); err != nil {
 			return nil, err
 		}

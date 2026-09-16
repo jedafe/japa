@@ -102,7 +102,7 @@ RETURNING id
 	return id, nil
 }
 
-// GetEdition returns a single digest edition by id within a tenant.
+// GetEdition returns a single digest edition by id within a platform.
 func (s *Store) GetEdition(ctx context.Context, id pgtype.UUID) (DigestEdition, error) {
 	const q = `
 SELECT id, space_id, cadence, status, scheduled_for, published_at,
@@ -130,8 +130,8 @@ LIMIT 1
 	return e, nil
 }
 
-// GetLatestPublished returns the most recently published edition for a tenant
-// (and optionally a space). If spaceID is not valid, the tenant-wide digest
+// GetLatestPublished returns the most recently published edition for a platform
+// (and optionally a space). If spaceID is not valid, the platform-wide digest
 // is returned.
 func (s *Store) GetLatestPublished(ctx context.Context, spaceID pgtype.UUID) (DigestEdition, error) {
 	var (
@@ -146,9 +146,7 @@ FROM digest_editions
 WHERE status = 'published'
 `)
 
-	args = append(args)
-
-	argIdx := 2
+	argIdx := 1
 	if spaceID.Valid {
 		q.WriteString(fmt.Sprintf(" AND space_id = $%d", argIdx))
 
@@ -290,10 +288,10 @@ LIMIT $%d OFFSET $%d
 	return out, total, nil
 }
 
-// UpdateEdition applies a tenant-scoped partial update to a digest_editions
+// UpdateEdition applies a platform-scoped partial update to a digest_editions
 // row. Only non-nil fields in the input are written. The updated row is
 // returned. It returns pgx.ErrNoRows when the row does not exist for the
-// tenant.
+// platform.
 func (s *Store) UpdateEdition(ctx context.Context, id pgtype.UUID, in UpdateEditionInput) (EditionRow, error) {
 	var (
 		sets   []string
@@ -396,8 +394,8 @@ RETURNING id, space_id, cadence, status, scheduled_for, published_at,
 	return r, nil
 }
 
-// DeleteEdition hard-deletes a single digest edition scoped to a tenant.
-// It returns pgx.ErrNoRows if the row does not exist for the tenant.
+// DeleteEdition hard-deletes a single digest edition scoped to a platform.
+// It returns pgx.ErrNoRows if the row does not exist for the platform.
 func (s *Store) DeleteEdition(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 DELETE FROM digest_editions
@@ -568,7 +566,7 @@ type DigestStory struct {
 // upcoming events, and a featured story. The poll section is omitted (it
 // requires admin-seeded poll questions and is deferred to a future phase).
 // When spaceID is valid, results are scoped to that Space; otherwise the
-// tenant-wide digest is assembled.
+// platform-wide digest is assembled.
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Store) AssembleDigestContent(ctx context.Context, spaceID pgtype.UUID) (json.RawMessage, error) {
 	content := DigestContent{}
@@ -587,9 +585,7 @@ WHERE ft.deleted_at IS NULL
   AND ft.created_at >= now() - interval '7 days'
 `)
 
-	tArgs = append(tArgs)
-
-	argIdx := 2
+	argIdx := 1
 	if spaceID.Valid {
 		threadsQ.WriteString(fmt.Sprintf(" AND ft.space_id = $%d", argIdx))
 
@@ -669,9 +665,7 @@ WHERE c.content_type = 'event'
   AND c.publish_at >= now()
 `)
 
-	eArgs = append(eArgs)
-
-	argIdx = 2
+	argIdx = 1
 	if spaceID.Valid {
 		eventsQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
 
@@ -719,9 +713,7 @@ WHERE c.content_type = 'story'
   AND c.created_at >= now() - interval '30 days'
 `)
 
-	sArgs = append(sArgs)
-
-	argIdx = 2
+	argIdx = 1
 	if spaceID.Valid {
 		storyQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
 
@@ -749,7 +741,7 @@ WHERE c.content_type = 'story'
 }
 
 // GetDigestSubscriberEmails returns the emails of all subscribers with
-// digest_enabled=true for the given tenant. Used by SendEditionEmail to
+// digest_enabled=true for the given platform. Used by SendEditionEmail to
 // dispatch the published digest (§84 email channel, reuses §62 Newsletter
 // subscriber infrastructure).
 func (s *Store) GetDigestSubscriberEmails(ctx context.Context) ([]string, error) {

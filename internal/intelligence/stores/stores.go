@@ -5,9 +5,9 @@
 // internal/intelligence/sources/store.go: a thin wrapper around gen.Queries
 // that stamps each error with the "stores: <op>: %w" prefix so callers get a
 // consistent, traceable error chain.
-// // All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
+// // All queries are platform-scoped (ADR-112 Amendment 2). Every wrapper method
 // takes a ID pgtype.UUID as its first argument (after ctx) and stamps it
-// into the sqlc query params, guaranteeing data isolation across tenants
+// into the sqlc query params, guaranteeing data isolation across platforms
 // regardless of what the caller populated in the params struct.
 // // Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
 package stores
@@ -53,7 +53,7 @@ func NewStore(database *db.DB) *Store {
 // writes inside fn are atomic (BUG-01/02 fix: §6.2 transaction boundary).
 // // The transactional Store does not carry ID itself: the caller passes
 // ID to each method invoked inside fn, preserving the explicit
-// per-call tenant-scoping contract (ADR-112 Amendment 2).
+// per-call platform-scoping contract (ADR-112 Amendment 2).
 func (s *Store) WithTx(ctx context.Context, fn func(*Store) error) error {
 	return db.WithTx(ctx, s.pool.Writer, func(q *gen.Queries) error {
 		return fn(&Store{queries: q, pool: s.pool})
@@ -207,7 +207,7 @@ func (s *Store) GetIntelRecordByExternalKey(ctx context.Context, arg gen.GetInte
 }
 
 // ListIntelRecordsByExternalKey fetches all intel records matching the given
-// external_key across ALL sources (within the tenant). Used by the dedup
+// external_key across ALL sources (within the platform). Used by the dedup
 // stage's CheckAcrossSources (BUG-20 fix) to detect when the same upstream
 // entity has already been extracted from a different source — a cross-source
 // conflict that should be held for human review.
@@ -972,7 +972,7 @@ func (s *Store) UpdateLanguageTestRequirementIntel(ctx context.Context, arg gen.
 
 // GetLanguageTestByName resolves the language_tests(id) FK from a test name
 // extracted as free text. language_tests is a global reference table, so
-// the query filter does not use a tenant ID.
+// the query filter does not use a platform ID.
 func (s *Store) GetLanguageTestByName(ctx context.Context, name string) (gen.LanguageTest, error) {
 	row, err := s.queries.GetLanguageTestByName(ctx, name)
 	if err != nil {
@@ -1262,7 +1262,7 @@ func maybeString(s *string) string {
 	return *s
 }
 
-// ListSourceCollections returns tenant collections ordered by slug.
+// ListSourceCollections returns platform collections ordered by slug.
 func (s *Store) ListSourceCollections(ctx context.Context) ([]gen.SourceCollection, error) {
 	rows, err := s.queries.ListSourceCollections(ctx)
 	if err != nil {

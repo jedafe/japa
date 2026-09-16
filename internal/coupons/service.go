@@ -16,7 +16,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
-// Cache TTLs (Section 55 Valkey Caching / catalog: jc:coupon:{id}, jc:coupon_list:{tenant}).
+// Cache TTLs (Section 55 Valkey Caching / catalog: jc:coupon:{id}, jc:coupon_list:{platform}).
 const (
 	couponCacheTTL     = 15 * time.Minute
 	couponListCacheTTL = 5 * time.Minute
@@ -229,19 +229,19 @@ func (s *Service) GetCoupon(ctx context.Context, id pgtype.UUID) (gen.GetCouponB
 }
 
 // ListCoupons is an exported method.
-func (s *Service) ListCoupons(ctx context.Context, status, couponType, search *string, page, pageSize int32) ([]gen.ListCouponsByTenantRow, error) {
+func (s *Service) ListCoupons(ctx context.Context, status, couponType, search *string, page, pageSize int32) ([]gen.ListCouponsRow, error) {
 	limit, offset := paginate(page, pageSize)
 	return s.store.listCoupons(ctx, status, couponType, search, pgtype.UUID{}, limit, offset)
 }
 
-func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsByTenantRow, error) {
-	// Only cache unfiltered first-page lists (jc:coupon_list:{tenant}, TTL 5min — Section 55).
+func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsRow, error) {
+	// Only cache unfiltered first-page lists (jc:coupon_list:{platform}, TTL 5min — Section 55).
 	canCache := providerID == nil && couponType == nil && search == nil && page == 1
 	cacheKey := valkey.MustKey("coupon_list:")
 
 	if canCache && s.vk != nil {
 		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
-			var coupons []gen.ListActiveCouponsByTenantRow
+			var coupons []gen.ListActiveCouponsRow
 			if jsonErr := json.Unmarshal([]byte(cached), &coupons); jsonErr == nil {
 				return coupons, nil
 			}
@@ -264,7 +264,7 @@ func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID
 	if canCache && s.vk != nil {
 		if data, jsonErr := json.Marshal(coupons); jsonErr == nil {
 			if err := s.vk.Set(ctx, cacheKey, string(data), couponListCacheTTL).Err(); err != nil {
-				slog.Warn("coupons: failed to cache coupon list", "tenant", "", "error", err)
+				slog.Warn("coupons: failed to cache coupon list", "platform", "", "error", err)
 			}
 		}
 	}
@@ -324,7 +324,7 @@ func (s *Service) DeleteCoupon(ctx context.Context, id pgtype.UUID) error {
 }
 
 // invalidateCouponCaches clears the single-coupon cache (jc:coupon:{id}) and
-// the tenant coupon list cache (jc:coupon_list:{tenant}) after any coupon
+// the platform coupon list cache (jc:coupon_list:{platform}) after any coupon
 // mutation (Section 55). Best-effort: errors are logged.
 func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UUID) {
 	if s.vk == nil {

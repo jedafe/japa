@@ -130,7 +130,7 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 	}
 }
 
-// InvalidateRobotsCache removes the cached robots.txt for a tenant.
+// InvalidateRobotsCache removes the cached robots.txt for a platform.
 // Call this after updating the bot registry.
 func InvalidateRobotsCache(ctx context.Context, rdb *valkey.Client) {
 	if rdb == nil {
@@ -143,7 +143,7 @@ func InvalidateRobotsCache(ctx context.Context, rdb *valkey.Client) {
 	}
 }
 
-// InvalidateLLMsCache removes the cached llms.txt for a tenant.
+// InvalidateLLMsCache removes the cached llms.txt for a platform.
 func InvalidateLLMsCache(ctx context.Context, rdb *valkey.Client) {
 	if rdb == nil {
 		return

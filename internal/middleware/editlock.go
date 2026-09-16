@@ -33,7 +33,7 @@ type editLockSettingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
-var defaultTenantUUID = pgtype.UUID{Bytes: [16]byte{}, Valid: true}
+var defaultPlatformUUID = pgtype.UUID{Bytes: [16]byte{}, Valid: true}
 
 // deleteOwnershipScript atomically checks ownership and deletes the lock key.
 // Returns 1 if the key was deleted (ownership verified), 0 otherwise.
@@ -99,8 +99,8 @@ func EditLockMiddleware(rdb valkeycompat.Cmdable, settings editLockSettingsReade
 			// Read TTL from system settings with fallback to the default.
 			// The fallback (90) matches editLockTTLDefault and the
 			// valkey-keys-catalog.md entry (90s) for audit conformance
-			// (AUDIT-BE-028). Use the authenticated user's tenant so
-			// tenant-specific settings are honoured.
+			// (AUDIT-BE-028). Use the authenticated user's platform so
+			// platform-specific settings are honoured.
 			ttl := editLockTTLDefault
 
 			if settings != nil {

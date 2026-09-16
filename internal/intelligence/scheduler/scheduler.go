@@ -8,7 +8,7 @@
 // at the source's base crawl_frequency_mins). A separate counter key
 // `jc:intel:effective_interval:{}:{source_id}:unchanged_count`
 // tracks the consecutive-unchanged streak so the value survives restarts.
-// All keys are tenant-scoped per ADR-112 Amendment 2.
+// All keys are platform-scoped per ADR-112 Amendment 2.
 package scheduler
 
 import (

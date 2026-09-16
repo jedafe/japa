@@ -38,7 +38,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // LearnTracksListHandler returns a ToolHandler that lists all learning
-// tracks for the tenant (including drafts — the agent needs to see the
+// tracks for the platform (including drafts — the agent needs to see the
 // full catalog for admin operations).
 func LearnTracksListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
@@ -218,7 +218,7 @@ func LearnTracksUpdateHandler(deps *ToolDeps) ToolHandler {
 // ---------------------------------------------------------------------------
 
 // LearnLessonsListHandler returns a ToolHandler that lists all lessons for
-// the tenant (admin view, including drafts).
+// the platform (admin view, including drafts).
 func LearnLessonsListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Learning == nil {

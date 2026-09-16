@@ -80,7 +80,7 @@ SET point_value = @point_value,
 WHERE id = @id
 RETURNING *;
 
--- name: ListActivityRulesByTenant :many
+-- name: ListActivityRules :many
 SELECT * FROM activity_point_rules
 
 ORDER BY activity_key ASC

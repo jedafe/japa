@@ -142,7 +142,7 @@ func (s *Store) GetCampaign(ctx context.Context, id pgtype.UUID) (gen.ContentCam
 	return s.read.GetContentCampaign(ctx, id)
 }
 
-// ListCampaigns returns a paginated list of campaigns for a tenant.
+// ListCampaigns returns a paginated list of campaigns for a platform.
 func (s *Store) ListCampaigns(ctx context.Context, f CampaignListFilter) ([]gen.ContentCampaign, int64, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50
@@ -204,7 +204,7 @@ func (s *Store) UpdateCampaignItem(ctx context.Context, params gen.UpdateContent
 	return s.write.UpdateContentCampaignItem(ctx, params)
 }
 
-// ListActivePersonas returns all active personas for a tenant with the
+// ListActivePersonas returns all active personas for a platform with the
 // information needed by the content planner.
 func (s *Store) ListActivePersonas(ctx context.Context) ([]gen.ListContentCampaignActivePersonasRow, error) {
 	return s.read.ListContentCampaignActivePersonas(ctx)
@@ -218,7 +218,7 @@ func (s *Store) ListActivePersonasByIDs(ctx context.Context, ids []pgtype.UUID) 
 	)
 }
 
-// SpaceExists checks whether a space exists and belongs to the given tenant.
+// SpaceExists checks whether a space exists and belongs to the given platform.
 func (s *Store) SpaceExists(ctx context.Context, id pgtype.UUID) (bool, error) {
 	_, err := s.read.GetSpaceByID(ctx, id)
 	if err != nil {

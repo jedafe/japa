@@ -44,7 +44,7 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 	// Fetch media record including for scoped writes.
 	// The Asynq payload only carries media_id, but GetMediaForScan returns
 	// the from the row, which is then threaded into confirm/reject
-	// operations to prevent cross-tenant modification.
+	// operations to prevent cross-platform modification.
 	m, err := p.svc.getMediaForScan(ctx, mid[:])
 	if err != nil {
 		return fmt.Errorf("media:scan: fetch media %s: %w", mediaID, err)

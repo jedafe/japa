@@ -38,13 +38,13 @@ func (s *Store) GetOrganizationByID(ctx context.Context, id pgtype.UUID) (gen.Or
 	return s.read.GetOrganizationByID(ctx, id)
 }
 
-// GetOrganizationByIDOnly returns an organization by ID without tenant scoping.
+// GetOrganizationByIDOnly returns an organization by ID without platform scoping.
 // Used by invitation acceptance where is not yet known.
 func (s *Store) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (gen.Organization, error) {
 	return s.read.GetOrganizationByIDOnly(ctx, id)
 }
 
-// CountOrganizationsByOwner counts active orgs owned by a user in a tenant.
+// CountOrganizationsByOwner counts active orgs owned by a user in a platform.
 func (s *Store) CountOrganizationsByOwner(ctx context.Context, ownerID pgtype.UUID) (int64, error) {
 	return s.read.CountOrganizationsByOwner(ctx,
 		ownerID,
@@ -91,7 +91,7 @@ func (s *Store) RemoveMember(ctx context.Context, organizationID, userID pgtype.
 	})
 }
 
-// ListMembers returns members of an organization. Tenant-scoped for
+// ListMembers returns members of an organization. Platform-scoped for
 // defense-in-depth (BUG-004).
 func (s *Store) ListMembers(ctx context.Context, organizationID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
 	return s.read.ListOrganizationMembers(ctx,
@@ -134,7 +134,7 @@ func (s *Store) CreateInvitation(ctx context.Context, params gen.CreateOrganizat
 	return s.write.CreateOrganizationInvitation(ctx, params)
 }
 
-// ListInvitations returns pending invitations. Tenant-scoped for
+// ListInvitations returns pending invitations. Platform-scoped for
 // defense-in-depth (BUG-005).
 func (s *Store) ListInvitations(ctx context.Context, organizationID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
 	return s.read.ListOrganizationInvitations(ctx,
@@ -240,7 +240,7 @@ func (s *Store) ApproveOwnershipClaim(ctx context.Context, claimID, reviewedBy p
 }
 
 // IncrementMemberCount atomically increments/decrements member count.
-// Tenant-scoped for defense-in-depth.
+// Platform-scoped for defense-in-depth.
 func (s *Store) IncrementMemberCount(ctx context.Context, orgID pgtype.UUID, delta int32) error {
 	return s.write.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
 		ID:          orgID,
@@ -249,7 +249,7 @@ func (s *Store) IncrementMemberCount(ctx context.Context, orgID pgtype.UUID, del
 }
 
 // ActiveOrgExistsByID reports whether an ACTIVE, non-deleted org with this id
-// exists in the tenant.
+// exists in the platform.
 func (s *Store) ActiveOrgExistsByID(ctx context.Context, id pgtype.UUID) (bool, error) {
 	return s.read.ActiveOrgExistsByID(ctx, id)
 }
@@ -304,19 +304,19 @@ func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID pgtype.UUID,
 }
 
 // VerifyOrganization marks an organization as verified (admin action).
-// Tenant-scoped to prevent cross-tenant verification (BUG-002).
+// Platform-scoped to prevent cross-platform verification (BUG-002).
 func (s *Store) VerifyOrganization(ctx context.Context, id pgtype.UUID) error {
 	return s.write.VerifyOrganization(ctx, id)
 }
 
 // UnverifyOrganization revokes an organization's verification (admin action).
-// Tenant-scoped and clears verification_type (BUG-002, BUG-016).
+// Platform-scoped and clears verification_type (BUG-002, BUG-016).
 func (s *Store) UnverifyOrganization(ctx context.Context, id pgtype.UUID) error {
 	return s.write.UnverifyOrganization(ctx, id)
 }
 
 // TransferOrganizationOwnership updates an org's owner_user_id to the new
-// owner (the claimant whose ownership claim was approved). Tenant-scoped.
+// owner (the claimant whose ownership claim was approved). Platform-scoped.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Store) TransferOrganizationOwnership(ctx context.Context, orgID, newOwnerID pgtype.UUID) error {
 	return s.write.TransferOrganizationOwnership(ctx, gen.TransferOrganizationOwnershipParams{
@@ -325,7 +325,7 @@ func (s *Store) TransferOrganizationOwnership(ctx context.Context, orgID, newOwn
 	})
 }
 
-// GetUserEmail returns the email address for the given user in the given tenant.
+// GetUserEmail returns the email address for the given user in the given platform.
 // Used by AcceptInvitation to verify the accepting user's email matches the
 // invited email (BUG-003).
 func (s *Store) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
@@ -344,7 +344,7 @@ func (s *Store) GetPendingClaimByClaimant(ctx context.Context, orgID, claimantUs
 	})
 }
 
-// GetFormSubmissionByID returns a form submission by ID (tenant-scoped).
+// GetFormSubmissionByID returns a form submission by ID (platform-scoped).
 // Used by ClaimOwnership to verify the linked form submission has status='new'
 // before creating a claim (BUG-009).
 func (s *Store) GetFormSubmissionByID(ctx context.Context, submissionID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {

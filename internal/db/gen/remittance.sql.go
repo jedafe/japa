@@ -456,15 +456,15 @@ func (q *Queries) ListActiveAlertsForCorridor(ctx context.Context, arg ListActiv
 	return items, nil
 }
 
-const listAllActiveAlertsForTenant = `-- name: ListAllActiveAlertsForTenant :many
+const listAllActiveAlerts = `-- name: ListAllActiveAlerts :many
 SELECT id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
 WHERE is_active = true
  AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListAllActiveAlertsForTenant(ctx context.Context) ([]RemittanceRateAlert, error) {
-	rows, err := q.db.Query(ctx, listAllActiveAlertsForTenant)
+func (q *Queries) ListAllActiveAlerts(ctx context.Context) ([]RemittanceRateAlert, error) {
+	rows, err := q.db.Query(ctx, listAllActiveAlerts)
 	if err != nil {
 		return nil, err
 	}

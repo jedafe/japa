@@ -55,7 +55,7 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 // // Payload: { period_start, period_end }
 // When period_start/period_end are empty, the previous calendar month is used.
 // When is empty (cron-mode sweep), the handler iterates all active
-// tenants and runs the aggregation per tenant — mirroring the pattern used by
+// platforms and runs the aggregation per platform — mirroring the pattern used by
 // the sitemap, RSS, and security-scan sweep handlers (BUG-001/BUG-002).
 func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:calculate_period_payouts")

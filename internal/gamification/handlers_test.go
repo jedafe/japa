@@ -176,7 +176,7 @@ func TestLeaderboardScopeValidation(t *testing.T) {
 		},
 		{
 			name:          "invalid scope word",
-			scope:         "tenant",
+			scope:         "platform",
 			wantScopeType: "",
 			wantSpaceID:   "",
 			wantOK:        false,
@@ -246,19 +246,19 @@ func TestLeaderboardPeriodValidation(t *testing.T) {
 
 // TestHandleGetLeaderboard_InvalidScope verifies that the leaderboard handler
 // rejects invalid scope values with a 400 error. This test does not require
-// a tenant context because scope validation happens before the service call
-// — but the handler checks tenant first, so we expect service_unavailable (503)
-// unless a tenant is set. The scope validation logic is tested directly in
+// a platform context because scope validation happens before the service call
+// — but the handler checks platform first, so we expect service_unavailable (503)
+// unless a platform is set. The scope validation logic is tested directly in
 // TestLeaderboardScopeValidation above.
-func _TestHandleGetLeaderboard_NoTenant(t *testing.T) {
+func _TestHandleGetLeaderboard_NoPlatform(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/gamification/leaderboard?scope=global&period=all_time", nil)
 	rr := httptest.NewRecorder()
 	h.HandleGetLeaderboard(rr, req)
 
-	// No tenant in context → 503 service_unavailable.
+	// No platform in context → 503 service_unavailable.
 	if rr.Code != http.StatusServiceUnavailable {
-		t.Errorf("HandleGetLeaderboard without tenant = %d, want %d",
+		t.Errorf("HandleGetLeaderboard without platform = %d, want %d",
 			rr.Code, http.StatusServiceUnavailable)
 	}
 }

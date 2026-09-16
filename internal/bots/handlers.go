@@ -82,7 +82,7 @@ func parseOffset(r *http.Request) int32 {
 // Admin Handlers — Known Bots CRUD
 // ---------------------------------------------------------------------------
 
-// ListKnownBots returns all known bots for the tenant, optionally filtered by bot_type.
+// ListKnownBots returns all known bots for the platform, optionally filtered by bot_type.
 // GET /api/v1/admin/bots?bot_type=search_engine.
 func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 

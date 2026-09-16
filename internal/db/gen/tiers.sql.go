@@ -32,7 +32,7 @@ SELECT id FROM user_groups
 WHERE slug = $1
 `
 
-// Returns the UUID of a tier group (members/pro/business) for a tenant.
+// Returns the UUID of a tier group (members/pro/business) for a platform.
 func (q *Queries) GetTierGroupID(ctx context.Context, slug string) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, getTierGroupID, slug)
 	var id pgtype.UUID

@@ -234,7 +234,7 @@ var (
 )
 
 // JobBelongsToOrg returns true if the job (content) is a job_listing in the
-// tenant owned by orgID. Used to authorize application routes so a caller
+// platform owned by orgID. Used to authorize application routes so a caller
 // cannot reach a job's applications through a different org's ID (JOBS-012).
 func (s *Service) JobBelongsToOrg(ctx context.Context, jobID, orgID pgtype.UUID) (bool, error) {
 	var exists bool
@@ -275,7 +275,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 		argIdx  = 1
 	)
 
-	// Base clauses — tenant + content_type + published + not soft-deleted.
+	// Base clauses — platform + content_type + published + not soft-deleted.
 	// custom_field_values is EAV (field_id → custom_fields.id, entity_type,
 	// entity_id); filters join through custom_fields to resolve the key.
 	clauses = append(
@@ -295,7 +295,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 
 	// custom_field_values filters are applied via EXISTS subqueries so each
 	// filter is independent. Each joins custom_fields to resolve the key and
-	// scopes by tenant to avoid cross-tenant field-id collision.
+	// scopes by platform to avoid cross-platform field-id collision.
 	if filters.Country != "" {
 		clauses = append(clauses, fmt.Sprintf(`
 			EXISTS (
@@ -712,7 +712,7 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 	}
 
 	// Rule 12: compute content_hash before every contents insert so the
-	// unique index idx_contents_tenant_content_hash rejects duplicates.
+	// unique index idx_contents_platform_content_hash rejects duplicates.
 	contentHash := content.ComputeContentHash(body)
 
 	// body is NOT NULL DEFAULT '' — pass the value directly (empty string is
@@ -747,7 +747,7 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 }
 
 // GetJobByID returns a single job_listing content row by id, scoped to
-// tenant and organization. Used by the public update flow to verify ownership
+// platform and organization. Used by the public update flow to verify ownership
 // and to re-fetch the updated row.
 func (s *Service) GetJobByID(ctx context.Context, orgID, jobID pgtype.UUID) (JobDetail, error) {
 	query := `
@@ -823,7 +823,7 @@ func (s *Service) GetJobByID(ctx context.Context, orgID, jobID pgtype.UUID) (Job
 }
 
 // UpdateJobListing updates an org-owned job listing. The caller must be an
-// editor-or-above member of the organization. Immutable fields (tenant,
+// editor-or-above member of the organization. Immutable fields (platform,
 // organization, author, content_type, status) are not changed.
 func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error) {
 	member, err := s.IsOrgMember(ctx, callerID, orgID, OrgJobEditorRoles)
@@ -1013,8 +1013,8 @@ var jobFieldTypes = map[string]jobFieldType{
 
 // upsertJobFieldValue upserts a single custom_field_values row with the
 // correct typed column for the field key. It resolves field_id from
-// custom_fields by key + tenant, and verifies the target content is a
-// job_listing in the tenant (prevents cross-tenant / non-job writes).
+// custom_fields by key + platform, and verifies the target content is a
+// job_listing in the platform (prevents cross-platform / non-job writes).
 // Empty values are skipped. Unknown keys are skipped with a warning.
 func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID, key, value string) {
 	if value == "" {
@@ -1232,7 +1232,7 @@ func (s *Service) ListJobApplications(ctx context.Context, jobID pgtype.UUID, st
 	return results, total, nil
 }
 
-// AdminListApplications returns all applications across all jobs for a tenant,
+// AdminListApplications returns all applications across all jobs for a platform,
 // with pagination and optional status filter.
 func (s *Service) AdminListApplications(ctx context.Context, status string, page, limit int) ([]ApplicationResult, int64, error) {
 	if limit <= 0 {
@@ -1264,7 +1264,7 @@ func (s *Service) AdminListApplications(ctx context.Context, status string, page
 	return results, total, nil
 }
 
-// AdminListJobs returns all job_listing contents for a tenant, with
+// AdminListJobs returns all job_listing contents for a platform, with
 // pagination and optional status filter. This is the admin "all listings"
 // view per Section 63: GET /admin/jobs — all listings (admin).
 func (s *Service) AdminListJobs(ctx context.Context, status string, page, limit int) ([]AdminJobListing, int64, error) {
@@ -1278,7 +1278,7 @@ func (s *Service) AdminListJobs(ctx context.Context, status string, page, limit 
 
 	offset := (page - 1) * limit
 
-	// Build the WHERE clause — always tenant + content_type + not
+	// Build the WHERE clause — always platform + content_type + not
 	// soft-deleted, optionally status. Admin can see archived listings via
 	// the status filter; soft-deleted rows are excluded entirely.
 	whereClause := "c.content_type = 'job_listing' AND c.deleted_at IS NULL"
@@ -1416,7 +1416,7 @@ func (s *Service) AdminListJobs(ctx context.Context, status string, page, limit 
 }
 
 // AdminJobStatusDistribution returns the count of job_listing contents grouped
-// by content status (published, archived, draft) for a tenant.
+// by content status (published, archived, draft) for a platform.
 func (s *Service) AdminJobStatusDistribution(ctx context.Context) (map[string]int64, error) {
 	query := `
 		SELECT status, COUNT(*) AS count
@@ -1449,7 +1449,7 @@ func (s *Service) AdminJobStatusDistribution(ctx context.Context) (map[string]in
 }
 
 // AdminApplicationStatusDistribution returns the count of applications grouped
-// by status for a tenant.
+// by status for a platform.
 func (s *Service) AdminApplicationStatusDistribution(ctx context.Context) (map[string]int64, error) {
 	rows, err := s.store.AdminApplicationStatusDistribution(ctx)
 	if err != nil {
@@ -1471,10 +1471,10 @@ func (s *Service) ExpireListingsPastDeadline(ctx context.Context) (int64, error)
 }
 
 // ToggleFeature toggles the is_featured custom field value for a job listing.
-// Used by the admin feature route. Tenant-scoped and content-type-checked for
-// security (prevents cross-tenant toggle and toggling non-job content).
+// Used by the admin feature route. Platform-scoped and content-type-checked for
+// security (prevents cross-platform toggle and toggling non-job content).
 func (s *Service) ToggleFeature(ctx context.Context, jobID pgtype.UUID) (bool, error) {
-	// Read the current value — verify tenant + content_type = job_listing.
+	// Read the current value — verify platform + content_type = job_listing.
 	// Join custom_field_values → custom_fields to resolve the field key.
 	var current bool
 
@@ -1497,7 +1497,7 @@ func (s *Service) ToggleFeature(ctx context.Context, jobID pgtype.UUID) (bool, e
 
 	newVal := !current
 
-	// Resolve the custom_fields.id for 'is_featured' in this tenant, then
+	// Resolve the custom_fields.id for 'is_featured' in this platform, then
 	// upsert the custom_field_values row.
 	var fieldID pgtype.UUID
 
@@ -1528,7 +1528,7 @@ func (s *Service) ToggleFeature(ctx context.Context, jobID pgtype.UUID) (bool, e
 
 // AdminUpdateJob updates a job listing's core fields (title, body, status)
 // and custom field values. The jobID must be a content row with
-// content_type='job_listing' in the given tenant. The contents table has no
+// content_type='job_listing' in the given platform. The contents table has no
 // summary column (JOBS-004); summary is derived from body at read time.
 func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, summary, body, status *string, fieldValues map[string]string) error {
 	// Build the SET clause dynamically based on which fields are provided.
@@ -1579,7 +1579,7 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 
 // AdminDeleteJob soft-deletes a job listing by setting deleted_at = now().
 // The jobID must be a content row with content_type='job_listing' in the
-// given tenant.
+// given platform.
 func (s *Service) AdminDeleteJob(ctx context.Context, jobID pgtype.UUID) error {
 	_, err := s.store.pool.Writer.Exec(ctx, `
 		UPDATE contents SET deleted_at = now(), updated_at = now()

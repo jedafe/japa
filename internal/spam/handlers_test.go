@@ -25,8 +25,8 @@ func ctxWithUser(r *http.Request, userID string) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), auth.UserContextKey, user))
 }
 
-// ctxWithTenant adds a tenant to the request context.
-func ctxWithTenant(r *http.Request) *http.Request {
+// ctxWithPlatform adds a platform to the request context.
+func ctxWithPlatform(r *http.Request) *http.Request {
 	tid := pgtype.UUID{}
 	t := &struct {
 		ID   pgtype.UUID
@@ -60,7 +60,7 @@ const (
 
 func addContextMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = ctxWithTenant(r)
+		r = ctxWithPlatform(r)
 		r = ctxWithUser(r, testUserID)
 		next.ServeHTTP(w, r)
 	})

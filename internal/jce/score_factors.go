@@ -86,7 +86,7 @@ func (s *scoreFactorStore) listByType(ctx context.Context, comparisonTypeID pgty
 	return factors, nil
 }
 
-// get returns a score factor by id and tenant.
+// get returns a score factor by id and platform.
 func (s *scoreFactorStore) get(ctx context.Context, id pgtype.UUID) (ScoreFactor, error) {
 	row, err := s.read.GetScoreFactor(ctx,
 		id,
@@ -140,7 +140,7 @@ func (s *scoreFactorStore) delete(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// getByKey fetches a factor by tenant, comparison type, and factor key. A nil
+// getByKey fetches a factor by platform, comparison type, and factor key. A nil
 // comparison type selects the global factor for that key.
 //
 // The generated GetScoreFactorByKey query uses `comparison_type_id = $2`, which

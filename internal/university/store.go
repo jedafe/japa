@@ -24,7 +24,7 @@ import (
 
 // Store wraps the sqlc-generated queries with read/write pool separation.
 // All writes go through the write pool; all reads through the read pool.
-// Tenant scoping is enforced at the query level (every query filters on
+// Platform scoping is enforced at the query level (every query filters on
 // ).
 type Store struct {
 	read  *gen.Queries
@@ -731,7 +731,7 @@ func (s *Store) ListSplitsByInstructor(ctx context.Context, instructorID pgtype.
 }
 
 // GetRevenueSplitByID returns a single immutable revenue-split record by ID,
-// tenant-scoped. Used by the admin audit viewer (ADR-063 §9).
+// platform-scoped. Used by the admin audit viewer (ADR-063 §9).
 func (s *Store) GetRevenueSplitByID(ctx context.Context, id pgtype.UUID) (gen.RevenueSplit, error) {
 	return s.read.GetRevenueSplitByID(ctx,
 		id,
@@ -751,7 +751,7 @@ type ListRevenueSplitsFilter struct {
 	SpaceID      pgtype.UUID        // empty = all spaces (ADR-063 per-university view)
 }
 
-// ListRevenueSplits returns a tenant-wide paginated list of immutable
+// ListRevenueSplits returns a platform-wide paginated list of immutable
 // revenue-split audit records with optional filters (ADR-063 §9).
 func (s *Store) ListRevenueSplits(ctx context.Context, f ListRevenueSplitsFilter, limit, offset int32) ([]gen.ListRevenueSplitsRow, error) {
 	return s.read.ListRevenueSplits(ctx, gen.ListRevenueSplitsParams{
@@ -969,7 +969,7 @@ func (s *Store) CreateTrackCategory(ctx context.Context, slug, name string, sort
 	})
 }
 
-// GetTrackCategory fetches a single category by ID (tenant-scoped).
+// GetTrackCategory fetches a single category by ID (platform-scoped).
 func (s *Store) GetTrackCategory(ctx context.Context, id pgtype.UUID) (gen.UniversityTrackCategory, error) {
 	return s.read.GetUniversityTrackCategory(ctx,
 		id,

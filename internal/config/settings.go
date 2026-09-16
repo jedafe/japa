@@ -22,7 +22,7 @@ const settingsCacheTTL = 5 * time.Minute
 
 const settingsCachePrefix = "jc:settings:"
 
-// Settings provides hot-reloadable, per-tenant access to the system_settings
+// Settings provides hot-reloadable, per-platform access to the system_settings
 // table with a two-tier cache (in-memory L1 + Valkey L2).
 type Settings struct {
 	db      *db.DB
@@ -196,11 +196,11 @@ func (s *Settings) setValkeyCache(ctx context.Context, cacheKey string, entry ca
 	_ = s.vk.Set(ctx, settingsCachePrefix+cacheKey, data, settingsCacheTTL).Err()
 }
 
-// GetSetting returns the raw stored value for a tenant-scoped system setting.
+// GetSetting returns the raw stored value for a platform-scoped system setting.
 // Missing settings are cached with a sentinel so repeated lookups do not hit
 // the database. The cache is invalidated by Set/Update calls and by the TTL.
 func (s *Settings) GetSetting(ctx context.Context, key string) (string, error) {
-	// Ref: .jeos/sections/04-multi-tenancy.md (removal in progress).
+	// Ref: .jeos/sections/04-multi-tenancy.md (historical; settings are global).
 	// ID is kept in the public signature for Phase 1 compatibility and is ignored.
 	cacheKey := key
 
@@ -283,7 +283,7 @@ func parseInt(sv string) (int, error) {
 // InvalidateSettings clears the L1 and L2 cache for all settings.
 // Callers should invoke this after any system_settings write.
 func (s *Settings) InvalidateSettings(ctx context.Context) {
-	// Ref: .jeos/sections/04-multi-tenancy.md (removal in progress).
+	// Ref: .jeos/sections/04-multi-tenancy.md (historical; settings are global).
 	// ID is kept in the public signature for Phase 1 compatibility and is ignored.
 
 	s.mu.Lock()

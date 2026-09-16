@@ -337,7 +337,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// v2 source directory: auto-create a canonical source for verified publisher
-	// users when the tenant setting is enabled. Non-fatal.
+	// users when the platform setting is enabled. Non-fatal.
 	h.maybeCreateUserSource(r.Context(), userID, req.Username)
 
 	// Send welcome email (fire-and-forget, Golden Rule 8).
@@ -688,7 +688,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Re-check email verification when the tenant requires it. A user
+	// Re-check email verification when the platform requires it. A user
 	// whose email was un-verified (or whose verification was revoked)
 	// cannot keep refreshing. Ref: §02 (auth.email.verify_required).
 	if EmailVerifyRequired(r.Context(), h.Settings) {

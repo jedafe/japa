@@ -15,7 +15,7 @@ import (
 )
 
 // Store provides direct pgx CRUD for learning tracks, modules, lessons,
-// progress records, and certificates. All queries are tenant-scoped via
+// progress records, and certificates. All queries are platform-scoped via
 // the column and use the shared read/write connection pools.
 type Store struct {
 	read  *gen.Queries
@@ -144,7 +144,7 @@ func trackFromFields(
 	}
 }
 
-// ListPublishedTracks lists all published tracks for a tenant.
+// ListPublishedTracks lists all published tracks for a platform.
 func (s *Store) ListPublishedTracks(ctx context.Context) ([]Track, error) {
 	rows, err := s.read.ListPublishedLearningTracks(ctx)
 	if err != nil {
@@ -160,7 +160,7 @@ func (s *Store) ListPublishedTracks(ctx context.Context) ([]Track, error) {
 	return tracks, nil
 }
 
-// SearchPublishedTracks searches published tracks by title or slug, tenant-scoped.
+// SearchPublishedTracks searches published tracks by title or slug, platform-scoped.
 func (s *Store) SearchPublishedTracks(ctx context.Context, query string, limit int32) ([]Track, error) {
 	const q = `
 SELECT id, title, slug, description, difficulty, cover_media_id,
@@ -758,7 +758,7 @@ func (s *Store) DeleteModule(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// ListAllModules returns all modules for a tenant (admin view).
+// ListAllModules returns all modules for a platform (admin view).
 func (s *Store) ListAllModules(ctx context.Context) ([]Module, error) {
 	rows, err := s.read.ListAllLearningModules(ctx)
 	if err != nil {
@@ -774,7 +774,7 @@ func (s *Store) ListAllModules(ctx context.Context) ([]Module, error) {
 	return modules, nil
 }
 
-// ListAllLessons returns all lessons for a tenant (admin view).
+// ListAllLessons returns all lessons for a platform (admin view).
 func (s *Store) ListAllLessons(ctx context.Context) ([]Lesson, error) {
 	rows, err := s.read.ListAllLearningLessons(ctx)
 	if err != nil {
@@ -1421,7 +1421,7 @@ func (s *Store) IssueCertificate(ctx context.Context, userID, trackID pgtype.UUI
 	return &c, nil
 }
 
-// ListCertificatesByUser lists a user's certificates, tenant-scoped.
+// ListCertificatesByUser lists a user's certificates, platform-scoped.
 func (s *Store) ListCertificatesByUser(ctx context.Context, userID pgtype.UUID) ([]Certificate, error) {
 	rows, err := s.read.ListLearningCertificatesByUser(ctx,
 

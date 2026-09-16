@@ -105,7 +105,7 @@ SELECT id, name, export_type, format, status, file_url, file_size, include_metad
 WHERE id = $1
 `
 
-// Used by the Asynq worker, which does not have tenant context.
+// Used by the Asynq worker, which does not have platform context.
 func (q *Queries) GetPlatformDataExportByID(ctx context.Context, id pgtype.UUID) (PlatformDataExport, error) {
 	row := q.db.QueryRow(ctx, getPlatformDataExportByID, id)
 	var i PlatformDataExport

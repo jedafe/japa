@@ -51,12 +51,12 @@ func (s *Store) getTicketTypeBySlug(ctx context.Context, slug string) (gen.Ticke
 	return row, nil
 }
 
-func (s *Store) listTicketTypesByTenant(ctx context.Context, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
+func (s *Store) listTicketTypesByPlatform(ctx context.Context, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListTicketTypesByTenant(ctx, gen.ListTicketTypesByTenantParams{
+	rows, err := s.read.ListTicketTypes(ctx, gen.ListTicketTypesParams{
 
 		IsPublic:   isPublic,
 		PageLimit:  limit,
@@ -66,7 +66,7 @@ func (s *Store) listTicketTypesByTenant(ctx context.Context, limit, offset int32
 		return ListTicketTypesResponse{}, fmt.Errorf("listing ticket types: %w", err)
 	}
 
-	total, err := s.read.CountTicketTypesByTenant(ctx,
+	total, err := s.read.CountTicketTypes(ctx,
 
 		isPublic,
 	)
@@ -136,17 +136,17 @@ func (s *Store) getTicketByID(ctx context.Context, id pgtype.UUID) (gen.GetTicke
 	return row, nil
 }
 
-func (s *Store) listTicketsByTenant(ctx context.Context, p gen.ListTicketsByTenantParams) (ListTicketsResponse, error) {
+func (s *Store) listTicketsByPlatform(ctx context.Context, p gen.ListTicketsParams) (ListTicketsResponse, error) {
 	if p.PageLimit <= 0 || p.PageLimit > MaxPageSize {
 		p.PageLimit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListTicketsByTenant(ctx, p)
+	rows, err := s.read.ListTickets(ctx, p)
 	if err != nil {
 		return ListTicketsResponse{}, fmt.Errorf("listing tickets: %w", err)
 	}
 
-	total, err := s.read.CountTicketsByTenant(ctx, gen.CountTicketsByTenantParams{
+	total, err := s.read.CountTickets(ctx, gen.CountTicketsParams{
 
 		Status:     p.Status,
 		Priority:   p.Priority,
@@ -165,7 +165,7 @@ func (s *Store) listTicketsByTenant(ctx context.Context, p gen.ListTicketsByTena
 
 	items := rows
 	if items == nil {
-		items = make([]gen.ListTicketsByTenantRow, 0)
+		items = make([]gen.ListTicketsRow, 0)
 	}
 
 	return ListTicketsResponse{

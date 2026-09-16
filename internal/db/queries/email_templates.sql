@@ -1,4 +1,4 @@
--- Email Templates — Tenant-customizable transactional emails (ADR-054)
+-- Email Templates — Platform-customizable transactional emails (ADR-054)
 
 -- name: ListEmailTemplates :many
 SELECT id, type, name, slug, subject, html_body, plain_text_body,

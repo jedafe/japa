@@ -377,7 +377,7 @@ func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
 }
 
 // requireItemInMenu verifies that the item with the given ID belongs to the
-// menu with the given menuID (and tenant). On mismatch it writes a 404 and
+// menu with the given menuID (and platform). On mismatch it writes a 404 and
 // returns a non-nil error so the caller can return early. Ref: ADR-054.
 func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID pgtype.UUID, w http.ResponseWriter) error {
 	item, err := h.Service.GetMenuItem(ctx, itemID)
