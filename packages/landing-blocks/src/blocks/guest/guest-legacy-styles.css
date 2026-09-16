@@ -181,19 +181,28 @@
   .hero-image-wrap {
     position: relative;
     width: 100%;
-    max-width: 560px;
+    /* Read width/height constraints from the BlockShell CSS variables so the style tab settings actually reach the image.
+       If the style tab provides no custom width, fall back to the original 560px design cap. */
+    min-width: var(--block-min-width, 0px);
+    max-width: var(--block-max-width, 560px);
+    height: var(--block-height, auto);
+    min-height: var(--block-min-height, auto);
+    max-height: var(--block-max-height, none);
+    /* Default 5/4 (landscape) aspect ratio when no explicit height is set. */
+    aspect-ratio: 5/4;
   }
 
   .hero-image {
+    position: absolute;
+    inset: 0;
     width: 100%;
-    aspect-ratio: 4/5;
+    height: 100%;
     object-fit: cover;
     border-radius: 1.5rem;
     box-shadow: 0 24px 60px rgb(0 0 0 / 0.12);
   }
 
   .floating-card {
-    position: absolute;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
@@ -202,31 +211,17 @@
   }
 
   .floating-card-destinations {
-    top: 1.5rem;
-    left: 1.5rem;
-    width: 220px;
+    width: 100%;
   }
 
   .floating-card-community {
-    bottom: 2.5rem;
-    right: 1.5rem;
-    width: 260px;
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 0.75rem;
   }
 
   @media (max-width: 1024px) and (min-width: 641px) {
-    .floating-card-destinations {
-      left: 1rem;
-      top: 1rem;
-      width: 200px;
-    }
-    .floating-card-community {
-      right: 1rem;
-      bottom: 1.5rem;
-      width: 220px;
-    }
     .floating-card-community .community-avatars {
       display: none;
     }
@@ -238,16 +233,7 @@
       border-radius: calc(var(--radius-card) - 4px);
     }
 
-    .floating-card-destinations {
-      left: 0.75rem;
-      top: 0.75rem;
-      width: 170px;
-    }
-
     .floating-card-community {
-      right: 0.75rem;
-      bottom: 1rem;
-      width: 200px;
       gap: 0.5rem;
     }
 
@@ -323,20 +309,28 @@
   .community-avatars {
     display: flex;
     align-items: center;
+    margin: 0 0 0.25rem;
   }
 
   .community-avatar {
-    width: 2rem;
-    height: 2rem;
+    width: 2.25rem;
+    height: 2.25rem;
     border-radius: 9999px;
     background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
     color: white;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     border: 2px solid var(--color-surface);
     overflow: hidden;
+    flex-shrink: 0;
   }
+
+  .community-avatars > .community-avatar:not(:first-child),
+  .community-avatars > *:not(:first-child) .community-avatar {
+    margin-left: -10px;
+  }
+
   .community-avatar-img {
     width: 100%;
     height: 100%;
@@ -344,26 +338,28 @@
   }
 
   .community-body {
-    flex: 1;
+    width: 100%;
     min-width: 0;
   }
 
   .community-title {
-    font-size: 0.8125rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     color: var(--color-text);
     margin: 0;
+    line-height: 1.35;
   }
 
   .community-subtitle {
     font-size: 0.75rem;
     color: var(--color-muted);
-    margin: 0.125rem 0 0;
+    margin: 0.25rem 0 0;
+    line-height: 1.4;
   }
 
   .community-cta {
-    width: 2rem;
-    height: 2rem;
+    width: 2.25rem;
+    height: 2.25rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -371,6 +367,9 @@
     background: #16a34a;
     color: white;
     flex-shrink: 0;
+    align-self: flex-end;
+    margin-top: auto;
+    text-decoration: none;
   }
 
   .guest-section {

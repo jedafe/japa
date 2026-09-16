@@ -34,7 +34,9 @@ import GuestHeroTextContentEditor from './guest/GuestHeroTextContentEditor.svelt
 import GuestHeroImageContentEditor from './guest/GuestHeroImageContentEditor.svelte';
 import GuestHeroStatsContentEditor from './guest/GuestHeroStatsContentEditor.svelte';
 import GuestHeroDestinationsContentEditor from './guest/GuestHeroDestinationsContentEditor.svelte';
+import GuestHeroDestinationItemContentEditor from './guest/GuestHeroDestinationItemContentEditor.svelte';
 import GuestHeroCommunityContentEditor from './guest/GuestHeroCommunityContentEditor.svelte';
+import GuestHeroCommunityMemberContentEditor from './guest/GuestHeroCommunityMemberContentEditor.svelte';
 import GuestCategoriesContentEditor from './guest/GuestCategoriesContentEditor.svelte';
 import GuestOpportunitiesContentEditor from './guest/GuestOpportunitiesContentEditor.svelte';
 import GuestStoriesContentEditor from './guest/GuestStoriesContentEditor.svelte';
@@ -77,7 +79,9 @@ export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
   guest_hero_image: GuestHeroImageContentEditor,
   guest_hero_stats: GuestHeroStatsContentEditor,
   guest_hero_destinations: GuestHeroDestinationsContentEditor,
+  guest_hero_destination_item: GuestHeroDestinationItemContentEditor,
   guest_hero_community: GuestHeroCommunityContentEditor,
+  guest_hero_community_member: GuestHeroCommunityMemberContentEditor,
   guest_categories: GuestCategoriesContentEditor,
   guest_opportunities: GuestOpportunitiesContentEditor,
   guest_stories: GuestStoriesContentEditor,

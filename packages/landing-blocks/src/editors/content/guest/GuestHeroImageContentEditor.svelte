@@ -2,6 +2,7 @@
   import type { GuestHeroImageProps, MediaRef } from '../../../types';
   import type { Component } from 'svelte';
   import MediaPicker from '../../MediaPicker.svelte';
+  import NestedBlocksEditor from '../../NestedBlocksEditor.svelte';
 
   interface Props {
     props: GuestHeroImageProps;
@@ -51,5 +52,15 @@
   <div class="grid grid-cols-2 gap-2">
     <label class="flex items-center gap-2 text-sm"><input type="checkbox" checked={props.dots ?? true} onchange={(e) => update('dots', e.currentTarget.checked)} /> Show dots</label>
     <label class="flex items-center gap-2 text-sm"><input type="checkbox" checked={props.arrows ?? true} onchange={(e) => update('arrows', e.currentTarget.checked)} /> Show arrows</label>
+  </div>
+
+  <div class="space-y-2">
+    <div class="text-xs font-medium text-[var(--color-muted)]">Overlay children</div>
+    <p class="text-xs text-[var(--color-muted)]">Children are rendered on top of the hero image. Use the sidebar or this list to add, reorder, remove, and style each overlay card.</p>
+    <NestedBlocksEditor
+      blocks={props.children ?? []}
+      onchange={(children) => update('children', children)}
+      allowedTypes={['guest_hero_destinations', 'guest_hero_community']}
+    />
   </div>
 </div>

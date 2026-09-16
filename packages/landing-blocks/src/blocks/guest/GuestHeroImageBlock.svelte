@@ -2,7 +2,6 @@
   import type { GuestHeroImageProps, MediaRef, Block, BlockStyle } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
-  import { onMount } from 'svelte';
   import { blockRegistry } from '../../render/blockRegistry';
   import BlockShell from '../../shell/BlockShell.svelte';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
@@ -21,23 +20,23 @@
   ];
 
   const defaultChildren: Block[] = $derived([
-    { id: `${id}-destinations`, type: 'guest_hero_destinations', visible: true, props: {}, style: { layout: { position: 'absolute', top: 0, left: 0, z_index: 10 } } },
-    { id: `${id}-community`, type: 'guest_hero_community', visible: true, props: {}, style: { layout: { position: 'absolute', bottom: 0, right: 0, z_index: 10 } } },
+    { id: `${id}-destinations`, type: 'guest_hero_destinations', visible: true, props: {} },
+    { id: `${id}-community`, type: 'guest_hero_community', visible: true, props: {} },
   ]);
 
-  const children = $derived(props.children && props.children.length > 0 ? props.children : defaultChildren);
+  const children = $derived(props.children ?? defaultChildren);
 
   const slides = $derived(props.slides && props.slides.length > 0 ? props.slides : defaultSlides);
-  const autoplay = $derived(props.autoplay ?? false);
+  const autoplay = $derived(props.autoplay ?? true);
   const interval = $derived(props.interval ?? 5000);
-  const dots = $derived(props.dots ?? false);
-  const arrows = $derived(props.arrows ?? false);
+  const dots = $derived(props.dots ?? true);
+  const arrows = $derived(props.arrows ?? true);
 
   let index = $state(0);
-  let timer: ReturnType<typeof setInterval> | undefined = $state(undefined);
 
   function go(n: number) {
-    index = (n + slides.length) % slides.length;
+    if (slides.length === 0) return;
+    index = ((n % slides.length) + slides.length) % slides.length;
   }
 
   function next() {
@@ -48,29 +47,55 @@
     go(index - 1);
   }
 
-  onMount(() => {
-    if (autoplay && slides.length > 1) {
-      timer = setInterval(next, interval);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
+  $effect(() => {
+    if (!autoplay || slides.length <= 1) return;
+    const t = setInterval(next, interval);
+    return () => clearInterval(t);
   });
+
+  // Deep-merge helper so user-supplied block styles (e.g. top/left from the style tab)
+  // only override the matching default fields, not the whole default style group.
+  function deepMerge<T>(a: T | undefined, b: T | undefined): T | undefined {
+    if (a === undefined) return b;
+    if (b === undefined) return a;
+    if (Array.isArray(a) || Array.isArray(b)) return b as T;
+    if (typeof a === 'object' && typeof b === 'object') {
+      const result = { ...a } as Record<string, unknown>;
+      for (const key of Object.keys(b as Record<string, unknown>)) {
+        result[key] = deepMerge(result[key], (b as Record<string, unknown>)[key]);
+      }
+      return result as T;
+    }
+    return b as T;
+  }
 
   function defaultStyle(type: string): BlockStyle | undefined {
     if (type === 'guest_hero_destinations') {
-      return { layout: { position: 'absolute', top: 0, left: 0, z_index: 10 } };
+      // The BlockShell wrapper is the absolutely-positioned floating card.
+      // The inner .floating-card-destinations div is width: 100% and has no offsets,
+      // so the style-tab top/left are not added to a legacy CSS offset.
+      return {
+        layout: { position: 'absolute', top: 24, left: 24, z_index: 10, width: 220 },
+        responsive: {
+          tablet: { layout: { top: 16, left: 16, width: 200 } },
+          mobile: { layout: { top: 12, left: 12, width: 170 } }
+        }
+      };
     }
     if (type === 'guest_hero_community') {
-      return { layout: { position: 'absolute', bottom: 0, right: 0, z_index: 10 } };
+      return {
+        layout: { position: 'absolute', bottom: 40, right: 24, z_index: 10, width: 260 },
+        responsive: {
+          tablet: { layout: { bottom: 24, right: 16, width: 220 } },
+          mobile: { layout: { bottom: 16, right: 12, width: 200 } }
+        }
+      };
     }
     return undefined;
   }
 
   function childStyle(block: Block): BlockStyle | undefined {
-    const ds = defaultStyle(block.type);
-    if (!ds && !block.style) return undefined;
-    return { ...ds, ...block.style };
+    return deepMerge(defaultStyle(block.type), block.style);
   }
 
   function renderableComponent(block: Block) {
@@ -82,7 +107,7 @@
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
 <div class="hero-image-wrap" {id}>
-  {#each slides as slide, i (slide.media_id)}
+  {#each slides as slide, i (i)}
     {#if i === index}
       <img
         src={slide.url}

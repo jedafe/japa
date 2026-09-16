@@ -51,21 +51,33 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
     else if (l.position === 'absolute') classes.push('absolute');
     else if (l.position === 'fixed') classes.push('fixed');
     else if (l.position === 'relative') classes.push('relative');
-    if (l.top !== undefined && l.top !== 'auto') inline['top'] = `${l.top}px`;
-    if (l.right !== undefined && l.right !== 'auto') inline['right'] = `${l.right}px`;
-    if (l.bottom !== undefined && l.bottom !== 'auto') inline['bottom'] = `${l.bottom}px`;
-    if (l.left !== undefined && l.left !== 'auto') inline['left'] = `${l.left}px`;
+    if (l.top !== undefined && l.top !== 'auto') inline['top'] = typeof l.top === 'number' ? `${l.top}px` : l.top;
+    if (l.right !== undefined && l.right !== 'auto') inline['right'] = typeof l.right === 'number' ? `${l.right}px` : l.right;
+    if (l.bottom !== undefined && l.bottom !== 'auto') inline['bottom'] = typeof l.bottom === 'number' ? `${l.bottom}px` : l.bottom;
+    if (l.left !== undefined && l.left !== 'auto') inline['left'] = typeof l.left === 'number' ? `${l.left}px` : l.left;
     if (l.z_index !== undefined && l.z_index !== 'auto') inline['z-index'] = String(l.z_index);
     if (l.width === 'contained') classes.push('max-w-5xl mx-auto');
-    if (l.width === 'full') classes.push('w-full');
-    if (l.width === 'fit') inline['width'] = 'fit-content';
-    if (typeof l.width === 'number') inline['width'] = `${l.width}px`;
-    if (typeof l.max_width === 'number') inline['max-width'] = `${l.max_width}px`;
+    if (l.width === 'full') { classes.push('w-full'); inline['--block-width'] = '100%'; }
+    else if (l.width === 'fit') { inline['width'] = 'fit-content'; inline['--block-width'] = 'fit-content'; }
+    else if (l.width === 'auto') inline['--block-width'] = 'auto';
+    else if (typeof l.width === 'number') { inline['width'] = `${l.width}px`; inline['--block-width'] = `${l.width}px`; }
+    else if (typeof l.width === 'string') { inline['width'] = l.width; inline['--block-width'] = l.width; }
+    if (typeof l.min_width === 'number') { inline['min-width'] = `${l.min_width}px`; inline['--block-min-width'] = `${l.min_width}px`; }
+    else if (typeof l.min_width === 'string') { inline['min-width'] = l.min_width; inline['--block-min-width'] = l.min_width; }
+    if (typeof l.max_width === 'number') { inline['max-width'] = `${l.max_width}px`; inline['--block-max-width'] = `${l.max_width}px`; }
+    else if (typeof l.max_width === 'string') { inline['max-width'] = l.max_width; inline['--block-max-width'] = l.max_width; }
     if (l.min_height !== undefined && l.min_height !== 'auto') {
       inline['min-height'] = typeof l.min_height === 'number' ? `${l.min_height}px` : l.min_height;
+      inline['--block-min-height'] = typeof l.min_height === 'number' ? `${l.min_height}px` : l.min_height;
     }
-    if (l.height === 'full') inline['height'] = '100%';
-    else if (typeof l.height === 'number') inline['height'] = `${l.height}px`;
+    if (l.height === 'full') { inline['height'] = '100%'; inline['--block-height'] = '100%'; }
+    else if (l.height === 'auto') inline['--block-height'] = 'auto';
+    else if (typeof l.height === 'number') { inline['height'] = `${l.height}px`; inline['--block-height'] = `${l.height}px`; }
+    else if (typeof l.height === 'string') { inline['height'] = l.height; inline['--block-height'] = l.height; }
+    if (l.max_height !== undefined && l.max_height !== 'auto') {
+      inline['max-height'] = typeof l.max_height === 'number' ? `${l.max_height}px` : l.max_height;
+      inline['--block-max-height'] = typeof l.max_height === 'number' ? `${l.max_height}px` : l.max_height;
+    }
     if (l.display === 'flex') classes.push('flex');
     if (l.display === 'grid') classes.push('grid');
     if (l.display === 'hidden') classes.push('hidden');
@@ -259,16 +271,22 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
     if (l.width === 'contained') decls.push('max-width: 64rem', 'margin-left: auto', 'margin-right: auto');
     if (l.width === 'fit') decls.push('width: fit-content');
     if (typeof l.width === 'number') decls.push(`width: ${l.width}px`);
-    if (l.max_width !== undefined) decls.push(`max-width: ${l.max_width}px`);
+    else if (typeof l.width === 'string' && !['full', 'contained', 'fit', 'auto'].includes(l.width)) decls.push(`width: ${l.width}`);
+    if (typeof l.min_width === 'number') decls.push(`min-width: ${l.min_width}px`);
+    else if (typeof l.min_width === 'string') decls.push(`min-width: ${l.min_width}`);
+    if (typeof l.max_width === 'number') decls.push(`max-width: ${l.max_width}px`);
+    else if (typeof l.max_width === 'string') decls.push(`max-width: ${l.max_width}`);
     if (l.min_height !== undefined && l.min_height !== 'auto') decls.push(`min-height: ${typeof l.min_height === 'number' ? l.min_height + 'px' : l.min_height}`);
     if (l.height === 'full') decls.push('height: 100%');
     else if (typeof l.height === 'number') decls.push(`height: ${l.height}px`);
+    else if (typeof l.height === 'string' && l.height !== 'auto') decls.push(`height: ${l.height}`);
+    if (l.max_height !== undefined && l.max_height !== 'auto') decls.push(`max-height: ${typeof l.max_height === 'number' ? l.max_height + 'px' : l.max_height}`);
     if (l.flex_wrap) decls.push(`flex-wrap: ${l.flex_wrap}`);
     if (l.position && l.position !== 'static') decls.push(`position: ${l.position}`);
-    if (typeof l.top === 'number') decls.push(`top: ${l.top}px`);
-    if (typeof l.right === 'number') decls.push(`right: ${l.right}px`);
-    if (typeof l.bottom === 'number') decls.push(`bottom: ${l.bottom}px`);
-    if (typeof l.left === 'number') decls.push(`left: ${l.left}px`);
+    if (l.top !== undefined && l.top !== 'auto') decls.push(`top: ${typeof l.top === 'number' ? l.top + 'px' : l.top}`);
+    if (l.right !== undefined && l.right !== 'auto') decls.push(`right: ${typeof l.right === 'number' ? l.right + 'px' : l.right}`);
+    if (l.bottom !== undefined && l.bottom !== 'auto') decls.push(`bottom: ${typeof l.bottom === 'number' ? l.bottom + 'px' : l.bottom}`);
+    if (l.left !== undefined && l.left !== 'auto') decls.push(`left: ${typeof l.left === 'number' ? l.left + 'px' : l.left}`);
     if (l.z_index !== undefined && l.z_index !== 'auto') decls.push(`z-index: ${l.z_index}`);
     if (l.order !== undefined) decls.push(`order: ${l.order}`);
   }

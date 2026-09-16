@@ -1,16 +1,19 @@
 <script lang="ts">
-	// Renders a container block's children as a nested, sortable list inside
+	// Renders a container block's children as a nested, sortable tree inside
 	// the sections sidebar. Each child is a dnd-kit sortable item (group =
 	// container ID) enabling drag-to-reorder within the container. Children
 	// also have remove and move-to-top-level buttons. In grid mode, each
 	// selected child shows a 12-column span slider for visual resizing.
-	// A droppable zone at the end accepts palette drags and canvas-section
-	// drags, inserting the block into this container's children.
+	// Container-like children can be expanded to show their own children,
+	// so nested layouts (e.g. guest_home → guest_hero → guest_hero_image) are
+	// editable and reorderable at any depth.
 	import { createSortable } from '@dnd-kit/svelte/sortable';
 	import { createDroppable } from '@dnd-kit/svelte';
 	import { GripVertical, ChevronUp, ChevronDown, X, ArrowUpRight } from 'lucide-svelte';
 	import type { Component } from 'svelte';
-	import { blockRegistry, type Block, type BlockMeta, type ContainerProps } from '@japaconnect/landing-blocks';
+	import { blockRegistry, type Block, type BlockMeta } from '@japaconnect/landing-blocks';
+	import { isContainerLike, childrenOf, getContainerLayout, getContainerColumns } from '$lib/utils/blocks';
+	import ContainerChildren from './ContainerChildren.svelte';
 
 	let {
 		containerId,
@@ -19,6 +22,8 @@
 		columns,
 		selectedBlockId,
 		getIcon,
+		expandedContainers,
+		toggleExpand,
 		onSelect,
 		onReorder,
 		onRemove,
@@ -27,10 +32,12 @@
 	}: {
 		containerId: string;
 		children: Block[];
-		layout: ContainerProps['layout'];
+		layout: 'stack' | 'grid' | 'flex';
 		columns: number;
 		selectedBlockId: string | null;
 		getIcon: (name: string) => Component | null;
+		expandedContainers: Set<string>;
+		toggleExpand: (id: string) => void;
 		onSelect: (id: string) => void;
 		onReorder: (containerId: string, fromIdx: number, toIdx: number) => void;
 		onRemove: (containerId: string, childId: string) => void;
@@ -157,6 +164,35 @@
 					{/each}
 				</div>
 			</div>
+		{/if}
+
+		{#if isContainerLike(child)}
+			<div class="ml-2">
+				<button
+					type="button"
+					onclick={() => toggleExpand(child.id)}
+					class="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] px-2 py-0.5"
+				>
+					{expandedContainers.has(child.id) ? '▼' : '▶'} {childrenOf(child).length} children
+				</button>
+			</div>
+			{#if expandedContainers.has(child.id)}
+				<ContainerChildren
+					containerId={child.id}
+					children={childrenOf(child)}
+					layout={getContainerLayout(child)}
+					columns={getContainerColumns(child)}
+					{selectedBlockId}
+					{getIcon}
+					{expandedContainers}
+					{toggleExpand}
+					onSelect={onSelect}
+					onReorder={onReorder}
+					onRemove={onRemove}
+					onMoveOut={onMoveOut}
+					onSpanChange={onSpanChange}
+				/>
+			{/if}
 		{/if}
 	{/each}
 
