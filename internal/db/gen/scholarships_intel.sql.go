@@ -712,12 +712,12 @@ func (q *Queries) ListScholarshipsKeyset(ctx context.Context, arg ListScholarshi
 
 const searchScholarships = `-- name: SearchScholarships :many
 SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships
-WHERE ($1::text IS NULL OR country = $1)
- AND ($2::text IS NULL OR $2 = ANY(eligible_countries))
- AND ($3::text IS NULL OR degree_level = $3)
+WHERE (NULLIF($1::text, '') IS NULL OR country = $1)
+ AND (NULLIF($2::text, '') IS NULL OR $2 = ANY(eligible_countries))
+ AND (NULLIF($3::text, '') IS NULL OR degree_level = $3)
  AND ($4::date IS NULL OR deadline >= $4)
  AND ($5::date IS NULL OR deadline <= $5)
- AND ($6::text IS NULL OR $6 = ANY(fields_of_study))
+ AND (NULLIF($6::text, '') IS NULL OR $6 = ANY(fields_of_study))
 ORDER BY deadline ASC NULLS LAST, confidence_overall DESC
 LIMIT $7 OFFSET $8
 `
@@ -733,6 +733,8 @@ type SearchScholarshipsParams struct {
 	Offset  int32       `json:"offset"`
 }
 
+// Optional text filters use NULLIF($n,”) because sqlc types $n::text as a
+// non-nullable string — an unset filter arrives as ”, not NULL.
 func (q *Queries) SearchScholarships(ctx context.Context, arg SearchScholarshipsParams) ([]Scholarship, error) {
 	rows, err := q.db.Query(ctx, searchScholarships,
 		arg.Column1,

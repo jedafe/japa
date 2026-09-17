@@ -51,7 +51,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go, remittance/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -313,7 +312,6 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-
 	var body struct {
 		Name            string          `json:"name"`
 		Slug            string          `json:"slug"`
@@ -389,7 +387,6 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	providerID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

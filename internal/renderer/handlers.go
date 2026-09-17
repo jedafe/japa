@@ -29,8 +29,6 @@ func (h *Handlers) Render(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-
 	var input struct {
 		ContentID string          `json:"content_id"`
 		UpdatedAt string          `json:"updated_at"`

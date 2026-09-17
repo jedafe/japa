@@ -340,7 +340,8 @@
 		align-items: center;
 		gap: 8px;
 		width: 100%;
-		padding: 10px 14px;
+		height: 2.5rem;
+		padding: 0 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);

@@ -233,8 +233,6 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-
 	// Try to find existing linked account — returning user.
 	existing, err := h.Store.GetOAuthAccount(r.Context(), providerName, userInfo.ProviderUserID)
 	if err == nil && existing != nil {

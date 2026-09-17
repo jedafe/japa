@@ -21,7 +21,15 @@ export const load: LayoutServerLoad = async (event) => {
 	// Sidebar widgets — path-dependent, always fetched per route. Both
 	// positions resolve in parallel: the left rail renders when the side nav
 	// is collapsed (Section 59, ADR-066).
-	const sidebarPath = encodeURIComponent(event.url.pathname);
+	// Locale-prefixed URLs (/fr/studio) share the unprefixed route's sidebar
+	// config — strip the active locale prefix before resolving (§18, ADR-013).
+	const localePrefix =
+		event.locals.locale && event.url.pathname.startsWith(`/${event.locals.locale}/`)
+			? event.locals.locale.length + 1
+			: 0;
+	const sidebarPath = encodeURIComponent(
+		localePrefix ? event.url.pathname.slice(localePrefix) : event.url.pathname
+	);
 	const [sidebarData, leftSidebarData] = await Promise.all([
 		apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
 			ctx,

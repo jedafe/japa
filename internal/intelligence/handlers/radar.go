@@ -502,11 +502,6 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-	if !false {
-
-	}
-
 	rows, err := h.intelStores.CountScholarshipsByCountry(r.Context())
 	if err != nil {
 		slog.Error("intel: radar counts query failed", "error", err)
@@ -556,10 +551,6 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -686,11 +677,6 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var body struct {
 		SpaceID string `json:"space_id"`
 	}
@@ -743,11 +729,6 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	// Read space_id from body per spec; fall back to query string.
 	spaceIDStr := r.URL.Query().Get("space_id")
 	if spaceIDStr == "" && r.Body != nil {
@@ -794,11 +775,6 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
-	}
-
-
-	if !false {
-
 	}
 
 	itemID, ok := scanUUIDParam(w, r, "item_id")
@@ -855,15 +831,10 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	status := r.URL.Query().Get("status")
 	page, limit := h.parsePagination(r)
 
-	rows, total, err := h.scholarSvc.ListSavedScholarships(r.Context(), userID, status, page, limit)
+	rows, total, err := h.scholarSvc.ListSavedScholarships(r.Context(), userID, status, "", page, limit)
 	if err != nil {
 		slog.Error("intel: radar saved list failed", "user_id", userID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "saved_list_failed", "Failed to load saved opportunities")
@@ -896,11 +867,6 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -974,10 +940,6 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

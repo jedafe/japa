@@ -74,7 +74,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -258,10 +257,6 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
@@ -285,10 +280,6 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 // Body: {send, receive, target_rate, direction}.
 func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -332,10 +323,6 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 // Body: {target_rate?, direction?, is_active?}.
 func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -466,7 +453,6 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-
 	var body struct {
 		Name         string          `json:"name"`
 		Slug         string          `json:"slug"`
@@ -535,7 +521,6 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	providerID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

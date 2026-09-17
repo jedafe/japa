@@ -38,7 +38,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTargetIsAdmin):
@@ -61,10 +60,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // Response per Section 46: {"session_key":"jc:impersonate:{admin_id}","expires_at":"ISO8601","target":{id,username,email}}.
 func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -124,10 +119,6 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	ipAddress := clientip.FromRequest(r)
 
@@ -152,10 +143,6 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 // username instead of a raw UUID (Section 46 "UI Banner").
 func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

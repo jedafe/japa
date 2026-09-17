@@ -15,6 +15,7 @@
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type { IconComponent } from './icons';
 
 	export interface CardMetaItem {
@@ -134,7 +135,7 @@
 	{#snippet headerBody()}
 		{#if imageUrl}
 			<img
-				src={imageUrl}
+				src={remoteImageUrl(imageUrl)}
 				alt=""
 				loading="lazy"
 				decoding="async"

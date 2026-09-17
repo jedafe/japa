@@ -166,10 +166,6 @@ func (h *Handlers) ListJCEComparisonsAdmin(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	filter, err := h.buildListComparisonsFilter(r)
 	if err != nil {

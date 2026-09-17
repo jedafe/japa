@@ -1,5 +1,5 @@
 import { api } from '$lib/api/client';
-import type { VideoImportJob, VideoSource } from '$lib/types';
+import type { VideoChannelClaim, VideoImportJob, VideoSource } from '$lib/types';
 
 /**
  * §106 video — resolve/upload helpers for the /create composer's VideoField.
@@ -48,3 +48,12 @@ export const previewBulkImport = (body: {
 
 /** POST /api/v1/me/video-imports/{id}/retry — re-enqueue the user's import job. */
 export const retryImportJob = (id: string) => api.post<VideoImportJob>(`/me/video-imports/${id}/retry`);
+
+/** POST /api/v1/video-channels/{username}/claims — file a channel claim or takedown. */
+export const submitChannelClaim = (
+	username: string,
+	body: { claim_type: 'claim' | 'takedown'; evidence_url?: string; notes?: string; video_source_id?: string }
+) => api.post<VideoChannelClaim>(`/video-channels/${username}/claims`, body);
+
+/** GET /api/v1/me/video-claims — the caller's own claims/takedown requests. */
+export const listMyVideoClaims = () => api.get<VideoChannelClaim[]>('/me/video-claims');

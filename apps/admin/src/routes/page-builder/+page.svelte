@@ -176,10 +176,16 @@
 			}
 		],
 		fields,
-		load: async ({ q, page, pageSize }) => {
+		load: async ({ q, page, pageSize, sort }) => {
 			const params = new URLSearchParams();
 			params.set('page_size', String(pageSize));
-			params.set('page_offset', String(page));
+			// EntityPage's page is 0-based; the API's `page` is 1-based.
+			params.set('page', String(page + 1));
+			if (sort) {
+				const [key, dir] = sort.split(':');
+				params.set('sort', key);
+				if (dir) params.set('dir', dir);
+			}
 			if (q) params.set('q', q);
 			const result = await apiRaw<{ data?: Block[]; total?: number; total_pages?: number }>(
 				`/admin/pagebuilder/blocks?${params.toString()}`

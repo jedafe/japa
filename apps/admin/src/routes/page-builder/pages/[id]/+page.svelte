@@ -7,6 +7,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount, untrack, type Component } from 'svelte';
+	import { PUBLIC_JC_SITE_URL } from '$env/static/public';
 	import { api, pageBuilderAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -23,6 +24,8 @@
 		setCustomBlockDefs,
 		getCustomBlockMetas,
 		getCustomBlockDef,
+		setAssetBaseUrl,
+		resolveAssetUrl,
 		type Block,
 		type BlockStyle,
 		type BlockMeta,
@@ -145,12 +148,31 @@
 	const selectedBlock = $derived(selectedBlockId ? findBlockInTree(blocks, selectedBlockId) : null);
 	const visibleBlocks = $derived(blocks.filter((b) => b.visible));
 
+	// Published pages render on the main site (apps/main). Block props and
+	// preview data may carry root-relative asset paths (/brand/…, /logos/…)
+	// that only exist on that host — the shared assetBase makes the block
+	// defaults resolve them against the configured site URL, and
+	// resolveSiteAssets rewrites data-provided URLs (story avatars, seeded
+	// member images) so the editor preview doesn't 404 them.
+	setAssetBaseUrl(PUBLIC_JC_SITE_URL);
+	function resolveSiteAssets<T>(value: T): T {
+		if (value == null) return value;
+		if (typeof value === 'string') return resolveAssetUrl(value) as T;
+		if (Array.isArray(value)) return value.map(resolveSiteAssets) as T;
+		if (typeof value === 'object') {
+			const out: Record<string, unknown> = {};
+			for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = resolveSiteAssets(v);
+			return out as T;
+		}
+		return value;
+	}
+
 	const previewCtx: GeoContext = $derived({
 		contentCountry: previewCountry,
 		tokens: getGeoTokens(previewCountry, 'en'),
 		locale: 'en',
 	});
-	const resolvedBlocks = $derived(resolveGeoCopy(visibleBlocks, previewCtx));
+	const resolvedBlocks = $derived(resolveSiteAssets(resolveGeoCopy(visibleBlocks, previewCtx)));
 	const deviceWidth = $derived(deviceMode === 'desktop' ? 1280 : deviceMode === 'tablet' ? 768 : 375);
 
 	// Block palette — grouped by category from the canonical blockRegistry,
@@ -238,6 +260,7 @@
 				expandedContainers = new Set([...expandedContainers, ...collectGuestHomeContainerIds(blocks)]);
 				pageTitle = untrack(() => d.title);
 				selectedThemeId = d.theme_id ?? '';
+				savedFingerprint = saveFingerprint();
 				// Live preview data for the guest homepage block.
 				void loadGuestHome(blocks);
 			}
@@ -293,14 +316,14 @@
 			// Ignore — preview degrades to empty list.
 		}
 
-		guestHomePreview = {
+		guestHomePreview = resolveSiteAssets({
 			topDestinations,
 			opportunities,
 			stories,
 			tools,
 			stats,
 			categories
-		};
+		});
 	}
 
 	function asArray<T>(value: unknown): T[] {
@@ -778,22 +801,46 @@
 		if (!pageData) return false;
 		saving = true;
 		saveError = '';
-		const body: Record<string, unknown> = {
-			title: pageTitle,
-			slug: pageData.slug,
-			status: pageData.status,
-			// Send blocks as a parsed array — api() already JSON.stringifies
-			// the body. Double-encoding (JSON.stringify here) produced a JSON
-			// string that the backend's json.RawMessage + sanitizeBlocksJSON
-			// mishandled, silently emptying the page on save.
-			blocks,
-		};
-		if (selectedThemeId) body.theme_id = selectedThemeId;
-		const result = await api(`/admin/pages/${pageData.id}`, { method: 'PATCH', body });
+		// When nothing changed but block order, persist via the dedicated
+		// reorder endpoint (PATCH /admin/pages/{id}/blocks/reorder) instead of
+		// a full-page PATCH. The fingerprint sorts block serialisations so a
+		// pure reorder produces an identical fingerprint.
+		const pureReorder = savedFingerprint !== '' && saveFingerprint() === savedFingerprint;
+		const body: Record<string, unknown> = pureReorder
+			? { blocks }
+			: {
+					title: pageTitle,
+					slug: pageData.slug,
+					status: pageData.status,
+					// Send blocks as a parsed array — api() already JSON.stringifies
+					// the body. Double-encoding (JSON.stringify here) produced a JSON
+					// string that the backend's json.RawMessage + sanitizeBlocksJSON
+					// mishandled, silently emptying the page on save.
+					blocks,
+				};
+		if (!pureReorder && selectedThemeId) body.theme_id = selectedThemeId;
+		const endpoint = pureReorder
+			? `/admin/pages/${pageData.id}/blocks/reorder`
+			: `/admin/pages/${pageData.id}`;
+		const result = await api(endpoint, { method: 'PATCH', body });
 		saving = false;
-		if (result.ok) { unsavedChanges = false; return true; }
+		if (result.ok) {
+			unsavedChanges = false;
+			savedFingerprint = saveFingerprint();
+			return true;
+		}
 		saveError = result.error ?? t('pageBuilder.save_failed', 'Failed to save draft');
 		return false;
+	}
+
+	// Fingerprint of the last-saved saveable state (title + theme + block
+	// contents, order-insensitive). Used by saveDraft() to detect pure block
+	// reorders.
+	let savedFingerprint = $state('');
+
+	function saveFingerprint(): string {
+		const blockKey = blocks.map((b) => JSON.stringify(b)).sort().join(' ');
+		return `${pageTitle} ${selectedThemeId} ${blockKey}`;
 	}
 
 	async function publish(): Promise<void> {
@@ -946,11 +993,11 @@
 				<Button variant="outline" size="sm" class="shrink-0" onclick={saveDraft} disabled={saving || !unsavedChanges}>
 					<Save class="mr-1 h-3 w-3" />{saving ? t('common.saving', 'Saving...') : t('page_builder.save_draft', 'Save Draft')}
 				</Button>
-				{#if pageData?.status === 'published'}
+				{#if pageData?.status === 'published' && canPublishPages}
 					<Button variant="outline" size="sm" class="shrink-0" onclick={archive} disabled={publishing}>
 						<Archive class="mr-1 h-3 w-3" />{t('page_builder.archive', 'Archive')}
 					</Button>
-				{:else if canPublishPages}
+				{:else if pageData?.status !== 'published' && canPublishPages}
 					<Button size="sm" class="shrink-0" onclick={() => { publishError = ''; showPublishDialog = true; }} disabled={publishing}>
 						<Rocket class="mr-1 h-3 w-3" />{t('page_builder.publish', 'Publish')}
 					</Button>
@@ -1357,23 +1404,23 @@
 {/if}
 
 <!-- Save-as-template dialog -->
-{#if showSaveAsTemplate}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true">
-		<div class="w-full max-w-md rounded-lg border p-6 shadow-lg" style="border-color: var(--color-border); background: var(--color-background)">
-			<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('page_builder.save_as_template', 'Save as Template')}</h3>
-			<div class="mt-4 space-y-3">
-				<div>
-					<label for="tpl-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.template_name', 'Template name')}</label>
-					<input id="tpl-name" type="text" bind:value={templateName} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
-				</div>
-				<div class="flex justify-end gap-2">
-					<Button variant="ghost" onclick={() => { showSaveAsTemplate = false; }}>{t('common.cancel', 'Cancel')}</Button>
-					<Button onclick={saveAsTemplate} disabled={savingTemplate || !templateName.trim()}>{savingTemplate ? t('common.saving', 'Saving...') : t('common.save', 'Save')}</Button>
-				</div>
+<Dialog.Root bind:open={showSaveAsTemplate}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50" />
+		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-xl" style="border-color: var(--color-border); background: var(--color-background)">
+			<Dialog.Title class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('page_builder.save_as_template', 'Save as Template')}</Dialog.Title>
+			<div>
+				<label for="tpl-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.template_name', 'Template name')}</label>
+				<input id="tpl-name" type="text" bind:value={templateName} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
 			</div>
-		</div>
-	</div>
-{/if}
+			<div class="mt-4 flex justify-end gap-2">
+				<Button variant="ghost" onclick={() => { showSaveAsTemplate = false; }}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={saveAsTemplate} disabled={savingTemplate || !templateName.trim()}>{savingTemplate ? t('common.saving', 'Saving...') : t('common.save', 'Save')}</Button>
+			</div>
+			<Dialog.Close class="absolute right-4 top-4" style="color: var(--color-muted)" aria-label="Close">&#10005;</Dialog.Close>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
 
 <!-- Publish confirmation dialog -->
 <Dialog.Root bind:open={showPublishDialog}>

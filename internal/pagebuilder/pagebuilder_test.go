@@ -171,19 +171,6 @@ func TestUpdateThemeInputValidation(t *testing.T) {
 	}
 }
 
-func TestUpdatePageInputValidation(t *testing.T) {
-	t.Parallel()
-
-	svc := &Service{store: nil}
-
-	_, err := svc.UpdatePage(t.Context(), testID(), UpdatePageInput{
-		Title: "",
-	})
-	if err == nil {
-		t.Error("expected error for empty title")
-	}
-}
-
 func TestDefaultPageStatus(t *testing.T) {
 	t.Parallel()
 

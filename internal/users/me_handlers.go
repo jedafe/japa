@@ -38,10 +38,6 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var req ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -185,10 +181,6 @@ func (h *Handlers) GetPrivacy(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	settings, err := h.Service.GetPrivacySettings(r.Context(), user.UserID)
 	if err != nil {
@@ -212,10 +204,6 @@ type UpdatePrivacyRequest struct {
 // UpdatePrivacy handles PATCH /api/v1/me/privacy.
 func (h *Handlers) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -252,10 +240,6 @@ func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	// Resolve the current session from the jc_refresh cookie so the frontend
 	// can flag it. Best-effort: a missing/unmatched cookie yields a zero UUID,
@@ -274,10 +258,6 @@ func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
 // RevokeSession handles DELETE /api/v1/me/sessions/{id}.
 func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -309,10 +289,6 @@ type RevokeAllSessionsRequest struct {
 // cookie). Per JEOS §50: "revoke all other sessions (keep current one)".
 func (h *Handlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -359,10 +335,6 @@ func (h *Handlers) ListConnectedAccounts(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	accounts, err := h.Service.ListConnectedAccounts(r.Context(), user.UserID)
 	if err != nil {
@@ -376,10 +348,6 @@ func (h *Handlers) ListConnectedAccounts(w http.ResponseWriter, r *http.Request)
 // DisconnectAccount handles DELETE /api/v1/me/connected-accounts/{provider}.
 func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -431,10 +399,6 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -458,10 +422,6 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 // ListMyDrafts handles GET /api/v1/me/drafts.
 func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -489,10 +449,6 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 // pgx.ErrNoRows → 404, so the route never leaks another author's draft.
 func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -526,10 +482,6 @@ func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
 // own. The backend still enforces the actual permission on PATCH /content/{id}.
 func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -595,10 +547,6 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -635,10 +583,6 @@ type BookmarkListItem struct {
 // entities).
 func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -680,10 +624,6 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 // forum_thread, space, etc.). Returns 201 Created with the saved bookmark.
 func (h *Handlers) CreateMyBookmark(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -738,10 +678,6 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	idStr := chi.URLParam(r, "id")
 
@@ -772,10 +708,6 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -838,10 +770,6 @@ func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var req UpdateAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -876,10 +804,6 @@ type DeactivateAccountRequest struct {
 // DeactivateAccount handles POST /api/v1/me/deactivate.
 func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -965,10 +889,6 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -1034,10 +954,6 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (h *Handlers) GetMyFollowerGrowth(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

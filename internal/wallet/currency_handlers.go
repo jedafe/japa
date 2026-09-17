@@ -492,11 +492,6 @@ func (h *Handlers) PurchaseCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var input struct {
 		CreditAmount int    `json:"credit_amount"`
 		PackID       string `json:"pack_id"`

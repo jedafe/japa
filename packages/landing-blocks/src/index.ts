@@ -2,6 +2,8 @@
 // Consumed by apps/main (public rendering) and apps/admin (live preview + editors).
 export const PACKAGE_NAME = '@japaconnect/landing-blocks';
 
+export { setAssetBaseUrl, resolveAssetUrl } from './assetBase';
+
 export type {
   Block, BaseBlock, BlockStyle, MotionConfig, GeoContext, GeoCopyTokens,
   BackgroundConfig, MediaRef, VisibilityRules, CTA, LandingPage,

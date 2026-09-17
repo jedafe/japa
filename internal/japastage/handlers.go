@@ -80,7 +80,6 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -227,11 +226,6 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
@@ -260,11 +254,6 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 // fire-and-forget (Rule 8) so the worker can dispatch recommendations.
 func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

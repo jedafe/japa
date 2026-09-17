@@ -228,7 +228,7 @@ func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, email string) (*Use
 	var u User
 
 	err := s.db.Reader.QueryRow(ctx, query, email).Scan(
-		&u.ID, &(pgtype.UUID{}), &u.Email, &u.PasswordHash, &u.Username, &u.ProfileType, &u.Status, &u.EmailVerifiedAt, &u.IsBot,
+		&u.ID, &u.Email, &u.PasswordHash, &u.Username, &u.ProfileType, &u.Status, &u.EmailVerifiedAt, &u.IsBot,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying user by email: %w", err)

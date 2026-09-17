@@ -745,10 +745,10 @@ WITH spans AS (
         t.visa_category,
         t.consulate,
         date_trunc('month', dec_m.occurred_at)::date AS period_start,
-        EXTRACT(EPOCH FROM (dec_m.occurred_at - first_m.first_occurred))::numeric / 86400 AS days_span
+        (dec_m.occurred_at - first_m.first_occurred)::numeric AS days_span
     FROM visa_timelines t
     JOIN LATERAL (
-        SELECT occurred_at
+        SELECT occurred_at AS first_occurred
         FROM visa_timeline_milestones m
         WHERE m.timeline_id = t.id
           AND m.milestone_type IN ('applied')

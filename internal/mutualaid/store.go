@@ -165,7 +165,7 @@ RETURNING id, user_id, post_type, category, title, description,
 		input.Title, input.Description, input.DestinationSpaceID,
 		input.CitySpaceID, input.ExpiresAt,
 	).Scan(
-		&p.ID, &(pgtype.UUID{}), &p.UserID, &p.PostType, &p.Category, &p.Title,
+		&p.ID, &p.UserID, &p.PostType, &p.Category, &p.Title,
 		&p.Description, &p.DestinationSpaceID, &p.CitySpaceID, &p.ExpiresAt,
 		&p.IsFulfilled, &p.Status, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt,
 	)
@@ -200,7 +200,7 @@ LIMIT 1
 	var r PostRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
-		&r.ID, &(pgtype.UUID{}), &r.UserID, &r.PostType, &r.Category, &r.Title,
+		&r.ID, &r.UserID, &r.PostType, &r.Category, &r.Title,
 		&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 		&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 		&r.AuthorName, &r.AuthorAvatar,
@@ -300,7 +300,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r PostRow
 		if err := rows.Scan(
-			&r.ID, &(pgtype.UUID{}), &r.UserID, &r.PostType, &r.Category, &r.Title,
+			&r.ID, &r.UserID, &r.PostType, &r.Category, &r.Title,
 			&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 			&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 			&r.AuthorName, &r.AuthorAvatar,
@@ -504,7 +504,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r PostRow
 		if err := rows.Scan(
-			&r.ID, &(pgtype.UUID{}), &r.UserID, &r.PostType, &r.Category, &r.Title,
+			&r.ID, &r.UserID, &r.PostType, &r.Category, &r.Title,
 			&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 			&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 			&r.AuthorName, &r.AuthorAvatar,
@@ -596,7 +596,7 @@ ORDER BY expires_at ASC`
 
 	for rows.Next() {
 		var p ExpiringPost
-		if err := rows.Scan(&p.ID, &(pgtype.UUID{}), &p.UserID, &p.Title, &p.ExpiresAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Title, &p.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("mutualaid: expiring soon scan: %w", err)
 		}
 

@@ -185,10 +185,6 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
@@ -327,10 +323,6 @@ func (h *Handlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	sessionID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -370,10 +362,6 @@ func (h *Handlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 // yet complete or has failed.
 func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

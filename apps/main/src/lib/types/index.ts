@@ -371,7 +371,11 @@ export interface ContentRecord {
 export interface VideoSource {
 	id: string;
 
+	/** §106 — public slug used by the canonical /video/{slug} route. */
+	slug?: string;
 	author_user_id?: string;
+	/** §106 — the intel_sources row this video belongs to (channel source). */
+	source_id?: string | null;
 	source_type: string;
 	source_url: string;
 	external_id?: string | null;
@@ -2535,6 +2539,11 @@ export interface Scholarship {
 	how_to_apply: string;
 	contact_email: string;
 	field_values: Record<string, string>;
+	// Present in the API payload; optional here since not every consumer
+	// renders them.
+	intel_record_id?: string;
+	country_space_id?: string;
+	fields_of_study?: string[];
 	source?: SourceAttribution;
 }
 
@@ -2783,6 +2792,22 @@ export interface VideoImportJob {
 	started_at: string | null;
 	completed_at: string | null;
 	auto_publish: boolean;
+}
+
+// §106 — a channel ownership claim or takedown request filed by a user.
+export interface VideoChannelClaim {
+	id: string;
+	claimant_user_id: string;
+	video_author_user_id: string;
+	claim_type: 'claim' | 'takedown';
+	evidence_url: string | null;
+	notes: string | null;
+	status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+	reviewed_by: string | null;
+	resolution_note: string | null;
+	created_at: string;
+	resolved_at: string | null;
+	video_source_id: string | null;
 }
 
 // --- Section 67: Travel Search ---

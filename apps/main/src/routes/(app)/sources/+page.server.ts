@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet } from '$lib/server/api';
-import type { Source, SourceMeta } from '$lib/types/sources';
+import type { Source, SourceCollection, SourceMeta } from '$lib/types/sources';
 
 const PAGE_SIZE = 24;
 
@@ -34,12 +34,24 @@ export const load: PageServerLoad = async (event) => {
 	params.set('page_size', String(pageSize));
 	params.set('page_offset', String(pageOffset));
 
-	const { items: sources, meta } = await apiList<Source>(ctx, `/sources?${params.toString()}`);
+	// Curated collections only render on the default directory view — the
+	// first page with no search or filters active (sources-directory v2
+	// plan, step 4).
+	const isDirectoryHome = !q && !category && !sourceKind && page === 1;
+
+	const [listResult, collections] = await Promise.all([
+		apiList<Source>(ctx, `/sources?${params.toString()}`),
+		isDirectoryHome
+			? apiGet<SourceCollection[]>(ctx, '/sources/collections').catch(() => [] as SourceCollection[])
+			: Promise.resolve([] as SourceCollection[])
+	]);
+	const { items: sources, meta } = listResult;
 
 	return {
 		sources,
 		meta,
 		sourceMeta,
+		collections,
 		q,
 		category,
 		sourceKind,

@@ -248,7 +248,7 @@ ORDER BY e.occurs_at ASC
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
-			&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
+			&e.ID, &e.Title, &e.Description, &e.Category,
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
@@ -325,7 +325,7 @@ LIMIT 1
 	var e CalendarEntry
 
 	err := s.pool.Writer.QueryRow(ctx, q, id).Scan(
-		&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
+		&e.ID, &e.Title, &e.Description, &e.Category,
 		&e.DestinationSpaceID, &e.OriginSpaceID,
 		&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 		&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
@@ -480,7 +480,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
-			&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
+			&e.ID, &e.Title, &e.Description, &e.Category,
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
@@ -739,7 +739,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
-			&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
+			&e.ID, &e.Title, &e.Description, &e.Category,
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,

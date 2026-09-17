@@ -58,11 +58,6 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var body handleSourceCreateBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
@@ -481,10 +476,6 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	recordID, ok := scanUUIDParam(w, r, "record_id")
 	if !ok {
@@ -665,7 +656,6 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	sourceID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -733,10 +723,6 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
@@ -776,11 +762,6 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 	}
 
 	userID, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -826,10 +807,6 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

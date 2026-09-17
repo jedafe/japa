@@ -13,7 +13,7 @@ import (
 
 type fakeIngestionService struct {
 	called      bool
-	platforms     []pgtype.UUID
+	platforms   []pgtype.UUID
 	contents    []pgtype.UUID
 	jobs        []pgtype.UUID
 	sourceKinds []*string

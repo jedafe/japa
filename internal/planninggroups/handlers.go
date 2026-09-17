@@ -53,7 +53,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go, wiki/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -213,11 +212,6 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
@@ -254,11 +248,6 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 // Auth required (planning_group.create permission checked at route registration).
 func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -305,11 +294,6 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 // permission checked at route registration).
 func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -387,10 +371,6 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -457,10 +437,6 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -504,10 +480,6 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 // Soft-delete per Rule 11.
 func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -626,11 +598,6 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 // (§82: milestones are personal; only the owner can complete their own).
 func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

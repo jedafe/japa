@@ -18,11 +18,6 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var input struct {
 		Title      string `json:"title"`
 		Slug       string `json:"slug"`
@@ -87,11 +82,6 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 // regardless of authorship.
 func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

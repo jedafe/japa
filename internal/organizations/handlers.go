@@ -199,7 +199,7 @@ func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
 
 	// Read org types from the custom_fields table (key='org_type') when the
 	// lookup is available. The field's options JSONB stores [{value, label}].
-	if h.customFieldLookup != nil && false {
+	if h.customFieldLookup != nil {
 		field, err := h.customFieldLookup.GetCustomFieldByKey(r.Context(), "org_type")
 		if err == nil && len(field.Options) > 0 {
 			var opts []map[string]string

@@ -914,6 +914,41 @@ func (s *Service) DeleteSavedScholarship(ctx context.Context, userID, guideID pg
 	})
 }
 
+// ListLevels returns the distinct degree_level values across published
+// scholarship guides — the option list consumed by the finder's level
+// autocomplete (Rule 16). Each entry is {value, label} where value is the
+// stored level code and label is the same value for display.
+func (s *Service) ListLevels(ctx context.Context) ([]Option, error) {
+	const query = `
+		SELECT DISTINCT s.degree_level
+		FROM scholarships s
+		JOIN contents c ON c.id = s.guide_id
+		WHERE c.status = 'published' AND c.deleted_at IS NULL
+		  AND c.guide_category = 'scholarship'
+		  AND s.degree_level IS NOT NULL AND s.degree_level <> ''
+		ORDER BY s.degree_level`
+
+	rows, err := s.store.pool.Reader.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("scholarships: list levels: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Option{}
+	for rows.Next() {
+		var level string
+		if err := rows.Scan(&level); err != nil {
+			return nil, fmt.Errorf("scholarships: scan level: %w", err)
+		}
+		out = append(out, Option{Value: level, Label: level})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("scholarships: iterate levels: %w", err)
+	}
+
+	return out, nil
+}
+
 // IsSavedScholarship checks whether the user has saved the given guide.
 // Returns false (not an error) when no saved-tracker row exists.
 func (s *Service) IsSavedScholarship(ctx context.Context, userID, guideID pgtype.UUID) (bool, error) {
@@ -934,9 +969,12 @@ func (s *Service) IsSavedScholarship(ctx context.Context, userID, guideID pgtype
 }
 
 // ListSavedScholarships returns a user's saved scholarships as
-// SavedScholarshipResponse rows (nested scholarship object). Each row
-// fetches the scholarship detail to populate the flat fields.
-func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID, status string, page, limit int) ([]SavedScholarshipResponse, int64, error) {
+// SavedScholarshipResponse rows (nested scholarship object). An optional
+// guideID filter scopes the list to a single scholarship — used by the
+// detail page to check saved state without paging through the tracker.
+// Scholarship details are fetched in one batch query plus one batch source
+// lookup (no per-row detail fan-out).
+func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID, status, guideID string, page, limit int) ([]SavedScholarshipResponse, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -947,10 +985,18 @@ func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID,
 
 	offset := safeOffset(page, limit)
 
+	var guideFilter pgtype.UUID
+	if guideID != "" {
+		if err := guideFilter.Scan(guideID); err != nil {
+			return nil, 0, fmt.Errorf("scholarships: invalid guide_id filter: %w", err)
+		}
+	}
+
 	rows, err := s.store.ListSavedScholarships(ctx, gen.ListSavedScholarshipsParams{
 
 		UserID:     userID,
 		Status:     status,
+		GuideID:    guideFilter,
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
@@ -960,9 +1006,15 @@ func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID,
 
 	total, err := s.store.CountSavedScholarships(ctx, gen.CountSavedScholarshipsParams{
 
-		UserID: userID,
-		Status: status,
+		UserID:  userID,
+		Status:  status,
+		GuideID: guideFilter,
 	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	details, err := s.getScholarshipDetails(ctx, savedGuideIDs(rows))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -970,8 +1022,8 @@ func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID,
 	out := make([]SavedScholarshipResponse, 0, len(rows))
 
 	for _, row := range rows {
-		sch, err := s.GetScholarshipDetail(ctx, row.GuideID)
-		if err != nil {
+		sch, ok := details[row.GuideID]
+		if !ok {
 			// Fallback: build a minimal scholarship from the row's joined
 			// guide_title/guide_slug so a missing detail doesn't drop the
 			// saved entry from the tracker list.
@@ -996,6 +1048,117 @@ func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID,
 	}
 
 	return out, total, nil
+}
+
+func savedGuideIDs(rows []gen.ListSavedScholarshipsRow) []pgtype.UUID {
+	ids := make([]pgtype.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.GuideID)
+	}
+	return ids
+}
+
+// getScholarshipDetails batch-fetches published scholarship details for the
+// given guide IDs — the same projection as GetScholarshipDetail, applied to
+// the whole set in one query, plus one batch source-attribution lookup.
+func (s *Service) getScholarshipDetails(ctx context.Context, guideIDs []pgtype.UUID) (map[pgtype.UUID]ScholarshipResult, error) {
+	out := make(map[pgtype.UUID]ScholarshipResult, len(guideIDs))
+	if len(guideIDs) == 0 {
+		return out, nil
+	}
+
+	const query = `
+		SELECT s.id, s.intel_record_id, s.guide_id, s.title, c.slug, c.meta_description,
+		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
+		       s.university, s.eligible_countries, s.funding, s.description,
+		       (
+				   SELECT COALESCE(jsonb_object_agg(cf.key, cfv.value_text), '{}'::jsonb) || COALESCE(c.field_values, '{}'::jsonb)
+				   FROM custom_field_values cfv
+				   JOIN custom_fields cf ON cf.id = cfv.field_id
+				   WHERE cfv.entity_id = c.id AND cfv.entity_type = 'content'
+				     AND cf.key IN ('eligibility_criteria','how_to_apply','contact_email','award_amount_usd','is_renewable','provider_institution','countries_eligible','level_of_study','application_deadline','application_link','description')
+		       ) AS field_values
+		FROM scholarships s
+		JOIN contents c ON c.id = s.guide_id
+		WHERE s.guide_id = ANY($1)
+		  AND c.status = 'published' AND c.deleted_at IS NULL
+		  AND c.guide_category = 'scholarship'`
+
+	rows, err := s.store.pool.Reader.Query(ctx, query, guideIDs)
+	if err != nil {
+		return nil, fmt.Errorf("scholarships: list details: %w", err)
+	}
+	defer rows.Close()
+
+	var intelIDs []pgtype.UUID
+	for rows.Next() {
+		var (
+			r                 ScholarshipResult
+			id                pgtype.UUID
+			intelRecordID     pgtype.UUID
+			gID               pgtype.UUID
+			slug              *string
+			summary           *string
+			country           string
+			countrySpaceID    pgtype.UUID
+			degreeLevel       *string
+			fieldsOfStudy     []string
+			deadline          pgtype.Date
+			applicationURL    *string
+			university        *string
+			eligibleCountries []string
+			funding           []byte
+			description       *string
+			fieldValues       []byte
+		)
+		if err := rows.Scan(
+			&id, &intelRecordID, &gID, &r.Title, &slug, &summary,
+			&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
+			&university, &eligibleCountries, &funding, &description, &fieldValues,
+		); err != nil {
+			return nil, fmt.Errorf("scholarships: scan detail: %w", err)
+		}
+
+		r.ID = pgtypeUUIDString(id)
+		r.IntelRecordID = pgtypeUUIDString(intelRecordID)
+		r.GuideID = pgtypeUUIDString(gID)
+		r.CountrySpaceID = pgtypeUUIDString(countrySpaceID)
+		r.FieldsOfStudy = fieldsOfStudy
+		if slug != nil {
+			r.Slug = *slug
+		}
+		if summary != nil && *summary != "" {
+			r.Summary = *summary
+		} else if description != nil && *description != "" {
+			r.Summary = *description
+		}
+		populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description, fieldValues)
+
+		out[gID] = r
+		if intelRecordID.Valid {
+			intelIDs = append(intelIDs, intelRecordID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("scholarships: iterate details: %w", err)
+	}
+
+	if len(intelIDs) > 0 {
+		srcMap, err := s.store.MapSourcesByRecordIDs(ctx, intelIDs)
+		if err == nil {
+			for gID, r := range out {
+				if r.IntelRecordID == "" {
+					continue
+				}
+				if src, ok := srcMap[r.IntelRecordID]; ok {
+					r.Source = sourceAttributionFromRow(src)
+					out[gID] = r
+				}
+			}
+		}
+	}
+
+	return out, nil
 }
 
 // AdminStats returns aggregate save counts, upcoming-deadline count,

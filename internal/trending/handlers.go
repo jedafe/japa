@@ -54,7 +54,6 @@ func (h *Handlers) SetCache(c valkey.Client) {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {

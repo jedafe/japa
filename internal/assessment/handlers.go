@@ -59,7 +59,6 @@ func (h *Handlers) SetFeedService(fs *feed.Service) {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -543,10 +542,6 @@ func shapeResult(result gen.AssessmentResult) map[string]any {
 // authenticated user's past assessment results. Auth required.
 func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	u, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

@@ -477,6 +477,14 @@ func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceI
 		return sourceID, src, false, nil
 	}
 
+	// Manual sources (§106 video channels, entity-linked rows) carry no
+	// crawlable config — a stray enqueue must skip cleanly instead of
+	// erroring and tripping the consecutive-failures circuit-breaker.
+	if src.CrawlMethod == "manual" {
+		slog.Info("task:intel:fetch_source: manual source, skipping", "source_id", sourceID.String())
+		return sourceID, src, false, nil
+	}
+
 	return sourceID, src, true, nil
 }
 

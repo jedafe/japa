@@ -45,7 +45,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -148,10 +147,6 @@ func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
@@ -198,10 +193,6 @@ func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
 // user's imports with pagination. Gated by import.use.
 func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -267,10 +258,6 @@ func (h *Handlers) HandleListImportSources(w http.ResponseWriter, r *http.Reques
 // authenticated user.
 func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

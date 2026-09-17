@@ -244,7 +244,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -387,11 +386,6 @@ type pollOptionInputJSON struct {
 // CreateThread handles POST /api/v1/forum/threads.
 func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -984,11 +978,6 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
@@ -1033,10 +1022,6 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 // DeleteThread handles DELETE /api/v1/forum/{id}.
 func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1087,10 +1072,6 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1129,10 +1110,6 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1157,10 +1134,6 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 // CreateReply handles POST /api/v1/forum/{id}/replies.
 func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1287,10 +1260,6 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1322,10 +1291,6 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1347,7 +1312,6 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 // Anonymous viewers are accepted but not recorded (the table requires a user_id).
 func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
-
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1378,10 +1342,6 @@ func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 // Ref: api-routes-catalog L591.
 func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1437,10 +1397,6 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	entityID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1473,10 +1429,6 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 // AddBookmark handles POST /api/v1/forum/bookmarks.
 func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1525,10 +1477,6 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1547,10 +1495,6 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 // ListBookmarks handles GET /api/v1/forum/bookmarks.
 func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1686,10 +1630,6 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 // Adds a poll to an existing thread. The thread must not already have a poll.
 func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1832,10 +1772,6 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Name            string  `json:"name"`
@@ -1934,10 +1870,6 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1996,10 +1928,6 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 // DeleteTag handles DELETE /api/v1/forum/tags/{id}.
 func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

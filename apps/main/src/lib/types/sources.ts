@@ -29,6 +29,9 @@ export interface Source {
 	is_following?: boolean;
 	is_blocked?: boolean;
 	linked_entity?: LinkedEntity | null;
+	/** §106 video channels only — the channel account username, used to link
+	 *  the claim/report form. The channel has no public /u/ profile. */
+	channel_username?: string;
 }
 
 export interface SourceItem {
@@ -39,6 +42,7 @@ export interface SourceItem {
 	excerpt?: string | null;
 	original_url: string;
 	href: string;
+	thumbnail_url?: string | null;
 	published_at: string;
 	view_count: number;
 	comment_count: number;

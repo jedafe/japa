@@ -34,7 +34,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
 }
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -80,11 +79,6 @@ func parsePagination(r *http.Request) (int32, int32) {
 // HandleCreate handles POST /api/v1/admin/campaigns.
 func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -231,10 +225,6 @@ func (h *Handlers) HandleRun(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "campaign_unavailable", "Campaign service not configured")
@@ -268,10 +258,6 @@ func (h *Handlers) HandleRetry(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "campaign_unavailable", "Campaign service not configured")
@@ -296,10 +282,6 @@ func (h *Handlers) HandleRetry(w http.ResponseWriter, r *http.Request) {
 // HandleCancel handles POST /api/v1/admin/campaigns/:id/cancel.
 func (h *Handlers) HandleCancel(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

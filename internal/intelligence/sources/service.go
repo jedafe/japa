@@ -78,6 +78,18 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 		arg.Status = "active"
 	}
 
+	// robots_policy and provider_config are NOT NULL in the schema; a nil
+	// []byte binds SQL NULL and overrides the column default, violating the
+	// constraint (SQLSTATE 23502). Default both to an empty object at this
+	// chokepoint so auto-create paths (video, comparison, entity) cannot
+	// regress on it again.
+	if len(arg.RobotsPolicy) == 0 {
+		arg.RobotsPolicy = []byte("{}")
+	}
+	if len(arg.ProviderConfig) == 0 {
+		arg.ProviderConfig = []byte("{}")
+	}
+
 	src, err := s.store.Create(ctx, arg)
 	if err != nil {
 		return Source{}, err
@@ -300,7 +312,7 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, userID pgtype.UUID, ti
 		Domain:             domain,
 		SourceUrl:          *sourceURL,
 		Category:           "video",
-		SourceType:         "video_upload",
+		SourceType:         "video_channel",
 		SourceKind:         "publisher",
 		TrustLevel:         2,
 		CrawlMethod:        "manual",

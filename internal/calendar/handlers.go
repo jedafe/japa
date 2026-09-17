@@ -54,7 +54,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings, updater: service}
 }
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -207,10 +206,6 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	page, limit := parsePageParams(r)
 	if limit > 100 {
@@ -282,10 +277,6 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input SubmitEntryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -334,11 +325,6 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 // calendar.edit_any (moderator/admin).
 func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -408,10 +394,6 @@ func (h *Handlers) HandleSave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	entryID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -431,10 +413,6 @@ func (h *Handlers) HandleSave(w http.ResponseWriter, r *http.Request) {
 // HandleUnsave handles DELETE /calendar/:id/save — remove a bookmark.
 func (h *Handlers) HandleUnsave(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -458,10 +436,6 @@ func (h *Handlers) HandleUnsave(w http.ResponseWriter, r *http.Request) {
 // category/destination combination.
 func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -505,10 +479,6 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 // either query params or JSON body (frontend sends a body).
 func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -668,10 +638,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 // or mark unverified a calendar entry.
 func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

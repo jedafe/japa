@@ -18,10 +18,8 @@ const CONTENT_ROUTE_PREFIX: Record<string, string> = {
 	achievement: '/achievements',
 	page: '/pages',
 	job_listing: '/jobs',
-	service_listing: '/services'
-	// §106 video does not have a dedicated /video route family; it renders
-	// through the generic /content/{slug} page, which already loads the
-	// video source and renders the player.
+	service_listing: '/services',
+	video: '/video' // §106 video posts live at /video/{slug}
 };
 
 /** Canonical detail href for a content item, keyed by content_type. */

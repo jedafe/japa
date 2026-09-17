@@ -16,6 +16,3 @@ CREATE TABLE IF NOT EXISTS content_engagement (
 
 CREATE INDEX IF NOT EXISTS idx_content_engagement_velocity
     ON content_engagement(velocity_score DESC);
-
--- +migrate Down
-DROP TABLE IF EXISTS content_engagement;

@@ -3966,5 +3966,6 @@
 	"users.profile_type_pro": "Pro",
 	"users.profile_type_business": "Entreprise",
 	"users.detail.change_profile_type": "Changer de niveau",
-	"users.detail.profile_type_changed": "Niveau mis à jour"
+	"users.detail.profile_type_changed": "Niveau mis à jour",
+	"app.tools.col_top_saved": "Les plus enregistrées"
 }

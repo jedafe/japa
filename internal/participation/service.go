@@ -322,7 +322,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		        c.author_id, COALESCE(cr.persona_payload::text, cr.feedback)::bytea
 		 FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
-		 WHERE cr.id = $1 AND cr.source = 'persona_action'`, actionID).Scan(&pgtype.UUID{}, &contentID, &reviewerID, &status, &authorID, &payload)
+		 WHERE cr.id = $1 AND cr.source = 'persona_action'`, actionID).Scan(&contentID, &reviewerID, &status, &authorID, &payload)
 	if err != nil {
 		return fmt.Errorf("participation: load action: %w", err)
 	}
@@ -580,7 +580,7 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 	err := s.db.Reader.QueryRow(ctx, `SELECT id, user_id, profile_id, disclosure_mode,
 		        autonomy_mode, voice_prompt, activity_policy, status, created_by,
 		        created_at, updated_at
-		 FROM ai_personas WHERE id = $1`, personaID).Scan(&p.ID, &pgtype.UUID{}, &userID, &profileID, &p.DisclosureMode,
+		 FROM ai_personas WHERE id = $1`, personaID).Scan(&p.ID, &userID, &profileID, &p.DisclosureMode,
 		&p.AutonomyMode, &voicePrompt, &activityPolicy, &p.Status, &createdBy,
 		&createdAt, &updatedAt)
 	if err != nil {

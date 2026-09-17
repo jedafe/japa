@@ -28,9 +28,17 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
+	// Optional status filter (?status=saved|researching|applied|...) — the
+	// backend filters the tracker list server-side. The set of valid values
+	// comes from GET /scholarships/statuses below.
+	const statusFilter = event.url.searchParams.get('status') ?? '';
+
 	let saved: SavedScholarship[] = [];
 	try {
-		const res = await apiList<SavedScholarship>(ctx, '/scholarships/saved?page_size=100');
+		const res = await apiList<SavedScholarship>(
+			ctx,
+			`/scholarships/saved?page_size=100${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`
+		);
 		saved = res.items;
 	} catch {
 		saved = [];
@@ -43,5 +51,5 @@ export const load: PageServerLoad = async (event) => {
 		statuses = [];
 	}
 
-	return { saved, statuses, defaultReminderDays: defaultReminderDays(event.locals.siteSettings) };
+	return { saved, statuses, statusFilter, defaultReminderDays: defaultReminderDays(event.locals.siteSettings) };
 };

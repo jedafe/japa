@@ -66,7 +66,6 @@ func (h *Handlers) SetPointsChecker(pc pointsChecker) {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -206,10 +205,6 @@ func (h *Handlers) HandleListOwn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
@@ -231,10 +226,6 @@ func (h *Handlers) HandleListOwn(w http.ResponseWriter, r *http.Request) {
 // required (visa_timeline.create permission checked at route registration).
 func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -351,11 +342,6 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -398,11 +384,6 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 // (visa_timeline.manage_own permission checked at route registration).
 func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -459,11 +440,6 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 // (visa_timeline.manage_own permission checked at route registration).
 func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -596,7 +572,6 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {

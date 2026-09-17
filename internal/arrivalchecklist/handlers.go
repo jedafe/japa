@@ -48,7 +48,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -153,10 +152,6 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
@@ -179,10 +174,6 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 // merged in. Auth required.
 func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -217,10 +208,6 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 // checklist (save initial progress). Auth required.
 func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -261,10 +248,6 @@ func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) 
 // tick/untick an item + add note. Auth required.
 func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -443,10 +426,6 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 // checked at route registration). Optional body: {"notes": "..."}.
 func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

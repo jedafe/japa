@@ -4,6 +4,7 @@
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { blockRegistry } from '../../render/blockRegistry';
   import BlockShell from '../../shell/BlockShell.svelte';
+  import { resolveAssetUrl } from '../../assetBase';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
 
   interface Props {
@@ -110,7 +111,7 @@
   {#each slides as slide, i (i)}
     {#if i === index}
       <img
-        src={slide.url}
+        src={resolveAssetUrl(slide.url)}
         alt={slide.alt}
         class="hero-image"
         loading={i === 0 ? 'eager' : 'lazy'}

@@ -40,8 +40,6 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 				return
 			}
 
-
-
 			space, err := service.GetSpaceBySlug(r.Context(), slug)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {

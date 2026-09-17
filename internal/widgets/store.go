@@ -51,7 +51,7 @@ func (s *Store) List(ctx context.Context, q string, page, limit int32) ([]Widget
 	for rows.Next() {
 		var w Widget
 		if err := rows.Scan(
-			&w.ID, &(pgtype.UUID{}), &w.Name, &w.WidgetType,
+			&w.ID, &w.Name, &w.WidgetType,
 			&w.Config, &w.CacheTTLSecs, &w.IsActive, &w.CreatedAt, &w.UpdatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scanning widget: %w", err)
@@ -88,7 +88,7 @@ func (s *Store) Get(ctx context.Context, id pgtype.UUID) (Widget, error) {
 		FROM widget_configurations
 		WHERE id = $1
 	`, id).Scan(
-		&w.ID, &(pgtype.UUID{}), &w.Name, &w.WidgetType,
+		&w.ID, &w.Name, &w.WidgetType,
 		&w.Config, &w.CacheTTLSecs, &w.IsActive, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {
@@ -110,7 +110,7 @@ func (s *Store) GetPublic(ctx context.Context, id pgtype.UUID) (Widget, error) {
 		FROM widget_configurations
 		WHERE id = $1 AND is_active = true
 	`, id).Scan(
-		&w.ID, &(pgtype.UUID{}), &w.Name, &w.WidgetType,
+		&w.ID, &w.Name, &w.WidgetType,
 		&w.Config, &w.CacheTTLSecs, &w.IsActive, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {
@@ -145,7 +145,7 @@ func (s *Store) Create(ctx context.Context, input CreateWidgetInput) (Widget, er
 		          COALESCE(config, '{}'::jsonb),
 		          cache_ttl_secs, is_active, created_at, updated_at
 	`, input.Name, input.WidgetType, config, ttl, active).Scan(
-		&w.ID, &(pgtype.UUID{}), &w.Name, &w.WidgetType,
+		&w.ID, &w.Name, &w.WidgetType,
 		&w.Config, &w.CacheTTLSecs, &w.IsActive, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {
@@ -177,7 +177,7 @@ func (s *Store) Update(ctx context.Context, id pgtype.UUID, input UpdateWidgetIn
 		          COALESCE(config, '{}'::jsonb),
 		          cache_ttl_secs, is_active, created_at, updated_at
 	`, id, input.Name, input.WidgetType, configArg, input.CacheTTLSecs, input.IsActive).Scan(
-		&w.ID, &(pgtype.UUID{}), &w.Name, &w.WidgetType,
+		&w.ID, &w.Name, &w.WidgetType,
 		&w.Config, &w.CacheTTLSecs, &w.IsActive, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {

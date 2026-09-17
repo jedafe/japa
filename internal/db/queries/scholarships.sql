@@ -57,6 +57,7 @@ FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
 WHERE ss.user_id = @user_id
  AND (@status::text = '' OR ss.status = @status)
+ AND (@guide_id::uuid IS NULL OR ss.guide_id = @guide_id)
 ORDER BY ss.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -64,7 +65,8 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*) AS count
 FROM saved_scholarships
 WHERE user_id = @user_id
- AND (@status::text = '' OR status = @status);
+ AND (@status::text = '' OR status = @status)
+ AND (@guide_id::uuid IS NULL OR guide_id = @guide_id);
 
 -- =====================================================================
 -- Admin: save counts + status distribution.

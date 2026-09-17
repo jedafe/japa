@@ -41,8 +41,13 @@ export const load: PageServerLoad = async (event) => {
 	let savedItem: SavedScholarship | null = null;
 	if (event.locals.user) {
 		try {
-			const res = await apiList<SavedScholarship>(ctx, '/scholarships/saved?page_size=100');
-			savedItem = res.items.find((s) => s.scholarship?.guide_id === guideId) ?? null;
+			// Server-side guide_id filter — correct even when the user has more
+			// saved scholarships than a single page would return.
+			const res = await apiList<SavedScholarship>(
+				ctx,
+				`/scholarships/saved?guide_id=${encodeURIComponent(guideId)}&page_size=1`
+			);
+			savedItem = res.items[0] ?? null;
 		} catch {
 			savedItem = null;
 		}

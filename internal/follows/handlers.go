@@ -24,7 +24,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -94,11 +93,6 @@ func parsePageOffset(r *http.Request) int32 {
 //	conventions/api-routes-catalog.md (POST /follows, POST /users/{id}/follow)
 func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -356,10 +350,6 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	targetIDStr := chi.URLParam(r, "user_id")
 
@@ -411,10 +401,6 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 // relationship mapping by arbitrary users.
 func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

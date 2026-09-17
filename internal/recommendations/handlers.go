@@ -217,7 +217,6 @@ var featureSlugs = map[string]bool{
 // //	limit — max number of tools/features to return (default 10, max configurable)
 func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 
-
 	vc := visitor.FromContext(r.Context())
 
 	limit := h.resolveLimit(r.Context(), r.URL.Query().Get("limit"))

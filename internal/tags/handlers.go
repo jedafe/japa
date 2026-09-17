@@ -123,7 +123,6 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 	h.permCache.InvalidateUserCache(ctx, targetUserID)
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())

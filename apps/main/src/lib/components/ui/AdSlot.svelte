@@ -34,6 +34,9 @@
 	let impressionTracked = $state(false);
 
 	let containerEl = $state<HTMLDivElement | null>(null);
+	// Non-reactive fetch guard — the effect below re-runs when containerEl
+	// flips null→element post-hydration, which would issue /ads/serve twice.
+	let fetchedSlot = '';
 
 	const dimensions = {
 		banner: 'h-[90px] w-full',
@@ -97,7 +100,10 @@
 	// The returned cleanup function disconnects the IntersectionObserver when
 	// the component unmounts or the effect re-runs.
 	$effect(() => {
-		fetchAds();
+		if (fetchedSlot !== slot) {
+			fetchedSlot = slot;
+			void fetchAds();
+		}
 
 		// IntersectionObserver to track impression when the ad enters the viewport.
 		const observer = new IntersectionObserver(

@@ -86,7 +86,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -158,10 +157,6 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // CreateCampaign handles POST /api/v1/admin/advertising/campaigns.
 func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -264,10 +259,6 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -290,10 +281,6 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -310,11 +297,6 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 // ActivateCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/activate.
 func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -357,10 +339,6 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -380,10 +358,6 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 // EndCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/end.
 func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -410,11 +384,6 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate).
 func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -603,10 +572,6 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -623,10 +588,6 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 // CreateSlotType handles POST /api/v1/admin/advertising/slot-types.
 func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -661,10 +622,6 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 // UpdateSlotType handles PUT /api/v1/admin/advertising/slot-types/{id}.
 func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -703,10 +660,6 @@ func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -728,10 +681,6 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -750,10 +699,6 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 // GetCampaignStats handles GET /api/v1/admin/advertising/campaigns/{id}/stats.
 func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -780,10 +725,6 @@ func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 // CreateBoost handles POST /api/v1/admin/advertising/boosts.
 func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -868,10 +809,6 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	orgIDStr := r.URL.Query().Get("organization_id")
 	if orgIDStr == "" {
@@ -900,10 +837,6 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	boosts, err := h.Service.ListActiveBoosts(r.Context())
 	if err != nil {
@@ -917,10 +850,6 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 // EndBoost handles POST /api/v1/admin/advertising/boosts/{id}/end.
 func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -943,10 +872,6 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 // UpdateBoost handles PATCH /api/v1/admin/ads/boosts/{id}.
 func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -991,10 +916,6 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 // DeleteBoost handles DELETE /api/v1/admin/ads/boosts/{id}.
 func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1079,10 +1000,6 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input CreateAdNetworkInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1102,10 +1019,6 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 // ListAdNetworks lists all ad networks for the platform.
 func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1131,10 +1044,6 @@ func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1154,10 +1063,6 @@ func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
 // UpdateAdNetwork updates an existing ad network.
 func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1186,10 +1091,6 @@ func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
 // DeleteAdNetwork deletes an ad network by ID.
 func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

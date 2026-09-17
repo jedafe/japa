@@ -3966,5 +3966,6 @@
 	"users.profile_type_pro": "Pro",
 	"users.profile_type_business": "Business",
 	"users.detail.change_profile_type": "Change Tier",
-	"users.detail.profile_type_changed": "Tier updated"
+	"users.detail.profile_type_changed": "Tier updated",
+	"app.tools.col_top_saved": "Top Saved"
 }

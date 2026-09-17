@@ -50,7 +50,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -236,11 +235,6 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	pathwayID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -386,7 +380,6 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
@@ -434,7 +427,6 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
@@ -473,11 +465,6 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 // Optional body: {"review_notes": "..."}.
 func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -527,11 +514,6 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 // Body: {"approve": true|false}.
 func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

@@ -48,7 +48,6 @@ func toolWriteError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-
 // ---------------------------------------------------------------------------
 // Admin Handlers — AI Tool Registry
 // ---------------------------------------------------------------------------

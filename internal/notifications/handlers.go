@@ -25,7 +25,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -85,10 +84,6 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -106,10 +101,6 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 // GetUnreadCount handles GET /api/v1/notifications/unread-count.
 func (h *Handlers) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -152,10 +143,6 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 // MarkAllAsRead handles POST /api/v1/me/notifications/read-all.
 func (h *Handlers) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

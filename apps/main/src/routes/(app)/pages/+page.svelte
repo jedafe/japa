@@ -37,7 +37,7 @@
 			{#each pages as p (p.id)}
 				<li>
 					<a
-						href={`/pages/${p.slug}`}
+						href={`/${p.slug}`}
 						class="group flex h-full flex-col rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
 					>
 						<div class="mb-2 flex items-center gap-2">

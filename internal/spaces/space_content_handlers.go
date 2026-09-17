@@ -23,10 +23,6 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	filter := visibility.VisibilityFilterFromRequest(r)
@@ -90,10 +86,6 @@ func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
 // to the space (moderator action, gated by spaces.moderate at the router).
 func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

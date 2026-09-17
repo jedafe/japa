@@ -87,6 +87,22 @@ func (s *Service) StartBulkImport(ctx context.Context, userID pgtype.UUID, req B
 		return gen.VideoImportJob{}, err
 	}
 
+	// §106: attributing a bulk import to another account is an import-on-
+	// behalf-of capability — only the caller themself or a holder of
+	// admin.video_import_jobs.manage may set it. Without this check any
+	// member could mass-create content authored by an arbitrary user.
+	if targetAuthorID.Valid && targetAuthorID != userID {
+		if s.perms == nil || !s.perms.HasPermission(ctx, userID, "admin.video_import_jobs.manage") {
+			return gen.VideoImportJob{}, fmt.Errorf("%w: cannot attribute imports to another user", errpkg.ErrForbidden)
+		}
+	}
+
+	// Fail fast when the YouTube Data API key is not configured rather than
+	// queuing a job that can only fail in the worker (same check preview does).
+	if _, err := s.getYouTubeAPIKey(ctx); err != nil {
+		return gen.VideoImportJob{}, err
+	}
+
 	job, err := s.createBulkImportJob(ctx, userID, dbSourceType, sourceURL, query, targetAuthorID, req.AutoPublish)
 	if err != nil {
 		return gen.VideoImportJob{}, err
@@ -239,7 +255,7 @@ func (s *Service) startBulkImportJob(ctx context.Context, importJobID pgtype.UUI
 	return s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
 		ID: job.ID,
 
-		Status:        "running",
+		Status:        "processing",
 		TotalItems:    0,
 		ImportedCount: 0,
 		FailedCount:   0,
@@ -275,7 +291,7 @@ func (s *Service) upsertImportJobTotal(ctx context.Context, job gen.VideoImportJ
 	_, err := s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
 		ID: job.ID,
 
-		Status:        "running",
+		Status:        "processing",
 		TotalItems:    total,
 		ImportedCount: 0,
 		FailedCount:   0,
@@ -327,7 +343,7 @@ func (s *Service) importBulkURLs(ctx context.Context, userID pgtype.UUID, job ge
 		if _, err := s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
 			ID: job.ID,
 
-			Status:        "running",
+			Status:        "processing",
 			TotalItems:    total,
 			ImportedCount: imported,
 			FailedCount:   failed,
@@ -466,7 +482,7 @@ func (s *Service) RetryMyImportJob(ctx context.Context, userID, id pgtype.UUID) 
 		return gen.VideoImportJob{}, err
 	}
 
-	if job.Status == "pending" || job.Status == "running" || job.Status == "processing" {
+	if job.Status == "pending" || job.Status == "processing" {
 		return gen.VideoImportJob{}, fmt.Errorf("%w: cannot retry a job that is %s", errpkg.ErrInvalidStatusTransition, job.Status)
 	}
 

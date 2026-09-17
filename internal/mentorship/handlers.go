@@ -66,7 +66,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {

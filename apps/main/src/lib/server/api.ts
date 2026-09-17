@@ -209,7 +209,10 @@ export async function apiRadarList<T>(
 		'has_more',
 		'counts_by_type',
 		'counts_by_country',
-		'followed_space_ids'
+		'followed_space_ids',
+		// GET /intel/scholarships facet sidecar (country + degree_level
+		// distributions over the filtered result set).
+		'facets'
 	]) {
 		if (key in raw) meta[key] = raw[key];
 	}

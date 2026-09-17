@@ -312,6 +312,11 @@
 		...(initialUserCard !== undefined ? { user_card: true } : {}),
 		...(initialRelatedDiscussions !== undefined ? { related_discussions: true } : {})
 	});
+	// Non-reactive in-flight guard. The fetch effect below re-runs when
+	// tracked deps change post-hydration (page.url identity swap) while the
+	// first request is still in flight — dataLoaded only flips on completion,
+	// so without this set every data widget would issue its request twice.
+	const inflight = new Set<string>();
 
 	// Newsletter subscribe form state (Rule 16: calls POST /newsletter/subscribe).
 	// The endpoint is gated behind the feature.newsletter flag — when the
@@ -355,7 +360,9 @@
 				dataLoaded = { ...dataLoaded, [wt]: false };
 			}
 		}
-		if (dataLoaded[wt]) return;
+		if (dataLoaded[wt] || inflight.has(wt)) return;
+		inflight.add(wt);
+		const settled = () => inflight.delete(wt);
 
 		async function fetchFeatured() {
 			const path = page.url.pathname;
@@ -658,18 +665,19 @@
 			dataLoaded = { ...dataLoaded, related_discussions: true };
 		}
 
-		if (wt === 'featured_content') fetchFeatured();
-		else if (wt === 'space_list') fetchSpaces();
-		else if (wt === 'recent_content') fetchRecent();
-		else if (wt === 'suggested_content') fetchSuggestedContent();
-		else if (wt === 'bookmark_folders') fetchBookmarks();
-		else if (wt === 'learning_enrollments' || wt === 'continue_learning' || wt === 'progress_ring') fetchEnrollments();
-		else if (wt === 'track_card') fetchFeaturedTrack();
-		else if (wt === 'leaderboard') fetchLeaderboard();
-		else if (wt === 'upcoming_events') fetchEvents();
-		else if (wt === 'user_card') fetchUserCard();
-		else if (wt === 'related_discussions') fetchRelatedDiscussions();
-		else if (wt === 'space_categories') fetchSpaceCategories();
+		if (wt === 'featured_content') void fetchFeatured().finally(settled);
+		else if (wt === 'space_list') void fetchSpaces().finally(settled);
+		else if (wt === 'recent_content') void fetchRecent().finally(settled);
+		else if (wt === 'suggested_content') void fetchSuggestedContent().finally(settled);
+		else if (wt === 'bookmark_folders') void fetchBookmarks().finally(settled);
+		else if (wt === 'learning_enrollments' || wt === 'continue_learning' || wt === 'progress_ring') void fetchEnrollments().finally(settled);
+		else if (wt === 'track_card') void fetchFeaturedTrack().finally(settled);
+		else if (wt === 'leaderboard') void fetchLeaderboard().finally(settled);
+		else if (wt === 'upcoming_events') void fetchEvents().finally(settled);
+		else if (wt === 'user_card') void fetchUserCard().finally(settled);
+		else if (wt === 'related_discussions') void fetchRelatedDiscussions().finally(settled);
+		else if (wt === 'space_categories') void fetchSpaceCategories().finally(settled);
+		else settled();
 	});
 </script>
 

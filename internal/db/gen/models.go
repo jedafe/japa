@@ -182,6 +182,20 @@ type AdminBroadcast struct {
 	RecipientCount int32              `json:"recipient_count"`
 }
 
+type AdsCampaign struct {
+	ID            pgtype.UUID        `json:"id"`
+	AdvertiserID  pgtype.UUID        `json:"advertiser_id"`
+	Name          string             `json:"name"`
+	Placement     string             `json:"placement"`
+	BudgetCredits int32              `json:"budget_credits"`
+	SpentCredits  int32              `json:"spent_credits"`
+	Status        string             `json:"status"`
+	StartDate     pgtype.Timestamptz `json:"start_date"`
+	EndDate       pgtype.Timestamptz `json:"end_date"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Tracks external affiliate commissions earned from content with affiliate links, and the author revenue share.
 type AffiliateContentCommission struct {
 	ID                  pgtype.UUID        `json:"id"`
@@ -3955,6 +3969,7 @@ type VideoSource struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	SourceID         pgtype.UUID        `json:"source_id"`
+	Slug             string             `json:"slug"`
 }
 
 type VisaProcessingStat struct {

@@ -45,7 +45,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -158,10 +157,6 @@ func (h *Handlers) HandleGetProgress(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	guideID, ok := scanUUIDParam(w, r, "guide_id")
 	if !ok {
@@ -199,10 +194,6 @@ type updateProgressBody struct {
 // completion state (note-only update); a nil notes preserves existing notes.
 func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -253,10 +244,6 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 // all progress for this checklist. Auth required.
 func (h *Handlers) HandleResetProgress(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

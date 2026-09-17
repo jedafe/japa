@@ -47,7 +47,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -123,10 +122,6 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	points, credits, err := h.Service.GetBalance(r.Context(), user.UserID)
 	if err != nil {
@@ -159,10 +154,6 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 // field so clients that only need the number can avoid a second call.
 func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -200,10 +191,6 @@ func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	_, credits, err := h.Service.GetBalance(r.Context(), user.UserID)
 	if err != nil {
@@ -235,10 +222,6 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	// Optional ledger_type filter
 	var ledgerType *string
@@ -261,11 +244,6 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 // ConvertPoints handles POST /api/v1/wallet/convert.
 func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -309,10 +287,6 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context())
 	if err != nil {
@@ -341,10 +315,6 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/28-wallet-credits.md (Wallet API Routes).
 func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -387,10 +357,6 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		PointsToCreditsRate int32 `json:"points_to_credits_rate"`
@@ -427,10 +393,6 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -447,10 +409,6 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 // CreateOrUpdateRule handles POST /api/v1/wallet/rules.
 func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -501,10 +459,6 @@ func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -550,10 +504,6 @@ func (h *Handlers) ToggleRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -576,10 +526,6 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -598,11 +544,6 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 // AdminAdjust handles POST /api/v1/wallet/admin/adjust.
 func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -668,10 +609,6 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
@@ -700,10 +637,6 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -737,11 +670,6 @@ func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -794,10 +722,6 @@ func (h *Handlers) CreateWithdrawalMethod(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Provider     string `json:"provider"`
@@ -835,10 +759,6 @@ func (h *Handlers) ListWithdrawalMethods(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	methods, err := h.Service.ListWithdrawalMethods(r.Context(), user.UserID)
 	if err != nil {
@@ -852,10 +772,6 @@ func (h *Handlers) ListWithdrawalMethods(w http.ResponseWriter, r *http.Request)
 // AdminListWithdrawals handles GET /api/v1/admin/wallet/withdrawals.
 func (h *Handlers) AdminListWithdrawals(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -880,10 +796,6 @@ func (h *Handlers) AdminListWithdrawals(w http.ResponseWriter, r *http.Request) 
 // ProcessWithdrawal handles POST /api/v1/admin/wallet/withdrawals/{id}/process.
 func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -921,10 +833,6 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 // ListWithdrawals handles GET /api/v1/me/wallet/withdrawals.
 func (h *Handlers) ListWithdrawals(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

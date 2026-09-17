@@ -60,7 +60,6 @@ func parseComparisonItemID(r *http.Request) (pgtype.UUID, error) {
 	return parseUUIDParam(r, "id")
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -150,10 +149,6 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // CreateComparisonType handles POST /api/v1/comparisons/types.
 func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -300,10 +295,6 @@ func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	filter, err := h.buildListComparisonsFilter(r)
 	if err != nil {
@@ -341,10 +332,6 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 // UpdateComparisonType handles PATCH /api/v1/comparisons/types/{id}.
 func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -406,10 +393,6 @@ func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -432,10 +415,6 @@ func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) 
 // SetComparisonTypeAccess handles PUT /api/v1/comparisons/types/{id}/access.
 func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -487,10 +466,6 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	typeID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -514,10 +489,6 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 // CreateComparison handles POST /api/v1/comparisons.
 func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -648,11 +619,6 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
@@ -703,10 +669,6 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 // // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -778,10 +740,6 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -849,10 +807,6 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 // UpdateComparisonItem handles PATCH /api/v1/comparisons/items/{id}.
 func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -973,10 +927,6 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1033,10 +983,6 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 // UpdateComparisonDimension handles PATCH /api/v1/comparisons/dimensions/{id}.
 func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1105,10 +1051,6 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	dimensionID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1173,10 +1115,6 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 // //nolint:gocyclo // Supports both deprecated legacy body and canonical ordered_item_ids body.
 func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1286,10 +1224,6 @@ func (h *Handlers) GetDimensionTypes(w http.ResponseWriter, _ *http.Request) {
 // // Ref: japaconnect-engineering/sections/16-comparisons.md (Phase 16.05 — HITL).
 func (h *Handlers) AutoGenerateDimensions(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

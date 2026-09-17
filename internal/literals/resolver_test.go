@@ -15,7 +15,7 @@ func TestResolve(t *testing.T) {
 		SourceCode:         "NG",
 		DestinationCountry: "the UK",
 		DestinationCode:    "GB",
-		PlatformName:         "JapaConnect",
+		PlatformName:       "JapaConnect",
 	}
 
 	tokens := []TemplateLiteral{

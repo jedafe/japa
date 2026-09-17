@@ -10,6 +10,7 @@
 	import { goto } from '$app/navigation';
 	import { Users, FileText, Shield } from 'lucide-svelte';
 	import { FollowButton } from '$lib/components/ui';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type { Source } from '$lib/types/sources';
 
 	interface Props {
@@ -33,6 +34,11 @@
 
 	const initials = $derived(source.name.slice(0, 2).toUpperCase());
 	const trustLabel = $derived(`${t('sources.trust', 'Trust')} ${source.trust_level}`);
+
+	// Third-party logo URLs can fail to load — some origins send
+	// Cross-Origin-Resource-Policy: same-origin (CORB/CORB-blocked), others
+	// simply 404. Fall back to the initials badge instead of a broken img.
+	let logoFailed = $state(false);
 </script>
 
 <div
@@ -40,12 +46,14 @@
 >
 	<div class="flex items-start justify-between gap-3">
 		<a href="/sources/{source.slug}" class="flex min-w-0 flex-1 items-center gap-3">
-			{#if source.logo_url}
+			{#if source.logo_url && !logoFailed}
 				<img
-					src={source.logo_url}
+					src={remoteImageUrl(source.logo_url)}
 					alt=""
 					loading="lazy"
 					decoding="async"
+					referrerpolicy="no-referrer"
+					onerror={() => (logoFailed = true)}
 					class="h-12 w-12 shrink-0 rounded-full bg-[var(--color-surface)] object-cover"
 				/>
 			{:else}

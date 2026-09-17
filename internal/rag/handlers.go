@@ -41,7 +41,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as university/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -187,7 +186,6 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	if h.settings == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings service not configured")

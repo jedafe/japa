@@ -58,7 +58,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -277,11 +276,6 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -357,11 +351,6 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -407,11 +396,6 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 // Auth required (no separate RBAC node per §81 — subscribe is auth-only).
 func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -523,10 +507,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 // registration).
 func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

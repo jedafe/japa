@@ -914,8 +914,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Bucket:    cfg.S3Bucket,
 	})
 	// Inject system_settings provider for Rule 3 compliance
-	// (media.max_upload_mb, media.allowed_video_types, media.cdn.base_url).
+	// (media.max_upload_mb, media.allowed_video_types, media.cdn.base_url,
+	// media.proxy.*).
 	mediaService.SetSettings(settingsService)
+	// Valkey cache for the /media/proxy remote-image cache
+	// (jc:media:proxy:{sha256(url)} — valkey-keys-catalog).
+	mediaService.SetValkey(vkClient.Redis())
 	// Rebuild the S3 client from media.storage.* system_settings when the
 	// operator has configured storage via the Control Panel (Section 34).
 	// When the settings are absent the env-var-based client is retained.
@@ -2230,6 +2234,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	videoService.SetContentService(contentService)
 	videoService.SetYouTubeProvider(ytProvider)
 	videoService.SetDispatcher(aiDispatcher)
+	// §106: enforce video.* permission nodes (import.single, create,
+	// import.bulk, channel.claim) and restrict cross-user target_username.
+	videoService.SetPermissionChecker(rbacResolver)
 	intelHandlers.SetVideoStore(videoStore)
 	intelHandlers.SetContentStore(contentService)
 	intelHandlers.SetReportService(reportsService)
@@ -2238,6 +2245,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	worker.RegisterVideoSummaryProcessor(videoService)
 	videoHandlers := video.NewHandlers(videoService)
 	videoHandlers.SetAuthMiddleware(auth.RequireAuth(kr, vkClient.Redis()))
+	videoHandlers.SetPermissionChecker(rbacResolver)
 	videoAdminHandlers := video.NewAdminHandlers(videoService, auth.RequireAuth(kr, vkClient.Redis()), rbacResolver)
 
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
@@ -3277,6 +3285,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Media serving endpoint (no auth required for serving files)
 			r.Get("/media/serve/{bucket}/*", mediaHandlers.ServeMedia)
+			// Remote image proxy (no auth) — same-origin fetches for external
+			// assets that block cross-origin embeds via CORP/ORB.
+			r.Get("/media/proxy", mediaHandlers.ProxyRemoteMedia)
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).Post("/media/upload", mediaHandlers.InitiateUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/confirm/{id}", mediaHandlers.ConfirmUpload)
@@ -6207,6 +6218,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/scholarships/{id}", scholarshipsHandlers.HandleScholarshipDetail)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
 					Get("/scholarships/statuses", scholarshipsHandlers.HandleStatuses)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
+					Get("/scholarships/levels", scholarshipsHandlers.HandleLevels)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
 					Get("/scholarships/saved", scholarshipsHandlers.HandleListSavedScholarships)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).

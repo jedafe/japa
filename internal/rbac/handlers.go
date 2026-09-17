@@ -24,7 +24,6 @@ func NewHandlers(store *Store, rbac *RBAC) *Handlers {
 	return &Handlers{store: store, rbac: rbac}
 }
 
-
 // ListGroups handles GET /api/v1/admin/rbac/groups.
 func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
 

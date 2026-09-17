@@ -373,7 +373,6 @@ func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, 
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -2114,11 +2113,6 @@ func decodeAIOutput(raw []byte) string {
 // a backing content row (content_id is nullable per migration 000275).
 func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

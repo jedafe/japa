@@ -467,7 +467,6 @@ func (h *Handlers) GetWidgetConfigOptions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-
 	// Return a deep copy so a caller cannot mutate the shared catalog.
 	out := WidgetConfigOptions{
 		WidgetTypes:        make([]CatalogOption, len(widgetConfigCatalog.WidgetTypes)),
@@ -502,7 +501,6 @@ func (h *Handlers) GetCatalog(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	name := chi.URLParam(r, "name")
 	if name == "" {

@@ -49,7 +49,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -220,10 +219,6 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
@@ -286,11 +281,6 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 // (community_locator.claim permission checked at route registration).
 func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -387,11 +377,6 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -425,7 +410,6 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -462,7 +446,6 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -518,10 +501,6 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
@@ -574,7 +553,6 @@ func (h *Handlers) HandleAdminArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -609,7 +587,6 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {

@@ -37,7 +37,6 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-
 			ip := extractIP(r)
 			if ip == "" {
 				next.ServeHTTP(w, r)
@@ -130,7 +129,6 @@ var CensorResultKey = contextKey{"censor_result"}
 func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 
 			// Extract text from the request body for censor checking.
 			// extractBodyText also restores the body on the request so the
