@@ -11,6 +11,7 @@
     GuestHomeProps
   } from '../types';
   import type { FetchContext } from '../data/types';
+  import { resolveAssetUrl } from '../assetBase';
     import {
       Briefcase,
       GraduationCap,
@@ -297,7 +298,7 @@
     <div class="hero-visual">
       <div class="hero-image-wrap">
         <img
-          src={(props.hero_image ?? '/brand/diaspora-community.jpg')}
+          src={resolveAssetUrl(props.hero_image ?? '/brand/diaspora-community.jpg')}
           alt={c('hero_image_alt', 'A confident traveler at the airport')}
           class="hero-image"
           loading="eager"

@@ -485,7 +485,8 @@
 		align-items: center;
 		gap: 8px;
 		width: 100%;
-		padding: 6px 12px;
+		height: 2.5rem;
+		padding: 0 12px;
 		border: 1px solid var(--color-border-input);
 		border-radius: var(--radius-input, 9px);
 		background: var(--background);

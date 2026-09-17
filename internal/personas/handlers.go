@@ -41,7 +41,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers (same pattern as university/handlers.go, rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -181,11 +180,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // Gated by persona.manage permission.
 func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -346,10 +340,6 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 // Gated by persona.manage permission.
 func (h *Handlers) HandleCreateVoice(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

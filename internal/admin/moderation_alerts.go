@@ -22,7 +22,6 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-
 	status := r.URL.Query().Get("status")
 
 	alerts, err := gen.New(h.DB.Reader).ListModerationAlerts(r.Context(),
@@ -57,7 +56,6 @@ func (h *Handlers) AcknowledgeModerationAlert(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-
 	id, err := scanUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid alert ID")
@@ -84,7 +82,6 @@ func (h *Handlers) ResolveModerationAlert(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
 
 	id, err := scanUUIDParam(r, "id")
 	if err != nil {
@@ -127,7 +124,6 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
 
 	orgID, err := scanUUIDParam(r, "id")
 	if err != nil {
@@ -282,7 +278,6 @@ func (h *Handlers) GetClaimFormSubmission(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
 
 	claimID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

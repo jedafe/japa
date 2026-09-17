@@ -43,7 +43,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
 }
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -156,7 +155,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	page, limit := parsePageParams(r)
 	if limit > 200 {
 		limit = 200
@@ -261,11 +259,6 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 // HandleAdminPublish handles POST /admin/digest/:id/publish — publish edition.
 func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

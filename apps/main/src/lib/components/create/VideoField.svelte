@@ -69,6 +69,8 @@
 				return;
 			}
 			applyResult(res.data);
+		} catch {
+			error = t('create.video.error_generic', 'Could not resolve this video URL');
 		} finally {
 			busy = false;
 		}
@@ -85,6 +87,8 @@
 				return;
 			}
 			applyResult(res.data);
+		} catch {
+			error = t('create.video.error_generic', 'Could not upload this video');
 		} finally {
 			busy = false;
 		}

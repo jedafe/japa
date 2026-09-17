@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -608,9 +609,27 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 
 	// Sniff MIME type from content.
 	mimeType := http.DetectContentType(data)
+	if mimeType == "application/octet-stream" {
+		// DetectContentType knows a small fixed set — many valid uploads
+		// (mkv, avi, docx…) sniff as octet-stream. Fall back to the
+		// filename extension so the media row and storage path carry a
+		// real type instead of a generic blob.
+		if fm := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename))); fm != "" {
+			mimeType = fm
+		}
+	}
 
 	// Generate unique storage path.
 	ext := extensionFromMIME(mimeType)
+	if ext == ".bin" {
+		// Keep the original extension when it is a known-safe media
+		// container — a .bin path makes ServeMedia return
+		// application/octet-stream and browsers download instead of
+		// playing.
+		if fe := strings.ToLower(filepath.Ext(filename)); isSafeMediaExt(fe) {
+			ext = fe
+		}
+	}
 	storagePath := fmt.Sprintf("%s//%s%s", StoragePathMedia,
 
 		uuid.New().String(),
@@ -742,7 +761,51 @@ func extensionFromMIME(mimeType string) string {
 		return ".gif"
 	case strings.HasPrefix(mimeType, "image/svg"):
 		return ".svg"
+	// Video/audio — without these every upload lands as ".bin" and
+	// ServeMedia returns application/octet-stream, so browsers download
+	// the file instead of playing it.
+	case strings.HasPrefix(mimeType, "video/mp4"):
+		return ".mp4"
+	case strings.HasPrefix(mimeType, "video/webm"):
+		return ".webm"
+	case strings.HasPrefix(mimeType, "video/quicktime"):
+		return ".mov"
+	case strings.HasPrefix(mimeType, "video/x-msvideo"):
+		return ".avi"
+	case strings.HasPrefix(mimeType, "video/x-matroska"):
+		return ".mkv"
+	case strings.HasPrefix(mimeType, "video/3gpp"):
+		return ".3gp"
+	case strings.HasPrefix(mimeType, "audio/mpeg"):
+		return ".mp3"
+	case strings.HasPrefix(mimeType, "audio/mp4"), strings.HasPrefix(mimeType, "audio/x-m4a"):
+		return ".m4a"
+	case strings.HasPrefix(mimeType, "audio/ogg"):
+		return ".ogg"
+	case strings.HasPrefix(mimeType, "audio/wav"), strings.HasPrefix(mimeType, "audio/x-wav"):
+		return ".wav"
+	case strings.HasPrefix(mimeType, "application/pdf"):
+		return ".pdf"
 	default:
 		return ".bin"
 	}
+}
+
+// safeMediaExts are filename extensions allowed to override a ".bin" result
+// from extensionFromMIME. Only inert media/document containers are listed —
+// extensions that map to active content (html, svg, js…) are intentionally
+// absent so they can never be served under a runnable type.
+var safeMediaExts = map[string]bool{
+	".mp4": true, ".m4v": true, ".mov": true, ".webm": true,
+	".mkv": true, ".avi": true, ".wmv": true, ".flv": true,
+	".ts": true, ".3gp": true, ".mpg": true, ".mpeg": true,
+	".mp3": true, ".m4a": true, ".wav": true, ".ogg": true,
+	".oga": true, ".opus": true, ".flac": true, ".aac": true,
+	".pdf": true, ".txt": true, ".md": true, ".csv": true,
+	".jpg": true, ".jpeg": true, ".png": true, ".webp": true,
+	".gif": true, ".avif": true,
+}
+
+func isSafeMediaExt(ext string) bool {
+	return safeMediaExts[ext]
 }

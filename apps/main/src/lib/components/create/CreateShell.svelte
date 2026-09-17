@@ -694,8 +694,8 @@
 		color: var(--color-text);
 	}
 	.composer-type-select {
-		min-height: 44px;
-		padding: 6px 12px;
+		height: 2.375rem;
+		padding: 0 12px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
@@ -721,12 +721,13 @@
 	}
 	.guide-category-select {
 		width: 100%;
-		padding: 10px 14px;
+		height: 2.375rem;
+		padding: 0 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
 		color: var(--color-text);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		outline: none;
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}

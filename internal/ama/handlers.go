@@ -54,7 +54,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service, patcher: service}
 }
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -157,10 +156,6 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Title                    string  `json:"title"`
@@ -248,10 +243,6 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	threadID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -292,10 +283,6 @@ type patchAMARequest struct {
 // (thread author) or a moderator with forum.ama.moderate may edit.
 func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -375,10 +362,6 @@ func (h *Handlers) HandlePatch(w http.ResponseWriter, r *http.Request) {
 // question_approval_required).
 func (h *Handlers) HandleApproveQuestion(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

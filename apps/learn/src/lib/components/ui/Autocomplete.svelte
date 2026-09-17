@@ -340,12 +340,13 @@
 		align-items: center;
 		gap: 8px;
 		width: 100%;
-		padding: 10px 14px;
+		height: 2.875rem;
+		padding: 0 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
 		color: var(--color-text);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		cursor: text;
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}

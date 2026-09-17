@@ -136,16 +136,31 @@ func (h *Handlers) HandleStatuses(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": statuses})
 }
 
-// HandleSaveScholarship saves a scholarship to the user's tracker.
-// POST /me/scholarships/{id}/save.
-func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request) {
-	// Auth before platform: an unauthenticated request must get 401, not 503.
-	userID, ok := requireUser(w, r)
-	if !ok {
+// HandleLevels returns the distinct degree levels present on published
+// scholarship guides — the option list for the finder's level filter
+// (Rule 16). GET /scholarships/levels.
+func (h *Handlers) HandleLevels(w http.ResponseWriter, r *http.Request) {
+
+	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
+	if !h.svc.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
 
-	ok = true
+	levels, err := h.svc.ListLevels(r.Context())
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "levels_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": levels})
+}
+
+// HandleSaveScholarship saves a scholarship to the user's tracker.
+// POST /scholarships/{id}/save.
+func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request) {
+	// Auth before platform: an unauthenticated request must get 401, not 503.
+	userID, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -184,15 +199,17 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 }
 
 // HandleUpdateSavedScholarship updates a saved scholarship's status/notes.
-// PATCH /me/scholarships/{id}.
+// PATCH /scholarships/{id}/save.
 func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.Request) {
 	// Auth before platform: an unauthenticated request must get 401, not 503.
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
+
+	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
+	if !h.svc.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
 
@@ -222,15 +239,17 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 }
 
 // HandleDeleteSavedScholarship removes a scholarship from the tracker.
-// DELETE /me/scholarships/{id}.
+// DELETE /scholarships/{id}/save.
 func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.Request) {
 	// Auth before platform: an unauthenticated request must get 401, not 503.
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
+
+	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
+	if !h.svc.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
 
@@ -248,7 +267,7 @@ func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.R
 }
 
 // HandleListSavedScholarships lists the user's saved scholarships.
-// GET /me/scholarships.
+// GET /scholarships/saved.
 func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Request) {
 	// Auth before platform: an unauthenticated request must get 401, not 503.
 	userID, ok := requireUser(w, r)
@@ -256,15 +275,26 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	ok = true
-	if !ok {
+	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
+	if !h.svc.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
 
 	status := r.URL.Query().Get("status")
+	// Optional guide_id filter — lets the detail page check saved state for a
+	// single scholarship without paging through the whole tracker.
+	guideID := r.URL.Query().Get("guide_id")
+	if guideID != "" {
+		var probe pgtype.UUID
+		if err := probe.Scan(guideID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid guide_id")
+			return
+		}
+	}
 	page, limit := parsePagination(r)
 
-	rows, total, err := h.svc.ListSavedScholarships(r.Context(), userID, status, page, limit)
+	rows, total, err := h.svc.ListSavedScholarships(r.Context(), userID, status, guideID, page, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
@@ -323,7 +353,13 @@ func handleAdminReport[T any](w http.ResponseWriter, r *http.Request, report fun
 		rows = []T{}
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": rows,
+		"meta": map[string]interface{}{
+			"page_size":   limit,
+			"page_offset": (page - 1) * limit,
+		},
+	})
 }
 
 // HandleAdminTopSaved returns admin top-saved report.
@@ -572,7 +608,6 @@ func applyScholarshipUpdateSource(arg *gen.UpdateScholarshipParams, body *schola
 	}
 }
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil || !u.UserID.Valid {
@@ -698,10 +733,6 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 // Requires: scholarship.manage.
 func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -841,7 +872,7 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	// Re-fetch so the admin panel receives the updated row.
 	updated, err := h.svc.store.AdminGetScholarship(r.Context(), id)
 	if err != nil {
-		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": "ok"})
+		errpkg.WriteError(w, http.StatusInternalServerError, "refetch_failed", "Scholarship updated but refetch failed")
 		return
 	}
 

@@ -91,13 +91,15 @@ ORDER BY created_at DESC
 LIMIT $2;
 
 -- name: SearchScholarships :many
+-- Optional text filters use NULLIF($n,'') because sqlc types $n::text as a
+-- non-nullable string — an unset filter arrives as '', not NULL.
 SELECT * FROM scholarships
-WHERE ($1::text IS NULL OR country = $1)
- AND ($2::text IS NULL OR $2 = ANY(eligible_countries))
- AND ($3::text IS NULL OR degree_level = $3)
+WHERE (NULLIF($1::text, '') IS NULL OR country = $1)
+ AND (NULLIF($2::text, '') IS NULL OR $2 = ANY(eligible_countries))
+ AND (NULLIF($3::text, '') IS NULL OR degree_level = $3)
  AND ($4::date IS NULL OR deadline >= $4)
  AND ($5::date IS NULL OR deadline <= $5)
- AND ($6::text IS NULL OR $6 = ANY(fields_of_study))
+ AND (NULLIF($6::text, '') IS NULL OR $6 = ANY(fields_of_study))
 ORDER BY deadline ASC NULLS LAST, confidence_overall DESC
 LIMIT $7 OFFSET $8;
 

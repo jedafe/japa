@@ -19,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 // WidgetResolver resolves a widget by ID and returns its rendered data,
@@ -67,7 +68,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -85,21 +85,14 @@ func handleServiceError(w http.ResponseWriter, err error) {
 }
 
 // parsePageParams extracts page/page_size from the query string.
-// page is 1-based; page_size defaults to 20, max 100. Matches the
-// geo-aware tool pattern used by calendar/media/admin list endpoints.
+// page is 1-based; page_size defaults to 20, max 100.
+// `page` (1-based) is the canonical param. `page_offset` is a true row
+// offset per conventions/api-response-format.md — it maps to
+// page = offset/limit + 1. (Earlier revisions incorrectly treated
+// page_offset as a page number.)
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
-
-	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
-		}
-	} else if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
-		}
-	}
 
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
@@ -111,7 +104,73 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 		}
 	}
 
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n) // #nosec
+		}
+	} else if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			page = int32(n)/limit + 1 // #nosec
+		}
+	}
+
 	return page, limit
+}
+
+// sortClause builds a safe ORDER BY fragment from the `sort`/`dir` query
+// params. The `sort` value is looked up in the caller's whitelist so raw
+// client input never reaches SQL; unknown keys fall back to `fallback`.
+func sortClause(r *http.Request, allowed map[string]string, fallback string) string {
+	col, ok := allowed[r.URL.Query().Get("sort")]
+	if !ok {
+		return fallback
+	}
+
+	dir := "ASC"
+	if r.URL.Query().Get("dir") == "desc" {
+		dir = "DESC"
+	}
+
+	return col + " " + dir
+}
+
+// Sortable column whitelists per entity. Keys are the column keys the
+// admin DataTable sends; values are the real column names.
+var (
+	blockSortColumns = map[string]string{
+		"name": "name", "slug": "slug", "category": "category",
+		"component": "component", "is_enabled": "is_enabled",
+		"created_at": "created_at", "updated_at": "updated_at",
+	}
+	templateSortColumns = map[string]string{
+		"name": "name", "slug": "slug", "page_type": "page_type",
+		"is_system": "is_system", "is_active": "is_active",
+		"created_at": "created_at", "updated_at": "updated_at",
+	}
+	themeSortColumns = map[string]string{
+		"name": "name", "slug": "slug", "is_default": "is_default",
+		"created_at": "created_at", "updated_at": "updated_at",
+	}
+	pageSortColumns = map[string]string{
+		"title": "title", "slug": "slug", "status": "status",
+		"page_type": "page_type", "created_at": "created_at",
+		"updated_at": "updated_at", "published_at": "published_at",
+	}
+)
+
+// canPublishPages reports whether the caller holds the pages.publish node.
+// The page create/update handlers use it to gate status transitions so a
+// caller with only pages.manage cannot publish or archive a page by
+// setting `status` directly (the publish/archive routes are the
+// permission-gated path for that).
+func canPublishPages(r *http.Request, user *auth.AuthenticatedUser) bool {
+	resolver := rbac.FromContext(r.Context())
+	if resolver == nil || user == nil || !user.UserID.Valid {
+		return false
+	}
+
+	return resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+		resolver.HasPermission(r.Context(), user.UserID, "pages.publish")
 }
 
 // totalPages computes the page count from a total row count and page size.
@@ -151,8 +210,9 @@ func (h *Handlers) ListPageTypes(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
+	orderBy := sortClause(r, blockSortColumns, "name ASC")
 
-	blocks, total, err := h.Service.ListBlocks(r.Context(), r.URL.Query().Get("q"), page, limit)
+	blocks, total, err := h.Service.ListBlocks(r.Context(), r.URL.Query().Get("q"), orderBy, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -254,9 +314,18 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	category := r.URL.Query().Get("category")
 
-	page, limit := parsePageParams(r)
+	// is_system is a tri-state filter: absent → all, "true" → system only,
+	// "false" → custom only.
+	var isSystem *bool
+	if v := r.URL.Query().Get("is_system"); v != "" {
+		b := v == "true"
+		isSystem = &b
+	}
 
-	templates, total, err := h.Service.ListTemplates(r.Context(), q, category, page, limit)
+	page, limit := parsePageParams(r)
+	orderBy := sortClause(r, templateSortColumns, "name ASC")
+
+	templates, total, err := h.Service.ListTemplates(r.Context(), q, category, isSystem, orderBy, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -356,8 +425,9 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
+	orderBy := sortClause(r, themeSortColumns, "name ASC")
 
-	themes, total, err := h.Service.ListThemes(r.Context(), r.URL.Query().Get("q"), page, limit)
+	themes, total, err := h.Service.ListThemes(r.Context(), r.URL.Query().Get("q"), orderBy, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -483,13 +553,14 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	page, limit := parsePageParams(r)
+	orderBy := sortClause(r, pageSortColumns, "updated_at DESC")
 
 	pages, total, err := h.Service.ListPages(r.Context(), PageListFilter{
 		Q:        q.Get("q"),
 		PageType: q.Get("page_type"),
 		Slug:     q.Get("slug"),
 		Status:   q.Get("status"),
-	}, page, limit)
+	}, orderBy, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -528,14 +599,18 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input CreatePageInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	// Creating a page directly in a published/archived state is a state
+	// transition — it must go through the pages.publish permission, the
+	// same gate used by POST /pages/{id}/publish and /archive.
+	if input.Status != "" && input.Status != PageStatusDraft && !canPublishPages(r, user) {
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to publish pages")
 		return
 	}
 
@@ -561,6 +636,26 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
+	}
+
+	// A status change via PATCH is a state transition — it requires the
+	// pages.publish permission, matching the publish/archive endpoints.
+	// Echoing the page's current status back (as the editor's Save Draft
+	// does) is not a transition and stays under pages.manage.
+	if input.Status != "" {
+		if existing, err := h.Service.GetPage(r.Context(), id); err != nil {
+			handleServiceError(w, err)
+			return
+		} else if input.Status != existing.Status {
+			user, ok := h.requireUser(w, r)
+			if !ok {
+				return
+			}
+			if !canPublishPages(r, user) {
+				errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to change page status")
+				return
+			}
+		}
 	}
 
 	page, err := h.Service.UpdatePage(r.Context(), id, input)
@@ -627,12 +722,7 @@ func (h *Handlers) ArchivePage(w http.ResponseWriter, r *http.Request) {
 
 // ReorderBlocks handles PATCH /admin/pages/{id}/blocks/reorder.
 func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
-	if !ok {
+	if _, ok := h.requireUser(w, r); !ok {
 		return
 	}
 
@@ -845,10 +935,6 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 // copy for another app's homepage without touching the original.
 func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

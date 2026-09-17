@@ -435,13 +435,13 @@
 		align-items: center;
 		gap: 8px;
 		width: 100%;
-		min-height: 44px;
-		padding: 10px 14px;
+		height: 2.375rem;
+		padding: 0 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
 		color: var(--color-text);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		cursor: text;
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
@@ -456,7 +456,6 @@
 	.autocomplete-input {
 		flex: 1;
 		min-width: 0;
-		min-height: 44px;
 		padding: 0;
 		border: none;
 		background: transparent;

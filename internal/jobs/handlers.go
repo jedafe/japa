@@ -80,7 +80,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -220,10 +219,6 @@ func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	jobID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -265,10 +260,6 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	page, limit := parsePagination(r)
 
@@ -295,10 +286,6 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 // must be a member of the org with an editor-or-above role (JOBS-012).
 func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -349,10 +336,6 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 // (JOBS-012).
 func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -409,10 +392,6 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.updater == nil || !h.updater.IsEnabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
@@ -461,10 +440,6 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 // caller must be an admin of the org that owns the job (JOBS-012).
 func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -519,10 +494,6 @@ type updateStatusRequest struct {
 // that owns the job (JOBS-012).
 func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

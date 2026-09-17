@@ -93,7 +93,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
-
 func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
@@ -157,11 +156,6 @@ func (h *Handlers) Enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	member, err := h.Service.Enroll(r.Context(), EnrollInput{
 
 		UserID: user.UserID,
@@ -179,10 +173,6 @@ func (h *Handlers) Enroll(w http.ResponseWriter, r *http.Request) {
 // ListMyLinks handles GET /api/v1/me/affiliate-links.
 func (h *Handlers) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -212,10 +202,6 @@ func (h *Handlers) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 // CreateMyLink handles POST /api/v1/me/affiliate-links.
 func (h *Handlers) CreateMyLink(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -251,10 +237,6 @@ func (h *Handlers) GetMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -279,10 +261,6 @@ func (h *Handlers) GetMyLink(w http.ResponseWriter, r *http.Request) {
 // UpdateMyLink handles PATCH /api/v1/me/affiliate-links/:id.
 func (h *Handlers) UpdateMyLink(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -314,10 +292,6 @@ func (h *Handlers) DeleteMyLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -336,10 +310,6 @@ func (h *Handlers) DeleteMyLink(w http.ResponseWriter, r *http.Request) {
 // GetMyEarnings handles GET /api/v1/me/affiliate-earnings.
 func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

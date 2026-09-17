@@ -38,7 +38,6 @@ func (h *Handlers) SetEnqueuer(e TaskEnqueuer) {
 	h.enqueuer = e
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())

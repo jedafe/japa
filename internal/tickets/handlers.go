@@ -49,7 +49,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -142,10 +141,6 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		TypeID      string         `json:"type_id"`
@@ -203,10 +198,6 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -224,10 +215,6 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 // GetMyTicket handles GET /api/v1/me/tickets/{id}.
 func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -274,10 +261,6 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 // AddReply handles POST /api/v1/me/tickets/{id}/comments.
 func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -337,10 +320,6 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	status := r.URL.Query().Get("status")
 	priority := r.URL.Query().Get("priority")
@@ -375,10 +354,6 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 // GetTicket handles GET /api/v1/admin/tickets/:id.
 func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -424,10 +399,6 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 // UpdateTicket handles PATCH /api/v1/admin/tickets/:id.
 func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -534,10 +505,6 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -592,10 +559,6 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 // submitter). The /comments endpoint (AddComment) defaults to false.
 func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -654,10 +617,6 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -683,10 +642,6 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 // ResolveTicket handles POST /api/v1/admin/tickets/:id/resolve.
 func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -750,10 +705,6 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -780,10 +731,6 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 // attachment.
 func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -841,10 +788,6 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	ticketID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -870,10 +813,6 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 // CreateTicketType handles POST /api/v1/admin/ticket-types.
 func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -948,10 +887,6 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1019,10 +954,6 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 // DeleteTicketType handles DELETE /api/v1/admin/ticket-types/:id.
 func (h *Handlers) DeleteTicketType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

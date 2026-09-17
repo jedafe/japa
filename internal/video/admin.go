@@ -58,7 +58,6 @@ func (h *AdminHandlers) runAdminList(w http.ResponseWriter, r *http.Request, typ
 		return
 	}
 
-
 	status := r.URL.Query().Get("status")
 	typeFilter := r.URL.Query().Get(typeKey)
 	q := r.URL.Query().Get("q")
@@ -102,10 +101,6 @@ func writePagedListResponse(w http.ResponseWriter, items any, total, limit, offs
 // ReviewClaim handles PATCH /api/v1/admin/video-claims/{id}.
 func (h *AdminHandlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -160,7 +155,6 @@ func (h *AdminHandlers) runAdminGet(w http.ResponseWriter, r *http.Request, notF
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
@@ -236,10 +230,6 @@ func (h *AdminHandlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 // RetryImportJob handles POST /api/v1/admin/video-import-jobs/{id}/retry.
 func (h *AdminHandlers) RetryImportJob(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

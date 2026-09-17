@@ -107,12 +107,15 @@ func (v *VideoProcessor) GenerateThumbnail(ctx context.Context, inputPath, outpu
 		return fmt.Errorf("thumbnail: output path validation: %w", err)
 	}
 
+	// -ss goes BEFORE -i: fast seek on the input side. With -ss after -i
+	// (accurate seek), a video shorter than the timestamp produces no
+	// packets and ffmpeg exits without writing a frame.
 	// #nosec G204 // input/output paths are validated by validateMediaPath.
 	cmd := exec.CommandContext(
 		ctx, "ffmpeg",
-		"-y",            // overwrite output
-		"-i", inputPath, // input
+		"-y",             // overwrite output
 		"-ss", timestamp, // seek to timestamp
+		"-i", inputPath, // input
 		"-vframes", "1", // extract single frame
 		"-q:v", "2", // quality
 		outputPath,

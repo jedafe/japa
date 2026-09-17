@@ -660,8 +660,6 @@ func (h *SitemapHandler) writeXML(w http.ResponseWriter, entries []urlEntry) {
 func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-
-
 	// Query the contents row with render-time resolution (Section 26).
 	// Uses raw pgxpool (the handler's existing pattern) until the
 	// sidebar_widgets sqlc blocker is resolved; the equivalent sqlc query

@@ -24,10 +24,6 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -144,10 +140,6 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
@@ -171,10 +163,6 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 // Returns all moderators assigned to the space.
 func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

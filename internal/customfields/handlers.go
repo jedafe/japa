@@ -767,7 +767,6 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	field, err := h.Service.CreateField(r.Context(), gen.CreateCustomFieldParams{
 		GroupID: groupID,
 
@@ -848,7 +847,6 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
 		return
 	}
-
 
 	field, err := h.Service.UpdateField(r.Context(), gen.UpdateCustomFieldParams{
 		Label:          req.Label,
@@ -2518,7 +2516,6 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	// Offset pagination per Rule 5 / api-response-format.md.
 	pageSize := int32(20)
 
@@ -3283,7 +3280,6 @@ func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
 
 	var req struct {
 		Label     string `json:"label"`

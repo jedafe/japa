@@ -1,7 +1,7 @@
 -- Video sources: canonical external video records for imports and uploads.
 
 -- name: CreateOrUpdateVideoSource :one
-INSERT INTO video_sources (author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, field_values, status, source_id) VALUES (@author_user_id, @source_type, @source_url, @external_id, @title, @description, @category, @thumbnail_url, @thumbnail_media_id, @duration_secs, COALESCE(@field_values, '{}'::jsonb), COALESCE(@status, 'active'), @source_id)
+INSERT INTO video_sources (author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, field_values, status, source_id, slug) VALUES (@author_user_id, @source_type, @source_url, @external_id, @title, @description, @category, @thumbnail_url, @thumbnail_media_id, @duration_secs, COALESCE(@field_values, '{}'::jsonb), COALESCE(@status, 'active'), @source_id, @slug)
 ON CONFLICT (source_url) DO UPDATE SET
  author_user_id = EXCLUDED.author_user_id,
  source_type = EXCLUDED.source_type,
@@ -22,6 +22,13 @@ RETURNING *;
 SELECT *
 FROM video_sources
 WHERE id = @id;
+
+-- name: GetVideoSourceBySlug :one
+-- §106 — /video/{slug} resolves bare video sources by slug (UUIDs still
+-- resolve via GetVideoSourceByID).
+SELECT *
+FROM video_sources
+WHERE slug = @slug;
 
 -- name: GetVideoSourceByURL :one
 SELECT *
@@ -66,6 +73,49 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*)::int AS total
 FROM video_sources
 WHERE source_id = @source_id AND status = 'active';
+
+-- name: ListVideoSourceItemsBySourceID :many
+-- Same scope as ListVideoSourcesBySourceID, plus the author's username and the
+-- published content slug (if the video was imported as a post) so /sources
+-- item cards can link in-app instead of to the external video URL (§106).
+SELECT vs.id, vs.title, vs.description, vs.source_url, vs.thumbnail_url,
+       vs.duration_secs, vs.created_at, vs.slug AS video_slug,
+       u.username AS author_username,
+       COALESCE(c.slug, '') AS content_slug
+FROM video_sources vs
+JOIN users u ON u.id = vs.author_user_id
+LEFT JOIN LATERAL (
+    SELECT c1.slug FROM contents c1
+    WHERE c1.video_source_id = vs.id
+      AND c1.deleted_at IS NULL
+      AND c1.status = 'published'
+    ORDER BY c1.published_at DESC NULLS LAST, c1.created_at DESC
+    LIMIT 1
+) c ON TRUE
+WHERE vs.source_id = @source_id AND vs.status = 'active'
+ORDER BY vs.created_at DESC, vs.id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: LinkVideoSourcesToChannel :exec
+-- Backfill: when a channel intel source is registered, link that channel's
+-- previously-imported videos to it. video_sources.author_user_id is the
+-- synthetic channel user (§106) — every non-upload video under it belongs
+-- to the channel source. Only fills NULLs so explicit links are kept.
+UPDATE video_sources
+SET source_id = @source_id, updated_at = now()
+WHERE author_user_id = @author_user_id
+  AND source_id IS NULL
+  AND source_type != 'upload';
+
+-- name: GetVideoChannelUsernameBySourceID :one
+-- The channel account username behind a video_channel intel source — every
+-- non-upload video under the source shares the synthetic channel author.
+SELECT u.username
+FROM video_sources vs
+JOIN users u ON u.id = vs.author_user_id
+WHERE vs.source_id = @source_id AND vs.source_type != 'upload'
+ORDER BY vs.created_at ASC
+LIMIT 1;
 
 -- name: UpdateVideoSourceStatus :one
 -- Used by the takedown approval flow to hide a specific video.

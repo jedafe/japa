@@ -122,7 +122,6 @@ func (h *Handlers) computeErasedMentionIDs(ctx context.Context, body []byte) []s
 	return erased
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -400,11 +399,6 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -520,10 +514,6 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -579,10 +569,6 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 // gate, and a plain member cannot delete another author's comment (BUG-003).
 func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -648,10 +634,6 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -682,10 +664,6 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -708,10 +686,6 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 // comments.pin can still pin comments on their own content (BL-003).
 func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -739,10 +713,6 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 // // Same author-or-moderator gate as PinComment (BL-003).
 func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -789,10 +759,6 @@ func (h *Handlers) canPinComment(r *http.Request, userID, commentID pgtype.UUID)
 // soft-delete). The route is gated by comments.delete_any (BUG-010).
 func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

@@ -90,7 +90,6 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		// Try cache first
 		cacheKey := robotsCacheKey
 		if rdb != nil {

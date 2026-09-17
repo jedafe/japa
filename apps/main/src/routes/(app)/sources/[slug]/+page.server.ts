@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
 import type { Source, SourceItemEnvelope, SourceMeta } from '$lib/types/sources';
@@ -15,6 +15,12 @@ export const load: PageServerLoad = async (event) => {
 	const source = await apiGet<Source>(ctx, `/sources/${encodeURIComponent(slug)}`).catch(() => {
 		error(404, { code: 'not_found', message: 'Source not found' });
 	});
+
+	// §106: the backend also resolves a source by its UUID — canonicalize to
+	// the slug URL so a channel never answers at two different addresses.
+	if (source.slug && source.slug !== slug) {
+		throw redirect(301, `/sources/${source.slug}${event.url.search}`);
+	}
 
 	const sourceMeta = await apiGet<SourceMeta>(ctx, '/sources/meta').catch(() => ({
 		categories: [],

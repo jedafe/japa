@@ -113,7 +113,6 @@ func (h *Handlers) resolveFeedLiterals(r *http.Request, items []FeedItem) {
 	}
 }
 
-
 // optionalUser resolves the authenticated user from the request context, if present.
 func (h *Handlers) optionalUser(r *http.Request) *auth.AuthenticatedUser {
 	return auth.FromContext(r.Context())
@@ -257,7 +256,6 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
 
 	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)

@@ -7,6 +7,7 @@
 	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
 	import ShareButton from '$lib/components/ui/ShareButton.svelte';
 	import SourceActions from './SourceActions.svelte';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type { Source, SourceItem } from '$lib/types/sources';
 
 	interface Props {
@@ -71,11 +72,21 @@
 		<span class="sr-only">{item.title}</span>
 	</a>
 
-	<!-- Cover / media area -->
+	<!-- Cover / media area — shows the item's thumbnail when the backend
+	     provides one (video sources, posts with og_image); the gradient is
+	     the fallback. -->
 	<div class="relative aspect-[4/3] w-full overflow-hidden">
 		<div
 			class="h-full w-full bg-gradient-to-br from-[var(--color-primary)]/20 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"
 		></div>
+		{#if item.thumbnail_url}
+			<img
+				src={remoteImageUrl(item.thumbnail_url)}
+				alt=""
+				loading="lazy"
+				class="pointer-events-none absolute inset-0 h-full w-full object-cover"
+			/>
+		{/if}
 
 		<!-- Top-right action cluster -->
 		<div class="absolute right-3 top-3 z-20 flex items-center gap-2">

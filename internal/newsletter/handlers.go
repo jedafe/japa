@@ -209,7 +209,6 @@ func isValidEmail(s string) bool {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {

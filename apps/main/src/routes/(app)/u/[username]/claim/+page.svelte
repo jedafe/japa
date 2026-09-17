@@ -6,7 +6,8 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import { ShieldQuestion, Loader2, Send, FileCheck, Video } from 'lucide-svelte';
-	import type { PublicUser, VideoSource } from '$lib/types';
+	import { listMyVideoClaims, submitChannelClaim } from '$lib/api/videos';
+	import type { PublicUser, VideoChannelClaim, VideoSource } from '$lib/types';
 
 	const username = $derived(page.params.username);
 	const currentUser = $derived(page.data.user as PublicUser | null | undefined);
@@ -14,6 +15,7 @@
 
 	let target = $state<PublicUser | null>(null);
 	let videos = $state<VideoSource[]>([]);
+	let myClaims = $state<VideoChannelClaim[]>([]);
 	let loading = $state(true);
 	let loadError = $state('');
 
@@ -41,9 +43,10 @@
 	async function loadTarget() {
 		loading = true;
 		loadError = '';
-		const [userRes, videosRes] = await Promise.all([
+		const [userRes, videosRes, claimsRes] = await Promise.all([
 			api.get<PublicUser>(`/users/${username}`),
-			api.get<{ items: VideoSource[] }>(`/u/${username}/videos`)
+			api.get<{ items: VideoSource[] }>(`/u/${username}/videos`),
+			listMyVideoClaims()
 		]);
 		loading = false;
 		if (userRes.data) {
@@ -56,6 +59,7 @@
 		if (videosRes.data) {
 			videos = videosRes.data.items ?? [];
 		}
+		myClaims = claimsRes.data ?? [];
 		// Default to claim when the target is synthetic; otherwise takedown.
 		if (target && !target.is_synthetic) {
 			claimType = 'takedown';
@@ -81,7 +85,12 @@
 		submitting = true;
 		submitSuccess = false;
 		try {
-			const body: Record<string, unknown> = {
+			const body: {
+				claim_type: 'claim' | 'takedown';
+				evidence_url?: string;
+				notes?: string;
+				video_source_id?: string;
+			} = {
 				claim_type: claimType,
 				evidence_url: evidenceUrl || undefined,
 				notes: notes || undefined
@@ -89,7 +98,7 @@
 			if (claimType === 'takedown') {
 				body.video_source_id = selectedVideoId;
 			}
-			const res = await api.post('/video-channels/' + username + '/claims', body);
+			const res = await submitChannelClaim(displayUsername, body);
 			if (res.error) {
 				submitError = res.error.message;
 			} else {
@@ -97,6 +106,7 @@
 				evidenceUrl = '';
 				notes = '';
 				selectedVideoId = '';
+				if (res.data) myClaims = [...myClaims, res.data];
 			}
 		} catch {
 			submitError = t('video_claims.errors.submit_failed', 'Submission failed. Please try again.');
@@ -106,6 +116,14 @@
 	}
 
 	const displayUsername = $derived(username ?? '');
+	// §106 — the caller's existing requests against this channel (GET
+	// /me/video-claims), so a second pending claim can't be filed blindly.
+	const channelClaims = $derived.by(() => {
+		const authorId = target?.id;
+		return authorId ? myClaims.filter((c) => c.video_author_user_id === authorId) : [];
+	});
+	const claimStatusLabel = (status: string) =>
+		t(`video_claims.status.${status}`, status);
 	const title = $derived(t('video_claims.title', 'Claim or report channel — {username}').replace('{username}', displayUsername ?? ''));
 	const pageDescription = $derived(
 		t('video_claims.description', 'Submit a claim or takedown request for this channel.')
@@ -191,6 +209,32 @@
 				<p class="mb-3 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
 					{submitError}
 				</p>
+			{/if}
+
+			{#if channelClaims.length > 0}
+				<div
+					class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+				>
+					<p class="mb-2 text-sm font-medium text-[var(--color-text)]">
+						{t('video_claims.existing_heading', 'Your requests for this channel')}
+					</p>
+					<ul class="space-y-2">
+						{#each channelClaims as claim (claim.id)}
+							<li class="flex items-center justify-between gap-3 text-sm">
+								<span class="text-[var(--color-text)]">
+									{claim.claim_type === 'takedown'
+										? t('video_claims.type.takedown', 'Request a takedown')
+										: t('video_claims.type.claim', 'Claim this channel')}
+								</span>
+								<span
+									class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium capitalize text-[var(--color-text-subtle)]"
+								>
+									{claimStatusLabel(claim.status)}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				</div>
 			{/if}
 
 			<form onsubmit={submit} class="space-y-4">

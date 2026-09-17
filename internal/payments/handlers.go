@@ -260,7 +260,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -321,11 +320,6 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // InitiatePayment handles POST /api/v1/payments/initiate.
 func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -756,10 +750,6 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -779,10 +769,6 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 // read another user's payment details by ID enumeration (BUG-P004).
 func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -815,10 +801,6 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 // the refund record (BUG-P008, BUG-P009).
 func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -889,10 +871,6 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Plan     string `json:"plan"`
@@ -932,10 +910,6 @@ func (h *Handlers) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -955,10 +929,6 @@ func (h *Handlers) GetActiveSubscription(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	subscription, err := h.Service.GetActiveSubscription(r.Context(), user.UserID)
 	if err != nil {
@@ -974,10 +944,6 @@ func (h *Handlers) GetActiveSubscription(w http.ResponseWriter, r *http.Request)
 // from the authenticated user via GetActiveSubscription).
 func (h *Handlers) CancelMySubscription(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1004,10 +970,6 @@ func (h *Handlers) CancelMySubscription(w http.ResponseWriter, r *http.Request) 
 // CreateDiscountCode handles POST /api/v1/discount-codes.
 func (h *Handlers) CreateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1090,10 +1052,6 @@ func (h *Handlers) ListDiscountCodes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -1110,10 +1068,6 @@ func (h *Handlers) ListDiscountCodes(w http.ResponseWriter, r *http.Request) {
 // ValidateDiscountCode handles POST /api/v1/discount-codes/validate.
 func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1150,10 +1104,6 @@ func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) 
 // DeleteDiscountCode handles DELETE /api/v1/discount-codes/{id}.
 func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1433,10 +1383,6 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1472,10 +1418,6 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 // ReactivateSubscription handles POST /me/subscription/reactivate.
 func (h *Handlers) ReactivateSubscription(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

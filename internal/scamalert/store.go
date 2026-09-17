@@ -120,7 +120,7 @@ LIMIT 1
 	var r ScamReportRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
-		&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
+		&r.ID, &r.ReporterID, &r.ScamType,
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
@@ -169,7 +169,7 @@ LIMIT 1
 	var r ScamReportRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
-		&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
+		&r.ID, &r.ReporterID, &r.ScamType,
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
@@ -304,7 +304,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ScamReportRow
 		if err := rows.Scan(
-			&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
+			&r.ID, &r.ReporterID, &r.ScamType,
 			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
@@ -545,7 +545,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ScamReportRow
 		if err := rows.Scan(
-			&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
+			&r.ID, &r.ReporterID, &r.ScamType,
 			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,

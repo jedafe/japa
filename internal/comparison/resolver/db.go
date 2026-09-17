@@ -18,16 +18,16 @@ import (
 // small set of known columns. It is intended for tool tables that carry a
 // human-readable title/name.
 type DBConfig struct {
-	Entity       string // human name for error messages
-	Table        string
-	IDColumn     string
-	TitleColumn  string
-	SlugColumn   string // optional; empty means no slug search
-	DescColumn   string // optional; empty means no description
+	Entity         string // human name for error messages
+	Table          string
+	IDColumn       string
+	TitleColumn    string
+	SlugColumn     string // optional; empty means no slug search
+	DescColumn     string // optional; empty means no description
 	PlatformColumn string // optional; empty means no platform filter
 	PlatformJoin   string // optional JOIN clause (e.g. "JOIN contents c ON c.id = t.guide_id")
 	PlatformWhere  string // optional predicate when PlatformJoin is used
-	ActiveWhere  string // optional SQL predicate (e.g. "t.is_active = true" or "t.status = 'published'")
+	ActiveWhere    string // optional SQL predicate (e.g. "t.is_active = true" or "t.status = 'published'")
 
 	// Optional personalization metadata columns for Sub-spec 2 Smart Compare.
 	// Leave empty to omit from the resolver response.

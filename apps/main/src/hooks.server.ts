@@ -245,8 +245,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 			maxAge: 60 * 60 * 24 * 365,
 			sameSite: 'lax'
 		});
-		// Rewrite URL for routing — remove the 2-letter prefix + leading slash.
-		event.url.pathname = event.url.pathname.slice(3) || '/';
+		// Route matching for the prefix happens in the `reroute` hook
+		// (src/hooks.ts). Do NOT mutate event.url.pathname here — SSR page
+		// data and hydration must see the same URL as the browser.
 	} else if (localeCookie && enabledLanguages.includes(localeCookie)) {
 		event.locals.locale = localeCookie;
 	} else {

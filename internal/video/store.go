@@ -64,6 +64,7 @@ func (s *Store) UpdateVideoSourceStatus(ctx context.Context, id pgtype.UUID, sta
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
 		SourceID:         row.SourceID,
+		Slug:             row.Slug,
 	}, nil
 }
 
@@ -92,6 +93,7 @@ func (s *Store) CreateOrUpdateSource(ctx context.Context, arg gen.CreateOrUpdate
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
 		SourceID:         row.SourceID,
+		Slug:             row.Slug,
 	}, nil
 }
 
@@ -123,6 +125,7 @@ func (s *Store) GetSourceByURL(ctx context.Context, sourceURL string) (gen.Video
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
 		SourceID:         row.SourceID,
+		Slug:             row.Slug,
 	}, nil
 }
 
@@ -236,6 +239,57 @@ func (s *Store) ListBySourceID(ctx context.Context, sourceID pgtype.UUID, limit,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing video sources by source id: %w", err)
+	}
+
+	total, err := s.read.CountVideoSourcesBySourceID(ctx,
+
+		sourceID,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting video sources by source id: %w", err)
+	}
+
+	return rows, int64(total), nil
+}
+
+// LinkVideoSourcesToChannel backfills source_id on a channel's previously
+// imported videos once the channel's intel source is registered (§106).
+func (s *Store) LinkVideoSourcesToChannel(ctx context.Context, sourceID, authorID pgtype.UUID) error {
+	return s.write.LinkVideoSourcesToChannel(ctx, gen.LinkVideoSourcesToChannelParams{
+		SourceID:     sourceID,
+		AuthorUserID: authorID,
+	})
+}
+
+// GetSourceBySlug returns a video source by its public slug (§106
+// /video/{slug} canonical route).
+func (s *Store) GetSourceBySlug(ctx context.Context, slug string) (gen.VideoSource, error) {
+	row, err := s.read.GetVideoSourceBySlug(ctx, slug)
+	if err != nil {
+		return gen.VideoSource{}, fmt.Errorf("getting video source by slug: %w", err)
+	}
+
+	return row, nil
+}
+
+// GetChannelUsernameBySourceID returns the channel account username behind a
+// video_channel intel source (§106).
+func (s *Store) GetChannelUsernameBySourceID(ctx context.Context, sourceID pgtype.UUID) (string, error) {
+	return s.read.GetVideoChannelUsernameBySourceID(ctx, sourceID)
+}
+
+// ListItemsBySourceID returns the video sources for a canonical intel source
+// enriched with the author username and published content slug so /sources
+// item cards can link to the in-app video page (§106).
+func (s *Store) ListItemsBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListVideoSourceItemsBySourceIDRow, int64, error) {
+	rows, err := s.read.ListVideoSourceItemsBySourceID(ctx, gen.ListVideoSourceItemsBySourceIDParams{
+
+		SourceID:   sourceID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing video source items by source id: %w", err)
 	}
 
 	total, err := s.read.CountVideoSourcesBySourceID(ctx,

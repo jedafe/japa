@@ -22,10 +22,6 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var req struct {
 		ParentSpaceID string `json:"parent_space_id"`
@@ -105,10 +101,6 @@ func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
 // Returns all parent spaces linked via the junction table.
 func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

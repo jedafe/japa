@@ -26,7 +26,6 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 		return
 	}
 
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
@@ -151,7 +150,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -218,11 +216,6 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var input struct {
 		CIDR      string  `json:"cidr"`
 		BlockType string  `json:"block_type"`
@@ -279,10 +272,6 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 // UpdateIPBlock handles PATCH /admin/spam/ip-blocks/{id}.
 func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

@@ -1,8 +1,8 @@
 <script lang="ts">
 	// §106 video — grid of video_sources rows for the profile "Videos" tab.
-	// A video source is not a content post (it has no slug), so cards link to
-	// the canonical source_url: external providers open in a new tab, uploads
-	// open the same-origin media serve URL which plays the file directly.
+	// Cards open in-app on the canonical video page /video/{slug} (UUID
+	// fallback for rows predating the slug column), so external and uploaded
+	// videos alike stay inside JapaConnect (player + "Watch on …" link).
 	import { Play, ExternalLink } from 'lucide-svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
@@ -29,9 +29,7 @@
 		{@const external = isExternalUrl(video.source_url)}
 		{@const duration = formatDuration(video.duration_secs)}
 		<a
-			href={video.source_url}
-			target={external ? '_blank' : undefined}
-			rel={external ? 'noopener noreferrer' : undefined}
+			href="/video/{video.slug || video.id}"
 			class="group flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
 			<span class="relative block aspect-video w-full bg-[var(--color-surface-subtle)]">

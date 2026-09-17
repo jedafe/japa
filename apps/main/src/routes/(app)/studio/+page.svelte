@@ -16,11 +16,13 @@
 
 	const jobs = $derived<VideoImportJob[]>(data.jobs);
 
-	const TABS = [
-		{ id: 'channel', label: 'Channel', icon: Video, requiresUrl: true },
-		{ id: 'playlist', label: 'Playlist', icon: ListVideo, requiresUrl: true },
-		{ id: 'keyword', label: 'Keyword', icon: Search, requiresUrl: false }
-	] as const;
+	// §7 i18n — tab labels go through t() so they translate and react to
+	// locale switches ($derived re-evaluates when i18n.locale changes).
+	const TABS = $derived([
+		{ id: 'channel', label: t('studio.tab.channel', 'Channel'), icon: Video, requiresUrl: true },
+		{ id: 'playlist', label: t('studio.tab.playlist', 'Playlist'), icon: ListVideo, requiresUrl: true },
+		{ id: 'keyword', label: t('studio.tab.keyword', 'Keyword'), icon: Search, requiresUrl: false }
+	] as const);
 
 	type TabID = (typeof TABS)[number]['id'];
 

@@ -95,11 +95,6 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-
-	if !false {
-
-	}
-
 	q := r.URL.Query()
 	page, limit := h.parsePagination(r)
 	// INTEL-016 fix: max page size from system_settings (intel.scholarships.max_page_size).

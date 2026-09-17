@@ -46,7 +46,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
 }
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -192,11 +191,6 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	pathwayID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -297,7 +291,6 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
@@ -389,7 +382,6 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -429,11 +421,6 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 // {"review_notes": "..."}.
 func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

@@ -27,7 +27,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -93,10 +92,6 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var req createImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -140,10 +135,6 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
@@ -173,10 +164,6 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -195,10 +182,6 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 // HandleDeleteImport handles DELETE /api/v1/admin/data-imports/:id.
 func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

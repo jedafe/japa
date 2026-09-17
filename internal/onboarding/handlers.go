@@ -20,7 +20,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -48,10 +47,6 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	status, err := h.Service.GetState(r.Context(), user.UserID)
 	if err != nil {
@@ -65,11 +60,6 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 // UpdateStep handles PUT /api/v1/onboarding/step.
 func (h *Handlers) UpdateStep(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -94,10 +84,6 @@ func (h *Handlers) Complete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if err := h.Service.Complete(r.Context(), user.UserID); err != nil {
 		handleServiceError(w, err)
@@ -114,11 +100,6 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	recs, err := h.Service.GetRecommendations(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -131,10 +112,6 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 // DismissTour handles POST /api/v1/onboarding/tour/dismiss.
 func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

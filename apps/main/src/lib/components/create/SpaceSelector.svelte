@@ -193,9 +193,9 @@
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-		width: 44px;
-		min-width: 44px;
-		min-height: 44px;
+		width: 2.375rem;
+		min-width: 2.375rem;
+		height: 2.375rem;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);

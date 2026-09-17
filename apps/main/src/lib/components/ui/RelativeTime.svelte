@@ -1,13 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-
 	interface Props {
 		iso: string;
 	}
 
 	let { iso }: Props = $props();
-
-	let label = $state('');
 
 	function formatRelative(input: string): string {
 		const then = new Date(input).getTime();
@@ -37,14 +33,10 @@
 		return rtf.format(Math.round(duration), 'year');
 	}
 
-	$effect(() => {
-		label = formatRelative(iso);
-	});
-
-	// Refresh once on mount so labels stay fresh after hydration.
-	onMount(() => {
-		label = formatRelative(iso);
-	});
+	// Derived, not effect-seeded: SSR must render the relative text too —
+	// an empty label makes the <time> accessible name fall back to the
+	// title attribute, leaking the raw ISO string.
+	const label = $derived(formatRelative(iso));
 </script>
 
 <time datetime={iso} title={iso}>{label}</time>

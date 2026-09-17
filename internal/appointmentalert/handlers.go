@@ -50,7 +50,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -143,10 +142,6 @@ func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
@@ -179,10 +174,6 @@ func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 // (appointment_alert.create permission checked at route registration).
 func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -238,11 +229,6 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	alertID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -290,11 +276,6 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 // (appointment_alert.manage_own permission checked at route registration).
 func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -462,7 +443,6 @@ func (h *Handlers) HandleAdminUpdateEmbassy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-
 	embassyID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -504,7 +484,6 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	embassyID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

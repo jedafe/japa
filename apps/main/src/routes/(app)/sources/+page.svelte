@@ -206,6 +206,31 @@
 	</ListPageBar>
 
 	<div class="p-4">
+		<!-- Curated collections (default directory view only) -->
+		{#if (data.collections ?? []).length > 0}
+			<div class="mb-6 space-y-5">
+				{#each data.collections as collection (collection.slug)}
+					{#if collection.sources?.length > 0}
+						<section>
+							<div class="mb-2 flex items-baseline justify-between gap-2">
+								<h2 class="text-sm font-semibold text-[var(--color-text)]">{collection.name}</h2>
+								{#if collection.description}
+									<p class="text-xs text-[var(--color-text-subtle)]">{collection.description}</p>
+								{/if}
+							</div>
+							<div class="flex gap-3 overflow-x-auto pb-2">
+								{#each collection.sources as source (source.slug)}
+									<div class="w-72 shrink-0">
+										<SourceCard {source} />
+									</div>
+								{/each}
+							</div>
+						</section>
+					{/if}
+				{/each}
+			</div>
+		{/if}
+
 		{#if data.sources.length === 0}
 			<p class="py-8 text-center text-sm text-[var(--color-text-subtle)]">
 				{t('sources.empty', 'No sources found.')}

@@ -29,7 +29,7 @@ type RenderContext struct {
 	SourceCode         string
 	DestinationCountry string
 	DestinationCode    string
-	PlatformName         string
+	PlatformName       string
 }
 
 // reservedKeys are built-in variable and function names that cannot be
@@ -44,7 +44,7 @@ var reservedKeys = map[string]struct{}{
 	"Source_Code":         {},
 	"Destination_Country": {},
 	"Destination_Code":    {},
-	"Platform_Name":         {},
+	"Platform_Name":       {},
 	"Locale":              {},
 	"adjective":           {},
 	"year":                {},

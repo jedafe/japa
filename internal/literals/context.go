@@ -16,8 +16,8 @@ import (
 // {{...}} placeholders so all surfaces resolve identically.
 func NewRequestContext(r *http.Request, platformName string) RenderContext {
 	rc := RenderContext{
-		Now:        time.Now().UTC(),
-		Locale:     requestLocale(r),
+		Now:          time.Now().UTC(),
+		Locale:       requestLocale(r),
 		PlatformName: platformName,
 	}
 	FillRequestContext(r, &rc)

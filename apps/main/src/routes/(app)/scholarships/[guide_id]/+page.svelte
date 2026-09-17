@@ -7,11 +7,16 @@
 		GraduationCap,
 		Bookmark,
 		BookmarkCheck,
-		Calendar,
+		CalendarClock,
+		Building2,
+		Globe,
+		DollarSign,
+		RefreshCw,
+		ShieldCheck,
+		ShieldAlert,
 		ExternalLink,
 		ArrowLeft,
 		ClipboardList,
-		Bell,
 		BookOpen
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
@@ -32,6 +37,15 @@
 	let scholarship = $state<Scholarship>(untrack(() => data.scholarship!));
 	let savedItem = $state<SavedScholarship | null>(untrack(() => data.savedItem));
 	let authed = $state(untrack(() => data.authed));
+
+	// Resync when the server load re-runs (e.g. navigating between scholarship
+	// detail pages in-place). Local optimistic mutations don't touch `data`,
+	// so they are not clobbered.
+	$effect(() => {
+		scholarship = data.scholarship!;
+		savedItem = data.savedItem;
+		authed = data.authed;
+	});
 
 	let showRegisterPrompt = $state(false);
 	let editingNotes = $state(false);
@@ -143,6 +157,69 @@
 			day: 'numeric'
 		});
 	}
+
+	// Provenance — the source's trust tier (1=official … 4=community) powers
+	// the verified pill in the header band and the trust bar below, matching
+	// the radar detail page's signal readout.
+	const trustTier = $derived(scholarship.source?.trust_level ?? 0);
+	const verified = $derived(trustTier > 0 && trustTier <= 2);
+	const trustPct = $derived(
+		trustTier > 0 ? Math.max(0, Math.min(100, (4 - trustTier) * 25 + 25)) : 0
+	);
+
+	// Deadline callout — the most actionable datum for a scholarship.
+	const deadlineDate = $derived(
+		scholarship.application_deadline ? new Date(scholarship.application_deadline) : null
+	);
+	const deadlineValid = $derived(
+		deadlineDate !== null && !isNaN(deadlineDate.getTime())
+	);
+	const daysToDeadline = $derived(
+		deadlineValid ? Math.ceil((deadlineDate!.getTime() - Date.now()) / 86_400_000) : null
+	);
+	const deadlinePassed = $derived(daysToDeadline !== null && daysToDeadline < 0);
+
+	// Bare domain of the source URL for the facts grid.
+	const sourceDomain = $derived(
+		scholarship.source?.source_url ? extractDomain(scholarship.source.source_url) : ''
+	);
+
+	function extractDomain(url: string): string {
+		try {
+			return new URL(url).hostname.replace(/^www\./, '');
+		} catch {
+			return url;
+		}
+	}
+
+	// field_values keys already covered by flat fields/sections — the rest
+	// render verbatim under "Additional details" so nothing the API returns
+	// is hidden (e.g. eligible_countries, field_of_study, dimension).
+	const PROJECTED_KEYS = new Set([
+		'provider_institution',
+		'countries_eligible',
+		'level_of_study',
+		'application_deadline',
+		'application_link',
+		'eligibility_criteria',
+		'how_to_apply',
+		'contact_email',
+		'description',
+		'award_amount_usd',
+		'is_renewable',
+		'field_of_study',
+		'fields_of_study'
+	]);
+
+	function humanize(key: string): string {
+		return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+	}
+
+	const extraFields = $derived(
+		Object.entries(scholarship.field_values ?? {})
+			.filter(([k, v]) => v !== '' && !PROJECTED_KEYS.has(k))
+			.map(([k, v]) => ({ label: humanize(k), value: v }))
+	);
 </script>
 
 <svelte:head>
@@ -158,302 +235,438 @@
 	{/if}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<a
-			href="/scholarships"
-			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
-		>
-			<ArrowLeft size={16} />
-			{t('scholarships.back_to_list', 'Back to scholarships')}
-		</a>
-	</div>
-
+<div class="mx-auto max-w-3xl px-4 py-6">
 	{#if !scholarship}
-		<div class="p-4">
-			<EmptyState
-				icon={GraduationCap}
-				title={t('scholarships.not_found', 'Scholarship not found')}
-				body={t('scholarships.not_found_desc', 'This scholarship may have been removed or is no longer available.')}
-			/>
-		</div>
+		<EmptyState
+			icon={GraduationCap}
+			title={t('scholarships.not_found', 'Scholarship not found')}
+			body={t('scholarships.not_found_desc', 'This scholarship may have been removed or is no longer available.')}
+		/>
 	{:else}
-		<div class="space-y-4 p-4">
-			<!-- Header -->
-			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-				<div class="flex items-start justify-between gap-3">
-					<div class="min-w-0 flex-1">
-						<h1 class="text-lg font-semibold text-[var(--color-text)]">{scholarship.title}</h1>
-						{#if scholarship.institution}
-							<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{scholarship.institution}</p>
-						{/if}
-							{#if scholarship.source}
-								{@const source = scholarship.source}
-								<div class="mt-1.5 flex items-center gap-1 text-sm">
-									<EntityHoverChip
-										type="source"
-										id={source.id}
-										slug={source.slug}
-										name={source.name}
-										avatar={source.logo_url}
-										class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
-									>
-										{#snippet trigger()}
-											{t('scholarships.source', 'Source')}: {source.name}
-										{/snippet}
-									</EntityHoverChip>
-									{#if source.source_url}
-										<a
-											href={source.source_url}
-											target="_blank"
-											rel="noopener noreferrer"
-											class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
-											aria-label={t('scholarships.original_source', 'View original source')}
-										>
-											<ExternalLink size={14} />
-										</a>
-									{/if}
-								</div>
-						{/if}
-						<div class="mt-2 flex flex-wrap gap-2">
-							{#if scholarship.country}
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
-									{scholarship.country}
-								</span>
-							{/if}
-							{#if scholarship.level_of_study}
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)] capitalize">
-									{scholarship.level_of_study}
-								</span>
-							{/if}
-							{#if scholarship.is_renewable}
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
-									{t('scholarships.renewable_badge', 'Renewable')}
-								</span>
-							{/if}
-						</div>
+		<!-- Back link + save button -->
+		<div class="flex items-center justify-between">
+			<a
+				href="/scholarships"
+				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+			>
+				<ArrowLeft size={15} />
+				{t('scholarships.back_to_list', 'Back to scholarships')}
+			</a>
+			<button
+				type="button"
+				onclick={toggleSave}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{#if savedItem}
+					<BookmarkCheck size={14} class="text-[var(--color-primary)]" />
+					{t('scholarships.saved', 'Saved')}
+				{:else}
+					<Bookmark size={14} />
+					{t('scholarships.save', 'Save')}
+				{/if}
+			</button>
+		</div>
 
-						{#if scholarship.summary}
-							<p class="mt-3 text-sm text-[var(--color-text-subtle)] line-clamp-3">{scholarship.summary}</p>
-						{/if}
-
-						<a
-							href={`/guide/${scholarship.slug}`}
-							class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
-						>
-							<BookOpen size={16} />
-							{t('scholarships.read_more_details', 'Read more details')}
-						</a>
-					</div>
-					<button
-						type="button"
-						onclick={toggleSave}
-						class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-						aria-label={savedItem ? t('common.saved', 'Saved') : t('common.save', 'Save')}
-					>
-						{#if savedItem}
-							<BookmarkCheck size={18} class="text-[var(--color-primary)]" />
+		<article class="mt-5 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+			<!-- Header band: type pill + country + verified status -->
+			<div class="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-5 py-3">
+				<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium capitalize text-[var(--color-primary)]">
+					<GraduationCap size={12} />
+					{t('scholarships.type_label', 'Scholarship')}
+				</span>
+				{#if scholarship.country}
+					<span class="inline-flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+						<Globe size={12} />
+						{scholarship.country}
+					</span>
+				{/if}
+				{#if trustTier > 0}
+					<span class="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {verified ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}">
+						{#if verified}
+							<ShieldCheck size={12} />
+							{t('scholarships.verified', 'Verified')}
 						{:else}
-							<Bookmark size={18} />
+							<ShieldAlert size={12} />
+							{t('scholarships.needs_review', 'Needs review')}
 						{/if}
-					</button>
-				</div>
-
-				{#if scholarship.award_amount_usd !== null && scholarship.award_amount_usd !== undefined}
-					<div class="mt-4 text-2xl font-bold text-[var(--color-primary)]">
-						{formatAmount(scholarship.award_amount_usd)}
-						<span class="text-sm font-normal text-[var(--color-muted)]">{t('scholarships.award', 'award')}</span>
-					</div>
+					</span>
 				{/if}
 			</div>
 
-			<!-- Key dates -->
-			{#if scholarship.application_deadline || scholarship.application_url}
-				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-2">
-					{#if scholarship.application_deadline}
-						<div class="flex items-center gap-2 text-sm text-[var(--color-text-subtle)]">
-							<Calendar size={16} class="text-[var(--color-muted)]" />
-							<span>
-								{t('scholarships.deadline', 'Deadline:')}
-								<strong class="text-[var(--color-text)]">{formatDate(scholarship.application_deadline)}</strong>
+			<div class="px-5 py-5">
+				<!-- Title -->
+				<h1 class="text-xl font-medium leading-snug text-[var(--color-text)] sm:text-2xl">
+					{scholarship.title}
+				</h1>
+				{#if scholarship.institution}
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{scholarship.institution}</p>
+				{/if}
+
+				<!-- Deadline callout — the most actionable datum for a scholarship -->
+				{#if deadlineValid}
+					<div
+						class="mt-4 flex items-center gap-3 rounded-[var(--radius)] border px-4 py-3 {deadlinePassed
+							? 'border-[var(--color-danger)]/30 bg-[var(--color-danger)]/5'
+							: 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5'}"
+					>
+						<CalendarClock
+							size={18}
+							class={deadlinePassed ? 'text-[var(--color-danger)]' : 'text-[var(--color-primary)]'}
+						/>
+						<div class="min-w-0 flex-1">
+							<p class="text-xs text-[var(--color-muted)]">{t('scholarships.deadline', 'Deadline')}</p>
+							<p class="text-sm font-medium text-[var(--color-text)]">
+								{formatDate(scholarship.application_deadline)}
+							</p>
+						</div>
+						{#if daysToDeadline !== null}
+							<span
+								class="shrink-0 text-xs font-medium {deadlinePassed
+									? 'text-[var(--color-danger)]'
+									: 'text-[var(--color-primary)]'}"
+							>
+								{#if deadlinePassed}
+									{t('scholarships.deadline_passed', 'Deadline passed')}
+								{:else}
+									{daysToDeadline} {t('scholarships.days_away', 'days away')}
+								{/if}
 							</span>
+						{/if}
+					</div>
+				{:else}
+					<p class="mt-4 text-xs text-[var(--color-muted)]">{t('scholarships.no_deadline', 'No deadline recorded')}</p>
+				{/if}
+
+				<!-- Quick facts grid -->
+				<dl class="mt-5 grid grid-cols-1 gap-px overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-2">
+					{#if scholarship.institution}
+						<div class="flex items-center gap-2.5 bg-[var(--color-surface)] px-4 py-3">
+							<Building2 size={15} class="shrink-0 text-[var(--color-muted)]" />
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{t('scholarships.institution', 'Institution')}</dt>
+								<dd class="truncate text-sm text-[var(--color-text)]">{scholarship.institution}</dd>
+							</div>
 						</div>
 					{/if}
+					{#if scholarship.level_of_study}
+						<div class="flex items-center gap-2.5 bg-[var(--color-surface)] px-4 py-3">
+							<GraduationCap size={15} class="shrink-0 text-[var(--color-muted)]" />
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{t('scholarships.level', 'Level')}</dt>
+								<dd class="truncate text-sm capitalize text-[var(--color-text)]">{scholarship.level_of_study}</dd>
+							</div>
+						</div>
+					{/if}
+					{#if scholarship.award_amount_usd !== null && scholarship.award_amount_usd !== undefined}
+						<div class="flex items-center gap-2.5 bg-[var(--color-surface)] px-4 py-3">
+							<DollarSign size={15} class="shrink-0 text-[var(--color-muted)]" />
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{t('scholarships.award_amount', 'Award amount')}</dt>
+								<dd class="truncate text-sm text-[var(--color-text)]">{formatAmount(scholarship.award_amount_usd)}</dd>
+							</div>
+						</div>
+					{/if}
+					{#if scholarship.is_renewable !== null && scholarship.is_renewable !== undefined}
+						<div class="flex items-center gap-2.5 bg-[var(--color-surface)] px-4 py-3">
+							<RefreshCw size={15} class="shrink-0 text-[var(--color-muted)]" />
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{t('scholarships.renewable', 'Renewable')}</dt>
+								<dd class="truncate text-sm text-[var(--color-text)]">
+									{scholarship.is_renewable
+										? t('scholarships.renewable_yes', 'Yes')
+										: t('scholarships.one_time', 'One-time')}
+								</dd>
+							</div>
+						</div>
+					{/if}
+					{#if scholarship.fields_of_study && scholarship.fields_of_study.length > 0}
+						<div class="flex items-center gap-2.5 bg-[var(--color-surface)] px-4 py-3">
+							<BookOpen size={15} class="shrink-0 text-[var(--color-muted)]" />
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{t('scholarships.field_of_study', 'Field of study')}</dt>
+								<dd class="truncate text-sm text-[var(--color-text)]">{scholarship.fields_of_study.join(', ')}</dd>
+							</div>
+						</div>
+					{/if}
+					{#if sourceDomain}
+						<div class="flex items-center gap-2.5 bg-[var(--color-surface)] px-4 py-3">
+							<Globe size={15} class="shrink-0 text-[var(--color-muted)]" />
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{t('scholarships.source', 'Source')}</dt>
+								<dd class="truncate text-sm text-[var(--color-text)]">{sourceDomain}</dd>
+							</div>
+						</div>
+					{/if}
+				</dl>
+
+				<!-- Overview -->
+				{#if scholarship.description || scholarship.summary}
+					<section class="mt-6">
+						<h2 class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+							{t('scholarships.overview', 'Overview')}
+						</h2>
+						{#if scholarship.summary}
+							<p class="whitespace-pre-line text-sm leading-relaxed text-[var(--color-text)]">{scholarship.summary}</p>
+						{/if}
+						{#if scholarship.description && scholarship.description !== scholarship.summary}
+							<p class="whitespace-pre-line text-sm leading-relaxed text-[var(--color-text)] {scholarship.summary ? 'mt-3' : ''}">
+								{scholarship.description}
+							</p>
+						{/if}
+					</section>
+				{/if}
+
+				<!-- Eligibility -->
+				{#if scholarship.eligibility}
+					<section class="mt-6">
+						<h2 class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+							{t('scholarships.eligibility', 'Eligibility')}
+						</h2>
+						<p class="whitespace-pre-line text-sm leading-relaxed text-[var(--color-text)]">{scholarship.eligibility}</p>
+					</section>
+				{/if}
+
+				<!-- How to apply -->
+				{#if scholarship.how_to_apply}
+					<section class="mt-6">
+						<h2 class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+							{t('scholarships.how_to_apply', 'How to apply')}
+						</h2>
+						<p class="whitespace-pre-line text-sm leading-relaxed text-[var(--color-text)]">{scholarship.how_to_apply}</p>
+					</section>
+				{/if}
+
+				<!-- Contact -->
+				{#if scholarship.contact_email}
+					<section class="mt-6">
+						<h2 class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+							{t('scholarships.contact', 'Contact')}
+						</h2>
+						<a
+							href={`mailto:${scholarship.contact_email}`}
+							class="text-sm text-[var(--color-primary)] hover:underline"
+						>
+							{scholarship.contact_email}
+						</a>
+					</section>
+				{/if}
+
+				<!-- Additional details — any field_values not covered above -->
+				{#if extraFields.length > 0}
+					<section class="mt-6">
+						<h2 class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+							{t('scholarships.additional_details', 'Additional details')}
+						</h2>
+						<dl class="grid grid-cols-1 gap-px overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-2">
+							{#each extraFields as f (f.label)}
+								<div class="bg-[var(--color-surface)] px-4 py-3">
+									<dt class="text-xs text-[var(--color-muted)]">{f.label}</dt>
+									<dd class="text-sm text-[var(--color-text)]">{f.value}</dd>
+								</div>
+							{/each}
+						</dl>
+					</section>
+				{/if}
+
+				<!-- Provenance — source attribution + trust-tier readout -->
+				{#if scholarship.source?.slug || trustTier > 0}
+					{@const source = scholarship.source!}
+					<section class="mt-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
+						<h2 class="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+							{t('scholarships.provenance', 'Provenance')}
+						</h2>
+						{#if source.slug}
+							<div class="mb-3 flex items-center gap-1 text-sm">
+								<EntityHoverChip
+									type="source"
+									id={source.id}
+									slug={source.slug}
+									name={source.name}
+									avatar={source.logo_url}
+									class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+								>
+									{#snippet trigger()}
+										{t('scholarships.source', 'Source')}: {source.name}
+									{/snippet}
+								</EntityHoverChip>
+								{#if source.source_url}
+									<a
+										href={source.source_url}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+										aria-label={t('scholarships.original_source', 'View original source')}
+									>
+										<ExternalLink size={14} />
+									</a>
+								{/if}
+							</div>
+						{/if}
+						{#if trustTier > 0}
+							<div>
+								<div class="mb-1 flex items-center justify-between text-xs">
+									<span class="text-[var(--color-muted)]">{t('scholarships.trust_tier', 'Trust tier')}</span>
+									<span class="font-medium text-[var(--color-text)]">{trustPct}%</span>
+								</div>
+								<div class="h-1.5 overflow-hidden rounded-full bg-[var(--color-border)]">
+									<div
+										class="h-full rounded-full bg-[var(--color-primary)] transition-[width] duration-500"
+										style="width: {trustPct}%"
+									></div>
+								</div>
+							</div>
+						{/if}
+					</section>
+				{/if}
+
+				<!-- CTAs -->
+				<div class="mt-6 flex flex-wrap items-center gap-4">
 					{#if scholarship.application_url}
 						<a
 							href={scholarship.application_url}
 							target="_blank"
-							rel="noopener noreferrer"
-							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:opacity-90 transition-opacity"
+							rel="noopener noreferrer nofollow"
+							class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
 						>
 							{t('scholarships.apply', 'Apply')}
-							<ExternalLink size={14} />
+							<ExternalLink size={15} />
 						</a>
 					{/if}
-				</div>
-			{/if}
-
-			<!-- Description -->
-			{#if scholarship.description}
-				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-					<p class="text-sm text-[var(--color-text-subtle)] whitespace-pre-line">{scholarship.description}</p>
-				</div>
-			{/if}
-
-			<!-- Eligibility -->
-			{#if scholarship.eligibility}
-				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-					<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('scholarships.eligibility', 'Eligibility')}</h2>
-					<p class="text-sm text-[var(--color-text-subtle)] whitespace-pre-line">{scholarship.eligibility}</p>
-				</div>
-			{/if}
-
-			<!-- How to apply -->
-			{#if scholarship.how_to_apply}
-				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-					<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('scholarships.how_to_apply', 'How to apply')}</h2>
-					<p class="text-sm text-[var(--color-text-subtle)] whitespace-pre-line">{scholarship.how_to_apply}</p>
-				</div>
-			{/if}
-
-			<!-- Contact -->
-			{#if scholarship.contact_email}
-				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-					<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('scholarships.contact', 'Contact')}</h2>
 					<a
-						href={`mailto:${scholarship.contact_email}`}
-						class="text-sm text-[var(--color-primary)] hover:underline"
+						href={`/guide/${scholarship.slug}`}
+						class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
 					>
-						{scholarship.contact_email}
+						<BookOpen size={15} />
+						{t('scholarships.read_more_details', 'Read more details')}
 					</a>
 				</div>
-			{/if}
+			</div>
+		</article>
 
-			<!-- Save + tracker panel -->
-			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-4">
-				<div class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-					<ClipboardList size={16} />
-					{t('scholarships.tracker', 'Application Tracker')}
-				</div>
+		<!-- Save + tracker panel -->
+		<div class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-4">
+			<div class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+				<ClipboardList size={16} />
+				{t('scholarships.tracker', 'Application Tracker')}
+			</div>
 
-				<div class="flex items-center justify-between">
-					<button
-						onclick={toggleSave}
-						class="inline-flex items-center gap-2 rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {savedItem ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'border border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-primary)]'}"
+			<div class="flex items-center justify-between">
+				<button
+					onclick={toggleSave}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {savedItem ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'border border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-primary)]'}"
+				>
+					{#if savedItem}
+						<BookmarkCheck size={18} />
+						{t('scholarships.saved', 'Saved')}
+					{:else}
+						<Bookmark size={18} />
+						{t('scholarships.save', 'Save scholarship')}
+					{/if}
+				</button>
+			</div>
+
+			{#if savedItem}
+				<!-- Status dropdown -->
+				<div>
+					<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="status">
+						{t('scholarships.application_status', 'Application status')}
+					</label>
+					<select
+						id="status"
+						value={savedItem.status}
+						onchange={(e) => updateStatus((e.currentTarget as HTMLSelectElement).value)}
+						disabled={updating}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 					>
-						{#if savedItem}
-							<BookmarkCheck size={18} />
-							{t('scholarships.saved', 'Saved')}
-						{:else}
-							<Bookmark size={18} />
-							{t('scholarships.save', 'Save scholarship')}
-						{/if}
-					</button>
+						{#each statusOptions as opt (opt.value)}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
 				</div>
 
-				{#if savedItem}
-					<!-- Status dropdown -->
-					<div>
-						<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="status">
-							{t('scholarships.application_status', 'Application status')}
-						</label>
-						<select
-							id="status"
-							value={savedItem.status}
-							onchange={(e) => updateStatus((e.currentTarget as HTMLSelectElement).value)}
-							disabled={updating}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-						>
-							{#each statusOptions as opt (opt.value)}
-								<option value={opt.value}>{opt.label}</option>
-							{/each}
-						</select>
-					</div>
-
-					<!-- Notes editor -->
-					<div>
-						<span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('scholarships.notes', 'Notes')}</span>
-						{#if editingNotes}
-							<div class="space-y-2">
-								<textarea
-									bind:value={notesDraft}
-									rows="3"
-									placeholder={t('scholarships.notes_placeholder', 'Add your notes about this scholarship...')}
-									class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-								></textarea>
-								<div class="flex gap-2">
-									<button
-										onclick={saveNotes}
-										class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:opacity-90"
-									>
-										{t('common.save', 'Save')}
-									</button>
-									<button
-										onclick={() => (editingNotes = false)}
-										class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
-									>
-										{t('common.cancel', 'Cancel')}
-									</button>
-								</div>
-							</div>
-						{:else}
-							<div class="flex items-start justify-between gap-2">
-								<p class="flex-1 whitespace-pre-line text-sm text-[var(--color-text-subtle)]">
-									{savedItem.notes || t('scholarships.no_notes', 'No notes yet.')}
-								</p>
+				<!-- Notes editor -->
+				<div>
+					<span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('scholarships.notes', 'Notes')}</span>
+					{#if editingNotes}
+						<div class="space-y-2">
+							<textarea
+								bind:value={notesDraft}
+								rows="3"
+								placeholder={t('scholarships.notes_placeholder', 'Add your notes about this scholarship...')}
+								class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+							></textarea>
+							<div class="flex gap-2">
 								<button
-									onclick={startEditNotes}
-									class="flex-shrink-0 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-								>
-									{t('scholarships.edit_notes', 'Edit')}
-								</button>
-							</div>
-						{/if}
-					</div>
-
-					<!-- Reminder configuration -->
-					<div>
-						<span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('scholarships.reminder_days', 'Reminder (days before deadline)')}</span>
-						{#if editingReminder}
-							<div class="flex items-center gap-2">
-								<input
-									type="number"
-									bind:value={reminderDraft}
-									min="0"
-									max="90"
-									class="w-24 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-								/>
-								<button
-									onclick={saveReminder}
+									onclick={saveNotes}
 									class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:opacity-90"
 								>
 									{t('common.save', 'Save')}
 								</button>
 								<button
-									onclick={() => (editingReminder = false)}
+									onclick={() => (editingNotes = false)}
 									class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 								>
 									{t('common.cancel', 'Cancel')}
 								</button>
 							</div>
-						{:else}
-							<div class="flex items-center justify-between">
-								<span class="text-sm text-[var(--color-text-subtle)]">
-									{savedItem.remind_before_days === 0
-										? t('scholarships.no_reminder', 'No reminder')
-										: t('scholarships.reminder_value', '{days} days before').replace('{days}', String(savedItem.remind_before_days))}
-								</span>
-								<button
-									onclick={startEditReminder}
-									class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-								>
-									{t('scholarships.edit_reminder', 'Edit')}
-								</button>
-							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
+						</div>
+					{:else}
+						<div class="flex items-start justify-between gap-2">
+							<p class="flex-1 whitespace-pre-line text-sm text-[var(--color-text-subtle)]">
+								{savedItem.notes || t('scholarships.no_notes', 'No notes yet.')}
+							</p>
+							<button
+								onclick={startEditNotes}
+								class="flex-shrink-0 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							>
+								{t('scholarships.edit_notes', 'Edit')}
+							</button>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Reminder configuration -->
+				<div>
+					<span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('scholarships.reminder_days', 'Reminder (days before deadline)')}</span>
+					{#if editingReminder}
+						<div class="flex items-center gap-2">
+							<input
+								type="number"
+								bind:value={reminderDraft}
+								min="0"
+								max="90"
+								class="w-24 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+							/>
+							<button
+								onclick={saveReminder}
+								class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:opacity-90"
+							>
+								{t('common.save', 'Save')}
+							</button>
+							<button
+								onclick={() => (editingReminder = false)}
+								class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							>
+								{t('common.cancel', 'Cancel')}
+							</button>
+						</div>
+					{:else}
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-[var(--color-text-subtle)]">
+								{savedItem.remind_before_days === 0
+									? t('scholarships.no_reminder', 'No reminder')
+									: t('scholarships.reminder_value', '{days} days before').replace('{days}', String(savedItem.remind_before_days))}
+							</span>
+							<button
+								onclick={startEditReminder}
+								class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							>
+								{t('scholarships.edit_reminder', 'Edit')}
+							</button>
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>

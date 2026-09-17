@@ -21,7 +21,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
 }
 
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
 }

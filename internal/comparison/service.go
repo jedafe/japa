@@ -269,8 +269,8 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, limit, offs
 
 		items = append(items, ComparisonTypeListItem{
 			ListComparisonTypesRow: td,
-			FieldCount:                     fieldCount,
-			ItemCount:                      itemCount,
+			FieldCount:             fieldCount,
+			ItemCount:              itemCount,
 		})
 	}
 

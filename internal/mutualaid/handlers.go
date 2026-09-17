@@ -116,7 +116,6 @@ func permKeyForPostType(postType string) string {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -301,11 +300,6 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
@@ -404,11 +398,6 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -457,11 +446,6 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 // 202 if the DM subsystem is not configured (graceful degradation).
 func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -560,11 +544,6 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -599,11 +578,6 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 // 30 days. Auth required (author only).
 func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -643,11 +617,6 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 // required. Soft-delete per Rule 11.
 func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -754,7 +723,6 @@ func (h *Handlers) HandleAdminModerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

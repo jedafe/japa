@@ -829,11 +829,6 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var input struct {
 		ContentType     string          `json:"content_type"`
 		Title           string          `json:"title"`
@@ -1543,11 +1538,6 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -1841,10 +1831,6 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1896,11 +1882,6 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = user // used for RBAC audit trail
-
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2016,10 +1997,6 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 // publish_at.
 func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -2254,10 +2231,6 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2331,11 +2304,6 @@ func (h *Handlers) UnpinContent(w http.ResponseWriter, r *http.Request) {
 // AddReaction handles POST /api/v1/content/{id}/reactions.
 func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -2449,10 +2417,6 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2514,10 +2478,6 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 // frontend to initialise the like button state on page load).
 func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -2654,10 +2614,6 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2708,10 +2664,6 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2759,10 +2711,6 @@ func (h *Handlers) GetBookmarkStatus(w http.ResponseWriter, r *http.Request) {
 // Body: { "folder_id": "uuid" } — pass empty string or omit to unfile.
 func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -2829,10 +2777,6 @@ func (h *Handlers) ListContentTags(w http.ResponseWriter, r *http.Request) {
 // slug-based tagging, and the legacy {tag_id: string} for backward compatibility.
 func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -2946,10 +2890,6 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -3013,10 +2953,6 @@ func (h *Handlers) FeatureContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -3062,10 +2998,6 @@ func (h *Handlers) UnfeatureContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -3088,10 +3020,6 @@ func (h *Handlers) UnfeatureContent(w http.ResponseWriter, r *http.Request) {
 // ShareContent handles POST /api/v1/content/{id}/share.
 func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -3162,7 +3090,7 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	guideCategories := []map[string]string{}
 
-	if h.guideCategoryLister != nil && false {
+	if h.guideCategoryLister != nil {
 		cats, err := h.guideCategoryLister.ListGuideCategories(r.Context())
 		if err == nil {
 			for _, c := range cats {
@@ -3229,10 +3157,6 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -3279,11 +3203,6 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 // include additional_space_ids. At least one primary space is required.
 func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

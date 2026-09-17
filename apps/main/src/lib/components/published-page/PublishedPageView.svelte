@@ -1,15 +1,23 @@
 <script lang="ts">
+	/**
+	 * PublishedPageView — renders a published Page Builder page. Shared by the
+	 * root-level /[slug] route and the legacy /pages/[slug] path.
+	 *
+	 * Ref: japaconnect-engineering/sections/27-page-builder.md
+	 */
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { FileText } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { LandingRenderer, normalizeLegacyBlocks, type Block } from '@japaconnect/landing-blocks';
-	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import type { PageBuilderPage } from '$lib/types';
 
-	let { data }: { data: PageData } = $props();
+	interface Props {
+		page: PageBuilderPage;
+	}
 
-	const pageData = $derived(data.page);
+	let { page: pageData }: Props = $props();
 
 	const title = $derived(
 		pageData.meta && typeof pageData.meta === 'object' && 'title' in pageData.meta

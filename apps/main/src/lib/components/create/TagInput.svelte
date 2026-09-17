@@ -219,8 +219,8 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		min-height: 44px;
-		padding: 10px 14px;
+		height: 2.375rem;
+		padding: 0 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
@@ -247,11 +247,10 @@
 	.tag-input {
 		flex: 1;
 		min-width: 100px;
-		min-height: 44px;
 		border: none;
 		background: transparent;
 		color: var(--color-text);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		outline: none;
 	}
 	.tag-input::placeholder {

@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { GraduationCap, ClipboardList, ArrowLeft, ExternalLink, Trash2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import { goto } from '$app/navigation';
 	import { EmptyState } from '$lib/components/ui';
 	import type { SavedScholarship } from '$lib/types';
 	import type { PageData } from './$types';
@@ -17,6 +18,13 @@
 
 	let saved = $state<SavedScholarship[]>(untrack(() => data.saved ?? []));
 	let updating = $state<Record<string, boolean>>({});
+
+	// Resync when the server load re-runs (e.g. ?status= filter navigation).
+	// Local mutations (unsave/status/notes) do not touch data.saved, so this
+	// only fires when the URL-driven load returns fresh data.
+	$effect(() => {
+		saved = data.saved ?? [];
+	});
 
 	const statusOptions = $derived(
 		(data.statuses ?? []).map((o) => ({
@@ -81,6 +89,16 @@
 		const diff = new Date(date).getTime() - Date.now();
 		return Math.ceil(diff / (1000 * 60 * 60 * 24));
 	}
+
+	// Status filter tabs — consume the backend's ?status= filter on
+	// GET /scholarships/saved via the URL so the filtered view is shareable.
+	const activeStatus = $derived(data.statusFilter ?? '');
+	function filterByStatus(status: string) {
+		goto(status ? `/scholarships/saved?status=${encodeURIComponent(status)}` : '/scholarships/saved', {
+			keepFocus: true,
+			noScroll: true
+		});
+	}
 </script>
 
 <svelte:head>
@@ -111,17 +129,50 @@
 		</a>
 	</div>
 
+	{#if statusOptions.length > 0}
+		<div class="flex flex-wrap gap-2 border-b border-[var(--color-border)] px-4 py-2" role="group" aria-label={t('scholarships.filter_status', 'Filter by status')}>
+			<button
+				type="button"
+				onclick={() => filterByStatus('')}
+				class="rounded-full px-3 py-1 text-xs font-medium transition-colors {activeStatus === '' ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
+			>
+				{t('common.all', 'All')}
+			</button>
+			{#each statusOptions as opt (opt.value)}
+				<button
+					type="button"
+					onclick={() => filterByStatus(opt.value)}
+					class="rounded-full px-3 py-1 text-xs font-medium transition-colors {activeStatus === opt.value ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
+				>
+					{opt.label}
+				</button>
+			{/each}
+		</div>
+	{/if}
+
 	<div class="p-4">
 		{#if saved.length === 0}
-			<EmptyState
-				icon={GraduationCap}
-				title={t('scholarships.no_saved', 'No saved scholarships')}
-				body={t('scholarships.no_saved_desc', 'Browse the scholarship finder and save opportunities to track them here.')}
-				action={{
-					label: t('scholarships.browse', 'Browse scholarships'),
-					href: '/scholarships'
-				}}
-			/>
+			{#if activeStatus}
+				<EmptyState
+					icon={GraduationCap}
+					title={t('scholarships.no_saved_filtered', 'No scholarships with this status')}
+					body={t('scholarships.no_saved_filtered_desc', 'Try a different status filter or clear it to see all your saved scholarships.')}
+					action={{
+						label: t('common.clear_filters', 'Clear filters'),
+						onclick: () => filterByStatus('')
+					}}
+				/>
+			{:else}
+				<EmptyState
+					icon={GraduationCap}
+					title={t('scholarships.no_saved', 'No saved scholarships')}
+					body={t('scholarships.no_saved_desc', 'Browse the scholarship finder and save opportunities to track them here.')}
+					action={{
+						label: t('scholarships.browse', 'Browse scholarships'),
+						href: '/scholarships'
+					}}
+				/>
+			{/if}
 		{:else}
 			<div class="space-y-3">
 				{#each saved as item (item.id)}
@@ -147,9 +198,13 @@
 										<span class="text-[var(--color-muted)]">
 											{t('scholarships.deadline', 'Deadline')}: {formatDate(s.application_deadline)}
 											{#if days !== null}
-												<span class="ml-1 {days < 7 ? 'text-[var(--color-danger)]' : ''}">
-													({days} {days === 1 ? t('scholarships.day', 'day') : t('scholarships.days', 'days')} left)
-												</span>
+												{#if days < 0}
+													<span class="ml-1 text-[var(--color-danger)]">({t('scholarships.deadline_passed', 'Deadline passed')})</span>
+												{:else}
+													<span class="ml-1 {days < 7 ? 'text-[var(--color-danger)]' : ''}">
+														({days} {days === 1 ? t('scholarships.day', 'day') : t('scholarships.days', 'days')} left)
+													</span>
+												{/if}
 											{/if}
 										</span>
 									{/if}

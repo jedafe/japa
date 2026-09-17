@@ -239,15 +239,17 @@ SELECT COUNT(*) AS count
 FROM saved_scholarships
 WHERE user_id = $1
  AND ($2::text = '' OR status = $2)
+ AND ($3::uuid IS NULL OR guide_id = $3)
 `
 
 type CountSavedScholarshipsParams struct {
-	UserID pgtype.UUID `json:"user_id"`
-	Status string      `json:"status"`
+	UserID  pgtype.UUID `json:"user_id"`
+	Status  string      `json:"status"`
+	GuideID pgtype.UUID `json:"guide_id"`
 }
 
 func (q *Queries) CountSavedScholarships(ctx context.Context, arg CountSavedScholarshipsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSavedScholarships, arg.UserID, arg.Status)
+	row := q.db.QueryRow(ctx, countSavedScholarships, arg.UserID, arg.Status, arg.GuideID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -383,13 +385,15 @@ FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
 WHERE ss.user_id = $1
  AND ($2::text = '' OR ss.status = $2)
+ AND ($3::uuid IS NULL OR ss.guide_id = $3)
 ORDER BY ss.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListSavedScholarshipsParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
 	Status     string      `json:"status"`
+	GuideID    pgtype.UUID `json:"guide_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -415,6 +419,7 @@ func (q *Queries) ListSavedScholarships(ctx context.Context, arg ListSavedSchola
 	rows, err := q.db.Query(ctx, listSavedScholarships,
 		arg.UserID,
 		arg.Status,
+		arg.GuideID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

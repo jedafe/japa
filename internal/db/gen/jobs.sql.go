@@ -217,8 +217,11 @@ WHERE c.content_type = 'job_listing'
  WHERE cfv.entity_type = 'content'
  AND cfv.entity_id = c.id
  AND cf.key = 'application_deadline'
- AND cfv.value_text IS NOT NULL
- AND cfv.value_text::timestamptz < now()
+ AND (
+   cfv.value_date < now()
+   OR CASE WHEN cfv.value_text ~ '^\d{4}-\d{2}-\d{2}'
+           THEN cfv.value_text::timestamptz END < now()
+ )
  )
 `
 
@@ -231,8 +234,12 @@ WHERE c.content_type = 'job_listing'
 // Archive published job_listing content whose application_deadline custom
 // field value is in the past. custom_field_values is EAV: field_id →
 // custom_fields.id, entity_type='content', entity_id = contents.id. The
-// application_deadline field is field_type='date' and stored in value_text
-// (ISO date) so it is cast to timestamptz for comparison.
+// application_deadline field is field_type='date' so its value is stored in
+// the value_date column (customfields.FieldTypeValueColumn). The value_text
+// fallback is guarded by an ISO-date regex — Postgres may evaluate the cast
+// before the cf.key predicate, and unrelated fields (e.g. destination_country)
+// store non-date text in value_text, which would otherwise fail the whole
+// task with SQLSTATE 22007.
 func (q *Queries) ExpireJobListingsPastDeadline(ctx context.Context) (int64, error) {
 	result, err := q.db.Exec(ctx, expireJobListingsPastDeadline)
 	if err != nil {

@@ -177,11 +177,6 @@ func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var input struct {
 		Prompt         string `json:"prompt"`
 		ConversationID string `json:"conversation_id,omitempty"`
@@ -291,10 +286,6 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	// Build the catalog filtered by the user's RBAC grants. Reuses the
 	// agent's buildToolCatalog which reads from the jc:agent:tools:{user_id}
@@ -323,11 +314,6 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 // (?page_size=N&page_offset=N).
 func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -376,11 +362,6 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 // another user's session.
 func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -434,11 +415,6 @@ func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Requ
 // layer via GetAgentSessionForUser.
 func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -517,11 +493,6 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment).
 func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -714,11 +685,6 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	// Profile-level exemption (users.ai_exempt).
 	profileExempt, err := h.sessions.GetUserAIExempt(r.Context(), user.UserID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -745,10 +711,6 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 // queries are platform-scoped for defense-in-depth.
 func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1073,11 +1035,6 @@ type compareEntitiesRequest struct {
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 7, task 7.07).
 func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

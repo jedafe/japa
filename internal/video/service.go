@@ -10,6 +10,7 @@ import (
 	"html"
 	"log/slog"
 	"math"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -98,6 +99,7 @@ type Service struct {
 	dispatcher  AIDispatcher
 	ytProvider  *YouTubeProvider
 	sources     SourceRegistry
+	perms       permissionChecker
 }
 
 // NewService returns a video Service.
@@ -122,6 +124,11 @@ func (s *Service) SetContentService(c ContentCreator) { s.content = c }
 
 // SetSourceRegistry links the video service to the canonical source registry.
 func (s *Service) SetSourceRegistry(sr SourceRegistry) { s.sources = sr }
+
+// SetPermissionChecker injects the RBAC resolver used for in-service
+// permission rules (§106: attributing a bulk import to another user requires
+// the admin.video_import_jobs.manage node).
+func (s *Service) SetPermissionChecker(p permissionChecker) { s.perms = p }
 
 // SetDispatcher injects the AI Gateway dispatcher used to generate video
 // draft summaries.
@@ -261,13 +268,37 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, metadata *Metada
 
 	description := metadata.Description
 
+	// §106: the canonical source is the CHANNEL, not the individual video —
+	// the /sources directory must only list channel/user URLs (e.g.
+	// youtube.com/@handle), never per-video watch URLs or upload paths.
 	var intelSourceID pgtype.UUID
-	if s.sources != nil {
-		src, sErr := s.sources.CreateAutoForVideo(ctx, authorID, &metadata.Title, &metadata.SourceURL, thumbnailURL)
+	if s.sources != nil && metadata.ChannelURL != "" {
+		channelName := metadata.ChannelName
+		if channelName == "" {
+			channelName = metadata.AuthorName
+		}
+		if channelName == "" {
+			channelName = metadata.ChannelURL
+		}
+		var channelLogo *string
+		if metadata.ChannelLogo != "" {
+			channelLogo = &metadata.ChannelLogo
+		} else {
+			// oEmbed rarely returns a channel avatar — use the video
+			// thumbnail so the /sources card still shows an image.
+			channelLogo = thumbnailURL
+		}
+		src, sErr := s.sources.CreateAutoForVideo(ctx, authorID, &channelName, &metadata.ChannelURL, channelLogo)
 		if sErr != nil {
-			slog.Warn("video: failed to register canonical source", "source_url", metadata.SourceURL, "error", sErr)
+			slog.Warn("video: failed to register canonical source", "source_url", metadata.ChannelURL, "error", sErr)
 		} else {
 			intelSourceID = src.ID
+			// Re-link this channel's previously imported videos — they were
+			// persisted before the channel row existed (or were orphaned by
+			// migration 000675).
+			if lErr := s.store.LinkVideoSourcesToChannel(ctx, src.ID, authorID); lErr != nil {
+				slog.Warn("video: failed to backlink channel videos", "source_id", src.ID, "error", lErr)
+			}
 		}
 	}
 
@@ -285,6 +316,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, metadata *Metada
 		DurationSecs:     durationSecs,
 		FieldValues:      fieldValues,
 		SourceID:         intelSourceID,
+		Slug:             s.uniqueVideoSlug(ctx, metadata.Title),
 	})
 	if err != nil {
 		return ResolveResult{}, fmt.Errorf("storing video source: %w", err)
@@ -323,14 +355,22 @@ func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filen
 		title = filename
 	}
 
-	var intelSourceID pgtype.UUID
-	if s.sources != nil {
-		src, sErr := s.sources.CreateAutoForVideo(ctx, uploaderID, &title, &sourceURL, nil)
-		if sErr != nil {
-			slog.Warn("video: failed to register canonical source for upload", "source_url", sourceURL, "error", sErr)
-		} else {
-			intelSourceID = src.ID
-		}
+	// §106: uploads have no external source — a same-origin media serve path
+	// is not a channel URL and must not appear in the /sources directory.
+	// source_id stays NULL.
+
+	// §106: extract a poster frame with ffmpeg (same primitive as the
+	// content:process_video worker) and store it as its own media row.
+	// Previously thumbnail_media_id pointed at the video file itself, so
+	// grids/poster slots rendered nothing and composers picked a video file
+	// as the post's featured image. Non-fatal — the video plays regardless.
+	var thumbnailMediaID pgtype.UUID
+	var thumbnailURL *string
+	if tID, tURL, tErr := s.storeVideoPoster(ctx, uploaderID, data); tErr != nil {
+		slog.WarnContext(ctx, "video: poster generation skipped", "error", tErr)
+	} else {
+		thumbnailMediaID = tID
+		thumbnailURL = &tURL
 	}
 
 	source, err := s.store.CreateOrUpdateSource(ctx, gen.CreateOrUpdateVideoSourceParams{
@@ -340,9 +380,10 @@ func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filen
 		SourceUrl:        sourceURL,
 		Title:            title,
 		Description:      description,
-		ThumbnailMediaID: mediaID,
+		ThumbnailUrl:     thumbnailURL,
+		ThumbnailMediaID: thumbnailMediaID,
 		FieldValues:      []byte("{}"),
-		SourceID:         intelSourceID,
+		Slug:             s.uniqueVideoSlug(ctx, title),
 	})
 	if err != nil {
 		return ResolveResult{}, fmt.Errorf("storing video source: %w", err)
@@ -364,9 +405,94 @@ func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filen
 	return ResolveResult{Source: source, EmbedJSON: buildEmbedJSON(source.ID, metadata)}, nil
 }
 
+// storeVideoPoster extracts a single frame from uploaded video bytes with
+// ffmpeg and stores it as its own media row, returning the poster's media
+// ID and its same-origin serve URL. Temporary files live in os.TempDir —
+// inside the VideoProcessor path allowlist — and are removed on return.
+func (s *Service) storeVideoPoster(ctx context.Context, uploaderID pgtype.UUID, data []byte) (pgtype.UUID, string, error) {
+	in, err := os.CreateTemp("", "jc-video-*.mp4")
+	if err != nil {
+		return pgtype.UUID{}, "", fmt.Errorf("temp input: %w", err)
+	}
+	defer os.Remove(in.Name())
+
+	if _, err := in.Write(data); err != nil {
+		in.Close()
+		return pgtype.UUID{}, "", fmt.Errorf("writing temp input: %w", err)
+	}
+	if err := in.Close(); err != nil {
+		return pgtype.UUID{}, "", fmt.Errorf("closing temp input: %w", err)
+	}
+
+	out, err := os.CreateTemp("", "jc-poster-*.jpg")
+	if err != nil {
+		return pgtype.UUID{}, "", fmt.Errorf("temp output: %w", err)
+	}
+	outPath := out.Name()
+	out.Close()
+	defer os.Remove(outPath)
+
+	timestamp := "00:00:01"
+	if s.settings != nil {
+		// Same key the content:process_video worker uses (Rule 3).
+		timestamp = s.settings.GetStringOr(ctx, "media.video_thumbnail_time", "00:00:01")
+	}
+
+	processor := media.NewVideoProcessor()
+	if err := processor.GenerateThumbnail(ctx, in.Name(), outPath, timestamp); err != nil {
+		// Very short clips can produce no frame at the configured timestamp —
+		// fall back to the first frame.
+		if retryErr := processor.GenerateThumbnail(ctx, in.Name(), outPath, "00:00:00"); retryErr != nil {
+			return pgtype.UUID{}, "", err
+		}
+	}
+
+	poster, err := os.ReadFile(outPath)
+	if err != nil {
+		return pgtype.UUID{}, "", fmt.Errorf("reading poster: %w", err)
+	}
+
+	posterID, err := s.media.StoreFromBytes(ctx, uploaderID, poster, "video-poster.jpg", nil)
+	if err != nil {
+		return pgtype.UUID{}, "", fmt.Errorf("storing poster: %w", err)
+	}
+
+	pm, err := s.media.GetMedia(ctx, posterID)
+	if err != nil {
+		return pgtype.UUID{}, "", fmt.Errorf("loading poster media: %w", err)
+	}
+
+	return posterID, fmt.Sprintf("/api/v1/media/serve/%s/%s", pm.StorageBucket, pm.StoragePath), nil
+}
+
 // GetSourceByID returns a single active video source in the platform.
 func (s *Service) GetSourceByID(ctx context.Context, id pgtype.UUID) (gen.VideoSource, error) {
 	return s.store.GetSourceByID(ctx, id)
+}
+
+// GetSourceBySlug resolves a video source by its public slug (§106
+// /video/{slug} canonical route).
+func (s *Service) GetSourceBySlug(ctx context.Context, slug string) (gen.VideoSource, error) {
+	return s.store.GetSourceBySlug(ctx, slug)
+}
+
+// uniqueVideoSlug generates a URL-safe slug for a video source — the
+// contents.slug scheme (Slugify + numeric suffix on collision) scoped to
+// video_sources (§106 /video/{slug} canonical route). The slug is generated
+// pre-insert; ON CONFLICT (source_url) keeps an existing row's slug.
+func (s *Service) uniqueVideoSlug(ctx context.Context, title string) string {
+	base := content.Slugify(title)
+	for i := 0; i < content.MaxSlugAttempts; i++ {
+		candidate := base
+		if i > 0 {
+			candidate = fmt.Sprintf("%s-%d", base, i+1)
+		}
+		if _, err := s.store.GetSourceBySlug(ctx, candidate); err != nil {
+			return candidate //nolint:nilerr // no row → slug is available
+		}
+	}
+
+	return base
 }
 
 // MaxUploadBytes returns the platform's configured upload size cap in bytes.

@@ -548,7 +548,6 @@ func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-
 			if !checker.IsEnabled(r.Context(), key) {
 				errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
 				return

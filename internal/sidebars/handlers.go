@@ -34,7 +34,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
-
 func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {

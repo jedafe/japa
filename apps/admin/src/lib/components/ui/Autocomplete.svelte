@@ -373,7 +373,8 @@
 		align-items: center;
 		gap: 8px;
 		width: 100%;
-		padding: 8px 12px;
+		height: 2.5rem;
+		padding: 0 12px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-md);
 		background: var(--color-surface);

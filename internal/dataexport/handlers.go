@@ -30,7 +30,6 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers (same pattern as contentimport/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -112,10 +111,6 @@ func (h *Handlers) HandleCreateExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var req createExportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -161,10 +156,6 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
@@ -191,10 +182,6 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 // HandleGetExport handles GET /api/v1/admin/data-exports/:id.
 func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -227,10 +214,6 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -252,10 +235,6 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 // caller's platform must match the export's platform. Gated by gdpr.data_exports.view.
 func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

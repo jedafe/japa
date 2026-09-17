@@ -88,6 +88,15 @@
 		currentPage = 1;
 	});
 
+	// Unknown or unavailable ?tab= values (e.g. ?tab=bogus, or a conditional
+	// tab hidden for this profile) would render no panel at all — normalize
+	// to Posts so the page always shows content.
+	$effect(() => {
+		if (activeTab && !tabs.some((tab) => tab.value === activeTab)) {
+			activeTab = 'posts';
+		}
+	});
+
 	// BUG-007: Block/unblock toggle for the profile user. Mirrors the
 	// FollowButton pattern — local state seeded from SSR, optimistic update,
 	// invalidate the blocked-users list on success.
@@ -658,6 +667,17 @@ profile is private, or no stage is set. -->
 						{/if}
 					</div>
 				</div>
+			{/if}
+			{#if user.is_synthetic && isAuthenticated && !isOwnProfile}
+				<!-- §106 — imported channels can be claimed or reported by their
+				real owner. This is the only entry point to /u/[username]/claim. -->
+				<a
+					href="/u/{user.username}/claim"
+					class="mb-4 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] hover:border-[var(--color-border-strong)]"
+				>
+					<Flag size={14} />
+					{t('profile.claim_channel', 'Is this your channel? Claim or report it')}
+				</a>
 			{/if}
 			{#if data.videos.length === 0 && videoPosts.length === 0}
 				<EmptyState icon={Video} title={t('profile.videos_empty', 'No videos yet')} />

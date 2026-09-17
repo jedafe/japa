@@ -46,11 +46,6 @@ func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, paramName)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
@@ -289,7 +284,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -482,10 +476,6 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		Title        string  `json:"title"`
@@ -653,10 +643,6 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -718,11 +704,6 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	seriesID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
@@ -767,10 +748,6 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	seriesID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -806,10 +783,6 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -840,10 +813,6 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 // post reorder by an attacker who knows the series_id.
 func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -902,10 +871,6 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		ContentID string `json:"content_id"`
@@ -952,10 +917,6 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -996,10 +957,6 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1037,10 +994,6 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1061,10 +1014,6 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 // feedback from the body — does not require a status field.
 func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1127,10 +1076,6 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1189,10 +1134,6 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 // FeaturePost handles POST /api/v1/blog/featured.
 func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1342,10 +1283,6 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 // M3: uses a transactional bulk update so partial failure leaves consistent order.
 func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -1838,11 +1775,6 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var input struct {
 		Title           string          `json:"title"`
 		Slug            string          `json:"slug"`
@@ -1975,10 +1907,6 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2024,10 +1952,6 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 // path-based featuring, alongside the existing body-based POST /blog/featured.
 func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -2133,11 +2057,6 @@ func (h *Handlers) verifyOwnBlogPost(w http.ResponseWriter, r *http.Request, use
 // delegating to the content service. Ref: §24 blog.edit_own.
 func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -2289,10 +2208,6 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 // delegating to the content service. Ref: §24 blog.edit_own.
 func (h *Handlers) DeletePost(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

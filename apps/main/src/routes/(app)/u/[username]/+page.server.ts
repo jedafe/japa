@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
 import type {
@@ -67,6 +67,25 @@ export const load: PageServerLoad = async (event) => {
 			code: status === 404 ? 'not_found' : 'server_error',
 			message: status === 404 ? 'User not found' : 'Failed to load profile'
 		});
+	}
+
+	// §106: video-channel synthetic users have no public profile — the
+	// canonical surface is their /sources/{slug} directory page (a source,
+	// not a profile, per the sources-directory model). Resolve one of the
+	// channel's videos → its intel source → the canonical slug.
+	if (user.is_synthetic) {
+		const channelSourceId = await apiList<VideoSource>(ctx, `/u/${username}/videos?limit=1`)
+			.then((r) => r.items[0]?.source_id ?? null)
+			.catch(() => null);
+		let channelSlug: string | null = null;
+		if (channelSourceId) {
+			channelSlug = await apiGet<{ slug: string }>(ctx, `/sources/${channelSourceId}`)
+				.then((s) => s.slug ?? null)
+				.catch(() => null);
+		}
+		if (channelSlug) {
+			throw redirect(301, `/sources/${channelSlug}`);
+		}
 	}
 
 	const userId = user.id;
@@ -198,7 +217,7 @@ export const load: PageServerLoad = async (event) => {
 		// §106 video — channel/uploaded video sources for the profile Videos
 		// tab (GET /u/{username}/videos returns VideoSource rows). Best-effort:
 		// a failure degrades to an empty list so the tab never blanks the page.
-		apiList<VideoSource>(ctx, `/u/${username}/videos`).then((r) => r.items).catch(catchEmpty<VideoSource>('videos'))
+		apiList<VideoSource>(ctx, `/u/${username}/videos?limit=100`).then((r) => r.items).catch(catchEmpty<VideoSource>('videos'))
 	]);
 
 	return {

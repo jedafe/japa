@@ -368,12 +368,13 @@
 	}
 	.cf-input {
 		width: 100%;
-		padding: 10px 14px;
+		height: 2.375rem;
+		padding: 0 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
 		color: var(--color-text);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		outline: none;
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
@@ -386,6 +387,7 @@
 	}
 	.cf-textarea {
 		resize: vertical;
+		height: auto;
 		min-height: 60px;
 		font-family: inherit;
 	}
@@ -416,7 +418,7 @@
 	}
 	.cf-color {
 		width: 100%;
-		height: 40px;
+		height: 2.375rem;
 		padding: 4px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);

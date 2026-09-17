@@ -425,8 +425,6 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-
 	// Get client IP from request
 	ip := clientIP(r)
 	bruteKey := LoginIdentifier(req.Email, ip)
@@ -1123,8 +1121,6 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-
-
 	// Always return 200 to prevent email enumeration — whether the user exists or not.
 	defer func() {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -1457,8 +1453,6 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
-
-
 
 	// Always return 200 to prevent email enumeration.
 	defer func() {

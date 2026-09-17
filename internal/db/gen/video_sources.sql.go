@@ -49,7 +49,7 @@ func (q *Queries) CountVideoSourcesForAdmin(ctx context.Context, arg CountVideoS
 
 const createOrUpdateVideoSource = `-- name: CreateOrUpdateVideoSource :one
 
-INSERT INTO video_sources (author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, field_values, status, source_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, '{}'::jsonb), COALESCE($12, 'active'), $13)
+INSERT INTO video_sources (author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, field_values, status, source_id, slug) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, '{}'::jsonb), COALESCE($12, 'active'), $13, $14)
 ON CONFLICT (source_url) DO UPDATE SET
  author_user_id = EXCLUDED.author_user_id,
  source_type = EXCLUDED.source_type,
@@ -64,7 +64,7 @@ ON CONFLICT (source_url) DO UPDATE SET
  source_id = COALESCE(EXCLUDED.source_id, video_sources.source_id),
  status = 'active',
  updated_at = now()
-RETURNING id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+RETURNING id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id, slug
 `
 
 type CreateOrUpdateVideoSourceParams struct {
@@ -81,6 +81,7 @@ type CreateOrUpdateVideoSourceParams struct {
 	FieldValues      interface{} `json:"field_values"`
 	Status           interface{} `json:"status"`
 	SourceID         pgtype.UUID `json:"source_id"`
+	Slug             string      `json:"slug"`
 }
 
 // Video sources: canonical external video records for imports and uploads.
@@ -99,6 +100,7 @@ func (q *Queries) CreateOrUpdateVideoSource(ctx context.Context, arg CreateOrUpd
 		arg.FieldValues,
 		arg.Status,
 		arg.SourceID,
+		arg.Slug,
 	)
 	var i VideoSource
 	err := row.Scan(
@@ -118,12 +120,31 @@ func (q *Queries) CreateOrUpdateVideoSource(ctx context.Context, arg CreateOrUpd
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SourceID,
+		&i.Slug,
 	)
 	return i, err
 }
 
+const getVideoChannelUsernameBySourceID = `-- name: GetVideoChannelUsernameBySourceID :one
+SELECT u.username
+FROM video_sources vs
+JOIN users u ON u.id = vs.author_user_id
+WHERE vs.source_id = $1 AND vs.source_type != 'upload'
+ORDER BY vs.created_at ASC
+LIMIT 1
+`
+
+// The channel account username behind a video_channel intel source — every
+// non-upload video under the source shares the synthetic channel author.
+func (q *Queries) GetVideoChannelUsernameBySourceID(ctx context.Context, sourceID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getVideoChannelUsernameBySourceID, sourceID)
+	var username string
+	err := row.Scan(&username)
+	return username, err
+}
+
 const getVideoSourceByExternalID = `-- name: GetVideoSourceByExternalID :one
-SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id, slug
 FROM video_sources
 WHERE source_type = $1 AND external_id = $2
 `
@@ -153,12 +174,13 @@ func (q *Queries) GetVideoSourceByExternalID(ctx context.Context, arg GetVideoSo
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SourceID,
+		&i.Slug,
 	)
 	return i, err
 }
 
 const getVideoSourceByID = `-- name: GetVideoSourceByID :one
-SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id, slug
 FROM video_sources
 WHERE id = $1
 `
@@ -183,12 +205,46 @@ func (q *Queries) GetVideoSourceByID(ctx context.Context, id pgtype.UUID) (Video
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SourceID,
+		&i.Slug,
+	)
+	return i, err
+}
+
+const getVideoSourceBySlug = `-- name: GetVideoSourceBySlug :one
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id, slug
+FROM video_sources
+WHERE slug = $1
+`
+
+// §106 — /video/{slug} resolves bare video sources by slug (UUIDs still
+// resolve via GetVideoSourceByID).
+func (q *Queries) GetVideoSourceBySlug(ctx context.Context, slug string) (VideoSource, error) {
+	row := q.db.QueryRow(ctx, getVideoSourceBySlug, slug)
+	var i VideoSource
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorUserID,
+		&i.SourceType,
+		&i.SourceUrl,
+		&i.ExternalID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.ThumbnailUrl,
+		&i.ThumbnailMediaID,
+		&i.DurationSecs,
+		&i.Status,
+		&i.FieldValues,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SourceID,
+		&i.Slug,
 	)
 	return i, err
 }
 
 const getVideoSourceByURL = `-- name: GetVideoSourceByURL :one
-SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id, slug
 FROM video_sources
 WHERE source_url = $1
 `
@@ -213,12 +269,108 @@ func (q *Queries) GetVideoSourceByURL(ctx context.Context, sourceUrl string) (Vi
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SourceID,
+		&i.Slug,
 	)
 	return i, err
 }
 
+const linkVideoSourcesToChannel = `-- name: LinkVideoSourcesToChannel :exec
+UPDATE video_sources
+SET source_id = $1, updated_at = now()
+WHERE author_user_id = $2
+  AND source_id IS NULL
+  AND source_type != 'upload'
+`
+
+type LinkVideoSourcesToChannelParams struct {
+	SourceID     pgtype.UUID `json:"source_id"`
+	AuthorUserID pgtype.UUID `json:"author_user_id"`
+}
+
+// Backfill: when a channel intel source is registered, link that channel's
+// previously-imported videos to it. video_sources.author_user_id is the
+// synthetic channel user (§106) — every non-upload video under it belongs
+// to the channel source. Only fills NULLs so explicit links are kept.
+func (q *Queries) LinkVideoSourcesToChannel(ctx context.Context, arg LinkVideoSourcesToChannelParams) error {
+	_, err := q.db.Exec(ctx, linkVideoSourcesToChannel, arg.SourceID, arg.AuthorUserID)
+	return err
+}
+
+const listVideoSourceItemsBySourceID = `-- name: ListVideoSourceItemsBySourceID :many
+SELECT vs.id, vs.title, vs.description, vs.source_url, vs.thumbnail_url,
+       vs.duration_secs, vs.created_at, vs.slug AS video_slug,
+       u.username AS author_username,
+       COALESCE(c.slug, '') AS content_slug
+FROM video_sources vs
+JOIN users u ON u.id = vs.author_user_id
+LEFT JOIN LATERAL (
+    SELECT c1.slug FROM contents c1
+    WHERE c1.video_source_id = vs.id
+      AND c1.deleted_at IS NULL
+      AND c1.status = 'published'
+    ORDER BY c1.published_at DESC NULLS LAST, c1.created_at DESC
+    LIMIT 1
+) c ON TRUE
+WHERE vs.source_id = $1 AND vs.status = 'active'
+ORDER BY vs.created_at DESC, vs.id DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListVideoSourceItemsBySourceIDParams struct {
+	SourceID   pgtype.UUID `json:"source_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListVideoSourceItemsBySourceIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Description    string             `json:"description"`
+	SourceUrl      string             `json:"source_url"`
+	ThumbnailUrl   *string            `json:"thumbnail_url"`
+	DurationSecs   *int32             `json:"duration_secs"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	VideoSlug      string             `json:"video_slug"`
+	AuthorUsername string             `json:"author_username"`
+	ContentSlug    string             `json:"content_slug"`
+}
+
+// Same scope as ListVideoSourcesBySourceID, plus the author's username and the
+// published content slug (if the video was imported as a post) so /sources
+// item cards can link in-app instead of to the external video URL (§106).
+func (q *Queries) ListVideoSourceItemsBySourceID(ctx context.Context, arg ListVideoSourceItemsBySourceIDParams) ([]ListVideoSourceItemsBySourceIDRow, error) {
+	rows, err := q.db.Query(ctx, listVideoSourceItemsBySourceID, arg.SourceID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVideoSourceItemsBySourceIDRow
+	for rows.Next() {
+		var i ListVideoSourceItemsBySourceIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.SourceUrl,
+			&i.ThumbnailUrl,
+			&i.DurationSecs,
+			&i.CreatedAt,
+			&i.VideoSlug,
+			&i.AuthorUsername,
+			&i.ContentSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVideoSourcesByAuthor = `-- name: ListVideoSourcesByAuthor :many
-SELECT vs.id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id, vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id, vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at, vs.source_id
+SELECT vs.id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id, vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id, vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at, vs.source_id, vs.slug
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
 WHERE u.username = $1 AND vs.status = 'active'
@@ -258,6 +410,7 @@ func (q *Queries) ListVideoSourcesByAuthor(ctx context.Context, arg ListVideoSou
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SourceID,
+			&i.Slug,
 		); err != nil {
 			return nil, err
 		}
@@ -270,7 +423,7 @@ func (q *Queries) ListVideoSourcesByAuthor(ctx context.Context, arg ListVideoSou
 }
 
 const listVideoSourcesByAuthorUserID = `-- name: ListVideoSourcesByAuthorUserID :many
-SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id, slug
 FROM video_sources
 WHERE author_user_id = $1
 ORDER BY created_at DESC, id DESC
@@ -309,6 +462,7 @@ func (q *Queries) ListVideoSourcesByAuthorUserID(ctx context.Context, arg ListVi
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SourceID,
+			&i.Slug,
 		); err != nil {
 			return nil, err
 		}
@@ -321,7 +475,7 @@ func (q *Queries) ListVideoSourcesByAuthorUserID(ctx context.Context, arg ListVi
 }
 
 const listVideoSourcesBySourceID = `-- name: ListVideoSourcesBySourceID :many
-SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id, slug
 FROM video_sources
 WHERE source_id = $1 AND status = 'active'
 ORDER BY created_at DESC, id DESC
@@ -361,6 +515,7 @@ func (q *Queries) ListVideoSourcesBySourceID(ctx context.Context, arg ListVideoS
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SourceID,
+			&i.Slug,
 		); err != nil {
 			return nil, err
 		}
@@ -494,7 +649,7 @@ const updateVideoSourceStatus = `-- name: UpdateVideoSourceStatus :one
 UPDATE video_sources
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+RETURNING id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id, slug
 `
 
 type UpdateVideoSourceStatusParams struct {
@@ -523,6 +678,7 @@ func (q *Queries) UpdateVideoSourceStatus(ctx context.Context, arg UpdateVideoSo
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SourceID,
+		&i.Slug,
 	)
 	return i, err
 }

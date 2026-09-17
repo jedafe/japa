@@ -56,7 +56,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	}
 }
 
-
 // requireUser extracts the authenticated user ID from the request context.
 // Returns false (and writes a 401) if no authenticated user is present.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {

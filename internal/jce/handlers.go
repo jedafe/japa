@@ -66,7 +66,6 @@ type Handlers struct {
 // NewHandlers creates Handlers backed by the given JCE service.
 func NewHandlers(service service) *Handlers { return &Handlers{service: service} }
 
-
 // requireUser resolves the authenticated user from the request context.
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -161,11 +160,6 @@ func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	all := r.URL.Query().Get("all") == "true"
 
 	profiles, err := h.service.ListComparisonProfiles(r.Context(), user.UserID, true, all)
@@ -180,11 +174,6 @@ func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request) {
 // CreateProfile handles POST /api/v1/jce/profiles.
 func (h *Handlers) CreateProfile(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -215,11 +204,6 @@ func (h *Handlers) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -238,11 +222,6 @@ func (h *Handlers) GetProfile(w http.ResponseWriter, r *http.Request) {
 // UpdateProfile handles PATCH /api/v1/jce/profiles/{id}.
 func (h *Handlers) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -274,11 +253,6 @@ func (h *Handlers) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -300,11 +274,6 @@ func (h *Handlers) SetDefaultProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -322,11 +291,6 @@ func (h *Handlers) SetDefaultProfile(w http.ResponseWriter, r *http.Request) {
 // GetProfileStats handles GET /api/v1/jce/profiles/stats.
 func (h *Handlers) GetProfileStats(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -353,11 +317,6 @@ func (h *Handlers) ListScoreFactors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -376,11 +335,6 @@ func (h *Handlers) ListScoreFactors(w http.ResponseWriter, r *http.Request) {
 // CreateScoreFactor handles POST /api/v1/jce/comparison-types/{id}/score-factors.
 func (h *Handlers) CreateScoreFactor(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -417,11 +371,6 @@ func (h *Handlers) GetScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -440,11 +389,6 @@ func (h *Handlers) GetScoreFactor(w http.ResponseWriter, r *http.Request) {
 // UpdateScoreFactor handles PATCH /api/v1/jce/score-factors/{id}.
 func (h *Handlers) UpdateScoreFactor(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -476,11 +420,6 @@ func (h *Handlers) DeleteScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -502,11 +441,6 @@ func (h *Handlers) DeleteScoreFactor(w http.ResponseWriter, r *http.Request) {
 // ScoreComparison handles POST /api/v1/jce/comparisons/{id}/score.
 func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -555,11 +489,6 @@ func (h *Handlers) GetComparisonScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -584,11 +513,6 @@ func (h *Handlers) GetComparisonScore(w http.ResponseWriter, r *http.Request) {
 // ListRecommendations handles GET /api/v1/jce/comparisons/{id}/recommendations.
 func (h *Handlers) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -619,11 +543,6 @@ func (h *Handlers) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 // PreviewScoreForItems handles POST /api/v1/jce/score-preview.
 func (h *Handlers) PreviewScoreForItems(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -677,8 +596,6 @@ type advisorBody struct {
 	ItemID    *string `json:"item_id,omitempty"`
 	FactorKey *string `json:"factor_key,omitempty"`
 }
-
-
 
 // validSourceKind reports whether the supplied source kind is one of the
 // accepted comparison_data_sources.source_kind values.

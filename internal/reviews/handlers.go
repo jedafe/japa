@@ -78,7 +78,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -139,10 +138,6 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // CreateReview handles POST /api/v1/reviews.
 func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -392,10 +387,6 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -437,10 +428,6 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -473,10 +460,6 @@ func (h *Handlers) HardDeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -505,10 +488,6 @@ func (h *Handlers) HardDeleteReview(w http.ResponseWriter, r *http.Request) {
 // FlagReview handles POST /api/v1/reviews/{id}/flag.
 func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -560,10 +539,6 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 // audit_logs per spec §29 (moderation reuses Section 22 Reporting & Appeals).
 func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

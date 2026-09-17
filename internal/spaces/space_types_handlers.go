@@ -116,7 +116,6 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	var fieldGroupID pgtype.UUID
 	if req.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(req.FieldGroupID); err != nil {
@@ -177,7 +176,6 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 			"Category must be one of: education, business, profession, interest, lifestyle")
 		return
 	}
-
 
 	var fieldGroupID pgtype.UUID
 	if req.FieldGroupID != "" {

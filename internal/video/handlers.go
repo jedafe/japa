@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -25,15 +26,43 @@ const (
 	hardMaxUploadBytes = 1 << 30
 )
 
+// permissionChecker is the minimal RBAC surface the video handlers need to
+// enforce §106 permission nodes inside handler bodies (video.import.single,
+// video.create, video.import.bulk, video.channel.claim). Mirrors the media
+// handlers' permissionChecker so the resolver can be stubbed in tests.
+type permissionChecker interface {
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
+}
+
 // Handlers exposes HTTP endpoints for the video import subsystem.
 type Handlers struct {
 	Service *Service
 	authMW  func(http.Handler) http.Handler
+	// perms is optional — when set, §106 permission nodes are enforced on the
+	// mutating endpoints. nil keeps the routes auth-only (tests, dev wiring).
+	perms permissionChecker
 }
 
 // NewHandlers returns video HTTP handlers.
 func NewHandlers(svc *Service) *Handlers {
 	return &Handlers{Service: svc}
+}
+
+// SetPermissionChecker injects the RBAC resolver used for in-handler
+// permission checks per §106 (video.import.single / video.create /
+// video.import.bulk / video.channel.claim).
+func (h *Handlers) SetPermissionChecker(p permissionChecker) {
+	h.perms = p
+}
+
+// requirePerm writes a 403 and returns false when the user lacks the node.
+// When no checker is wired the request is allowed (same contract as media).
+func (h *Handlers) requirePerm(w http.ResponseWriter, r *http.Request, userID pgtype.UUID, permKey string) bool {
+	if h.perms == nil || h.perms.HasPermission(r.Context(), userID, permKey) {
+		return true
+	}
+	errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to perform this action")
+	return false
 }
 
 // SetAuthMiddleware sets the authentication middleware for routes that require
@@ -84,8 +113,8 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
+	// §106: single-URL import requires the video.import.single node.
+	if !h.requirePerm(w, r, user.UserID, "video.import.single") {
 		return
 	}
 
@@ -135,8 +164,8 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
+	// §106: direct video uploads require the video.create node.
+	if !h.requirePerm(w, r, user.UserID, "video.create") {
 		return
 	}
 
@@ -208,13 +237,17 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 // embed. Non-existent IDs return 404.
 func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
 
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid video source ID")
-		return
-	}
+	param := chi.URLParam(r, "id")
 
-	source, err := h.Service.GetSourceByID(r.Context(), id)
+	var source gen.VideoSource
+	var err error
+	var id pgtype.UUID
+	if scanErr := id.Scan(param); scanErr == nil && id.Valid {
+		source, err = h.Service.GetSourceByID(r.Context(), id)
+	} else {
+		// §106 — /video/{slug} resolves bare video sources by slug.
+		source, err = h.Service.GetSourceBySlug(r.Context(), param)
+	}
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -237,8 +270,9 @@ func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
+
+	// §106: AI drafts create a contents row — same node as video creation.
+	if !h.requirePerm(w, r, user.UserID, "video.create") {
 		return
 	}
 
@@ -286,8 +320,10 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
+
+	// §106: bulk import is restricted to users holding video.import.bulk
+	// (super_admin, assigned usergroup, or the real channel author).
+	if !h.requirePerm(w, r, user.UserID, "video.import.bulk") {
 		return
 	}
 
@@ -317,6 +353,16 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 		AutoPublish:    input.AutoPublish,
 	})
 	if err != nil {
+		// A missing YouTube Data API key is an operator configuration issue,
+		// not a server fault — 503 tells the UI to show a clear message.
+		if errors.Is(err, ErrYouTubeAPIKeyMissing) {
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "youtube_not_configured", "YouTube import is not configured on this platform")
+			return
+		}
+		if isVideoClientError(err) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
 		errpkg.HandleServiceError(w, err)
 		return
 	}
@@ -327,10 +373,6 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 // GetImportJob handles GET /api/v1/me/video-imports/{id}.
 func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -363,11 +405,6 @@ func (h *Handlers) runUserList(w http.ResponseWriter, r *http.Request, fetch use
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	limit, offset := parsePage(r, "limit", "offset")
 
 	items, err := fetch(r.Context(), user.UserID, limit, offset)
@@ -393,8 +430,9 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
+
+	// §106: channel claims/takedowns require the video.channel.claim node.
+	if !h.requirePerm(w, r, user.UserID, "video.channel.claim") {
 		return
 	}
 
@@ -451,8 +489,9 @@ func (h *Handlers) PreviewBulkImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
+
+	// §106: preview is a dry run of the bulk import — same node.
+	if !h.requirePerm(w, r, user.UserID, "video.import.bulk") {
 		return
 	}
 
@@ -464,6 +503,14 @@ func (h *Handlers) PreviewBulkImport(w http.ResponseWriter, r *http.Request) {
 
 	preview, err := h.Service.PreviewBulkImport(r.Context(), user.UserID, req)
 	if err != nil {
+		if errors.Is(err, ErrYouTubeAPIKeyMissing) {
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "youtube_not_configured", "YouTube import is not configured on this platform")
+			return
+		}
+		if isVideoClientError(err) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
 		errpkg.HandleServiceError(w, err)
 		return
 	}
@@ -477,8 +524,9 @@ func (h *Handlers) RetryMyImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
+
+	// §106: retry re-runs a bulk import — same node as starting one.
+	if !h.requirePerm(w, r, user.UserID, "video.import.bulk") {
 		return
 	}
 
@@ -514,7 +562,6 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	return user, true
 }
 
-
 func isVideoClientError(err error) bool {
 	if err == nil {
 		return false
@@ -522,5 +569,7 @@ func isVideoClientError(err error) bool {
 
 	return errors.Is(err, ErrUnsupportedPlatform) ||
 		errors.Is(err, ErrInvalidVideoURL) ||
-		errors.Is(err, ErrNoYouTubeID)
+		errors.Is(err, ErrNoYouTubeID) ||
+		errors.Is(err, ErrInvalidBulkSource) ||
+		errors.Is(err, ErrMissingBulkInput)
 }

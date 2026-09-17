@@ -89,10 +89,6 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 	// OptionalAuth: platform may or may not be present. When absent, fall
 	// back to the default platform so the public directory still renders.
 
-	if !false {
-
-	}
-
 	category := r.URL.Query().Get("category")
 	includeDisabled := r.URL.Query().Get("include_disabled") == "true" || r.URL.Query().Get("include_disabled") == "1"
 	page, limit := h.parsePagination(r)
@@ -248,10 +244,6 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	recordID, ok := scanUUIDParam(w, r, "record_id")
 	if !ok {
@@ -325,10 +317,6 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -466,11 +454,6 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-	if !false {
-
-	}
-
 	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
 
@@ -550,11 +533,6 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-
-	if !false {
-
-	}
-
 	status := r.URL.Query().Get("status")
 	if status == "" {
 		status = "review_required"
@@ -630,11 +608,6 @@ func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Reque
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
-	}
-
-
-	if !false {
-
 	}
 
 	id, ok := scanUUIDParam(w, r, "id")

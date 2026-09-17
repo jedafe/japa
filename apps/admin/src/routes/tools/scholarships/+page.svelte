@@ -43,6 +43,8 @@
 
 	type StatusDistEntry = { status: string; count: number };
 
+	type TopSavedItem = { guide_id: string; guide_title?: string; save_count: number };
+
 	const canManage = $derived(hasPermission('scholarship.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
@@ -74,8 +76,9 @@
 	let distribution = $state<StatusDistEntry[]>([]);
 	let reminderLogEntries = $state<ReminderLogEntry[]>([]);
 	let deadlineEntries = $state<DeadlineItem[]>([]);
+	let topSavedEntries = $state<TopSavedItem[]>([]);
 
-	// Load stats, deadlines, and reminder log on mount.
+	// Load stats, deadlines, reminder log, and top-saved on mount.
 	$effect(() => {
 		void loadSummary();
 	});
@@ -83,10 +86,11 @@
 	async function loadSummary() {
 		pageError = '';
 		try {
-			const [statsRes, logRes, deadlinesRes] = await Promise.all([
+			const [statsRes, logRes, deadlinesRes, topSavedRes] = await Promise.all([
 				scholarshipAdminApi.stats(),
 				scholarshipAdminApi.reminderLog('page_size=10'),
-				scholarshipAdminApi.deadlines('page_size=10')
+				scholarshipAdminApi.deadlines('page_size=10'),
+				scholarshipAdminApi.topSaved('page_size=10')
 			]);
 			if (statsRes.ok) {
 				const s = (statsRes.data as Record<string, any>) ?? {};
@@ -98,6 +102,7 @@
 			}
 			if (logRes.ok) reminderLogEntries = (logRes.data as ReminderLogEntry[]) ?? [];
 			if (deadlinesRes.ok) deadlineEntries = (deadlinesRes.data as DeadlineItem[]) ?? [];
+			if (topSavedRes.ok) topSavedEntries = (topSavedRes.data as TopSavedItem[]) ?? [];
 		} catch {
 			// Non-fatal: the CRUD list still loads via EntityPage.
 		}
@@ -324,8 +329,8 @@
 	</div>
 {/if}
 
-<!-- ── Distribution breakdown + deadlines + reminder log ─────────────────── -->
-<div class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+<!-- ── Distribution breakdown + deadlines + reminder log + top saved ─────── -->
+<div class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
 	<!-- Per-status distribution of saved scholarships -->
 	<div
 		class="rounded-lg border p-5"
@@ -428,6 +433,36 @@
 		{:else}
 			<p class="mt-3 text-sm" style="color: var(--color-muted)">
 				{t('app.tools.no_reminders_sent', 'No reminders sent yet.')}
+			</p>
+		{/if}
+	</div>
+
+	<!-- Most-saved scholarships (GET /admin/scholarships/top-saved) -->
+	<div
+		class="rounded-lg border p-5"
+		style="border-color: var(--color-border); background: var(--color-surface)"
+	>
+		<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+			{t('app.tools.col_top_saved', 'Top Saved')}
+		</p>
+		{#if topSavedEntries.length > 0}
+			<ul class="mt-3 space-y-2">
+				{#each topSavedEntries as s (s.guide_id)}
+					<li class="flex items-center justify-between gap-2">
+						<span class="truncate text-sm font-medium" style="color: var(--color-foreground)">
+							{s.guide_title || '—'}
+						</span>
+						<span
+							class="shrink-0 rounded-md border px-1.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground border-border"
+						>
+							{s.save_count.toLocaleString()}
+						</span>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="mt-3 text-sm" style="color: var(--color-muted)">
+				{t('app.tools.no_saved_scholarships', 'No saved scholarships yet.')}
 			</p>
 		{/if}
 	</div>

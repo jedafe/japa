@@ -11,6 +11,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // MIME type prefixes for filtering.
@@ -61,6 +62,7 @@ type Service struct {
 	db       *db.DB
 	s3       *S3Client
 	settings SettingsProvider
+	vk       valkeycompat.Cmdable
 }
 
 // NewService creates a Service backed by the given database pool.

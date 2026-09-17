@@ -269,11 +269,11 @@ var settingsCatalog = map[string]settingMeta{
 
 	// Landing page (Rule 16): the tool card registry is configurable via
 	// public settings so the homepage never relies on hardcoded data.
-	"landing.tools": {Type: "json", DefaultValue: landingToolsDefault, Description: "Public landing-page tool card registry (array of {id, name, slug, description, href, icon, accent?, badge?}).", Public: true, Panel: "admin"},
-	"landing.stats": {Type: "json", DefaultValue: landingStatsDefault, Description: "Public guest-homepage stats row (array of {value, label, icon}).", Public: true, Panel: "admin"},
-	"landing.categories": {Type: "json", DefaultValue: landingCategoriesDefault, Description: "Public guest-homepage category card grid (array of {id, title, description, href, icon, color}).", Public: true, Panel: "admin"},
+	"landing.tools":                  {Type: "json", DefaultValue: landingToolsDefault, Description: "Public landing-page tool card registry (array of {id, name, slug, description, href, icon, accent?, badge?}).", Public: true, Panel: "admin"},
+	"landing.stats":                  {Type: "json", DefaultValue: landingStatsDefault, Description: "Public guest-homepage stats row (array of {value, label, icon}).", Public: true, Panel: "admin"},
+	"landing.categories":             {Type: "json", DefaultValue: landingCategoriesDefault, Description: "Public guest-homepage category card grid (array of {id, title, description, href, icon, color}).", Public: true, Panel: "admin"},
 	"landing.featured_opportunities": {Type: "json", DefaultValue: landingFeaturedOpportunitiesDefault, Description: "Public guest-homepage featured-opportunity carousel (array of {id, type, title, organization, location, tag, badge?, value?, logo_url?, href, published_at?}).", Public: true, Panel: "admin"},
-	"landing.top_destinations": {Type: "json", DefaultValue: landingTopDestinationsDefault, Description: "Public guest-homepage top-destinations card (array of {id, slug, name, icon_url?}).", Public: true, Panel: "admin"},
+	"landing.top_destinations":       {Type: "json", DefaultValue: landingTopDestinationsDefault, Description: "Public guest-homepage top-destinations card (array of {id, slug, name, icon_url?}).", Public: true, Panel: "admin"},
 	// Appearance / branding — public so the main site can apply primary color
 	// and render the logo from the control panel settings.
 	"appearance.dark_mode_default": {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light).", Public: true, Panel: "admin"},

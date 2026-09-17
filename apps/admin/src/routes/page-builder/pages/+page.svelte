@@ -472,10 +472,16 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter, page, pageSize }) => {
+		load: async ({ q, filter, page, pageSize, sort }) => {
 			const params = new URLSearchParams();
 			params.set('page_size', String(pageSize));
-			params.set('page_offset', String(page));
+			// EntityPage's page is 0-based; the API's `page` is 1-based.
+			params.set('page', String(page + 1));
+			if (sort) {
+				const [key, dir] = sort.split(':');
+				params.set('sort', key);
+				if (dir) params.set('dir', dir);
+			}
 			if (filter.status) params.set('status', filter.status);
 			if (q) params.set('q', q);
 			const result = await apiRaw<{ data?: Page[]; total?: number; total_pages?: number }>(

@@ -83,6 +83,10 @@ type publicSource struct {
 	IsFollowing   bool              `json:"is_following"`
 	IsBlocked     bool              `json:"is_blocked"`
 	LinkedEntity  *linkedEntity     `json:"linked_entity,omitempty"`
+	// ChannelUsername is the username of the channel account that owns a
+	// video_channel source's videos (§106) — lets the detail page link to
+	// the claim/report form without exposing the channel profile.
+	ChannelUsername string `json:"channel_username,omitempty"`
 }
 
 type linkedEntity struct {
@@ -123,10 +127,6 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
-	}
-
-	if !false {
-
 	}
 
 	userID, authed := optionalUser(w, r)
@@ -225,10 +225,6 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if !false {
-
-	}
-
 	q := r.URL.Query()
 	category := q.Get("category")
 	sourceKind := q.Get("source_kind")
@@ -297,10 +293,6 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !false {
-
-	}
-
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Source slug is required")
@@ -308,6 +300,16 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	row, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), slug)
+	if err != nil && errors.Is(err, pgx.ErrNoRows) {
+		// §106: also accept the source's UUID so callers holding only the ID
+		// (e.g. a video channel's synthetic author → source redirect) resolve.
+		var id pgtype.UUID
+		if idErr := id.Scan(slug); idErr == nil && id.Valid {
+			if raw, gErr := h.intelStores.GetIntelSource(r.Context(), id); gErr == nil && raw.Slug != nil && *raw.Slug != "" {
+				row, err = h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), *raw.Slug)
+			}
+		}
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
@@ -351,6 +353,15 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		LinkedEntity:  linked,
 	}
 
+	// §106: video channel sources expose the channel account username so the
+	// detail page can link the claim/report form — the channel profile itself
+	// is not public (it redirects to this source page).
+	if src.SourceType == "video_channel" && h.videos != nil {
+		if uname, uErr := h.videos.GetChannelUsernameBySourceID(r.Context(), row.ID); uErr == nil {
+			src.ChannelUsername = uname
+		}
+	}
+
 	h.ensureSourceTags(r.Context(), &src)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -371,10 +382,6 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil || h.reportSvc == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "unavailable", "Source reporting is not configured")
 		return
-	}
-
-	if !false {
-
 	}
 
 	user := auth.FromContext(r.Context())
@@ -569,10 +576,6 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if !false {
-
-	}
-
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Source slug is required")
@@ -665,10 +668,6 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !false {
-
-	}
-
 	var req proposeSourceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -732,10 +731,6 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if !false {
-
-	}
-
 	ids, err := h.intelSources.ListBlockedSourceIDs(r.Context(), userID)
 	if err != nil {
 		slog.Error("intel: list blocked sources failed", "error", err)
@@ -773,10 +768,6 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
-	}
-
-	if !false {
-
 	}
 
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))

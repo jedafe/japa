@@ -67,11 +67,14 @@ export function defaultChildrenFor(type: Block['type']): Block[] | undefined {
 				{ id: crypto.randomUUID(), type: 'guest_hero_destination_item', visible: true, props: { name: 'France' } },
 			] as Block[];
 		case 'guest_hero_community':
+			// Members start with no image_url — the member block renders a
+			// Users icon fallback. (The earlier seeds pointed at /brand/
+			// avatar-*.jpg files that don't exist on any host and 404'd.)
 			return [
-				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: { image_url: '/brand/avatar-1.jpg' } },
-				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: { image_url: '/brand/avatar-2.jpg' } },
-				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: { image_url: '/brand/avatar-3.jpg' } },
-				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: { image_url: '/brand/avatar-4.jpg' } },
+				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: {} },
+				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: {} },
+				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: {} },
+				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: {} },
 			] as Block[];
 		default:
 			return undefined;

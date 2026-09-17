@@ -19,11 +19,6 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -66,11 +61,6 @@ func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -92,11 +82,6 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -114,10 +99,6 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 // GetMuteStatus handles GET /api/v1/spaces/{slug}/mute-status.
 func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

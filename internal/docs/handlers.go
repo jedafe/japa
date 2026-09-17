@@ -90,7 +90,6 @@ func (h *Handlers) enqueueSearchIndex(pageID pgtype.UUID, operation string) {
 	}
 }
 
-
 // checkAudienceGate verifies the requester may read the given audience.
 // Public audiences (users, api) always pass. Gated audiences require auth
 // and the RBAC permission node mapped in audienceGates (§44).

@@ -48,7 +48,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -359,10 +358,6 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -399,10 +394,6 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 // HandleAdminReject rejects a pending housing guide (admin HITL).
 func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

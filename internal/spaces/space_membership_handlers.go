@@ -26,11 +26,6 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	isMember, err := h.Service.IsMember(r.Context(), space.ID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -117,10 +112,6 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	// Check if the user is an approved member before removing. Pending
 	// members (status='pending') are removed but don't affect the count.
@@ -154,10 +145,6 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 // Returns paginated members of the space with user profile data.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

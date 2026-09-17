@@ -69,7 +69,6 @@ func requireUserFromContext(r *http.Request) (*auth.AuthenticatedUser, bool) {
 	return user, true
 }
 
-
 // ListConversations handles GET /api/v1/dm/conversations.
 func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)

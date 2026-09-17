@@ -31,6 +31,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const selectedSpaceId = $derived(data.spaceId);
 	const selectedDest = $derived(data.dest);
 
+	// Builds the radar URL for the country selector.
+	function radarUrl(spaceId?: string): string {
+		const p = new URLSearchParams();
+		if (spaceId) p.set('space_id', spaceId);
+		const qs = p.toString();
+		return qs ? `?${qs}` : '?';
+	}
+
 	// The selected country name (for the filter badge). Resolved from the
 	// countries list by space_id, or from the dest param.
 	const selectedCountryName = $derived.by(() => {
@@ -197,7 +205,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		     the geo-aware pattern used by other surfaces (§31 spaces, §32 feed).
 		     BUG-012 fix. -->
 		<div class="border-b border-[var(--color-border)] px-4 py-3">
-			<div class="flex items-center gap-2">
+			<div class="flex flex-wrap items-center gap-2">
 				<Autocomplete
 					placeholder={t('radar.browse_countries', 'Browse countries')}
 					emptyMessage={t('common.no_results', 'No results found')}
@@ -206,15 +214,15 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					selectedId={selectedSpaceId || null}
 					selectedLabel={selectedCountryName || null}
 					onSelect={(item) => {
-						if (item.id) goto(`?space_id=${encodeURIComponent(item.id)}`, { keepFocus: true });
-						else goto('?', { keepFocus: true });
+						if (item.id) goto(radarUrl(item.id), { keepFocus: true });
+						else goto(radarUrl(), { keepFocus: true });
 					}}
-					onClear={() => goto('?', { keepFocus: true })}
+					onClear={() => goto(radarUrl(), { keepFocus: true })}
 				/>
 				{#if hasGeoFilter}
 					<button
 						type="button"
-						onclick={() => goto('?', { keepFocus: true })}
+						onclick={() => goto(radarUrl(), { keepFocus: true })}
 						class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
 						{t('common.clear', 'Clear')}

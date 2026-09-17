@@ -1925,6 +1925,7 @@ export const costOfLivingAdminApi = {
 
 export const scholarshipAdminApi = {
 	stats: () => api<unknown>(`/admin/scholarships/stats`),
+	topSaved: (params?: string) => api<unknown>(`/admin/scholarships/top-saved${params ? `?${params}` : ''}`),
 	deadlines: (params?: string) => api<unknown>(`/admin/scholarships/deadlines${params ? `?${params}` : ''}`),
 	reminderLog: (params?: string) => api<unknown>(`/admin/scholarships/reminder-log${params ? `?${params}` : ''}`),
 	list: (params?: string) => apiRaw<{ data: unknown[]; meta: { count: number; page_size: number; page_offset: number } }>(`/admin/scholarships${params ? `?${params}` : ''}`),

@@ -183,8 +183,6 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// logging) are skipped. Ref: sections/13-search.md
 	user := auth.FromContext(r.Context())
 
-
-
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
@@ -298,8 +296,6 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 // nil user is valid — analytics logging is skipped for guests.
 func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
-
-
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
@@ -685,7 +681,6 @@ type AutocompleteResponse struct {
 // Maximum 8 results. NOT logged to search analytics per Section 54.
 func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 
-
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
@@ -890,8 +885,6 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-
 	spaceID := r.PathValue("id")
 	if spaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "Space ID is required")
@@ -959,8 +952,6 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-
 	tagSlug := r.PathValue("slug")
 	if tagSlug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "Tag slug is required")
@@ -1017,7 +1008,6 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 // // Returns search analytics: top queries, zero-result queries, and daily volume.
 // Requires admin.analytics.search RBAC permission (enforced at router level).
 func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) {
-
 
 	if h.queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "analytics_unavailable", "Analytics not configured")

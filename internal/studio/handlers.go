@@ -67,7 +67,6 @@ func (h *Handlers) writeError(w http.ResponseWriter, status int, code, message s
 	})
 }
 
-
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {

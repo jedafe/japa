@@ -137,6 +137,16 @@ export const load: PageServerLoad = async (event) => {
 		statuses = [];
 	}
 
+	// Rule 16: distinct degree levels across all published scholarships —
+	// the level filter's option list must not be limited to the current page.
+	let levels: string[] = [];
+	try {
+		const list = await apiGet<{ value: string; label: string }[]>(ctx, '/scholarships/levels');
+		levels = (list ?? []).map((o) => o.value);
+	} catch {
+		levels = [];
+	}
+
 	return {
 		scholarships,
 		disabled,
@@ -148,6 +158,7 @@ export const load: PageServerLoad = async (event) => {
 		savedIds,
 		countries,
 		statuses,
+		levels,
 		defaultReminderDays: defaultReminderDays(event.locals.siteSettings)
 	};
 };

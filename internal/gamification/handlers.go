@@ -51,7 +51,6 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -224,10 +223,6 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
@@ -255,10 +250,6 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 // user's challenge progress. Auth required.
 func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -427,10 +418,6 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 // Body: { "user_id": "<uuid>" }.
 func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

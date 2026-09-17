@@ -88,7 +88,6 @@ func (h *Handlers) SetRAGIndexer(ri ragIndexer) {
 	h.rag = ri
 }
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -334,11 +333,6 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	spaceSlug := chi.URLParam(r, "space_slug")
 	if spaceSlug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
@@ -432,11 +426,6 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 //     the configured threshold.
 func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -558,10 +547,6 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	pageID, ok := scanUUIDParam(w, r, "page_id")
 	if !ok {
@@ -619,10 +604,6 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	revID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -657,10 +638,6 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 // wiki.lock is a distinct permission for lock/unlock, B7).
 func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -708,10 +685,6 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 // when the Content Agent task runs (B3: replaces the former stub).
 func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

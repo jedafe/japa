@@ -29,6 +29,11 @@ SELECT * FROM intel_sources WHERE category = $1 AND enabled = true AND status = 
 SELECT * FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
+ -- Manual sources (§106 video channels, entity-linked rows) are never
+ -- auto-crawled — without this they were always "due", the fetcher failed
+ -- on unknown crawl_method, and the failure circuit-breaker auto-disabled
+ -- them (removing them from the public directory).
+ AND crawl_method != 'manual'
  AND (last_crawled_at IS NULL OR now() - last_crawled_at >= (crawl_frequency_mins || ' minutes')::interval)
 ORDER BY last_crawled_at NULLS FIRST
 LIMIT $1;

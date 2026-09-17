@@ -284,11 +284,6 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	var input struct {
 		Filename string `json:"filename"`
 		MimeType string `json:"mime_type"`
@@ -369,10 +364,6 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 // Response: { "data": { "confirmed": true } }.
 func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -478,10 +469,6 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	idStr := chi.URLParam(r, "id")
 
@@ -536,10 +523,6 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request,
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
 
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -605,10 +588,6 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	mediaID, ok := parseMediaID(w, r)
 	if !ok {
@@ -632,10 +611,6 @@ func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	mediaID, ok := parseMediaID(w, r)
 	if !ok {
@@ -655,10 +630,6 @@ func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 // Response: { "data": [...] }.
 func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -723,10 +694,6 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 // reusing ListMedia's uploader_id filter with the authenticated user's ID.
 func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -835,10 +802,6 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -899,10 +862,6 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	mediaID, ok := parseMediaID(w, r)
 	if !ok {
@@ -946,11 +905,6 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxMediaUploadBody)
 
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -1053,10 +1007,6 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var input struct {
 		MediaIDs []string `json:"media_ids"`
@@ -1130,8 +1080,15 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	ext := strings.ToLower(filepath.Ext(storagePath))
 
 	contentType := mime.TypeByExtension(ext)
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	if contentType == "" || contentType == "application/octet-stream" {
+		// Older uploads were stored with a .bin extension before the
+		// extension map covered video/audio — sniff the real type so
+		// they serve (and play) correctly.
+		if sniffed, sErr := sniffStoredContentType(localPath); sErr == nil && sniffed != "" {
+			contentType = sniffed
+		} else {
+			contentType = "application/octet-stream"
+		}
 	}
 
 	// Stored files are attacker-supplied: never let the browser execute them
@@ -1146,6 +1103,25 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	http.ServeFile(w, r, localPath)
+}
+
+// sniffStoredContentType reads the first 512 bytes of a stored file and
+// returns the sniffed MIME type. Used when the storage path extension does
+// not map to a type (legacy .bin uploads).
+func sniffStoredContentType(localPath string) (string, error) {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	head := make([]byte, 512)
+	n, err := f.Read(head)
+	if err != nil && n == 0 {
+		return "", err
+	}
+
+	return http.DetectContentType(head[:n]), nil
 }
 
 // mediaRoot is the base directory for locally stored media files.
@@ -1245,6 +1221,36 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	slog.Info("seaweedfs upload: file stored locally", "path", localPath, "bytes", written)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ProxyRemoteMedia handles GET /api/v1/media/proxy?url={encoded} — public.
+// Fetches a remote image same-origin so hosts that block cross-origin embeds
+// (CORP/ORB) still render. Any failure (bad URL, SSRF-guarded target,
+// non-image response, oversize body) falls back to the placeholder SVG with
+// 200 so <img> consumers never see a console error.
+// Ref: conventions/api-routes-catalog.md (media), sections/34 (media system).
+func (h *Handlers) ProxyRemoteMedia(w http.ResponseWriter, r *http.Request) {
+	rawURL := r.URL.Query().Get("url")
+	if rawURL == "" {
+		writePlaceholderSVG(w)
+		return
+	}
+
+	res, err := h.service.ProxyRemote(r.Context(), rawURL)
+	if err != nil {
+		slog.Debug("media proxy: fetch failed", "url", rawURL, "error", err)
+		writePlaceholderSVG(w)
+		return
+	}
+
+	// Same hardening as ServeMedia — proxied bytes are attacker-influenced.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	w.Header().Set("Content-Type", res.ContentType)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Content-Length", strconv.Itoa(len(res.Body)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(res.Body)
 }
 
 // writePlaceholderSVG returns a static placeholder image for missing media.

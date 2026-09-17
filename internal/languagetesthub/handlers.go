@@ -86,7 +86,6 @@ func (h *Handlers) enqueueSearchIndex(reqID pgtype.UUID, operation string) {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -344,10 +343,6 @@ func (h *Handlers) HandleCreateStory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
@@ -547,11 +542,6 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 // route registration). Optional body: {"review_notes": "..."}.
 func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

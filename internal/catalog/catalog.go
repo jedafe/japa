@@ -82,4 +82,3 @@ func (h *Handlers) GetCatalog(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
-

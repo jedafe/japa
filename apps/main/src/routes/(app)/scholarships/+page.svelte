@@ -4,8 +4,8 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
-	import { GraduationCap, Lock, Bookmark, BookmarkCheck, Search, ClipboardList, GitCompare, Loader2, ExternalLink } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, SearchInput, ListPageBar, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
+	import { GraduationCap, Lock, Bookmark, BookmarkCheck, ClipboardList, GitCompare, Loader2, ExternalLink, Clock, ShieldCheck, ShieldAlert } from 'lucide-svelte';
+	import { EmptyState, PaginationControls, SearchInput, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -60,6 +60,28 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let sort = $state(page.url.searchParams.get('sort') ?? '');
 	let savedIds = $state<Set<string>>(untrack(() => new Set(data.savedIds ?? [])));
 
+	// Resync local state when the server load re-runs (filter/pagination nav,
+	// back/forward). The URL is the source of truth for filters; saved tracker
+	// state comes from data. Local optimistic mutations (toggleSave) don't
+	// change data.savedIds/data.savedScholarships, so they are not clobbered.
+	$effect(() => {
+		const sp = page.url.searchParams;
+		q = sp.get('q') ?? '';
+		country = sp.get('country') ?? '';
+		level = sp.get('level') ?? '';
+		minAmount = sp.get('min_amount') ?? '';
+		maxAmount = sp.get('max_amount') ?? '';
+		renewable = sp.get('renewable') ?? '';
+		deadlineFrom = sp.get('deadline_from') ?? '';
+		deadlineTo = sp.get('deadline_to') ?? '';
+		includeExpired = sp.get('include_expired') === 'true';
+		sort = sp.get('sort') ?? '';
+	});
+	$effect(() => {
+		savedScholarships = data.savedScholarships ?? [];
+		savedIds = new Set(data.savedIds ?? []);
+	});
+
 	// JCE quick-comparison selection (Section 73): select up to 4 scholarships.
 	let selectedIds = $state<Set<string>>(new Set());
 	let savingJCE = $state(false);
@@ -92,6 +114,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (status === 'applied' || status === 'researching') return 'bg-[var(--color-info)] text-white';
 		return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
 	};
+
+	function formatDate(date: string | null | undefined): string {
+		if (!date) return '—';
+		const d = new Date(date);
+		if (Number.isNaN(d.getTime())) return date;
+		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	}
 
 	function applyFilters() {
 		const params = new URLSearchParams();
@@ -133,10 +162,15 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		!!q || !!country || !!level || !!minAmount || !!maxAmount || !!renewable || !!deadlineFrom || !!deadlineTo || !!sort || includeExpired
 	);
 
-	// level is a free-text filter — suggest levels present in the loaded page,
-	// allow arbitrary input via allowFreeText.
+	// Level filter options come from GET /scholarships/levels (all published
+	// levels), falling back to levels present in the loaded page when the
+	// endpoint is unavailable. Free-text input is still allowed.
 	const levelFetcher = $derived(
-		staticAutocompleteFetcher(autocompleteItems(scholarships.map((s) => s.level_of_study)))
+		staticAutocompleteFetcher(
+			autocompleteItems(
+				(data.levels?.length ?? 0) > 0 ? data.levels : scholarships.map((s) => s.level_of_study)
+			)
+		)
 	);
 
 	let showFilters = $state(false);
@@ -210,7 +244,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		return (res.data ?? []).map((s) => ({
 			id: s.guide_id,
 			title: s.title,
-			url: `/scholarships?q=${encodeURIComponent(s.slug)}`,
+			url: `/scholarships/${s.guide_id}`,
 			excerpt: s.summary
 		}));
 	}
@@ -247,7 +281,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							'@type': 'EducationalOccupationalProgram',
 							name: s.title,
 							description: s.summary,
-							url: `${page.url.origin}/scholarships?q=${encodeURIComponent(s.slug)}`
+							url: `${page.url.origin}/scholarships/${s.guide_id}`
 						}
 					}))
 				})
@@ -268,13 +302,19 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">
-	<ListPageBar title={t('tools.scholarships', 'Scholarship Finder')}>
-		{#snippet actions()}
-			{#if !disabled}
-				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="scholarships-filter-panel" />
-			{/if}
-		{/snippet}
-	</ListPageBar>
+	<!-- Header — same structure as the radar pages, with the filter
+	     toggle pinned to the top-right. -->
+	<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4">
+		<div class="min-w-0">
+			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+				<GraduationCap size={20} /> {t('tools.scholarships', 'Scholarship Finder')}
+			</h1>
+			<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{description}</p>
+		</div>
+		{#if !disabled}
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="scholarships-filter-panel" />
+		{/if}
+	</div>
 
 	{#if disabled}
 		<div class="p-4">
@@ -285,18 +325,20 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			/>
 		</div>
 	{:else}
-		<!-- Filter panel -->
-		{#if showFilters}
-		<div id="scholarships-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
-			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-				<SearchInput
-					bind:value={q}
-					placeholder={t('scholarships.search', 'Search')}
-					ariaLabel={t('tools.scholarships', 'Scholarship Finder')}
-					fetcher={scholarshipSearchFetcher}
-					onInput={queueApply}
-					inputClass="min-h-[44px] py-[11px] focus:ring-2 focus:ring-[var(--color-primary)]"
-				/>
+		<!-- Filter row — radar-style compact bar: search + country + level,
+		     with the advanced filters tucked behind the toggle. -->
+		<div class="border-b border-[var(--color-border)] px-4 py-3">
+			<div class="flex flex-wrap items-center gap-2">
+				<div class="min-w-44 flex-1">
+					<SearchInput
+						bind:value={q}
+						placeholder={t('scholarships.search', 'Search')}
+						ariaLabel={t('tools.scholarships', 'Scholarship Finder')}
+						fetcher={scholarshipSearchFetcher}
+						onInput={queueApply}
+						inputClass="min-h-[40px] py-2 focus:ring-2 focus:ring-[var(--color-primary)]"
+					/>
+				</div>
 				<Autocomplete
 					placeholder={t('scholarships.country', 'Country')}
 					ariaLabel={t('scholarships.country', 'Country')}
@@ -305,7 +347,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					initialFetcher={fetchCountriesInitial}
 					selectedId={country || null}
 					selectedLabel={selectedCountryLabel}
-					class="h-[44px] box-border"
+					class="h-[40px] box-border"
 					inputClass="!min-h-0 !h-full"
 					onSelect={(item) => { country = item.id; applyFilters(); }}
 					onClear={() => { country = ''; applyFilters(); }}
@@ -319,11 +361,27 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					selectedId={level || null}
 					selectedLabel={level || null}
 					allowFreeText
-					class="h-[44px] box-border"
+					class="h-[40px] box-border"
 					inputClass="!min-h-0 !h-full"
 					onSelect={(item) => { level = item.id; applyFilters(); }}
 					onClear={() => { level = ''; applyFilters(); }}
 				/>
+				{#if hasActiveFilters}
+					<button
+						type="button"
+						onclick={clearFilters}
+						class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('common.clear', 'Clear')}
+					</button>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Advanced filter panel -->
+		{#if showFilters}
+		<div id="scholarships-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
+			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<input
 					type="number"
 					min="0"
@@ -431,7 +489,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 											{statusOptions.find((o) => o.value === saved.status)?.label ?? saved.status}
 										</span>
 										{#if saved.updated_at}
-											<span class="text-xs text-[var(--color-muted)]">{t('scholarships.updated', 'Updated')}: {saved.updated_at}</span>
+											<span class="text-xs text-[var(--color-muted)]">{t('scholarships.updated', 'Updated')}: {formatDate(saved.updated_at)}</span>
 										{/if}
 									</div>
 								</div>
@@ -466,65 +524,48 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						{t('common.showing', 'Showing {start}-{end} of {total}').replace('{start}', String(showingStart)).replace('{end}', String(showingEnd)).replace('{total}', String(data.total))}
 					</p>
 				{/if}
-				<div class="space-y-3">
+				<!-- Result rows — RadarItemRow styling: icon + title, clamped
+				     summary, meta pills, and a badges row with the source trust tier. -->
+				<div class="space-y-2">
 					{#each scholarships as s (s.guide_id)}
 						{@const selected = selectedIds.has(s.guide_id)}
-						<div class="rounded-[var(--radius-card)] border p-4 transition-colors {selected ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}">
+						{@const trustTier = s.source?.trust_level ?? 0}
+						{@const deadline = field(s, 'application_deadline')}
+						<div class="group rounded-[var(--radius-card)] border p-4 transition-colors {selected ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5' : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]'}">
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0 flex-1">
-									<a
-										href="/scholarships/{s.guide_id}"
-										class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
-									>
-										{s.title}
-									</a>
+									<div class="flex items-center gap-2">
+										<GraduationCap size={16} class="shrink-0 text-[var(--color-primary)]" />
+										<a
+											href="/scholarships/{s.guide_id}"
+											class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										>
+											{s.title}
+										</a>
+									</div>
 									{#if s.summary}
 										<p class="mt-1 line-clamp-2 text-xs text-[var(--color-muted)]">{s.summary}</p>
 									{/if}
-									<div class="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
-										{#if field(s, 'countries_eligible')}
-											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{field(s, 'countries_eligible')}</span>
+									<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
+										{#if field(s, 'countries_eligible') || s.country}
+											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{field(s, 'countries_eligible') || s.country}</span>
 										{/if}
-										{#if field(s, 'level_of_study')}
-											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{field(s, 'level_of_study')}</span>
+										{#if s.institution}
+											<span class="truncate">{s.institution}</span>
+										{/if}
+										{#if field(s, 'level_of_study') || s.level_of_study}
+											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{field(s, 'level_of_study') || s.level_of_study}</span>
 										{/if}
 										{#if field(s, 'award_amount_usd')}
 											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">${field(s, 'award_amount_usd')}</span>
 										{/if}
-										{#if field(s, 'application_deadline')}
-											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">
-												{t('scholarships.deadline', 'Deadline')}: {field(s, 'application_deadline')}
+										{#if deadline || s.application_deadline}
+											<span class="flex items-center gap-1">
+												<Clock size={12} />
+												{t('scholarships.deadline', 'Deadline')}: {deadline || s.application_deadline}
 											</span>
 										{/if}
 									</div>
-								{#if s.source}
-									{@const source = s.source}
-									<div class="mt-1.5 flex items-center gap-1 text-xs">
-										<EntityHoverChip
-											type="source"
-											id={source.id}
-											slug={source.slug}
-											name={source.name}
-											avatar={source.logo_url}
-											class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
-										>
-											{#snippet trigger()}
-												{t('scholarships.source', 'Source')}: {source.name}
-											{/snippet}
-										</EntityHoverChip>
-										{#if source.source_url}
-											<a
-												href={source.source_url}
-												target="_blank"
-												rel="noopener noreferrer"
-												class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
-												aria-label={t('scholarships.original_source', 'View original source')}
-											>
-												<ExternalLink size={12} />
-											</a>
-										{/if}
-									</div>
-								{/if}
 								</div>
 								<div class="flex shrink-0 flex-col items-end gap-2">
 									<label class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
@@ -553,12 +594,60 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 									{/if}
 								</div>
 							</div>
+
+							<!-- Badges row: source trust tier + source attribution -->
+							{#if trustTier > 0 || s.source?.slug}
+								<div class="mt-3 flex flex-wrap items-center gap-2">
+									{#if trustTier > 0}
+										<span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium {trustTier <= 2 ? 'border-[var(--color-success)]/40 bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}">
+											{#if trustTier <= 2}
+												<ShieldCheck size={12} />
+											{:else}
+												<ShieldAlert size={12} />
+											{/if}
+											{trustTier <= 1
+												? t('radar.trust_high', 'High trust')
+												: trustTier <= 2
+													? t('radar.trust_verified', 'Verified')
+													: t('radar.trust_review', 'Needs review')}
+										</span>
+									{/if}
+									{#if s.source?.slug}
+										{@const source = s.source}
+										<span class="inline-flex items-center gap-1 text-xs">
+											<EntityHoverChip
+												type="source"
+												id={source.id}
+												slug={source.slug}
+												name={source.name}
+												avatar={source.logo_url}
+												class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+											>
+												{#snippet trigger()}
+													{t('scholarships.source', 'Source')}: {source.name}
+												{/snippet}
+											</EntityHoverChip>
+											{#if source.source_url}
+												<a
+													href={source.source_url}
+													target="_blank"
+													rel="noopener noreferrer"
+													class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+													aria-label={t('scholarships.original_source', 'View original source')}
+												>
+													<ExternalLink size={12} />
+												</a>
+											{/if}
+										</span>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</div>
 
 				{#if form?.error}
-					<div class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+					<div class="mb-4 rounded-[var(--radius)] border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 p-3 text-sm text-[var(--color-danger)]">
 						{form.message || t('scholarships.jce_error', 'Could not create comparison')}
 					</div>
 				{/if}

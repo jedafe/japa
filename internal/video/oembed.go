@@ -141,6 +141,13 @@ func doOEmbedRequest(ctx context.Context, client httpClient, u string, ssrfEnabl
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		// Upstream 4xx means the user-supplied URL resolves to no video
+		// (deleted, private, or wrong ID) — surface it as a client error so
+		// the composer shows a 400 invalid_url instead of a generic 500.
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return nil, fmt.Errorf("%w: %soembed returned status %d", ErrInvalidVideoURL, statusPrefix, resp.StatusCode)
+		}
+
 		return nil, fmt.Errorf("%soembed returned status %d", statusPrefix, resp.StatusCode)
 	}
 

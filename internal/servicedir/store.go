@@ -215,7 +215,7 @@ WHERE content_id = $1
 	var m ServiceMeta
 
 	err := s.pool.Reader.QueryRow(ctx, q, contentID).Scan(
-		&m.ID, &(pgtype.UUID{}), &m.ContentID, &m.OrgID, &m.ServiceCategory,
+		&m.ID, &m.ContentID, &m.OrgID, &m.ServiceCategory,
 		&m.DestinationSpaceID, &m.CitySpaceID, &m.OriginCommunities,
 		&m.IsRemote, &m.WebsiteURL, &m.BookingURL, &m.PriceRange,
 		&m.IsVerified, &m.VerificationType, &m.ClaimStatus, &m.ClaimedByOrgID,
@@ -400,7 +400,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ServiceRow
 		if err := rows.Scan(
-			&r.ID, &(pgtype.UUID{}), &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.OrgID, &r.OrgName, &r.OrgSlug,
@@ -471,7 +471,7 @@ LIMIT 1
 	var r ServiceRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(
-		&r.ID, &(pgtype.UUID{}), &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+		&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 		&r.OrgID, &r.OrgName, &r.OrgSlug,
@@ -613,7 +613,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ServiceRow
 		if err := rows.Scan(
-			&r.ID, &(pgtype.UUID{}), &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.OrgID, &r.OrgName, &r.OrgSlug,

@@ -43,7 +43,6 @@ func NewHandlers(service *Service) *Handlers {
 
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())

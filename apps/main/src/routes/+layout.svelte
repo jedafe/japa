@@ -87,16 +87,26 @@
 	let defaultLanguage = $derived(
 		(data.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
 	);
+	// Strip the active locale prefix — canonical URLs are always unprefixed.
+	// With `reroute` the browser URL keeps /fr/... on both SSR and client,
+	// so this must be removed explicitly (prevents /fr/fr/... alternates and
+	// hydration_attribute_changed warnings).
+	let unprefixedPath = $derived.by(() => {
+		const loc = (data.locale as string | undefined) ?? defaultLanguage;
+		return loc !== defaultLanguage && pathname.startsWith(`/${loc}`)
+			? pathname.slice(loc.length + 1) || '/'
+			: pathname;
+	});
 	let hreflangLinks = $derived(
 		enabledLanguages.map((lang) => ({
 			lang,
 			href: lang === defaultLanguage
-				? (pathname === '/' ? '/' : pathname)
-				: `/${lang}${pathname === '/' ? '' : pathname}`
+				? (unprefixedPath === '/' ? '/' : unprefixedPath)
+				: `/${lang}${unprefixedPath === '/' ? '' : unprefixedPath}`
 		}))
 	);
 	let xDefaultHref = $derived(
-		pathname === '/' ? '/' : pathname
+		unprefixedPath === '/' ? '/' : unprefixedPath
 	);
 
 	// Site-level settings from GET /site/settings/public (general.*).

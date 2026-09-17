@@ -88,7 +88,6 @@ func NewHandlers(service *Service, settings *config.Settings, rbac RBACResolver,
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -271,11 +270,6 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
@@ -314,11 +308,6 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 // at route registration (BUG-014: no redundant in-handler check).
 func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -375,11 +364,6 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 // checked at route registration).
 func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -515,11 +499,6 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -569,11 +548,6 @@ func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -607,7 +581,6 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
 
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {

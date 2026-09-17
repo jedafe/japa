@@ -24,7 +24,6 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	rows, err := h.Service.read.ListSpaceJoinRequests(r.Context(),
 		spaceID,
 	)
@@ -105,7 +104,6 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-
 
 	err = h.Service.write.UpdateSpaceStatus(r.Context(), gen.UpdateSpaceStatusParams{
 		ID: spaceID,

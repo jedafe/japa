@@ -199,10 +199,6 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {

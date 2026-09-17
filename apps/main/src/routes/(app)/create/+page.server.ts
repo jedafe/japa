@@ -103,10 +103,13 @@ export const load: PageServerLoad = async (event) => {
 					(g) =>
 						g.entity_type === 'content' &&
 						allowedFieldGroupSlugs.has(g.slug ?? '') &&
-						// Exclude guide category-specific field groups — those are loaded
-						// on demand by CreateShell when a guide category is selected,
-						// via GET /custom-field-groups?entity_class=content_type:guide:{cat}
-						!(g.slug?.startsWith('guide_') && g.slug?.endsWith('_fields'))
+						// Exclude guide category-specific field groups (slug =
+						// "guide_{category}_fields") — those are loaded on demand by
+						// CreateShell when a guide category is selected, via GET
+						// /custom-field-groups?entity_class=content_type:guide:{cat}.
+						// The base "guide_fields" group must NOT be excluded — the
+						// pattern matches it too, so exclude it explicitly.
+						!(g.slug !== 'guide_fields' && g.slug?.startsWith('guide_') && g.slug?.endsWith('_fields'))
 				)
 			: [];
 	const series = seriesRes.status === 'fulfilled' ? seriesRes.value.items : [];

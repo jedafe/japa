@@ -139,14 +139,14 @@ func TestDBResolverResolveByID(t *testing.T) {
 	}
 
 	r := NewDBResolver(db, DBConfig{
-		Entity:       "remittance",
-		Table:        "remittance_providers",
-		IDColumn:     "id",
-		TitleColumn:  "name",
-		SlugColumn:   "slug",
-		DescColumn:   "website_url",
+		Entity:         "remittance",
+		Table:          "remittance_providers",
+		IDColumn:       "id",
+		TitleColumn:    "name",
+		SlugColumn:     "slug",
+		DescColumn:     "website_url",
 		PlatformColumn: "",
-		ActiveWhere:  "t.is_active = true",
+		ActiveWhere:    "t.is_active = true",
 	})
 
 	item, found, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"})
@@ -182,14 +182,14 @@ func TestDBResolverResolveBySlug(t *testing.T) {
 	}
 
 	r := NewDBResolver(db, DBConfig{
-		Entity:       "organization",
-		Table:        "organizations",
-		IDColumn:     "id",
-		TitleColumn:  "name",
-		SlugColumn:   "slug",
-		DescColumn:   "description",
+		Entity:         "organization",
+		Table:          "organizations",
+		IDColumn:       "id",
+		TitleColumn:    "name",
+		SlugColumn:     "slug",
+		DescColumn:     "description",
 		PlatformColumn: "",
-		ActiveWhere:  "t.verified = true",
+		ActiveWhere:    "t.verified = true",
 	})
 
 	item, found, err := r.Resolve(t.Context(), map[string]any{"slug": "orgco"})
@@ -243,11 +243,11 @@ func TestDBResolverSearch(t *testing.T) {
 	}
 
 	r := NewDBResolver(db, DBConfig{
-		Entity:       "remittance",
-		Table:        "remittance_providers",
-		IDColumn:     "id",
-		TitleColumn:  "name",
-		SlugColumn:   "slug",
+		Entity:         "remittance",
+		Table:          "remittance_providers",
+		IDColumn:       "id",
+		TitleColumn:    "name",
+		SlugColumn:     "slug",
 		PlatformColumn: "",
 	})
 

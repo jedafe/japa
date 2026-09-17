@@ -29,7 +29,6 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
 }
 
-
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -97,10 +96,6 @@ func (h *Handlers) BlockUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	targetID, err := parseUUIDParam(r, "user_id")
 	if err != nil {
@@ -129,10 +124,6 @@ func (h *Handlers) BlockUser(w http.ResponseWriter, r *http.Request) {
 // Idempotent: unblocking a non-blocked user is a no-op (200).
 func (h *Handlers) UnblockUser(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -166,10 +157,6 @@ func (h *Handlers) ListBlocked(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -193,11 +180,6 @@ func (h *Handlers) ListBlocked(w http.ResponseWriter, r *http.Request) {
 //nolint:dupl // handler pattern is intentionally consistent with UnmuteUser/MuteSpace
 func (h *Handlers) MuteUser(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}
@@ -236,11 +218,6 @@ func (h *Handlers) UnmuteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok = true
-	if !ok {
-		return
-	}
-
 	targetID, err := parseUUIDParam(r, "user_id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
@@ -263,10 +240,6 @@ func (h *Handlers) UnmuteUser(w http.ResponseWriter, r *http.Request) {
 // Returns whether the caller has muted the given user.
 func (h *Handlers) GetUserMuteStatus(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}
@@ -296,10 +269,6 @@ func (h *Handlers) ListMutedUsers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -324,10 +293,6 @@ func (h *Handlers) ListMutedUsers(w http.ResponseWriter, r *http.Request) {
 // ListMutedSpaces handles GET /api/v1/me/muted-spaces.
 func (h *Handlers) ListMutedSpaces(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-	ok = true
 	if !ok {
 		return
 	}

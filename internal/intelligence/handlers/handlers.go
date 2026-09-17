@@ -54,6 +54,14 @@ type SettingsReader interface {
 // feeds that include linked video sources (v2 source directory, Task 3).
 type videoStore interface {
 	ListBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.VideoSource, int64, error)
+	// ListItemsBySourceID returns the same rows enriched with the author's
+	// username and the published content slug, so item cards link to the
+	// in-app video page (/video/{slug} or /video/{id}) instead of the raw
+	// external video URL (§106).
+	ListItemsBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListVideoSourceItemsBySourceIDRow, int64, error)
+	// GetChannelUsernameBySourceID returns the channel account username
+	// behind a video_channel source (used to link the claim form, §106).
+	GetChannelUsernameBySourceID(ctx context.Context, sourceID pgtype.UUID) (string, error)
 }
 
 // contentStore is the small surface of the content service needed for source
@@ -175,7 +183,6 @@ func optionalUser(_ http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 
 	return u.UserID, true
 }
-
 
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
 	raw := chi.URLParam(r, param)

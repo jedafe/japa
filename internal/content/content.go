@@ -191,6 +191,8 @@ var ContentTypeLabels = map[string]string{
 	TypeStory:          "Story",
 	TypeAchievement:    "Achievement",
 	TypeServiceListing: "Service Listing",
+	// Video content type (§106 / ADR-117).
+	TypeVideo: "Video",
 }
 
 // ContentTypeHasCategory reports whether a content type uses admin-configurable

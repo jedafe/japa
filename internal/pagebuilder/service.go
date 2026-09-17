@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -58,8 +59,9 @@ func validationError(msg string) error {
 // ---------------------------------------------------------------------------
 
 // ListBlocks returns all blocks for a platform, optionally filtered by q.
-func (s *Service) ListBlocks(ctx context.Context, q string, page, limit int32) ([]Block, int64, error) {
-	return s.store.ListBlocks(ctx, q, page, limit)
+// orderBy is a whitelisted "col ASC|DESC" fragment built by the handler.
+func (s *Service) ListBlocks(ctx context.Context, q, orderBy string, page, limit int32) ([]Block, int64, error) {
+	return s.store.ListBlocks(ctx, q, orderBy, page, limit)
 }
 
 // GetBlock returns a single block by ID, scoped to the platform.
@@ -110,9 +112,11 @@ func (s *Service) DeleteBlock(ctx context.Context, id pgtype.UUID) error {
 // Template operations
 // ---------------------------------------------------------------------------
 
-// ListTemplates returns all templates for a platform, optionally filtered by q and category.
-func (s *Service) ListTemplates(ctx context.Context, q, category string, page, limit int32) ([]Template, int64, error) {
-	return s.store.ListTemplates(ctx, q, category, page, limit)
+// ListTemplates returns all templates for a platform, optionally filtered by
+// q, category (page_type), and isSystem (nil = all, &true = system only,
+// &false = custom only). orderBy is a whitelisted "col ASC|DESC" fragment.
+func (s *Service) ListTemplates(ctx context.Context, q, category string, isSystem *bool, orderBy string, page, limit int32) ([]Template, int64, error) {
+	return s.store.ListTemplates(ctx, q, category, isSystem, orderBy, page, limit)
 }
 
 // GetTemplate returns a single template by ID, scoped to the platform.
@@ -160,8 +164,9 @@ func (s *Service) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
 // ---------------------------------------------------------------------------
 
 // ListThemes returns all themes for a platform, optionally filtered by q.
-func (s *Service) ListThemes(ctx context.Context, q string, page, limit int32) ([]Theme, int64, error) {
-	return s.store.ListThemes(ctx, q, page, limit)
+// orderBy is a whitelisted "col ASC|DESC" fragment built by the handler.
+func (s *Service) ListThemes(ctx context.Context, q, orderBy string, page, limit int32) ([]Theme, int64, error) {
+	return s.store.ListThemes(ctx, q, orderBy, page, limit)
 }
 
 // GetTheme returns a single theme by ID, scoped to the platform.
@@ -206,9 +211,10 @@ func (s *Service) SetDefaultTheme(ctx context.Context, id pgtype.UUID) error {
 // ---------------------------------------------------------------------------
 
 // ListPages returns a paginated list of pages for a platform, optionally
-// narrowed by f. page is 1-based; limit is the page size.
-func (s *Service) ListPages(ctx context.Context, f PageListFilter, page, limit int32) ([]Page, int64, error) {
-	return s.store.ListPages(ctx, f, page, limit)
+// narrowed by f. page is 1-based; limit is the page size. orderBy is a
+// whitelisted "col ASC|DESC" fragment built by the handler.
+func (s *Service) ListPages(ctx context.Context, f PageListFilter, orderBy string, page, limit int32) ([]Page, int64, error) {
+	return s.store.ListPages(ctx, f, orderBy, page, limit)
 }
 
 // ListPublishedPages returns only published pages for public consumption.
@@ -227,6 +233,8 @@ func (s *Service) GetPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 // invalidated on any page write (update/delete/publish/archive).
 // Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
 func (s *Service) GetPageBySlug(ctx context.Context, slug string) (Page, error) {
+	// Tolerate a leading slash — the canonical stored form has none.
+	slug = strings.TrimPrefix(slug, "/")
 	cacheKey := pageCacheKey(slug)
 
 	// Try Valkey cache first.
@@ -276,6 +284,9 @@ func (s *Service) CreatePage(ctx context.Context, createdBy pgtype.UUID, input C
 	if input.Slug == "" {
 		input.Slug = slugify(input.Title)
 	}
+	// Canonical slug form has no leading slash — the admin UI renders the
+	// "/" prefix for display only (Ref: sections/16-page-builder.md).
+	input.Slug = strings.TrimPrefix(input.Slug, "/")
 
 	if input.Status == "" {
 		input.Status = PageStatusDraft
@@ -349,16 +360,17 @@ func (s *Service) DuplicatePage(ctx context.Context, id, createdBy pgtype.UUID) 
 	return s.CreatePage(ctx, createdBy, input)
 }
 
-// UpdatePage updates an existing page with input validation.
+// UpdatePage updates an existing page. PATCH semantics are partial: any field
+// omitted (empty) is preserved by the store's COALESCE fallbacks, so callers
+// can PATCH a single field (e.g. description) without re-sending the title.
 func (s *Service) UpdatePage(ctx context.Context, id pgtype.UUID, input UpdatePageInput) (Page, error) {
-	if input.Title == "" {
-		return Page{}, validationError("title is required")
-	}
-
 	// NOTE: unlike CreatePage, we do NOT auto-derive the slug from the title
 	// here. Auto-deriving on every save would overwrite a user's custom slug
 	// whenever the client omits the slug field (the editor only sends title +
 	// blocks). The store preserves the existing slug when input.Slug is empty.
+	// When a slug IS provided, normalize it — canonical form has no leading
+	// slash (the admin UI renders "/" as a display prefix only).
+	input.Slug = strings.TrimPrefix(input.Slug, "/")
 
 	input.Blocks = sanitizeBlocksJSON(input.Blocks)
 

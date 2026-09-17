@@ -7,6 +7,7 @@
 	import SourceActions from '$lib/components/source/SourceActions.svelte';
 	import SourceDailyCard from '$lib/components/source/SourceDailyCard.svelte';
 	import { api } from '$lib/api/client';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type { PageData } from './$types';
 	import type { Source, SourceItemEnvelope } from '$lib/types/sources';
 
@@ -91,7 +92,7 @@
 	<div class="flex items-start gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		{#if source.logo_url && !logoError}
 			<img
-				src={source.logo_url}
+				src={remoteImageUrl(source.logo_url)}
 				alt={source.name}
 				class="h-16 w-16 shrink-0 rounded-md object-cover"
 				loading="lazy"
@@ -166,6 +167,17 @@
 				>
 					{t('sources.view_profile', 'View {type} profile').replace('{type}', source.linked_entity.type)}
 					<ExternalLink class="h-3 w-3" />
+				</a>
+			{/if}
+
+			<!-- §106 — video channels have no public profile; the claim/report
+			     entry point lives here on the source page instead. -->
+			{#if source.source_type === 'video_channel' && source.channel_username}
+				<a
+					href="/u/{source.channel_username}/claim"
+					class="mt-1 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
+				>
+					{t('video.claim_or_report', 'Is this your channel? Claim or report it')}
 				</a>
 			{/if}
 

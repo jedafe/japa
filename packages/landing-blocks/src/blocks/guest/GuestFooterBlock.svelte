@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { GuestFooterProps } from '../../types';
   import { getLucideIcon } from './guestIconMap';
+  import { resolveAssetUrl } from '../../assetBase';
   import SocialIcon from './SocialIcon.svelte';
 
   interface Props {
@@ -19,7 +20,7 @@
     }
   );
 
-  const logoSrc = $derived(logo.dark ?? logo.light ?? '');
+  const logoSrc = $derived(resolveAssetUrl(logo.dark ?? logo.light ?? ''));
 
   const tagline = $derived(
     props.tagline ??

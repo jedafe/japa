@@ -118,7 +118,6 @@ func (h *Handlers) SetKeyRotation(kr *auth.KeyRotation) {
 	h.keyRot = kr
 }
 
-
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -713,10 +712,6 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	var body struct {
 		Latitude  *float64 `json:"latitude"`
@@ -836,10 +831,6 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ok = true
-	if !ok {
-		return
-	}
 
 	geoSpace, err := h.Service.store.getCurrentGeoSpace(r.Context(), user.UserID)
 	if err != nil {
@@ -918,11 +909,6 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 // //	japaconnect-engineering/conventions/api-routes-catalog.md §342
 func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	ok = true
 	if !ok {
 		return
 	}

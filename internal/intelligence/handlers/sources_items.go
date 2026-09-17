@@ -27,6 +27,7 @@ type sourceItem struct {
 	Excerpt      *string            `json:"excerpt,omitempty"`
 	OriginalURL  string             `json:"original_url"`
 	Href         string             `json:"href"`
+	ThumbnailURL *string            `json:"thumbnail_url,omitempty"`
 	PublishedAt  pgtype.Timestamptz `json:"published_at"`
 	ViewCount    int32              `json:"view_count"`
 	CommentCount int32              `json:"comment_count"`
@@ -51,10 +52,6 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
-	}
-
-	if !false {
-
 	}
 
 	userID, authed := optionalUser(w, r)
@@ -133,7 +130,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	// v2 source directory: if the source is a linked video source, the item
 	// feed is served directly from video_sources for the "video" entity type.
 	if entityType == "video" && h.videos != nil {
-		videos, total, err := h.videos.ListBySourceID(r.Context(), src.ID, clampInt32(limit), offset)
+		videos, total, err := h.videos.ListItemsBySourceID(r.Context(), src.ID, clampInt32(limit), offset)
 		if err != nil {
 			slog.Error("intel: source video items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -501,7 +498,7 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 
 	var videoTotal int64
 	if h.videos != nil {
-		videos, vTotal, err := h.videos.ListBySourceID(ctx, sourceID, innerLimit, 0)
+		videos, vTotal, err := h.videos.ListItemsBySourceID(ctx, sourceID, innerLimit, 0)
 		if err != nil {
 			slog.Error("intel: source video items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -541,20 +538,29 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 	return items[start:end], int64(recordTotal) + videoTotal + comparisonTotal, nil
 }
 
-func videoSourceToItem(v gen.VideoSource) sourceItem {
+func videoSourceToItem(v gen.ListVideoSourceItemsBySourceIDRow) sourceItem {
 	excerpt := ""
 	if v.Description != "" {
 		excerpt = v.Description
 	}
 
+	// §106: cards open in-app on the video single page — the published post's
+	// slug when the video was imported as content, else the video source's
+	// own slug. The external URL stays on original_url for the "View" chip.
+	href := "/video/" + v.VideoSlug
+	if v.ContentSlug != "" {
+		href = "/video/" + v.ContentSlug
+	}
+
 	return sourceItem{
-		ID:          pgtypeUUIDString(v.ID),
-		EntityType:  "video",
-		Title:       v.Title,
-		Excerpt:     &excerpt,
-		OriginalURL: v.SourceUrl,
-		Href:        v.SourceUrl,
-		PublishedAt: v.CreatedAt,
+		ID:           pgtypeUUIDString(v.ID),
+		EntityType:   "video",
+		Title:        v.Title,
+		Excerpt:      &excerpt,
+		OriginalURL:  v.SourceUrl,
+		Href:         href,
+		ThumbnailURL: v.ThumbnailUrl,
+		PublishedAt:  v.CreatedAt,
 	}
 }
 

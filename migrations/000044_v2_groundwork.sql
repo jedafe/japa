@@ -155,15 +155,3 @@ CREATE TABLE IF NOT EXISTS external_data_sources (
 CREATE INDEX IF NOT EXISTS idx_external_data_sources_tenant ON external_data_sources(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_external_data_sources_type ON external_data_sources(source_type);
 CREATE INDEX IF NOT EXISTS idx_external_data_sources_status ON external_data_sources(status);
-
--- +migrate Down
-
-DROP TABLE IF EXISTS external_data_sources;
-DROP TABLE IF EXISTS booking_slots;
-DROP TABLE IF EXISTS bookings;
-DROP TABLE IF EXISTS ads_campaigns;
-DROP TABLE IF EXISTS mentor_reviews;
-DROP TABLE IF EXISTS mentor_sessions;
-DROP TABLE IF EXISTS mentorship_profiles;
-DROP TABLE IF EXISTS newsletter_list_subscribers;
-DROP TABLE IF EXISTS newsletter_lists;

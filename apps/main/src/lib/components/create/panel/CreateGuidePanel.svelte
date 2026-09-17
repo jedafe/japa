@@ -72,6 +72,15 @@
 			/>
 		</div>
 		<div class="footer-section">
+			<span class="footer-label">{t('create.label.tags')}</span>
+			<TagInput
+				{tags}
+				{maxTags}
+				onTags={(next) => { ontags(next); onedit(); }}
+				onfocus={ontagsfocus}
+			/>
+		</div>
+		<div class="footer-section">
 			<span class="footer-label">{t('create.label.series')}</span>
 			<SeriesSelector
 				bind:series
@@ -87,15 +96,6 @@
 				{spaceIds}
 				onChange={(ids) => { onspace(ids); onedit(); }}
 				onfocus={onspacefocus}
-			/>
-		</div>
-		<div class="footer-section">
-			<span class="footer-label">{t('create.label.tags')}</span>
-			<TagInput
-				{tags}
-				{maxTags}
-				onTags={(next) => { ontags(next); onedit(); }}
-				onfocus={ontagsfocus}
 			/>
 		</div>
 	</div>
