@@ -1,17 +1,25 @@
 <script lang="ts">
   import type { GuestFooterProps } from '../../types';
+  import type { FetchContext } from '../../data/types';
   import { getLucideIcon } from './guestIconMap';
   import { resolveAssetUrl } from '../../assetBase';
   import SocialIcon from './SocialIcon.svelte';
+  import GuestChildren from './GuestChildren.svelte';
 
   interface Props {
     props: GuestFooterProps;
-    fetchCtx?: unknown;
+    fetchCtx?: FetchContext;
     geoCountry?: string;
     id?: string;
   }
 
-  let { props, id = 'guest-footer' }: Props = $props();
+  let { props, fetchCtx, geoCountry, id = 'guest-footer' }: Props = $props();
+
+  // Footer children are partitioned by type into the three footer areas; each
+  // area falls back to its legacy props array when it has no child blocks.
+  const socialChildren = $derived((props.children ?? []).filter((b) => b.type === 'guest_footer_social'));
+  const columnChildren = $derived((props.children ?? []).filter((b) => b.type === 'guest_footer_column'));
+  const bottomChildren = $derived((props.children ?? []).filter((b) => b.type === 'guest_footer_link'));
 
   const logo = $derived(
     props.logo ?? {
@@ -114,7 +122,11 @@
     <div class="guest-footer-brand">
       <img src={logoSrc} alt="JapaConnect" class="footer-logo footer-logo-dark" />
       <p class="footer-tagline">{tagline}</p>
-      {#if socials.length > 0}
+      {#if socialChildren.length > 0}
+        <div class="footer-socials">
+          <GuestChildren blocks={socialChildren} {fetchCtx} {geoCountry} />
+        </div>
+      {:else if socials.length > 0}
         <div class="footer-socials">
           {#each socials as social (social.id ?? social.url)}
             <a href={social.url} aria-label={social.label} target="_blank" rel="noopener noreferrer">
@@ -126,40 +138,48 @@
     </div>
 
     <div class="guest-footer-columns">
-      {#each columns as col (col.id ?? col.title)}
-        <div class="footer-column">
-          <h3 class="footer-column-title">{col.title}</h3>
-          <ul class="footer-column-list">
-            {#each col.links as link, i (`${link.url ?? ''}:${link.label}:${i}`)}
-              {@const LinkIcon = getLucideIcon(link.icon)}
-              <li>
-                {#if link.url}
-                  {@const attrs = linkAttrs(link.url, link.target)}
-                  <a {...attrs}>
-                    {#if LinkIcon}
-                      <LinkIcon size={14} />
-                    {/if}
-                    <span>{link.label}</span>
-                  </a>
-                {:else}
-                  <span class="footer-column-text">
-                    {#if LinkIcon}
-                      <LinkIcon size={14} />
-                    {/if}
-                    <span>{link.label}</span>
-                  </span>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        </div>
-      {/each}
+      {#if columnChildren.length > 0}
+        <GuestChildren blocks={columnChildren} {fetchCtx} {geoCountry} />
+      {:else}
+        {#each columns as col (col.id ?? col.title)}
+          <div class="footer-column">
+            <h3 class="footer-column-title">{col.title}</h3>
+            <ul class="footer-column-list">
+              {#each col.links as link, i (`${link.url ?? ''}:${link.label}:${i}`)}
+                {@const LinkIcon = getLucideIcon(link.icon)}
+                <li>
+                  {#if link.url}
+                    {@const attrs = linkAttrs(link.url, link.target)}
+                    <a {...attrs}>
+                      {#if LinkIcon}
+                        <LinkIcon size={14} />
+                      {/if}
+                      <span>{link.label}</span>
+                    </a>
+                  {:else}
+                    <span class="footer-column-text">
+                      {#if LinkIcon}
+                        <LinkIcon size={14} />
+                      {/if}
+                      <span>{link.label}</span>
+                    </span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/each}
+      {/if}
     </div>
   </div>
 
   <div class="guest-footer-bottom">
     <p class="footer-copyright">{copyright}</p>
-    {#if bottomLinks.length > 0}
+    {#if bottomChildren.length > 0}
+      <div class="footer-legal">
+        <GuestChildren blocks={bottomChildren} {fetchCtx} {geoCountry} />
+      </div>
+    {:else if bottomLinks.length > 0}
       <div class="footer-legal">
         {#each bottomLinks as link (link.label)}
           {@const attrs = linkAttrs(link.url, link.target)}

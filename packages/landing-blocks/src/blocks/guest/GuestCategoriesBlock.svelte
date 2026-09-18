@@ -1,11 +1,12 @@
 <script lang="ts">
-  import type { GuestCategoriesProps, GuestHomeData, GuestHomeCategory } from '../../types';
+  import type { GuestCategoriesProps, GuestHomeData, GuestHomeCategory, Block, GuestCategoryItemProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
   import { writable } from 'svelte/store';
   import GuestCardList from './GuestCardList.svelte';
   import { getLucideIcon } from './guestIconMap';
   import { ArrowRight } from 'lucide-svelte';
+  import { resolveGuestItems } from './guestChildren';
 
   interface Props {
     props: GuestCategoriesProps;
@@ -14,18 +15,35 @@
     id?: string;
   }
 
-  let { props, id = 'guest-categories' }: Props = $props();
+  let { props, fetchCtx, geoCountry, id = 'guest-categories' }: Props = $props();
 
   const guestHomeStore = $derived(getGuestHomeData() ?? writable<GuestHomeData | undefined>(undefined));
   const guestHome = $derived($guestHomeStore);
 
-  const items = $derived<GuestHomeCategory[]>(
-    props.data_source === 'manual' && props.items
-      ? props.items
-      : (guestHome?.categories ?? [])
+  function cloneForContext(template: Block, cat: GuestHomeCategory, index: number): Block {
+    const itemProps: GuestCategoryItemProps = {
+      ...(template.props as GuestCategoryItemProps),
+      title: cat.title,
+      description: cat.description,
+      href: cat.href,
+      icon: cat.icon,
+      color: cat.color,
+    };
+    return { ...template, id: `${template.id}-${cat.id ?? index}`, props: itemProps } as Block;
+  }
+
+  const res = $derived(
+    resolveGuestItems<GuestHomeCategory>({
+      dataSource: props.data_source,
+      children: props.children,
+      items: props.items,
+      contextItems: guestHome?.categories ?? [],
+      maxItems: props.max_items ?? 8,
+      cloneForContext,
+    })
   );
 
-  const visibleItems = $derived(items.slice(0, props.max_items ?? 8));
+  const childBlocks = $derived(res.manualChildren ?? res.contextChildren);
   const title = $derived(props.title ?? 'Explore What Matters to You');
   const subtitle = $derived(props.subtitle ?? 'Everything you need to achieve your global dreams.');
 
@@ -58,7 +76,10 @@
   responsive_columns={props.responsive_columns ?? { tablet: 3, mobile: 1 }}
   gap={props.gap ?? 'lg'}
   card_style={props.card_style ?? 'default'}
-  items={visibleItems}
+  items={res.legacyItems ?? []}
+  blocks={childBlocks}
+  {fetchCtx}
+  {geoCountry}
   {id}
 >
   {#snippet card(cat: GuestHomeCategory)}

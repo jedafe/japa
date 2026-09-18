@@ -1,5 +1,7 @@
 <script lang="ts">
-  import type { GuestNewsletterProps } from '../../../types';
+  import type { GuestNewsletterProps, Block } from '../../../types';
+  import { blockRegistry } from '../../../render/blockRegistry';
+  import NestedBlocksEditor from '../../NestedBlocksEditor.svelte';
 
   interface Props {
     props: GuestNewsletterProps;
@@ -13,6 +15,13 @@
   function update<K extends keyof GuestNewsletterProps>(key: K, value: GuestNewsletterProps[K]) {
     onchange({ ...props, [key]: value });
   }
+
+  function updateChildren(children: Block[]) {
+    onchange({ ...props, children });
+  }
+
+  // Newsletter children can be any block — they render inside the card.
+  const allowedChildTypes = Object.keys(blockRegistry) as Block['type'][];
 </script>
 
 <div class="space-y-4">
@@ -23,4 +32,14 @@
   <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Endpoint</span><input class='w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]' value={props.endpoint ?? ''} oninput={(e) => update('endpoint', e.currentTarget.value || undefined)} placeholder="/newsletter/subscribe" /></label>
   <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Success message</span><input class='w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]' value={props.success_message ?? ''} oninput={(e) => update('success_message', e.currentTarget.value || undefined)} /></label>
   <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Error message</span><input class='w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]' value={props.error_message ?? ''} oninput={(e) => update('error_message', e.currentTarget.value || undefined)} /></label>
+
+  <div class="space-y-2">
+    <span class="text-xs font-medium text-[var(--color-muted)]">Child blocks</span>
+    <p class="text-xs text-[var(--color-muted)]">Optional blocks rendered inside the newsletter card, below the form.</p>
+    <NestedBlocksEditor
+      blocks={props.children ?? []}
+      allowedTypes={allowedChildTypes}
+      onchange={updateChildren}
+    />
+  </div>
 </div>

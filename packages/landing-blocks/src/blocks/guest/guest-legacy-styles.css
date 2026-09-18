@@ -94,6 +94,25 @@
     }
   }
 
+  /* Wrapper for registry-rendered CTA child blocks — carries the legacy
+     .hero-actions a flex sizing since the .hero-btn is nested inside a
+     BlockShell. */
+  .hero-action-item {
+    display: flex;
+    flex: 1 1 auto;
+  }
+  .hero-action-item > * {
+    flex: 1;
+  }
+  .hero-action-item .hero-btn {
+    width: 100%;
+  }
+  @media (min-width: 480px) {
+    .hero-action-item {
+      flex: 0 0 auto;
+    }
+  }
+
   .hero-btn {
     display: inline-flex;
     align-items: center;
@@ -559,6 +578,21 @@
     }
   }
 
+  /* Wrapper for registry-rendered child blocks — carries the card's flex
+     sizing since the .opportunity-card is nested inside a BlockShell. */
+  .opportunity-scroll-item {
+    flex: 0 0 clamp(250px, 70vw, 280px);
+    scroll-snap-align: start;
+    display: flex;
+  }
+  .opportunity-scroll-item > * {
+    flex: 1;
+    min-width: 0;
+  }
+  .opportunity-scroll-item .opportunity-card {
+    width: 100%;
+  }
+
   .opportunity-card {
     flex: 0 0 clamp(250px, 70vw, 280px);
     scroll-snap-align: start;
@@ -755,6 +789,21 @@
     }
   }
 
+  /* Wrapper for registry-rendered child blocks — carries the card's flex
+     sizing since the .story-card is nested inside a BlockShell. */
+  .story-scroll-item {
+    flex: 0 0 clamp(280px, 85vw, 340px);
+    scroll-snap-align: start;
+    display: flex;
+  }
+  .story-scroll-item > * {
+    flex: 1;
+    min-width: 0;
+  }
+  .story-scroll-item .story-card {
+    width: 100%;
+  }
+
   .story-card {
     flex: 0 0 clamp(280px, 85vw, 340px);
     scroll-snap-align: start;
@@ -927,6 +976,12 @@
     align-items: center;
     gap: 1rem;
     max-width: 420px;
+  }
+
+  /* Child blocks dropped into the newsletter card take a full row below
+     the content + form flex line. */
+  .newsletter-children {
+    width: 100%;
   }
 
   .newsletter-icon {

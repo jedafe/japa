@@ -13,12 +13,14 @@
 		style,
 		motion,
 		background,
+		id,
 	}: {
 		props: CustomBlockProps;
 		blockDefId: string;
 		style?: BlockStyle;
 		motion?: MotionConfig;
 		background?: BackgroundConfig;
+		id?: string;
 	} = $props();
 
 	const def = $derived(getCustomBlockDef(blockDefId));
@@ -38,7 +40,7 @@
 	}
 </script>
 
-<BlockShell {style} {motion} {background}>
+<BlockShell {style} {motion} {background} scopeKey={id}>
 	<div class="custom-block mx-auto max-w-4xl px-4 py-6">
 		{#if !def}
 			<!-- Block definition not found (possibly deleted or not loaded) -->

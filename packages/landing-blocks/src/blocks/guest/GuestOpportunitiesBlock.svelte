@@ -1,9 +1,11 @@
 <script lang="ts">
-  import type { GuestOpportunitiesProps, GuestHomeData, GuestHomeOpportunity } from '../../types';
+  import type { GuestOpportunitiesProps, GuestHomeData, GuestHomeOpportunity, Block, GuestOpportunityItemProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
   import { writable } from 'svelte/store';
   import { MapPin, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-svelte';
+  import { resolveGuestItems } from './guestChildren';
+  import GuestChildren from './GuestChildren.svelte';
 
   interface Props {
     props: GuestOpportunitiesProps;
@@ -12,19 +14,42 @@
     id?: string;
   }
 
-  let { props, id = 'guest-opportunities' }: Props = $props();
+  let { props, fetchCtx, geoCountry, id = 'guest-opportunities' }: Props = $props();
 
   const guestHomeStore = $derived(getGuestHomeData() ?? writable<GuestHomeData | undefined>(undefined));
   const guestHome = $derived($guestHomeStore);
   let scroller = $state<HTMLDivElement | undefined>(undefined);
 
-  const items = $derived<GuestHomeOpportunity[]>(
-    props.data_source === 'manual' && props.items
-      ? props.items
-      : (guestHome?.opportunities ?? [])
+  function cloneForContext(template: Block, opp: GuestHomeOpportunity, index: number): Block {
+    const itemProps: GuestOpportunityItemProps = {
+      ...(template.props as GuestOpportunityItemProps),
+      type: opp.type,
+      title: opp.title,
+      organization: opp.organization,
+      location: opp.location,
+      location_code: opp.location_code,
+      tag: opp.tag,
+      badge: opp.badge,
+      value: opp.value,
+      logo_url: opp.logo_url,
+      href: opp.href,
+      published_at: opp.published_at,
+    };
+    return { ...template, id: `${template.id}-${opp.id ?? index}`, props: itemProps } as Block;
+  }
+
+  const res = $derived(
+    resolveGuestItems<GuestHomeOpportunity>({
+      dataSource: props.data_source,
+      children: props.children,
+      items: props.items,
+      contextItems: guestHome?.opportunities ?? [],
+      maxItems: props.max_items ?? 6,
+      cloneForContext,
+    })
   );
 
-  const visibleItems = $derived(items.slice(0, props.max_items ?? 6));
+  const childBlocks = $derived(res.manualChildren ?? res.contextChildren);
   const title = $derived(props.title ?? 'Featured Opportunities');
   const subtitle = $derived(props.subtitle ?? 'Hand-picked opportunities from around the world.');
   const viewAllHref = $derived(props.view_all_href ?? '/explore');
@@ -136,38 +161,42 @@
       </button>
 
       <div bind:this={scroller} class="opportunity-scroll">
-        {#each visibleItems as opp (opp.id)}
-          <a href={opportunityHref(opp)} class="opportunity-card">
-            <div class="opportunity-card-top">
-              <span class="opportunity-type {opportunityTagClasses(opp.type)}">{opp.tag}</span>
-              {#if opp.badge}
-                <span class="opportunity-badge">{opp.badge}</span>
-              {/if}
-            </div>
-            <div class="opportunity-logo">
-              {#if opp.logo_url}
-                <img src={opp.logo_url} alt="" class="opportunity-logo-img" />
-              {:else}
-                <div class="opportunity-logo-fallback {logoBg(opp.type)}">{logoInitials(opp.organization)}</div>
-              {/if}
-            </div>
-            <h3 class="opportunity-title">{opp.title}</h3>
-            <p class="opportunity-org">{opp.organization}</p>
-            <div class="opportunity-meta">
-              <span class="opportunity-location">
-                <MapPin size={14} />
-                {opp.location}
-              </span>
-              {#if opp.value}
-                <span class="opportunity-value">{opp.value}</span>
-              {/if}
-            </div>
-            <div class="opportunity-footer">
-              <span class="opportunity-type-pill {opportunityTagClasses(opp.type)}">{opp.tag}</span>
-              <span class="opportunity-time">{timeAgo(opp.published_at)}</span>
-            </div>
-          </a>
-        {/each}
+        {#if childBlocks}
+          <GuestChildren blocks={childBlocks} {fetchCtx} {geoCountry} tag="div" class="opportunity-scroll-item" />
+        {:else}
+          {#each res.legacyItems ?? [] as opp (opp.id)}
+            <a href={opportunityHref(opp)} class="opportunity-card">
+              <div class="opportunity-card-top">
+                <span class="opportunity-type {opportunityTagClasses(opp.type)}">{opp.tag}</span>
+                {#if opp.badge}
+                  <span class="opportunity-badge">{opp.badge}</span>
+                {/if}
+              </div>
+              <div class="opportunity-logo">
+                {#if opp.logo_url}
+                  <img src={opp.logo_url} alt="" class="opportunity-logo-img" />
+                {:else}
+                  <div class="opportunity-logo-fallback {logoBg(opp.type)}">{logoInitials(opp.organization)}</div>
+                {/if}
+              </div>
+              <h3 class="opportunity-title">{opp.title}</h3>
+              <p class="opportunity-org">{opp.organization}</p>
+              <div class="opportunity-meta">
+                <span class="opportunity-location">
+                  <MapPin size={14} />
+                  {opp.location}
+                </span>
+                {#if opp.value}
+                  <span class="opportunity-value">{opp.value}</span>
+                {/if}
+              </div>
+              <div class="opportunity-footer">
+                <span class="opportunity-type-pill {opportunityTagClasses(opp.type)}">{opp.tag}</span>
+                <span class="opportunity-time">{timeAgo(opp.published_at)}</span>
+              </div>
+            </a>
+          {/each}
+        {/if}
       </div>
 
       <button

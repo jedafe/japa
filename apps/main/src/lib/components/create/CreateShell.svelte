@@ -35,6 +35,8 @@
 	import type { VideoSource } from '$lib/types';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
 	import CustomFieldGroupCmp from './panel/CustomFieldGroup.svelte';
+	import Autocomplete, { type AutocompleteItem } from './Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import AiBodyButton from '$lib/ai/AiBodyButton.svelte';
 	import AiDraftPanel from '$lib/ai/AiDraftPanel.svelte';
 	import { canUseAI } from '$lib/ai/canUseAI';
@@ -340,6 +342,17 @@
 		})();
 	});
 
+	// Guide category picker — static option list from the content type's
+	// categories, so a client-side fetcher is enough.
+	const guideCategoryItems = $derived<AutocompleteItem[]>(
+		(selectedType.categories ?? []).map((c) => ({ id: c.Slug, label: c.Label }))
+	);
+	const guideCategoryFetcher = $derived(staticAutocompleteFetcher(guideCategoryItems));
+	// Falls back to the raw slug for saved categories no longer in the list.
+	const guideCategoryLabel = $derived(
+		guideCategoryItems.find((c) => c.id === guideCategory)?.label ?? guideCategory
+	);
+
 	function markDirty() {
 		composer?.markDirty();
 	}
@@ -454,23 +467,17 @@
 				<label for="guide-category" class="guide-category-label">
 					{t('create.guide.category_label')}
 				</label>
-				<select
+				<Autocomplete
 					id="guide-category"
-					class="guide-category-select"
-					value={guideCategory ?? ''}
-					onchange={(e) => {
-						guideCategory = e.currentTarget.value || null;
-						markDirty();
-					}}
-				>
-					<option value="">{t('create.guide.category_placeholder')}</option>
-					{#each selectedType.categories as cat (cat.Slug)}
-						<option value={cat.Slug}>{cat.Label}</option>
-					{/each}
-					{#if guideCategory && !selectedType.categories?.some((c) => c.Slug === guideCategory)}
-						<option value={guideCategory}>{guideCategory}</option>
-					{/if}
-				</select>
+					placeholder={t('create.guide.category_placeholder')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={guideCategoryFetcher}
+					initialFetcher={guideCategoryFetcher}
+					selectedId={guideCategory}
+					selectedLabel={guideCategoryLabel}
+					onSelect={(item) => { guideCategory = item.id; markDirty(); }}
+					onClear={() => { guideCategory = null; markDirty(); }}
+				/>
 			</div>
 		{/if}
 
@@ -718,22 +725,6 @@
 		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--color-muted);
-	}
-	.guide-category-select {
-		width: 100%;
-		height: 2.375rem;
-		padding: 0 14px;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-size: 0.875rem;
-		outline: none;
-		transition: border-color 0.15s, box-shadow 0.15s;
-	}
-	.guide-category-select:focus {
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}
 	.composer-right {
 		min-width: 0;

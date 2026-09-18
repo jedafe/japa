@@ -1,36 +1,21 @@
 import type { PageServerLoad } from './$types';
 import { apiList, apiGet, apiGetEnvelope, apiContext } from '$lib/server/api';
+import { buildGuestHome, emptyGuestHome } from '$lib/server/guest-home';
 import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE, type FeedTab, type SortValue } from '$lib/feed/endpoint';
 import type {
 	FeedItem,
 	GeoContext,
 	GeoCountry,
-	GuestHomeData,
-	GuestHomeOpportunity,
-	GuestHomeStory,
-	GuestHomeTool,
-	GuestHomeStat,
-	GuestHomeCategory,
-	SpaceSuggestion,
-	Story
 } from '$lib/types';
 
 import {
 	resolveGeoCopy,
 	resolveString,
 	getGeoTokens,
+	containsGuestBlocks,
 	type LandingPage as LandingPageData,
 	type Block
 } from '@japaconnect/landing-blocks';
-
-const emptyGuestHome: GuestHomeData = {
-	topDestinations: [],
-	opportunities: [],
-	stories: [],
-	tools: [],
-	stats: [],
-	categories: []
-};
 
 /**
  * Home route (/). Behavior splits by auth state per ADR-058 §5 Exception #3:
@@ -138,7 +123,12 @@ export const load: PageServerLoad = async (event) => {
 			literals
 		});
 		const hasGuestHome = (landing.blocks as Block[]).some((b) => b.type === 'guest_home');
-		const home = hasGuestHome ? await buildGuestHome(ctx, event) : emptyGuestHome;
+		// Guest-home context data is needed by ANY guest_* block on the page
+		// (standalone blocks consume stats/categories/etc. too), not just
+		// the guest_home wrapper.
+		const home = containsGuestBlocks(landing.blocks as Block[])
+			? await buildGuestHome(ctx, event)
+			: emptyGuestHome;
 		return {
 			authed: false,
 			landing: {
@@ -180,72 +170,3 @@ export const load: PageServerLoad = async (event) => {
 		};
 	}
 };
-
-function asArray<T>(value: unknown): T[] {
-	if (Array.isArray(value)) return value as T[];
-	if (value && typeof value === 'object' && !Array.isArray(value)) {
-		const maybe = (value as Record<string, unknown>).data;
-		if (Array.isArray(maybe)) return maybe as T[];
-	}
-	return [];
-}
-
-function mapStoryToGuestHome(story: Story): GuestHomeStory {
-	const quote =
-		story.best_advice?.trim() ||
-		story.most_useful_resource?.trim() ||
-		(story.body ? story.body.replace(/<[^>]+>/g, '').slice(0, 160) : story.title);
-	const role = [story.profession, story.destination_space_name].filter(Boolean).join(' • ');
-
-	return {
-		id: story.id,
-		slug: story.slug,
-		title: story.title,
-		quote,
-		author_name: story.author_display_name ?? story.author_name ?? 'A JapaConnect Member',
-		author_role: role || undefined,
-		author_avatar_url: story.author_avatar ?? story.featured_image_url ?? null,
-		destination: story.destination_space_name
-	};
-}
-
-async function buildGuestHome(
-	ctx: ReturnType<typeof apiContext>,
-	event: Parameters<PageServerLoad>[0]
-): Promise<GuestHomeData> {
-	const parent = await event.parent();
-	const siteSettings = (parent?.siteSettings as Record<string, unknown> | undefined) ?? {};
-
-	const stats = asArray<GuestHomeStat>(siteSettings['landing.stats']);
-	const categories = asArray<GuestHomeCategory>(siteSettings['landing.categories']);
-	const opportunities = asArray<GuestHomeOpportunity>(siteSettings['landing.featured_opportunities']);
-	const tools = asArray<GuestHomeTool>(siteSettings['landing.tools']);
-	let topDestinations = asArray<SpaceSuggestion>(siteSettings['landing.top_destinations']);
-
-	// If no curated top destinations are configured, try the directory API.
-	if (topDestinations.length === 0) {
-		try {
-			const spaceRes = await apiList<SpaceSuggestion>(ctx, `/spaces?level=country&sort=members&page_size=4`);
-			topDestinations = spaceRes.items.slice(0, 4);
-		} catch (err) {
-			console.error('[HOME] top destinations load failed', err);
-		}
-	}
-
-	let stories: GuestHomeStory[] = [];
-	try {
-		const storyRes = await apiList<Story>(ctx, '/stories?limit=10&sort=top');
-		stories = storyRes.items.slice(0, 10).map(mapStoryToGuestHome);
-	} catch (err) {
-		console.error('[HOME] stories load failed', err);
-	}
-
-	return {
-		topDestinations,
-		opportunities,
-		stories,
-		tools,
-		stats,
-		categories
-	};
-}

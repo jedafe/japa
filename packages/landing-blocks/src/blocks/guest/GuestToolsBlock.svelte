@@ -1,10 +1,11 @@
 <script lang="ts">
-  import type { GuestToolsProps, GuestHomeData, GuestHomeTool } from '../../types';
+  import type { GuestToolsProps, GuestHomeData, GuestHomeTool, Block, GuestToolItemProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
   import { writable } from 'svelte/store';
   import GuestCardList from './GuestCardList.svelte';
   import { getLucideIcon } from './guestIconMap';
+  import { resolveGuestItems } from './guestChildren';
 
   interface Props {
     props: GuestToolsProps;
@@ -13,18 +14,37 @@
     id?: string;
   }
 
-  let { props, id = 'guest-tools' }: Props = $props();
+  let { props, fetchCtx, geoCountry, id = 'guest-tools' }: Props = $props();
 
   const guestHomeStore = $derived(getGuestHomeData() ?? writable<GuestHomeData | undefined>(undefined));
   const guestHome = $derived($guestHomeStore);
 
-  const items = $derived<GuestHomeTool[]>(
-    props.data_source === 'manual' && props.items
-      ? props.items
-      : (guestHome?.tools ?? [])
+  function cloneForContext(template: Block, tool: GuestHomeTool, index: number): Block {
+    const itemProps: GuestToolItemProps = {
+      ...(template.props as GuestToolItemProps),
+      name: tool.name,
+      slug: tool.slug,
+      description: tool.description,
+      href: tool.href,
+      icon: tool.icon,
+      badge: tool.badge,
+      accent: tool.accent,
+    };
+    return { ...template, id: `${template.id}-${tool.id ?? index}`, props: itemProps } as Block;
+  }
+
+  const res = $derived(
+    resolveGuestItems<GuestHomeTool>({
+      dataSource: props.data_source,
+      children: props.children,
+      items: props.items,
+      contextItems: guestHome?.tools ?? [],
+      maxItems: props.max_items ?? 6,
+      cloneForContext,
+    })
   );
 
-  const visibleItems = $derived(items.slice(0, props.max_items ?? 6));
+  const childBlocks = $derived(res.manualChildren ?? res.contextChildren);
   const title = $derived(props.title ?? 'Powerful Tools & Resources');
   const subtitle = $derived(props.subtitle ?? 'Free tools to help you plan, apply, and succeed.');
 
@@ -44,7 +64,10 @@
   responsive_columns={props.responsive_columns ?? { tablet: 2, mobile: 1 }}
   gap={props.gap ?? 'lg'}
   card_style={props.card_style ?? 'default'}
-  items={visibleItems}
+  items={res.legacyItems ?? []}
+  blocks={childBlocks}
+  {fetchCtx}
+  {geoCountry}
   {id}
 >
   {#snippet card(tool: GuestHomeTool)}

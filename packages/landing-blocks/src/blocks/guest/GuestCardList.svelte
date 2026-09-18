@@ -1,5 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import type { Block } from '../../types';
+  import type { FetchContext } from '../../data/types';
+  import GuestChildren from './GuestChildren.svelte';
 
   interface Props {
     title?: string;
@@ -14,6 +17,10 @@
     items: any[];
     card: Snippet<[any]>;
     id?: string;
+    /** When set, child blocks are rendered instead of `items` (each wrapped in a .card-list-cell). */
+    blocks?: Block[];
+    fetchCtx?: FetchContext;
+    geoCountry?: string;
   }
 
   let {
@@ -29,6 +36,9 @@
     items,
     card,
     id = 'guest-card-list',
+    blocks,
+    fetchCtx,
+    geoCountry,
   }: Props = $props();
 
   const gapMap: Record<NonNullable<Props['gap']>, string> = {
@@ -60,11 +70,15 @@
       class:card-style-filled={card_style === 'filled'}
       style="--gap: {gapMap[gap]}; --desktop: {desktop}; --tablet: {tablet}; --mobile: {mobile};"
     >
-      {#each items as item (item.id ?? item.slug ?? item.name ?? item.title)}
-        <div class="card-list-cell">
-          {@render card(item)}
-        </div>
-      {/each}
+      {#if blocks}
+        <GuestChildren {blocks} {fetchCtx} {geoCountry} tag="div" class="card-list-cell" />
+      {:else}
+        {#each items as item (item.id ?? item.slug ?? item.name ?? item.title)}
+          <div class="card-list-cell">
+            {@render card(item)}
+          </div>
+        {/each}
+      {/if}
     </div>
     {#if view_all_href}
       <a href={view_all_href} class="section-link">{view_all_label}</a>

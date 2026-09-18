@@ -6,8 +6,10 @@ import {
 	resolveGeoCopy,
 	resolveString,
 	getGeoTokens,
+	containsGuestBlocks,
 	type Block,
 } from '@japaconnect/landing-blocks';
+import { buildGuestHome, emptyGuestHome } from '$lib/server/guest-home';
 import type { GeoContext, GeoCountry, PageBuilderPage } from '$lib/types';
 
 /**
@@ -88,7 +90,12 @@ export async function loadPublishedPage(event: ServerLoadEvent) {
 			literals,
 		}) as unknown as typeof page.blocks;
 
-		return { page, contentCountry: geoCountry };
+		// Guest-home context data for any guest_* blocks on the page — they
+		// render context data (stats, categories, stories, …) even without a
+		// guest_home wrapper on the page.
+		const home = containsGuestBlocks(blocks) ? await buildGuestHome(ctx, event) : emptyGuestHome;
+
+		return { page, contentCountry: geoCountry, home };
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Page not found' });

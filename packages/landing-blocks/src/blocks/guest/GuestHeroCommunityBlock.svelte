@@ -7,6 +7,8 @@
   import { blockRegistry } from '../../render/blockRegistry';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
   import BlockShell from '../../shell/BlockShell.svelte';
+  import ScopedCss from '../../shell/ScopedCss.svelte';
+  import { responsiveVisibilityCss } from '../../shell/styleToCss';
 
   interface Props {
     props: GuestHeroCommunityProps;
@@ -81,7 +83,13 @@
   function fmt(template: string, vars: Record<string, string>): string {
     return template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
   }
+
+  // Per-device visibility rules for whichever child list renders.
+  const renderedChildren = $derived(manualChildren ?? visibleItems);
+  const visibilityCss = $derived(responsiveVisibilityCss(renderedChildren ?? []));
 </script>
+
+<ScopedCss css={visibilityCss} />
 
 <div class="floating-card floating-card-community">
   <div class="community-avatars">
@@ -90,7 +98,7 @@
         {#if isBlockVisible(block, geoCountry)}
           {@const meta = blockRegistry[block.type]}
           {#if meta}
-            <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+            <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
               {@const Component = meta.component}
               {#if block.type === 'custom'}
                 <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
@@ -106,7 +114,7 @@
         {#if isBlockVisible(block, geoCountry)}
           {@const meta = blockRegistry[block.type]}
           {#if meta}
-            <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+            <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
               {@const Component = meta.component}
               {#if block.type === 'custom'}
                 <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />

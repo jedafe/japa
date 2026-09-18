@@ -1,5 +1,6 @@
 import type { Component } from 'svelte';
 import {
+  ArrowRight,
   Briefcase,
   GraduationCap,
   Plane,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-svelte';
 
 const iconMap: Record<string, unknown> = {
+  ArrowRight,
   Briefcase,
   GraduationCap,
   Plane,

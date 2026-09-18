@@ -29,6 +29,8 @@ const (
 	EntityTypeWorkCareer            = "work_career"
 	EntityTypeHealthInsurance       = "health_insurance"
 	EntityTypeCultureLifestyle      = "culture_lifestyle"
+	EntityTypeInternship            = "internship"
+	EntityTypeImportExport          = "import_export"
 	EntityTypeWikiPage              = "wiki_page"
 	EntityTypeLanguageTest          = "language_test_requirement"
 	EntityTypeTaxObligation         = "tax_obligation_guide"
@@ -55,6 +57,8 @@ var registry = map[string]EntitySchema{
 	EntityTypeWorkCareer:            WorkCareer,
 	EntityTypeHealthInsurance:       HealthInsurance,
 	EntityTypeCultureLifestyle:      CultureLifestyle,
+	EntityTypeInternship:            Internship,
+	EntityTypeImportExport:          ImportExport,
 	EntityTypeWikiPage:              WikiPage,
 	EntityTypeLanguageTest:          LanguageTestRequirement,
 	EntityTypeTaxObligation:         TaxObligationGuide,
@@ -101,6 +105,8 @@ var categoryEntityTypes = map[string]string{
 	"work_career":               EntityTypeWorkCareer,
 	"health_insurance":          EntityTypeHealthInsurance,
 	"culture_lifestyle":         EntityTypeCultureLifestyle,
+	"internship":                EntityTypeInternship,
+	"import_export":             EntityTypeImportExport,
 	"wiki":                      EntityTypeWikiPage,
 	"wiki_page":                 EntityTypeWikiPage,
 	"language_test":             EntityTypeLanguageTest,

@@ -4,6 +4,8 @@
   import { blockRegistry } from '../../render/blockRegistry';
   import BlockShell from '../../shell/BlockShell.svelte';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
+  import { responsiveVisibilityCss } from '../../shell/styleToCss';
+  import ScopedCss from '../../shell/ScopedCss.svelte';
 
   interface Props {
     props: GuestHeroContainerProps;
@@ -14,7 +16,9 @@
 
   let { props, fetchCtx, geoCountry, id = 'guest-hero' }: Props = $props();
 
-  const leftTypes = ['guest_hero_text', 'guest_hero_stats'];
+  // `guest_hero_image` anchors the right column; every other child type
+  // (hero text/stats plus any other block the admin nests here) renders
+  // in the left column so no child is silently dropped.
   const rightTypes = ['guest_hero_image'];
 
   const defaultChildren: Block[] = $derived([
@@ -35,7 +39,7 @@
 
   const children = $derived(props.children && props.children.length > 0 ? props.children : defaultChildren);
 
-  const leftChildren = $derived(children.filter((b) => leftTypes.includes(b.type)));
+  const leftChildren = $derived(children.filter((b) => !rightTypes.includes(b.type)));
   const rightChildren = $derived(children.filter((b) => rightTypes.includes(b.type)));
 
   function renderableComponent(block: Block) {
@@ -43,7 +47,12 @@
     if (!meta || !isBlockVisible(block, geoCountry)) return null;
     return { Component: meta.component, style: block.style };
   }
+
+  // Per-device visibility rules for hero children (scopeKey = block.id).
+  const visibilityCss = $derived(responsiveVisibilityCss(children));
 </script>
+
+<ScopedCss css={visibilityCss} />
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
 <section class="guest-hero" data-hero={id} aria-label="Hero">
@@ -53,7 +62,7 @@
         {@const r = renderableComponent(block)}
         {#if r}
           {@const Component = r.Component}
-          <BlockShell style={r.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+          <BlockShell style={r.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
             <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
           </BlockShell>
         {/if}
@@ -64,7 +73,7 @@
         {@const r = renderableComponent(block)}
         {#if r}
           {@const Component = r.Component}
-          <BlockShell style={r.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+          <BlockShell style={r.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
             <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
           </BlockShell>
         {/if}

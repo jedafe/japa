@@ -37,12 +37,21 @@ import GuestHeroDestinationsContentEditor from './guest/GuestHeroDestinationsCon
 import GuestHeroDestinationItemContentEditor from './guest/GuestHeroDestinationItemContentEditor.svelte';
 import GuestHeroCommunityContentEditor from './guest/GuestHeroCommunityContentEditor.svelte';
 import GuestHeroCommunityMemberContentEditor from './guest/GuestHeroCommunityMemberContentEditor.svelte';
+import GuestHeroCtaItemContentEditor from './guest/GuestHeroCtaItemContentEditor.svelte';
+import GuestHeroStatItemContentEditor from './guest/GuestHeroStatItemContentEditor.svelte';
 import GuestCategoriesContentEditor from './guest/GuestCategoriesContentEditor.svelte';
+import GuestCategoryItemContentEditor from './guest/GuestCategoryItemContentEditor.svelte';
 import GuestOpportunitiesContentEditor from './guest/GuestOpportunitiesContentEditor.svelte';
+import GuestOpportunityItemContentEditor from './guest/GuestOpportunityItemContentEditor.svelte';
 import GuestStoriesContentEditor from './guest/GuestStoriesContentEditor.svelte';
+import GuestStoryItemContentEditor from './guest/GuestStoryItemContentEditor.svelte';
 import GuestToolsContentEditor from './guest/GuestToolsContentEditor.svelte';
+import GuestToolItemContentEditor from './guest/GuestToolItemContentEditor.svelte';
 import GuestNewsletterContentEditor from './guest/GuestNewsletterContentEditor.svelte';
 import GuestFooterContentEditor from './guest/GuestFooterContentEditor.svelte';
+import GuestFooterColumnContentEditor from './guest/GuestFooterColumnContentEditor.svelte';
+import GuestFooterLinkContentEditor from './guest/GuestFooterLinkContentEditor.svelte';
+import GuestFooterSocialContentEditor from './guest/GuestFooterSocialContentEditor.svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
@@ -82,11 +91,20 @@ export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
   guest_hero_destination_item: GuestHeroDestinationItemContentEditor,
   guest_hero_community: GuestHeroCommunityContentEditor,
   guest_hero_community_member: GuestHeroCommunityMemberContentEditor,
+  guest_hero_cta_item: GuestHeroCtaItemContentEditor,
+  guest_hero_stat_item: GuestHeroStatItemContentEditor,
   guest_categories: GuestCategoriesContentEditor,
+  guest_category_item: GuestCategoryItemContentEditor,
   guest_opportunities: GuestOpportunitiesContentEditor,
+  guest_opportunity_item: GuestOpportunityItemContentEditor,
   guest_stories: GuestStoriesContentEditor,
+  guest_story_item: GuestStoryItemContentEditor,
   guest_tools: GuestToolsContentEditor,
+  guest_tool_item: GuestToolItemContentEditor,
   guest_newsletter: GuestNewsletterContentEditor,
   guest_footer: GuestFooterContentEditor,
+  guest_footer_column: GuestFooterColumnContentEditor,
+  guest_footer_link: GuestFooterLinkContentEditor,
+  guest_footer_social: GuestFooterSocialContentEditor,
   widget: WidgetContentEditor,
 };

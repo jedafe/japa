@@ -32,6 +32,32 @@ const HEADING_SIZE_MAP: Record<string, string> = {
   '2xl': '1.5rem', '3xl': '1.875rem', '4xl': '2.25rem', '5xl': '3rem',
 };
 
+// Literal-class maps (no template interpolation) so Tailwind's source scan
+// always sees the full class names and generates the utilities.
+const DISPLAY_MAP: Record<string, string> = {
+  block: 'block', flex: 'flex', grid: 'grid',
+  'inline-flex': 'inline-flex', 'inline-block': 'inline-block', hidden: 'hidden',
+};
+const FLEX_DIRECTION_MAP: Record<string, string> = {
+  row: 'flex-row', column: 'flex-col',
+  'row-reverse': 'flex-row-reverse', 'column-reverse': 'flex-col-reverse',
+};
+const ALIGN_ITEMS_MAP: Record<string, string> = {
+  start: 'items-start', center: 'items-center', end: 'items-end',
+  stretch: 'items-stretch', baseline: 'items-baseline',
+};
+const JUSTIFY_MAP: Record<string, string> = {
+  start: 'justify-start', center: 'justify-center', end: 'justify-end',
+  between: 'justify-between', around: 'justify-around', evenly: 'justify-evenly',
+};
+const TEXT_ALIGN_MAP: Record<string, string> = {
+  left: 'text-left', center: 'text-center', right: 'text-right', justify: 'text-justify',
+};
+const OVERFLOW_MAP: Record<string, string> = {
+  hidden: 'overflow-hidden', clip: 'overflow-clip',
+  scroll: 'overflow-scroll', auto: 'overflow-auto',
+};
+
 const FONT_FAMILY_STACK: Record<string, string> = {
   sans: 'var(--font-sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif)',
   serif: 'var(--font-serif, ui-serif, Georgia, Cambria, Times New Roman, Times, serif)',
@@ -78,17 +104,11 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
       inline['max-height'] = typeof l.max_height === 'number' ? `${l.max_height}px` : l.max_height;
       inline['--block-max-height'] = typeof l.max_height === 'number' ? `${l.max_height}px` : l.max_height;
     }
-    if (l.display === 'flex') classes.push('flex');
-    if (l.display === 'grid') classes.push('grid');
-    if (l.display === 'hidden') classes.push('hidden');
-    if (l.flex_direction === 'column') classes.push('flex-col');
-    if (l.flex_direction === 'row-reverse') classes.push('flex-row-reverse');
+    if (l.display && DISPLAY_MAP[l.display]) classes.push(DISPLAY_MAP[l.display]);
+    if (l.flex_direction && FLEX_DIRECTION_MAP[l.flex_direction]) classes.push(FLEX_DIRECTION_MAP[l.flex_direction]);
     if (l.flex_wrap) inline['flex-wrap'] = l.flex_wrap;
-    if (l.align_items) classes.push(`items-${l.align_items}`);
-    if (l.justify_content) {
-      const j = l.justify_content === 'between' ? 'between' : l.justify_content === 'around' ? 'around' : l.justify_content === 'evenly' ? 'evenly' : l.justify_content;
-      classes.push(`justify-${j}`);
-    }
+    if (l.align_items && ALIGN_ITEMS_MAP[l.align_items]) classes.push(ALIGN_ITEMS_MAP[l.align_items]);
+    if (l.justify_content && JUSTIFY_MAP[l.justify_content]) classes.push(JUSTIFY_MAP[l.justify_content]);
     if (l.gap !== undefined) {
       inline['gap'] = typeof l.gap === 'number' ? `${l.gap}px` : GAP_PX_MAP[l.gap] ?? '0px';
     }
@@ -110,7 +130,7 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
   // Typography
   const t = style.typography;
   if (t) {
-    if (t.text_align) classes.push(`text-${t.text_align}`);
+    if (t.text_align && TEXT_ALIGN_MAP[t.text_align]) classes.push(TEXT_ALIGN_MAP[t.text_align]);
     if (t.heading_family === 'serif') classes.push('font-serif');
     if (t.heading_family === 'mono') classes.push('font-mono');
     if (t.heading_family) inline['--block-heading-family'] = FONT_FAMILY_STACK[t.heading_family];
@@ -205,7 +225,7 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
     if (e.backdrop_blur && e.backdrop_blur !== 'none') {
       inline['backdrop-filter'] = `blur(${BLUR_MAP[e.backdrop_blur] ?? '8px'})`;
     }
-    if (e.overflow && e.overflow !== 'visible') classes.push(`overflow-${e.overflow}`);
+    if (e.overflow && e.overflow !== 'visible' && OVERFLOW_MAP[e.overflow]) classes.push(OVERFLOW_MAP[e.overflow]);
   }
 
   // Transform
@@ -255,6 +275,8 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
     else if (l.display === 'flex') decls.push('display: flex');
     else if (l.display === 'grid') decls.push('display: grid');
     else if (l.display === 'block') decls.push('display: block');
+    else if (l.display === 'inline-flex') decls.push('display: inline-flex');
+    else if (l.display === 'inline-block') decls.push('display: inline-block');
     if (l.flex_direction) decls.push(`flex-direction: ${l.flex_direction}`);
     if (l.flex_wrap) decls.push(`flex-wrap: ${l.flex_wrap}`);
     if (l.align_items) decls.push(`align-items: ${l.align_items}`);
@@ -371,6 +393,28 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
     }
   }
 
+  // Background override — paints directly on the shell. The caller also hides
+  // the shell's DOM background layers (see responsiveStyleToCss) so a 'none'
+  // or 'color' override isn't covered by the base <img>/<video>/<div> layer.
+  const bg = style.background;
+  if (bg) {
+    if (bg.type === 'color' && bg.color) decls.push(`background-color: ${bg.color}`);
+    else if (bg.type === 'gradient' && bg.gradient) {
+      const angle = bg.gradient.angle === 'radial' ? 'radial' : `${bg.gradient.angle}deg`;
+      decls.push(`background: linear-gradient(${angle}, ${bg.gradient.from}, ${bg.gradient.to})`);
+    } else if (bg.type === 'image' && bg.image?.url) {
+      decls.push(`background-image: url(${bg.image.url})`);
+      decls.push(`background-size: ${bg.image.fit === 'contain' ? 'contain' : 'cover'}`);
+      decls.push(`background-repeat: ${bg.image.fit === 'repeat' ? 'repeat' : 'no-repeat'}`);
+      decls.push(`background-position: center`);
+      if (bg.image.fit === 'fixed') decls.push(`background-attachment: fixed`);
+    } else if (bg.type === 'video' && bg.video?.poster) {
+      decls.push(`background-image: url(${bg.video.poster})`);
+      decls.push(`background-size: cover`);
+      decls.push(`background-position: center`);
+    } else if (bg.type === 'none') decls.push('background: none');
+  }
+
   const e = style.effects;
   if (e) {
     if (e.shadow && e.shadow !== 'none') decls.push(`box-shadow: ${SHADOW_CSS_MAP[e.shadow] ?? ''}`);
@@ -432,10 +476,23 @@ export function responsiveStyleToCss(style: BlockStyle | undefined, scopeSelecto
   for (const [breakpoint, override] of Object.entries(style.responsive)) {
     if (!override) continue;
     const decls = styleToCssDeclarations(override);
-    if (decls.length === 0) continue;
+    const rules: string[] = [];
+    if (decls.length > 0) {
+      rules.push(`${scopeSelector} {\n    ${decls.join(';\n    ')};\n  }`);
+    }
+    // A background override paints on the shell — hide the DOM background
+    // layers the base style rendered so they don't cover it.
+    if (override.background) {
+      rules.push(`${scopeSelector} > [data-bglayer] { display: none; }`);
+    }
+    // Per-device custom CSS — same `&` scoping as the base custom_css.
+    if (override.custom_css?.trim()) {
+      rules.push(override.custom_css.replace(/&/g, scopeSelector));
+    }
+    if (rules.length === 0) continue;
     const query = breakpointQuery(breakpoint);
     if (!query) continue;
-    parts.push(`${query} {\n  ${scopeSelector} {\n    ${decls.join(';\n    ')};\n  }\n}`);
+    parts.push(`${query} {\n  ${rules.join('\n  ')}\n}`);
   }
   return parts.length > 0 ? parts.join('\n') : undefined;
 }
@@ -451,4 +508,67 @@ function breakpointQuery(breakpoint: string): string | undefined {
     default:
       return undefined;
   }
+}
+
+// ─── Per-device visibility ────────────────────────────────────────────────
+
+/**
+ * Generate @container display:none rules for blocks carrying
+ * `responsive_visibility` overrides. Scoped to each block's BlockShell
+ * `data-bs` attribute (`bs-{block.id}` — the deterministic scopeKey), so it
+ * works for any nested block as long as the renderer passes scopeKey.
+ */
+export function responsiveVisibilityCss(blocks: Array<{ id: string; responsive_visibility?: { desktop?: boolean; tablet?: boolean; mobile?: boolean } }>): string | null {
+  const parts: string[] = [];
+  for (const b of blocks) {
+    const rv = b.responsive_visibility;
+    if (!rv) continue;
+    const sel = `[data-bs="bs-${b.id}"]`;
+    if (rv.desktop === false) parts.push(`@container (min-width: ${BREAKPOINTS.tablet + 1}px) { ${sel} { display: none !important; } }`);
+    if (rv.tablet === false) parts.push(`@container (min-width: ${BREAKPOINTS.mobile + 1}px) and (max-width: ${BREAKPOINTS.tablet}px) { ${sel} { display: none !important; } }`);
+    if (rv.mobile === false) parts.push(`@container (max-width: ${BREAKPOINTS.mobile}px) { ${sel} { display: none !important; } }`);
+  }
+  return parts.length > 0 ? parts.join('\n') : null;
+}
+
+// ─── Scoped typography ────────────────────────────────────────────────────
+
+/**
+ * Emit scoped CSS that applies a block's typography settings to its
+ * descendant elements. The `--block-heading-*` / `--block-body-*` custom
+ * properties are only consumed by a couple of block components; these rules
+ * make heading/body size, weight, family, and colour effective on every
+ * block type (the `[data-bs] :is(...)` selectors outrank single utility
+ * classes inside the block).
+ */
+export function typographyScopeCss(style: BlockStyle | undefined, scopeSelector: string): string | null {
+  const t = style?.typography;
+  if (!t && !style?.color?.heading && !style?.color?.text) return null;
+
+  const headingDecls: string[] = [];
+  if (t?.heading_family) headingDecls.push(`font-family: ${FONT_FAMILY_STACK[t.heading_family]}`);
+  if (t?.heading_weight) headingDecls.push(`font-weight: ${t.heading_weight}`);
+  if (t?.heading_size) {
+    headingDecls.push(`font-size: ${typeof t.heading_size === 'string' ? HEADING_SIZE_MAP[t.heading_size] ?? '1.5rem' : `${t.heading_size}rem`}`);
+  }
+  const headingColor = t?.heading_color ?? style?.color?.heading;
+  if (headingColor) headingDecls.push(`color: ${headingColor}`);
+
+  const bodyDecls: string[] = [];
+  if (t?.body_family) bodyDecls.push(`font-family: ${FONT_FAMILY_STACK[t.body_family]}`);
+  if (t?.body_weight) bodyDecls.push(`font-weight: ${t.body_weight}`);
+  if (t?.body_size) {
+    bodyDecls.push(`font-size: ${typeof t.body_size === 'string' ? HEADING_SIZE_MAP[t.body_size] ?? '1rem' : `${t.body_size}rem`}`);
+  }
+  const bodyColor = t?.body_color ?? style?.color?.text;
+  if (bodyColor) bodyDecls.push(`color: ${bodyColor}`);
+
+  const parts: string[] = [];
+  if (headingDecls.length > 0) {
+    parts.push(`${scopeSelector} :is(h1, h2, h3, h4, h5, h6) { ${headingDecls.join('; ')}; }`);
+  }
+  if (bodyDecls.length > 0) {
+    parts.push(`${scopeSelector} :is(p, li, td, th, label, span, a, small, strong, em, blockquote, figcaption, button, input, textarea, select) { ${bodyDecls.join('; ')}; }`);
+  }
+  return parts.length > 0 ? parts.join('\n') : null;
 }
