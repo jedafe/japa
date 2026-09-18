@@ -5,7 +5,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiGet, apiList, apiPost, apiPatch, apiDelete, ApiError } from '$lib/server/api';
-import type { ContentTypeMeta, MeSpace, ContentRecord, ContentTag } from '$lib/types';
+import type { ContentTypeMeta, MeSpace, ContentRecord, ContentTag, Visibility } from '$lib/types';
 import type { Persona } from '$lib/studio/types';
 import { validateFrontmatter, validateBody, isHighStakesCategory } from '$lib/studio/validation';
 import { markdownToHtml } from '$lib/studio/markdown-html';
@@ -26,13 +26,14 @@ export const load: PageServerLoad = async (event) => {
 	event.depends(STUDIO_PROMPTS_TAG);
 	const ctx = apiContext(event);
 
-	const [typesRes, spacesRes, draftsRes, permsRes] = await Promise.allSettled([
+	const [typesRes, spacesRes, draftsRes, permsRes, visibilityRes] = await Promise.allSettled([
 		apiList<ContentTypeMeta>(ctx, '/content-types'),
 		apiList<MeSpace>(ctx, '/me/spaces'),
 		// Advisory list for the slug-conflict check — the backend's slug
 		// handling is authoritative on save.
 		apiList<ContentRecord>(ctx, '/me/drafts?page_size=100'),
-		apiGet<{ permissions: string[] }>(ctx, '/me/permissions')
+		apiGet<{ permissions: string[] }>(ctx, '/me/permissions'),
+		apiGet<{ value: Visibility; label: string }[]>(ctx, '/content/visibility-options')
 	]);
 
 	const canPersona =
@@ -59,7 +60,9 @@ export const load: PageServerLoad = async (event) => {
 		drafts: draftsRes.status === 'fulfilled' ? draftsRes.value.items : [],
 		canPersona,
 		voices,
-		personas
+		personas,
+		visibilityOptions:
+			visibilityRes.status === 'fulfilled' ? visibilityRes.value : []
 	};
 };
 

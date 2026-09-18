@@ -11,7 +11,7 @@
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
-	const videoEnabled = $derived(data.siteSettings?.['video.enabled'] === true);
+	const videoEnabled = $derived(data.videoEnabled);
 	const isCreateTab = $derived(page.route.id === '/(app)/studio/create');
 
 	const tabs = $derived.by(() => [

@@ -76,6 +76,8 @@ export type HumanizeLevel = 'off' | 'light' | 'medium' | 'heavy';
 export interface PromptFormValues {
 	topic: string;
 	title: string;
+	/** Optional explicit slug override; when empty the slug is derived from title/topic. */
+	slug: string;
 	mode: PromptMode;
 	content_type: string;
 	guide_category: string;
@@ -119,6 +121,7 @@ export interface PromptFormValues {
 export const DEFAULT_PROMPT_VALUES: PromptFormValues = {
 	topic: '',
 	title: '',
+	slug: '',
 	mode: 'generate',
 	content_type: 'guide',
 	guide_category: '',

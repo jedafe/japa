@@ -80,7 +80,7 @@ function fieldValuesYaml(values: Record<string, string>): string {
 }
 
 export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mode?: StudioMode): string {
-	const slug = slugify(values.title || values.topic || 'untitled');
+	const slug = slugify(values.slug || values.title || values.topic || 'untitled');
 	const filePath = `jc-content/${values.content_type}/${slug}.md`;
 	const status = effectiveStatus(values);
 
