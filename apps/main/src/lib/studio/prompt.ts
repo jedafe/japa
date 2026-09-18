@@ -14,6 +14,7 @@ import {
 } from './types';
 import { isHighStakes } from './validation';
 import * as yaml from 'js-yaml';
+import type { CustomFieldDef } from '$lib/types';
 
 export interface PromptLookups {
 	contentTypeName: string;
@@ -22,6 +23,14 @@ export interface PromptLookups {
 	voiceName: string;
 	voicePrompt?: string;
 	spaceName: string;
+	/**
+	 * Custom fields defined for the selected guide category — fetched from
+	 * GET /custom-field-groups?entity_class=content_type:guide:{category}.
+	 * Emitted into the prompt so the agent knows which field_values keys
+	 * the category expects (the composer renders the same schema for the
+	 * human author).
+	 */
+	categoryFields?: CustomFieldDef[];
 }
 
 export function slugify(text: string): string {
@@ -77,6 +86,40 @@ function fieldValuesYaml(values: Record<string, string>): string {
 		.split('\n')
 		.map((line) => `    ${line}`)
 		.join('\n')}\n`;
+}
+
+/**
+ * Emit field_values seeded with the guide category's schema keys — every
+ * declared key appears (empty string means "the agent must fill this"),
+ * user-entered values win, and extra user keys pass through.
+ */
+function categoryFieldValuesYaml(fields: CustomFieldDef[], values: Record<string, string>): string {
+	if (fields.length === 0) return fieldValuesYaml(values);
+	const merged: Record<string, string> = {};
+	for (const f of fields) merged[f.key] = values[f.key] ?? '';
+	for (const [k, v] of Object.entries(values)) {
+		if (v !== '') merged[k] = v;
+	}
+	const dumped = yaml.dump(merged, { lineWidth: -1, indent: 2 }).trim();
+	return `field_values:\n${dumped
+		.split('\n')
+		.map((line) => `    ${line}`)
+		.join('\n')}\n`;
+}
+
+function fieldOptionsHint(f: CustomFieldDef): string {
+	if (!Array.isArray(f.options) || f.options.length === 0) return '';
+	const vals = f.options.map((o) => (typeof o === 'string' ? o : o.value)).join(' | ');
+	return ` [options: ${vals}]`;
+}
+
+function categoryFieldsInstruction(fields: CustomFieldDef[], categoryName: string): string {
+	if (fields.length === 0) return '';
+	const lines = fields.map(
+		(f) =>
+			`- ${f.key} (${f.field_type}${f.is_required ? ', required' : ''}): ${f.label}${fieldOptionsHint(f)}${f.help_text ? ` — ${f.help_text}` : ''}`
+	);
+	return `Category custom fields — the "${categoryName}" guide category defines these extra fields. Include every key inside field_values in the frontmatter below; required fields must have a non-empty value:\n${lines.join('\n')}\n\n`;
 }
 
 export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mode?: StudioMode): string {
@@ -153,6 +196,12 @@ export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mo
 	const publishAt = values.publish_at ? `publish_at: "${values.publish_at}"\n` : '';
 	const topicLine = values.topic || values.title;
 
+	const categoryFields = lookups.categoryFields ?? [];
+	const categoryFieldsBlock = categoryFieldsInstruction(
+		categoryFields,
+		lookups.guideCategoryName || values.guide_category
+	);
+
 	return `${authorBlock}
 
 Topic: ${topicLine || '(not provided)'}
@@ -171,7 +220,7 @@ ${linkInstructions.map((p) => `- ${p}`).join('\n')}
 ${humanizeInstruction ? `- ${humanizeInstruction}` : ''}
 - Do not sound generic or AI-like. Be specific, practical, and human.
 
-Required frontmatter (fill in real values; do not leave placeholders empty):
+${categoryFieldsBlock}Required frontmatter (fill in real values; do not leave placeholders empty):
 
 \`\`\`yaml
 ---
@@ -186,7 +235,7 @@ ${frontmatterLine('space_id', values.space_id)}
 ${isMember ? '' : frontmatterLine('persona_id', values.persona_id)}${isMember ? '' : frontmatterLine('voice_id', values.voice_id)}${frontmatterLine('status', status)}
 ${frontmatterLine('visibility', values.visibility)}
 ${publishAt}${tagsYaml}
-${fieldValuesYaml(values.field_values)}${frontmatterLine('header_image_id', values.header_image_id)}
+${categoryFieldValuesYaml(categoryFields, values.field_values)}${frontmatterLine('header_image_id', values.header_image_id)}
 ${frontmatterLine('featured_image_id', values.featured_image_id)}
 ${frontmatterLine('meta_title', values.meta_title)}
 ${frontmatterLine('meta_description', values.meta_description)}

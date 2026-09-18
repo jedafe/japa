@@ -169,4 +169,58 @@ describe('buildPrompt', () => {
 		expect(prompt).not.toContain('voice_id:');
 		expect(prompt).toContain('JapaConnect member writing under your own profile');
 	});
+
+	it('emits the guide category custom-field schema into the prompt', () => {
+		const values: PromptFormValues = { ...baseValues, guide_category: 'relocation' };
+		const prompt = buildPrompt(values, {
+			...lookups,
+			guideCategoryName: 'Relocation',
+			categoryFields: [
+				{
+					id: 'f1',
+					key: 'moving_from',
+					label: 'Moving from',
+					field_type: 'text',
+					is_required: true
+				},
+				{
+					id: 'f2',
+					key: 'visa_type',
+					label: 'Visa type',
+					field_type: 'select',
+					is_required: false,
+					options: ['f1', 'h1b', 'pr']
+				}
+			]
+		});
+		expect(prompt).toContain('Category custom fields — the "Relocation" guide category');
+		expect(prompt).toContain('- moving_from (text, required): Moving from');
+		expect(prompt).toContain('- visa_type (select): Visa type [options: f1 | h1b | pr]');
+		// Schema keys are seeded into the field_values block for the agent to fill
+		expect(prompt).toContain('field_values:');
+		expect(prompt).toContain("moving_from: ''");
+		expect(prompt).toContain("visa_type: ''");
+	});
+
+	it('seeds user-entered field_values over empty schema keys', () => {
+		const values: PromptFormValues = {
+			...baseValues,
+			guide_category: 'relocation',
+			field_values: { moving_from: 'Lagos', extra_key: 'kept' }
+		};
+		const prompt = buildPrompt(values, {
+			...lookups,
+			guideCategoryName: 'Relocation',
+			categoryFields: [
+				{ id: 'f1', key: 'moving_from', label: 'Moving from', field_type: 'text', is_required: true }
+			]
+		});
+		expect(prompt).toContain('moving_from: Lagos');
+		expect(prompt).toContain('extra_key: kept');
+	});
+
+	it('emits no field_values block when there is no schema and no values', () => {
+		const prompt = buildPrompt(baseValues, lookups);
+		expect(prompt).not.toContain('field_values:');
+	});
 });
