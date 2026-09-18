@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { GuestCategoriesProps, GuestHomeCategory } from '../../../types';
+  import type { GuestCategoriesProps, GuestHomeCategory, Block } from '../../../types';
   import GuestCardListEditor from './GuestCardListEditor.svelte';
+  import NestedBlocksEditor from '../../NestedBlocksEditor.svelte';
 
   interface Props {
     props: GuestCategoriesProps;
@@ -20,7 +21,32 @@
     return { id: crypto.randomUUID(), title: '', description: '', href: '#', icon: 'Globe', color: 'blue' };
   }
 
-  const dataSource = $derived(props.data_source ?? 'context');
+  function categoryToBlock(cat: GuestHomeCategory): Block {
+    return {
+      id: crypto.randomUUID(),
+      type: 'guest_category_item',
+      visible: true,
+      props: {
+        title: cat.title,
+        description: cat.description,
+        href: cat.href,
+        icon: cat.icon,
+        color: cat.color,
+      },
+    } as Block;
+  }
+
+  function convertToNested() {
+    const children = (props.items ?? []).map(categoryToBlock);
+    onchange({ ...props, items: undefined, children });
+  }
+
+  // If children exist without an explicit source, assume manual so the sidebar
+  // blocks actually drive the preview. When there are no children, default to context.
+  const dataSource = $derived(
+    props.data_source ?? (props.children && props.children.length > 0 ? 'manual' : 'context')
+  );
+  const hasChildren = $derived((props.children?.length ?? 0) > 0);
 </script>
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
@@ -156,12 +182,19 @@
   </div>
 
   {#if dataSource === 'manual'}
-    <GuestCardListEditor
-      items={props.items ?? []}
-      onchange={(items) => update('items', items)}
-      add={defaultCategory}
-      id="categories"
-    >
+    {#if hasChildren}
+      <div class="space-y-2">
+        <p class="text-xs text-[var(--color-muted)]">Each category is a nested block. Select one in the sidebar to edit its content and style.</p>
+        <NestedBlocksEditor blocks={props.children ?? []} onchange={(children) => update('children', children)} allowedTypes={['guest_category_item']} />
+      </div>
+    {:else}
+      <p class="text-xs text-[var(--color-muted)]">Add category blocks from the sidebar, or use the legacy list below.</p>
+      <GuestCardListEditor
+        items={props.items ?? []}
+        onchange={(items) => update('items', items)}
+        add={defaultCategory}
+        id="categories"
+      >
       {#snippet card(cat: GuestHomeCategory, updateCard, removeCard)}
         <div class="space-y-2">
           <input
@@ -203,7 +236,17 @@
           </div>
         </div>
       {/snippet}
-    </GuestCardListEditor>
+      </GuestCardListEditor>
+      {#if (props.items?.length ?? 0) > 0}
+        <button
+          type="button"
+          onclick={convertToNested}
+          class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface)]"
+        >
+          Convert to block items
+        </button>
+      {/if}
+    {/if}
   {:else}
     <label class="block">
       <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Max items</span>
@@ -216,5 +259,13 @@
         oninput={(e) => update('max_items', Number(e.currentTarget.value))}
       />
     </label>
+
+    <div class="space-y-2">
+      <p class="text-xs text-[var(--color-muted)]">
+        Optional: add a <b>Category Item</b> block below as a template. It will be cloned for each category from the geo context, with title, description, icon, and color injected.
+        <span class="block text-[var(--color-danger)]" class:hidden={!hasChildren}>Only the first child is used as the template.</span>
+      </p>
+      <NestedBlocksEditor blocks={props.children ?? []} onchange={(children) => update('children', children)} allowedTypes={['guest_category_item']} />
+    </div>
   {/if}
 </div>

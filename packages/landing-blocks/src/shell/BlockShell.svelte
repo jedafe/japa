@@ -1,8 +1,10 @@
 <script lang="ts">
   import type { BlockStyle, MotionConfig, BackgroundConfig } from '../types';
-  import { styleToCss, responsiveStyleToCss, BLUR_MAP } from './styleToCss';
+  import { styleToCss, responsiveStyleToCss, typographyScopeCss, BLUR_MAP } from './styleToCss';
   import { setBlockContentContext, type BlockContentContext } from './blockContent';
   import Reveal from './Reveal.svelte';
+  import * as LucideIcons from 'lucide-svelte';
+  import type { Component } from 'svelte';
 
   interface Props {
     style?: BlockStyle;
@@ -12,9 +14,13 @@
     hideIfEmpty?: boolean;
     /** Initial content state. Dynamic blocks should start as true so they can fetch and then report. */
     initialHasContent?: boolean;
+    /** Stable key (the block id) used to derive the scoped-CSS data attribute.
+     *  Pass it so SSR and hydration agree on the selector — a random id makes
+     *  the {@html} style tag differ between server and client renders. */
+    scopeKey?: string;
     children: import('svelte').Snippet;
   }
-  let { style, motion, background, hideIfEmpty = false, initialHasContent = true, children }: Props = $props();
+  let { style, motion, background, hideIfEmpty = false, initialHasContent = true, scopeKey, children }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let hasContent = $state(initialHasContent ?? true);
@@ -46,8 +52,10 @@
 
   // Custom CSS + responsive overrides — both use a unique scoped selector.
   // Each BlockShell instance gets its own data attribute so CSS doesn't
-  // leak to sibling blocks. The ID is generated once per instance.
-  const scopeId = `bs-${crypto.randomUUID()}`;
+  // leak to sibling blocks. The ID is derived from the block id when given
+  // so it is identical between SSR and hydration.
+  // svelte-ignore state_referenced_locally
+  const scopeId = `bs-${scopeKey ?? crypto.randomUUID()}`;
   const scopeSelector = `[data-bs="${scopeId}"]`;
   const scopedCss = $derived.by(() => {
     const raw = style?.custom_css;
@@ -58,15 +66,45 @@
   // Responsive container-query CSS from style.responsive overrides.
   const responsiveCss = $derived(responsiveStyleToCss(style, scopeSelector));
 
+  // Scoped typography rules — apply heading/body size, weight, family and
+  // colour to the block's descendant elements so the typography settings are
+  // effective on every block type.
+  const typographyCss = $derived(typographyScopeCss(style, scopeSelector));
+
   // Only add a default `relative` class when no explicit position class is set
   // so that the Layout > Position control can override it.
   const hasPositionClass = $derived(/\b(sticky|absolute|fixed|relative)\b/.test(resolved.classes));
   const rootClasses = $derived(`${hasPositionClass ? '' : 'relative'} ${resolved.classes}`.trim());
+
+  // Decorative icon from the style panel's Icon section. Rendered inside the
+  // shell beside/above the block content; position 'none' hides it.
+  const ICON_SIZE_MAP: Record<string, number> = { xs: 12, sm: 16, md: 20, lg: 24, xl: 32, '2xl': 40 };
+  const iconCfg = $derived(style?.icon);
+  const IconComponent = $derived(
+    iconCfg?.name ? ((LucideIcons as Record<string, unknown>)[iconCfg.name] as Component | undefined) : undefined
+  );
+  const iconPosition = $derived(iconCfg?.position ?? 'left');
+  const iconPx = $derived(
+    typeof iconCfg?.size === 'number' ? iconCfg.size : ICON_SIZE_MAP[iconCfg?.size ?? 'md'] ?? 20
+  );
+  const showIcon = $derived(!!IconComponent && iconPosition !== 'none');
+  const iconWrapperStyle = $derived.by(() => {
+    const parts: string[] = [`color: ${iconCfg?.color ?? 'currentColor'}`];
+    if (iconCfg?.background_color) {
+      parts.push(`background-color: ${iconCfg.background_color}`);
+      parts.push(`padding: ${Math.max(4, Math.round(iconPx / 4))}px`);
+    }
+    if (iconCfg?.shape === 'circle') parts.push('border-radius: 9999px');
+    else if (iconCfg?.shape === 'square') parts.push('border-radius: 0');
+    else if (iconCfg?.shape === 'rounded') parts.push('border-radius: 0.5rem');
+    return parts.join('; ');
+  });
 </script>
 
 <svelte:head>
   {@html scopedCss ? '<style>' + scopedCss + '<\/style>' : ''}
   {@html responsiveCss ? '<style>' + responsiveCss + '<\/style>' : ''}
+  {@html typographyCss ? '<style>' + typographyCss + '<\/style>' : ''}
 </svelte:head>
 
 {#if !hideIfEmpty || hasContent}
@@ -77,6 +115,7 @@
       {#if fit === 'repeat' || fit === 'fixed'}
         <div
           class="absolute inset-0"
+          data-bglayer
           style="
             background-image: url({background.image.url});
             background-repeat: {fit === 'repeat' ? 'repeat' : 'no-repeat'};
@@ -93,10 +132,11 @@
           class="absolute inset-0 h-full w-full {fit === 'contain' ? 'object-contain' : 'object-cover'}"
           style={bgFilterAndOpacity(background)}
           loading="lazy"
+          data-bglayer
         />
       {/if}
       {#if bgOverlay}
-        <div class="absolute inset-0" style="background-color: {bgOverlay.color}; opacity: {bgOverlay.opacity / 100}"></div>
+        <div class="absolute inset-0" data-bglayer style="background-color: {bgOverlay.color}; opacity: {bgOverlay.opacity / 100}"></div>
       {/if}
     {:else if hasBg && background?.type === 'video' && background.video}
       <video
@@ -108,17 +148,37 @@
         autoplay={background.video.autoplay}
         playsInline
         style={bgFilterAndOpacity(background)}
+        data-bglayer
       ></video>
     {:else if hasBg && background?.type === 'gradient' && background.gradient}
       <div
         class="absolute inset-0"
+        data-bglayer
         style="background: linear-gradient({background.gradient.angle === 'radial' ? 'radial' : `${background.gradient.angle}deg`}, {background.gradient.from}, {background.gradient.to}); {bgFilterAndOpacity(background)}"
       ></div>
     {:else if hasBg && background?.type === 'color' && background.color}
-      <div class="absolute inset-0" style="background-color: {background.color}; {bgFilterAndOpacity(background)}"></div>
+      <div class="absolute inset-0" data-bglayer style="background-color: {background.color}; {bgFilterAndOpacity(background)}"></div>
     {/if}
     <div class="relative" style={hasBg ? 'z-index: 10;' : undefined}>
-      {@render children()}
+      {#if showIcon && IconComponent}
+        <div class="flex gap-3 {iconPosition === 'top' ? 'flex-col' : 'flex-row items-start'}">
+          {#if iconPosition !== 'right'}
+            <span class="inline-flex shrink-0 items-center justify-center" style={iconWrapperStyle}>
+              <IconComponent size={iconPx} />
+            </span>
+          {/if}
+          <div class="min-w-0 flex-1">
+            {@render children()}
+          </div>
+          {#if iconPosition === 'right'}
+            <span class="inline-flex shrink-0 items-center justify-center" style={iconWrapperStyle}>
+              <IconComponent size={iconPx} />
+            </span>
+          {/if}
+        </div>
+      {:else}
+        {@render children()}
+      {/if}
     </div>
   </div>
 </Reveal>

@@ -9,15 +9,16 @@
 	import { t } from '$lib/i18n';
 	import { FileText } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { LandingRenderer, normalizeLegacyBlocks, type Block } from '@japaconnect/landing-blocks';
+	import { LandingRenderer, normalizeLegacyBlocks, type Block, type GuestHomeData } from '@japaconnect/landing-blocks';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { PageBuilderPage } from '$lib/types';
 
 	interface Props {
 		page: PageBuilderPage;
+		guestHome?: GuestHomeData;
 	}
 
-	let { page: pageData }: Props = $props();
+	let { page: pageData, guestHome }: Props = $props();
 
 	const title = $derived(
 		pageData.meta && typeof pageData.meta === 'object' && 'title' in pageData.meta
@@ -70,5 +71,5 @@
 		<EmptyState icon={FileText} title={pageData.title} />
 	</div>
 {:else}
-	<LandingRenderer blocks={normalizedBlocks} />
+	<LandingRenderer blocks={normalizedBlocks} {guestHome} />
 {/if}

@@ -1,9 +1,11 @@
 <script lang="ts">
-  import type { GuestStoriesProps, GuestHomeData, GuestHomeStory } from '../../types';
+  import type { GuestStoriesProps, GuestHomeData, GuestHomeStory, Block, GuestStoryItemProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getGuestHomeData } from '../../data/guestHomeContext';
   import { writable } from 'svelte/store';
   import { ChevronLeft, ChevronRight, ArrowRight } from 'lucide-svelte';
+  import { resolveGuestItems } from './guestChildren';
+  import GuestChildren from './GuestChildren.svelte';
 
   interface Props {
     props: GuestStoriesProps;
@@ -12,20 +14,41 @@
     id?: string;
   }
 
-  let { props, id = 'guest-stories' }: Props = $props();
+  let { props, fetchCtx, geoCountry, id = 'guest-stories' }: Props = $props();
 
   const guestHomeStore = $derived(getGuestHomeData() ?? writable<GuestHomeData | undefined>(undefined));
   const guestHome = $derived($guestHomeStore);
   let scroller = $state<HTMLDivElement | undefined>(undefined);
   let activeIndex = $state(0);
 
-  const items = $derived<GuestHomeStory[]>(
-    props.data_source === 'manual' && props.items
-      ? props.items
-      : (guestHome?.stories ?? [])
+  function cloneForContext(template: Block, story: GuestHomeStory, index: number): Block {
+    const itemProps: GuestStoryItemProps = {
+      ...(template.props as GuestStoryItemProps),
+      title: story.title,
+      slug: story.slug,
+      quote: story.quote,
+      author_name: story.author_name,
+      author_role: story.author_role,
+      author_avatar_url: story.author_avatar_url,
+      href: story.href,
+      destination: story.destination,
+    };
+    return { ...template, id: `${template.id}-${story.id ?? index}`, props: itemProps } as Block;
+  }
+
+  const res = $derived(
+    resolveGuestItems<GuestHomeStory>({
+      dataSource: props.data_source,
+      children: props.children,
+      items: props.items,
+      contextItems: guestHome?.stories ?? [],
+      maxItems: props.max_items ?? 3,
+      cloneForContext,
+    })
   );
 
-  const visibleItems = $derived(items.slice(0, props.max_items ?? 3));
+  const childBlocks = $derived(res.manualChildren ?? res.contextChildren);
+  const visibleCount = $derived(childBlocks?.length ?? res.legacyItems?.length ?? 0);
   const eyebrow = $derived(props.eyebrow ?? 'Real People. Real Stories.');
   const title = $derived(props.title ?? 'Success Stories That Inspire');
   const subtitle = $derived(
@@ -89,26 +112,30 @@
       </button>
 
       <div bind:this={scroller} class="story-scroll">
-        {#each visibleItems as story (story.id)}
-          <div class="story-card" style={backgroundStyle(story)}>
-            <div class="story-quote">“{story.quote}”</div>
-            <div class="story-author">
-              <div class="story-avatar">
-                {#if story.author_avatar_url}
-                  <img src={story.author_avatar_url} alt="" class="story-avatar-img" />
-                {:else}
-                  <div class="initials-avatar" aria-hidden="true">{initials(story.author_name)}</div>
-                {/if}
-              </div>
-              <div class="story-author-body">
-                <span class="story-author-name">{story.author_name}</span>
-                {#if story.author_role}
-                  <span class="story-author-role">{story.author_role}</span>
-                {/if}
+        {#if childBlocks}
+          <GuestChildren blocks={childBlocks} {fetchCtx} {geoCountry} tag="div" class="story-scroll-item" />
+        {:else}
+          {#each res.legacyItems ?? [] as story (story.id)}
+            <div class="story-card" style={backgroundStyle(story)}>
+              <div class="story-quote">“{story.quote}”</div>
+              <div class="story-author">
+                <div class="story-avatar">
+                  {#if story.author_avatar_url}
+                    <img src={story.author_avatar_url} alt="" class="story-avatar-img" />
+                  {:else}
+                    <div class="initials-avatar" aria-hidden="true">{initials(story.author_name)}</div>
+                  {/if}
+                </div>
+                <div class="story-author-body">
+                  <span class="story-author-name">{story.author_name}</span>
+                  {#if story.author_role}
+                    <span class="story-author-role">{story.author_role}</span>
+                  {/if}
+                </div>
               </div>
             </div>
-          </div>
-        {/each}
+          {/each}
+        {/if}
       </div>
 
       <button
@@ -122,7 +149,7 @@
     </div>
 
     <div class="stories-dots">
-      {#each visibleItems as _, i (i)}
+      {#each { length: visibleCount } as _, i (i)}
         <button
           type="button"
           class="story-dot {i === activeIndex ? 'story-dot-active' : ''}"

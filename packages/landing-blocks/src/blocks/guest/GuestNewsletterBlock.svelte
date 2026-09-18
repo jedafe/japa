@@ -2,6 +2,7 @@
   import type { GuestNewsletterProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { Plane, ArrowRight } from 'lucide-svelte';
+  import GuestChildren from './GuestChildren.svelte';
 
   interface Props {
     props: GuestNewsletterProps;
@@ -10,7 +11,7 @@
     id?: string;
   }
 
-  let { props, fetchCtx, id = 'guest-newsletter' }: Props = $props();
+  let { props, fetchCtx, geoCountry, id = 'guest-newsletter' }: Props = $props();
 
   let email = $state('');
   let newsletterStatus = $state<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -28,6 +29,8 @@
     props.success_message ?? "You're subscribed! Check your inbox for the next update."
   );
   const errorMessage = $derived(props.error_message ?? 'Something went wrong. Please try again.');
+  // Arbitrary child blocks rendered inside the newsletter card.
+  const children = $derived(props.children ?? []);
 
   async function subscribe(e: Event) {
     e.preventDefault();
@@ -93,6 +96,12 @@
     {/if}
     {#if newsletterStatus === 'error'}
       <p class="newsletter-status newsletter-status-error">{newsletterMessage}</p>
+    {/if}
+
+    {#if children.length > 0}
+      <div class="newsletter-children">
+        <GuestChildren blocks={children} {fetchCtx} {geoCountry} />
+      </div>
     {/if}
   </div>
 </section>

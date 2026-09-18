@@ -202,7 +202,7 @@
           {#if meta}
             {@const span = childSpan(block, props.columns)}
             <div class="container-cell" data-cell={i} style={`--span: ${span}`}>
-              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
                 {@const Component = meta.component}
                 {#if block.type === 'custom'}
                   <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
@@ -226,7 +226,7 @@
           {@const meta = blockRegistry[block.type]}
           {#if meta}
             <div class="flex-1 min-w-0" data-cell={i}>
-              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
                 {@const Component = meta.component}
                 {#if block.type === 'custom'}
                   <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
@@ -247,7 +247,7 @@
           {@const meta = blockRegistry[block.type]}
           {#if meta}
             <div data-cell={i}>
-              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
                 {@const Component = meta.component}
                 {#if block.type === 'custom'}
                   <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />

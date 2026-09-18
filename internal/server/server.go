@@ -2106,6 +2106,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		schemas.EntityTypeCultureLifestyle: &intelPromoterPortAdapter{
 			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "culture_lifestyle", "culture_lifestyle", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
+		schemas.EntityTypeInternship: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "internship", "internship", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeImportExport: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "import_export", "import_export", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
 		schemas.EntityTypeWikiPage: &intelPromoterPortAdapter{
 			prom: promoter.NewWikiPromoter(&intelWikiPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithWikiAIModel(intelExtractionModel)),
 		},

@@ -49,6 +49,7 @@ export {
 } from './render/runtimeBlockRegistry';
 export { default as LandingRenderer } from './render/LandingRenderer.svelte';
 export { setGuestHomeData, getGuestHomeData } from './data/guestHomeContext';
+export { containsGuestBlocks } from './render/blockVisibility';
 export { normalizeLegacyBlocks, normalizeLegacyBlock, type LegacyBlock } from './render/legacyCompat';
 export { default as BlockShell } from './shell/BlockShell.svelte';
 export { default as Reveal } from './shell/Reveal.svelte';

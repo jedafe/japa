@@ -793,7 +793,18 @@ export interface GuestHeroTextProps {
   headline_prefix?: string;
   headline_accent?: string;
   subhead?: string;
+  /** Legacy CTA array; superseded by `children` (`guest_hero_cta_item` blocks). */
   ctas?: CTA[];
+  /** CTA blocks rendered in the actions row. Overrides `ctas` when non-empty. */
+  children?: Block[];
+}
+
+/** Props for a single CTA button inside `guest_hero_text`. */
+export interface GuestHeroCtaItemProps {
+  label?: string;
+  href?: string;
+  variant?: 'primary' | 'ghost' | 'outline' | 'link';
+  icon?: string;
 }
 
 /** Props for `guest_hero_image`. */
@@ -811,8 +822,21 @@ export interface GuestHeroImageProps {
 export interface GuestHeroStatsProps {
   title?: string;
   data_source?: 'context' | 'manual';
+  /** Legacy data array; superseded by `children` (`guest_hero_stat_item` blocks). */
   items?: GuestHomeStat[];
+  /**
+   * Stat item blocks. `data_source: 'manual'` renders them as-is; in
+   * `context` mode the first child acts as a template cloned per context stat.
+   */
+  children?: Block[];
   max_items?: number;
+}
+
+/** Props for a single stat inside `guest_hero_stats`. */
+export interface GuestHeroStatItemProps {
+  value?: string;
+  label?: string;
+  icon?: string;
 }
 
 /** Props for `guest_hero_destinations`. */
@@ -861,8 +885,20 @@ export interface GuestCategoriesProps extends GuestCardListBaseProps {
   subtitle?: string;
   view_all_href?: string;
   data_source?: 'context' | 'manual';
+  /** Legacy data array; superseded by `children` (`guest_category_item` blocks). */
   items?: GuestHomeCategory[];
+  /** Category item blocks; in `context` mode the first child is a per-item template. */
+  children?: Block[];
   max_items?: number;
+}
+
+/** Props for a single category card inside `guest_categories`. */
+export interface GuestCategoryItemProps {
+  title?: string;
+  description?: string;
+  href?: string;
+  icon?: string;
+  color?: string;
 }
 
 /** Props for `guest_opportunities`. */
@@ -870,8 +906,26 @@ export interface GuestOpportunitiesProps extends GuestCardListBaseProps {
   title?: string;
   view_all_href?: string;
   data_source?: 'context' | 'manual';
+  /** Legacy data array; superseded by `children` (`guest_opportunity_item` blocks). */
   items?: GuestHomeOpportunity[];
+  /** Opportunity item blocks; in `context` mode the first child is a per-item template. */
+  children?: Block[];
   max_items?: number;
+}
+
+/** Props for a single opportunity card inside `guest_opportunities`. */
+export interface GuestOpportunityItemProps {
+  type?: string;
+  title?: string;
+  organization?: string;
+  location?: string;
+  location_code?: string;
+  tag?: string;
+  badge?: string;
+  value?: string;
+  logo_url?: string | null;
+  href?: string;
+  published_at?: string;
 }
 
 /** Props for `guest_stories`. */
@@ -880,8 +934,23 @@ export interface GuestStoriesProps extends GuestCardListBaseProps {
   cta_label?: string;
   cta_href?: string;
   data_source?: 'context' | 'manual';
+  /** Legacy data array; superseded by `children` (`guest_story_item` blocks). */
   items?: GuestHomeStory[];
+  /** Story item blocks; in `context` mode the first child is a per-item template. */
+  children?: Block[];
   max_items?: number;
+}
+
+/** Props for a single story card inside `guest_stories`. */
+export interface GuestStoryItemProps {
+  title?: string;
+  slug?: string;
+  quote?: string;
+  author_name?: string;
+  author_role?: string;
+  author_avatar_url?: string | null;
+  href?: string;
+  destination?: string;
 }
 
 /** Props for `guest_tools`. */
@@ -890,8 +959,22 @@ export interface GuestToolsProps extends GuestCardListBaseProps {
   subtitle?: string;
   view_all_href?: string;
   data_source?: 'context' | 'manual';
+  /** Legacy data array; superseded by `children` (`guest_tool_item` blocks). */
   items?: GuestHomeTool[];
+  /** Tool item blocks; in `context` mode the first child is a per-item template. */
+  children?: Block[];
   max_items?: number;
+}
+
+/** Props for a single tool card inside `guest_tools`. */
+export interface GuestToolItemProps {
+  name?: string;
+  slug?: string;
+  description?: string;
+  href?: string;
+  icon?: string;
+  badge?: string;
+  accent?: string;
 }
 
 /** Props for `guest_newsletter`. */
@@ -903,20 +986,54 @@ export interface GuestNewsletterProps {
   cta?: string;
   success_message?: string;
   error_message?: string;
+  /** Arbitrary child blocks rendered inside the newsletter card. */
+  children?: Block[];
 }
 
 /** Props for `guest_footer`. */
 export interface GuestFooterProps {
   logo?: { light?: string; dark?: string };
   tagline?: string;
+  /** Legacy socials array; superseded by `guest_footer_social` children. */
   socials?: Array<{ id?: string; icon: string; url: string; label: string }>;
+  /** Legacy columns array; superseded by `guest_footer_column` children. */
   columns?: Array<{
     id?: string;
     title: string;
     links: Array<{ label: string; url?: string; target?: string; icon?: string }>;
   }>;
   copyright?: string;
+  /** Legacy bottom-links array; superseded by `guest_footer_link` children. */
   bottom_links?: Array<{ label: string; url: string; target?: string }>;
+  /**
+   * Footer children partitioned by type: `guest_footer_social` renders in the
+   * brand socials row, `guest_footer_column` renders in the columns grid (each
+   * column holds `guest_footer_link` children), and `guest_footer_link` renders
+   * in the bottom legal bar.
+   */
+  children?: Block[];
+}
+
+/** Props for a single column inside `guest_footer`. */
+export interface GuestFooterColumnProps {
+  title?: string;
+  /** `guest_footer_link` children rendered as the column's link list. */
+  children?: Block[];
+}
+
+/** Props for a single link inside a `guest_footer_column` or the footer bottom bar. */
+export interface GuestFooterLinkProps {
+  label?: string;
+  url?: string;
+  target?: string;
+  icon?: string;
+}
+
+/** Props for a single social icon inside `guest_footer`. */
+export interface GuestFooterSocialProps {
+  icon?: string;
+  url?: string;
+  label?: string;
 }
 
 /** Discriminated union of all block types. */
@@ -956,12 +1073,21 @@ export type Block =
   | (BaseBlock & { type: 'guest_hero_destination_item'; props: GuestHeroDestinationItemProps })
   | (BaseBlock & { type: 'guest_hero_community'; props: GuestHeroCommunityProps })
   | (BaseBlock & { type: 'guest_hero_community_member'; props: GuestHeroCommunityMemberProps })
+  | (BaseBlock & { type: 'guest_hero_cta_item'; props: GuestHeroCtaItemProps })
+  | (BaseBlock & { type: 'guest_hero_stat_item'; props: GuestHeroStatItemProps })
   | (BaseBlock & { type: 'guest_categories'; props: GuestCategoriesProps })
+  | (BaseBlock & { type: 'guest_category_item'; props: GuestCategoryItemProps })
   | (BaseBlock & { type: 'guest_opportunities'; props: GuestOpportunitiesProps })
+  | (BaseBlock & { type: 'guest_opportunity_item'; props: GuestOpportunityItemProps })
   | (BaseBlock & { type: 'guest_stories'; props: GuestStoriesProps })
+  | (BaseBlock & { type: 'guest_story_item'; props: GuestStoryItemProps })
   | (BaseBlock & { type: 'guest_tools'; props: GuestToolsProps })
+  | (BaseBlock & { type: 'guest_tool_item'; props: GuestToolItemProps })
   | (BaseBlock & { type: 'guest_newsletter'; props: GuestNewsletterProps })
   | (BaseBlock & { type: 'guest_footer'; props: GuestFooterProps })
+  | (BaseBlock & { type: 'guest_footer_column'; props: GuestFooterColumnProps })
+  | (BaseBlock & { type: 'guest_footer_link'; props: GuestFooterLinkProps })
+  | (BaseBlock & { type: 'guest_footer_social'; props: GuestFooterSocialProps })
   | (BaseBlock & { type: 'container'; props: ContainerProps })
   | (BaseBlock & { type: 'custom'; props: CustomBlockProps; block_def_id: string });
 

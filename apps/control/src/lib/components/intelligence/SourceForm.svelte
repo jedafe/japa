@@ -131,7 +131,9 @@
 		{ value: 'banking', label: t('intel.category_banking', 'Banking') },
 		{ value: 'work_career', label: t('intel.category_work_career', 'Work & Career') },
 		{ value: 'health_insurance', label: t('intel.category_health_insurance', 'Health Insurance') },
-		{ value: 'culture_lifestyle', label: t('intel.category_culture_lifestyle', 'Culture & Lifestyle') }
+		{ value: 'culture_lifestyle', label: t('intel.category_culture_lifestyle', 'Culture & Lifestyle') },
+		{ value: 'internship', label: t('intel.category_internship', 'Internship') },
+		{ value: 'import_export', label: t('intel.category_import_export', 'Import & Export') }
 	]);
 
 	const methodItems = $derived([

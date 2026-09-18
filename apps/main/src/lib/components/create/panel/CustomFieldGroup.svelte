@@ -2,6 +2,7 @@
 	import type { CustomFieldDef, GeoCountry } from '$lib/types';
 	import Autocomplete from '../Autocomplete.svelte';
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import { listCountries } from '$lib/api/geo';
 	import { t } from '$lib/i18n';
 
@@ -123,6 +124,26 @@
 		return Promise.resolve(query ? items.filter((i) => i.label.toLowerCase().includes(query)) : items);
 	}
 
+	// 'select' fields render via the shared Autocomplete too — a closed
+	// list, so free text stays off. Stored values remain the option `value`
+	// (item.id), matching what the native <select> used to save.
+	function selectItems(field: CustomFieldDef): AutocompleteItem[] {
+		return optionList(field).map((o): AutocompleteItem => {
+			const opt = typeof o === 'object' ? o : { value: o, label: o };
+			return { id: opt.value || opt.label, label: opt.label || opt.value };
+		});
+	}
+	function selectFetcher(field: CustomFieldDef) {
+		return staticAutocompleteFetcher(selectItems(field));
+	}
+	// Resolve a stored option value back to its label for the chip; falls
+	// back to the raw value for legacy data saved before {value,label}.
+	function selectLabel(field: CustomFieldDef, val: unknown): string | null {
+		if (typeof val !== 'string' || !val) return null;
+		const opt = optionList(field).find((o) => (typeof o === 'object' ? o.value : o) === val);
+		return opt ? (typeof opt === 'object' ? opt.label : opt) : val;
+	}
+
 	// Field types that should always span the full width of the grid,
 	// regardless of how many columns are available. These are complex or
 	// tall inputs that don't work well side-by-side.
@@ -153,17 +174,17 @@
 			</label>
 		{:else if field.field_type === 'select'}
 			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
-			<select
+			<Autocomplete
 				id={field.key}
-				class="cf-input"
-				value={values[field.key] ?? ''}
-				onchange={(e) => setField(field.key, e.currentTarget.value)}
-			>
-				<option value="">— Select —</option>
-			{#each optionList(field) as opt (typeof opt === 'object' ? opt.value : opt)}
-				<option value={typeof opt === 'object' ? opt.value : opt}>{typeof opt === 'object' ? opt.label : opt}</option>
-			{/each}
-			</select>
+				placeholder={field.placeholder ?? field.label}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={selectFetcher(field)}
+				initialFetcher={selectFetcher(field)}
+				selectedId={typeof values[field.key] === 'string' && values[field.key] ? (values[field.key] as string) : null}
+				selectedLabel={selectLabel(field, values[field.key])}
+				onSelect={(item) => setField(field.key, item.id)}
+				onClear={() => setField(field.key, '')}
+			/>
 		{:else if field.field_type === 'suggest'}
 			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<Autocomplete

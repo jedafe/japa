@@ -1,22 +1,24 @@
 <script lang="ts">
 	// Renders a container block's children as a nested, sortable tree inside
 	// the sections sidebar. Each child is a dnd-kit sortable item (group =
-	// container ID) enabling drag-to-reorder within the container. Children
-	// also have remove and move-to-top-level buttons. In grid mode, each
-	// selected child shows a 12-column span slider for visual resizing.
+	// container ID + slot key) enabling drag-to-reorder within the slot.
+	// Children also have remove and move-to-top-level buttons. In grid mode,
+	// each selected child shows a 12-column span slider for visual resizing.
 	// Container-like children can be expanded to show their own children,
 	// so nested layouts (e.g. guest_home → guest_hero → guest_hero_image) are
-	// editable and reorderable at any depth.
+	// editable and reorderable at any depth. Accordion/tabs render a labeled
+	// group per item/tab slot.
 	import { createSortable } from '@dnd-kit/svelte/sortable';
 	import { createDroppable } from '@dnd-kit/svelte';
 	import { GripVertical, ChevronUp, ChevronDown, X, ArrowUpRight } from 'lucide-svelte';
 	import type { Component } from 'svelte';
 	import { blockRegistry, type Block, type BlockMeta } from '@japaconnect/landing-blocks';
-	import { isContainerLike, childrenOf, getContainerLayout, getContainerColumns } from '$lib/utils/blocks';
+	import { isContainerLike, childrenOf, childSlotsOf, getContainerLayout, getContainerColumns, DEFAULT_SLOT } from '$lib/utils/blocks';
 	import ContainerChildren from './ContainerChildren.svelte';
 
 	let {
 		containerId,
+		slotKey = DEFAULT_SLOT,
 		children,
 		layout,
 		columns,
@@ -31,6 +33,8 @@
 		onSpanChange,
 	}: {
 		containerId: string;
+		/** Which child slot this list renders ('children', 'slides', 'item:N', 'tab:N'). */
+		slotKey?: string;
 		children: Block[];
 		layout: 'stack' | 'grid' | 'flex';
 		columns: number;
@@ -39,10 +43,10 @@
 		expandedContainers: Set<string>;
 		toggleExpand: (id: string) => void;
 		onSelect: (id: string) => void;
-		onReorder: (containerId: string, fromIdx: number, toIdx: number) => void;
-		onRemove: (containerId: string, childId: string) => void;
-		onMoveOut: (containerId: string, childId: string) => void;
-		onSpanChange: (containerId: string, childId: string, span: number) => void;
+		onReorder: (containerId: string, slotKey: string, fromIdx: number, toIdx: number) => void;
+		onRemove: (containerId: string, slotKey: string, childId: string) => void;
+		onMoveOut: (containerId: string, slotKey: string, childId: string) => void;
+		onSpanChange: (containerId: string, slotKey: string, childId: string, span: number) => void;
 	} = $props();
 
 	function meta(type: string): BlockMeta | undefined {
@@ -55,20 +59,24 @@
 		return Math.max(1, Math.floor(12 / columns));
 	}
 
-	// Droppable zone for accepting palette/canvas drags into this container.
+	// Sortable/droppable identity — scoped to this container's exact child
+	// slot so reorder and drop operations hit the right array.
+	const groupId = $derived(`${containerId}::${slotKey}`);
+
+	// Droppable zone for accepting palette/canvas drags into this slot.
 	const dropInput = $state({
 		get id() {
-			return `dropzone-${containerId}`;
+			return `dropzone-${containerId}-${slotKey}`;
 		},
 		get data() {
-			return { source: 'container-dropzone' as const, containerId };
+			return { source: 'container-dropzone' as const, containerId, slotKey };
 		},
 	});
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const droppable = createDroppable(dropInput as any);
 
-	// Create a sortable for each child. The `group` is the container ID so
-	// dnd-kit knows these items belong together for reordering.
+	// Create a sortable for each child. The `group` scopes reordering to this
+	// container slot.
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const sortables = $derived.by(() => {
 		return children.map((child, i) => {
@@ -80,10 +88,10 @@
 					return i;
 				},
 				get group() {
-					return containerId;
+					return groupId;
 				},
 				get data() {
-					return { source: 'container-child' as const, containerId, blockType: child.type, index: i };
+					return { source: 'container-child' as const, containerId, slotKey, blockType: child.type, index: i };
 				},
 			});
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -127,16 +135,16 @@
 			{#if !child.visible}<span class="text-[10px] text-[var(--muted)]">hidden</span>{/if}
 			{#if layout === 'grid'}<span class="font-mono text-[10px] text-[var(--muted)]">{effectiveSpan(child)}/12</span>{/if}
 			<!-- Quick actions (always visible for accessibility) -->
-			<button type="button" onclick={() => onReorder(containerId, i, i - 1)} disabled={i === 0} class="text-[var(--muted)] disabled:opacity-20 hover:text-[var(--foreground)]" aria-label="Move up">
+			<button type="button" onclick={() => onReorder(containerId, slotKey, i, i - 1)} disabled={i === 0} class="text-[var(--muted)] disabled:opacity-20 hover:text-[var(--foreground)]" aria-label="Move up">
 				<ChevronUp class="h-3 w-3" />
 			</button>
-			<button type="button" onclick={() => onReorder(containerId, i, i + 1)} disabled={i === children.length - 1} class="text-[var(--muted)] disabled:opacity-20 hover:text-[var(--foreground)]" aria-label="Move down">
+			<button type="button" onclick={() => onReorder(containerId, slotKey, i, i + 1)} disabled={i === children.length - 1} class="text-[var(--muted)] disabled:opacity-20 hover:text-[var(--foreground)]" aria-label="Move down">
 				<ChevronDown class="h-3 w-3" />
 			</button>
-			<button type="button" onclick={() => onMoveOut(containerId, child.id)} class="text-[var(--muted)] hover:text-[var(--foreground)]" aria-label="Move to top level" title="Move to top level">
+			<button type="button" onclick={() => onMoveOut(containerId, slotKey, child.id)} class="text-[var(--muted)] hover:text-[var(--foreground)]" aria-label="Move to top level" title="Move to top level">
 				<ArrowUpRight class="h-3 w-3" />
 			</button>
-			<button type="button" onclick={() => onRemove(containerId, child.id)} class="text-[var(--danger)] hover:opacity-80" aria-label="Remove child">
+			<button type="button" onclick={() => onRemove(containerId, slotKey, child.id)} class="text-[var(--danger)] hover:opacity-80" aria-label="Remove child">
 				<X class="h-3 w-3" />
 			</button>
 		</div>
@@ -149,7 +157,7 @@
 					min="1"
 					max="12"
 					value={effectiveSpan(child)}
-					oninput={(e) => onSpanChange(containerId, child.id, Number(e.currentTarget.value))}
+					oninput={(e) => onSpanChange(containerId, slotKey, child.id, Number(e.currentTarget.value))}
 					class="flex-1 h-1 cursor-pointer"
 					style="accent-color: var(--color-primary)"
 					aria-label="Column span (1-12)"
@@ -167,31 +175,38 @@
 		{/if}
 
 		{#if isContainerLike(child)}
+			{@const slots = childSlotsOf(child)}
 			<div class="ml-2">
 				<button
 					type="button"
 					onclick={() => toggleExpand(child.id)}
 					class="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] px-2 py-0.5"
 				>
-					{expandedContainers.has(child.id) ? '▼' : '▶'} {childrenOf(child).length} children
+					{expandedContainers.has(child.id) ? '▼' : '▶'} {slots.reduce((n, s) => n + s.blocks.length, 0)} children
 				</button>
 			</div>
 			{#if expandedContainers.has(child.id)}
-				<ContainerChildren
-					containerId={child.id}
-					children={childrenOf(child)}
-					layout={getContainerLayout(child)}
-					columns={getContainerColumns(child)}
-					{selectedBlockId}
-					{getIcon}
-					{expandedContainers}
-					{toggleExpand}
-					onSelect={onSelect}
-					onReorder={onReorder}
-					onRemove={onRemove}
-					onMoveOut={onMoveOut}
-					onSpanChange={onSpanChange}
-				/>
+				{#each slots as slot (slot.key)}
+					{#if slot.label}
+						<div class="ml-2 mt-1 px-1 text-[10px] font-medium uppercase tracking-wider text-[var(--muted)]">{slot.label}</div>
+					{/if}
+					<ContainerChildren
+						containerId={child.id}
+						slotKey={slot.key}
+						children={slot.blocks}
+						layout={getContainerLayout(child)}
+						columns={getContainerColumns(child)}
+						{selectedBlockId}
+						{getIcon}
+						{expandedContainers}
+						{toggleExpand}
+						onSelect={onSelect}
+						onReorder={onReorder}
+						onRemove={onRemove}
+						onMoveOut={onMoveOut}
+						onSpanChange={onSpanChange}
+					/>
+				{/each}
 			{/if}
 		{/if}
 	{/each}

@@ -1,13 +1,20 @@
 <script lang="ts">
-  import type { AccordionProps } from '../types';
+  import type { AccordionProps, Block } from '../types';
+  import type { FetchContext } from '../data/types';
   import { Accordion } from 'bits-ui';
   import { blockRegistry } from '../render/blockRegistry';
+  import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
+  import ScopedCss from '../shell/ScopedCss.svelte';
+  import { responsiveVisibilityCss } from '../shell/styleToCss';
 
   interface Props {
     props: AccordionProps;
+    fetchCtx?: FetchContext;
+    geoCountry?: string;
+    id?: string;
   }
-  let { props }: Props = $props();
+  let { props, fetchCtx, geoCountry }: Props = $props();
 
   let searchQuery = $state('');
 
@@ -18,7 +25,35 @@
           item.title.toLowerCase().includes(searchQuery.toLowerCase())
         )
   );
+
+  const allNested = $derived(props.items.flatMap((item) => item.content_blocks ?? []));
+  const visibilityCss = $derived(responsiveVisibilityCss(allNested));
 </script>
+
+{#snippet nestedBlock(block: Block)}
+  {#if isBlockVisible(block, geoCountry)}
+    {@const meta = blockRegistry[block.type]}
+    {#if meta}
+      {@const Component = meta.component}
+      <BlockShell
+        style={block.style}
+        motion={block.motion}
+        background={block.style?.background}
+        hideIfEmpty={block.visibility_rules?.hide_if_empty}
+        initialHasContent={!isBlockEmpty(block)}
+        scopeKey={block.id}
+      >
+        {#if block.type === 'custom'}
+          <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+        {:else}
+          <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+        {/if}
+      </BlockShell>
+    {/if}
+  {/if}
+{/snippet}
+
+<ScopedCss css={visibilityCss} />
 
 <section class="px-6 py-16">
   <div class="mx-auto max-w-3xl">
@@ -39,15 +74,7 @@
             <div class="mt-2 text-sm text-[var(--color-text-subtle)]">
               {#if item.content_blocks}
                 {#each item.content_blocks as block (block.id)}
-                  {#if block.visible}
-                    {@const meta = blockRegistry[block.type]}
-                    {#if meta}
-                      <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
-                        {@const Component = meta.component}
-                        <Component props={block.props} />
-                      </BlockShell>
-                    {/if}
-                  {/if}
+                  {@render nestedBlock(block)}
                 {/each}
               {/if}
             </div>
@@ -67,15 +94,7 @@
             <Accordion.Content class="px-4 pb-3 text-sm text-[var(--color-text-subtle)]">
               {#if item.content_blocks}
                 {#each item.content_blocks as block (block.id)}
-                  {#if block.visible}
-                    {@const meta = blockRegistry[block.type]}
-                    {#if meta}
-                      <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
-                        {@const Component = meta.component}
-                        <Component props={block.props} />
-                      </BlockShell>
-                    {/if}
-                  {/if}
+                  {@render nestedBlock(block)}
                 {/each}
               {/if}
             </Accordion.Content>

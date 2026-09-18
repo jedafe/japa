@@ -26,8 +26,10 @@
 		getCustomBlockDef,
 		setAssetBaseUrl,
 		resolveAssetUrl,
+		containsGuestBlocks,
 		type Block,
 		type BlockStyle,
+		type MotionConfig,
 		type BlockMeta,
 		type GeoContext,
 		type ContainerProps,
@@ -43,7 +45,7 @@
 		type GuestHomeDestination,
 	} from '@japaconnect/landing-blocks';
 	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
-	import { isContainerLike, childrenOf, getContainerLayout, getContainerColumns, seedAllContainerDefaults, defaultChildrenFor } from '$lib/utils/blocks';
+	import { isContainerLike, childrenOf, childSlotsOf, mapChildSlots, defaultSlotKey, getContainerLayout, getContainerColumns, seedAllContainerDefaults, seedBlockDefaults, defaultChildrenFor } from '$lib/utils/blocks';
 	import { Button } from '$lib/components/ui/button';
 
 	import { Tabs, Dialog } from 'bits-ui';
@@ -214,20 +216,20 @@
 		return [];
 	}
 
-	/** Recursively collect all container-like ids under any `guest_home` block. */
-	function collectGuestHomeContainerIds(tree: Block[]): Set<string> {
+	/** Recursively collect all container-like ids under any `guest_*` container block. */
+	function collectGuestContainerIds(tree: Block[]): Set<string> {
 		const ids = new Set<string>();
+		function collect(b: Block) {
+			if (!isContainerLike(b)) return;
+			ids.add(b.id);
+			for (const child of childrenOf(b)) collect(child);
+		}
 		function walk(b: Block) {
-			if (b.type === 'guest_home') {
-				collectFromGuestHome(b, ids);
+			if (b.type.startsWith('guest_') && isContainerLike(b)) {
+				collect(b);
 			} else if (isContainerLike(b)) {
 				for (const child of childrenOf(b)) walk(child);
 			}
-		}
-		function collectFromGuestHome(b: Block, set: Set<string>) {
-			if (!isContainerLike(b)) return;
-			set.add(b.id);
-			for (const child of childrenOf(b)) collectFromGuestHome(child, set);
 		}
 		for (const b of tree) walk(b);
 		return ids;
@@ -257,7 +259,7 @@
 				// changes don't clobber in-progress edits.
 				blocks = untrack(() => seedAllContainerDefaults(parseBlocks(d.blocks)));
 				// Default-expand any Guest Home block and its container descendants.
-				expandedContainers = new Set([...expandedContainers, ...collectGuestHomeContainerIds(blocks)]);
+				expandedContainers = new Set([...expandedContainers, ...collectGuestContainerIds(blocks)]);
 				pageTitle = untrack(() => d.title);
 				selectedThemeId = d.theme_id ?? '';
 				savedFingerprint = saveFingerprint();
@@ -278,7 +280,9 @@
 	}
 
 	async function loadGuestHome(blockList: Block[]) {
-		if (!blockList.some((b) => b.type === 'guest_home')) {
+		// Any guest_* block (not just guest_home) can consume context data in
+		// the preview — stats, categories, opportunities, stories, tools.
+		if (!containsGuestBlocks(blockList)) {
 			guestHomePreview = undefined;
 			return;
 		}
@@ -374,6 +378,11 @@
 	// ─── Block CRUD ───────────────────────────────────────────────
 	// `type` can be a real Block type or a `custom:{blockDefId}` palette key.
 	function makeBlock(type: string): Block {
+		// Seed nested container defaults so every guest block arrives with its
+		// editable children already in place (or absent for context-driven lists).
+		return seedBlockDefaults(buildBlock(type));
+	}
+	function buildBlock(type: string): Block {
 		// Custom block — parse the block def ID and seed props from defaults.
 		if (type.startsWith('custom:')) {
 			const blockDefId = type.slice('custom:'.length);
@@ -449,8 +458,8 @@
 		const nb = makeBlock(type);
 		blocks = [...blocks, nb];
 		selectedBlockId = nb.id;
-		if (nb.type === 'guest_home') {
-			expandedContainers = new Set([...expandedContainers, ...collectGuestHomeContainerIds([nb])]);
+		if (isContainerLike(nb)) {
+			expandedContainers = new Set([...expandedContainers, nb.id, ...collectGuestContainerIds([nb])]);
 		}
 		unsavedChanges = true;
 	}
@@ -466,10 +475,21 @@
 		if (selectedBlockId === id) selectedBlockId = null;
 		unsavedChanges = true;
 	}
+	/** Regenerate ids recursively so duplicated container subtrees don't share
+	 *  child ids with the source (all tree ops match on id). */
+	function regenBlockIds(b: Block): Block {
+		const withNewId = {
+			...b,
+			id: crypto.randomUUID(),
+			props: b.props ? JSON.parse(JSON.stringify(b.props)) : b.props,
+		} as Block;
+		if (!isContainerLike(withNewId)) return withNewId;
+		return mapChildSlots(withNewId, (children) => children.map(regenBlockIds));
+	}
 	function duplicateBlock(id: string): void {
 		const block = findBlockInTree(blocks, id);
 		if (!block) return;
-		const copy = { ...block, id: crypto.randomUUID(), props: JSON.parse(JSON.stringify(block.props)) } as Block;
+		const copy = regenBlockIds(block);
 		// If the block is top-level, insert after it. Otherwise append to top level.
 		const idx = blocks.findIndex((b) => b.id === id);
 		if (idx >= 0) {
@@ -514,7 +534,7 @@
 		return tree.map((b) => {
 			if (b.id === id) return fn(b);
 			if (isContainerLike(b)) {
-				return { ...b, props: { ...b.props, children: updateBlockInTree(childrenOf(b), id, fn) } } as Block;
+				return mapChildSlots(b, (children) => updateBlockInTree(children, id, fn));
 			}
 			return b;
 		});
@@ -527,25 +547,32 @@
 				return { tree: [...tree.slice(0, i), ...tree.slice(i + 1)], removed: tree[i] };
 			}
 			if (isContainerLike(tree[i])) {
-				const result = removeBlockFromTree(childrenOf(tree[i]), id);
-				if (result.removed) {
+				let removed: Block | null = null;
+				const newBlock = mapChildSlots(tree[i], (children) => {
+					if (removed) return children;
+					const result = removeBlockFromTree(children, id);
+					if (result.removed) removed = result.removed;
+					return result.tree;
+				});
+				if (removed) {
 					const newTree = [...tree];
-					newTree[i] = { ...tree[i], props: { ...tree[i].props, children: result.tree } } as Block;
-					return { tree: newTree, removed: result.removed };
+					newTree[i] = newBlock;
+					return { tree: newTree, removed };
 				}
 			}
 		}
 		return { tree, removed: null };
 	}
 
-	/** Insert a block into a container's children (found by ID, anywhere in the tree). */
-	function insertIntoContainer(tree: Block[], containerId: string, block: Block): Block[] {
+	/** Insert a block into a container's child slot (found by ID, anywhere in the tree). */
+	function insertIntoContainer(tree: Block[], containerId: string, slotKey: string, block: Block): Block[] {
 		return tree.map((b) => {
 			if (b.id === containerId && isContainerLike(b)) {
-				return { ...b, props: { ...b.props, children: [...childrenOf(b), block] } } as Block;
+				const target = slotKey || defaultSlotKey(b);
+				return mapChildSlots(b, (children, slot) => (slot.key === target ? [...children, block] : children));
 			}
 			if (isContainerLike(b)) {
-				return { ...b, props: { ...b.props, children: insertIntoContainer(childrenOf(b), containerId, block) } } as Block;
+				return mapChildSlots(b, (children) => insertIntoContainer(children, containerId, slotKey, block));
 			}
 			return b;
 		});
@@ -559,63 +586,71 @@
 		expandedContainers = next;
 	}
 
-	/** Reorder a child within a container (by container ID + indices). */
-	function reorderContainerChild(containerId: string, fromIdx: number, toIdx: number): void {
+	/** Reorder a child within a container slot (by container ID + slot + indices). */
+	function reorderContainerChild(containerId: string, slotKey: string, fromIdx: number, toIdx: number): void {
 		if (fromIdx === toIdx) return;
 		blocks = updateBlockInTree(blocks, containerId, (b) => {
 			if (!isContainerLike(b)) return b;
-			const children = [...childrenOf(b)];
-			if (toIdx < 0 || toIdx >= children.length) return b;
-			const [moved] = children.splice(fromIdx, 1);
-			children.splice(toIdx, 0, moved);
-			return { ...b, props: { ...b.props, children } } as Block;
+			return mapChildSlots(b, (children, slot) => {
+				if (slot.key !== slotKey || toIdx < 0 || toIdx >= children.length) return children;
+				const next = [...children];
+				const [moved] = next.splice(fromIdx, 1);
+				next.splice(toIdx, 0, moved);
+				return next;
+			});
 		});
 		unsavedChanges = true;
 	}
 
-	/** Reorder a child by ID within a container (by container ID + child IDs). */
-	function reorderContainerChildByIds(containerId: string, fromChildId: string, toChildId: string): void {
+	/** Reorder a child by ID within a container slot (by container ID + slot + child IDs). */
+	function reorderContainerChildByIds(containerId: string, slotKey: string, fromChildId: string, toChildId: string): void {
 		blocks = updateBlockInTree(blocks, containerId, (b) => {
 			if (!isContainerLike(b)) return b;
-			const children = [...childrenOf(b)];
-			const fromIdx = children.findIndex((c) => c.id === fromChildId);
-			const toIdx = children.findIndex((c) => c.id === toChildId);
-			if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return b;
-			const [moved] = children.splice(fromIdx, 1);
-			children.splice(toIdx, 0, moved);
-			return { ...b, props: { ...b.props, children } } as Block;
+			return mapChildSlots(b, (children, slot) => {
+				if (slot.key !== slotKey) return children;
+				const fromIdx = children.findIndex((c) => c.id === fromChildId);
+				const toIdx = children.findIndex((c) => c.id === toChildId);
+				if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return children;
+				const next = [...children];
+				const [moved] = next.splice(fromIdx, 1);
+				next.splice(toIdx, 0, moved);
+				return next;
+			});
 		});
 		unsavedChanges = true;
 	}
 
-	/** Insert a block into a container at a specific index (before the target child). */
-	function insertIntoContainerAtIndex(containerId: string, block: Block, beforeChildId: string | null): void {
+	/** Insert a block into a container slot at a specific index (before the target child). */
+	function insertIntoContainerAtIndex(containerId: string, slotKey: string, block: Block, beforeChildId: string | null): void {
 		blocks = updateBlockInTree(blocks, containerId, (b) => {
 			if (!isContainerLike(b)) return b;
-			const children = [...childrenOf(b)];
-			if (beforeChildId) {
-				const idx = children.findIndex((c) => c.id === beforeChildId);
-				if (idx >= 0) children.splice(idx, 0, block);
-				else children.push(block);
-			} else {
-				children.push(block);
-			}
-			return { ...b, props: { ...b.props, children } } as Block;
+			return mapChildSlots(b, (children, slot) => {
+				if (slot.key !== slotKey) return children;
+				const next = [...children];
+				if (beforeChildId) {
+					const idx = next.findIndex((c) => c.id === beforeChildId);
+					if (idx >= 0) next.splice(idx, 0, block);
+					else next.push(block);
+				} else {
+					next.push(block);
+				}
+				return next;
+			});
 		});
 	}
 
-	/** Remove a child from a container. */
-	function removeContainerChild(containerId: string, childId: string): void {
+	/** Remove a child from a container slot. */
+	function removeContainerChild(containerId: string, slotKey: string, childId: string): void {
 		blocks = updateBlockInTree(blocks, containerId, (b) => {
 			if (!isContainerLike(b)) return b;
-			return { ...b, props: { ...b.props, children: childrenOf(b).filter((c) => c.id !== childId) } } as Block;
+			return mapChildSlots(b, (children, slot) => (slot.key === slotKey ? children.filter((c) => c.id !== childId) : children));
 		});
 		if (selectedBlockId === childId) selectedBlockId = null;
 		unsavedChanges = true;
 	}
 
 	/** Move a child out of a container to the top-level blocks array. */
-	function moveChildToTopLevel(_containerId: string, childId: string): void {
+	function moveChildToTopLevel(_containerId: string, _slotKey: string, childId: string): void {
 		const { tree, removed } = removeBlockFromTree(blocks, childId);
 		if (!removed) return;
 		blocks = [...tree, removed];
@@ -624,7 +659,7 @@
 	}
 
 	/** Update a child's grid column span (1–12). */
-	function updateChildSpan(containerId: string, childId: string, span: number): void {
+	function updateChildSpan(_containerId: string, _slotKey: string, childId: string, span: number): void {
 		const clamped = Math.max(1, Math.min(12, span));
 		blocks = updateBlockInTree(blocks, childId, (b) => ({ ...b, span: clamped }));
 		unsavedChanges = true;
@@ -636,6 +671,15 @@
 	}
 	function updateBlockStyle(id: string, style: BlockStyle): void {
 		blocks = updateBlockInTree(blocks, id, (b) => ({ ...b, style } as Block));
+		unsavedChanges = true;
+	}
+	/** Merge a motion patch into a block anywhere in the tree. */
+	function updateBlockMotion(id: string, patch: Partial<MotionConfig> | null): void {
+		blocks = updateBlockInTree(blocks, id, (b) =>
+			patch === null
+				? ({ ...b, motion: undefined } as Block)
+				: ({ ...b, motion: { ...(b.motion ?? {}), ...patch } } as Block)
+		);
 		unsavedChanges = true;
 	}
 	/** Toggle per-device visibility for a block (desktop/tablet/mobile). */
@@ -705,12 +749,13 @@
 		const sourceData = source.data;
 		const targetData = target?.data;
 
-		// Drop onto a container drop zone → insert into that container (append).
+		// Drop onto a container drop zone → insert into that container slot (append).
 		if (targetData?.source === 'container-dropzone') {
 			const containerId = targetData.containerId as string;
+			const slotKey = (targetData.slotKey as string) ?? '';
 			if (sourceData?.source === 'palette') {
 				const nb = makeBlock(sourceData.blockType as string);
-				blocks = insertIntoContainer(blocks, containerId, nb);
+				blocks = insertIntoContainer(blocks, containerId, slotKey, nb);
 				selectedBlockId = nb.id;
 				expandedContainers = new Set(expandedContainers).add(containerId);
 				unsavedChanges = true;
@@ -719,7 +764,7 @@
 			if (sourceData?.source === 'canvas' || sourceData?.source === 'container-child') {
 				const { tree: newTree, removed } = removeBlockFromTree(blocks, source.id as string);
 				if (!removed) return;
-				blocks = insertIntoContainer(newTree, containerId, removed);
+				blocks = insertIntoContainer(newTree, containerId, slotKey, removed);
 				selectedBlockId = removed.id;
 				expandedContainers = new Set(expandedContainers).add(containerId);
 				unsavedChanges = true;
@@ -730,42 +775,43 @@
 		// Drop onto a container child (sortable target) → reorder or insert.
 		if (targetData?.source === 'container-child' && target && isSortable(target)) {
 			const targetContainerId = targetData.containerId as string;
+			const targetSlotKey = (targetData.slotKey as string) ?? '';
 			const targetChildId = target.id as string;
 
 			// Palette → insert before the target child.
 			if (sourceData?.source === 'palette') {
 				const nb = makeBlock(sourceData.blockType as string);
-				insertIntoContainerAtIndex(targetContainerId, nb, targetChildId);
+				insertIntoContainerAtIndex(targetContainerId, targetSlotKey, nb, targetChildId);
 				selectedBlockId = nb.id;
 				expandedContainers = new Set(expandedContainers).add(targetContainerId);
 				unsavedChanges = true;
 				return;
 			}
 
-			// Container child → reorder within the same container.
-			if (sourceData?.source === 'container-child' && sourceData.containerId === targetContainerId) {
-				reorderContainerChildByIds(targetContainerId, source.id as string, targetChildId);
+			// Container child → reorder within the same slot.
+			if (sourceData?.source === 'container-child' && sourceData.containerId === targetContainerId && sourceData.slotKey === targetSlotKey) {
+				reorderContainerChildByIds(targetContainerId, targetSlotKey, source.id as string, targetChildId);
 				return;
 			}
 
-			// Canvas section → move into container before target child.
+			// Canvas section → move into container slot before target child.
 			if (sourceData?.source === 'canvas') {
 				const { tree: newTree, removed } = removeBlockFromTree(blocks, source.id as string);
 				if (!removed) return;
 				blocks = newTree;
-				insertIntoContainerAtIndex(targetContainerId, removed, targetChildId);
+				insertIntoContainerAtIndex(targetContainerId, targetSlotKey, removed, targetChildId);
 				selectedBlockId = removed.id;
 				expandedContainers = new Set(expandedContainers).add(targetContainerId);
 				unsavedChanges = true;
 				return;
 			}
 
-			// Container child from a different container → move between containers.
-			if (sourceData?.source === 'container-child' && sourceData.containerId !== targetContainerId) {
+			// Container child from a different slot/container → move before target child.
+			if (sourceData?.source === 'container-child' && (sourceData.containerId !== targetContainerId || sourceData.slotKey !== targetSlotKey)) {
 				const { tree: newTree, removed } = removeBlockFromTree(blocks, source.id as string);
 				if (!removed) return;
 				blocks = newTree;
-				insertIntoContainerAtIndex(targetContainerId, removed, targetChildId);
+				insertIntoContainerAtIndex(targetContainerId, targetSlotKey, removed, targetChildId);
 				selectedBlockId = removed.id;
 				expandedContainers = new Set(expandedContainers).add(targetContainerId);
 				unsavedChanges = true;
@@ -1142,29 +1188,36 @@
 							{@const meta = blockRegistry[block.type]}
 							<SortableSection {block} index={i} selected={selectedBlockId === block.id} {meta} {getIcon} onSelect={() => (selectedBlockId = block.id)} onRemove={() => removeBlock(block.id)} />
 							{#if isContainerLike(block)}
+								{@const slots = childSlotsOf(block)}
 								<div class="ml-2">
 									<button
 										type="button"
 										onclick={() => toggleContainerExpand(block.id)}
 										class="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] px-2 py-0.5"
 									>
-										{expandedContainers.has(block.id) ? '▼' : '▶'} {childrenOf(block).length} children
+										{expandedContainers.has(block.id) ? '▼' : '▶'} {slots.reduce((n, s) => n + s.blocks.length, 0)} children
 									</button>
 								</div>
 								{#if expandedContainers.has(block.id)}
-									<ContainerChildren
-										containerId={block.id}
-										children={childrenOf(block)}
-										layout={getContainerLayout(block)}
-										columns={getContainerColumns(block)}
-										{selectedBlockId}
-										{getIcon}
-										onSelect={(id) => (selectedBlockId = id)}
-										onReorder={reorderContainerChild}
-										onRemove={removeContainerChild}
-										onMoveOut={moveChildToTopLevel}
-										onSpanChange={updateChildSpan} {expandedContainers} toggleExpand={toggleContainerExpand}
-									/>
+									{#each slots as slot (slot.key)}
+										{#if slot.label}
+											<div class="ml-6 mt-1 text-[10px] font-medium uppercase tracking-wider" style="color: var(--color-muted)">{slot.label}</div>
+										{/if}
+										<ContainerChildren
+											containerId={block.id}
+											slotKey={slot.key}
+											children={slot.blocks}
+											layout={getContainerLayout(block)}
+											columns={getContainerColumns(block)}
+											{selectedBlockId}
+											{getIcon}
+											onSelect={(id) => (selectedBlockId = id)}
+											onReorder={reorderContainerChild}
+											onRemove={removeContainerChild}
+											onMoveOut={moveChildToTopLevel}
+											onSpanChange={updateChildSpan} {expandedContainers} toggleExpand={toggleContainerExpand}
+										/>
+									{/each}
 								{/if}
 							{/if}
 						{/each}
@@ -1306,7 +1359,7 @@
 									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('landing.animation', 'Animation')}</h4>
 									<div>
 										<label for="motion-preset" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_preset', 'Preset')}</label>
-										<select id="motion-preset" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.preset ?? 'none'} onchange={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? ({ ...b, motion: { ...(b.motion ?? { delay: 0 }), preset: e.currentTarget.value as any } } as Block) : b); unsavedChanges = true; }}>
+										<select id="motion-preset" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.preset ?? 'none'} onchange={(e) => updateBlockMotion(selectedBlock.id, { preset: e.currentTarget.value as MotionConfig['preset'] })}>
 											<optgroup label={t('landing.motion_none', 'None')}><option value="none">{t('landing.motion_none', 'None')}</option></optgroup>
 											<optgroup label={t('landing.motion_fade', 'Fade')}>
 												<option value="fade-in">{t('landing.motion_fade_in', 'Fade In')}</option>
@@ -1343,16 +1396,16 @@
 										<div class="grid grid-cols-2 gap-2">
 											<div>
 												<label for="motion-delay" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_delay', 'Delay (ms)')}</label>
-												<input id="motion-delay" type="number" min="0" step="50" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.delay ?? 0} oninput={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? ({ ...b, motion: { ...(b.motion ?? { preset: 'none' }), delay: Number(e.currentTarget.value) } } as Block) : b); unsavedChanges = true; }} />
+												<input id="motion-delay" type="number" min="0" step="50" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.delay ?? 0} oninput={(e) => updateBlockMotion(selectedBlock.id, { delay: Number(e.currentTarget.value) })} />
 											</div>
 											<div>
 												<label for="motion-duration" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_duration', 'Duration (ms)')}</label>
-												<input id="motion-duration" type="number" min="100" step="50" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.duration ?? 700} oninput={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? ({ ...b, motion: { ...(b.motion ?? { preset: 'none', delay: 0 }), duration: Number(e.currentTarget.value) } } as Block) : b); unsavedChanges = true; }} />
+												<input id="motion-duration" type="number" min="100" step="50" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.duration ?? 700} oninput={(e) => updateBlockMotion(selectedBlock.id, { duration: Number(e.currentTarget.value) })} />
 											</div>
 										</div>
 										<div>
 											<label for="motion-easing" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_easing', 'Easing')}</label>
-											<select id="motion-easing" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.easing ?? 'cubic-bezier(0.16, 1, 0.3, 1)'} onchange={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? ({ ...b, motion: { ...(b.motion ?? { preset: 'none', delay: 0 }), easing: e.currentTarget.value } } as Block) : b); unsavedChanges = true; }}>
+											<select id="motion-easing" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.easing ?? 'cubic-bezier(0.16, 1, 0.3, 1)'} onchange={(e) => updateBlockMotion(selectedBlock.id, { easing: e.currentTarget.value })}>
 												<option value="cubic-bezier(0.16, 1, 0.3, 1)">{t('landing.easing_smooth', 'Smooth (default)')}</option>
 												<option value="ease-out">{t('landing.easing_out', 'Ease Out')}</option>
 												<option value="ease-in-out">{t('landing.easing_in_out', 'Ease In Out')}</option>
@@ -1364,13 +1417,23 @@
 										</div>
 										<div>
 											<label for="motion-threshold" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_threshold', 'Viewport threshold')}: {selectedBlock.motion?.threshold ?? 0.1}</label>
-											<input id="motion-threshold" type="range" min="0" max="1" step="0.05" class="w-full" value={selectedBlock.motion?.threshold ?? 0.1} oninput={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? ({ ...b, motion: { ...(b.motion ?? { preset: 'none', delay: 0 }), threshold: Number(e.currentTarget.value) } } as Block) : b); unsavedChanges = true; }} />
+											<input id="motion-threshold" type="range" min="0" max="1" step="0.05" class="w-full" value={selectedBlock.motion?.threshold ?? 0.1} oninput={(e) => updateBlockMotion(selectedBlock.id, { threshold: Number(e.currentTarget.value) })} />
 										</div>
 										<label class="flex items-center justify-between text-xs">
 											<span style="color: var(--color-foreground)">{t('landing.motion_once', 'Animate only once')}</span>
-											<input type="checkbox" checked={selectedBlock.motion?.once ?? true} onchange={(e) => { blocks = blocks.map((b) => b.id === selectedBlock.id ? ({ ...b, motion: { ...(b.motion ?? { preset: 'none', delay: 0 }), once: e.currentTarget.checked } } as Block) : b); unsavedChanges = true; }} />
+											<input type="checkbox" checked={selectedBlock.motion?.once ?? true} onchange={(e) => updateBlockMotion(selectedBlock.id, { once: e.currentTarget.checked })} />
 										</label>
-										<button type="button" onclick={() => { blocks = blocks.map((b) => b.id === selectedBlock.id ? ({ ...b, motion: undefined } as Block) : b); unsavedChanges = true; }} class="w-full rounded border px-2 py-1 text-xs hover:bg-[var(--surface)]" style="border-color: var(--color-border); color: var(--color-muted)">
+										<label class="flex items-center justify-between text-xs">
+											<span style="color: var(--color-foreground)">{t('landing.motion_stagger', 'Stagger children')}</span>
+											<input type="checkbox" checked={selectedBlock.motion?.stagger_children ?? false} onchange={(e) => updateBlockMotion(selectedBlock.id, { stagger_children: e.currentTarget.checked })} />
+										</label>
+										{#if selectedBlock.motion?.stagger_children}
+											<div>
+												<label for="motion-stagger-delay" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_stagger_delay', 'Stagger delay (ms)')}</label>
+												<input id="motion-stagger-delay" type="number" min="0" step="20" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.stagger_delay ?? 80} oninput={(e) => updateBlockMotion(selectedBlock.id, { stagger_delay: Number(e.currentTarget.value) })} />
+											</div>
+										{/if}
+										<button type="button" onclick={() => updateBlockMotion(selectedBlock.id, null)} class="w-full rounded border px-2 py-1 text-xs hover:bg-[var(--surface)]" style="border-color: var(--color-border); color: var(--color-muted)">
 											{t('landing.motion_reset', 'Reset animation')}
 										</button>
 									{/if}

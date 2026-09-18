@@ -20,9 +20,10 @@ import (
 var _ = content.Slugify
 
 // GuideContentStore is the persistence surface for the GuideContentPromoter,
-// which handles the 7 pure guide content type domains (travel_routes,
+// which handles the pure guide content type domains (travel_routes,
 // grants, admission, banking, work_career, health_insurance,
-// culture_lifestyle). These domains have no standalone projection table —
+// culture_lifestyle, internship, import_export). These domains have no
+// standalone projection table —
 // the promoter creates a contents row (content_type='guide',
 // guide_category=<category>) and the extraction is the projection. The
 // intel_record itself carries the confidence/freshness/editorial_overrides
@@ -46,8 +47,9 @@ type GuideContentTxStore interface {
 
 // GuideContentPromoter promotes guide content type intel_records into
 // contents rows (content_type='guide', guide_category=<category>). It
-// handles 7 domains: travel_routes, grants, admission, banking,
-// work_career, health_insurance, culture_lifestyle. Each domain is a
+// handles the pure guide domains: travel_routes, grants, admission,
+// banking, work_career, health_insurance, culture_lifestyle, internship,
+// import_export. Each domain is a
 // separate promoter instance with a different entityType + guideCategory.
 //
 // On the update path, the promoter re-extracts the body from the

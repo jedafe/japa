@@ -38,12 +38,21 @@ import GuestHeroDestinationsBlock from '../blocks/guest/GuestHeroDestinationsBlo
 import GuestHeroDestinationItemBlock from '../blocks/guest/GuestHeroDestinationItemBlock.svelte';
 import GuestHeroCommunityBlock from '../blocks/guest/GuestHeroCommunityBlock.svelte';
 import GuestHeroCommunityMemberBlock from '../blocks/guest/GuestHeroCommunityMemberBlock.svelte';
+import GuestHeroCtaItemBlock from '../blocks/guest/GuestHeroCtaItemBlock.svelte';
+import GuestHeroStatItemBlock from '../blocks/guest/GuestHeroStatItemBlock.svelte';
 import GuestCategoriesBlock from '../blocks/guest/GuestCategoriesBlock.svelte';
+import GuestCategoryItemBlock from '../blocks/guest/GuestCategoryItemBlock.svelte';
 import GuestOpportunitiesBlock from '../blocks/guest/GuestOpportunitiesBlock.svelte';
+import GuestOpportunityItemBlock from '../blocks/guest/GuestOpportunityItemBlock.svelte';
 import GuestStoriesBlock from '../blocks/guest/GuestStoriesBlock.svelte';
+import GuestStoryItemBlock from '../blocks/guest/GuestStoryItemBlock.svelte';
 import GuestToolsBlock from '../blocks/guest/GuestToolsBlock.svelte';
+import GuestToolItemBlock from '../blocks/guest/GuestToolItemBlock.svelte';
 import GuestNewsletterBlock from '../blocks/guest/GuestNewsletterBlock.svelte';
 import GuestFooterBlock from '../blocks/guest/GuestFooterBlock.svelte';
+import GuestFooterColumnBlock from '../blocks/guest/GuestFooterColumnBlock.svelte';
+import GuestFooterLinkBlock from '../blocks/guest/GuestFooterLinkBlock.svelte';
+import GuestFooterSocialBlock from '../blocks/guest/GuestFooterSocialBlock.svelte';
 
 export interface BlockMeta {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,12 +98,21 @@ export const blockRegistry: Record<Block['type'], BlockMeta> = {
   guest_hero_destination_item: { component: GuestHeroDestinationItemBlock, icon: 'Globe', label: 'Destination Item', category: 'guest' },
   guest_hero_community: { component: GuestHeroCommunityBlock, icon: 'Users', label: 'Hero Community', category: 'guest' },
   guest_hero_community_member: { component: GuestHeroCommunityMemberBlock, icon: 'User', label: 'Community Member', category: 'guest' },
+  guest_hero_cta_item: { component: GuestHeroCtaItemBlock, icon: 'MousePointerClick', label: 'Hero CTA', category: 'guest' },
+  guest_hero_stat_item: { component: GuestHeroStatItemBlock, icon: 'TrendingUp', label: 'Stat Item', category: 'guest' },
   guest_categories: { component: GuestCategoriesBlock, icon: 'Grid2x2', label: 'Guest Categories', category: 'guest' },
+  guest_category_item: { component: GuestCategoryItemBlock, icon: 'Tag', label: 'Category Item', category: 'guest' },
   guest_opportunities: { component: GuestOpportunitiesBlock, icon: 'Briefcase', label: 'Guest Opportunities', category: 'guest' },
+  guest_opportunity_item: { component: GuestOpportunityItemBlock, icon: 'Star', label: 'Opportunity Item', category: 'guest' },
   guest_stories: { component: GuestStoriesBlock, icon: 'BookOpen', label: 'Guest Stories', category: 'guest' },
+  guest_story_item: { component: GuestStoryItemBlock, icon: 'Quote', label: 'Story Item', category: 'guest' },
   guest_tools: { component: GuestToolsBlock, icon: 'Wrench', label: 'Guest Tools', category: 'guest' },
+  guest_tool_item: { component: GuestToolItemBlock, icon: 'Hammer', label: 'Tool Item', category: 'guest' },
   guest_newsletter: { component: GuestNewsletterBlock, icon: 'Mail', label: 'Guest Newsletter', category: 'guest' },
   guest_footer: { component: GuestFooterBlock, icon: 'PanelBottom', label: 'Guest Footer', category: 'guest' },
+  guest_footer_column: { component: GuestFooterColumnBlock, icon: 'List', label: 'Footer Column', category: 'guest' },
+  guest_footer_link: { component: GuestFooterLinkBlock, icon: 'Link', label: 'Footer Link', category: 'guest' },
+  guest_footer_social: { component: GuestFooterSocialBlock, icon: 'Share2', label: 'Footer Social', category: 'guest' },
   custom: { component: CustomBlock, icon: 'Puzzle', label: 'Custom Block', category: 'custom' },
   widget: { component: WidgetBlock, icon: 'LayoutDashboard', label: 'Widget', category: 'data' },
 };

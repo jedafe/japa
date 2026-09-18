@@ -44,13 +44,57 @@
   const delayMs = $derived(motion?.delay ?? 0);
   const threshold = $derived(motion?.threshold ?? 0.1);
   const once = $derived(motion?.once ?? true);
+  const stagger = $derived(!!motion?.stagger_children && preset !== 'none');
+  const staggerDelay = $derived(motion?.stagger_delay ?? 80);
 
   const hiddenClass = $derived(hiddenStates[preset] ?? '');
-  const stateClass = $derived(preset === 'none' ? '' : (visible ? visibleState : hiddenClass));
+  const stateClass = $derived(preset === 'none' || stagger ? '' : (visible ? visibleState : hiddenClass));
   const transitionStyle = $derived(
-    preset === 'none' ? '' :
+    preset === 'none' || stagger ? '' :
     `transition: opacity ${durationMs}ms ${easing} ${delayMs}ms, transform ${durationMs}ms ${easing} ${delayMs}ms, filter ${durationMs}ms ${easing} ${delayMs}ms;`
   );
+
+  // In stagger mode the animation is applied per child element inside the
+  // block's content, each offset by `stagger_delay`. Descend single-child
+  // wrapper chains so the stagger hits the repeated items (cards, list
+  // rows, columns) rather than layout wrappers.
+  function staggerTargets(): HTMLElement[] {
+    if (!el) return [];
+    const shell = el.firstElementChild as HTMLElement | null;
+    if (!shell) return [];
+    const content = shell.lastElementChild as HTMLElement | null;
+    if (!content) return [];
+    let node = content;
+    while (node.children.length === 1 && node.firstElementChild instanceof HTMLElement) {
+      node = node.firstElementChild as HTMLElement;
+    }
+    const targets = Array.from(node.children) as HTMLElement[];
+    return targets.length > 0 ? targets : [node];
+  }
+
+  function applyStagger() {
+    if (!stagger || !el) return;
+    const hidden = hiddenClass.split(' ').filter(Boolean);
+    const shown = visibleState.split(' ').filter(Boolean);
+    staggerTargets().forEach((t, i) => {
+      const d = delayMs + i * staggerDelay;
+      t.style.transition = `opacity ${durationMs}ms ${easing} ${d}ms, transform ${durationMs}ms ${easing} ${d}ms, filter ${durationMs}ms ${easing} ${d}ms`;
+      t.style.willChange = 'transform';
+      if (visible) {
+        t.classList.remove(...hidden);
+        t.classList.add(...shown);
+      } else {
+        t.classList.remove(...shown);
+        t.classList.add(...hidden);
+      }
+    });
+  }
+
+  $effect(() => {
+    // Re-apply whenever the visible flag flips (or stagger config changes).
+    void visible;
+    applyStagger();
+  });
 
   onMount(() => {
     if (!el) return;
@@ -81,6 +125,6 @@
   });
 </script>
 
-<div bind:this={el} class="{stateClass} {preset === 'none' ? '' : 'will-change-transform'}" style={transitionStyle}>
+<div bind:this={el} class="{stateClass} {preset === 'none' || stagger ? '' : 'will-change-transform'}" style={transitionStyle}>
   {@render children()}
 </div>

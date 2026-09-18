@@ -6,6 +6,8 @@
   import BlockShell from '../../shell/BlockShell.svelte';
   import { resolveAssetUrl } from '../../assetBase';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
+  import { responsiveVisibilityCss } from '../../shell/styleToCss';
+  import ScopedCss from '../../shell/ScopedCss.svelte';
 
   interface Props {
     props: GuestHeroImageProps;
@@ -104,7 +106,12 @@
     if (!meta || !isBlockVisible(block, geoCountry)) return null;
     return { Component: meta.component, style: childStyle(block) };
   }
+
+  // Per-device visibility rules for overlay children (scopeKey = child.id).
+  const visibilityCss = $derived(responsiveVisibilityCss(children));
 </script>
+
+<ScopedCss css={visibilityCss} />
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
 <div class="hero-image-wrap" {id}>
@@ -124,7 +131,7 @@
     {@const r = renderableComponent(child)}
     {#if r}
       {@const Component = r.Component}
-      <BlockShell style={r.style} motion={child.motion} background={child.style?.background} hideIfEmpty={child.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(child)}>
+      <BlockShell style={r.style} motion={child.motion} background={child.style?.background} hideIfEmpty={child.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(child)} scopeKey={child.id}>
         <Component props={child.props} {fetchCtx} {geoCountry} id={child.id} />
       </BlockShell>
     {/if}

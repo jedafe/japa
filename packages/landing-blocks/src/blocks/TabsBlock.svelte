@@ -1,15 +1,25 @@
 <script lang="ts">
   import type { TabsProps } from '../types';
+  import type { FetchContext } from '../data/types';
   import type { Component } from 'svelte';
   import { Tabs } from 'bits-ui';
   import * as LucideIcons from 'lucide-svelte';
   import { blockRegistry } from '../render/blockRegistry';
+  import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
+  import ScopedCss from '../shell/ScopedCss.svelte';
+  import { responsiveVisibilityCss } from '../shell/styleToCss';
 
   interface Props {
     props: TabsProps;
+    fetchCtx?: FetchContext;
+    geoCountry?: string;
+    id?: string;
   }
-  let { props }: Props = $props();
+  let { props, fetchCtx, geoCountry }: Props = $props();
+
+  const allNested = $derived(props.tabs.flatMap((tab) => tab.content_blocks ?? []));
+  const visibilityCss = $derived(responsiveVisibilityCss(allNested));
 
   function getIcon(name?: string): Component | null {
     if (!name) return null;
@@ -17,6 +27,8 @@
     return (found as Component) ?? null;
   }
 </script>
+
+<ScopedCss css={visibilityCss} />
 
 <section class="px-6 py-16">
   <div class="mx-auto max-w-5xl">
@@ -47,12 +59,23 @@
         <Tabs.Content value={String(i)} class={props.orientation === 'vertical' ? 'flex-1 p-4' : 'pt-4'}>
           {#if tab.content_blocks}
             {#each tab.content_blocks as block (block.id)}
-              {#if block.visible}
+              {#if isBlockVisible(block, geoCountry)}
                 {@const meta = blockRegistry[block.type]}
                 {#if meta}
-                  <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
-                    {@const Component = meta.component}
-                    <Component props={block.props} />
+                  {@const Component = meta.component}
+                  <BlockShell
+                    style={block.style}
+                    motion={block.motion}
+                    background={block.style?.background}
+                    hideIfEmpty={block.visibility_rules?.hide_if_empty}
+                    initialHasContent={!isBlockEmpty(block)}
+                    scopeKey={block.id}
+                  >
+                    {#if block.type === 'custom'}
+                      <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+                    {:else}
+                      <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+                    {/if}
                   </BlockShell>
                 {/if}
               {/if}

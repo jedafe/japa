@@ -3,7 +3,7 @@
   import type { FetchContext } from '../data/types';
   import { blockRegistry } from './blockRegistry';
   import BlockShell from '../shell/BlockShell.svelte';
-  import { isBlockVisible, isBlockEmpty } from './blockVisibility';
+  import { isBlockVisible, isBlockEmpty, containsGuestBlocks } from './blockVisibility';
   import { setGuestHomeData } from '../data/guestHomeContext';
   import GuestBlockStyles from '../blocks/guest/GuestBlockStyles.svelte';
 
@@ -24,7 +24,7 @@
   // Load the shared guest-block stylesheet only when at least one guest_*
   // block is on the page, so the split guest blocks render with the same
   // visual styling as the legacy monolithic block.
-  const hasGuestBlocks = $derived(blocks.some((b) => b.type.startsWith('guest_')));
+  const hasGuestBlocks = $derived(containsGuestBlocks(blocks));
 
   // Generate per-device visibility CSS for top-level blocks.
   // Uses @container queries so they respond to the preview container width
@@ -66,7 +66,7 @@
       {@const meta = blockRegistry[block.type]}
       {#if meta}
         <div data-rv={block.id}>
-          <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
+          <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
             {@const Component = meta.component}
             {#if block.type === 'custom'}
               <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />

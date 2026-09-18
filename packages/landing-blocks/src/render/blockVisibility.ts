@@ -25,6 +25,8 @@ const contentFields = new Set<string>([
   'poster',
   'name',
   'image_url',
+  'label',
+  'value',
 ]);
 
 /** Block types that load their content dynamically. */
@@ -93,6 +95,36 @@ export function isBlockEmpty(block: Block): boolean {
   }
 
   return true;
+}
+
+/** All nested block arrays on a block — props.children plus the
+ *  accordion/tabs/carousel child slots (items[].content_blocks,
+ *  tabs[].content_blocks, slides). */
+function nestedBlocks(b: Block): Block[] {
+  const p = (b as { props?: Record<string, unknown> }).props;
+  if (!p) return [];
+  const out: Block[] = [...((p.children as Block[] | undefined) ?? [])];
+  for (const item of (p.items as Array<{ content_blocks?: Block[] }> | undefined) ?? []) {
+    out.push(...(item?.content_blocks ?? []));
+  }
+  for (const tab of (p.tabs as Array<{ content_blocks?: Block[] }> | undefined) ?? []) {
+    out.push(...(tab?.content_blocks ?? []));
+  }
+  out.push(...((p.slides as Block[] | undefined) ?? []));
+  return out;
+}
+
+/**
+ * Whether a block tree contains any `guest_*` block at any depth. Used to
+ * decide whether guest styles and guest-home context data need to load —
+ * standalone guest blocks (not wrapped in `guest_home`) still consume them.
+ */
+export function containsGuestBlocks(blocks: Block[]): boolean {
+  return blocks.some(
+    (b) =>
+      b.type.startsWith('guest_') ||
+      containsGuestBlocks(nestedBlocks(b))
+  );
 }
 
 /** Determine whether the current geo context passes the rule. */

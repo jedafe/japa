@@ -389,6 +389,12 @@ var credentialPathwayPrompt string
 //go:embed prompts/culture_lifestyle.txt
 var cultureLifestylePrompt string
 
+//go:embed prompts/internship.txt
+var internshipPrompt string
+
+//go:embed prompts/import_export.txt
+var importExportPrompt string
+
 //go:embed prompts/news.txt
 var newsPrompt string
 
@@ -409,6 +415,8 @@ var promptTemplates = map[string]string{
 	schemas.EntityTypeWorkCareer:        workCareerPrompt,
 	schemas.EntityTypeHealthInsurance:   healthInsurancePrompt,
 	schemas.EntityTypeCultureLifestyle:  cultureLifestylePrompt,
+	schemas.EntityTypeInternship:        internshipPrompt,
+	schemas.EntityTypeImportExport:      importExportPrompt,
 	schemas.EntityTypeCredentialPathway: credentialPathwayPrompt,
 	schemas.EntityTypeNews:              newsPrompt,
 }

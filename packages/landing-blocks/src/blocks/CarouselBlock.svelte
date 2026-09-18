@@ -1,17 +1,25 @@
 <script lang="ts">
-  import type { CarouselProps, Block } from '../types';
+  import type { CarouselProps } from '../types';
+  import type { FetchContext } from '../data/types';
   import { blockRegistry } from '../render/blockRegistry';
+  import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
+  import ScopedCss from '../shell/ScopedCss.svelte';
+  import { responsiveVisibilityCss } from '../shell/styleToCss';
 
   interface Props {
     props: CarouselProps;
+    fetchCtx?: FetchContext;
+    geoCountry?: string;
+    id?: string;
   }
-  let { props }: Props = $props();
+  let { props, fetchCtx, geoCountry }: Props = $props();
 
   let current = $state(0);
   let paused = $state(false);
 
   const slideCount = $derived(props.slides.length);
+  const visibilityCss = $derived(responsiveVisibilityCss(props.slides));
 
   function next() {
     current = (current + 1) % slideCount;
@@ -31,6 +39,8 @@
   });
 </script>
 
+<ScopedCss css={visibilityCss} />
+
 <div
   class="relative overflow-hidden px-6 py-16"
   role="region"
@@ -42,14 +52,27 @@
     <div class="relative overflow-hidden rounded-[var(--radius-card)]">
       {#each props.slides as slide, i}
         {@const meta = blockRegistry[slide.type]}
-        <div
-          class="transition-opacity duration-500 {i === current ? 'opacity-100' : 'absolute inset-0 opacity-0'}"
-        >
-          {#if meta}
-            {@const Component = meta.component}
-            <Component props={slide.props} />
-          {/if}
-        </div>
+        {#if isBlockVisible(slide, geoCountry) && meta}
+          {@const Component = meta.component}
+          <div
+            class="transition-opacity duration-500 {i === current ? 'opacity-100' : 'absolute inset-0 opacity-0 pointer-events-none'}"
+          >
+            <BlockShell
+              style={slide.style}
+              motion={slide.motion}
+              background={slide.style?.background}
+              hideIfEmpty={slide.visibility_rules?.hide_if_empty}
+              initialHasContent={!isBlockEmpty(slide)}
+              scopeKey={slide.id}
+            >
+              {#if slide.type === 'custom'}
+                <Component props={slide.props} blockDefId={slide.block_def_id} {fetchCtx} {geoCountry} id={slide.id} />
+              {:else}
+                <Component props={slide.props} {fetchCtx} {geoCountry} id={slide.id} />
+              {/if}
+            </BlockShell>
+          </div>
+        {/if}
       {/each}
     </div>
 

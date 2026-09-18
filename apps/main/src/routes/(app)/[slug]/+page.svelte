@@ -5,4 +5,4 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<PublishedPageView page={data.page} />
+<PublishedPageView page={data.page} guestHome={data.home} />

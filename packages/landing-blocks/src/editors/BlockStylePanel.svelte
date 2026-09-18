@@ -136,6 +136,7 @@
   const heightOpts: Opt[] = [{ value: 'auto', label: 'Auto' }, { value: 'full', label: 'Full' }];
   const displayOpts: Opt[] = [{ value: 'block', label: 'Block' }, { value: 'flex', label: 'Flex' }, { value: 'grid', label: 'Grid' }, { value: 'inline-flex', label: 'Inline Flex' }, { value: 'inline-block', label: 'Inline Block' }, { value: 'hidden', label: 'Hidden' }];
   const flexDirectionOpts: Opt[] = [{ value: 'row', label: 'Row' }, { value: 'column', label: 'Column' }, { value: 'row-reverse', label: 'Row Reverse' }, { value: 'column-reverse', label: 'Column Reverse' }];
+  const flexWrapOpts: Opt[] = [{ value: 'nowrap', label: 'No Wrap' }, { value: 'wrap', label: 'Wrap' }, { value: 'wrap-reverse', label: 'Wrap Reverse' }];
   const alignOpts: Opt[] = [{ value: 'start', label: 'Start' }, { value: 'center', label: 'Center' }, { value: 'end', label: 'End' }, { value: 'stretch', label: 'Stretch' }, { value: 'baseline', label: 'Baseline' }];
   const justifyOpts: Opt[] = [{ value: 'start', label: 'Start' }, { value: 'center', label: 'Center' }, { value: 'end', label: 'End' }, { value: 'between', label: 'Between' }, { value: 'around', label: 'Around' }, { value: 'evenly', label: 'Evenly' }];
   const gapOpts: Opt[] = ['none', 'xs', 'sm', 'md', 'lg', 'xl', '2xl'].map((v) => ({ value: v, label: v === 'none' ? 'None' : v.toUpperCase() }));
@@ -167,6 +168,7 @@
     { label: 'Height', key: 'height', options: heightOpts },
     { label: 'Display', key: 'display', options: displayOpts },
     { label: 'Flex Direction', key: 'flex_direction', options: flexDirectionOpts },
+    { label: 'Flex Wrap', key: 'flex_wrap', options: flexWrapOpts },
     { label: 'Align Items', key: 'align_items', options: alignOpts },
     { label: 'Justify Content', key: 'justify_content', options: justifyOpts },
     { label: 'Gap', key: 'gap', options: gapOpts },
@@ -176,6 +178,7 @@
     { label: 'Heading Size', key: 'heading_size', options: sizeOpts },
     { label: 'Heading Weight', key: 'heading_weight', options: weightOpts },
     { label: 'Heading Family', key: 'heading_family', options: familyOpts },
+    { label: 'Body Family', key: 'body_family', options: familyOpts },
     { label: 'Body Size', key: 'body_size', options: bodySizeOpts },
     { label: 'Body Weight', key: 'body_weight', options: weightOpts },
     { label: 'Text Align', key: 'text_align', options: textAlignOpts },
@@ -230,6 +233,17 @@
   <label class="block">
     <span class={labelClass}>{label}</span>
     <input type="number" value={(current as number) ?? ''} oninput={(e) => updateGroup(group, { [field]: e.currentTarget.value ? Number(e.currentTarget.value) : undefined })} {placeholder} class={inputClass} />
+  </label>
+{/snippet}
+
+{#snippet txt(label: string, group: keyof BlockStyle, field: string, current: unknown, placeholder?: string)}
+  <label class="block">
+    <span class={labelClass}>{label}</span>
+    <input type="text" value={(current as string | number) ?? ''} oninput={(e) => {
+      const v = e.currentTarget.value.trim();
+      const n = Number(v);
+      updateGroup(group, { [field]: v === '' ? undefined : (/^\d+(\.\d+)?$/.test(v) && Number.isFinite(n) ? n : v) });
+    }} {placeholder} class={inputClass} />
   </label>
 {/snippet}
 
@@ -309,6 +323,9 @@
       {@render dim('Height', 'layout', 'height', g('layout')['height'], '0')}
       {@render dim('Min Height', 'layout', 'min_height', g('layout')['min_height'], '0')}
       {@render dim('Max Height', 'layout', 'max_height', g('layout')['max_height'], '0')}
+      {@render txt('Grid Columns', 'layout', 'grid_template_columns', g('layout')['grid_template_columns'], '3 or 1fr 2fr')}
+      {@render txt('Grid Rows', 'layout', 'grid_template_rows', g('layout')['grid_template_rows'], 'auto or 100px 1fr')}
+      {@render num('Order', 'layout', 'order', g('layout')['order'], '0')}
       {@render resetBtn('Layout', ['layout'])}
     </Accordion.Content>
   </Accordion.Item>

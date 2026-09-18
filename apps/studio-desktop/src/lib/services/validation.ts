@@ -12,7 +12,8 @@ export const HIGH_STAKES_CATEGORIES = new Set([
 	'banking',
 	'grants',
 	'health_insurance',
-	'admission'
+	'admission',
+	'import_export'
 ]);
 
 export function isHighStakesCategory(category: string): boolean {
