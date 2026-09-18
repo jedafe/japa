@@ -3584,6 +3584,7 @@
 	"studio.prompts.none": "—",
 	"studio.prompts.builder": "Prompt builder",
 	"studio.prompts.tab.prompt": "Prompt",
+	"studio.prompts.tab.structure": "Structure",
 	"studio.prompts.generation": "Generation",
 	"studio.prompts.structure": "Structure",
 	"studio.prompts.mode": "Mode",

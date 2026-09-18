@@ -1,14 +1,16 @@
 <script lang="ts">
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §4 — right rail in
-	// the CreateRightPanel idiom. The "Prompt" tab holds all generation
-	// fields (tone + voice side by side, per the §105 wiring contract: tone
-	// is an inline prompt instruction, voice_id resolves to a shared persona
-	// voice whose voice_prompt is injected in operator mode). The remaining
-	// tabs reuse the composer's own panel components. All selects render as
-	// Autocomplete fields.
+	// the CreateRightPanel idiom: Prompt | Structure | Journey | Settings.
+	// The Prompt tab holds the generation fields — tone + voice sit side by
+	// side and voice options are filtered by the selected tone (per the
+	// §105 contract: tone is an inline prompt instruction, voice_id resolves
+	// to a shared persona voice whose voice_prompt is injected in operator
+	// mode). Structure carries the counts/links/toggles; Journey and
+	// Settings reuse the composer's own panels, with space/tags/status/
+	// field_values appended to Settings. All selects render as Autocomplete.
 	import { Tabs } from 'bits-ui';
 	import { t } from '$lib/i18n';
-	import type { MeSpace, Visibility, MediaAsset } from '$lib/types';
+	import type { MeSpace, Visibility } from '$lib/types';
 	import type { Persona, PromptFormValues, PromptMode, PromptTone, PromptFramework, HumanizeLevel } from '$lib/studio/types';
 	import {
 		MODE_OPTIONS,
@@ -24,7 +26,6 @@
 	import TagInput from '$lib/components/create/TagInput.svelte';
 	import CreateJourneyPanel from '$lib/components/create/panel/CreateJourneyPanel.svelte';
 	import CreateSettingsPanel from '$lib/components/create/panel/CreateSettingsPanel.svelte';
-	import CreateSeoPanel from '$lib/components/create/panel/CreateSeoPanel.svelte';
 
 	interface VoiceOption {
 		id: string;
@@ -77,7 +78,34 @@
 	const frameworkItems = FRAMEWORK_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
 	const humanizeItems = HUMANIZE_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
 	const personaItems = $derived(personas.map((p) => ({ id: p.id, label: p.profile_name })));
-	const voiceItems = $derived(voices.map((v) => ({ id: v.id, label: v.name })));
+
+	// Ref: apps/studio-desktop prompt page — voices are named for the tone
+	// they embody ("Professional", "Professional Warm", ...). The tone of a
+	// voice is inferred from its label prefix, and the Voice field only
+	// offers voices matching the selected Tone.
+	function voiceToneFromLabel(label: string): string {
+		const lower = label.toLowerCase();
+		for (const tone of TONE_OPTIONS) {
+			if (lower === tone.value || lower.startsWith(tone.value + ' ')) {
+				return tone.value;
+			}
+		}
+		return 'natural';
+	}
+
+	const voiceItems = $derived(
+		voices
+			.filter((v) => voiceToneFromLabel(v.name) === values.tone)
+			.map((v) => ({ id: v.id, label: v.name }))
+	);
+
+	$effect(() => {
+		// Keep voice consistent with tone — clear it when the selected tone
+		// no longer matches the chosen voice.
+		if (values.voice_id && !voiceItems.some((v) => v.id === values.voice_id)) {
+			values.voice_id = '';
+		}
+	});
 	const statusItems = $derived(
 		['draft', 'in_review', 'published', 'scheduled']
 			.filter((s) => !highStakes || (s !== 'published' && s !== 'scheduled'))
@@ -139,8 +167,8 @@
 		<Tabs.Trigger value="prompt" class="right-panel-tab">
 			{t('studio.prompts.tab.prompt', 'Prompt')}
 		</Tabs.Trigger>
-		<Tabs.Trigger value="guide" class="right-panel-tab">
-			{t('create.panel.guide')}
+		<Tabs.Trigger value="structure" class="right-panel-tab">
+			{t('studio.prompts.tab.structure', 'Structure')}
 		</Tabs.Trigger>
 		<Tabs.Trigger value="journey" class="right-panel-tab">
 			{t('create.panel.journey')}
@@ -148,15 +176,11 @@
 		<Tabs.Trigger value="settings" class="right-panel-tab">
 			{t('create.panel.settings')}
 		</Tabs.Trigger>
-		<Tabs.Trigger value="seo" class="right-panel-tab">
-			{t('create.panel.seo')}
-		</Tabs.Trigger>
 	</Tabs.List>
 
 	<Tabs.Content value="prompt" class="pt-2">
 		<div class="panel-stack">
 			{@render selectField(t('studio.prompts.mode', 'Mode'), modeItems, values.mode, (i) => (values.mode = i.id as PromptMode))}
-			{@render textField(t('studio.prompts.topic', 'Topic'), values.topic, (v) => (values.topic = v))}
 			{@render textField(t('studio.prompts.audience', 'Audience'), values.audience, (v) => (values.audience = v))}
 
 			{#if canPersona}
@@ -171,8 +195,11 @@
 
 			{@render selectField(t('studio.prompts.framework', 'Framework'), frameworkItems, values.framework, (i) => (values.framework = i.id as PromptFramework))}
 			{@render selectField(t('studio.prompts.humanize', 'Humanize'), humanizeItems, values.humanize_level, (i) => (values.humanize_level = i.id as HumanizeLevel))}
+		</div>
+	</Tabs.Content>
 
-			<h5 class="subsection">{t('studio.prompts.structure', 'Structure')}</h5>
+	<Tabs.Content value="structure" class="pt-2">
+		<div class="panel-stack">
 			<div class="pair">
 				{@render numField(t('studio.prompts.min_words', 'Min words'), values.min_words, (v) => (values.min_words = v))}
 				{@render numField(t('studio.prompts.heading_count', 'H2 headings'), values.heading_count, (v) => (values.heading_count = v))}
@@ -193,24 +220,6 @@
 				<label class="toggle"><input type="checkbox" bind:checked={values.include_steps} /> {t('studio.prompts.inc_steps', 'Steps')}</label>
 				<label class="toggle"><input type="checkbox" bind:checked={values.include_key_takeaways} /> {t('studio.prompts.inc_takeaways', 'Key takeaways')}</label>
 				<label class="toggle"><input type="checkbox" bind:checked={values.include_inline_image} /> {t('studio.prompts.inc_images', 'Image suggestions')}</label>
-			</div>
-		</div>
-	</Tabs.Content>
-
-	<Tabs.Content value="guide" class="pt-2">
-		<div class="panel-stack">
-			<div class="field-row">
-				<span class="field-label">{t('studio.prompts.space', 'Space')}</span>
-				<SpaceSelector
-					bind:spaces
-					{spaceIds}
-					onChange={(ids) => (values.space_id = ids[0] ?? '')}
-				/>
-			</div>
-
-			<div class="field-row">
-				<span class="field-label">{t('studio.prompts.tags_label', 'Tags')}</span>
-				<TagInput tags={values.tags} onTags={(next) => (values.tags = next)} {maxTags} />
 			</div>
 		</div>
 	</Tabs.Content>
@@ -248,6 +257,20 @@
 			onedit={noop}
 		/>
 		<div class="panel-stack">
+			<div class="field-row">
+				<span class="field-label">{t('studio.prompts.space', 'Space')}</span>
+				<SpaceSelector
+					bind:spaces
+					{spaceIds}
+					onChange={(ids) => (values.space_id = ids[0] ?? '')}
+				/>
+			</div>
+
+			<div class="field-row">
+				<span class="field-label">{t('studio.prompts.tags_label', 'Tags')}</span>
+				<TagInput tags={values.tags} onTags={(next) => (values.tags = next)} {maxTags} />
+			</div>
+
 			{@render selectField(t('studio.prompts.status', 'Status'), statusItems, values.status, (i) => (values.status = i.id))}
 			{#if highStakes}
 				<p class="hint warn">
@@ -277,27 +300,6 @@
 			</div>
 		</div>
 	</Tabs.Content>
-
-	<Tabs.Content value="seo" class="pt-2">
-		<CreateSeoPanel
-			metaTitle={values.meta_title || null}
-			metaDescription={values.meta_description || null}
-			ogImageUrl={values.og_image_url || null}
-			ogImagePreviewUrl={values.og_image_url || null}
-			seoIndexable={values.seo_indexable}
-			title={values.title}
-			slug={effectiveSlug}
-			canonicalUrl={values.canonical_url}
-			visibility={values.visibility}
-			bodyHtml=""
-			contentType={values.content_type}
-			onmetatitle={(v) => (values.meta_title = v ?? '')}
-			onmetadescription={(v) => (values.meta_description = v ?? '')}
-			onogimageselect={(asset: MediaAsset | null) => (values.og_image_url = asset?.url ?? '')}
-			onseoindexable={(v) => (values.seo_indexable = v)}
-			onedit={noop}
-		/>
-	</Tabs.Content>
 </Tabs.Root>
 
 <style>
@@ -325,14 +327,6 @@
 		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--color-muted);
-	}
-	.subsection {
-		margin: 0;
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--color-text);
-		border-top: 1px solid var(--color-border);
-		padding-top: 10px;
 	}
 	.field-input {
 		width: 100%;

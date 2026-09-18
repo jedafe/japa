@@ -1,15 +1,14 @@
 <script lang="ts">
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md — Prompts tab in
-	// the composer idiom: builder + import panel in the main column, the
-	// Guide|Journey|Settings|SEO inspector in the right rail — same layout
-	// contract as /studio/create.
+	// the composer idiom: content type / guide category / title / generated
+	// prompt / import panel in the main column, the Prompt|Structure|Journey|
+	// Settings inspector in the right rail — same contract as /studio/create.
 	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n';
-	import DefaultsBar from '$lib/components/studio/DefaultsBar.svelte';
 	import PromptBuilder from '$lib/components/studio/PromptBuilder.svelte';
 	import PromptRightPanel from '$lib/components/studio/PromptRightPanel.svelte';
 	import ImportPanel from '$lib/components/studio/ImportPanel.svelte';
-	import { loadStudioDefaults, type StudioWebDefaults } from '$lib/studio/defaults';
+	import { loadStudioDefaults } from '$lib/studio/defaults';
 	import {
 		DEFAULT_PROMPT_VALUES,
 		promptFromDefaults,
@@ -20,12 +19,12 @@
 	let { data }: { data: PageData } = $props();
 
 	let values = $state<PromptFormValues>(structuredClone(DEFAULT_PROMPT_VALUES));
-	let defaults = $state<StudioWebDefaults>({});
 
-	// Project defaults apply once on mount — before the user can interact —
-	// which satisfies "pre-fill only untouched fields" in practice.
+	// Saved project defaults pre-fill the form once on mount — before the
+	// user can interact — which satisfies "pre-fill only untouched fields"
+	// in practice.
 	onMount(() => {
-		defaults = loadStudioDefaults();
+		const defaults = loadStudioDefaults();
 		if (data.canPersona) {
 			values = promptFromDefaults(defaults);
 		} else {
@@ -52,7 +51,6 @@
 
 <div class="composer-grid">
 	<div class="composer-main">
-		<DefaultsBar bind:defaults contentTypes={data.contentTypes} spaces={data.spaces} />
 		<PromptBuilder
 			{values}
 			contentTypes={data.contentTypes}
