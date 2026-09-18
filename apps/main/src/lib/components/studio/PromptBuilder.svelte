@@ -1,20 +1,14 @@
 <script lang="ts">
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §4 — prompt builder
-	// rendered in the same composer idiom as CreateShell: composer-header with
-	// title + type select, guide-category Autocomplete, TitleField, then the
-	// generation field group and the live prompt preview. Metadata fields live
-	// in the right rail (PromptRightPanel).
+	// main window in composer idiom: composer-header (title + content type),
+	// guide-category Autocomplete, TitleField, generated prompt preview.
+	// All generation + metadata fields live in the right rail tabs
+	// (PromptRightPanel).
 	import { t } from '$lib/i18n';
 	import type { ContentTypeMeta } from '$lib/types';
 	import type { Persona, PromptFormValues } from '$lib/studio/types';
-	import {
-		TONE_OPTIONS,
-		FRAMEWORK_OPTIONS,
-		MODE_OPTIONS,
-		HUMANIZE_OPTIONS,
-		type StudioMode
-	} from '$lib/studio/types';
-	import { buildPrompt, buildProjectInstruction, defaultFrameworkFor, type PromptLookups } from '$lib/studio/prompt';
+	import { defaultFrameworkFor, buildPrompt, buildProjectInstruction, type PromptLookups } from '$lib/studio/prompt';
+	import type { StudioMode } from '$lib/studio/types';
 	import { isHighStakesCategory } from '$lib/studio/validation';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -47,9 +41,10 @@
 	const categories = $derived(selectedType?.categories ?? []);
 	const highStakes = $derived(isHighStakesCategory(values.guide_category));
 
-	const guideCategoryItems = $derived(
-		categories.map((c) => ({ id: c.Slug, label: c.Label }))
-	);
+	const typeItems = $derived(contentTypes.map((ct) => ({ id: ct.value, label: ct.label })));
+	const typeFetcher = $derived(staticAutocompleteFetcher(typeItems));
+
+	const guideCategoryItems = $derived(categories.map((c) => ({ id: c.Slug, label: c.Label })));
 	const guideCategoryFetcher = $derived(staticAutocompleteFetcher(guideCategoryItems));
 	const guideCategoryLabel = $derived(
 		categories.find((c) => c.Slug === values.guide_category)?.Label ?? ''
@@ -96,18 +91,20 @@
 
 <div class="composer-header">
 	<h2 class="composer-title">{t('studio.prompts.builder', 'Prompt builder')}</h2>
-	<select
-		class="composer-type-select"
-		value={values.content_type}
-		onchange={(e) => {
-			values.content_type = e.currentTarget.value;
-			values.guide_category = '';
-		}}
-	>
-		{#each contentTypes as ty (ty.value)}
-			<option value={ty.value}>{ty.label}</option>
-		{/each}
-	</select>
+	<div class="type-field">
+		<Autocomplete
+			placeholder={t('studio.prompts.content_type', 'Content type')}
+			emptyMessage={t('common.no_results', 'No results found')}
+			fetcher={typeFetcher}
+			initialFetcher={typeFetcher}
+			selectedId={values.content_type || null}
+			selectedLabel={selectedType?.label ?? ''}
+			onSelect={(item) => {
+				values.content_type = item.id;
+				values.guide_category = '';
+			}}
+		/>
+	</div>
 </div>
 
 {#if categories.length > 0}
@@ -131,107 +128,11 @@
 
 <TitleField title={values.title} onTitle={(v) => (values.title = v)} />
 
-<div class="composer-field-groups">
-	<h4 class="composer-field-group-title">{t('studio.prompts.generation', 'Generation')}</h4>
-
-	<div class="field-grid">
-		<div class="field-row">
-			<label class="field-label" for="pb-mode">{t('studio.prompts.mode', 'Mode')}</label>
-			<select id="pb-mode" bind:value={values.mode} class="field-input">
-				{#each MODE_OPTIONS as o (o.value)}
-					<option value={o.value}>{o.label}</option>
-				{/each}
-			</select>
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-topic">{t('studio.prompts.topic', 'Topic')}</label>
-			<input id="pb-topic" type="text" bind:value={values.topic} class="field-input" />
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-audience">{t('studio.prompts.audience', 'Audience')}</label>
-			<input id="pb-audience" type="text" bind:value={values.audience} class="field-input" />
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-tone">{t('studio.prompts.tone', 'Tone')}</label>
-			<select id="pb-tone" bind:value={values.tone} class="field-input">
-				{#each TONE_OPTIONS as o (o.value)}
-					<option value={o.value}>{o.label}</option>
-				{/each}
-			</select>
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-framework">{t('studio.prompts.framework', 'Framework')}</label>
-			<select
-				id="pb-framework"
-				bind:value={values.framework}
-				onchange={() => (frameworkTouched = true)}
-				class="field-input"
-			>
-				{#each FRAMEWORK_OPTIONS as o (o.value)}
-					<option value={o.value}>{o.label}</option>
-				{/each}
-			</select>
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-humanize">{t('studio.prompts.humanize', 'Humanize')}</label>
-			<select id="pb-humanize" bind:value={values.humanize_level} class="field-input">
-				{#each HUMANIZE_OPTIONS as o (o.value)}
-					<option value={o.value}>{o.label}</option>
-				{/each}
-			</select>
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-min-words">{t('studio.prompts.min_words', 'Min words')}</label>
-			<input id="pb-min-words" type="number" min="0" bind:value={values.min_words} class="field-input" />
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-headings">{t('studio.prompts.heading_count', 'H2 headings')}</label>
-			<input id="pb-headings" type="number" min="0" bind:value={values.heading_count} class="field-input" />
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-paras-heading">{t('studio.prompts.paragraphs_per_heading', 'Paragraphs per heading')}</label>
-			<input id="pb-paras-heading" type="number" min="0" bind:value={values.min_paragraphs_per_heading} class="field-input" />
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-paras">{t('studio.prompts.paragraph_count', 'Total paragraphs')}</label>
-			<input id="pb-paras" type="number" min="0" bind:value={values.paragraph_count} class="field-input" />
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-int-links">{t('studio.prompts.internal_links', 'Internal links')}</label>
-			<input id="pb-int-links" type="number" min="0" bind:value={values.internal_links} class="field-input" />
-		</div>
-
-		<div class="field-row">
-			<label class="field-label" for="pb-ext-links">{t('studio.prompts.external_links', 'External links')}</label>
-			<input id="pb-ext-links" type="number" min="0" bind:value={values.external_links} class="field-input" />
-		</div>
-	</div>
-
-	<div class="toggle-row">
-		<label class="toggle"><input type="checkbox" bind:checked={values.include_intro} /> {t('studio.prompts.inc_intro', 'Intro')}</label>
-		<label class="toggle"><input type="checkbox" bind:checked={values.include_conclusion} /> {t('studio.prompts.inc_conclusion', 'Conclusion')}</label>
-		<label class="toggle"><input type="checkbox" bind:checked={values.include_faqs} /> {t('studio.prompts.inc_faqs', 'FAQs')}</label>
-		<label class="toggle"><input type="checkbox" bind:checked={values.include_steps} /> {t('studio.prompts.inc_steps', 'Steps')}</label>
-		<label class="toggle"><input type="checkbox" bind:checked={values.include_key_takeaways} /> {t('studio.prompts.inc_takeaways', 'Key takeaways')}</label>
-		<label class="toggle"><input type="checkbox" bind:checked={values.include_inline_image} /> {t('studio.prompts.inc_images', 'Image suggestions')}</label>
-	</div>
-
-	{#if highStakes}
-		<p class="high-stakes-hint">
-			{t('studio.prompts.high_stakes', 'High-stakes category — saved as in_review regardless of selected status.')}
-		</p>
-	{/if}
-</div>
+{#if highStakes}
+	<p class="high-stakes-hint">
+		{t('studio.prompts.high_stakes', 'High-stakes category — saved as in_review regardless of selected status.')}
+	</p>
+{/if}
 
 <div class="composer-field-groups">
 	<div class="preview-header">
@@ -263,21 +164,9 @@
 		font-weight: 600;
 		color: var(--color-text);
 	}
-	.composer-type-select {
-		height: 2.375rem;
-		padding: 0 12px;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-size: 0.875rem;
-		outline: none;
-		cursor: pointer;
-		transition: border-color 0.15s, box-shadow 0.15s;
-	}
-	.composer-type-select:focus {
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	.type-field {
+		width: 15rem;
+		flex-shrink: 0;
 	}
 	.guide-category-selector {
 		display: flex;
@@ -302,49 +191,6 @@
 		margin: 0;
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: var(--color-text);
-	}
-	.field-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 12px;
-	}
-	.field-row {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-	.field-label {
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: var(--color-muted);
-	}
-	.field-input {
-		width: 100%;
-		height: 2.375rem;
-		padding: 0 14px;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-size: 0.875rem;
-		outline: none;
-		transition: border-color 0.15s, box-shadow 0.15s;
-	}
-	.field-input:focus {
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
-	}
-	.toggle-row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 1rem;
-	}
-	.toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 0.875rem;
 		color: var(--color-text);
 	}
 	.high-stakes-hint {
@@ -409,10 +255,5 @@
 		background: var(--color-surface-subtle);
 		font-size: 0.75rem;
 		color: var(--color-text);
-	}
-	@media (max-width: 640px) {
-		.field-grid {
-			grid-template-columns: 1fr;
-		}
 	}
 </style>
