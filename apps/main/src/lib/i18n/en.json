@@ -3604,6 +3604,8 @@
 	"studio.prompts.internal_links": "Internal links",
 	"studio.prompts.external_links": "External links",
 	"studio.prompts.space": "Space",
+	"studio.prompts.series": "Series",
+	"studio.prompts.audience_placeholder": "e.g. Nigerians relocating to Canada — defaults to general JapaConnect readers",
 	"studio.prompts.status": "Status",
 	"studio.prompts.visibility": "Visibility",
 	"studio.prompts.publish_at": "Publish at",

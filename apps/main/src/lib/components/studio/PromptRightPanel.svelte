@@ -10,7 +10,7 @@
 	// field_values appended to Settings. All selects render as Autocomplete.
 	import { Tabs } from 'bits-ui';
 	import { t } from '$lib/i18n';
-	import type { MeSpace, Visibility } from '$lib/types';
+	import type { MeSpace, BlogSeries } from '$lib/types';
 	import type { Persona, PromptFormValues, PromptMode, PromptTone, PromptFramework, HumanizeLevel } from '$lib/studio/types';
 	import {
 		MODE_OPTIONS,
@@ -18,14 +18,13 @@
 		FRAMEWORK_OPTIONS,
 		HUMANIZE_OPTIONS
 	} from '$lib/studio/types';
-	import { slugify } from '$lib/studio/prompt';
 	import { isHighStakesCategory } from '$lib/studio/validation';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import SpaceSelector from '$lib/components/create/SpaceSelector.svelte';
 	import TagInput from '$lib/components/create/TagInput.svelte';
+	import SeriesSelector from '$lib/components/create/panel/SeriesSelector.svelte';
 	import CreateJourneyPanel from '$lib/components/create/panel/CreateJourneyPanel.svelte';
-	import CreateSettingsPanel from '$lib/components/create/panel/CreateSettingsPanel.svelte';
 
 	interface VoiceOption {
 		id: string;
@@ -36,7 +35,8 @@
 	interface Props {
 		values: PromptFormValues;
 		spaces: MeSpace[];
-		visibilityOptions: { value: Visibility; label: string }[];
+		series: BlogSeries[];
+		assessmentDimensions: string[];
 		maxTags: number;
 		canPersona: boolean;
 		personas: Persona[];
@@ -46,7 +46,8 @@
 	let {
 		values = $bindable(),
 		spaces = $bindable(),
-		visibilityOptions,
+		series = $bindable(),
+		assessmentDimensions,
 		maxTags,
 		canPersona,
 		personas,
@@ -58,9 +59,6 @@
 	// Adapters between the prompt form's scalar fields and the composer's
 	// multi-value components.
 	const spaceIds = $derived(values.space_id ? [values.space_id] : []);
-	const effectiveSlug = $derived(
-		values.slug || slugify(values.title || values.topic || 'untitled')
-	);
 	const dimension = $derived(values.field_values.roadmap_dimension || null);
 	const purpose = $derived(values.field_values.roadmap_purpose || null);
 
@@ -150,13 +148,14 @@
 	</div>
 {/snippet}
 
-{#snippet textField(label: string, value: string, onInput: (v: string) => void)}
+{#snippet textField(label: string, value: string, onInput: (v: string) => void, placeholder = '')}
 	<div class="field-row">
 		<span class="field-label">{label}</span>
 		<input
 			type="text"
 			class="field-input"
 			{value}
+			{placeholder}
 			oninput={(e) => onInput(e.currentTarget.value)}
 		/>
 	</div>
@@ -181,7 +180,7 @@
 	<Tabs.Content value="prompt" class="pt-2">
 		<div class="panel-stack">
 			{@render selectField(t('studio.prompts.mode', 'Mode'), modeItems, values.mode, (i) => (values.mode = i.id as PromptMode))}
-			{@render textField(t('studio.prompts.audience', 'Audience'), values.audience, (v) => (values.audience = v))}
+			{@render textField(t('studio.prompts.audience', 'Audience'), values.audience, (v) => (values.audience = v), t('studio.prompts.audience_placeholder', 'e.g. Nigerians relocating to Canada — defaults to general JapaConnect readers'))}
 
 			{#if canPersona}
 				{@render selectField(t('studio.prompts.persona', 'Persona'), personaItems, values.persona_id, (i) => (values.persona_id = i.id))}
@@ -232,7 +231,7 @@
 			targetCountry={values.target_country || null}
 			{dimension}
 			{purpose}
-			assessmentDimensions={[]}
+			{assessmentDimensions}
 			onjourney={(v) => (values.journey_stage = v ?? '')}
 			onvisa={(v) => (values.visa_route = v ?? '')}
 			onsource={(v) => (values.source_country = v ?? '')}
@@ -244,19 +243,27 @@
 	</Tabs.Content>
 
 	<Tabs.Content value="settings" class="pt-2">
-		<CreateSettingsPanel
-			slug={effectiveSlug}
-			visibility={values.visibility as Visibility}
-			canonicalUrl={values.canonical_url}
-			publishAt={values.publish_at || null}
-			{visibilityOptions}
-			onslug={(v) => (values.slug = v)}
-			onvisibility={(v) => (values.visibility = v)}
-			oncanonical={(v) => (values.canonical_url = v)}
-			onpublishat={(v) => (values.publish_at = v ?? '')}
-			onedit={noop}
-		/>
 		<div class="panel-stack">
+			<div class="field-row">
+				<span class="field-label">{t('studio.prompts.series', 'Series')}</span>
+				<SeriesSelector
+					bind:series
+					seriesId={values.series_id || null}
+					onselect={(id) => (values.series_id = id ?? '')}
+				/>
+			</div>
+
+			<div class="field-row">
+				<label class="field-label" for="pp-publish-at">{t('studio.prompts.publish_at', 'Publish at')}</label>
+				<input
+					id="pp-publish-at"
+					type="datetime-local"
+					class="field-input"
+					value={values.publish_at}
+					oninput={(e) => (values.publish_at = e.currentTarget.value)}
+				/>
+			</div>
+
 			<div class="field-row">
 				<span class="field-label">{t('studio.prompts.space', 'Space')}</span>
 				<SpaceSelector

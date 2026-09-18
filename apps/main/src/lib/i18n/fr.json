@@ -3529,6 +3529,8 @@
 	"studio.prompts.internal_links": "Liens internes",
 	"studio.prompts.external_links": "Liens externes",
 	"studio.prompts.space": "Espace",
+	"studio.prompts.series": "Série",
+	"studio.prompts.audience_placeholder": "ex. Nigérians s'installant au Canada — par défaut : lecteurs JapaConnect généraux",
 	"studio.prompts.status": "Statut",
 	"studio.prompts.visibility": "Visibilité",
 	"studio.prompts.publish_at": "Publier le",
