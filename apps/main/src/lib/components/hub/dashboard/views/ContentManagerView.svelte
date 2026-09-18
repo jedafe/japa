@@ -185,10 +185,10 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 			return `/content/${item.slug}`;
 		}
 		if (item.content_type && (CREATE_ALLOWED_TYPES as readonly string[]).includes(item.content_type)) {
-			return `/create?type=${item.content_type}&draft=${item.id}`;
+			return `/studio/create?type=${item.content_type}&draft=${item.id}`;
 		}
 		// Fallback for unknown/legacy types — keep the previous behaviour.
-		return `/create?draft=${item.id}`;
+		return `/studio/create?draft=${item.id}`;
 	}
 
 	let deleteTarget = $state<string | null>(null);

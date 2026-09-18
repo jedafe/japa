@@ -212,7 +212,7 @@
 			</a>
 			{#if data.canEdit}
 				<a
-					href={`/create?draft=${article.id}`}
+					href={`/studio/create?draft=${article.id}`}
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
 				>
 					<Pencil size={14} /> {t('content.edit', 'Edit')}

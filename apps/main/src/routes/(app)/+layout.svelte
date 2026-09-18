@@ -13,7 +13,8 @@
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
-	// ADR-058 Exception #2: /create collapses the nav and hides the right sidebar.
+	// ADR-058 Exception #2: the composer (/studio/create) collapses the nav
+	// and hides the right sidebar.
 	const exception = $derived(isExceptionRoute(page.route.id));
 
 	// Section 09 Product Tour: ?tour=1 triggers the contextual walkthrough
@@ -41,9 +42,12 @@
 	const isDashboard = $derived(page.route.id?.startsWith('/(app)/dashboard') ?? false);
 
 	// ADR-058 Exception #1: content single pages (blog, content, guide,
-	// story, comparisons) still render the unified shell's left ad rail. /create
-	// is the exception exception: it owns its own layout and hides the left rail.
-	const isCreateRoute = $derived(page.route.id === '/(app)/create');
+	// story, comparisons) still render the unified shell's left ad rail. The
+	// composer is the exception exception: it owns its own layout and hides
+	// the left rail. Its canonical route is /studio/create; /create redirects.
+	const isCreateRoute = $derived(
+		page.route.id === '/(app)/studio/create' || page.route.id === '/(app)/create'
+	);
 
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));

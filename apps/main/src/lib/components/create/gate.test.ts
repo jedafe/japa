@@ -33,6 +33,7 @@ describe('statusLabel', () => {
 
 describe('isExceptionRoute', () => {
 	it('matches the create route', () => {
+		expect(isExceptionRoute('/(app)/studio/create')).toBe(true);
 		expect(isExceptionRoute('/(app)/create')).toBe(true);
 	});
 	it('matches CPT single routes including comparisons', () => {
