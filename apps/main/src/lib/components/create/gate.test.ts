@@ -44,6 +44,9 @@ describe('isExceptionRoute', () => {
 		expect(isExceptionRoute('/(app)/comparisons/[slug]')).toBe(true);
 		expect(isExceptionRoute('/(app)/story/[slug]')).toBe(true);
 	});
+	it('matches the video single route (§106)', () => {
+		expect(isExceptionRoute('/(app)/video/[slug]')).toBe(true);
+	});
 	it('does not match the home route', () => {
 		expect(isExceptionRoute('/(app)')).toBe(false);
 		expect(isExceptionRoute(null)).toBe(false);

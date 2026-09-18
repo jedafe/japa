@@ -43,5 +43,5 @@ export function isExceptionRoute(routeId: string | null): boolean {
 	// full-bleed surface in composer chrome — no left rail, no right
 	// sidebar, no mobile tab bar. (The /create route 308-redirects to
 	// /studio/create but is kept here for safety.)
-	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]' || routeId?.startsWith('/(app)/studio') === true;
+	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]' || routeId === '/(app)/video/[slug]' || routeId?.startsWith('/(app)/studio') === true;
 }
