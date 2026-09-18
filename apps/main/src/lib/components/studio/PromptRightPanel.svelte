@@ -44,7 +44,7 @@
 	}
 
 	let {
-		values,
+		values = $bindable(),
 		spaces = $bindable(),
 		visibilityOptions,
 		maxTags,
@@ -185,16 +185,16 @@
 
 			{#if canPersona}
 				{@render selectField(t('studio.prompts.persona', 'Persona'), personaItems, values.persona_id, (i) => (values.persona_id = i.id))}
-				<div class="pair">
-					{@render selectField(t('studio.prompts.tone', 'Tone'), toneItems, values.tone, (i) => (values.tone = i.id as PromptTone))}
-					{@render selectField(t('studio.prompts.voice', 'Voice'), voiceItems, values.voice_id, (i) => (values.voice_id = i.id))}
-				</div>
-			{:else}
-				{@render selectField(t('studio.prompts.tone', 'Tone'), toneItems, values.tone, (i) => (values.tone = i.id as PromptTone))}
+			{/if}
+			{@render selectField(t('studio.prompts.tone', 'Tone'), toneItems, values.tone, (i) => (values.tone = i.id as PromptTone))}
+			{#if canPersona}
+				{@render selectField(t('studio.prompts.voice', 'Voice'), voiceItems, values.voice_id, (i) => (values.voice_id = i.id))}
 			{/if}
 
-			{@render selectField(t('studio.prompts.framework', 'Framework'), frameworkItems, values.framework, (i) => (values.framework = i.id as PromptFramework))}
-			{@render selectField(t('studio.prompts.humanize', 'Humanize'), humanizeItems, values.humanize_level, (i) => (values.humanize_level = i.id as HumanizeLevel))}
+			<div class="pair">
+				{@render selectField(t('studio.prompts.framework', 'Framework'), frameworkItems, values.framework, (i) => (values.framework = i.id as PromptFramework))}
+				{@render selectField(t('studio.prompts.humanize', 'Humanize'), humanizeItems, values.humanize_level, (i) => (values.humanize_level = i.id as HumanizeLevel))}
+			</div>
 		</div>
 	</Tabs.Content>
 
@@ -303,8 +303,33 @@
 </Tabs.Root>
 
 <style>
-	/* Reuses the global right-panel-tabs/right-panel-tab classes defined by
-	 * CreateRightPanel — same visual contract. */
+	/* The right-panel-tabs/right-panel-tab globals are defined in
+	 * CreateRightPanel, but that component's CSS ships in the /studio/create
+	 * code-split chunk — duplicating them here so the prompts rail renders
+	 * the same chrome without a prefetch. */
+	:global(.right-panel-tabs) {
+		display: flex;
+		border-bottom: 1px solid var(--color-border);
+	}
+	:global(.right-panel-tab) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		padding: 10px 12px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-muted);
+		cursor: pointer;
+		transition: color 0.15s;
+	}
+	:global(.right-panel-tab:hover) {
+		color: var(--color-text);
+	}
+	:global([data-state='active'].right-panel-tab) {
+		color: var(--color-text);
+		border-bottom: 2px solid var(--color-primary);
+	}
 	.panel-stack {
 		display: flex;
 		flex-direction: column;

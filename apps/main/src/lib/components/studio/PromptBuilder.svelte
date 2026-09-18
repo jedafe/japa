@@ -30,7 +30,7 @@
 		spaceName: string;
 	}
 
-	let { values, contentTypes, canPersona, personas, voices, spaceName }: Props = $props();
+	let { values = $bindable(), contentTypes, canPersona, personas, voices, spaceName }: Props = $props();
 
 	const mode: StudioMode = $derived(canPersona ? 'operator' : 'member');
 
@@ -39,6 +39,12 @@
 
 	const selectedType = $derived(contentTypes.find((ct) => ct.value === values.content_type));
 	const categories = $derived(selectedType?.categories ?? []);
+	// The selector renders whenever the type declares categories — even when
+	// the admin hasn't configured any yet — so guide_category always has a
+	// path into the generated prompt (free-text slug as fallback).
+	const hasCategory = $derived(
+		selectedType?.has_category === true || categories.length > 0
+	);
 	const highStakes = $derived(isHighStakesCategory(values.guide_category));
 
 	const typeItems = $derived(contentTypes.map((ct) => ({ id: ct.value, label: ct.label })));
@@ -47,7 +53,7 @@
 	const guideCategoryItems = $derived(categories.map((c) => ({ id: c.Slug, label: c.Label })));
 	const guideCategoryFetcher = $derived(staticAutocompleteFetcher(guideCategoryItems));
 	const guideCategoryLabel = $derived(
-		categories.find((c) => c.Slug === values.guide_category)?.Label ?? ''
+		categories.find((c) => c.Slug === values.guide_category)?.Label ?? values.guide_category
 	);
 
 	$effect(() => {
@@ -107,7 +113,7 @@
 	</div>
 </div>
 
-{#if categories.length > 0}
+{#if hasCategory}
 	<div class="guide-category-selector">
 		<label for="guide-category" class="guide-category-label">
 			{t('studio.prompts.guide_category', 'Guide category')}
@@ -122,6 +128,7 @@
 			selectedLabel={guideCategoryLabel}
 			onSelect={(item) => { values.guide_category = item.id; }}
 			onClear={() => { values.guide_category = ''; }}
+			allowFreeText
 		/>
 	</div>
 {/if}
