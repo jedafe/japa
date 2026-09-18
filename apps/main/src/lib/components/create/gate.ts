@@ -39,7 +39,9 @@ export function statusLabel(status: ComposerStatus): string {
 export function isExceptionRoute(routeId: string | null): boolean {
 	// ADR-058 Exception #1: blog single & CPT singles collapse the left nav.
 	// /story/[slug] and /comparisons/[slug] are CPT singles (§79 / §30).
-	// ADR-058 Exception #2: the composer collapses the nav and hides the right
-	// sidebar. It lives at /studio/create (the /create route 308-redirects there).
-	return routeId === '/(app)/studio/create' || routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]';
+	// ADR-058 Exception #2: the whole /studio surface is a dedicated
+	// full-bleed surface in composer chrome — no left rail, no right
+	// sidebar, no mobile tab bar. (The /create route 308-redirects to
+	// /studio/create but is kept here for safety.)
+	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]' || routeId?.startsWith('/(app)/studio') === true;
 }

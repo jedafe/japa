@@ -6,20 +6,21 @@ import type { VideoImportJob } from '$lib/types';
 const STUDIO_CACHE_TAG = 'app:studio';
 
 /**
- * Video Studio page at /studio (Section 106, ADR-117).
+ * Video Studio page at /studio/videos (Section 106, ADR-117).
  * Auth-gated page where users start bulk YouTube channel/playlist/keyword
  * imports and monitor their progress.
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw redirect(307, '/login?redirect=/studio');
+		throw redirect(307, '/login?redirect=/studio/videos');
 	}
 
-	// Gate the whole studio on the public video.enabled setting (Rule 16).
+	// The video.enabled gate covers this subroute only — the rest of the
+	// /studio surface is available regardless (Rule 16).
 	const parent = await event.parent();
 	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
 	if (siteSettings['video.enabled'] !== true) {
-		throw redirect(307, '/create');
+		throw redirect(307, '/studio/create');
 	}
 
 	event.depends(STUDIO_CACHE_TAG);

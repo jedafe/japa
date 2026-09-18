@@ -142,14 +142,12 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl">
-	<div class="px-4 pt-3">
-		<p class="text-sm text-[var(--color-muted)]">
-			{t('studio.description', 'Bulk import YouTube channels, playlists, or keyword search results as video content.')}
-		</p>
-	</div>
+<div class="w-full">
+	<p class="mb-4 text-sm text-[var(--color-muted)]">
+		{t('studio.description', 'Bulk import YouTube channels, playlists, or keyword search results as video content.')}
+	</p>
 
-	<div class="p-4">
+	<div>
 		<!-- Tabs -->
 		<div class="mb-4 flex gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
 			{#each TABS as tdef (tdef.id)}

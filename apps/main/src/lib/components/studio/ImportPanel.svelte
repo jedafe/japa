@@ -170,7 +170,7 @@
 				</div>
 			{/if}
 
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3">
 				<label class={labelCls}>
 					{t('studio.prompts.title', 'Title')}
 					<input type="text" value={str('title')} oninput={(e) => { setStr('title', e.currentTarget.value); revalidate(); }} class={inputCls} />
