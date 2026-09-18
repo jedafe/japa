@@ -5,7 +5,8 @@
 	// All generation + metadata fields live in the right rail tabs
 	// (PromptRightPanel).
 	import { t } from '$lib/i18n';
-	import type { ContentTypeMeta } from '$lib/types';
+	import { api } from '$lib/api/client';
+	import type { ContentTypeMeta, CustomFieldGroup } from '$lib/types';
 	import type { Persona, PromptFormValues } from '$lib/studio/types';
 	import { defaultFrameworkFor, buildPrompt, buildProjectInstruction, type PromptLookups } from '$lib/studio/prompt';
 	import type { StudioMode } from '$lib/studio/types';
@@ -62,13 +63,37 @@
 		}
 	});
 
+	// Load category-specific custom field groups when a guide category is
+	// selected — the same endpoint the composer uses (Section 14). The
+	// schema is injected into the generated prompt so the agent knows
+	// which field_values keys the category expects.
+	let categoryFieldGroups = $state<CustomFieldGroup[]>([]);
+	let fieldGroupRequest = 0;
+	$effect(() => {
+		const cat = values.guide_category;
+		const type = values.content_type;
+		if (!cat || type !== 'guide') {
+			categoryFieldGroups = [];
+			return;
+		}
+		const token = ++fieldGroupRequest;
+		void (async () => {
+			const res = await api.get<CustomFieldGroup[]>(
+				`/custom-field-groups?entity_class=${encodeURIComponent('content_type:guide:' + cat)}`
+			);
+			if (token !== fieldGroupRequest) return;
+			categoryFieldGroups = res.error ? [] : (res.data ?? []);
+		})();
+	});
+
 	const lookups = $derived<PromptLookups>({
 		contentTypeName: selectedType?.label ?? '',
 		guideCategoryName: guideCategoryLabel,
 		personaName: personas.find((p) => p.id === values.persona_id)?.profile_name ?? '',
 		voiceName: voices.find((v) => v.id === values.voice_id)?.name ?? '',
 		voicePrompt: voices.find((v) => v.id === values.voice_id)?.voice_prompt,
-		spaceName
+		spaceName,
+		categoryFields: categoryFieldGroups.flatMap((g) => g.fields)
 	});
 
 	const promptText = $derived(buildPrompt(values, lookups, mode));
