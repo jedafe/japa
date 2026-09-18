@@ -138,16 +138,13 @@
 </script>
 
 <svelte:head>
-	<title>{t('studio.title', 'Studio — JapaConnect')}</title>
+	<title>{t('studio.tabs.videos', 'Videos')} — {t('studio.title', 'Studio — JapaConnect')}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Clapperboard size={20} /> {t('studio.heading', 'Studio')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">
+	<div class="px-4 pt-3">
+		<p class="text-sm text-[var(--color-muted)]">
 			{t('studio.description', 'Bulk import YouTube channels, playlists, or keyword search results as video content.')}
 		</p>
 	</div>
