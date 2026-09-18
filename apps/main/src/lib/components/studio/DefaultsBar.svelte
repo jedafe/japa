@@ -5,6 +5,8 @@
 	import type { ContentTypeMeta, MeSpace } from '$lib/types';
 	import type { StudioWebDefaults } from '$lib/studio/defaults';
 	import { saveStudioDefaults } from '$lib/studio/defaults';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import { ChevronDown, ChevronUp, Save } from 'lucide-svelte';
 
 	interface Props {
@@ -22,8 +24,19 @@
 		contentTypes.find((ct) => ct.value === defaults.default_content_type)?.categories ?? []
 	);
 
+	const typeItems = $derived(contentTypes.map((ct) => ({ id: ct.value, label: ct.label })));
+	const categoryItems = $derived(categories.map((c) => ({ id: c.Slug, label: c.Label })));
+	const spaceItems = $derived(spaces.map((s) => ({ id: s.id, label: s.name })));
+	const statusItems = ['draft', 'in_review', 'published', 'scheduled'].map((s) => ({ id: s, label: s }));
+	const visibilityItems = ['public', 'members', 'private'].map((v) => ({ id: v, label: v }));
+
 	const inputCls =
 		'rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]';
+	const emptyMsg = t('common.no_results', 'No results found');
+
+	function labelFor(items: { id: string; label: string }[], id: string): string {
+		return items.find((i) => i.id === id)?.label ?? '';
+	}
 
 	function save() {
 		saveStudioDefaults(defaults);
@@ -32,7 +45,28 @@
 	}
 </script>
 
-<div class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+{#snippet acField(
+	label: string,
+	items: { id: string; label: string }[],
+	selectedId: string,
+	onPick: (id: string) => void
+)}
+	<div class="flex flex-col gap-1 text-xs text-[var(--color-muted)]">
+		<span>{label}</span>
+		<Autocomplete
+			placeholder={label}
+			emptyMessage={emptyMsg}
+			fetcher={staticAutocompleteFetcher(items)}
+			initialFetcher={staticAutocompleteFetcher(items)}
+			selectedId={selectedId || null}
+			selectedLabel={labelFor(items, selectedId)}
+			onSelect={(item) => onPick(item.id)}
+			onClear={() => onPick('')}
+		/>
+	</div>
+{/snippet}
+
+<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 	<button
 		type="button"
 		onclick={() => (open = !open)}
@@ -45,57 +79,30 @@
 
 	{#if open}
 		<div class="flex flex-wrap items-end gap-3 border-t border-[var(--color-border)] px-4 py-3">
-			<label class="flex flex-col gap-1 text-xs text-[var(--color-muted)]">
-				{t('studio.prompts.content_type', 'Content type')}
-				<select bind:value={defaults.default_content_type} class={inputCls}>
-					<option value="">{t('studio.prompts.none', '—')}</option>
-					{#each contentTypes as ct (ct.value)}
-						<option value={ct.value}>{ct.label}</option>
-					{/each}
-				</select>
-			</label>
+			<div class="w-44">
+				{@render acField(t('studio.prompts.content_type', 'Content type'), typeItems, defaults.default_content_type ?? '', (id) => {
+					defaults.default_content_type = id;
+					defaults.default_guide_category = '';
+				})}
+			</div>
 
 			{#if categories.length > 0}
-				<label class="flex flex-col gap-1 text-xs text-[var(--color-muted)]">
-					{t('studio.prompts.guide_category', 'Guide category')}
-					<select bind:value={defaults.default_guide_category} class={inputCls}>
-						<option value="">{t('studio.prompts.none', '—')}</option>
-						{#each categories as cat (cat.Slug)}
-							<option value={cat.Slug}>{cat.Label}</option>
-						{/each}
-					</select>
-				</label>
+				<div class="w-44">
+					{@render acField(t('studio.prompts.guide_category', 'Guide category'), categoryItems, defaults.default_guide_category ?? '', (id) => (defaults.default_guide_category = id))}
+				</div>
 			{/if}
 
-			<label class="flex flex-col gap-1 text-xs text-[var(--color-muted)]">
-				{t('studio.prompts.space', 'Space')}
-				<select bind:value={defaults.default_space_id} class={inputCls}>
-					<option value="">{t('studio.prompts.none', '—')}</option>
-					{#each spaces as s (s.id)}
-						<option value={s.id}>{s.name}</option>
-					{/each}
-				</select>
-			</label>
+			<div class="w-44">
+				{@render acField(t('studio.prompts.space', 'Space'), spaceItems, defaults.default_space_id ?? '', (id) => (defaults.default_space_id = id))}
+			</div>
 
-			<label class="flex flex-col gap-1 text-xs text-[var(--color-muted)]">
-				{t('studio.prompts.status', 'Status')}
-				<select bind:value={defaults.default_status} class={inputCls}>
-					<option value="">{t('studio.prompts.none', '—')}</option>
-					{#each ['draft', 'in_review', 'published', 'scheduled'] as st (st)}
-						<option value={st}>{st}</option>
-					{/each}
-				</select>
-			</label>
+			<div class="w-40">
+				{@render acField(t('studio.prompts.status', 'Status'), statusItems, defaults.default_status ?? '', (id) => (defaults.default_status = id))}
+			</div>
 
-			<label class="flex flex-col gap-1 text-xs text-[var(--color-muted)]">
-				{t('studio.prompts.visibility', 'Visibility')}
-				<select bind:value={defaults.default_visibility} class={inputCls}>
-					<option value="">{t('studio.prompts.none', '—')}</option>
-					{#each ['public', 'members', 'private'] as v (v)}
-						<option value={v}>{v}</option>
-					{/each}
-				</select>
-			</label>
+			<div class="w-40">
+				{@render acField(t('studio.prompts.visibility', 'Visibility'), visibilityItems, defaults.default_visibility ?? '', (id) => (defaults.default_visibility = id))}
+			</div>
 
 			<label class="flex flex-col gap-1 text-xs text-[var(--color-muted)]">
 				{t('studio.prompts.tags', 'Tags (comma-separated)')}

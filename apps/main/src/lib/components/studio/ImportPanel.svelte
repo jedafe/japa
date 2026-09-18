@@ -8,6 +8,8 @@
 	import type { ContentTypeMeta, MeSpace, ContentRecord } from '$lib/types';
 	import { parseFrontmatter, buildMarkdown } from '$lib/studio/frontmatter';
 	import { validateFrontmatter, validateBody, isHighStakesCategory } from '$lib/studio/validation';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import { FileUp, CheckCircle2, AlertCircle, Copy, Check, Save } from 'lucide-svelte';
 
 	const STUDIO_PROMPTS_TAG = 'app:studio-prompts';
@@ -35,6 +37,20 @@
 	);
 	const highStakes = $derived(isHighStakesCategory(str('guide_category')));
 	const conflictingDraft = $derived(drafts.find((d) => d.slug && d.slug === str('slug')));
+
+	const typeItems = $derived(contentTypes.map((ct) => ({ id: ct.value, label: ct.label })));
+	const categoryItems = $derived(categories.map((c) => ({ id: c.Slug, label: c.Label })));
+	const spaceItems = $derived(spaces.map((s) => ({ id: s.id, label: s.name })));
+	const statusItems = $derived(
+		['draft', 'in_review', 'published', 'scheduled']
+			.filter((s) => !highStakes || (s !== 'published' && s !== 'scheduled'))
+			.map((s) => ({ id: s, label: s }))
+	);
+	const visibilityItems = ['public', 'members', 'private'].map((v) => ({ id: v, label: v }));
+
+	function labelFor(items: { id: string; label: string }[], id: string): string {
+		return items.find((i) => i.id === id)?.label ?? '';
+	}
 
 	function str(key: string): string {
 		const v = fm[key];
@@ -100,7 +116,32 @@
 		'mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]';
 	const labelCls = 'block text-xs font-medium text-[var(--color-muted)]';
 	const errCls = 'mt-1 text-xs text-[var(--color-danger)]';
+	const emptyMsg = t('common.no_results', 'No results found');
 </script>
+
+{#snippet acField(
+	label: string,
+	items: { id: string; label: string }[],
+	key: string,
+	onPick?: (id: string) => void
+)}
+	<div>
+		<span class={labelCls}>{label}</span>
+		<div class="mt-1">
+			<Autocomplete
+				placeholder={label}
+				emptyMessage={emptyMsg}
+				fetcher={staticAutocompleteFetcher(items)}
+				initialFetcher={staticAutocompleteFetcher(items)}
+				selectedId={str(key) || null}
+				selectedLabel={labelFor(items, str(key))}
+				onSelect={(item) => { setStr(key, item.id); onPick?.(item.id); revalidate(); }}
+				onClear={() => { setStr(key, ''); onPick?.(''); revalidate(); }}
+			/>
+		</div>
+		{#if errors[key]}<p class={errCls}>{errors[key]}</p>{/if}
+	</div>
+{/snippet}
 
 <div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 	<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
@@ -181,55 +222,13 @@
 					<input type="text" value={str('slug')} oninput={(e) => { setStr('slug', e.currentTarget.value); revalidate(); }} class={inputCls} />
 					{#if errors.slug}<p class={errCls}>{errors.slug}</p>{/if}
 				</label>
-				<label class={labelCls}>
-					{t('studio.prompts.content_type', 'Content type')}
-					<select value={str('content_type')} onchange={(e) => { setStr('content_type', e.currentTarget.value); setStr('guide_category', ''); revalidate(); }} class={inputCls}>
-						{#each contentTypes as ct (ct.value)}
-							<option value={ct.value}>{ct.label}</option>
-						{/each}
-					</select>
-					{#if errors.content_type}<p class={errCls}>{errors.content_type}</p>{/if}
-				</label>
+				{@render acField(t('studio.prompts.content_type', 'Content type'), typeItems, 'content_type', () => setStr('guide_category', ''))}
 				{#if categories.length > 0}
-					<label class={labelCls}>
-						{t('studio.prompts.guide_category', 'Guide category')}
-						<select value={str('guide_category')} onchange={(e) => { setStr('guide_category', e.currentTarget.value); revalidate(); }} class={inputCls}>
-							<option value="">{t('studio.prompts.none', '—')}</option>
-							{#each categories as cat (cat.Slug)}
-								<option value={cat.Slug}>{cat.Label}</option>
-							{/each}
-						</select>
-						{#if errors.guide_category}<p class={errCls}>{errors.guide_category}</p>{/if}
-					</label>
+					{@render acField(t('studio.prompts.guide_category', 'Guide category'), categoryItems, 'guide_category')}
 				{/if}
-				<label class={labelCls}>
-					{t('studio.prompts.space', 'Space')}
-					<select value={str('space_id')} onchange={(e) => { setStr('space_id', e.currentTarget.value); revalidate(); }} class={inputCls}>
-						<option value="">{t('studio.prompts.none', '—')}</option>
-						{#each spaces as s (s.id)}
-							<option value={s.id}>{s.name}</option>
-						{/each}
-					</select>
-					{#if errors.space_id}<p class={errCls}>{errors.space_id}</p>{/if}
-				</label>
-				<label class={labelCls}>
-					{t('studio.prompts.status', 'Status')}
-					<select value={str('status')} onchange={(e) => { setStr('status', e.currentTarget.value); revalidate(); }} class={inputCls}>
-						{#each ['draft', 'in_review', 'published', 'scheduled'] as st (st)}
-							<option value={st} disabled={highStakes && (st === 'published' || st === 'scheduled')}>{st}</option>
-						{/each}
-					</select>
-					{#if errors.status}<p class={errCls}>{errors.status}</p>{/if}
-				</label>
-				<label class={labelCls}>
-					{t('studio.prompts.visibility', 'Visibility')}
-					<select value={str('visibility')} onchange={(e) => { setStr('visibility', e.currentTarget.value); revalidate(); }} class={inputCls}>
-						{#each ['public', 'members', 'private'] as v (v)}
-							<option value={v}>{v}</option>
-						{/each}
-					</select>
-					{#if errors.visibility}<p class={errCls}>{errors.visibility}</p>{/if}
-				</label>
+				{@render acField(t('studio.prompts.space', 'Space'), spaceItems, 'space_id')}
+				{@render acField(t('studio.prompts.status', 'Status'), statusItems, 'status')}
+				{@render acField(t('studio.prompts.visibility', 'Visibility'), visibilityItems, 'visibility')}
 				<label class={labelCls}>
 					{t('studio.prompts.tags', 'Tags (comma-separated)')}
 					<input type="text" value={tagsText()} oninput={(e) => { fm = { ...fm, tags: e.currentTarget.value.split(',').map((x) => x.trim()).filter(Boolean) }; }} class={inputCls} />

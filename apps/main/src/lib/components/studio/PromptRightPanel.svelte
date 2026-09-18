@@ -1,15 +1,25 @@
 <script lang="ts">
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §4 — right rail in
-	// the CreateRightPanel idiom: same Guide | Journey | Settings | SEO tabs,
-	// reusing the composer's own panel components so the prompts tab looks
-	// and behaves like the composer. Status + field_values are appended to
-	// the Settings tab (the composer has no equivalent).
+	// the CreateRightPanel idiom. The "Prompt" tab holds all generation
+	// fields (tone + voice side by side, per the §105 wiring contract: tone
+	// is an inline prompt instruction, voice_id resolves to a shared persona
+	// voice whose voice_prompt is injected in operator mode). The remaining
+	// tabs reuse the composer's own panel components. All selects render as
+	// Autocomplete fields.
 	import { Tabs } from 'bits-ui';
 	import { t } from '$lib/i18n';
 	import type { MeSpace, Visibility, MediaAsset } from '$lib/types';
-	import type { Persona, PromptFormValues } from '$lib/studio/types';
+	import type { Persona, PromptFormValues, PromptMode, PromptTone, PromptFramework, HumanizeLevel } from '$lib/studio/types';
+	import {
+		MODE_OPTIONS,
+		TONE_OPTIONS,
+		FRAMEWORK_OPTIONS,
+		HUMANIZE_OPTIONS
+	} from '$lib/studio/types';
 	import { slugify } from '$lib/studio/prompt';
 	import { isHighStakesCategory } from '$lib/studio/validation';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import SpaceSelector from '$lib/components/create/SpaceSelector.svelte';
 	import TagInput from '$lib/components/create/TagInput.svelte';
 	import CreateJourneyPanel from '$lib/components/create/panel/CreateJourneyPanel.svelte';
@@ -59,10 +69,76 @@
 	}
 
 	const noop = () => {};
+	const emptyMsg = t('common.no_results', 'No results found');
+
+	// Static option lists → AutocompleteItem[] for the select-style fields.
+	const modeItems = MODE_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
+	const toneItems = TONE_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
+	const frameworkItems = FRAMEWORK_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
+	const humanizeItems = HUMANIZE_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
+	const personaItems = $derived(personas.map((p) => ({ id: p.id, label: p.profile_name })));
+	const voiceItems = $derived(voices.map((v) => ({ id: v.id, label: v.name })));
+	const statusItems = $derived(
+		['draft', 'in_review', 'published', 'scheduled']
+			.filter((s) => !highStakes || (s !== 'published' && s !== 'scheduled'))
+			.map((s) => ({ id: s, label: s }))
+	);
+
+	function labelFor(items: { id: string; label: string }[], id: string): string {
+		return items.find((i) => i.id === id)?.label ?? '';
+	}
 </script>
 
-<Tabs.Root value="guide">
+{#snippet selectField(
+	label: string,
+	items: AutocompleteItem[],
+	selectedId: string,
+	onPick: (item: AutocompleteItem) => void
+)}
+	<div class="field-row">
+		<span class="field-label">{label}</span>
+		<Autocomplete
+			placeholder={label}
+			emptyMessage={emptyMsg}
+			fetcher={staticAutocompleteFetcher(items)}
+			initialFetcher={staticAutocompleteFetcher(items)}
+			selectedId={selectedId || null}
+			selectedLabel={labelFor(items, selectedId)}
+			onSelect={onPick}
+		/>
+	</div>
+{/snippet}
+
+{#snippet numField(label: string, value: number, onInput: (v: number) => void)}
+	<div class="field-row">
+		<span class="field-label">{label}</span>
+		<input
+			type="number"
+			min="0"
+			class="field-input"
+			{value}
+			oninput={(e) => onInput(Number(e.currentTarget.value) || 0)}
+		/>
+	</div>
+{/snippet}
+
+{#snippet textField(label: string, value: string, onInput: (v: string) => void)}
+	<div class="field-row">
+		<span class="field-label">{label}</span>
+		<input
+			type="text"
+			class="field-input"
+			{value}
+			oninput={(e) => onInput(e.currentTarget.value)}
+		/>
+	</div>
+{/snippet}
+
+<Tabs.Root value="prompt">
 	<Tabs.List class="right-panel-tabs">
+		<Tabs.Trigger value="prompt" class="right-panel-tab">
+			{t('studio.prompts.tab.prompt', 'Prompt')}
+		</Tabs.Trigger>
 		<Tabs.Trigger value="guide" class="right-panel-tab">
 			{t('create.panel.guide')}
 		</Tabs.Trigger>
@@ -76,6 +152,50 @@
 			{t('create.panel.seo')}
 		</Tabs.Trigger>
 	</Tabs.List>
+
+	<Tabs.Content value="prompt" class="pt-2">
+		<div class="panel-stack">
+			{@render selectField(t('studio.prompts.mode', 'Mode'), modeItems, values.mode, (i) => (values.mode = i.id as PromptMode))}
+			{@render textField(t('studio.prompts.topic', 'Topic'), values.topic, (v) => (values.topic = v))}
+			{@render textField(t('studio.prompts.audience', 'Audience'), values.audience, (v) => (values.audience = v))}
+
+			{#if canPersona}
+				{@render selectField(t('studio.prompts.persona', 'Persona'), personaItems, values.persona_id, (i) => (values.persona_id = i.id))}
+				<div class="pair">
+					{@render selectField(t('studio.prompts.tone', 'Tone'), toneItems, values.tone, (i) => (values.tone = i.id as PromptTone))}
+					{@render selectField(t('studio.prompts.voice', 'Voice'), voiceItems, values.voice_id, (i) => (values.voice_id = i.id))}
+				</div>
+			{:else}
+				{@render selectField(t('studio.prompts.tone', 'Tone'), toneItems, values.tone, (i) => (values.tone = i.id as PromptTone))}
+			{/if}
+
+			{@render selectField(t('studio.prompts.framework', 'Framework'), frameworkItems, values.framework, (i) => (values.framework = i.id as PromptFramework))}
+			{@render selectField(t('studio.prompts.humanize', 'Humanize'), humanizeItems, values.humanize_level, (i) => (values.humanize_level = i.id as HumanizeLevel))}
+
+			<h5 class="subsection">{t('studio.prompts.structure', 'Structure')}</h5>
+			<div class="pair">
+				{@render numField(t('studio.prompts.min_words', 'Min words'), values.min_words, (v) => (values.min_words = v))}
+				{@render numField(t('studio.prompts.heading_count', 'H2 headings'), values.heading_count, (v) => (values.heading_count = v))}
+			</div>
+			<div class="pair">
+				{@render numField(t('studio.prompts.paragraphs_per_heading', 'Paras / heading'), values.min_paragraphs_per_heading, (v) => (values.min_paragraphs_per_heading = v))}
+				{@render numField(t('studio.prompts.paragraph_count', 'Total paras'), values.paragraph_count, (v) => (values.paragraph_count = v))}
+			</div>
+			<div class="pair">
+				{@render numField(t('studio.prompts.internal_links', 'Internal links'), values.internal_links, (v) => (values.internal_links = v))}
+				{@render numField(t('studio.prompts.external_links', 'External links'), values.external_links, (v) => (values.external_links = v))}
+			</div>
+
+			<div class="toggle-col">
+				<label class="toggle"><input type="checkbox" bind:checked={values.include_intro} /> {t('studio.prompts.inc_intro', 'Intro')}</label>
+				<label class="toggle"><input type="checkbox" bind:checked={values.include_conclusion} /> {t('studio.prompts.inc_conclusion', 'Conclusion')}</label>
+				<label class="toggle"><input type="checkbox" bind:checked={values.include_faqs} /> {t('studio.prompts.inc_faqs', 'FAQs')}</label>
+				<label class="toggle"><input type="checkbox" bind:checked={values.include_steps} /> {t('studio.prompts.inc_steps', 'Steps')}</label>
+				<label class="toggle"><input type="checkbox" bind:checked={values.include_key_takeaways} /> {t('studio.prompts.inc_takeaways', 'Key takeaways')}</label>
+				<label class="toggle"><input type="checkbox" bind:checked={values.include_inline_image} /> {t('studio.prompts.inc_images', 'Image suggestions')}</label>
+			</div>
+		</div>
+	</Tabs.Content>
 
 	<Tabs.Content value="guide" class="pt-2">
 		<div class="panel-stack">
@@ -92,27 +212,6 @@
 				<span class="field-label">{t('studio.prompts.tags_label', 'Tags')}</span>
 				<TagInput tags={values.tags} onTags={(next) => (values.tags = next)} {maxTags} />
 			</div>
-
-			{#if canPersona}
-				<div class="field-row">
-					<label class="field-label" for="pp-persona">{t('studio.prompts.persona', 'Persona')}</label>
-					<select id="pp-persona" bind:value={values.persona_id} class="field-input">
-						<option value="">{t('studio.prompts.none', '—')}</option>
-						{#each personas as p (p.id)}
-							<option value={p.id}>{p.profile_name}</option>
-						{/each}
-					</select>
-				</div>
-				<div class="field-row">
-					<label class="field-label" for="pp-voice">{t('studio.prompts.voice', 'Voice')}</label>
-					<select id="pp-voice" bind:value={values.voice_id} class="field-input">
-						<option value="">{t('studio.prompts.none', '—')}</option>
-						{#each voices as v (v.id)}
-							<option value={v.id}>{v.name}</option>
-						{/each}
-					</select>
-				</div>
-			{/if}
 		</div>
 	</Tabs.Content>
 
@@ -149,16 +248,7 @@
 			onedit={noop}
 		/>
 		<div class="panel-stack">
-			<div class="field-row">
-				<label class="field-label" for="pp-status">{t('studio.prompts.status', 'Status')}</label>
-				<select id="pp-status" bind:value={values.status} class="field-input">
-					{#each ['draft', 'in_review', 'published', 'scheduled'] as st (st)}
-						<option value={st} disabled={highStakes && (st === 'published' || st === 'scheduled')}>
-							{st}
-						</option>
-					{/each}
-				</select>
-			</div>
+			{@render selectField(t('studio.prompts.status', 'Status'), statusItems, values.status, (i) => (values.status = i.id))}
 			{#if highStakes}
 				<p class="hint warn">
 					{t('studio.prompts.high_stakes', 'High-stakes category — saved as in_review regardless of selected status.')}
@@ -219,15 +309,30 @@
 		gap: 12px;
 		padding: 0.5rem;
 	}
+	.pair {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+		align-items: start;
+	}
 	.field-row {
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
+		min-width: 0;
 	}
 	.field-label {
 		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--color-muted);
+	}
+	.subsection {
+		margin: 0;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text);
+		border-top: 1px solid var(--color-border);
+		padding-top: 10px;
 	}
 	.field-input {
 		width: 100%;
@@ -249,6 +354,18 @@
 		height: auto;
 		padding: 8px 14px;
 		font-family: inherit;
+	}
+	.toggle-col {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.875rem;
+		color: var(--color-text);
 	}
 	.hint {
 		font-size: 0.75rem;
