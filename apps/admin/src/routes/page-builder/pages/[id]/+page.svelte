@@ -486,17 +486,22 @@
 		if (!isContainerLike(withNewId)) return withNewId;
 		return mapChildSlots(withNewId, (children) => children.map(regenBlockIds));
 	}
+	/** Insert `copy` immediately after the block with `id`, at whatever depth
+	 *  and in whichever child slot that block lives. */
+	function insertAfterInTree(tree: Block[], id: string, copy: Block): Block[] {
+		return tree.flatMap((b) => {
+			if (b.id === id) return [b, copy];
+			if (isContainerLike(b)) {
+				return [mapChildSlots(b, (children) => insertAfterInTree(children, id, copy))];
+			}
+			return [b];
+		});
+	}
 	function duplicateBlock(id: string): void {
 		const block = findBlockInTree(blocks, id);
 		if (!block) return;
 		const copy = regenBlockIds(block);
-		// If the block is top-level, insert after it. Otherwise append to top level.
-		const idx = blocks.findIndex((b) => b.id === id);
-		if (idx >= 0) {
-			blocks = [...blocks.slice(0, idx + 1), copy, ...blocks.slice(idx + 1)];
-		} else {
-			blocks = [...blocks, copy];
-		}
+		blocks = insertAfterInTree(blocks, id, copy);
 		selectedBlockId = copy.id;
 		unsavedChanges = true;
 	}
