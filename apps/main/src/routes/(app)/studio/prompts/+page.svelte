@@ -3,7 +3,7 @@
 	// the composer idiom: content type / guide category / title / generated
 	// prompt / import panel in the main column, the Prompt|Structure|Journey|
 	// Settings inspector in the right rail — same contract as /studio/create.
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import PromptBuilder from '$lib/components/studio/PromptBuilder.svelte';
 	import PromptRightPanel from '$lib/components/studio/PromptRightPanel.svelte';
@@ -20,6 +20,11 @@
 
 	let values = $state<PromptFormValues>(structuredClone(DEFAULT_PROMPT_VALUES));
 
+	// Local reactive copy of the spaces list — SpaceSelector appends a newly
+	// created space via bind:, and load data is not a valid binding target.
+	let spaces = $state(untrack(() => data.spaces));
+	let series = $state(untrack(() => data.series));
+
 	// Saved project defaults pre-fill the form once on mount — before the
 	// user can interact — which satisfies "pre-fill only untouched fields"
 	// in practice.
@@ -35,7 +40,7 @@
 	});
 
 	const spaceName = $derived(
-		data.spaces.find((s) => s.id === values.space_id)?.name ?? ''
+		spaces.find((s) => s.id === values.space_id)?.name ?? ''
 	);
 	const maxTags = $derived(
 		typeof data.siteSettings?.['content.max_tags'] === 'number'
@@ -52,7 +57,7 @@
 <div class="composer-grid">
 	<div class="composer-main">
 		<PromptBuilder
-			{values}
+			bind:values
 			contentTypes={data.contentTypes}
 			canPersona={data.canPersona}
 			personas={data.personas}
@@ -61,16 +66,17 @@
 		/>
 		<ImportPanel
 			contentTypes={data.contentTypes}
-			spaces={data.spaces}
+			{spaces}
 			drafts={data.drafts}
 		/>
 	</div>
 
 	<aside class="composer-right">
 		<PromptRightPanel
-			{values}
-			bind:spaces={data.spaces}
-			visibilityOptions={data.visibilityOptions}
+			bind:values
+			bind:spaces
+			bind:series
+			assessmentDimensions={data.assessmentDimensions}
 			{maxTags}
 			canPersona={data.canPersona}
 			personas={data.personas}
