@@ -1,22 +1,48 @@
 <script lang="ts">
-	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md — Prompts tab:
-	// prompt builder (member mode) + paste-generated-output → draft. Uses
-	// the composer-grid layout (builder in the main column, import panel in
-	// the right rail) so the tab renders in the same surface as Create.
+	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md — Prompts tab in
+	// the composer idiom: builder + import panel in the main column, the
+	// Guide|Journey|Settings|SEO inspector in the right rail — same layout
+	// contract as /studio/create.
 	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import DefaultsBar from '$lib/components/studio/DefaultsBar.svelte';
 	import PromptBuilder from '$lib/components/studio/PromptBuilder.svelte';
+	import PromptRightPanel from '$lib/components/studio/PromptRightPanel.svelte';
 	import ImportPanel from '$lib/components/studio/ImportPanel.svelte';
 	import { loadStudioDefaults, type StudioWebDefaults } from '$lib/studio/defaults';
+	import {
+		DEFAULT_PROMPT_VALUES,
+		promptFromDefaults,
+		type PromptFormValues
+	} from '$lib/studio/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
+	let values = $state<PromptFormValues>(structuredClone(DEFAULT_PROMPT_VALUES));
 	let defaults = $state<StudioWebDefaults>({});
+
+	// Project defaults apply once on mount — before the user can interact —
+	// which satisfies "pre-fill only untouched fields" in practice.
 	onMount(() => {
 		defaults = loadStudioDefaults();
+		if (data.canPersona) {
+			values = promptFromDefaults(defaults);
+		} else {
+			// Member mode: persona/voice defaults are meaningless.
+			const { default_persona_id: _p, default_voice_id: _v, ...memberDefaults } = defaults;
+			values = promptFromDefaults(memberDefaults);
+		}
 	});
+
+	const spaceName = $derived(
+		data.spaces.find((s) => s.id === values.space_id)?.name ?? ''
+	);
+	const maxTags = $derived(
+		typeof data.siteSettings?.['content.max_tags'] === 'number'
+			? (data.siteSettings['content.max_tags'] as number)
+			: 5
+	);
 </script>
 
 <svelte:head>
@@ -28,19 +54,29 @@
 	<div class="composer-main">
 		<DefaultsBar bind:defaults contentTypes={data.contentTypes} spaces={data.spaces} />
 		<PromptBuilder
+			{values}
 			contentTypes={data.contentTypes}
-			spaces={data.spaces}
 			canPersona={data.canPersona}
 			personas={data.personas}
 			voices={data.voices}
+			{spaceName}
 		/>
-	</div>
-
-	<aside class="composer-right">
 		<ImportPanel
 			contentTypes={data.contentTypes}
 			spaces={data.spaces}
 			drafts={data.drafts}
+		/>
+	</div>
+
+	<aside class="composer-right">
+		<PromptRightPanel
+			{values}
+			bind:spaces={data.spaces}
+			visibilityOptions={data.visibilityOptions}
+			{maxTags}
+			canPersona={data.canPersona}
+			personas={data.personas}
+			voices={data.voices}
 		/>
 	</aside>
 </div>
