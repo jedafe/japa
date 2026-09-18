@@ -32,8 +32,12 @@ describe('statusLabel', () => {
 });
 
 describe('isExceptionRoute', () => {
-	it('matches the create route', () => {
+	it('matches the whole /studio surface', () => {
 		expect(isExceptionRoute('/(app)/studio/create')).toBe(true);
+		expect(isExceptionRoute('/(app)/studio/videos')).toBe(true);
+		expect(isExceptionRoute('/(app)/studio/prompts')).toBe(true);
+		expect(isExceptionRoute('/(app)/studio/contents')).toBe(true);
+		expect(isExceptionRoute('/(app)/studio')).toBe(true);
 		expect(isExceptionRoute('/(app)/create')).toBe(true);
 	});
 	it('matches CPT single routes including comparisons', () => {
