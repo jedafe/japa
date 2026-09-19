@@ -16,6 +16,17 @@
 
 	const jobs = $derived<VideoImportJob[]>(data.jobs);
 
+	// DB source_type → friendly label via the existing tab keys
+	// (youtube_channel/youtube_playlist/youtube_search, §106).
+	const sourceTypeLabel = (s: string): string => {
+		switch (s) {
+			case 'youtube_channel': return t('studio.tab.channel', 'Channel');
+			case 'youtube_playlist': return t('studio.tab.playlist', 'Playlist');
+			case 'youtube_search': return t('studio.tab.keyword', 'Keyword');
+			default: return s.replace(/_/g, ' ');
+		}
+	};
+
 	// §7 i18n — tab labels go through t() so they translate and react to
 	// locale switches ($derived re-evaluates when i18n.locale changes).
 	const TABS = $derived([
@@ -52,7 +63,14 @@
 		}
 	};
 
-	let pollInterval: ReturnType<typeof setInterval> | null = null;
+	// Live status overrides for in-flight jobs — the server load captures
+	// state at request time, so pending/running/processing jobs are polled
+	// until they reach a terminal status (§106 import history).
+	const ACTIVE_STATUSES = ['pending', 'running', 'processing'];
+	const TERMINAL_STATUSES = ['completed', 'failed', 'partial'];
+	let liveStatus = $state<Record<string, VideoImportJob>>({});
+	const displayJobs = $derived(jobs.map((j) => liveStatus[j.id] ?? j));
+	const activeJobs = $derived(jobs.filter((j) => ACTIVE_STATUSES.includes(j.status)));
 
 	async function doPreview() {
 		if (previewing) return;
@@ -92,7 +110,6 @@
 			} else if (r.data) {
 				result = { ok: true, job: r.data };
 				await invalidate(STUDIO_CACHE_TAG);
-				startPolling(r.data);
 			}
 		} catch (e) {
 			result = { error: 'retry_failed', message: e instanceof Error ? e.message : t('studio.retry_error', 'Retry failed') };
@@ -101,39 +118,33 @@
 		}
 	}
 
-	function startPolling(job: VideoImportJob) {
-		if (pollInterval) clearInterval(pollInterval);
-
-		pollInterval = setInterval(async () => {
-			const r = await api.get<VideoImportJob>(`/me/video-imports/${job.id}`);
-			if (r.error || !r.data) {
-				if (pollInterval) clearInterval(pollInterval);
-				return;
-			}
-
-			const updated = r.data;
-			result = { ok: true, job: updated };
-
-			if (['completed', 'failed', 'partial'].includes(updated.status)) {
-				if (pollInterval) clearInterval(pollInterval);
-				await invalidate(STUDIO_CACHE_TAG);
-			}
-		}, 3000);
-	}
-
 	function onTabChange(next: TabID) {
 		tab = next;
 		sourceUrl = '';
 		query = '';
+		// Stale state from the previous source type must not linger under
+		// the new tab's inputs.
+		preview = null;
+		result = null;
 	}
 
+	// Poll every in-flight job until terminal status — covers both jobs
+	// submitted in this session and ones already running on page load.
+	// When any job finishes, invalidate so the history re-fetches.
 	$effect(() => {
-		if (result?.ok && result?.job && ['running', 'processing', 'pending'].includes(result.job.status)) {
-			startPolling(result.job);
-		}
-		return () => {
-			if (pollInterval) clearInterval(pollInterval);
-		};
+		const actives = activeJobs;
+		if (actives.length === 0) return;
+		const iv = setInterval(async () => {
+			let anyTerminal = false;
+			for (const job of actives) {
+				const r = await api.get<VideoImportJob>(`/me/video-imports/${job.id}`);
+				if (!r.data) continue;
+				liveStatus = { ...liveStatus, [job.id]: r.data };
+				if (TERMINAL_STATUSES.includes(r.data.status)) anyTerminal = true;
+			}
+			if (anyTerminal) await invalidate(STUDIO_CACHE_TAG);
+		}, 3000);
+		return () => clearInterval(iv);
 	});
 </script>
 
@@ -162,12 +173,20 @@
 			{/each}
 		</div>
 
-		<!-- Import form -->
+		<!-- Import form — §106: start/preview/retry all require
+		     video.import.bulk; without it the card shows a notice instead
+		     of a form that could only fail with 403. -->
 		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 				<Video size={16} /> {t('studio.start', 'Start a bulk import')}
 			</h2>
 
+			{#if !data.canBulkImport}
+				<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+					<AlertCircle size={16} />
+					{t('studio.no_bulk_permission', 'Bulk video import is not available for your account.')}
+				</div>
+			{:else}
 			{#if result?.ok}
 				<div class="mb-3 flex items-center gap-2 text-sm text-[var(--color-success)]">
 					<CheckCircle2 size={16} /> {t('studio.started', 'Import started. We will process it in the background.')}
@@ -189,7 +208,6 @@
 							result = r.data as { ok?: boolean; error?: string; message?: string; job?: VideoImportJob };
 							if (result?.ok && result?.job) {
 								await invalidate(STUDIO_CACHE_TAG);
-								startPolling(result.job);
 							}
 						}
 					};
@@ -226,19 +244,23 @@
 					{/if}
 				</div>
 
-				<div>
-					<label for="target_username" class="block text-xs font-medium text-[var(--color-muted)]">
-						{t('studio.target_username', 'Target username (optional)')}
-					</label>
-					<input
-						id="target_username"
-						name="target_username"
-						type="text"
-						bind:value={targetUsername}
-						placeholder={t('studio.target_username_placeholder', 'Attribute imports to another user')}
-						class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-					/>
-				</div>
+				<!-- §106: attribution to another user additionally requires
+				     admin.video_import_jobs.manage — hidden otherwise. -->
+				{#if data.canAttributeImports}
+					<div>
+						<label for="target_username" class="block text-xs font-medium text-[var(--color-muted)]">
+							{t('studio.target_username', 'Target username (optional)')}
+						</label>
+						<input
+							id="target_username"
+							name="target_username"
+							type="text"
+							bind:value={targetUsername}
+							placeholder={t('studio.target_username_placeholder', 'Attribute imports to another user')}
+							class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+						/>
+					</div>
+				{/if}
 
 				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 					<input
@@ -313,6 +335,7 @@
 					</button>
 				</div>
 			{/if}
+			{/if}
 		</div>
 
 		<!-- Import history -->
@@ -320,16 +343,16 @@
 			{t('studio.history', 'Import history')}
 		</h2>
 
-		{#if jobs.length === 0}
+		{#if displayJobs.length === 0}
 			<EmptyState icon={Clapperboard} title={t('studio.no_imports', 'No video imports yet')} />
 		{:else}
 			<div class="space-y-2">
-				{#each jobs as job (job.id)}
+				{#each displayJobs as job (job.id)}
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<div class="flex items-start justify-between gap-3">
 							<div class="min-w-0 flex-1">
-								<span class="block text-sm font-medium capitalize text-[var(--color-text)]">
-									{job.source_type}
+								<span class="block text-sm font-medium text-[var(--color-text)]">
+									{sourceTypeLabel(job.source_type)}
 								</span>
 								{#if job.source_url}
 									<span class="mt-0.5 block truncate text-xs text-[var(--color-muted)]">{job.source_url}</span>
@@ -375,7 +398,7 @@
 									{job.status}
 								</span>
 
-								{#if !['pending', 'running', 'processing'].includes(job.status)}
+								{#if data.canBulkImport && !['pending', 'running', 'processing'].includes(job.status)}
 									<button
 										type="button"
 										disabled={retryingId === job.id}

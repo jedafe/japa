@@ -44,7 +44,7 @@
 		params.set('sort', data.sort);
 		params.set('page_size', String(data.feed.meta.page_size ?? 24));
 		params.set('page_offset', String(items.length));
-		const res = await api.get<SourceItemEnvelope>(`/sources/${source.slug}/items?${params.toString()}`);
+		const res = await api.get<SourceItemEnvelope>(`/sources/${encodeURIComponent(source.slug)}/items?${params.toString()}`);
 		if (res.data) {
 			items = [...items, ...res.data.items];
 			feedMeta = { ...feedMeta, ...res.data.meta };
@@ -55,6 +55,15 @@
 	const sortTabs = $derived<UrlTab[]>(
 		(data.itemSorts ?? []).map((s) => ({ value: s.value, label: s.label }))
 	);
+
+	// Entity-type filter pills (v2 design: "the detail page groups or filters
+	// by entity_type"). Options come from /sources/meta (Rule 16); labels fall
+	// back to the backend-provided label when no i18n key covers the type.
+	function entityTypePillLabel(value: string): string {
+		const key = `sources.items.${value === 'wiki_page' ? 'wiki' : value === 'scholarship' ? 'scholarships' : value === 'job' ? 'jobs' : value}`;
+		const backend = data.entityTypes?.find((e) => e.value === value)?.label ?? value.replace(/_/g, ' ');
+		return t(key, backend);
+	}
 
 	const title = $derived(source.name);
 
@@ -196,6 +205,33 @@
 
 	<div class="flex flex-col gap-3">
 		<UrlTabs tabs={sortTabs} value={data.sort} onValueChange={(v) => setQuery('sort', v)} />
+
+		{#if (data.entityTypes ?? []).length > 0}
+			<div class="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('sources.items.filter_label', 'Filter by type')}>
+				<button
+					type="button"
+					onclick={() => setQuery('entity_type', '')}
+					aria-pressed={!data.entityType}
+					class="rounded-full px-3 py-1 text-xs font-medium transition-colors {!data.entityType
+						? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+						: 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]'}"
+				>
+					{t('sources.items.all', 'All')}
+				</button>
+				{#each data.entityTypes as et (et.value)}
+					<button
+						type="button"
+						onclick={() => setQuery('entity_type', data.entityType === et.value ? '' : et.value)}
+						aria-pressed={data.entityType === et.value}
+						class="rounded-full px-3 py-1 text-xs font-medium transition-colors {data.entityType === et.value
+							? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+							: 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]'}"
+					>
+						{entityTypePillLabel(et.value)}
+					</button>
+				{/each}
+			</div>
+		{/if}
 	</div>
 
 	{#if isBlocked}

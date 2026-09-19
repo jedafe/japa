@@ -16,6 +16,8 @@ import (
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
+	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
 // handleSourceCreateBody is the JSON body for POST /api/v1/intel/sources.
@@ -40,6 +42,41 @@ type handleSourceCreateBody struct {
 	LogoURL             *string `json:"logo_url"`
 	Enabled             *bool   `json:"enabled"`
 	PersonaID           *string `json:"persona_id"` // optional: AI persona to attribute promoted content to
+	// EntityTypes declares the extraction domains a mixed source publishes
+	// (e.g. ["scholarship","job"]). Stored inside provider_config; when
+	// omitted or empty the source extracts under its single category-derived
+	// type as before. Each value must map to a registered extraction schema.
+	EntityTypes []string `json:"entity_types"`
+}
+
+// validateEntityTypes returns the first value that does not map to a
+// registered extraction schema, or "" when all values are valid.
+func validateEntityTypes(types []string) string {
+	for _, et := range types {
+		if et == "" {
+			return "(empty)"
+		}
+		if _, ok := schemas.ForEntityType(et); !ok {
+			return et
+		}
+	}
+	return ""
+}
+
+// providerConfigWithEntityTypes builds a provider_config document carrying
+// the entity_types override, preserving any other keys already present.
+// Failure to merge (corrupt existing document) yields "{}" — the entity
+// types were already validated, so a degraded config beats a failed write.
+func providerConfigWithEntityTypes(existing []byte, types []string) []byte {
+	out, err := sources.SetEntityTypesInProviderConfig(existing, types)
+	if err != nil {
+		slog.Warn("intel: provider_config merge failed; resetting to entity_types only", "error", err)
+		out, _ = sources.SetEntityTypesInProviderConfig(nil, types)
+	}
+	if len(out) == 0 {
+		out = []byte(`{}`)
+	}
+	return out
 }
 
 // HandleCreateSource creates a new intel source. The body carries the
@@ -99,6 +136,11 @@ func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody)
 		return gen.CreateIntelSourceParams{}, false
 	}
 
+	if bad := validateEntityTypes(body.EntityTypes); bad != "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_types contains an unregistered type: "+bad)
+		return gen.CreateIntelSourceParams{}, false
+	}
+
 	enabled, freqMins, freq, domain := resolveSourceDefaults(body)
 
 	slug := body.Name
@@ -133,7 +175,7 @@ func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody)
 		SourceLicense:       body.SourceLicense,
 		AttributionRequired: body.AttributionRequired,
 		UsageRestriction:    body.UsageRestriction,
-		ProviderConfig:      []byte(`{}`),
+		ProviderConfig:      providerConfigWithEntityTypes(nil, body.EntityTypes),
 		LogoUrl:             logoURL,
 		Enabled:             enabled,
 	}
@@ -235,6 +277,17 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// entity_types is a presence-detected field: the key absent leaves the
+	// override untouched, an empty array removes it (source falls back to
+	// its category-derived type), and a non-empty array replaces it. Every
+	// value must map to a registered extraction schema.
+	if _, present := presence["entity_types"]; present {
+		if bad := validateEntityTypes(body.EntityTypes); bad != "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_types contains an unregistered type: "+bad)
+			return
+		}
+	}
+
 	// Merge: only non-zero / non-nil body fields override the existing row.
 	params := gen.UpdateIntelSourceParams{
 
@@ -265,6 +318,24 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source")
 
 		return
+	}
+
+	// Apply the entity_types override when the key was present: merge into
+	// the existing provider_config so sibling keys (API endpoint config,
+	// crawl hints) survive — never a wholesale replace.
+	if _, present := presence["entity_types"]; present {
+		merged := providerConfigWithEntityTypes(existing.ProviderConfig, body.EntityTypes)
+		if uerr := h.intelSources.UpdateProviderConfig(r.Context(), gen.UpdateIntelSourceProviderConfigParams{
+			ID:             sourceID,
+			ProviderConfig: merged,
+		}); uerr != nil {
+			slog.Error("intel: provider_config update failed", "source_id", sourceID.String(), "error", uerr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source entity types")
+			return
+		}
+		// src predates the provider_config write — stamp the merged document
+		// so the response echoes the override that was just applied.
+		src.ProviderConfig = merged
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{

@@ -147,6 +147,12 @@ func (s *Service) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (
 	return s.store.Update(ctx, arg)
 }
 
+// UpdateProviderConfig replaces the source's provider_config document. The
+// caller merges keys it does not own — see Store.UpdateProviderConfig.
+func (s *Service) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelSourceProviderConfigParams) error {
+	return s.store.UpdateProviderConfig(ctx, arg)
+}
+
 // ListProposed returns a page of sources with status='proposed' for admin
 // review. Platform-scoped.
 func (s *Service) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {

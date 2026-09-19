@@ -5,10 +5,12 @@
 	// dnd-kit drag-and-drop + live LandingRenderer preview + per-type content
 	// editor + BlockStylePanel + motion/visibility settings + geo preview.
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, beforeNavigate } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { onMount, untrack, type Component } from 'svelte';
-	import { PUBLIC_JC_SITE_URL } from '$env/static/public';
+	import { PUBLIC_JC_SITE_URL, PUBLIC_JC_API_URL } from '$env/static/public';
 	import { api, pageBuilderAdminApiExtended } from '$lib/api';
+	import { getAccessToken } from '$lib/api/token';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { useCountries } from '$lib/utils/countries.svelte';
@@ -43,14 +45,15 @@
 		type GuestHomeTool,
 		type GuestHomeStory,
 		type GuestHomeDestination,
+		type FetchContext,
 	} from '@japaconnect/landing-blocks';
 	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
-	import { isContainerLike, childrenOf, childSlotsOf, mapChildSlots, defaultSlotKey, getContainerLayout, getContainerColumns, seedAllContainerDefaults, seedBlockDefaults, defaultChildrenFor } from '$lib/utils/blocks';
+	import { isContainerLike, isChildOnlyType, childrenOf, childSlotsOf, mapChildSlots, defaultSlotKey, getContainerLayout, getContainerColumns, seedAllContainerDefaults, seedBlockDefaults, defaultChildrenFor } from '$lib/utils/blocks';
 	import { Button } from '$lib/components/ui/button';
 
 	import { Tabs, Dialog } from 'bits-ui';
 	import * as LucideIcons from 'lucide-svelte';
-	import { ArrowLeft, Save, Plus, Search, LayoutTemplate, Rocket, Archive, PanelLeft, PanelRight, PanelTop, Maximize2, Minimize2 } from 'lucide-svelte';
+	import { ArrowLeft, Save, Plus, Search, LayoutTemplate, Rocket, Archive, PanelLeft, PanelRight, PanelTop, Maximize2, Minimize2, Settings } from 'lucide-svelte';
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
@@ -68,6 +71,7 @@
 	interface PageData {
 		id: string; title: string; slug: string; status: string;
 		page_type?: string; theme_id?: string; blocks: Block[] | string;
+		description?: string | null; meta?: Record<string, unknown> | null;
 	}
 
 	let pageData = $state<{ id: string; title: string; slug: string; status: string; page_type: string; theme_id?: string } | null>(null);
@@ -141,6 +145,19 @@
 	let unsavedChanges = $state(false);
 	let pageTitle = $state('');
 
+	// Editable page metadata (Page Settings dialog — the list page has no
+	// metadata edit form, so this is the only place these can be changed).
+	let pageSlug = $state('');
+	let pageDescription = $state('');
+	let pageType = $state('custom');
+	let seoTitle = $state('');
+	let pageMeta = $state<Record<string, unknown>>({});
+	let pageTypeOptions = $state<Array<{ value: string; label: string }>>([]);
+	let showPageSettings = $state(false);
+
+	// Transient palette hint (e.g. dropping a child-only block at top level).
+	let paletteMessage = $state('');
+
 	// Theme + save-as-template wiring
 	let selectedThemeId = $state<string>('');
 	let showSaveAsTemplate = $state(false);
@@ -174,6 +191,13 @@
 		tokens: getGeoTokens(previewCountry, 'en'),
 		locale: 'en',
 	});
+
+	// Fetch context for data-driven blocks (widget, entity_collection,
+	// entity_feature, live_rate_ticker, map). Without it they render their
+	// empty state, so the preview diverges from the published page.
+	const fetchCtx: FetchContext | undefined = $derived(
+		browser ? { fetch, apiBase: PUBLIC_JC_API_URL, token: getAccessToken() } : undefined
+	);
 	const resolvedBlocks = $derived(resolveSiteAssets(resolveGeoCopy(visibleBlocks, previewCtx)));
 	const deviceWidth = $derived(deviceMode === 'desktop' ? 1280 : deviceMode === 'tablet' ? 768 : 375);
 
@@ -235,7 +259,14 @@
 		return ids;
 	}
 
-	$effect(() => { void load(); });
+	// Track only the route param — reactive reads inside load() (e.g. the
+	// shared countries store's `loading`/`countries` $state) must not re-fire
+	// this effect, or every state flip duplicates the page/themes/blocks
+	// fetches (observed 3× per mount).
+	$effect(() => {
+		page.params.id;
+		untrack(() => { void load(); });
+	});
 
 	async function load() {
 		loading = true;
@@ -245,10 +276,13 @@
 			// Pre-load the 250 primary geo space countries via the shared utility
 			// while the page data loads.
 			countryUtils.load();
-			const [pageRes, themesRes, blocksRes] = await Promise.all([
+			const [pageRes, themesRes, blocksRes, typesRes] = await Promise.all([
 				api<PageData>(`/admin/pages/${pageId}`),
-				pageBuilderAdminApiExtended.listThemes(),
-				pageBuilderAdminApiExtended.listBlocks(),
+				// page_size=100 — the default page size is 20, which would
+				// silently truncate the theme dropdown and custom block palette.
+				pageBuilderAdminApiExtended.listThemes('page_size=100'),
+				pageBuilderAdminApiExtended.listBlocks('page_size=100'),
+				pageBuilderAdminApiExtended.getPageTypes(),
 			]);
 			if (!pageRes.ok) {
 				errorMessage = pageRes.error || t('common.error', 'Failed to load page');
@@ -261,12 +295,19 @@
 				// Default-expand any Guest Home block and its container descendants.
 				expandedContainers = new Set([...expandedContainers, ...collectGuestContainerIds(blocks)]);
 				pageTitle = untrack(() => d.title);
+				pageSlug = untrack(() => d.slug);
+				pageDescription = d.description ?? '';
+				pageType = d.page_type ?? 'custom';
+				const meta = (d.meta ?? {}) as Record<string, unknown>;
+				pageMeta = meta;
+				seoTitle = typeof meta.title === 'string' ? meta.title : '';
 				selectedThemeId = d.theme_id ?? '';
 				savedFingerprint = saveFingerprint();
 				// Live preview data for the guest homepage block.
 				void loadGuestHome(blocks);
 			}
 			if (themesRes.ok) themes = ((themesRes.data as any[]) ?? []).map((th) => ({ id: th.id, name: th.name, is_default: th.is_default }));
+			if (typesRes.ok && Array.isArray(typesRes.data)) pageTypeOptions = typesRes.data;
 			// Load custom block definitions into the runtime registry.
 			if (blocksRes.ok && Array.isArray(blocksRes.data)) {
 				customBlockDefs = blocksRes.data as CustomBlockDef[];
@@ -455,6 +496,13 @@
 		return { id: crypto.randomUUID(), type: type as Block['type'], visible: true, props: {} } as Block;
 	}
 	function addBlock(type: string): void {
+		// Child-only guest blocks (footer links, hero items, …) only render
+		// inside their parent container — never as top-level sections.
+		if (isChildOnlyType(type)) {
+			paletteMessage = t('pageBuilder.child_only_block', 'This block only works inside a guest container — drag it onto a container instead.');
+			return;
+		}
+		paletteMessage = '';
 		const nb = makeBlock(type);
 		blocks = [...blocks, nb];
 		selectedBlockId = nb.id;
@@ -826,7 +874,15 @@
 
 		// Drop from palette → add new block at target position (or append).
 		if (sourceData?.source === 'palette') {
-			const nb = makeBlock(sourceData.blockType as string);
+			const paletteType = sourceData.blockType as string;
+			// Child-only guest blocks can't be top-level sections — they must
+			// land in a container drop zone instead.
+			if (isChildOnlyType(paletteType)) {
+				paletteMessage = t('pageBuilder.child_only_block', 'This block only works inside a guest container — drag it onto a container instead.');
+				return;
+			}
+			paletteMessage = '';
+			const nb = makeBlock(paletteType);
 			if (target && isSortable(target)) {
 				const targetIdx = blocks.findIndex((b) => b.id === target.id);
 				if (targetIdx >= 0) blocks = [...blocks.slice(0, targetIdx), nb, ...blocks.slice(targetIdx)];
@@ -857,12 +913,18 @@
 		// a full-page PATCH. The fingerprint sorts block serialisations so a
 		// pure reorder produces an identical fingerprint.
 		const pureReorder = savedFingerprint !== '' && saveFingerprint() === savedFingerprint;
+		// Merge the SEO title into meta, preserving any other stored keys.
+		const meta: Record<string, unknown> = { ...pageMeta };
+		if (seoTitle.trim()) meta.title = seoTitle.trim(); else delete meta.title;
 		const body: Record<string, unknown> = pureReorder
 			? { blocks }
 			: {
 					title: pageTitle,
-					slug: pageData.slug,
+					slug: pageSlug || pageData.slug,
+					description: pageDescription,
+					page_type: pageType || pageData.page_type,
 					status: pageData.status,
+					meta,
 					// Send blocks as a parsed array — api() already JSON.stringifies
 					// the body. Double-encoding (JSON.stringify here) produced a JSON
 					// string that the backend's json.RawMessage + sanitizeBlocksJSON
@@ -876,6 +938,12 @@
 		const result = await api(endpoint, { method: 'PATCH', body });
 		saving = false;
 		if (result.ok) {
+			const d = result.data as PageData | undefined;
+			if (d?.slug) {
+				pageData = { ...pageData, slug: d.slug, page_type: d.page_type ?? pageData.page_type };
+				pageSlug = d.slug;
+			}
+			pageMeta = meta;
 			unsavedChanges = false;
 			savedFingerprint = saveFingerprint();
 			return true;
@@ -891,7 +959,7 @@
 
 	function saveFingerprint(): string {
 		const blockKey = blocks.map((b) => JSON.stringify(b)).sort().join(' ');
-		return `${pageTitle} ${selectedThemeId} ${blockKey}`;
+		return `${pageTitle} ${pageSlug} ${pageDescription} ${pageType} ${seoTitle} ${selectedThemeId} ${blockKey}`;
 	}
 
 	async function publish(): Promise<void> {
@@ -950,12 +1018,20 @@
 		}
 	}
 
-	// Warn before navigating away with unsaved edits.
+	// Warn before navigating away with unsaved edits — covers both full-page
+	// unloads (beforeunload) and in-app SvelteKit navigation (beforeNavigate).
 	$effect(() => {
 		if (!unsavedChanges) return;
 		const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
 		window.addEventListener('beforeunload', handler);
 		return () => window.removeEventListener('beforeunload', handler);
+	});
+
+	beforeNavigate((nav) => {
+		if (!unsavedChanges) return;
+		if (!window.confirm(t('pageBuilder.leave_unsaved', 'You have unsaved changes. Leave anyway?'))) {
+			nav.cancel();
+		}
 	});
 </script>
 
@@ -997,7 +1073,8 @@
 		<div class="flex flex-1 items-center justify-center gap-2 overflow-hidden">
 			{#if activeHeaderPanel === 'info'}
 				<!-- Info: title + metadata + status -->
-				<input type="text" bind:value={pageTitle} class="w-48 rounded border px-2 py-1 text-sm font-medium" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.title', 'Title')} />
+				<input type="text" bind:value={pageTitle} oninput={() => (unsavedChanges = true)} class="w-48 rounded border px-2 py-1 text-sm font-medium" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.title', 'Title')} />
+				<button type="button" onclick={() => (showPageSettings = true)} class="shrink-0 rounded p-1 transition-colors hover:bg-[var(--color-surface)]" title={t('page_builder.page_settings', 'Page settings')} aria-label={t('page_builder.page_settings', 'Page settings')}><Settings class="h-4 w-4" style="color: var(--color-muted)" /></button>
 				{#if pageData?.page_type}<span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider" style="background: var(--color-surface); color: var(--color-muted)">{pageData.page_type}</span>{/if}
 				<span class="shrink-0 text-xs" style="color: var(--color-muted)">/{pageData?.slug} · {blocks.length} {t('page_builder.blocks', 'blocks')}</span>
 				{#if unsavedChanges}<span class="h-2 w-2 shrink-0 rounded-full" style="background: var(--color-warning)" title={t('pageBuilder.unsaved_changes', 'Unsaved changes')}></span>{/if}
@@ -1170,11 +1247,14 @@
 						<Search class="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
 						<input type="text" bind:value={paletteSearch} placeholder={t('common.search', 'Search')} class="w-full rounded-md border py-1.5 pl-8 pr-2 text-xs" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
 					</div>
+					{#if paletteMessage}
+						<p class="mb-2 rounded border px-2 py-1.5 text-[11px]" style="border-color: var(--color-warning); color: var(--color-warning)">{paletteMessage}</p>
+					{/if}
 					{#each Object.entries(groupedBlockTypes) as [category, types] (category)}
 						<p class="mb-1.5 mt-3 text-[10px] font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{category}</p>
 						<div class="space-y-1.5">
 							{#each types as [type, meta] (type)}
-								<DraggableBlockType blockType={type} {meta} {getIcon} />
+								<DraggableBlockType blockType={type} {meta} {getIcon} onAdd={addBlock} />
 							{/each}
 						</div>
 					{/each}
@@ -1241,7 +1321,7 @@
 			<main class="flex-1 overflow-y-auto p-4" style="background: var(--color-surface)">
 				<div class="mx-auto shadow-lg" style="width: {deviceWidth}px; max-width: 100%; background: var(--color-background)">
 					{#if resolvedBlocks.length > 0}
-						<LandingRenderer blocks={resolvedBlocks} geoCountry={previewCountry} guestHome={guestHomePreview} />
+						<LandingRenderer blocks={resolvedBlocks} {fetchCtx} geoCountry={previewCountry} guestHome={guestHomePreview} />
 					{:else}
 						<div class="flex h-full flex-col items-center justify-center rounded-xl border-2 border-dashed py-20" style="border-color: var(--color-border)">
 							<Plus class="mb-3 h-8 w-8" style="color: var(--color-muted)" />
@@ -1470,6 +1550,52 @@
 	</DragDropProvider>
 </div>
 {/if}
+
+<!-- Page settings dialog — the only UI where slug/page_type/description/SEO
+     title can be edited after creation (the list page's Edit action opens
+     this editor, which previously had no metadata form). -->
+<Dialog.Root bind:open={showPageSettings}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50" />
+		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-xl" style="border-color: var(--color-border); background: var(--color-background)">
+			<Dialog.Title class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('page_builder.page_settings', 'Page Settings')}</Dialog.Title>
+			<div class="space-y-4">
+				<div>
+					<label for="page-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.slug', 'Slug')}</label>
+					<div class="flex items-center gap-1">
+						<span class="text-sm" style="color: var(--color-muted)">/</span>
+						<input id="page-slug" type="text" bind:value={pageSlug} oninput={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
+					</div>
+				</div>
+				<div>
+					<label for="page-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.page_type', 'Page type')}</label>
+					<select id="page-type" bind:value={pageType} onchange={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)">
+						{#if pageTypeOptions.length === 0 && pageType}
+							<option value={pageType}>{pageType}</option>
+						{/if}
+						{#each pageTypeOptions as opt (opt.value)}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+				</div>
+				<div>
+					<label for="page-description" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.description', 'Description')}</label>
+					<textarea id="page-description" rows="2" bind:value={pageDescription} oninput={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"></textarea>
+					<p class="mt-1 text-[11px]" style="color: var(--color-muted)">{t('page_builder.description_hint', 'Used as the meta description on the published page.')}</p>
+				</div>
+				<div>
+					<label for="page-seo-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.seo_title', 'SEO title')}</label>
+					<input id="page-seo-title" type="text" bind:value={seoTitle} oninput={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" placeholder={pageTitle} />
+					<p class="mt-1 text-[11px]" style="color: var(--color-muted)">{t('page_builder.seo_title_hint', 'Overrides the browser/OG title (stored in meta.title).')}</p>
+				</div>
+			</div>
+			<div class="mt-4 flex justify-end gap-2">
+				<Button variant="ghost" onclick={() => { showPageSettings = false; }}>{t('common.done', 'Done')}</Button>
+			</div>
+			<Dialog.Close class="absolute right-4 top-4" style="color: var(--color-muted)" aria-label="Close">&#10005;</Dialog.Close>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
 
 <!-- Save-as-template dialog -->
 <Dialog.Root bind:open={showSaveAsTemplate}>

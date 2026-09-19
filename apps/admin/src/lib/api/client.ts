@@ -48,8 +48,19 @@ export async function refreshAccessToken(): Promise<boolean> {
 	return attemptRefresh();
 }
 
+// A successful /auth/refresh rotates the one-time-use refresh cookie. A
+// second refresh fired before the browser has applied the Set-Cookie would
+// present the just-revoked cookie, trip the server's reuse detection, and
+// revoke the entire session family (observed: every full-page reload bounced
+// the user to /login). A refresh that succeeded within this window is
+// treated as still valid — the retrying request only needs the new access
+// token, not another cookie rotation.
+const REFRESH_OK_TTL_MS = 3_000;
+let lastRefreshOkAt = 0;
+
 async function attemptRefresh(): Promise<boolean> {
 	if (refreshPromise) return refreshPromise;
+	if (Date.now() - lastRefreshOkAt < REFRESH_OK_TTL_MS) return true;
 	refreshPromise = (async () => {
 		try {
 			const res = await fetch(buildApiUrl('/auth/refresh', PUBLIC_JC_API_URL), {
@@ -62,6 +73,7 @@ async function attemptRefresh(): Promise<boolean> {
 				const newToken = body?.data?.access_token;
 				if (newToken) {
 					setAccessToken(newToken);
+					lastRefreshOkAt = Date.now();
 					return true;
 				}
 			}

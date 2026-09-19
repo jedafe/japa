@@ -49,6 +49,69 @@ type WidgetType struct {
 	Apps []string `json:"apps"`
 	// DefaultProps are the initial props assigned when a new widget is inserted.
 	DefaultProps map[string]any `json:"default_props"`
+	// PropSchema describes the editable props for this widget type. The admin
+	// sidebar widget form renders these as typed inputs (text/textarea/
+	// number/boolean/select/url/links) instead of a raw JSON textarea.
+	// An empty schema means the widget has no configurable props.
+	// Ref: Section 59 §4 (prop_schema).
+	PropSchema []PropField `json:"prop_schema,omitempty"`
+}
+
+// PropField describes one editable widget prop rendered by the admin form.
+type PropField struct {
+	// Key is the prop name stored in sidebar_widgets.props.
+	Key string `json:"key"`
+	// Label is the human-readable field label.
+	Label string `json:"label"`
+	// Type is the input kind rendered by the admin form:
+	// text | textarea | number | boolean | select | url | links.
+	// "links" is the platform+url repeater used by social_links.
+	Type string `json:"type"`
+	// Options are the allowed values for Type=select.
+	Options []PropOption `json:"options,omitempty"`
+	// Help is optional hint text shown under the field.
+	Help string `json:"help,omitempty"`
+}
+
+// PropOption is one value in a select prop field.
+type PropOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// Prop-field builders keep the per-type schemas below compact.
+func textField(key, label, help string) PropField {
+	return PropField{Key: key, Label: label, Type: "text", Help: help}
+}
+
+func textareaField(key, label, help string) PropField {
+	return PropField{Key: key, Label: label, Type: "textarea", Help: help}
+}
+
+func numberField(key, label string) PropField {
+	return PropField{Key: key, Label: label, Type: "number"}
+}
+
+func boolField(key, label, help string) PropField {
+	return PropField{Key: key, Label: label, Type: "boolean", Help: help}
+}
+
+func urlField(key, label, help string) PropField {
+	return PropField{Key: key, Label: label, Type: "url", Help: help}
+}
+
+func selectField(key, label string, opts ...PropOption) PropField {
+	return PropField{Key: key, Label: label, Type: "select", Options: opts}
+}
+
+// titleProp returns the shared "title" prop field used by most card widgets.
+func titleProp() PropField {
+	return PropField{Key: "title", Label: "Card title", Type: "text"}
+}
+
+// limitProp returns the shared "limit" prop field used by list widgets.
+func limitProp() PropField {
+	return PropField{Key: "limit", Label: "Max items", Type: "number"}
 }
 
 // appAll is a convenience value for widget types rendered by every app.
@@ -85,6 +148,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"placeholder": "",
 		},
+		PropSchema: []PropField{textField("placeholder", "Placeholder text", "Empty-input hint — blank uses the app default")},
 	},
 	{
 		Type:        "search_launcher",
@@ -97,6 +161,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"placeholder": "",
 		},
+		PropSchema: []PropField{textField("placeholder", "Placeholder text", "Empty-input hint — blank uses the app default")},
 	},
 	{
 		Type:         "theme_toggle",
@@ -119,6 +184,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"languages": "en,fr",
 		},
+		PropSchema: []PropField{textField("languages", "Languages", "Comma-separated ISO language codes, e.g. en,fr")},
 	},
 	{
 		Type:         "user_dropdown",
@@ -152,6 +218,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 8,
 			"title": "Trending Tags",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "suggested_spaces",
@@ -165,6 +232,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 5,
 			"title": "Suggested Spaces",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "suggested_content",
@@ -178,6 +246,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 5,
 			"title": "For You",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "ad_slot",
@@ -191,6 +260,14 @@ var widgetRegistry = []WidgetType{
 			"slot":   "sidebar_top",
 			"format": "square",
 		},
+		PropSchema: []PropField{
+			textField("slot", "Ad slot", "Slot key passed to /ads/serve, e.g. sidebar_top"),
+			selectField("format", "Format",
+				PropOption{Value: "square", Label: "Square"},
+				PropOption{Value: "banner", Label: "Banner"},
+				PropOption{Value: "inline", Label: "Inline"},
+			),
+		},
 	},
 	{
 		Type:        "rich_text",
@@ -203,6 +280,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"content": "",
 		},
+		PropSchema: []PropField{textareaField("content", "Content", "Free-form HTML — sanitized server-side")},
 	},
 	{
 		Type:        "custom_html",
@@ -215,6 +293,10 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"html":          "",
 			"embed_enabled": false,
+		},
+		PropSchema: []PropField{
+			textareaField("html", "HTML / embed markup", "Sanitized server-side"),
+			boolField("embed_enabled", "Allow iframe embeds", "Scripts are always stripped — enable only for trusted embeds"),
 		},
 	},
 	{
@@ -230,6 +312,7 @@ var widgetRegistry = []WidgetType{
 			"title":    "Recent Posts",
 			"space_id": "",
 		},
+		PropSchema: []PropField{limitProp(), titleProp(), textField("space_id", "Space ID", "Optional space UUID to scope the posts")},
 	},
 	{
 		Type:        "space_list",
@@ -244,6 +327,16 @@ var widgetRegistry = []WidgetType{
 			"level": "",
 			"title": "Browse Spaces",
 		},
+		PropSchema: []PropField{
+			limitProp(),
+			selectField("level", "Level",
+				PropOption{Value: "", Label: "All levels"},
+				PropOption{Value: "country", Label: "Country"},
+				PropOption{Value: "state", Label: "State"},
+				PropOption{Value: "city", Label: "City"},
+			),
+			titleProp(),
+		},
 	},
 	{
 		Type:        "continue_learning",
@@ -256,6 +349,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"title": "Continue Learning",
 		},
+		PropSchema: []PropField{titleProp()},
 	},
 	{
 		Type:        "learning_enrollments",
@@ -269,6 +363,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 3,
 			"title": "My Learning",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "progress_ring",
@@ -281,6 +376,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"title": "My Progress",
 		},
+		PropSchema: []PropField{titleProp()},
 	},
 	{
 		Type:         "curriculum_rail",
@@ -304,6 +400,7 @@ var widgetRegistry = []WidgetType{
 			"track_slug": "",
 			"title":      "Featured Track",
 		},
+		PropSchema: []PropField{textField("track_slug", "Track slug", "Leave empty to feature from the catalog"), titleProp()},
 	},
 	{
 		Type:         "table_of_contents",
@@ -327,6 +424,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 3,
 			"title": "Related Discussions",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "leaderboard",
@@ -340,6 +438,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 5,
 			"title": "Top Contributors",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "helpful_widget",
@@ -352,6 +451,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"question": "Was this page helpful?",
 		},
+		PropSchema: []PropField{textField("question", "Question", "")},
 	},
 	{
 		Type:        "tag_cloud",
@@ -365,6 +465,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 20,
 			"title": "Popular Tags",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "metric_card",
@@ -379,6 +480,11 @@ var widgetRegistry = []WidgetType{
 			"value": "0",
 			"label": "Metric",
 		},
+		PropSchema: []PropField{
+			textField("icon", "Icon", "Lucide icon name, e.g. bar-chart-3"),
+			textField("value", "Value", ""),
+			textField("label", "Label", ""),
+		},
 	},
 	{
 		Type:        "featured_content",
@@ -392,6 +498,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 3,
 			"title": "Featured",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "bookmark_folders",
@@ -405,6 +512,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 6,
 			"title": "My Bookmarks",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "upcoming_events",
@@ -418,6 +526,7 @@ var widgetRegistry = []WidgetType{
 			"limit": 3,
 			"title": "Upcoming Events",
 		},
+		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
 		Type:        "user_card",
@@ -430,6 +539,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"username": "",
 		},
+		PropSchema: []PropField{textField("username", "Username", "Leave empty to use the page context")},
 	},
 	{
 		Type:        "space_categories",
@@ -442,6 +552,7 @@ var widgetRegistry = []WidgetType{
 		DefaultProps: map[string]any{
 			"title": "Categories",
 		},
+		PropSchema: []PropField{titleProp()},
 	},
 	{
 		Type:        "newsletter_signup",
@@ -455,6 +566,7 @@ var widgetRegistry = []WidgetType{
 			"title":       "Stay in the loop",
 			"description": "Get weekly updates in your inbox.",
 		},
+		PropSchema: []PropField{textField("title", "Title", ""), textareaField("description", "Description", "")},
 	},
 	{
 		Type:        "social_links",
@@ -465,8 +577,10 @@ var widgetRegistry = []WidgetType{
 		Category:    WidgetCategoryMarketing,
 		Apps:        appAll,
 		DefaultProps: map[string]any{
-			"links": "",
+			// The renderer expects [{platform, url}] — an array, not a string.
+			"links": []any{},
 		},
+		PropSchema: []PropField{{Key: "links", Label: "Social links", Type: "links"}},
 	},
 	{
 		Type:        "cta_button",
@@ -480,6 +594,15 @@ var widgetRegistry = []WidgetType{
 			"label":   "Get Started",
 			"url":     "",
 			"variant": "primary",
+		},
+		PropSchema: []PropField{
+			textField("label", "Button label", ""),
+			urlField("url", "URL", ""),
+			selectField("variant", "Variant",
+				PropOption{Value: "primary", Label: "Primary"},
+				PropOption{Value: "secondary", Label: "Secondary"},
+				PropOption{Value: "outline", Label: "Outline"},
+			),
 		},
 	},
 }

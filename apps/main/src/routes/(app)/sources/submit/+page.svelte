@@ -150,7 +150,7 @@
 
 			<div>
 				<label class="mb-1 block text-sm font-medium" for="description">
-					{t('sources.submit.description', 'Description')}
+					{t('sources.submit.description_label', 'Description')}
 				</label>
 				<textarea
 					id="description"

@@ -305,7 +305,10 @@
 				label: t('page_builder.archive', 'Archive'),
 				icon: Archive,
 				onclick: openArchive,
-				show: (row: Page) => row.status === 'published' && canManagePages
+				// Archiving is a state transition gated by pages.publish on the
+				// backend — match the permission so manage-only admins don't
+				// see an action that always 403s.
+				show: (row: Page) => row.status === 'published' && canPublishPages
 			},
 			{
 				label: t('common.delete', 'Delete'),
@@ -413,7 +416,10 @@
 		createLabel: t('page_builder.create_page', 'Create Page'),
 		createPermission: 'pages.manage',
 		pageSize: 25,
-		headerActions: canManagePages
+		// Seeding creates the page directly in 'published' status, which the
+		// backend gates on pages.publish — hide the action for manage-only
+		// admins so they don't hit a 403.
+		headerActions: canManagePages && canPublishPages
 			? [{
 					label: t('page_builder.seed_homepage', 'Create Default Homepage'),
 					icon: Rocket,

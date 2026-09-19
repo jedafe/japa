@@ -25,6 +25,7 @@
 		usage_restriction: string;
 		enabled: boolean;
 		persona_id: string;
+		entity_types: string[];
 	}
 
 	interface SourceLike {
@@ -43,6 +44,7 @@
 		usage_restriction?: string | null;
 		enabled: boolean;
 		persona_id?: string | null;
+		entity_types?: string[] | null;
 	}
 
 	export interface PersonaItem {
@@ -57,6 +59,7 @@
 		open = $bindable(false),
 		source = null as SourceLike | null,
 		personas = [] as PersonaItem[],
+		entityTypeOptions = [] as string[],
 		saving = false,
 		errorMessage = '',
 		onSubmit
@@ -64,6 +67,7 @@
 		open: boolean;
 		source?: SourceLike | null;
 		personas?: PersonaItem[];
+		entityTypeOptions?: string[];
 		saving?: boolean;
 		errorMessage?: string;
 		onSubmit: (values: SourceFormValues) => void;
@@ -83,7 +87,8 @@
 		source_license: '',
 		usage_restriction: '',
 		enabled: true,
-		persona_id: ''
+		persona_id: '',
+		entity_types: []
 	};
 
 	let form = $state<SourceFormValues>({ ...empty });
@@ -106,7 +111,8 @@
 					source_license: source.source_license ?? '',
 					usage_restriction: source.usage_restriction ?? '',
 					enabled: !!source.enabled,
-					persona_id: source.persona_id ?? ''
+					persona_id: source.persona_id ?? '',
+					entity_types: source.entity_types ?? []
 				};
 			} else {
 				form = { ...empty };
@@ -168,6 +174,12 @@
 
 	function onPersonaChange(v: string | undefined) {
 		form.persona_id = !v || v === NONE_PERSONA ? '' : v;
+	}
+
+	function toggleEntityType(value: string, checked: boolean) {
+		form.entity_types = checked
+			? [...form.entity_types, value]
+			: form.entity_types.filter((v) => v !== value);
 	}
 
 	// --- Autocomplete fetcher for AI Persona ---
@@ -379,6 +391,28 @@
 						{t('intel.field_persona_hint', "The persona's backing bot user will be credited as the author of content promoted from this source.")}
 					</p>
 				</div>
+
+				{#if entityTypeOptions.length > 0}
+					<div>
+						<span class={labelClass}>{t('intel.field_entity_types', 'Extraction domains (entity types)')}</span>
+						<p class="text-muted-foreground mt-1 text-xs">
+							{t('intel.field_entity_types_hint', 'Leave empty to extract under the category-derived type only. Check the domains a mixed source publishes to extract each of them.')}
+						</p>
+						<div class="mt-2 grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto">
+							{#each entityTypeOptions as et}
+								<label class="flex cursor-pointer items-center gap-2 text-sm">
+									<input
+										type="checkbox"
+										checked={form.entity_types.includes(et)}
+										onchange={(e) => toggleEntityType(et, e.currentTarget.checked)}
+										class="border-border-input bg-background size-3.5 rounded-sm accent-accent-foreground"
+									/>
+									{t(`intel.category_${et}`, et.replace(/_/g, ' '))}
+								</label>
+							{/each}
+						</div>
+					</div>
+				{/if}
 
 				<div class="flex items-center gap-6">
 					<label class="flex cursor-pointer items-center gap-2 text-sm">

@@ -29,9 +29,10 @@ func (s *Service) SetRedis(r valkeycompat.Cmdable) {
 	s.redis = r
 }
 
-// List returns a paginated list of widgets for a platform.
-func (s *Service) List(ctx context.Context, q string, page, limit int32) ([]Widget, int64, error) {
-	return s.store.List(ctx, q, page, limit)
+// List returns a paginated list of widgets for a platform. isActive is a
+// tri-state filter: nil → all, non-nil → only widgets with that state.
+func (s *Service) List(ctx context.Context, q string, isActive *bool, page, limit int32) ([]Widget, int64, error) {
+	return s.store.List(ctx, q, isActive, page, limit)
 }
 
 // Get returns a single widget by ID, scoped to the platform.

@@ -600,6 +600,13 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	writeSessionResponse(w, r, h.CookieDomain, h.SecureCookies, refreshToken, refreshTTL, data, true)
 }
 
+// refreshReuseLeeway is the grace window applied to refresh-token reuse
+// detection. A revoked token re-presented within this window is treated as
+// a cookie-rotation race (parallel page loads, sibling apps sharing the
+// jc_refresh cookie) rather than theft; outside it the whole session family
+// is revoked. Ref: §02 (Refresh-token rotation reuse detection).
+const refreshReuseLeeway = 15 * time.Second
+
 // Refresh handles POST /api/v1/auth/refresh.
 // Exchanges a valid refresh token cookie for a new access token and a
 // rotated refresh token. The old refresh token is revoked (one-time-use),
@@ -645,17 +652,30 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if stored.RevokedAt.Valid {
-		// A revoked token presented for refresh indicates possible theft
-		// (the legitimate user rotated past it, or an attacker stole it
-		// before rotation). Revoke the entire session family to contain
-		// the damage. Ref: §02 (Refresh-token rotation reuse detection).
-		_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
-			stored.UserID,
-		)
+		// Leeway window: a token rotated out within the last few seconds was
+		// almost certainly presented by a concurrent refresh racing the
+		// cookie rotation, or by a sibling app on the same domain sharing
+		// the jc_refresh cookie (SSO across apps) — not theft. Family-
+		// revoking on those races logs every session out (observed: any
+		// second app or parallel page load nuked all refresh tokens within
+		// seconds). Genuine replay of an old token still revokes the family.
+		// Ref: §02 (Refresh-token rotation reuse detection — leeway window
+		// per OAuth BCP token rotation guidance).
+		if time.Since(stored.RevokedAt.Time) >= refreshReuseLeeway {
+			// A revoked token presented for refresh indicates possible theft
+			// (the legitimate user rotated past it, or an attacker stole it
+			// before rotation). Revoke the entire session family to contain
+			// the damage. Ref: §02 (Refresh-token rotation reuse detection).
+			_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
+				stored.UserID,
+			)
 
-		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
 
-		return
+			return
+		}
+		// Within the leeway window: fall through and issue a fresh pair.
+		// The presented token stays revoked — only the family survives.
 	}
 
 	if time.Now().After(stored.ExpiresAt) {

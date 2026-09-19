@@ -85,7 +85,9 @@ type IntelPromoteResult struct {
 // adapter wrapping the concrete *extractor.Extractor that selects the entity
 // schema by entityType and returns one or more marshalled extractions +
 // per-record aggregate confidence + stable external key. entityType is
-// derived by the worker from the source's category via schemas.CategoryToEntityType.
+// derived by the worker via resolveSourceEntityTypes — the source's
+// provider_config.entity_types override first, then the category via
+// schemas.CategoryToEntityType.
 type intelExtractorPort interface {
 	Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) ([]IntelExtractResult, error)
 }
@@ -681,10 +683,13 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Run AI extraction over the raw document body. The extractor adapter
-	// selects the schema by entityType (derived from the source's category)
-	// and returns one or more marshalled extractions + per-record metadata.
-	entityType := schemas.CategoryToEntityType(src.Category)
-	if entityType == "" {
+	// selects the schema by entityType and returns one or more marshalled
+	// extractions + per-record metadata. resolveSourceEntityTypes honours
+	// provider_config.entity_types so a mixed-domain source can emit records
+	// under every type it publishes (one extraction pass per type); without
+	// the override it falls back to the single category-derived type.
+	entityTypes := resolveSourceEntityTypes(src)
+	if len(entityTypes) == 0 {
 		// Unknown / unsupported source category — route to review so an
 		// admin can reclassify the source. No extraction attempted. The
 		// raw category is stored on the record for the moderation surface.
@@ -695,27 +700,89 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 	sourceText := string(rawDoc.Body)
 
-	results, extErr := intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
-	if extErr != nil {
-		if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
-			slog.Warn("task:intel:extract: retries exhausted, routing to review", "raw_doc_id", p.RawDocID)
+	var persisted int
+	var retriesExhausted bool
+	for _, entityType := range entityTypes {
+		results, extErr := intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
+		if extErr != nil {
+			if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
+				// Per-type tolerance: a mixed source loses only this type's
+				// pass — other types' records are still persisted.
+				slog.Warn("task:intel:extract: retries exhausted for entity type", "raw_doc_id", p.RawDocID, "entity_type", entityType)
+				retriesExhausted = true
+				continue
+			}
 
-			return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, entityType)
+			return fmt.Errorf("task:intel:extract: %w", extErr)
 		}
 
-		return fmt.Errorf("task:intel:extract: %w", extErr)
+		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, entityType, "", results)
+		if perr != nil {
+			return perr
+		}
+		persisted += n
 	}
 
-	if len(results) == 0 {
+	if persisted == 0 {
+		if retriesExhausted {
+			slog.Warn("task:intel:extract: all entity types exhausted retries, routing to review", "raw_doc_id", p.RawDocID)
+
+			return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, entityTypes[0])
+		}
+
 		return errors.New("task:intel:extract: no records extracted")
 	}
 
-	return intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, entityType, "", results)
+	return nil
+}
+
+// resolveSourceEntityTypes returns the extraction entity types for a source:
+// the provider_config.entity_types override when declared (each value must
+// map to a registered extraction schema — unregistered values are dropped
+// with a warning), otherwise the single type derived from the source's
+// category. An empty result means the source has no extractable domain and
+// the caller routes the document to the review queue.
+func resolveSourceEntityTypes(src gen.IntelSource) []string {
+	declared := sources.EntityTypesFromProviderConfig(src.ProviderConfig)
+	if len(declared) > 0 {
+		out := make([]string, 0, len(declared))
+		seen := make(map[string]struct{}, len(declared))
+
+		for _, et := range declared {
+			if et == "" {
+				continue
+			}
+			if _, ok := schemas.ForEntityType(et); !ok {
+				slog.Warn("task:intel:extract: provider_config entity type has no registered schema, skipping", "entity_type", et)
+				continue
+			}
+			if _, dup := seen[et]; dup {
+				continue
+			}
+			seen[et] = struct{}{}
+			out = append(out, et)
+		}
+
+		if len(out) > 0 {
+			return out
+		}
+	}
+
+	if et := schemas.CategoryToEntityType(src.Category); et != "" {
+		return []string{et}
+	}
+
+	return nil
 }
 
 // intelPersistExtractedRecords persists one intel_record per extraction
-// result and enqueues a dedup task for each.
-func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult) error {
+// result and enqueues a dedup task for each. Returns the number of records
+// created. A (source_id, external_key) unique-violation is skipped rather
+// than failing the task — a multi-type extraction pass can legitimately
+// re-derive a record that already exists under another entity type.
+func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult) (int, error) {
+	persisted := 0
+
 	for i, result := range results {
 		record, err := intelStores.CreateIntelRecord(ctx, gen.CreateIntelRecordParams{
 			SourceID:          sourceID,
@@ -729,10 +796,17 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype
 			GeoSpaceIds:       []pgtype.UUID{},
 		})
 		if err != nil {
-			return fmt.Errorf("task:intel:extract: create record %d: %w", i, err)
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				slog.Info("task:intel:extract: record already exists, skipping", "source_id", sourceID.String(), "external_key", result.ExternalKey, "entity_type", entityType)
+				continue
+			}
+
+			return persisted, fmt.Errorf("task:intel:extract: create record %d: %w", i, err)
 		}
 
-		slog.Info("task:intel:extract: extracted", "record_id", record.ID.String(), "index", i, "confidence", result.ConfidenceOverall)
+		persisted++
+		slog.Info("task:intel:extract: extracted", "record_id", record.ID.String(), "index", i, "entity_type", entityType, "confidence", result.ConfidenceOverall)
 
 		payload := marshalPayload(intelRecordPayload{
 			Version:  intelPayloadVersion,
@@ -743,7 +817,7 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype
 		}
 	}
 
-	return nil
+	return persisted, nil
 }
 
 // intelCreateReviewStub creates a stub intel_record in review_required when

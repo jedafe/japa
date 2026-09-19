@@ -309,6 +309,26 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, sidebarID pgtype.UUID
 		groupIDsJSON = []byte("[]")
 	}
 
+	// Non-positive sort_order means "append": position the widget after the
+	// last one. The admin create form never collects an explicit position, so
+	// a raw 0 would stack every new widget at order 0 and leave ordering to
+	// the created_at tie-break. Explicit positions are set via the reorder
+	// endpoint (Section 59 / ADR-066).
+	sortOrder := input.SortOrder
+	if sortOrder <= 0 {
+		existing, err := s.store.listSidebarWidgets(ctx, sidebarID)
+		if err != nil {
+			return gen.SidebarWidget{}, err
+		}
+
+		sortOrder = 1
+		for _, w := range existing {
+			if int(w.SortOrder) >= sortOrder {
+				sortOrder = int(w.SortOrder) + 1
+			}
+		}
+	}
+
 	widget, err := s.store.createSidebarWidget(ctx, gen.CreateSidebarWidgetParams{
 
 		SidebarID:  sidebarID,
@@ -316,7 +336,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, sidebarID pgtype.UUID
 		Label:      input.Label,
 		Props:      props,
 		// #nosec G115 // value bounded by caller
-		SortOrder:        int32(input.SortOrder),
+		SortOrder:        int32(sortOrder),
 		Visibility:       input.Visibility,
 		RequiredGroupIds: groupIDsJSON,
 		PermissionNode:   input.PermissionNode,

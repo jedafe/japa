@@ -306,7 +306,7 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 			isPublic = meta.Public
 		}
 
-		_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, updated_at = NOW()`, key, string(data), isPublic)
+		_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`, key, string(data), isPublic)
 		if err != nil {
 			slog.Error("control: update system setting", "key", key, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
@@ -359,7 +359,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 		isPublic = meta.Public
 	}
 
-	_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, is_public = $4, updated_at = NOW()`, key, string(data), isPublic)
+	_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, is_public = $3, updated_at = NOW()`, key, string(data), isPublic)
 	if err != nil {
 		slog.Error("control: update system setting", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
@@ -1768,7 +1768,7 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 	threshold := *input.BudgetThresholdUSD
 
 	data, _ := json.Marshal(threshold)
-	if _, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, updated_at = NOW()`, aiBudgetThresholdKey, string(data)); err != nil {
+	if _, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`, aiBudgetThresholdKey, string(data)); err != nil {
 		slog.Error("control: update ai budget", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI budget threshold")
 
@@ -3302,7 +3302,7 @@ func (h *Handlers) setExtensionEnabled(r *http.Request, ext *extensionEntry, ena
 		val = "true"
 	}
 
-	if _, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, updated_at = NOW()`, settingKey, val); err != nil {
+	if _, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`, settingKey, val); err != nil {
 		return fmt.Errorf("writing system_setting %s: %w", settingKey, err)
 	}
 

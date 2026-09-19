@@ -132,4 +132,18 @@
 			onchange={(e) => togglePref('show_points_publicly', e.currentTarget.checked)}
 		/>
 	</label>
+
+	<!-- Manage blocked sources — the unblock list lived at an orphaned URL
+	     (/me/blocked-sources) with no navigation path to it. -->
+	<div class="mt-4 border-t border-[var(--color-border)] pt-4">
+		<a
+			href="/me/blocked-sources"
+			class="text-sm font-medium text-[var(--color-primary)] hover:underline"
+		>
+			{t('settings.privacy.blocked_sources', 'Manage blocked sources')}
+		</a>
+		<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+			{t('settings.privacy.blocked_sources_desc', 'Review and unblock sources you have hidden from your feeds.')}
+		</p>
+	</div>
 </SettingsSection>

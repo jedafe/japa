@@ -228,10 +228,10 @@ func (s *Service) GetPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 }
 
 // GetPageBySlug returns a published page by slug for public consumption.
-// Results are Valkey-cached under jc:page:{}:{slug} with a TTL from
+// Results are Valkey-cached under jc:page:{slug} with a TTL from
 // the page.cache_ttl_secs system setting (default 300s). The cache is
-// invalidated on any page write (update/delete/publish/archive).
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
+// invalidated on any page write (update/delete/publish/archive/reorder).
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{slug}.
 func (s *Service) GetPageBySlug(ctx context.Context, slug string) (Page, error) {
 	// Tolerate a leading slash — the canonical stored form has none.
 	slug = strings.TrimPrefix(slug, "/")
@@ -484,21 +484,32 @@ func (s *Service) ReorderBlocks(ctx context.Context, id pgtype.UUID, blocks []ma
 		return Page{}, err
 	}
 
-	return s.store.UpdatePage(ctx, id, UpdatePageInput{
+	p, err := s.store.UpdatePage(ctx, id, UpdatePageInput{
 		Title:       existing.Title,
 		Slug:        existing.Slug,
 		Description: existing.Description,
 		TemplateID:  existing.TemplateID,
 		ThemeID:     existing.ThemeID,
-		Blocks:      blocksJSON,
-		Meta:        existing.Meta,
-		Status:      existing.Status,
-		PageType:    existing.PageType,
+		// The reorder payload carries full block bodies, so it is a content
+		// write path — run the same storage-boundary sanitizer as UpdatePage.
+		Blocks:   sanitizeBlocksJSON(blocksJSON),
+		Meta:     existing.Meta,
+		Status:   existing.Status,
+		PageType: existing.PageType,
 	})
+	if err != nil {
+		return Page{}, err
+	}
+
+	// Reorder changes the published render — drop the cached page so the
+	// public site does not serve a stale block order for the cache TTL.
+	s.invalidatePageCache(ctx, p.Slug)
+
+	return p, nil
 }
 
 // invalidatePageCache deletes the Valkey cache entry for a published page.
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{slug}.
 func (s *Service) invalidatePageCache(ctx context.Context, slug string) {
 	if s.redis == nil || slug == "" {
 		return
@@ -508,7 +519,7 @@ func (s *Service) invalidatePageCache(ctx context.Context, slug string) {
 }
 
 // pageCacheKey returns the Valkey key for a published page's cached data.
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{slug}.
 func pageCacheKey(slug string) string {
-	return "jc:page:" + "" + ":" + slug
+	return "jc:page:" + slug
 }

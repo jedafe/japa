@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Rss } from 'lucide-svelte';
+	import { Rss, Plus } from 'lucide-svelte';
 	import {
 		FilterToggle,
 		ListPageBar,
@@ -46,16 +46,20 @@
 	);
 
 	const categoryOptions = $derived(data.sourceMeta?.categories ?? []);
-	const sourceTypeOptions = $derived(data.sourceMeta?.source_types ?? []);
+	// ?source_kind= filters the publisher kind (publisher/institution/
+	// individual/aggregator) — NOT the crawl mechanism values in
+	// source_types (rss/youtube/api/static), which belong to the proposal
+	// form. Using source_types here always produced an empty directory.
+	const sourceKindOptions = $derived(data.sourceMeta?.source_kinds ?? []);
 
 	const categorySelectOptions = $derived([
 		{ value: '', label: t('sources.category.all', 'All categories') },
 		...categoryOptions.map((c) => ({ value: c, label: c }))
 	]);
 
-	const sourceTypeSelectOptions = $derived([
+	const sourceKindSelectOptions = $derived([
 		{ value: '', label: t('sources.source_kind.all', 'All source types') },
-		...sourceTypeOptions.map((k) => ({ value: k, label: k }))
+		...sourceKindOptions
 	]);
 
 	// Only category / source type are inside the filter panel now.
@@ -122,11 +126,20 @@
 					{description}
 				</p>
 			</div>
-			<FilterToggle
-				bind:show={showFilters}
-				active={hasActiveFilters}
-				controls="sources-filter-panel"
-			/>
+			<div class="flex shrink-0 items-center gap-2">
+				<a
+					href="/sources/submit"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+				>
+					<Plus size={15} />
+					{t('sources.propose', 'Propose a source')}
+				</a>
+				<FilterToggle
+					bind:show={showFilters}
+					active={hasActiveFilters}
+					controls="sources-filter-panel"
+				/>
+			</div>
 		</div>
 	</div>
 
@@ -168,7 +181,7 @@
 					</div>
 				{/if}
 
-				{#if sourceTypeOptions.length > 0}
+				{#if sourceKindOptions.length > 0}
 					<div>
 						<label for="sources-source-kind" class="sr-only">
 							{t('sources.source_type_label', 'Source type')}
@@ -176,7 +189,7 @@
 						<SelectField
 							id="sources-source-kind"
 							value={selectedSourceKind}
-							options={sourceTypeSelectOptions}
+							options={sourceKindSelectOptions}
 							placeholder={t('sources.source_kind.all', 'All source types')}
 							onValueChange={(v) => {
 								selectedSourceKind = v;

@@ -5,6 +5,8 @@
 	import ContentArticlePage from '$lib/components/content/ContentArticlePage.svelte';
 	import VideoEmbed from '$lib/components/content/VideoEmbed.svelte';
 	import { formatDuration } from '$lib/utils/duration';
+	import { api } from '$lib/api/client';
+	import { Sparkles, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import type { PageData } from './$types';
 
@@ -14,6 +16,20 @@
 	const platformLabel = $derived(
 		source ? t(`video.source_type.${source.source_type}`, source.source_type.replace(/_/g, ' ')) : ''
 	);
+
+	// §106: POST /videos/{id}/summarize enqueues a video:generate_summary
+	// task that drafts title/body as an in_review contents row (HITL).
+	let summarizing = $state(false);
+	let summarizeResult = $state<'queued' | 'error' | null>(null);
+
+	async function generateSummary() {
+		if (!source || summarizing) return;
+		summarizing = true;
+		summarizeResult = null;
+		const r = await api.post(`/videos/${source.id}/summarize`);
+		summarizing = false;
+		summarizeResult = r.error ? 'error' : 'queued';
+	}
 </script>
 
 <svelte:head>
@@ -60,7 +76,34 @@
 					{t('video.view_channel', 'View channel')}
 				</a>
 			{/if}
+			{#if data.canSummarize}
+				<button
+					type="button"
+					onclick={generateSummary}
+					disabled={summarizing || summarizeResult === 'queued'}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-elevated)] disabled:opacity-50"
+				>
+					{#if summarizing}
+						<Loader2 size={14} class="animate-spin" />
+					{:else}
+						<Sparkles size={14} />
+					{/if}
+					{t('video.summarize_btn', 'Generate AI draft')}
+				</button>
+			{/if}
 		</div>
+
+		{#if summarizeResult === 'queued'}
+			<p class="mt-3 flex items-center gap-2 text-sm text-[var(--color-success)]">
+				<CheckCircle2 size={16} />
+				{t('video.summarize_queued', 'AI draft queued — it will appear in review shortly.')}
+			</p>
+		{:else if summarizeResult === 'error'}
+			<p class="mt-3 flex items-center gap-2 text-sm text-[var(--color-danger)]">
+				<AlertCircle size={16} />
+				{t('video.summarize_error', 'Could not queue the AI draft.')}
+			</p>
+		{/if}
 
 		{#if source.description}
 			<p class="mt-6 whitespace-pre-line text-[15px] leading-relaxed text-[var(--color-text)]">
