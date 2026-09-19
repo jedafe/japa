@@ -60,6 +60,7 @@
 		source = null as SourceLike | null,
 		personas = [] as PersonaItem[],
 		entityTypeOptions = [] as string[],
+		sourceTypeOptions = [] as string[],
 		saving = false,
 		errorMessage = '',
 		onSubmit
@@ -68,6 +69,7 @@
 		source?: SourceLike | null;
 		personas?: PersonaItem[];
 		entityTypeOptions?: string[];
+		sourceTypeOptions?: string[];
 		saving?: boolean;
 		errorMessage?: string;
 		onSubmit: (values: SourceFormValues) => void;
@@ -142,20 +144,61 @@
 		{ value: 'import_export', label: t('intel.category_import_export', 'Import & Export') }
 	]);
 
-	const methodItems = $derived([
-		{ value: 'static', label: t('intel.method_static', 'Static (HTML)') },
-		{ value: 'rss', label: t('intel.method_rss', 'RSS / Atom') },
-		{ value: 'api', label: t('intel.method_api', 'REST API') },
-		{ value: 'pdf', label: t('intel.method_pdf', 'PDF') },
-		{ value: 'ocr', label: t('intel.method_ocr', 'OCR') }
-	]);
+	// 'manual' is a backend sentinel for non-crawlable rows (video_channel,
+	// entity-linked sources) — not offered for new sources, but appended
+	// when editing one so the current value is preserved.
+	const methodItems = $derived.by(() => {
+		const items = [
+			{ value: 'static', label: t('intel.method_static', 'Static (HTML)') },
+			{ value: 'rss', label: t('intel.method_rss', 'RSS / Atom') },
+			{ value: 'api', label: t('intel.method_api', 'REST API') },
+			{ value: 'pdf', label: t('intel.method_pdf', 'PDF') },
+			{ value: 'ocr', label: t('intel.method_ocr', 'OCR') }
+		];
+		if (form.crawl_method && !items.some((m) => m.value === form.crawl_method)) {
+			items.push({
+				value: form.crawl_method,
+				label: t(`intel.method_${form.crawl_method}`, form.crawl_method)
+			});
+		}
+		return items;
+	});
 
-	const frequencyItems = $derived([
-		{ value: 'hourly', label: t('intel.freq_hourly', 'Hourly') },
-		{ value: 'daily', label: t('intel.freq_daily', 'Daily') },
-		{ value: 'weekly', label: t('intel.freq_weekly', 'Weekly') },
-		{ value: 'monthly', label: t('intel.freq_monthly', 'Monthly') }
-	]);
+	// Same preserve-current-value rule as methodItems: non-crawlable rows
+	// carry crawl_frequency='manual'.
+	const frequencyItems = $derived.by(() => {
+		const items = [
+			{ value: 'hourly', label: t('intel.freq_hourly', 'Hourly') },
+			{ value: 'daily', label: t('intel.freq_daily', 'Daily') },
+			{ value: 'weekly', label: t('intel.freq_weekly', 'Weekly') },
+			{ value: 'monthly', label: t('intel.freq_monthly', 'Monthly') }
+		];
+		if (form.crawl_frequency && !items.some((f) => f.value === form.crawl_frequency)) {
+			items.push({
+				value: form.crawl_frequency,
+				label: t(`intel.freq_${form.crawl_frequency}`, form.crawl_frequency)
+			});
+		}
+		return items;
+	});
+
+	// Source-type options come from /api/v1/sources/meta (Rule 16 — no
+	// hardcoded list). The column is free text in the DB, so the current
+	// value is appended when absent to avoid clobbering legacy/seeded
+	// values (e.g. 'government', 'web') on edit.
+	const typeItems = $derived.by(() => {
+		const items = sourceTypeOptions.map((v) => ({
+			value: v,
+			label: t(`intel.type_${v}`, v.replace(/_/g, ' '))
+		}));
+		if (form.source_type && !sourceTypeOptions.includes(form.source_type)) {
+			items.push({
+				value: form.source_type,
+				label: t(`intel.type_${form.source_type}`, form.source_type.replace(/_/g, ' '))
+			});
+		}
+		return items;
+	});
 
 	const trustItems = $derived([
 		{ value: '1', label: t('intel.trust_official', '1 — Official') },
@@ -280,7 +323,26 @@
 					</div>
 					<div>
 						<label for="sf-type" class={labelClass}>{t('intel.field_source_type', 'Source Type')}</label>
-						<input id="sf-type" type="text" bind:value={form.source_type} class={inputClass} placeholder="web" />
+						<Select.Root
+							type="single"
+							value={form.source_type}
+							onValueChange={(v) => { if (v !== undefined) form.source_type = v; }}
+						>
+							<Select.Trigger class={inputClass}>
+								<Select.Value placeholder={t('intel.field_source_type', 'Source Type')} />
+							</Select.Trigger>
+							<Select.Portal>
+								<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+									<Select.Viewport class="p-1">
+										{#each typeItems as st}
+											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={st.value} label={st.label}>
+												{st.label}
+											</Select.Item>
+										{/each}
+									</Select.Viewport>
+								</Select.Content>
+							</Select.Portal>
+						</Select.Root>
 					</div>
 				</div>
 

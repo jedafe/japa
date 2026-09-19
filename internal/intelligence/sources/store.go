@@ -128,6 +128,22 @@ func (s *Store) ListDue(ctx context.Context, limit int32) ([]Source, error) {
 	return rows, nil
 }
 
+// ListVideoChannelsDue returns enabled video_channel sources due for a
+// channel-feed sync: never synced, or last_crawled_at older than
+// intervalMins. Used by the video:sync_channels poller (§106 channel-sync
+// amendment).
+func (s *Store) ListVideoChannelsDue(ctx context.Context, intervalMins, limit int32) ([]Source, error) {
+	rows, err := s.queries.ListVideoChannelSourcesDue(ctx, gen.ListVideoChannelSourcesDueParams{
+		Column1: intervalMins,
+		Limit:   limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sources: list video channels due: %w", err)
+	}
+
+	return rows, nil
+}
+
 // UpdateEnabled toggles the enabled flag for a source.
 func (s *Store) UpdateEnabled(ctx context.Context, id SourceID, enabled bool) error {
 	if err := s.queries.UpdateIntelSourceEnabled(ctx, gen.UpdateIntelSourceEnabledParams{

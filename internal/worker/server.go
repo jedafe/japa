@@ -303,6 +303,12 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	schedule("*/15 * * * *", TypeIntelScheduleCrawls, 15*time.Minute)
 	schedule("30 4 * * *", TypeIntelRefreshFreshness, 24*time.Hour)
 
+	// §106 channel-sync amendment — hourly YouTube Atom-feed poll for
+	// video_channel directory sources. Runs at :20 to avoid the top-of-hour
+	// cron cluster; low queue. New uploads land as video_sources + contents
+	// via the same path as bulk import (no YouTube Data API key required).
+	schedule("20 * * * *", TypeVideoSyncChannels, 1*time.Hour)
+
 	return scheduler
 }
 

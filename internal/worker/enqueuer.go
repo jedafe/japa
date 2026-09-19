@@ -116,6 +116,10 @@ func taskDefaults(taskType string) []asynq.Option {
 	// limited retries because failures are often site-side and permanent.
 	case TypeIntelSourceMetadata:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(3))
+	// Channel sync: external fetches (channel page + Atom feed + per-video
+	// oEmbed) across a batch of sources — generous timeout, few retries.
+	case TypeVideoSyncChannels:
+		opts = append(opts, asynq.Timeout(10*time.Minute), asynq.MaxRetry(3))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -273,6 +277,8 @@ var taskTier = func() map[string]string {
 		TypeVisaTimelinePromptUpdate,
 		// §INTEL — daily freshness decay cron, low tier (ADR-112).
 		TypeIntelRefreshFreshness,
+		// §106 channel-sync amendment — hourly Atom-feed poll, low tier.
+		TypeVideoSyncChannels,
 	} {
 		m[t] = QueueLow
 	}
@@ -332,6 +338,7 @@ var taskTypeCatalog = []struct {
 	{TypeVideoProcessing, "default", "Process uploaded video files"},
 	{TypeVideoImportBulk, "default", "Bulk import YouTube channel, playlist, or keyword results as video sources"},
 	{TypeVideoGenerateSummary, "low", "AI-generated title/body draft from video metadata (§106, ADR-117)"},
+	{TypeVideoSyncChannels, "low", "Hourly poll of video_channel sources' YouTube Atom feeds; imports new uploads as video_sources + contents (§106, ADR-117)"},
 	{TypeWalletProcessActivityEvent, "default", "Process wallet activity event"},
 	{TypeWalletProcessCreditPurchase, "default", "Credit wallet on credit purchase payment success"},
 	{TypeWalletAwardPoints, "default", "Award points or credits to a user wallet (checklist, referral, assessment, scholarship)"},

@@ -252,6 +252,15 @@ func (s *Store) ListBySourceID(ctx context.Context, sourceID pgtype.UUID, limit,
 	return rows, int64(total), nil
 }
 
+// SetVideoSourceIntelSource force-stamps the canonical intel_sources link on
+// a video source (§106 channel-sync amendment).
+func (s *Store) SetVideoSourceIntelSource(ctx context.Context, videoSourceID, intelSourceID pgtype.UUID) error {
+	return s.write.SetVideoSourceIntelSource(ctx, gen.SetVideoSourceIntelSourceParams{
+		SourceID: intelSourceID,
+		ID:       videoSourceID,
+	})
+}
+
 // LinkVideoSourcesToChannel backfills source_id on a channel's previously
 // imported videos once the channel's intel source is registered (§106).
 func (s *Store) LinkVideoSourcesToChannel(ctx context.Context, sourceID, authorID pgtype.UUID) error {

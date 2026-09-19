@@ -2257,6 +2257,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelHandlers.SetTagService(tagsService)
 	worker.RegisterVideoImportProcessor(videoService)
 	worker.RegisterVideoSummaryProcessor(videoService)
+	worker.RegisterVideoChannelSyncer(videoService)
 	videoHandlers := video.NewHandlers(videoService)
 	videoHandlers.SetAuthMiddleware(auth.RequireAuth(kr, vkClient.Redis()))
 	videoHandlers.SetPermissionChecker(rbacResolver)

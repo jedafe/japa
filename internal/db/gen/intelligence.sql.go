@@ -1854,6 +1854,83 @@ func (q *Queries) ListStaleIntelRecords(ctx context.Context, limit int32) ([]Int
 	return items, nil
 }
 
+const listVideoChannelSourcesDue = `-- name: ListVideoChannelSourcesDue :many
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources
+WHERE source_type = 'video_channel'
+ AND enabled = true
+ AND status = 'active'
+ AND (last_crawled_at IS NULL OR now() - last_crawled_at >= ($1::int || ' minutes')::interval)
+ORDER BY last_crawled_at NULLS FIRST
+LIMIT $2
+`
+
+type ListVideoChannelSourcesDueParams struct {
+	Column1 int32 `json:"column_1"`
+	Limit   int32 `json:"limit"`
+}
+
+// Enabled video_channel sources due for a channel-feed sync: never synced,
+// or last_crawled_at older than the given minute interval. Used by the
+// video:sync_channels poller (§106 channel-sync amendment) — distinct from
+// ListDueIntelSources, which excludes crawl_method='manual' by design.
+func (q *Queries) ListVideoChannelSourcesDue(ctx context.Context, arg ListVideoChannelSourcesDueParams) ([]IntelSource, error) {
+	rows, err := q.db.Query(ctx, listVideoChannelSourcesDue, arg.Column1, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntelSource
+	for rows.Next() {
+		var i IntelSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Domain,
+			&i.SourceUrl,
+			&i.Category,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.CrawlMethod,
+			&i.CrawlFrequency,
+			&i.CrawlFrequencyMins,
+			&i.RobotsPolicy,
+			&i.SourceLicense,
+			&i.AttributionRequired,
+			&i.UsageRestriction,
+			&i.ProviderConfig,
+			&i.Enabled,
+			&i.LastCrawledAt,
+			&i.LastSuccessAt,
+			&i.LastErrorAt,
+			&i.LastErrorMessage,
+			&i.LastChangedAt,
+			&i.ConsecutiveFailures,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.Slug,
+			&i.Description,
+			&i.LogoUrl,
+			&i.FollowerCount,
+			&i.PostCount,
+			&i.SourceKind,
+			&i.Keywords,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateIntelRecordFreshness = `-- name: UpdateIntelRecordFreshness :exec
 UPDATE intel_records SET freshness_score = $2, status = CASE WHEN $2 <= 40 THEN 'stale' ELSE status END WHERE id = $1
 `

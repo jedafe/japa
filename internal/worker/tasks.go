@@ -51,6 +51,7 @@ const (
 	TypeVideoProcessing               = "content:process_video"
 	TypeVideoImportBulk               = "video:import_bulk"
 	TypeVideoGenerateSummary          = "video:generate_summary"
+	TypeVideoSyncChannels             = "video:sync_channels"
 	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
 	TypeWalletProcessCreditPurchase   = "wallet:process_credit_purchase"
 	TypeWalletAwardPoints             = "wallet:award_points"
@@ -177,6 +178,7 @@ var handlerRegistry = []struct {
 	{TypeVideoProcessing, HandleVideoProcessing},
 	{TypeVideoImportBulk, HandleVideoImportBulk},
 	{TypeVideoGenerateSummary, HandleVideoGenerateSummary},
+	{TypeVideoSyncChannels, HandleVideoSyncChannels},
 	{TypeWalletProcessActivityEvent, HandleWalletProcessActivityEvent},
 	{TypeWalletProcessCreditPurchase, HandleWalletProcessCreditPurchase},
 	{TypeWalletAwardPoints, HandleWalletAwardPoints},

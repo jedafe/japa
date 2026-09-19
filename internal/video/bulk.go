@@ -597,15 +597,23 @@ func (s *Service) createVideoContent(ctx context.Context, userID pgtype.UUID, jo
 		authorID = job.TargetAuthorUserID
 	}
 
+	return s.createVideoContentForSource(ctx, authorID, job.AutoPublish, source)
+}
+
+// createVideoContentForSource writes the contents row for an imported video.
+// Shared by the bulk-import worker and the channel-sync poller (§106
+// channel-sync amendment): the caller supplies the authoring user and
+// whether the row should publish when the author has a default space.
+func (s *Service) createVideoContentForSource(ctx context.Context, authorID pgtype.UUID, autoPublish bool, source gen.VideoSource) error {
 	status := content.StatusDraft
 	spaceID := pgtype.UUID{}
 
-	if job.AutoPublish {
+	if autoPublish {
 		spaceID, _ = s.store.GetDefaultSpaceForUser(ctx, authorID)
 		if spaceID.Valid {
 			status = content.StatusPublished
 		} else {
-			slog.WarnContext(ctx, "auto_publish enabled but no default space; creating draft content", "job_id", job.ID)
+			slog.WarnContext(ctx, "auto_publish enabled but no default space; creating draft content", "video_source_id", source.ID)
 		}
 	}
 
