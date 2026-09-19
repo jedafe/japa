@@ -26,7 +26,8 @@ func NewStore(database *db.DB) *Store {
 }
 
 // List returns a paginated list of widget configurations for a platform.
-func (s *Store) List(ctx context.Context, q string, page, limit int32) ([]Widget, int64, error) {
+// isActive is a tri-state filter: nil → all, non-nil → only that state.
+func (s *Store) List(ctx context.Context, q string, isActive *bool, page, limit int32) ([]Widget, int64, error) {
 	offset := (page - 1) * limit
 	if offset < 0 {
 		offset = 0
@@ -38,9 +39,10 @@ func (s *Store) List(ctx context.Context, q string, page, limit int32) ([]Widget
 		       cache_ttl_secs, is_active, created_at, updated_at
 		FROM widget_configurations
 		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR widget_type ILIKE '%' || $1 || '%')
+		  AND ($4::boolean IS NULL OR is_active = $4)
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
-	`, q, limit, offset)
+	`, q, limit, offset, isActive)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing widgets: %w", err)
 	}
@@ -69,7 +71,8 @@ func (s *Store) List(ctx context.Context, q string, page, limit int32) ([]Widget
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM widget_configurations
 		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR widget_type ILIKE '%' || $1 || '%')
-	`, q).Scan(&total)
+		  AND ($2::boolean IS NULL OR is_active = $2)
+	`, q, isActive).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting widgets: %w", err)
 	}

@@ -2,6 +2,7 @@ import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { apiContext, apiGet } from '$lib/server/api';
 import { universityUrl } from '$lib/appOrigins';
+import { isExceptionRoute } from '$lib/components/create/gate';
 
 /**
  * App-shell scoped data for every `(app)` route. This layout is re-run on
@@ -30,21 +31,35 @@ export const load: LayoutServerLoad = async (event) => {
 	const sidebarPath = encodeURIComponent(
 		localePrefix ? event.url.pathname.slice(localePrefix) : event.url.pathname
 	);
+	// ADR-058: the shell hides the right sidebar on every exception route
+	// and zeroes left widgets on /studio, /create, /settings, /dashboard —
+	// skip the resolve calls the layout would throw away anyway.
+	const hideRight = isExceptionRoute(event.route.id);
+	const rid = event.route.id ?? '';
+	const hideLeft =
+		rid.startsWith('/(app)/studio') ||
+		rid === '/(app)/create' ||
+		rid.startsWith('/(app)/settings') ||
+		rid.startsWith('/(app)/dashboard');
 	const [sidebarData, leftSidebarData] = await Promise.all([
-		apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
-			ctx,
-			`/sidebars/resolve?app=main&position=right&path=${sidebarPath}`
-		).catch((err) => {
-			console.error('sidebar: right sidebar resolution failed', { path: event.url.pathname, err });
-			return null;
-		}),
-		apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
-			ctx,
-			`/sidebars/resolve?app=main&position=left&path=${sidebarPath}`
-		).catch((err) => {
-			console.error('sidebar: left sidebar resolution failed', { path: event.url.pathname, err });
-			return null;
-		})
+		hideRight
+			? null
+			: apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
+					ctx,
+					`/sidebars/resolve?app=main&position=right&path=${sidebarPath}`
+				).catch((err) => {
+					console.error('sidebar: right sidebar resolution failed', { path: event.url.pathname, err });
+					return null;
+				}),
+		hideLeft
+			? null
+			: apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
+					ctx,
+					`/sidebars/resolve?app=main&position=left&path=${sidebarPath}`
+				).catch((err) => {
+					console.error('sidebar: left sidebar resolution failed', { path: event.url.pathname, err });
+					return null;
+				})
 	]);
 
 	return {

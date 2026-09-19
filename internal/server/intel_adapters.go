@@ -114,11 +114,14 @@ func (a *intelPromoterPortAdapter) Entity() string {
 
 // recordsToResults converts validated extractor records into the worker's
 // IntelExtractResult slice, deriving a stable external_key and per-record
-// aggregate confidence for each. It returns an error if no records are
-// supplied or if any record cannot be marshalled to JSON.
+// aggregate confidence for each. An empty input yields an empty slice (not
+// an error): a mixed-entity-type source legitimately extracts nothing for
+// some of its declared types on a given document — the worker only fails
+// the task when every type produced nothing. It returns an error if any
+// record cannot be marshalled to JSON.
 func (a *intelExtractorPortAdapter) recordsToResults(sourceURL string, records []extractor.Extraction) ([]worker.IntelExtractResult, error) {
 	if len(records) == 0 {
-		return nil, errors.New("intel: no records extracted")
+		return nil, nil
 	}
 
 	out := make([]worker.IntelExtractResult, 0, len(records))

@@ -31,6 +31,9 @@
 		usage_restriction?: string | null;
 		enabled: boolean;
 		persona_id?: string | null;
+		/** Extraction-domain override from provider_config.entity_types —
+		 *  a mixed-domain source declares every entity type it publishes. */
+		entity_types?: string[] | null;
 		last_crawled_at?: string | null;
 		last_success_at?: string | null;
 		last_error_at?: string | null;
@@ -59,6 +62,7 @@
 
 	let sources = $state<IntelSource[]>([]);
 	let personas = $state<PersonaItem[]>([]);
+	let entityTypeOptions = $state<string[]>([]);
 	let personaNameById = $derived.by(() => {
 		const m = new Map<string, string>();
 		for (const p of personas) m.set(p.id, p.profile_name);
@@ -109,6 +113,17 @@
 			);
 			if (presult.ok) {
 				personas = Array.isArray(presult.data) ? (presult.data as PersonaItem[]) : [];
+			}
+		}
+		// Fetch the registered extraction entity types so the SourceForm can
+		// offer the entity_types multi-domain override (Rule 16 — options
+		// come from the API, not a hardcoded list).
+		if (entityTypeOptions.length === 0) {
+			const mresult = await api<{ registered_entity_types?: string[] }>(
+				'/api/v1/sources/meta'
+			);
+			if (mresult.ok && mresult.data) {
+				entityTypeOptions = mresult.data.registered_entity_types ?? [];
 			}
 		}
 		loading = false;
@@ -476,6 +491,7 @@
 		bind:open={formOpen}
 		source={editingSource}
 		personas={personas}
+		entityTypeOptions={entityTypeOptions}
 		saving={formSaving}
 		errorMessage={formError}
 		onSubmit={handleSubmit}

@@ -65,7 +65,8 @@ describe('createAvailableTypes', () => {
 		{ value: 'comparison', label: 'Comparison' },
 		{ value: 'guide', label: 'Guide' },
 		{ value: 'story', label: 'Story' },
-		{ value: 'video', label: 'Video' }
+		{ value: 'video', label: 'Video' },
+		{ value: 'news', label: 'News' }
 	];
 
 	it('exposes only the allowed /create types', () => {
@@ -86,14 +87,14 @@ describe('createAvailableTypes', () => {
 		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true }).map(
 			(t) => t.value
 		);
-		expect(vals).toEqual(['blog_post', 'comparison', 'guide', 'story', 'video']);
+		expect(vals).toEqual(['blog_post', 'comparison', 'guide', 'story', 'video', 'news']);
 	});
 
 	it('hides comparison when feature.comparison is off', () => {
 		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': false, 'video.enabled': true }).map(
 			(t) => t.value
 		);
-		expect(vals).toEqual(['blog_post', 'guide', 'story', 'video']);
+		expect(vals).toEqual(['blog_post', 'guide', 'story', 'video', 'news']);
 	});
 
 	it('hides video when video.enabled is off', () => {

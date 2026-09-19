@@ -8,10 +8,13 @@
 		blockType,
 		meta,
 		getIcon,
+		onAdd,
 	}: {
 		blockType: string;
 		meta: BlockMeta;
 		getIcon: (name: string) => Component | null;
+		/** Click-to-add handler — appends the block as a new top-level section. */
+		onAdd?: (blockType: string) => void;
 	} = $props();
 
 	const draggableInput = $state({
@@ -36,7 +39,9 @@
 	style="border-color: var(--color-border); background-color: var(--color-background)"
 	role="button"
 	tabindex="0"
-	title={meta.label}
+	title="{meta.label} — drag or click to add"
+	onclick={() => onAdd?.(blockType)}
+	onkeydown={(e) => { if (e.key === 'Enter' && onAdd) onAdd(blockType); }}
 >
 	{#if Icon}
 		<Icon size={14} />

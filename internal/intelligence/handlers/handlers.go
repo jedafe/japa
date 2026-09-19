@@ -43,6 +43,12 @@ const TaskIntelPromote = "intel:promote"
 // Mirrors worker.TypeIntelFetchSource without importing the worker package.
 const TaskIntelFetchSource = "intel:fetch_source"
 
+// TaskReportNotifyAdmin is the Asynq task name the source-report handler
+// enqueues so moderators with reports.review are notified of a new report —
+// the same fan-out the content/comment/user report handlers run (Section 51).
+// Mirrors worker.TypeReportNotifyAdmin without importing the worker package.
+const TaskReportNotifyAdmin = "report:notify_admin"
+
 // SettingsReader is the minimal interface the handlers need to read
 // system_settings at runtime (Rule 3, INTEL-016). Defining it locally
 // avoids an import cycle on internal/config.

@@ -231,6 +231,8 @@ The source `category` and `entity_type` already determine where a record lands. 
 
 A single source can publish multiple entity types. The detail page groups or filters by `entity_type`.
 
+**Extraction-side support for mixed-domain sources.** By default `intel:extract` derives one entity type per source from `intel_sources.category` (via `CategoryToEntityType`) — the limitation this design flagged. To let one source produce records under several entity types, the operator declares an explicit override in `provider_config.entity_types` (a JSON array of registered extraction entity types, e.g. `["scholarship","job"]`). When present and non-empty, `intel:extract` runs one extraction pass per declared type and persists each pass's records under that pass's `entity_type`; every `intel_records` row keeps its own type, so the `?entity_type=` filter and the mixed "latest" feed need no further changes. An empty array (or absent key) restores the category-derived single-type behaviour. The override is managed through the first-class `entity_types` field on `POST/PATCH /api/v1/intel/sources` (the backend merges it into `provider_config` so sibling keys like an API source's `endpoint` are preserved) and is surfaced as `entity_types` on the admin source responses. The set of valid values is exposed on `GET /api/v1/sources/meta` as `registered_entity_types` so operator UIs never hardcode the registry.
+
 ---
 
 ## Data flow

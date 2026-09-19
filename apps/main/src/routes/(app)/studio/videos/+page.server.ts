@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiList, apiPost, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
 import { redirect } from '@sveltejs/kit';
 import type { VideoImportJob } from '$lib/types';
 
@@ -26,14 +26,23 @@ export const load: PageServerLoad = async (event) => {
 	event.depends(STUDIO_CACHE_TAG);
 	const ctx = apiContext(event);
 
-	let jobs: VideoImportJob[] = [];
-	try {
-		jobs = (await apiList<VideoImportJob>(ctx, '/me/video-imports')).items;
-	} catch {
-		jobs = [];
-	}
+	// §106: the mutating routes (start/preview/retry) all require
+	// video.import.bulk, and target_username attribution additionally
+	// requires admin.video_import_jobs.manage — the UI mirrors those gates
+	// instead of rendering a form that can only fail with 403.
+	const [jobsRes, permsRes] = await Promise.allSettled([
+		apiList<VideoImportJob>(ctx, '/me/video-imports?limit=100'),
+		apiGet<{ permissions: string[] }>(ctx, '/me/permissions')
+	]);
 
-	return { jobs };
+	const permissions =
+		permsRes.status === 'fulfilled' ? (permsRes.value?.permissions ?? []) : [];
+
+	return {
+		jobs: jobsRes.status === 'fulfilled' ? jobsRes.value.items : [],
+		canBulkImport: permissions.includes('video.import.bulk'),
+		canAttributeImports: permissions.includes('admin.video_import_jobs.manage')
+	};
 };
 
 export const actions: Actions = {

@@ -70,6 +70,9 @@ export interface SourceOption {
 export interface SourceMeta {
 	categories: string[];
 	source_types: string[];
+	/** Publisher-kind options for the directory ?source_kind= filter —
+	 *  distinct from source_types (crawl mechanism, proposal form only). */
+	source_kinds?: SourceOption[];
 	entity_types?: SourceEntityType[];
 	sorts?: SourceOption[];
 	item_sorts?: SourceOption[];

@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('studio.tabs.contents', 'Contents')} — {t('app.name', 'JapaConnect')}</title>
+	<title>{t('studio.tabs.contents', 'Contents')} — {t('studio.title', 'Studio — JapaConnect')}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

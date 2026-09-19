@@ -68,6 +68,8 @@
 			contentTypes={data.contentTypes}
 			{spaces}
 			drafts={data.drafts}
+			visibilityOptions={data.visibilityOptions}
+			statusOptions={data.statusOptions}
 		/>
 	</div>
 
@@ -81,6 +83,8 @@
 			canPersona={data.canPersona}
 			personas={data.personas}
 			voices={data.voices}
+			statusOptions={data.statusOptions}
+			visibilityOptions={data.visibilityOptions}
 		/>
 	</aside>
 </div>

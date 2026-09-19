@@ -27,6 +27,31 @@ export function isContainerLike(b: Block): boolean {
 	return CONTAINER_LIKE_TYPES.has(b.type);
 }
 
+/**
+ * Block types that only render meaningfully nested inside a specific guest
+ * container (e.g. `guest_footer_link` inside `guest_footer_column`). They
+ * stay draggable into container slots but must not be added as top-level
+ * sections — at the root they produce broken output.
+ */
+export const CHILD_ONLY_TYPES = new Set([
+	'guest_hero_destination_item',
+	'guest_hero_community_member',
+	'guest_hero_cta_item',
+	'guest_hero_stat_item',
+	'guest_category_item',
+	'guest_opportunity_item',
+	'guest_story_item',
+	'guest_tool_item',
+	'guest_footer_column',
+	'guest_footer_link',
+	'guest_footer_social',
+]);
+
+/** Whether a block type is only valid as a nested child of a guest container. */
+export function isChildOnlyType(type: string): boolean {
+	return CHILD_ONLY_TYPES.has(type);
+}
+
 /** The default slot key — `props.children`. */
 export const DEFAULT_SLOT = 'children';
 

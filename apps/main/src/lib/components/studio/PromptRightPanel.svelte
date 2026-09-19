@@ -16,7 +16,9 @@
 		MODE_OPTIONS,
 		TONE_OPTIONS,
 		FRAMEWORK_OPTIONS,
-		HUMANIZE_OPTIONS
+		HUMANIZE_OPTIONS,
+		DEFAULT_PROMPT_VALUES,
+		type SelectOption
 	} from '$lib/studio/types';
 	import { isHighStakesCategory } from '$lib/studio/validation';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
@@ -41,6 +43,10 @@
 		canPersona: boolean;
 		personas: Persona[];
 		voices: VoiceOption[];
+		/** GET /content/status-options — the authoritative status list (Rule 16). */
+		statusOptions: SelectOption[];
+		/** GET /content/visibility-options — the authoritative visibility list. */
+		visibilityOptions: SelectOption[];
 	}
 
 	let {
@@ -51,7 +57,9 @@
 		maxTags,
 		canPersona,
 		personas,
-		voices
+		voices,
+		statusOptions,
+		visibilityOptions
 	}: Props = $props();
 
 	const highStakes = $derived(isHighStakesCategory(values.guide_category));
@@ -105,9 +113,12 @@
 		}
 	});
 	const statusItems = $derived(
-		['draft', 'in_review', 'published', 'scheduled']
-			.filter((s) => !highStakes || (s !== 'published' && s !== 'scheduled'))
-			.map((s) => ({ id: s, label: s }))
+		statusOptions
+			.filter((s) => !highStakes || (s.value !== 'published' && s.value !== 'scheduled'))
+			.map((s) => ({ id: s.value, label: s.label }))
+	);
+	const visibilityItems = $derived(
+		visibilityOptions.map((s) => ({ id: s.value, label: s.label }))
 	);
 
 	function labelFor(items: { id: string; label: string }[], id: string): string {
@@ -119,7 +130,8 @@
 	label: string,
 	items: AutocompleteItem[],
 	selectedId: string,
-	onPick: (item: AutocompleteItem) => void
+	onPick: (item: AutocompleteItem) => void,
+	onClear?: () => void
 )}
 	<div class="field-row">
 		<span class="field-label">{label}</span>
@@ -131,6 +143,7 @@
 			selectedId={selectedId || null}
 			selectedLabel={labelFor(items, selectedId)}
 			onSelect={onPick}
+			{onClear}
 		/>
 	</div>
 {/snippet}
@@ -179,20 +192,20 @@
 
 	<Tabs.Content value="prompt" class="pt-2">
 		<div class="panel-stack">
-			{@render selectField(t('studio.prompts.mode', 'Mode'), modeItems, values.mode, (i) => (values.mode = i.id as PromptMode))}
+			{@render selectField(t('studio.prompts.mode', 'Mode'), modeItems, values.mode, (i) => (values.mode = i.id as PromptMode), () => (values.mode = DEFAULT_PROMPT_VALUES.mode))}
 			{@render textField(t('studio.prompts.audience', 'Audience'), values.audience, (v) => (values.audience = v), t('studio.prompts.audience_placeholder', 'e.g. Nigerians relocating to Canada — defaults to general JapaConnect readers'))}
 
 			{#if canPersona}
-				{@render selectField(t('studio.prompts.persona', 'Persona'), personaItems, values.persona_id, (i) => (values.persona_id = i.id))}
+				{@render selectField(t('studio.prompts.persona', 'Persona'), personaItems, values.persona_id, (i) => (values.persona_id = i.id), () => (values.persona_id = ''))}
 			{/if}
-			{@render selectField(t('studio.prompts.tone', 'Tone'), toneItems, values.tone, (i) => (values.tone = i.id as PromptTone))}
+			{@render selectField(t('studio.prompts.tone', 'Tone'), toneItems, values.tone, (i) => (values.tone = i.id as PromptTone), () => (values.tone = DEFAULT_PROMPT_VALUES.tone))}
 			{#if canPersona}
-				{@render selectField(t('studio.prompts.voice', 'Voice'), voiceItems, values.voice_id, (i) => (values.voice_id = i.id))}
+				{@render selectField(t('studio.prompts.voice', 'Voice'), voiceItems, values.voice_id, (i) => (values.voice_id = i.id), () => (values.voice_id = ''))}
 			{/if}
 
 			<div class="pair">
-				{@render selectField(t('studio.prompts.framework', 'Framework'), frameworkItems, values.framework, (i) => (values.framework = i.id as PromptFramework))}
-				{@render selectField(t('studio.prompts.humanize', 'Humanize'), humanizeItems, values.humanize_level, (i) => (values.humanize_level = i.id as HumanizeLevel))}
+				{@render selectField(t('studio.prompts.framework', 'Framework'), frameworkItems, values.framework, (i) => (values.framework = i.id as PromptFramework), () => (values.framework = DEFAULT_PROMPT_VALUES.framework))}
+				{@render selectField(t('studio.prompts.humanize', 'Humanize'), humanizeItems, values.humanize_level, (i) => (values.humanize_level = i.id as HumanizeLevel), () => (values.humanize_level = DEFAULT_PROMPT_VALUES.humanize_level))}
 			</div>
 		</div>
 	</Tabs.Content>
@@ -278,12 +291,18 @@
 				<TagInput tags={values.tags} onTags={(next) => (values.tags = next)} {maxTags} />
 			</div>
 
-			{@render selectField(t('studio.prompts.status', 'Status'), statusItems, values.status, (i) => (values.status = i.id))}
+			<div class="pair">
+				{@render selectField(t('studio.prompts.status', 'Status'), statusItems, values.status, (i) => (values.status = i.id), () => (values.status = DEFAULT_PROMPT_VALUES.status))}
+				{@render selectField(t('studio.prompts.visibility', 'Visibility'), visibilityItems, values.visibility, (i) => (values.visibility = i.id), () => (values.visibility = DEFAULT_PROMPT_VALUES.visibility))}
+			</div>
 			{#if highStakes}
 				<p class="hint warn">
 					{t('studio.prompts.high_stakes', 'High-stakes category — saved as in_review regardless of selected status.')}
 				</p>
 			{/if}
+
+			<label class="toggle"><input type="checkbox" bind:checked={values.seo_indexable} /> {t('studio.prompts.seo_indexable', 'Indexable')}</label>
+
 			<div class="field-row">
 				<label class="field-label" for="pp-field-values">
 					{t('studio.prompts.field_values', 'Field values (key: value, one per line)')}
@@ -382,9 +401,9 @@
 		font-family: inherit;
 	}
 	.toggle-col {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 8px 12px;
 	}
 	.toggle {
 		display: inline-flex;

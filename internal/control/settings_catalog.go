@@ -661,7 +661,7 @@ var settingsCatalog = map[string]settingMeta{
 	"video.import.youtube_api_key":        {Type: "string", DefaultValue: "", Description: "YouTube Data API v3 key for bulk imports (server-only).", Sensitive: true, Panel: "admin"},
 	"video.import.instagram_access_token": {Type: "string", DefaultValue: "", Description: "Instagram oEmbed access token for Reel/post imports (server-only).", Sensitive: true, Panel: "admin"},
 	"video.import.max_items_per_run":      {Type: "int", DefaultValue: "50", Description: "Max videos resolved per bulk import run.", Panel: "admin"},
-	"video.ai_summary.enabled":            {Type: "bool", DefaultValue: "false", Description: "Allow users to enqueue AI-generated drafts from video metadata.", Panel: "admin"},
+	"video.ai_summary.enabled":            {Type: "bool", DefaultValue: "false", Public: true, Description: "Allow users to enqueue AI-generated drafts from video metadata.", Panel: "admin"},
 	"video.claim_form_slug":               {Type: "string", DefaultValue: "video-channel-claim", Description: "Form Builder slug for claim/takedown evidence.", Panel: "admin"},
 }
 

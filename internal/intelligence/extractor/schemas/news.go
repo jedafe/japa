@@ -4,9 +4,11 @@ package schemas
 // (spec item 10: "Immigration news"). News sources are RSS feeds from
 // outlets like BBC Africa, Al Jazeera, Punch Nigeria, etc. The extractor
 // parses each feed item into a structured news article for the moderation
-// queue. News records are always human-reviewed before publishing (no
-// auto-promote projection table exists for news); the extracted fields
-// give the reviewer structured metadata to act on.
+// queue. News records are always human-reviewed before publishing — the
+// publish gate routes them to review, and on approval the promoter writes
+// a contents row with content_type='news' (no dedicated projection
+// table; the extraction is the projection). The extracted fields give the
+// reviewer structured metadata to act on.
 var News = EntitySchema{
 	EntityType: EntityTypeNews,
 	Fields: []FieldSpec{

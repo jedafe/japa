@@ -37,6 +37,10 @@ type sourceDirectoryEntry struct {
 	FollowerCount       int32   `json:"follower_count"`
 	PostCount           int32   `json:"post_count"`
 	Enabled             bool    `json:"enabled"`
+	// EntityTypes is the provider_config.entity_types extraction-domain
+	// override — surfaced so the control panel can manage mixed-domain
+	// sources without exposing the raw config document.
+	EntityTypes []string `json:"entity_types,omitempty"`
 }
 
 func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
@@ -54,6 +58,7 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 		FollowerCount:       s.FollowerCount,
 		PostCount:           s.PostCount,
 		Enabled:             s.Enabled,
+		EntityTypes:         sources.EntityTypesFromProviderConfig(s.ProviderConfig),
 	}
 	if s.ID.Valid {
 		entry.ID = s.ID.String()
@@ -210,6 +215,11 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 	} else {
 		entry["persona_id"] = nil
 	}
+
+	// The extraction-domain override stored inside provider_config — surfaced
+	// as a first-class field so the control panel form can prefill it without
+	// exposing the rest of the config document.
+	entry["entity_types"] = sources.EntityTypesFromProviderConfig(s.ProviderConfig)
 
 	entry["proposed_at"] = s.ProposedAt
 	if s.ProposedBy.Valid {

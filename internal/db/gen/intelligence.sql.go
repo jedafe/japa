@@ -2097,6 +2097,20 @@ func (q *Queries) UpdateIntelSourceMetadata(ctx context.Context, arg UpdateIntel
 	return err
 }
 
+const updateIntelSourceProviderConfig = `-- name: UpdateIntelSourceProviderConfig :exec
+UPDATE intel_sources SET provider_config = $2, updated_at = now() WHERE id = $1
+`
+
+type UpdateIntelSourceProviderConfigParams struct {
+	ID             pgtype.UUID `json:"id"`
+	ProviderConfig []byte      `json:"provider_config"`
+}
+
+func (q *Queries) UpdateIntelSourceProviderConfig(ctx context.Context, arg UpdateIntelSourceProviderConfigParams) error {
+	_, err := q.db.Exec(ctx, updateIntelSourceProviderConfig, arg.ID, arg.ProviderConfig)
+	return err
+}
+
 const updateIntelSourceRobotsPolicy = `-- name: UpdateIntelSourceRobotsPolicy :exec
 UPDATE intel_sources SET robots_policy = $2, updated_at = now() WHERE id = $1
 `

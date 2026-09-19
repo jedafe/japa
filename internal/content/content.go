@@ -110,6 +110,11 @@ const (
 	TypeServiceListing = "service_listing"
 	// Video content type (§106 / ADR-117).
 	TypeVideo = "video"
+	// News content type — the promotion target for intel_records with
+	// entity_type 'news'. News records are extracted by the intelligence
+	// spine (RSS rule-based path or LLM) and promoted to contents rows under
+	// this type so they surface on the source feed and /content/{slug}.
+	TypeNews = "news"
 )
 
 // Visibility values stored in the contents.visibility column.
@@ -152,6 +157,8 @@ var validContentTypes = map[string]bool{
 	TypeServiceListing: true,
 	// Video content type (§106 / ADR-117).
 	TypeVideo: true,
+	// News post — the intel 'news' entity_type promotion target.
+	TypeNews: true,
 }
 
 // IsValidStatus reports whether s is a valid contents.status value.
@@ -193,6 +200,8 @@ var ContentTypeLabels = map[string]string{
 	TypeServiceListing: "Service Listing",
 	// Video content type (§106 / ADR-117).
 	TypeVideo: "Video",
+	// News post — intel 'news' promotion target.
+	TypeNews: "News",
 }
 
 // ContentTypeHasCategory reports whether a content type uses admin-configurable

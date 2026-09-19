@@ -18,9 +18,13 @@
 		contentTypes: ContentTypeMeta[];
 		spaces: MeSpace[];
 		drafts: ContentRecord[];
+		/** GET /content/visibility-options — the authoritative visibility list (Rule 16). */
+		visibilityOptions: { value: string; label: string }[];
+		/** GET /content/status-options — the authoritative status list. */
+		statusOptions: { value: string; label: string }[];
 	}
 
-	let { contentTypes, spaces, drafts }: Props = $props();
+	let { contentTypes, spaces, drafts, visibilityOptions, statusOptions }: Props = $props();
 
 	let raw = $state('');
 	let parsed = $state(false);
@@ -42,11 +46,13 @@
 	const categoryItems = $derived(categories.map((c) => ({ id: c.Slug, label: c.Label })));
 	const spaceItems = $derived(spaces.map((s) => ({ id: s.id, label: s.name })));
 	const statusItems = $derived(
-		['draft', 'in_review', 'published', 'scheduled']
-			.filter((s) => !highStakes || (s !== 'published' && s !== 'scheduled'))
-			.map((s) => ({ id: s, label: s }))
+		statusOptions
+			.filter((s) => !highStakes || (s.value !== 'published' && s.value !== 'scheduled'))
+			.map((s) => ({ id: s.value, label: s.label }))
 	);
-	const visibilityItems = ['public', 'members', 'private'].map((v) => ({ id: v, label: v }));
+	const visibilityItems = $derived(
+		visibilityOptions.map((v) => ({ id: v.value, label: v.label }))
+	);
 
 	function labelFor(items: { id: string; label: string }[], id: string): string {
 		return items.find((i) => i.id === id)?.label ?? '';
@@ -98,6 +104,13 @@
 		if (conflictingDraft) payload.content_id = conflictingDraft.id;
 		if (highStakes && (str('status') === 'published' || str('status') === 'scheduled')) {
 			payload.status = 'in_review';
+		}
+		// A bare datetime-local value is browser-local time — normalise to
+		// a UTC instant here, where the user's timezone is known.
+		const pa = str('publish_at');
+		if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(pa)) {
+			const d = new Date(pa);
+			if (!isNaN(d.getTime())) payload.publish_at = d.toISOString();
 		}
 		return JSON.stringify(payload);
 	}

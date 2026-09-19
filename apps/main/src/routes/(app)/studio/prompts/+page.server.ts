@@ -26,7 +26,7 @@ export const load: PageServerLoad = async (event) => {
 	event.depends(STUDIO_PROMPTS_TAG);
 	const ctx = apiContext(event);
 
-	const [typesRes, spacesRes, draftsRes, permsRes, visibilityRes, seriesRes, assessmentRes] =
+	const [typesRes, spacesRes, draftsRes, permsRes, visibilityRes, statusRes, seriesRes, assessmentRes] =
 		await Promise.allSettled([
 			apiList<ContentTypeMeta>(ctx, '/content-types'),
 			apiList<MeSpace>(ctx, '/me/spaces'),
@@ -35,6 +35,9 @@ export const load: PageServerLoad = async (event) => {
 			apiList<ContentRecord>(ctx, '/me/drafts?page_size=100'),
 			apiGet<{ permissions: string[] }>(ctx, '/me/permissions'),
 			apiGet<{ value: Visibility; label: string }[]>(ctx, '/content/visibility-options'),
+			// Rule 16 — the status list comes from the backend, not a
+			// hardcoded constant (includes 'archived').
+			apiGet<{ value: string; label: string }[]>(ctx, '/content/status-options'),
 			apiList<BlogSeries>(ctx, '/blog/series'),
 			// §71 — active assessment form; its dimensions populate the
 			// Journey panel's roadmap-dimension picker.
@@ -68,6 +71,8 @@ export const load: PageServerLoad = async (event) => {
 		personas,
 		visibilityOptions:
 			visibilityRes.status === 'fulfilled' ? visibilityRes.value : [],
+		statusOptions:
+			statusRes.status === 'fulfilled' ? statusRes.value : [],
 		series: seriesRes.status === 'fulfilled' ? seriesRes.value.items : [],
 		assessmentDimensions:
 			assessmentRes.status === 'fulfilled' ? (assessmentRes.value?.dimensions ?? []) : []
@@ -88,7 +93,13 @@ function getTags(payload: Record<string, unknown>): string[] {
 
 function normalisePublishAt(value: string): string | undefined {
 	if (!value) return undefined;
-	if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return `${value}:00Z`;
+	// A bare `YYYY-MM-DDTHH:mm` comes from a datetime-local input — it is
+	// browser-local time, so convert to a real UTC instant instead of
+	// naively tagging it 'Z' (which would store local wall-time as UTC).
+	if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
+		const d = new Date(value);
+		return isNaN(d.getTime()) ? undefined : d.toISOString();
+	}
 	return value;
 }
 
@@ -100,7 +111,10 @@ function buildApiPayload(fm: Record<string, unknown>, status: string): Record<st
 		title: getStr(fm, 'title') || 'Untitled',
 		slug: getStr(fm, 'slug'),
 		body,
-		body_html: markdownToHtml(body),
+		// Spec §5 — the body_html pipeline is marked → isomorphic-dompurify
+		// (the backend re-sanitizes on save as well, but the payload should
+		// arrive already clean).
+		body_html: markdownToHtml(body, { sanitize: true }),
 		status,
 		visibility: getStr(fm, 'visibility') || 'public',
 		seo_indexable: fm.seo_indexable !== false

@@ -34,6 +34,15 @@ const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 /** In-flight browser refresh; shared so concurrent 401s coalesce into one call. */
 let refreshPromise: Promise<boolean> | null = null;
 
+// A successful refresh rotates the one-time-use jc_refresh cookie. A second
+// refresh fired before the browser has applied the Set-Cookie would present
+// the just-revoked cookie, trip the server's reuse detection, and revoke the
+// entire session family. A refresh that succeeded within this window is
+// treated as still valid — the retrying request only needs the rotated
+// jc_token cookie, not another refresh-cookie rotation.
+const REFRESH_OK_TTL_MS = 3_000;
+let lastRefreshOkAt = 0;
+
 /**
  * Refresh the access token via the SvelteKit /api/auth/refresh endpoint.
  * The backend rotates the refresh token and the endpoint sets both jc_token
@@ -42,13 +51,16 @@ let refreshPromise: Promise<boolean> | null = null;
  */
 async function refreshSession(): Promise<boolean> {
 	if (refreshPromise) return refreshPromise;
+	if (Date.now() - lastRefreshOkAt < REFRESH_OK_TTL_MS) return true;
 	refreshPromise = (async () => {
 		try {
 			const res = await fetch('/api/auth/refresh', {
 				method: 'POST',
 				credentials: 'include'
 			});
-			return res.ok;
+			if (!res.ok) return false;
+			lastRefreshOkAt = Date.now();
+			return true;
 		} catch {
 			return false;
 		} finally {

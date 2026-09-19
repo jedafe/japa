@@ -39,7 +39,7 @@ export const load: PageServerLoad = async (event) => {
 			}
 		}
 
-		return { ...data, videoSource, sourceOnly: false as const };
+		return { ...data, videoSource, sourceOnly: false as const, canSummarize: false };
 	} catch (e) {
 		if (isRedirect(e)) {
 			throw e;
@@ -59,7 +59,22 @@ export const load: PageServerLoad = async (event) => {
 		if (videoSource.slug && videoSource.slug !== id) {
 			throw redirect(301, `/video/${videoSource.slug}${event.url.search}`);
 		}
-		return { videoSource, sourceOnly: true as const };
+
+		// §106: POST /videos/{id}/summarize enqueues an AI draft — exposed to
+		// video.create holders only when video.ai_summary.enabled is on.
+		const siteSettings =
+			((await event.parent()) as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
+		let canSummarize = false;
+		if (event.locals.user && siteSettings['video.ai_summary.enabled'] === true) {
+			try {
+				const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+				canSummarize = (perms?.permissions ?? []).includes('video.create');
+			} catch {
+				canSummarize = false;
+			}
+		}
+
+		return { videoSource, sourceOnly: true as const, canSummarize };
 	} catch (err) {
 		if (isRedirect(err)) {
 			throw err;

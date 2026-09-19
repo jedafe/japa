@@ -19,6 +19,18 @@
 	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
 	import { Eye, Pencil, Trash2, Plus, ArrowUp, ArrowDown, LayoutGrid, X } from "lucide-svelte";
 
+	type PropOption = { value: string; label: string };
+
+	// PropField mirrors the backend registry's prop_schema — typed form fields
+	// for the widget modal (Section 59 §4).
+	type PropField = {
+		key: string;
+		label: string;
+		type: 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'url' | 'links';
+		options?: PropOption[];
+		help?: string;
+	};
+
 	type WidgetType = {
 		type: string;
 		name: string;
@@ -30,6 +42,7 @@
 		 *  means all apps — treated as unrestricted for backward compat. */
 		apps?: string[];
 		default_props: Record<string, unknown>;
+		prop_schema?: PropField[];
 	};
 
 	type SidebarWidget = {
@@ -231,6 +244,10 @@
 	let widgetLabel = $state("");
 	let widgetType = $state<string>("");
 	let widgetProps = $state<string>("");
+	// Typed props for schema-driven types — the modal binds fields directly to
+	// this object instead of a raw JSON string. widgetProps stays as the
+	// JSON fallback for widget types with no registry entry.
+	let widgetPropsObj = $state<Record<string, unknown>>({});
 	let widgetVisibility = $state<string>("all");
 	let widgetStatus = $state<string>("active");
 	let widgetPermissionNode = $state("");
@@ -336,6 +353,7 @@
 		widgetLabel = "";
 		widgetType = "";
 		widgetProps = "{}";
+		widgetPropsObj = {};
 		widgetVisibility = "all";
 		widgetStatus = "active";
 		widgetPermissionNode = "";
@@ -348,6 +366,7 @@
 		widgetLabel = widget.label;
 		widgetType = widget.widget_type;
 		widgetProps = JSON.stringify(widget.props ?? {}, null, 2);
+		widgetPropsObj = { ...(widget.props ?? {}) };
 		widgetVisibility = widget.visibility || "all";
 		widgetStatus = widget.status || "active";
 		widgetPermissionNode = widget.permission_node ?? "";
@@ -376,7 +395,54 @@
 		const wt = widgetTypes.find((w) => w.type === val);
 		if (wt && !editingWidget) {
 			widgetProps = JSON.stringify(wt.default_props ?? {}, null, 2);
+			widgetPropsObj = { ...(wt.default_props ?? {}) };
 		}
+	}
+
+	// ── Schema-driven props form (Section 59 §4) ─────────────────────────
+	const currentWidgetType = $derived(widgetTypes.find((w) => w.type === widgetType));
+	const propSchema = $derived(currentWidgetType?.prop_schema ?? []);
+	// Known registry types render typed fields (or a "no options" note when
+	// the schema is empty); unregistered types keep the raw JSON fallback.
+	const isKnownWidgetType = $derived(!!currentWidgetType);
+
+	// Social-link platforms — matches the icon map in the main app's
+	// SidebarWidgetRenderer (unknown names fall back to a generic icon).
+	const socialPlatforms: PropOption[] = [
+		{ value: 'website', label: 'Website' },
+		{ value: 'email', label: 'Email' },
+		{ value: 'rss', label: 'RSS feed' },
+		{ value: 'twitter', label: 'Twitter / X' },
+		{ value: 'instagram', label: 'Instagram' },
+		{ value: 'facebook', label: 'Facebook' },
+		{ value: 'youtube', label: 'YouTube' },
+		{ value: 'github', label: 'GitHub' },
+		{ value: 'linkedin', label: 'LinkedIn' },
+		{ value: 'tiktok', label: 'TikTok' },
+		{ value: 'mastodon', label: 'Mastodon' },
+		{ value: 'threads', label: 'Threads' },
+		{ value: 'bluesky', label: 'Bluesky' },
+	];
+
+	function widgetLinks(): Array<{ platform: string; url: string }> {
+		const links = widgetPropsObj.links;
+		return Array.isArray(links) ? links as Array<{ platform: string; url: string }> : [];
+	}
+
+	function setWidgetLinks(links: Array<{ platform: string; url: string }>) {
+		widgetPropsObj = { ...widgetPropsObj, links };
+	}
+
+	function addWidgetLink() {
+		setWidgetLinks([...widgetLinks(), { platform: 'website', url: '' }]);
+	}
+
+	function removeWidgetLink(i: number) {
+		setWidgetLinks(widgetLinks().filter((_, j) => j !== i));
+	}
+
+	function updateWidgetLink(i: number, key: 'platform' | 'url', value: string) {
+		setWidgetLinks(widgetLinks().map((l, j) => (j === i ? { ...l, [key]: value } : l)));
 	}
 
 	async function saveWidget() {
@@ -385,18 +451,25 @@
 		widgetMessage = "";
 		try {
 			let props: Record<string, unknown> = {};
-			try {
-				props = JSON.parse(widgetProps || "{}");
-			} catch {
-				widgetMessage = t("sidebars.invalid_props_json", "Props must be valid JSON");
-				savingWidget = false;
-				return;
+			if (isKnownWidgetType) {
+				// Schema-driven form already holds a typed props object.
+				props = widgetPropsObj;
+			} else {
+				try {
+					props = JSON.parse(widgetProps || "{}");
+				} catch {
+					widgetMessage = t("sidebars.invalid_props_json", "Props must be valid JSON");
+					savingWidget = false;
+					return;
+				}
 			}
 			const body: Record<string, unknown> = {
 				widget_type: widgetType.trim(),
 				label: widgetLabel.trim(),
 				props,
-				sort_order: editingWidget?.sort_order ?? 0,
+				// Omit sort_order on create — the backend appends to the end.
+				// On edit, preserve the widget's current position.
+				sort_order: editingWidget?.sort_order,
 				visibility: widgetVisibility,
 				required_group_ids: [...widgetRequiredGroupIds],
 				permission_node: widgetPermissionNode.trim() || null,
@@ -703,10 +776,81 @@
 				</p>
 			{/if}
 		</div>
-		<div>
-			<label for="widget-props" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_props", "Props (JSON)")}</label>
-			<textarea id="widget-props" bind:value={widgetProps} rows="6" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={'{}'}></textarea>
-		</div>
+		<!-- Schema-driven props form (Section 59 §4): typed inputs rendered
+		     from the registry's prop_schema. Unregistered types fall back to
+		     the raw JSON editor. -->
+		{#if isKnownWidgetType && propSchema.length > 0}
+			<div class="space-y-4 rounded-lg border p-3" style="border-color: var(--color-border)">
+				<p class="text-xs font-medium uppercase tracking-wide" style="color: var(--color-muted)">{t("sidebars.widget_options", "Options")}</p>
+				{#each propSchema as field (field.key)}
+					{#if field.type === 'boolean'}
+						<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
+							<input type="checkbox" checked={widgetPropsObj[field.key] === true} onchange={(e) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: e.currentTarget.checked }; }} />
+							{field.label}
+						</label>
+						{#if field.help}<p class="-mt-2 pl-6 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
+					{:else if field.type === 'select'}
+						<div>
+							<label for="prop-{field.key}" class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</label>
+							<Select
+								options={field.options ?? []}
+								value={String(widgetPropsObj[field.key] ?? '')}
+								onchange={(val) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: val }; }}
+							/>
+							{#if field.help}<p class="mt-1 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
+						</div>
+					{:else if field.type === 'textarea'}
+						<div>
+							<label for="prop-{field.key}" class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</label>
+							<textarea id="prop-{field.key}" rows="3" value={String(widgetPropsObj[field.key] ?? '')} oninput={(e) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: e.currentTarget.value }; }} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"></textarea>
+							{#if field.help}<p class="mt-1 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
+						</div>
+					{:else if field.type === 'number'}
+						<div>
+							<label for="prop-{field.key}" class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</label>
+							<input id="prop-{field.key}" type="number" min="0" value={Number(widgetPropsObj[field.key] ?? 0)} oninput={(e) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: e.currentTarget.valueAsNumber || 0 }; }} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+							{#if field.help}<p class="mt-1 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
+						</div>
+					{:else if field.type === 'links'}
+						<div>
+							<span class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</span>
+							<div class="mt-1 space-y-2">
+								{#each widgetLinks() as link, i (i)}
+									<div class="flex items-center gap-2">
+										<div class="w-36 shrink-0">
+											<Select
+												options={socialPlatforms}
+												value={link.platform || 'website'}
+												onchange={(val) => updateWidgetLink(i, 'platform', val)}
+											/>
+										</div>
+										<input type="url" value={link.url} oninput={(e) => updateWidgetLink(i, 'url', e.currentTarget.value)} placeholder="https://…" class="min-w-0 flex-1 rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+										<button type="button" onclick={() => removeWidgetLink(i)} class="shrink-0 rounded p-1.5 hover:bg-[var(--color-surface)]" style="color: var(--color-muted)" aria-label={t('common.remove', 'Remove')}><X class="h-4 w-4" /></button>
+									</div>
+								{/each}
+								<button type="button" onclick={addWidgetLink} class="flex items-center gap-1 rounded-lg border border-dashed px-3 py-1.5 text-xs hover:bg-[var(--color-surface)]" style="border-color: var(--color-border); color: var(--color-muted)">
+									<Plus class="h-3.5 w-3.5" /> {t("sidebars.add_link", "Add link")}
+								</button>
+							</div>
+							{#if field.help}<p class="mt-1 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
+						</div>
+					{:else}
+						<div>
+							<label for="prop-{field.key}" class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</label>
+							<input id="prop-{field.key}" type={field.type === 'url' ? 'url' : 'text'} value={String(widgetPropsObj[field.key] ?? '')} oninput={(e) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: e.currentTarget.value }; }} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+							{#if field.help}<p class="mt-1 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
+						</div>
+					{/if}
+				{/each}
+			</div>
+		{:else if isKnownWidgetType}
+			<p class="text-xs" style="color: var(--color-muted)">{t("sidebars.no_widget_props", "This widget has no configurable options.")}</p>
+		{:else}
+			<div>
+				<label for="widget-props" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_props_json", "Props (JSON)")}</label>
+				<textarea id="widget-props" bind:value={widgetProps} rows="6" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={'{}'}></textarea>
+			</div>
+		{/if}
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label for="widget-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}</label>

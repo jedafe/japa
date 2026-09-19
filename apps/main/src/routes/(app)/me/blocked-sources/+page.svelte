@@ -39,8 +39,12 @@
 					class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
 				>
 					<div class="flex flex-col gap-1">
-						<span class="font-medium">{source.name}</span>
-						<span class="text-sm text-[var(--color-text-muted)]">{source.domain}</span>
+						<a href="/sources/{source.slug}" class="font-medium hover:text-[var(--color-primary)] hover:underline">
+							{source.name}
+						</a>
+						{#if source.domain}
+							<span class="text-sm text-[var(--color-text-muted)]">{source.domain}</span>
+						{/if}
 					</div>
 					<SourceBlockButton
 						slug={source.slug}

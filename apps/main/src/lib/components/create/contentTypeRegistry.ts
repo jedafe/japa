@@ -65,6 +65,14 @@ const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 		formKind: 'standard',
 		supportsSeries: false,
 		featureFlag: 'video.enabled'
+	},
+	// News — pipeline-extracted articles AND user-authored news posts share
+	// the same content_type. No dedicated flag exists; always available like
+	// guide.
+	news: {
+		formKind: 'standard',
+		supportsSeries: false,
+		featureFlag: null
 	}
 };
 
@@ -117,16 +125,17 @@ export function availableTypes(
 }
 
 /** Content types that can be created through the /create page composer. */
-export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story', 'video'] as const;
+export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story', 'video', 'news'] as const;
 
 const CREATE_TYPE_ORDER = Object.fromEntries(
 	CREATE_ALLOWED_TYPES.map((value, index) => [value, index])
 ) as Record<string, number>;
 
 /**
- * Build the /create type selector. Blog posts, comparisons, guides, and
+ * Build the /create type selector. Blog posts, comparisons, guides,
  * stories (§79 — standard composer with the story_fields group; the
- * backend syncs story_meta and enforces moderation) are authored here;
+ * backend syncs story_meta and enforces moderation), videos, and news
+ * posts are authored here;
  * pages are created in the admin pagebuilder and discussions are created
  * in the forum composer (ADR-058 / Section 14).
  */

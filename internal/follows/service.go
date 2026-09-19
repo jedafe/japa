@@ -201,6 +201,22 @@ func (s *Service) EnsureFollow(ctx context.Context, followerID pgtype.UUID, enti
 	return s.ToggleFollow(ctx, followerID, entityType, entityID)
 }
 
+// EnsureUnfollow is the idempotent counterpart of EnsureFollow: it only
+// toggles when the caller is currently following, so DELETE-style endpoints
+// never accidentally create a follow (the raw ToggleFollow used on both POST
+// and DELETE previously inverted state on repeated calls). Returns the
+// resulting follow state (false when the unfollow took effect).
+func (s *Service) EnsureUnfollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+	following, err := s.IsFollowing(ctx, followerID, entityType, entityID)
+	if err != nil {
+		return false, fmt.Errorf("checking follow status: %w", err)
+	}
+	if !following {
+		return false, nil
+	}
+	return s.ToggleFollow(ctx, followerID, entityType, entityID)
+}
+
 // GetFollow returns the follow row for a specific follower-entity pair.
 func (s *Service) GetFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
 	return s.store.getFollow(ctx, followerID, entityType, entityID)

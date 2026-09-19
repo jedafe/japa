@@ -45,12 +45,14 @@ type GuideContentTxStore interface {
 	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
-// GuideContentPromoter promotes guide content type intel_records into
+// GuideContentPromoter promotes content-projection intel_records into
 // contents rows (content_type='guide', guide_category=<category>). It
 // handles the pure guide domains: travel_routes, grants, admission,
 // banking, work_career, health_insurance, culture_lifestyle, internship,
-// import_export. Each domain is a
-// separate promoter instance with a different entityType + guideCategory.
+// import_export — and, via WithGuideContentType, the 'news' domain which
+// promotes to content_type='news' with no guide_category. Each domain
+// is a separate promoter instance with a different entityType +
+// guideCategory (+ contentType when not 'guide').
 //
 // On the update path, the promoter re-extracts the body from the
 // extraction and updates the contents row. Editorial overrides are
@@ -65,7 +67,8 @@ type GuideContentPromoter struct {
 	store         GuideContentStore
 	authorID      pgtype.UUID
 	entityType    string  // e.g. "travel_routes", "grants", ...
-	guideCategory string  // e.g. "travel_routes", "grants", ...
+	guideCategory string  // e.g. "travel_routes", "grants", ... (empty = none)
+	contentType   string  // contents.content_type to write; default "guide"
 	aiModel       *string // AI model used for extraction (ADR-088, INTEL-003)
 	now           func() time.Time
 }
@@ -83,12 +86,21 @@ func WithGuideContentAIModel(model string) GuideContentPromoterOption {
 	return func(p *GuideContentPromoter) { p.aiModel = &model }
 }
 
+// WithGuideContentType overrides the contents.content_type written on
+// promotion. Used by non-guide domains that still project to a contents row —
+// e.g. the 'news' entity_type promotes to content_type='news' so
+// extracted articles surface on the source feed and /content/{slug}.
+func WithGuideContentType(contentType string) GuideContentPromoterOption {
+	return func(p *GuideContentPromoter) { p.contentType = contentType }
+}
+
 // NewGuideContentPromoter creates a promoter for the given guide content
 // type. entityType is the intel_records.entity_type value;
 // guideCategory is the contents.guide_category value (they are usually
-// the same, e.g. "travel_routes" → "travel_routes").
+// the same, e.g. "travel_routes" → "travel_routes"). Pass an empty
+// guideCategory with WithGuideContentType for non-guide domains.
 func NewGuideContentPromoter(store GuideContentStore, authorID pgtype.UUID, entityType, guideCategory string, opts ...GuideContentPromoterOption) *GuideContentPromoter {
-	p := &GuideContentPromoter{store: store, authorID: authorID, entityType: entityType, guideCategory: guideCategory, aiModel: ptr("gpt-4o-mini"), now: time.Now}
+	p := &GuideContentPromoter{store: store, authorID: authorID, entityType: entityType, guideCategory: guideCategory, contentType: "guide", aiModel: ptr("gpt-4o-mini"), now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -141,13 +153,26 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 	body := guideBodyFromExtraction(ext, title)
 	slug := content.Slugify(title)
 	hash := content.ComputeContentHash(body)
+	// Prefer the extraction's own article link (news schema carries
+	// article_url — the per-item URL is a better canonical than the feed
+	// URL); fall back to the source URL when absent.
 	canonicalURL := source.SourceUrl
+	if u := stringField(ext, "article_url"); u != "" {
+		canonicalURL = u
+	}
+
+	// guide_category only applies to the 'guide' content type; other
+	// content-projection domains (e.g. news) leave it NULL.
+	var guideCategory *string
+	if p.guideCategory != "" {
+		guideCategory = &p.guideCategory
+	}
 
 	contentParams := gen.CreateContentParams{
 
 		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
 		FieldValues:     []byte(`{}`),
-		ContentType:     "guide",
+		ContentType:     p.contentType,
 		Title:           title,
 		Slug:            slug,
 		Body:            body,
@@ -158,7 +183,7 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 		Visibility:      "public",
 		SeoIndexable:    true,
 		ReadTimeMinutes: content.ComputeReadTime(body),
-		GuideCategory:   ptr(p.guideCategory),
+		GuideCategory:   guideCategory,
 		PublishAt:       pgtype.Timestamptz{Time: p.now(), Valid: true},
 		PublishedAt:     pgtype.Timestamptz{Time: p.now(), Valid: true},
 		AiGenerated:     true,      // ADR-088: mark as AI-generated (INTEL-003)

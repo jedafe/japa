@@ -2127,6 +2127,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		schemas.EntityTypeCredentialPathway: &intelPromoterPortAdapter{
 			prom: promoter.NewCredentialPromoter(&intelCredentialPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithCredentialAIModel(intelExtractionModel)),
 		},
+		// News promotes into contents rows (content_type='news', no
+		// guide_category) so extracted articles surface on the source feed
+		// and the generic /content/{slug} detail page. Records still go
+		// through the review queue before approval — the promoter only runs
+		// once the publish gate or a moderator approves them.
+		schemas.EntityTypeNews: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "news", "", promoter.WithGuideContentType(content.TypeNews), promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
 	}
 
 	// Register the intelligence spine dependencies with the worker package
@@ -5240,10 +5248,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// sidebars/widgets while guests still receive public ones.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sidebars/resolve", sidebarHandlers.Resolve)
-
-			// Public page-templates endpoints (read-only, no auth required)
-			r.Get("/page-templates", pagebuilderHandlers.ListTemplates)
-			r.Get("/page-templates/{id}", pagebuilderHandlers.GetTemplate)
 
 			// Admin widget configurations CRUD (Section 16 — widget_configurations).
 			// Gates on widgets.manage RBAC node (migration 000412).

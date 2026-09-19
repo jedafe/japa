@@ -29,16 +29,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
 
-	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
-		}
-	} else if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
-		}
-	}
-
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
@@ -46,6 +36,19 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
+		}
+	}
+
+	// `page` (1-based) is the canonical param. `page_offset` is a true row
+	// offset per conventions/api-response-format.md — it maps to
+	// page = offset/limit + 1 (same interpretation as pagebuilder).
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n) // #nosec
+		}
+	} else if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			page = int32(n)/limit + 1 // #nosec
 		}
 	}
 
@@ -72,7 +75,16 @@ func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	widgets, total, err := h.Service.List(r.Context(), r.URL.Query().Get("q"), page, limit)
+	// is_active is a tri-state filter: absent → all, "true" → active only,
+	// "false" → inactive only.
+	var isActive *bool
+	if v := r.URL.Query().Get("is_active"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			isActive = &b
+		}
+	}
+
+	widgets, total, err := h.Service.List(r.Context(), r.URL.Query().Get("q"), isActive, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -169,6 +169,18 @@ func (s *Store) UpdateRobotsPolicy(ctx context.Context, arg gen.UpdateIntelSourc
 	return nil
 }
 
+// UpdateProviderConfig replaces the provider_config JSON for a source. The
+// caller is responsible for merging keys it does not own — API sources carry
+// endpoint/method/path in the same document, so a wholesale replace with a
+// config that omits them would break the next fetch.
+func (s *Store) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelSourceProviderConfigParams) error {
+	if err := s.queries.UpdateIntelSourceProviderConfig(ctx, arg); err != nil {
+		return fmt.Errorf("sources: update provider config: %w", err)
+	}
+
+	return nil
+}
+
 // MarkLastChanged stamps last_changed_at for a source, signalling that the
 // upstream content has changed since the previous crawl.
 func (s *Store) MarkLastChanged(ctx context.Context, id SourceID) error {

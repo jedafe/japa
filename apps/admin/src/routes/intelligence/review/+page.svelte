@@ -201,7 +201,9 @@
 		banking: 'guide',
 		work_career: 'guide',
 		health_insurance: 'guide',
-		culture_lifestyle: 'guide'
+		culture_lifestyle: 'guide',
+		// News promotes to contents with content_type='news' — not a guide.
+		news: 'news'
 	};
 
 	function contentTypeForEntity(entityType: string): string {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
+	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/tags"
@@ -51,6 +53,19 @@ var sourceSortOptions = []sourceOption{
 	{Value: "popular", Label: "Popular"},
 	{Value: "recent", Label: "Recently added"},
 	{Value: "trending", Label: "Trending"},
+}
+
+// sourceKindOptions are the publisher kinds a directory visitor can filter
+// by (?source_kind=). They describe WHO publishes the source — distinct from
+// source_types (rss/youtube/api/static), which describe the crawl mechanism
+// and are only meaningful on the proposal form. Values must stay in sync with
+// the intel_sources.source_kind CHECK constraint. Ref: sources directory v2
+// design (2026-09-11-sources-directory-design.md).
+var sourceKindOptions = []sourceOption{
+	{Value: "publisher", Label: "Publisher"},
+	{Value: "institution", Label: "Institution"},
+	{Value: "individual", Label: "Individual"},
+	{Value: "aggregator", Label: "Aggregator"},
 }
 
 // sourceItemSortOptions are the sorts exposed by a source's item feed.
@@ -421,8 +436,34 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 		EvidenceURLs: body.EvidenceURLs,
 	})
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "source_report_failed", "Failed to submit report")
+		// Mirror reports.submitReport's writeServiceError mapping so client
+		// errors don't surface as 500s (a repeat report hit the partial
+		// unique index and previously returned 500 source_report_failed).
+		switch {
+		case errors.Is(err, reports.ErrAlreadyReported):
+			errpkg.WriteError(w, http.StatusConflict, "already_reported", err.Error())
+		case errors.Is(err, reports.ErrInvalidReason), errors.Is(err, reports.ErrInvalidEntityType):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+		default:
+			slog.Error("intel: source report failed", "slug", slug, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "source_report_failed", "Failed to submit report")
+		}
 		return
+	}
+
+	// Section 51 report:notify_admin — notify every user with reports.review
+	// that a new source report was filed, matching the fan-out the generic
+	// content/comment/user report handlers run. Fire-and-forget per Rule 8.
+	if h.asynqClient != nil {
+		payload, _ := json.Marshal(map[string]string{
+			"report_id":   report.ID.String(),
+			"entity_type": reports.EntityTypeSource,
+			"entity_id":   src.ID.String(),
+			"reason":      body.Reason,
+		})
+		if _, qerr := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskReportNotifyAdmin, payload)); qerr != nil {
+			slog.Warn("intel: failed to enqueue report:notify_admin", "report_id", report.ID.String(), "error", qerr)
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
@@ -561,7 +602,9 @@ func derefString(s *string) string {
 }
 
 // pgtypeUUIDString returns a string for a pgtype.UUID when valid, otherwise "".
-// HandleToggleSourceFollow toggles a follow on a source.
+// HandleToggleSourceFollow follows or unfollows a source.
+// POST follows (idempotent — no-op when already following); DELETE unfollows
+// (idempotent — no-op when not following). Mirrors HandleToggleSourceBlock.
 //
 // POST /api/v1/sources/{slug}/follow
 // DELETE /api/v1/sources/{slug}/follow
@@ -594,10 +637,34 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	isFollowing, err := h.followsSvc.ToggleFollow(r.Context(), userID, follows.EntityTypeSource, row.ID)
+	// POST follows; DELETE unfollows. chi only routes those two methods here,
+	// so anything else falls back to toggling (defensive parity with
+	// HandleToggleSourceBlock).
+	var wantFollow bool
+	switch r.Method {
+	case http.MethodPost:
+		wantFollow = true
+	case http.MethodDelete:
+		wantFollow = false
+	default:
+		current, cerr := h.followsSvc.IsFollowing(r.Context(), userID, follows.EntityTypeSource, row.ID)
+		if cerr != nil {
+			slog.Error("intel: source follow state failed", "slug", slug, "error", cerr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_state_failed", "Failed to check follow state")
+			return
+		}
+		wantFollow = !current
+	}
+
+	var isFollowing bool
+	if wantFollow {
+		isFollowing, err = h.followsSvc.EnsureFollow(r.Context(), userID, follows.EntityTypeSource, row.ID)
+	} else {
+		isFollowing, err = h.followsSvc.EnsureUnfollow(r.Context(), userID, follows.EntityTypeSource, row.ID)
+	}
 	if err != nil {
-		slog.Error("intel: source follow toggle failed", "slug", slug, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_failed", "Failed to follow source")
+		slog.Error("intel: source follow update failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_failed", "Failed to update follow state")
 		return
 	}
 
@@ -647,9 +714,16 @@ func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) 
 				"cost_of_living", "university", "video", "organization", "people",
 			},
 			"source_types": []string{"rss", "youtube", "api", "static"},
+			"source_kinds": sourceKindOptions,
 			"entity_types": sourceItemEntityTypes,
-			"sorts":        sourceSortOptions,
-			"item_sorts":   sourceItemSortOptions,
+			// registered_entity_types is the full extraction-domain registry —
+			// a superset of entity_types (which is the curated feed subset).
+			// Exposed so the control panel can offer every valid value for a
+			// source's provider_config.entity_types override instead of
+			// hardcoding the list (Rule 16).
+			"registered_entity_types": schemas.RegisteredEntityTypes(),
+			"sorts":                   sourceSortOptions,
+			"item_sorts":              sourceItemSortOptions,
 		},
 	})
 }
@@ -712,9 +786,10 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 }
 
 type blockedSource struct {
-	ID   string `json:"id"`
-	Slug string `json:"slug"`
-	Name string `json:"name"`
+	ID     string `json:"id"`
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Domain string `json:"domain"`
 }
 
 // HandleListBlockedSources returns the sources the current user has blocked.
@@ -745,9 +820,10 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 		sources = append(sources, blockedSource{
-			ID:   pgtypeUUIDString(src.ID),
-			Slug: derefString(src.Slug),
-			Name: src.Name,
+			ID:     pgtypeUUIDString(src.ID),
+			Slug:   derefString(src.Slug),
+			Name:   src.Name,
+			Domain: src.Domain,
 		})
 	}
 

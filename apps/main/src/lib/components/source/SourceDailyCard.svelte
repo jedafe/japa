@@ -170,13 +170,18 @@
 			</div>
 
 			<div class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-3">
-				<ReactionButton
-					contentId={item.content_id}
-					count={item.vote_score}
-					side="top"
-					align="end"
-					ariaLabel={t('sources.love', 'Love')}
-				/>
+				<!-- Items without a backing content row (remittance records, video
+				     source items, wiki pages, comparisons) have no reaction endpoint —
+				     rendering the button would fake a toggle that never persists. -->
+				{#if item.content_id}
+					<ReactionButton
+						contentId={item.content_id}
+						count={item.vote_score}
+						side="top"
+						align="end"
+						ariaLabel={t('sources.love', 'Love')}
+					/>
+				{/if}
 
 				<ShareButton contentId={item.content_id} url={shareUrl} title={item.title} />
 			</div>

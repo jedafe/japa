@@ -11,12 +11,14 @@ export const load: PageServerLoad = async (event) => {
 	const category = event.url.searchParams.get('category') ?? '';
 	const sourceKind = event.url.searchParams.get('source_kind') ?? '';
 
-	const sourceMeta = await apiGet<SourceMeta>(ctx, '/sources/meta').catch(() => ({
-		categories: [],
-		source_types: [],
-		sorts: [],
-		item_sorts: []
-	}));
+	const sourceMeta = await apiGet<SourceMeta>(ctx, '/sources/meta').catch(
+		(): SourceMeta => ({
+			categories: [],
+			source_types: [],
+			sorts: [],
+			item_sorts: []
+		})
+	);
 
 	const validSorts = new Set((sourceMeta.sorts ?? []).map((s) => s.value));
 	const rawSort = event.url.searchParams.get('sort') ?? 'popular';
