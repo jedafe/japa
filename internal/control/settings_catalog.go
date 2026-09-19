@@ -663,6 +663,10 @@ var settingsCatalog = map[string]settingMeta{
 	"video.import.max_items_per_run":      {Type: "int", DefaultValue: "50", Description: "Max videos resolved per bulk import run.", Panel: "admin"},
 	"video.ai_summary.enabled":            {Type: "bool", DefaultValue: "false", Public: true, Description: "Allow users to enqueue AI-generated drafts from video metadata.", Panel: "admin"},
 	"video.claim_form_slug":               {Type: "string", DefaultValue: "video-channel-claim", Description: "Form Builder slug for claim/takedown evidence.", Panel: "admin"},
+	"video.channel_sync.enabled":          {Type: "bool", DefaultValue: "true", Description: "Master switch for the recurring video_channel Atom-feed sync task.", Panel: "admin"},
+	"video.channel_sync.interval_minutes": {Type: "int", DefaultValue: "360", Description: "Minimum minutes between syncs of the same channel source.", Panel: "admin"},
+	"video.channel_sync.batch_size":       {Type: "int", DefaultValue: "50", Description: "Max channels processed per video:sync_channels run.", Panel: "admin"},
+	"video.channel_sync.auto_publish":     {Type: "bool", DefaultValue: "true", Description: "Publish synced videos as contents when the channel author has a default space.", Panel: "admin"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public

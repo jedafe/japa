@@ -38,6 +38,19 @@ WHERE enabled = true
 ORDER BY last_crawled_at NULLS FIRST
 LIMIT $1;
 
+-- name: ListVideoChannelSourcesDue :many
+-- Enabled video_channel sources due for a channel-feed sync: never synced,
+-- or last_crawled_at older than the given minute interval. Used by the
+-- video:sync_channels poller (§106 channel-sync amendment) — distinct from
+-- ListDueIntelSources, which excludes crawl_method='manual' by design.
+SELECT * FROM intel_sources
+WHERE source_type = 'video_channel'
+ AND enabled = true
+ AND status = 'active'
+ AND (last_crawled_at IS NULL OR now() - last_crawled_at >= ($1::int || ' minutes')::interval)
+ORDER BY last_crawled_at NULLS FIRST
+LIMIT $2;
+
 -- name: UpdateIntelSourceCrawlStatus :exec
 UPDATE intel_sources
 SET last_crawled_at = now(),

@@ -645,6 +645,25 @@ func (q *Queries) ReassignVideoSourcesAuthor(ctx context.Context, arg ReassignVi
 	return err
 }
 
+const setVideoSourceIntelSource = `-- name: SetVideoSourceIntelSource :exec
+UPDATE video_sources
+SET source_id = $1, updated_at = now()
+WHERE id = $2
+`
+
+type SetVideoSourceIntelSourceParams struct {
+	SourceID pgtype.UUID `json:"source_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// Force-stamps the canonical intel_sources link on a video source. Used by
+// the channel sync poller when the channel row it polled differs from the
+// row CreateAutoForVideo matched (different URL shape for the same channel).
+func (q *Queries) SetVideoSourceIntelSource(ctx context.Context, arg SetVideoSourceIntelSourceParams) error {
+	_, err := q.db.Exec(ctx, setVideoSourceIntelSource, arg.SourceID, arg.ID)
+	return err
+}
+
 const updateVideoSourceStatus = `-- name: UpdateVideoSourceStatus :one
 UPDATE video_sources
 SET status = $1, updated_at = now()

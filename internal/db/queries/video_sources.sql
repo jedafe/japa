@@ -107,6 +107,14 @@ WHERE author_user_id = @author_user_id
   AND source_id IS NULL
   AND source_type != 'upload';
 
+-- name: SetVideoSourceIntelSource :exec
+-- Force-stamps the canonical intel_sources link on a video source. Used by
+-- the channel sync poller when the channel row it polled differs from the
+-- row CreateAutoForVideo matched (different URL shape for the same channel).
+UPDATE video_sources
+SET source_id = @source_id, updated_at = now()
+WHERE id = @id;
+
 -- name: GetVideoChannelUsernameBySourceID :one
 -- The channel account username behind a video_channel intel source — every
 -- non-upload video under the source shares the synthetic channel author.

@@ -147,6 +147,18 @@ func (s *Service) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (
 	return s.store.Update(ctx, arg)
 }
 
+// ListVideoChannelsDue returns enabled video_channel sources due for a
+// channel-feed sync (§106 channel-sync amendment).
+func (s *Service) ListVideoChannelsDue(ctx context.Context, intervalMins, limit int32) ([]Source, error) {
+	return s.store.ListVideoChannelsDue(ctx, intervalMins, limit)
+}
+
+// UpdateCrawlStatus records the outcome of a crawl or sync attempt on the
+// source row (last_crawled_at, success/error stamps, consecutive_failures).
+func (s *Service) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSourceCrawlStatusParams) error {
+	return s.store.UpdateCrawlStatus(ctx, arg)
+}
+
 // UpdateProviderConfig replaces the source's provider_config document. The
 // caller merges keys it does not own — see Store.UpdateProviderConfig.
 func (s *Service) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelSourceProviderConfigParams) error {

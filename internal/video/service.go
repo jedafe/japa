@@ -82,8 +82,13 @@ type ContentCreator interface {
 }
 
 // SourceRegistry links a video source to the canonical intel_sources registry.
+// The channel-sync methods back the video:sync_channels poller (§106
+// channel-sync amendment).
 type SourceRegistry interface {
 	CreateAutoForVideo(ctx context.Context, userID pgtype.UUID, title, sourceURL, thumbnailURL *string) (gen.IntelSource, error)
+	ListVideoChannelsDue(ctx context.Context, intervalMins, limit int32) ([]gen.IntelSource, error)
+	UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelSourceProviderConfigParams) error
+	UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSourceCrawlStatusParams) error
 }
 
 // Service coordinates video URL resolution, synthetic channel creation,
