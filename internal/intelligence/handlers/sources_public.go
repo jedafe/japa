@@ -699,13 +699,22 @@ func pgtypeUUIDString(id pgtype.UUID) string {
 	return id.String()
 }
 
+// proposeSourceRequest is the POST /api/v1/sources/propose body. The
+// intel-channels payload adds `categories`, `source_kind` and
+// `probe_snapshot`; the legacy `category`/`source_type` fields are still
+// accepted for backward compatibility (the service folds category into
+// categories and maps 'video'/'youtube' source_type to
+// source_kind=channel_profile).
 type proposeSourceRequest struct {
-	Name        string  `json:"name"`
-	Domain      string  `json:"domain"`
-	SourceURL   string  `json:"source_url"`
-	Category    string  `json:"category"`
-	SourceType  string  `json:"source_type"`
-	Description *string `json:"description"`
+	Name          string          `json:"name"`
+	Domain        string          `json:"domain"`
+	SourceURL     string          `json:"source_url"`
+	Category      string          `json:"category"`
+	Categories    []string        `json:"categories"`
+	SourceType    string          `json:"source_type"`
+	SourceKind    string          `json:"source_kind"`
+	ProbeSnapshot json.RawMessage `json:"probe_snapshot"`
+	Description   *string         `json:"description"`
 }
 
 // HandleGetSourcesMeta returns the public source form metadata: allowed
@@ -781,21 +790,37 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src, err := h.intelSources.Propose(r.Context(), userID, sources.ProposeInput{
-		Name:        req.Name,
-		Domain:      req.Domain,
-		SourceURL:   req.SourceURL,
-		Category:    req.Category,
-		SourceType:  req.SourceType,
-		Description: req.Description,
+		Name:          req.Name,
+		Domain:        req.Domain,
+		SourceURL:     req.SourceURL,
+		Category:      req.Category,
+		Categories:    req.Categories,
+		SourceType:    req.SourceType,
+		SourceKind:    req.SourceKind,
+		ProbeSnapshot: req.ProbeSnapshot,
+		Description:   req.Description,
 	})
 	if err != nil {
 		slog.Error("intel: propose source failed", "error", err)
 
 		switch {
 		case errors.Is(err, errpkg.ErrRequired):
-			errpkg.WriteError(w, http.StatusBadRequest, "missing_required", "Name and source_url are required")
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_required", "Name, source_url and at least one category are required")
 		case errors.Is(err, errpkg.ErrInvalid):
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_url", "source_url must be a valid http/https URL")
+			// ErrInvalid covers bad source_url/domain, an unknown
+			// source_kind, a malformed probe_snapshot, and the §106
+			// video-platform guard — pick the code/message from the
+			// service's field tag so each failure stays identifiable.
+			code, msg := "invalid_source_url", "source_url must be a valid http/https URL"
+			switch {
+			case strings.Contains(err.Error(), "source_kind"):
+				code, msg = "invalid_source_kind", "source_kind is not a supported value"
+			case strings.Contains(err.Error(), "probe_snapshot"):
+				code, msg = "invalid_probe_snapshot", "probe_snapshot must be a JSON object"
+			case strings.Contains(err.Error(), "video"):
+				msg = "video sources must be a supported video platform URL"
+			}
+			errpkg.WriteError(w, http.StatusBadRequest, code, msg)
 		case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_source", "A source with this URL already exists")
 		default:
