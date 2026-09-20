@@ -50,9 +50,9 @@ async function main() {
 	await page.waitForLoadState('networkidle');
 	await page.screenshot({ path: '/tmp/audit-dashboard-analytics.png', fullPage: true });
 
-	await page.goto(`${BASE}/dashboard/content`);
+	await page.goto(`${BASE}/studio/contents`);
 	await page.waitForLoadState('networkidle');
-	await page.screenshot({ path: '/tmp/audit-dashboard-content.png', fullPage: true });
+	await page.screenshot({ path: '/tmp/audit-studio-contents.png', fullPage: true });
 
 	// 3. Route-folder organization dashboard still works inside the new shell.
 	await page.goto(`${BASE}/dashboard/organizations`);

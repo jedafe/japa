@@ -346,6 +346,20 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// persona_id: an explicit JSON null clears the attribution — the update
+	// query COALESCEs the column so it cannot express NULL itself. An absent
+	// key or empty string keeps the existing value.
+	if raw, present := presence["persona_id"]; present && string(raw) == "null" {
+		if cerr := h.intelSources.ClearPersona(r.Context(), sourceID); cerr != nil {
+			slog.Error("intel: clear source persona failed", "source_id", sourceID.String(), "error", cerr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to clear source persona")
+
+			return
+		}
+
+		src.PersonaID = pgtype.UUID{}
+	}
+
 	// Apply the entity_types override when the key was present: merge into
 	// the existing provider_config so sibling keys (API endpoint config,
 	// crawl hints) survive — never a wholesale replace.

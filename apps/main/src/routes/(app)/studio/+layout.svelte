@@ -15,7 +15,7 @@
 	const isCreateTab = $derived(page.route.id === '/(app)/studio/create');
 
 	const tabs = $derived.by(() => [
-		{ href: '/studio/contents', label: t('studio.tabs.contents', 'Contents'), icon: Files, disabled: true },
+		{ href: '/studio/contents', label: t('studio.tabs.contents', 'Contents'), icon: Files, disabled: false },
 		{
 			href: '/studio/videos',
 			label: t('studio.tabs.videos', 'Videos'),

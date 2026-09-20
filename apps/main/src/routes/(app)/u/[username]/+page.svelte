@@ -328,7 +328,8 @@
 		{ value: 'user', label: t('profile.filter.users', 'Users') },
 		{ value: 'space', label: t('profile.filter.spaces', 'Spaces') },
 		{ value: 'tag', label: t('profile.filter.tags', 'Tags') },
-		{ value: 'organization', label: t('profile.filter.organizations', 'Organizations') }
+		{ value: 'organization', label: t('profile.filter.organizations', 'Organizations') },
+		{ value: 'source', label: t('profile.filter.sources', 'Sources') }
 	]);
 
 	// One derived, sliced view per tab, sharing the q/filterVal/page/pageSize state.
@@ -735,7 +736,7 @@ profile is private, or no stage is set. -->
 			{#if data.spaces.length === 0}
 				<EmptyState icon={Users} title={t('profile.spaces_empty', 'No spaces yet')} />
 			{:else}
-				<ul class="space-y-2">
+				<ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 					{#each data.spaces as space (space.id)}
 						<li>
 							<a
@@ -765,7 +766,7 @@ profile is private, or no stage is set. -->
 			{:else if tabView.total === 0}
 				<EmptyState icon={Users} title={t('profile.empty.no_results', 'No results')} />
 			{:else}
-				<ul class="space-y-2">
+				<ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 					{#each tabView.items as u (u.id)}
 						{@const et = u.entity_type ?? 'user'}
 						{@const followType = et as FollowableType}
@@ -773,12 +774,14 @@ profile is private, or no stage is set. -->
 							et === 'space' ? `/spaces/${u.username}` :
 							et === 'tag' ? `/tags/${u.username}` :
 							et === 'organization' ? `/org/${u.username}` :
+							et === 'source' ? `/sources/${u.username}` :
 							`/u/${u.username}`}
 						{@const handle =
 							et === 'user' ? `@${u.username}` :
 							et === 'space' ? 'Space' :
 							et === 'tag' ? 'Tag' :
 							et === 'organization' ? 'Organization' :
+							et === 'source' ? 'Source' :
 							'User'}
 						<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 							<a href={href} class="flex min-w-0 flex-1 items-center gap-3">

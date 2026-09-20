@@ -1972,6 +1972,7 @@
 	"profile.filter.users": "Users",
 	"profile.filter.spaces": "Spaces",
 	"profile.filter.tags": "Tags",
+	"profile.filter.sources": "Sources",
 	"profile.search.placeholder": "Search",
 	"profile.pager.showing": "Showing {start}–{end} of {total}",
 	"profile.pager.page_size": "Per page",

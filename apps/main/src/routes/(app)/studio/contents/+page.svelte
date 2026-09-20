@@ -1,9 +1,12 @@
 <script lang="ts">
-	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §11 — Contents tab is a
-	// future phase (member drafts/queue management); placeholder until built.
+	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §11 — Contents tab:
+	// member content manager (Published / Drafts / Scheduled), moved from
+	// /dashboard/content.
 	import { t } from '$lib/i18n';
-	import { FolderOpen } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import ContentManagerView from '$lib/components/studio/ContentManagerView.svelte';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
@@ -11,8 +14,4 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<EmptyState
-	icon={FolderOpen}
-	title={t('studio.contents.title', 'Contents')}
-	body={t('studio.contents.coming_soon', 'Your drafts and published content will be managed here soon.')}
-/>
+<ContentManagerView {data} />

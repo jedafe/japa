@@ -73,6 +73,15 @@ func (q *Queries) ApproveProposedIntelSource(ctx context.Context, arg ApprovePro
 	return i, err
 }
 
+const clearIntelSourcePersona = `-- name: ClearIntelSourcePersona :exec
+UPDATE intel_sources SET persona_id = NULL, updated_at = now() WHERE id = $1
+`
+
+func (q *Queries) ClearIntelSourcePersona(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearIntelSourcePersona, id)
+	return err
+}
+
 const countIntelRecordsBySource = `-- name: CountIntelRecordsBySource :one
 SELECT COUNT(*) FROM intel_records
 WHERE source_id = $1

@@ -210,6 +210,12 @@ func (s *Service) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSour
 	return s.store.UpdateCrawlStatus(ctx, arg)
 }
 
+// ClearPersona removes the persona attribution — the update query COALESCEs
+// persona_id, so clearing to NULL goes through this dedicated path.
+func (s *Service) ClearPersona(ctx context.Context, id SourceID) error {
+	return s.store.ClearPersona(ctx, id)
+}
+
 // UpdateProviderConfig replaces the source's provider_config document. The
 // caller merges keys it does not own — see Store.UpdateProviderConfig.
 func (s *Service) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelSourceProviderConfigParams) error {

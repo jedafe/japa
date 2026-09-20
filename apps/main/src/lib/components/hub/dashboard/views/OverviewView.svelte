@@ -172,7 +172,7 @@
 	<ReferralWidget />
 
 	<div class="flex flex-wrap gap-3">
-		<a href="/dashboard/content" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+		<a href="/studio/contents" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 			{t('dashboard.nav.content')}
 		</a>
 		<a href="/dashboard/relationships" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">

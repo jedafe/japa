@@ -22,10 +22,11 @@ export interface ViewMeta {
 export const DEFAULT_VIEW = 'overview';
 
 // Slugs that have a `[view]` component. Must match keys in dashboardComponents.ts.
+// 'content' moved to /studio/contents (Studio → Contents tab); the static
+// /dashboard/content route redirects there.
 export const DASHBOARD_COMPONENT_SLUGS: Set<string> = new Set([
 	'overview',
 	'analytics',
-	'content',
 	'relationships',
 	'learning',
 	'certificates',

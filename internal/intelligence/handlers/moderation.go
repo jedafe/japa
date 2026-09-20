@@ -187,6 +187,25 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 		entry["id"] = s.ID.String()
 	}
 
+	// Editable metadata the control-panel form needs for edit seeding
+	// (description/logo/slug/kind are nullable in the DB).
+	entry["description"] = nil
+	if s.Description != nil {
+		entry["description"] = *s.Description
+	}
+
+	entry["logo_url"] = nil
+	if s.LogoUrl != nil {
+		entry["logo_url"] = *s.LogoUrl
+	}
+
+	entry["slug"] = nil
+	if s.Slug != nil {
+		entry["slug"] = *s.Slug
+	}
+
+	entry["source_kind"] = s.SourceKind
+
 	if s.SourceLicense != nil {
 		entry["source_license"] = *s.SourceLicense
 	} else {

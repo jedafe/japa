@@ -1942,6 +1942,7 @@
 	"profile.filter.users": "Utilisateurs",
 	"profile.filter.spaces": "Espaces",
 	"profile.filter.tags": "Tags",
+	"profile.filter.sources": "Sources",
 	"profile.search.placeholder": "Rechercher",
 	"profile.pager.showing": "Affichage de {start}–{end} sur {total}",
 	"profile.pager.page_size": "Par page",
