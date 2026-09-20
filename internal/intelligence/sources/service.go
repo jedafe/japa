@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -258,13 +259,144 @@ func (s *Service) CrawlNow(ctx context.Context, id SourceID) error {
 }
 
 // ProposeInput is the public submission payload for a new source proposal.
+//
+// Category and SourceType are the legacy single-value fields, kept for
+// backward compatibility: Category folds into Categories when Categories is
+// empty, and a legacy 'video'/'youtube' SourceType still implies
+// source_kind=channel_profile (§106 video routing, now kind-driven).
 type ProposeInput struct {
 	Name        string
 	Domain      string
 	SourceURL   string
 	Category    string
+	Categories  []string
 	SourceType  string
+	SourceKind  string
 	Description *string
+	// ProbeSnapshot is the preview-probe report (POST /sources/probe) the
+	// submitter attached to the proposal; stored verbatim in probe_report.
+	ProbeSnapshot []byte
+}
+
+// buildProposeParams validates and normalizes a ProposeInput into create
+// params. It is pure — no store access — so every validation failure is
+// returned before the uniqueness check and the rules are unit-testable
+// without a database.
+func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error) {
+	if input.Name == "" {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
+	}
+	if input.SourceURL == "" {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: source_url", errpkg.ErrRequired)
+	}
+
+	u, err := url.Parse(input.SourceURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: invalid source_url", errpkg.ErrInvalid)
+	}
+
+	domain := input.Domain
+	if domain == "" {
+		domain = u.Hostname()
+	}
+	if domain == "" || strings.Contains(domain, ":") {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: invalid domain", errpkg.ErrInvalid)
+	}
+
+	// Multi-category proposals (intel-channels §6): at least one category is
+	// required. The legacy single 'category' field still counts when the
+	// array is absent.
+	categories := normalizeCategories(input.Categories)
+	if len(categories) == 0 && input.Category != "" {
+		categories = normalizeCategories([]string{input.Category})
+	}
+	if len(categories) == 0 {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: categories", errpkg.ErrRequired)
+	}
+
+	// source_kind drives probe/verify defaults. Absent an explicit kind, a
+	// legacy 'video'/'youtube' source_type still implies channel_profile so
+	// old clients keep landing on the §106 video-channel path; anything else
+	// defaults to publisher.
+	kind := SourceKind(input.SourceKind)
+	legacyVideoType := false
+	if input.SourceKind == "" {
+		switch input.SourceType {
+		case "video", "youtube":
+			kind = SourceKindChannelProfile
+			legacyVideoType = true
+		default:
+			kind = SourceKindPublisher
+		}
+	}
+	if !kind.IsValid() {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: unknown source_kind %q", errpkg.ErrInvalid, input.SourceKind)
+	}
+
+	if len(input.ProbeSnapshot) > 0 {
+		var snapshot map[string]json.RawMessage
+		if err := json.Unmarshal(input.ProbeSnapshot, &snapshot); err != nil || snapshot == nil {
+			return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: probe_snapshot must be a JSON object", errpkg.ErrInvalid)
+		}
+	}
+
+	// Channels own crawling after approval, so proposed rows are always
+	// manual/manual — EXCEPT the §106 video path: a channel_profile on a
+	// supported video platform is a video_channel subscription the
+	// video:sync_channels poller picks up (kind-driven, replacing the old
+	// source_type-driven switch).
+	sourceType := "auto"
+	if kind == SourceKindChannelProfile {
+		if isVideoProviderHost(u.Hostname()) {
+			sourceType = string(SourceTypeVideoChannel)
+		} else if legacyVideoType {
+			// A legacy 'video' proposal on a non-platform host keeps its old
+			// rejection — the URL cannot be a channel subscription.
+			return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: video sources must be a supported video platform URL", errpkg.ErrInvalid)
+		}
+	}
+
+	arg := gen.CreateIntelSourceParams{
+		Name:                input.Name,
+		Domain:              domain,
+		SourceUrl:           input.SourceURL,
+		Category:            categories[0], // dual-write: categories[0] is the legacy primary category
+		Categories:          categories,
+		SourceType:          sourceType,
+		SourceKind:          string(kind),
+		TrustLevel:          5,
+		CrawlMethod:         string(CrawlMethodManual),
+		CrawlFrequency:      string(CrawlFrequencyManual),
+		CrawlFrequencyMins:  0,
+		RobotsPolicy:        []byte("{}"),
+		AttributionRequired: false,
+		ProviderConfig:      []byte("{}"),
+		Enabled:             false,
+		Description:         input.Description,
+		Status:              "proposed",
+	}
+	if len(input.ProbeSnapshot) > 0 {
+		arg.ProbeReport = input.ProbeSnapshot
+	}
+
+	return arg, nil
+}
+
+// normalizeCategories trims, lowercases, and drops empty entries while
+// preserving order and removing duplicates.
+func normalizeCategories(cats []string) []string {
+	out := make([]string, 0, len(cats))
+	seen := make(map[string]bool, len(cats))
+	for _, c := range cats {
+		c = strings.ToLower(strings.TrimSpace(c))
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+
+	return out
 }
 
 // Propose creates a new source proposal from an authenticated user.
@@ -276,31 +408,15 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 	input.Domain = strings.TrimSpace(input.Domain)
 	input.Category = strings.TrimSpace(input.Category)
 	input.SourceType = strings.TrimSpace(input.SourceType)
+	input.SourceKind = strings.TrimSpace(input.SourceKind)
 
-	if input.Name == "" {
-		return Source{}, errpkg.ErrRequired
-	}
-	if input.SourceURL == "" {
-		return Source{}, errpkg.ErrRequired
-	}
-	if input.SourceType == "" {
-		input.SourceType = "rss"
-	}
-
-	u, err := url.Parse(input.SourceURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return Source{}, fmt.Errorf("sources: propose: %w: invalid source_url", errpkg.ErrInvalid)
-	}
-
-	if input.Domain == "" {
-		input.Domain = u.Hostname()
-	}
-	if input.Domain == "" || strings.Contains(input.Domain, ":") {
-		return Source{}, fmt.Errorf("sources: propose: %w: invalid domain", errpkg.ErrInvalid)
+	arg, err := buildProposeParams(input)
+	if err != nil {
+		return Source{}, err
 	}
 
 	// Public URLs must be unique per platform.
-	if _, err := s.store.GetByURL(ctx, input.SourceURL); err == nil {
+	if _, err := s.store.GetByURL(ctx, arg.SourceUrl); err == nil {
 		return Source{}, errpkg.ErrAlreadyExists
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return Source{}, fmt.Errorf("sources: propose: check existing url: %w", err)
@@ -308,57 +424,9 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 
 	slug := s.uniqueSlug(ctx, slugify(input.Name))
 
-	now := time.Now().UTC()
-	proposedAt := pgtype.Timestamptz{Time: now, Valid: true}
-
-	crawlMethod := string(CrawlMethodManual)
-	crawlFrequency := string(CrawlFrequencyManual)
-
-	switch input.SourceType {
-	case "rss":
-		crawlMethod = string(CrawlMethodRSS)
-		crawlFrequency = string(CrawlFrequencyHourly)
-	case "api":
-		crawlMethod = string(CrawlMethodAPI)
-		crawlFrequency = string(CrawlFrequencyDaily)
-	case "video", "youtube":
-		// §106 channel-sync amendment: a proposed video-platform URL is a
-		// channel subscription — register it as video_channel/manual so the
-		// video:sync_channels poller imports uploads as real video content.
-		// The intel crawl pipeline never handles it (an api-crawl source here
-		// dead-ended on empty provider_config).
-		switch {
-		case isVideoProviderHost(u.Hostname()):
-			input.SourceType = string(SourceTypeVideoChannel)
-		case input.SourceType == string(SourceTypeVideo):
-			return Source{}, fmt.Errorf("sources: propose: %w: video sources must be a supported video platform URL", errpkg.ErrInvalid)
-		default:
-			crawlMethod = string(CrawlMethodAPI)
-			crawlFrequency = string(CrawlFrequencyDaily)
-		}
-	}
-
-	arg := gen.CreateIntelSourceParams{
-		Name:                input.Name,
-		Domain:              input.Domain,
-		SourceUrl:           input.SourceURL,
-		Category:            input.Category,
-		SourceType:          input.SourceType,
-		SourceKind:          "publisher",
-		TrustLevel:          5,
-		CrawlMethod:         crawlMethod,
-		CrawlFrequency:      crawlFrequency,
-		CrawlFrequencyMins:  0,
-		RobotsPolicy:        []byte("{}"),
-		AttributionRequired: false,
-		ProviderConfig:      []byte("{}"),
-		Enabled:             false,
-		Slug:                &slug,
-		Description:         input.Description,
-		Status:              "proposed",
-		ProposedBy:          userID,
-		ProposedAt:          proposedAt,
-	}
+	arg.Slug = &slug
+	arg.ProposedBy = userID
+	arg.ProposedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 
 	return s.store.Create(ctx, arg)
 }

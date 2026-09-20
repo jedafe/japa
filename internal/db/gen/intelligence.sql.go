@@ -264,7 +264,7 @@ func (q *Queries) CreateIntelReviewLog(ctx context.Context, arg CreateIntelRevie
 
 const createIntelSource = `-- name: CreateIntelSource :one
 
-INSERT INTO intel_sources (name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, keywords, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id) VALUES ($1, $16, $2, $3, $17, $4, $5, COALESCE($18, 'publisher'), $6, $7, $8, $9, $10, $11, $12, $13, $14, $19, $20, $15, COALESCE($21, 'active'), $22, $23, $24, $25, $26)
+INSERT INTO intel_sources (name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, keywords, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id, categories, probe_report) VALUES ($1, $16, $2, $3, $17, $4, $5, COALESCE($18, 'publisher'), $6, $7, $8, $9, $10, $11, $12, $13, $14, $19, $20, $15, COALESCE($21, 'active'), $22, $23, $24, $25, $26, COALESCE($27::text[], CASE WHEN $4 = '' THEN '{}'::text[] ELSE ARRAY[$4] END), COALESCE($28::jsonb, '{}'::jsonb))
 
 RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at
 `
@@ -296,6 +296,8 @@ type CreateIntelSourceParams struct {
 	ApprovedBy          pgtype.UUID        `json:"approved_by"`
 	ApprovedAt          pgtype.Timestamptz `json:"approved_at"`
 	PersonaID           pgtype.UUID        `json:"persona_id"`
+	Categories          []string           `json:"categories"`
+	ProbeReport         []byte             `json:"probe_report"`
 }
 
 // internal/db/queries/intelligence.sql
@@ -304,6 +306,9 @@ type CreateIntelSourceParams struct {
 //
 // All queries are platform-scoped (ADR-112 Amendment 2). Every query filters
 // by the id to guarantee data isolation across platforms.
+// categories dual-writes category when the caller does not pass the array
+// (reviewer-flagged gap: propose must populate both columns). probe_report
+// carries the preview-probe snapshot submitted with the proposal (§6).
 func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourceParams) (IntelSource, error) {
 	row := q.db.QueryRow(ctx, createIntelSource,
 		arg.Name,
@@ -332,6 +337,8 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 		arg.ApprovedBy,
 		arg.ApprovedAt,
 		arg.PersonaID,
+		arg.Categories,
+		arg.ProbeReport,
 	)
 	var i IntelSource
 	err := row.Scan(

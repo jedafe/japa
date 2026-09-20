@@ -6,7 +6,10 @@
 -- by the id to guarantee data isolation across platforms.
 
 -- name: CreateIntelSource :one
-INSERT INTO intel_sources (name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, keywords, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id) VALUES ($1, sqlc.narg(slug), $2, $3, sqlc.narg(description), $4, $5, COALESCE(sqlc.narg(source_kind), 'publisher'), $6, $7, $8, $9, $10, $11, $12, $13, $14, sqlc.narg(logo_url), sqlc.narg(keywords), $15, COALESCE(sqlc.narg(status), 'active'), sqlc.narg(proposed_by), sqlc.narg(proposed_at), sqlc.narg(approved_by), sqlc.narg(approved_at), sqlc.narg(persona_id))
+-- categories dual-writes category when the caller does not pass the array
+-- (reviewer-flagged gap: propose must populate both columns). probe_report
+-- carries the preview-probe snapshot submitted with the proposal (§6).
+INSERT INTO intel_sources (name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, keywords, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id, categories, probe_report) VALUES ($1, sqlc.narg(slug), $2, $3, sqlc.narg(description), $4, $5, COALESCE(sqlc.narg(source_kind), 'publisher'), $6, $7, $8, $9, $10, $11, $12, $13, $14, sqlc.narg(logo_url), sqlc.narg(keywords), $15, COALESCE(sqlc.narg(status), 'active'), sqlc.narg(proposed_by), sqlc.narg(proposed_at), sqlc.narg(approved_by), sqlc.narg(approved_at), sqlc.narg(persona_id), COALESCE(sqlc.narg(categories)::text[], CASE WHEN $4 = '' THEN '{}'::text[] ELSE ARRAY[$4] END), COALESCE(sqlc.narg(probe_report)::jsonb, '{}'::jsonb))
 
 RETURNING *;
 
