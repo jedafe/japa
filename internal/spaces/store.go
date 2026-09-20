@@ -1505,16 +1505,19 @@ func (s *Service) ReorderPinned(ctx context.Context, spaceID pgtype.UUID, conten
 	return nil
 }
 
-// SpaceAnalyticsSummary holds the three aggregate counts returned by
+// SpaceAnalyticsSummary holds the aggregate counts returned by
 // GetSpaceAnalytics in a single round-trip (BUG-020).
 type SpaceAnalyticsSummary struct {
-	MemberCount  int
-	ContentCount int
-	ViewCount    int
+	MemberCount   int
+	ContentCount  int
+	ViewCount     int
+	FollowerCount int
+	PostsLast30d  int
 }
 
-// GetSpaceAnalyticsSummary returns member/content/view counts for a space
-// in a single SQL query instead of three sequential ones (BUG-020).
+// GetSpaceAnalyticsSummary returns member/content/view/follower counts and
+// the last-30-days post volume for a space in a single SQL query instead of
+// sequential ones (BUG-020).
 func (s *Service) GetSpaceAnalyticsSummary(ctx context.Context, spaceID pgtype.UUID) (SpaceAnalyticsSummary, error) {
 	row, err := s.read.GetSpaceAnalyticsSummary(ctx,
 		spaceID,
@@ -1524,8 +1527,10 @@ func (s *Service) GetSpaceAnalyticsSummary(ctx context.Context, spaceID pgtype.U
 	}
 
 	return SpaceAnalyticsSummary{
-		MemberCount:  int(row.MemberCount),
-		ContentCount: int(row.ContentCount),
-		ViewCount:    int(row.ViewCount),
+		MemberCount:   int(row.MemberCount),
+		ContentCount:  int(row.ContentCount),
+		ViewCount:     int(row.ViewCount),
+		FollowerCount: int(row.FollowerCount),
+		PostsLast30d:  int(row.PostsLast30d),
 	}, nil
 }

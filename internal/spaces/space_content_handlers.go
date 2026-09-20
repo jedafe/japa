@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -47,7 +49,12 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 
 	var cursor pgtype.Timestamptz
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
-		if err := cursor.Scan(cs); err != nil {
+		// Accept RFC3339 (the format this endpoint itself returns in
+		// created_at fields) first, then fall back to Postgres text format
+		// ("2006-01-02 15:04:05.999999-07") for compatibility.
+		if t, err := time.Parse(time.RFC3339Nano, cs); err == nil {
+			cursor = pgtype.Timestamptz{Time: t, Valid: true}
+		} else if err := cursor.Scan(cs); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
 		}
@@ -66,17 +73,26 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
-// ListPinned handles GET /api/v1/spaces/{slug}/pinned.
+// ListPinned handles GET /api/v1/spaces/{slug}/pinned. Returns the pinned
+// content rows (in pin order) so the hub's Pinned tab can render FeedCards
+// directly — pin metadata alone is not renderable. Visibility-gated like
+// the content list so guests never see members/private pins.
 func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	pins, err := h.content.ListPinnedContent(r.Context(), space.ID)
+	filter := visibility.VisibilityFilterFromRequest(r)
+
+	pins, err := h.content.ListPinnedContentBySpace(r.Context(), space.ID, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list pinned content")
 		return
+	}
+
+	if pins == nil {
+		pins = []gen.ListPinnedContentBySpaceRow{}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pins})
@@ -119,7 +135,16 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 
 	pin, err := h.content.PinContent(r.Context(), space.ID, contentID, user.UserID, input.Position)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
+		// Domain failures carry a prefixed code — map them to 4xx instead of
+		// a misleading 500.
+		switch {
+		case strings.HasPrefix(err.Error(), "content_not_in_space"):
+			errpkg.WriteError(w, http.StatusBadRequest, "content_not_in_space", "This content is not assigned to this space")
+		case strings.HasPrefix(err.Error(), "max_pinned_posts_reached"):
+			errpkg.WriteError(w, http.StatusConflict, "max_pinned_posts_reached", "This space has reached its pinned post limit")
+		default:
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
+		}
 		return
 	}
 

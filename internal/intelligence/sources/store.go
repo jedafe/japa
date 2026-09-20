@@ -2,12 +2,15 @@ package sources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store wraps the sqlc-generated Queries for the intel_sources registry.
@@ -39,9 +42,13 @@ func NewStore(database *db.DB) *Store {
 // Create inserts a new intel_sources row. The ID is stamped into the
 // row regardless of any value the caller set on arg.
 func (s *Store) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (Source, error) {
-
 	row, err := s.queries.CreateIntelSource(ctx, arg)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return Source{}, errpkg.ErrAlreadyExists
+		}
+
 		return Source{}, fmt.Errorf("sources: create: %w", err)
 	}
 
@@ -50,7 +57,8 @@ func (s *Store) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (So
 
 // Get fetches a single source by its primary key.
 func (s *Store) Get(ctx context.Context, id SourceID) (Source, error) {
-	row, err := s.queries.GetIntelSource(ctx,
+	row, err := s.queries.GetIntelSource(
+		ctx,
 
 		id,
 	)
@@ -63,7 +71,8 @@ func (s *Store) Get(ctx context.Context, id SourceID) (Source, error) {
 
 // GetBySlug fetches a single source by its public slug.
 func (s *Store) GetBySlug(ctx context.Context, slug string) (Source, error) {
-	row, err := s.queries.GetIntelSourceBySlug(ctx,
+	row, err := s.queries.GetIntelSourceBySlug(
+		ctx,
 
 		&slug,
 	)
@@ -76,7 +85,8 @@ func (s *Store) GetBySlug(ctx context.Context, slug string) (Source, error) {
 
 // GetByURL fetches a single source by its canonical source_url.
 func (s *Store) GetByURL(ctx context.Context, sourceURL string) (Source, error) {
-	row, err := s.queries.GetIntelSourceByURL(ctx,
+	row, err := s.queries.GetIntelSourceByURL(
+		ctx,
 
 		sourceURL,
 	)
@@ -91,7 +101,6 @@ func (s *Store) GetByURL(ctx context.Context, sourceURL string) (Source, error) 
 // ID is stamped into the query params regardless of any value the
 // caller set on arg.
 func (s *Store) List(ctx context.Context, arg gen.ListIntelSourcesParams) ([]Source, error) {
-
 	rows, err := s.queries.ListIntelSources(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("sources: list: %w", err)
@@ -103,7 +112,8 @@ func (s *Store) List(ctx context.Context, arg gen.ListIntelSourcesParams) ([]Sou
 // ListByCategory returns enabled sources for a given category, ordered by
 // trust level then name.
 func (s *Store) ListByCategory(ctx context.Context, category string) ([]Source, error) {
-	rows, err := s.queries.ListIntelSourcesByCategory(ctx,
+	rows, err := s.queries.ListIntelSourcesByCategory(
+		ctx,
 
 		category,
 	)
@@ -117,7 +127,8 @@ func (s *Store) ListByCategory(ctx context.Context, category string) ([]Source, 
 // ListDue returns up to limit enabled sources whose crawl interval has
 // elapsed (or that have never been crawled), oldest-first.
 func (s *Store) ListDue(ctx context.Context, limit int32) ([]Source, error) {
-	rows, err := s.queries.ListDueIntelSources(ctx,
+	rows, err := s.queries.ListDueIntelSources(
+		ctx,
 
 		limit,
 	)
@@ -147,7 +158,6 @@ func (s *Store) ListVideoChannelsDue(ctx context.Context, intervalMins, limit in
 // UpdateEnabled toggles the enabled flag for a source.
 func (s *Store) UpdateEnabled(ctx context.Context, id SourceID, enabled bool) error {
 	if err := s.queries.UpdateIntelSourceEnabled(ctx, gen.UpdateIntelSourceEnabledParams{
-
 		ID:      id,
 		Enabled: enabled,
 	}); err != nil {
@@ -165,7 +175,6 @@ func (s *Store) UpdateEnabled(ctx context.Context, id SourceID, enabled bool) er
 // into the query params regardless of any value the caller set on
 // arg.
 func (s *Store) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSourceCrawlStatusParams) error {
-
 	if err := s.queries.UpdateIntelSourceCrawlStatus(ctx, arg); err != nil {
 		return fmt.Errorf("sources: update crawl status: %w", err)
 	}
@@ -177,7 +186,6 @@ func (s *Store) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSource
 // The ID is stamped into the query params regardless of any value the
 // caller set on arg.
 func (s *Store) UpdateRobotsPolicy(ctx context.Context, arg gen.UpdateIntelSourceRobotsPolicyParams) error {
-
 	if err := s.queries.UpdateIntelSourceRobotsPolicy(ctx, arg); err != nil {
 		return fmt.Errorf("sources: update robots policy: %w", err)
 	}
@@ -200,7 +208,8 @@ func (s *Store) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelSou
 // MarkLastChanged stamps last_changed_at for a source, signalling that the
 // upstream content has changed since the previous crawl.
 func (s *Store) MarkLastChanged(ctx context.Context, id SourceID) error {
-	if err := s.queries.UpdateIntelSourceLastChanged(ctx,
+	if err := s.queries.UpdateIntelSourceLastChanged(
+		ctx,
 
 		id,
 	); err != nil {
@@ -214,7 +223,8 @@ func (s *Store) MarkLastChanged(ctx context.Context, id SourceID) error {
 // preserved by the database (the row is hard-deleted; promoted intel_records
 // keep their snapshot).
 func (s *Store) Delete(ctx context.Context, id SourceID) error {
-	if err := s.queries.DeleteIntelSource(ctx,
+	if err := s.queries.DeleteIntelSource(
+		ctx,
 
 		id,
 	); err != nil {
@@ -229,7 +239,6 @@ func (s *Store) Delete(ctx context.Context, id SourceID) error {
 // toggle). Returns the updated row. The ID is stamped into the params
 // regardless of any value the caller set on arg.
 func (s *Store) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (Source, error) {
-
 	row, err := s.queries.UpdateIntelSource(ctx, arg)
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: update: %w", err)
@@ -242,7 +251,6 @@ func (s *Store) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (So
 // review. Platform-scoped.
 func (s *Store) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {
 	rows, err := s.queries.ListProposedIntelSources(ctx, gen.ListProposedIntelSourcesParams{
-
 		Limit:  limit,
 		Offset: offset,
 	})
@@ -259,7 +267,6 @@ func (s *Store) ListProposed(ctx context.Context, limit, offset int32) ([]Source
 // it returns pgx.ErrNoRows because of the ON CONFLICT DO NOTHING clause.
 func (s *Store) BlockSource(ctx context.Context, blockerID, sourceID pgtype.UUID) (pgtype.UUID, error) {
 	row, err := s.queries.CreateSourceBlock(ctx, gen.CreateSourceBlockParams{
-
 		BlockerID: blockerID,
 		SourceID:  sourceID,
 	})
@@ -272,7 +279,6 @@ func (s *Store) BlockSource(ctx context.Context, blockerID, sourceID pgtype.UUID
 // UnblockSource removes a user_source_blocks row.
 func (s *Store) UnblockSource(ctx context.Context, blockerID, sourceID pgtype.UUID) error {
 	if err := s.queries.DeleteSourceBlock(ctx, gen.DeleteSourceBlockParams{
-
 		BlockerID: blockerID,
 		SourceID:  sourceID,
 	}); err != nil {
@@ -283,7 +289,8 @@ func (s *Store) UnblockSource(ctx context.Context, blockerID, sourceID pgtype.UU
 
 // ListBlockedSourceIDs returns the source IDs blocked by the given user.
 func (s *Store) ListBlockedSourceIDs(ctx context.Context, blockerID pgtype.UUID) ([]pgtype.UUID, error) {
-	ids, err := s.queries.ListBlockedSourceIDs(ctx,
+	ids, err := s.queries.ListBlockedSourceIDs(
+		ctx,
 
 		blockerID,
 	)
@@ -296,7 +303,6 @@ func (s *Store) ListBlockedSourceIDs(ctx context.Context, blockerID pgtype.UUID)
 // IsSourceBlocked returns whether the user has blocked the given source.
 func (s *Store) IsSourceBlocked(ctx context.Context, blockerID, sourceID pgtype.UUID) (bool, error) {
 	blocked, err := s.queries.IsSourceBlocked(ctx, gen.IsSourceBlockedParams{
-
 		BlockerID: blockerID,
 		SourceID:  sourceID,
 	})
@@ -310,7 +316,6 @@ func (s *Store) IsSourceBlocked(ctx context.Context, blockerID, sourceID pgtype.
 // and records the approver. Platform-scoped.
 func (s *Store) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUID) (Source, error) {
 	row, err := s.queries.ApproveProposedIntelSource(ctx, gen.ApproveProposedIntelSourceParams{
-
 		ID:         id,
 		ApprovedBy: approvedBy,
 	})

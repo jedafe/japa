@@ -151,13 +151,20 @@
 			<dd class="text-sm font-medium text-[var(--color-text)]">{space.post_count}</dd>
 			<dt class="text-xs text-[var(--color-muted)]">{t('space.followers', 'Followers')}</dt>
 			<dd class="text-sm font-medium text-[var(--color-text)]">
-				<button
-					type="button"
-					onclick={() => (followersOpen = true)}
-					class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
-				>
+				{#if authed}
+					<button
+						type="button"
+						onclick={() => (followersOpen = true)}
+						class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+					>
+						{space.follower_count}
+					</button>
+				{:else}
+					<!-- GET /spaces/{id}/followers requires auth — render the count
+					     non-interactive for guests instead of opening a modal that
+					     would 401 and show a misleading "No followers yet". -->
 					{space.follower_count}
-				</button>
+				{/if}
 			</dd>
 		</dl>
 

@@ -131,3 +131,39 @@ var categoryEntityTypes = map[string]string{
 func CategoryToEntityType(category string) string {
 	return categoryEntityTypes[category]
 }
+
+// RegisteredCategories returns the canonical intel_sources.category values —
+// one primary label per extraction domain, plus "fx" (a directory domain
+// with no entity mapping; such sources produce review-queue stubs). Aliases
+// (accommodation → housing, diaspora → community_organisation, etc.) remain
+// valid in the DB via CategoryToEntityType but are not offered as choices.
+// Sorted for stable option lists. Exposed through /api/v1/sources/meta as
+// admin_categories so the control-panel source form consumes the taxonomy
+// from the API rather than a hardcoded list (Rule 16).
+func RegisteredCategories() []string {
+	return []string{
+		"admission",
+		"banking",
+		"community_organisation",
+		"cost_of_living",
+		"credential_pathway",
+		"culture_lifestyle",
+		"fx",
+		"grants",
+		"health_insurance",
+		"housing",
+		"import_export",
+		"internship",
+		"job",
+		"language_test",
+		"news",
+		"remittance",
+		"scholarship",
+		"tax_obligation",
+		"travel_alert",
+		"travel_routes",
+		"visa",
+		"wiki_page",
+		"work_career",
+	}
+}

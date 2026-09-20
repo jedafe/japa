@@ -43,6 +43,12 @@ const TaskIntelPromote = "intel:promote"
 // Mirrors worker.TypeIntelFetchSource without importing the worker package.
 const TaskIntelFetchSource = "intel:fetch_source"
 
+// TaskVideoSyncChannels is the Asynq task name enqueued when a video_channel
+// source is approved so the first channel sync runs immediately rather than
+// waiting for the hourly cron (§106 channel-sync amendment).
+// Mirrors worker.TypeVideoSyncChannels without importing the worker package.
+const TaskVideoSyncChannels = "video:sync_channels"
+
 // TaskReportNotifyAdmin is the Asynq task name the source-report handler
 // enqueues so moderators with reports.review are notified of a new report —
 // the same fan-out the content/comment/user report handlers run (Section 51).

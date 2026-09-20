@@ -1493,6 +1493,14 @@ export interface SpaceContentItem {
 	comment_count: number;
 	share_count: number;
 	published_at: string;
+	/** Row creation timestamp — the ?cursor= pagination key for
+	 * GET /spaces/{slug}/content (ORDER BY created_at DESC, id DESC). */
+	created_at: string;
+	/** Author fields joined from users/user_profiles — FeedCard renders
+	 * these via toFeedItem. Nullable: LEFT JOINs. */
+	author_username?: string | null;
+	author_display_name?: string | null;
+	author_avatar_url?: string | null;
 }
 
 /* ------------------------------------------------------------------ *

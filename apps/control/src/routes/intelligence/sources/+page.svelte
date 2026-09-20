@@ -64,6 +64,9 @@
 	let personas = $state<PersonaItem[]>([]);
 	let entityTypeOptions = $state<string[]>([]);
 	let sourceTypeOptions = $state<string[]>([]);
+	let categoryOptions = $state<string[]>([]);
+	let crawlMethodOptions = $state<string[]>([]);
+	let crawlFrequencyOptions = $state<string[]>([]);
 	let personaNameById = $derived.by(() => {
 		const m = new Map<string, string>();
 		for (const p of personas) m.set(p.id, p.profile_name);
@@ -119,14 +122,22 @@
 		// Fetch the registered extraction entity types so the SourceForm can
 		// offer the entity_types multi-domain override (Rule 16 — options
 		// come from the API, not a hardcoded list). The same meta payload
-		// carries source_types, which feeds the Source Type select.
+		// carries source_types plus the admin category/crawl option sets,
+		// which feed the Source Type, Category, Method, and Frequency selects.
 		if (entityTypeOptions.length === 0) {
-			const mresult = await api<{ registered_entity_types?: string[]; source_types?: string[] }>(
-				'/api/v1/sources/meta'
-			);
+			const mresult = await api<{
+				registered_entity_types?: string[];
+				source_types?: string[];
+				admin_categories?: string[];
+				crawl_methods?: string[];
+				crawl_frequencies?: string[];
+			}>('/api/v1/sources/meta');
 			if (mresult.ok && mresult.data) {
 				entityTypeOptions = mresult.data.registered_entity_types ?? [];
 				sourceTypeOptions = mresult.data.source_types ?? [];
+				categoryOptions = mresult.data.admin_categories ?? [];
+				crawlMethodOptions = mresult.data.crawl_methods ?? [];
+				crawlFrequencyOptions = mresult.data.crawl_frequencies ?? [];
 			}
 		}
 		loading = false;
@@ -496,6 +507,9 @@
 		personas={personas}
 		entityTypeOptions={entityTypeOptions}
 		sourceTypeOptions={sourceTypeOptions}
+		categoryOptions={categoryOptions}
+		crawlMethodOptions={crawlMethodOptions}
+		crawlFrequencyOptions={crawlFrequencyOptions}
 		saving={formSaving}
 		errorMessage={formError}
 		onSubmit={handleSubmit}

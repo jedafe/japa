@@ -31,6 +31,21 @@ const (
 	TrustLevelCommunity  TrustLevel = 4 // reddit, forums, social media, user submissions
 )
 
+// SourceType labels what a source represents — descriptive, not the crawl
+// mechanism (that is crawl_method).
+type SourceType string
+
+// Exported const values.
+const (
+	// SourceTypeVideo is the user-facing video-platform type — mapped to
+	// SourceTypeVideoChannel on create/propose when the URL is a supported
+	// provider (§106 channel-sync amendment).
+	SourceTypeVideo SourceType = "video"
+	// SourceTypeVideoChannel marks a video channel subscription row — synced
+	// by video:sync_channels, never crawled by the intel pipeline.
+	SourceTypeVideoChannel SourceType = "video_channel"
+)
+
 // CrawlMethod selects the fetcher adapter.
 type CrawlMethod string
 
@@ -42,6 +57,9 @@ const (
 	CrawlMethodAPI    CrawlMethod = "api"
 	CrawlMethodPDF    CrawlMethod = "pdf"
 	CrawlMethodOCR    CrawlMethod = "ocr"
+	// CrawlMethodManual marks registry-only rows the crawl scheduler must
+	// skip (video channels, entity-linked sources).
+	CrawlMethodManual CrawlMethod = "manual"
 )
 
 // CrawlFrequency is a volatility bucket.
@@ -54,6 +72,8 @@ const (
 	CrawlFrequencyDaily   CrawlFrequency = "daily"
 	CrawlFrequencyWeekly  CrawlFrequency = "weekly"
 	CrawlFrequencyMonthly CrawlFrequency = "monthly"
+	// CrawlFrequencyManual marks rows that are never auto-crawled.
+	CrawlFrequencyManual CrawlFrequency = "manual"
 )
 
 // Category groups sources by data domain.

@@ -57,7 +57,7 @@ var sourceSortOptions = []sourceOption{
 
 // sourceKindOptions are the publisher kinds a directory visitor can filter
 // by (?source_kind=). They describe WHO publishes the source — distinct from
-// source_types (rss/youtube/api/static), which describe the crawl mechanism
+// source_types (rss/video/api/static), which describe the crawl mechanism
 // and are only meaningful on the proposal form. Values must stay in sync with
 // the intel_sources.source_kind CHECK constraint. Ref: sources directory v2
 // design (2026-09-11-sources-directory-design.md).
@@ -713,9 +713,19 @@ func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) 
 				"scholarship", "job", "visa", "remittance", "news",
 				"cost_of_living", "university", "video", "organization", "people",
 			},
-			"source_types": []string{"rss", "youtube", "api", "static"},
+			"source_types": []string{"rss", "video", "api", "static"},
 			"source_kinds": sourceKindOptions,
 			"entity_types": sourceItemEntityTypes,
+			// admin_* fields carry the canonical option sets for the control
+			// panel's source form (Rule 16) — the public 'categories' list
+			// above stays the curated proposal catalog, while admin_categories
+			// is the full extraction-domain taxonomy.
+			"admin_categories": schemas.RegisteredCategories(),
+			// crawl_methods mirrors the composite fetcher's adapter set
+			// (pdf/ocr fetch through the static adapter). 'manual' is a
+			// backend sentinel for non-crawlable rows and is not offered.
+			"crawl_methods":     []string{"static", "rss", "api", "pdf", "ocr"},
+			"crawl_frequencies": []string{"hourly", "daily", "weekly", "monthly"},
 			// registered_entity_types is the full extraction-domain registry —
 			// a superset of entity_types (which is the curated feed subset).
 			// Exposed so the control panel can offer every valid value for a

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -108,6 +109,11 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 
 	src, err := h.intelSources.Create(r.Context(), params)
 	if err != nil {
+		if errors.Is(err, errpkg.ErrAlreadyExists) {
+			errpkg.WriteError(w, http.StatusConflict, "already_exists", "A source with this URL already exists")
+			return
+		}
+
 		slog.Error("intel: create source failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create source")
 
@@ -126,8 +132,21 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 // crawl frequency, and domain. On a validation failure it writes the error
 // response and returns ok=false.
 func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody) (gen.CreateIntelSourceParams, bool) {
+	body.Name = strings.TrimSpace(body.Name)
+	body.Domain = strings.TrimSpace(body.Domain)
+	body.SourceURL = strings.TrimSpace(body.SourceURL)
+	body.Category = strings.TrimSpace(body.Category)
+	body.SourceType = strings.TrimSpace(body.SourceType)
+	body.CrawlMethod = strings.TrimSpace(body.CrawlMethod)
+	body.CrawlFrequency = strings.TrimSpace(body.CrawlFrequency)
+
 	if body.Name == "" || body.SourceURL == "" || body.Category == "" || body.CrawlMethod == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name, source_url, category, and crawl_method are required")
+		return gen.CreateIntelSourceParams{}, false
+	}
+
+	if u, err := url.Parse(body.SourceURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_url", "source_url must be a valid http(s) URL")
 		return gen.CreateIntelSourceParams{}, false
 	}
 
@@ -158,7 +177,6 @@ func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody)
 	}
 
 	params := gen.CreateIntelSourceParams{
-
 		Name:                body.Name,
 		Slug:                &slug,
 		Domain:              domain,
@@ -277,6 +295,15 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if body.SourceURL != "" {
+		body.SourceURL = strings.TrimSpace(body.SourceURL)
+
+		if u, err := url.Parse(body.SourceURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_url", "source_url must be a valid http(s) URL")
+			return
+		}
+	}
+
 	// entity_types is a presence-detected field: the key absent leaves the
 	// override untouched, an empty array removes it (source falls back to
 	// its category-derived type), and a non-empty array replaces it. Every
@@ -290,7 +317,6 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 
 	// Merge: only non-zero / non-nil body fields override the existing row.
 	params := gen.UpdateIntelSourceParams{
-
 		ID:                  sourceID,
 		Name:                existing.Name,
 		Domain:              existing.Domain,
@@ -853,6 +879,15 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve source")
 
 		return
+	}
+
+	// §106 channel-sync amendment: a newly approved video_channel is due
+	// immediately — kick the poller so its first import doesn't wait for the
+	// hourly cron. Fire-and-forget (Rule 8).
+	if src.SourceType == "video_channel" && h.asynqClient != nil {
+		if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskVideoSyncChannels, []byte("{}"))); err != nil {
+			slog.Warn("intel: approve proposed: video sync enqueue failed", "source_id", sourceID.String(), "error", err)
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{

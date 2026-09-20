@@ -1545,6 +1545,21 @@ func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.U
 // are recorded. If the content is already pinned, the unique constraint
 // prevents a duplicate.
 func (s *Service) PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error) {
+	// Only content assigned to the space (authoritative content_spaces
+	// junction, BUG-010) may be pinned — otherwise a moderator could pin
+	// foreign content into the space's pinned tab.
+	inSpace, err := s.read.IsContentInSpace(ctx, gen.IsContentInSpaceParams{
+		SpaceID:   spaceID,
+		ContentID: contentID,
+	})
+	if err != nil {
+		return gen.SpacePinnedPost{}, fmt.Errorf("checking content space membership: %w", err)
+	}
+
+	if !inSpace {
+		return gen.SpacePinnedPost{}, fmt.Errorf("content_not_in_space: content %s is not assigned to space %s", contentID.String(), spaceID.String())
+	}
+
 	maxPinned := 5
 	if s.settings != nil {
 		maxPinned = s.settings.GetIntOr(ctx, "spaces.max_pinned_posts", 5)
@@ -1594,6 +1609,27 @@ func (s *Service) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([
 	}
 
 	return pins, nil
+}
+
+// ListPinnedContentBySpace returns the pinned content rows for a space in pin
+// order — the full content payload the space hub's Pinned tab renders, not
+// just pin metadata. Visibility is gated by the supplied filter so guests
+// never see members/private pins.
+func (s *Service) ListPinnedContentBySpace(ctx context.Context, spaceID pgtype.UUID, filter visibility.VisibilityFilter) ([]gen.ListPinnedContentBySpaceRow, error) {
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
+	rows, err := s.read.ListPinnedContentBySpace(ctx, gen.ListPinnedContentBySpaceParams{
+		SpaceID:           spaceID,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing pinned content by space: %w", err)
+	}
+
+	return rows, nil
 }
 
 // IsContentPinned returns true if the given content is pinned to the space.

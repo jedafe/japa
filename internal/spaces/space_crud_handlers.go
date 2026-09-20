@@ -13,6 +13,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 // ---------------------------------------------------------------------------
@@ -865,6 +866,14 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SPACES-017: spaces.edit is granted to member_role as "edit own spaces"
+	// (migration 000175) — the handler must check management rights per space.
+	// Only the space owner, an assigned moderator, or a platform admin
+	// (spaces.admin — the /admin/spaces/{id} route's gate) may update.
+	if !h.canManageOrAdmin(w, r, id) {
+		return
+	}
+
 	var req struct {
 		Name           string   `json:"name"`
 		Description    *string  `json:"description"`
@@ -1075,7 +1084,9 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// SPACES-002: only the space owner (creator) may delete the space.
+	// SPACES-002: only the space owner (creator) may delete the space —
+	// or a platform admin via /admin/spaces/{id} (spaces.admin), since the
+	// admin panel's delete action must work on non-owned spaces too.
 	isOwner, err := h.Service.IsOwner(r.Context(), id, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1083,9 +1094,15 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !isOwner {
-		errpkg.WriteError(w, http.StatusForbidden, "not_space_owner",
-			"Only the space creator can delete this space")
-		return
+		isAdmin := false
+		if resolver := rbac.FromContext(r.Context()); resolver != nil {
+			isAdmin = resolver.HasPermission(r.Context(), user.UserID, "spaces.admin")
+		}
+		if !isAdmin {
+			errpkg.WriteError(w, http.StatusForbidden, "not_space_owner",
+				"Only the space creator can delete this space")
+			return
+		}
 	}
 
 	// SPACES-002: the space must have 0 approved members (excluding the

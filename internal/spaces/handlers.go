@@ -31,6 +31,7 @@ type ContentService interface {
 	PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error)
 	UnpinContent(ctx context.Context, spaceID, contentID pgtype.UUID) error
 	ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]gen.SpacePinnedPost, error)
+	ListPinnedContentBySpace(ctx context.Context, spaceID pgtype.UUID, filter visibility.VisibilityFilter) ([]gen.ListPinnedContentBySpaceRow, error)
 }
 
 // PermCacheInvalidator flushes a user's permission cache (jc:perm:{user_id})

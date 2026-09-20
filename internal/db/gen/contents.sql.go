@@ -1916,6 +1916,24 @@ func (q *Queries) IsBookmarked(ctx context.Context, arg IsBookmarkedParams) (boo
 	return is_bookmarked, err
 }
 
+const isContentInSpace = `-- name: IsContentInSpace :one
+SELECT EXISTS(SELECT 1 FROM content_spaces WHERE space_id = $1 AND content_id = $2) AS exists
+`
+
+type IsContentInSpaceParams struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// True when the content is assigned to the space via the authoritative
+// content_spaces junction (BUG-010).
+func (q *Queries) IsContentInSpace(ctx context.Context, arg IsContentInSpaceParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isContentInSpace, arg.SpaceID, arg.ContentID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const isContentPinned = `-- name: IsContentPinned :one
 SELECT EXISTS(SELECT 1 FROM space_pinned_posts WHERE space_id = $1 AND content_id = $2) AS exists
 `
@@ -2925,12 +2943,15 @@ const listContentsBySpace = `-- name: ListContentsBySpace :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
- c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
  u.username AS author_username, up.display_name AS author_display_name,
- s.name AS space_name
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ s.name AS space_name,
+ EXISTS(SELECT 1 FROM space_pinned_posts spp
+  WHERE spp.space_id = $1 AND spp.content_id = c.id) AS is_pinned
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
 LEFT JOIN users u ON u.id = c.author_id
@@ -2987,7 +3008,6 @@ type ListContentsBySpaceRow struct {
 	Status            string             `json:"status"`
 	Visibility        string             `json:"visibility"`
 	IsLocked          bool               `json:"is_locked"`
-	IsPinned          bool               `json:"is_pinned"`
 	ReadTimeMinutes   int32              `json:"read_time_minutes"`
 	ViewCount         int32              `json:"view_count"`
 	CommentCount      int32              `json:"comment_count"`
@@ -3005,7 +3025,9 @@ type ListContentsBySpaceRow struct {
 	Purpose           interface{}        `json:"purpose"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
+	AuthorAvatarUrl   string             `json:"author_avatar_url"`
 	SpaceName         *string            `json:"space_name"`
+	IsPinned          bool               `json:"is_pinned"`
 }
 
 // Lists content assigned to a given space via the authoritative
@@ -3050,7 +3072,6 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
-			&i.IsPinned,
 			&i.ReadTimeMinutes,
 			&i.ViewCount,
 			&i.CommentCount,
@@ -3068,7 +3089,9 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.Purpose,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
+			&i.AuthorAvatarUrl,
 			&i.SpaceName,
+			&i.IsPinned,
 		); err != nil {
 			return nil, err
 		}
@@ -3507,6 +3530,166 @@ func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([
 			&i.PinnedBy,
 			&i.Position,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPinnedContentBySpace = `-- name: ListPinnedContentBySpace :many
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ s.name AS space_name,
+ true AS is_pinned
+FROM space_pinned_posts spp
+JOIN contents c ON c.id = spp.content_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = spp.space_id
+WHERE spp.space_id = $1
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($2::boolean AND $3::boolean)
+ OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $5::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+ )
+ )
+ )
+ORDER BY spp.position ASC, spp.created_at ASC
+`
+
+type ListPinnedContentBySpaceParams struct {
+	SpaceID           pgtype.UUID `json:"space_id"`
+	CanSeeUnpublished bool        `json:"can_see_unpublished"`
+	CanSeePrivate     bool        `json:"can_see_private"`
+	RequesterID       pgtype.UUID `json:"requester_id"`
+	CanSeeMembers     bool        `json:"can_see_members"`
+}
+
+type ListPinnedContentBySpaceRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	BodyHtml          string             `json:"body_html"`
+	FieldValues       []byte             `json:"field_values"`
+	ContentHash       *string            `json:"content_hash"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl      *string            `json:"canonical_url"`
+	MetaTitle         *string            `json:"meta_title"`
+	MetaDescription   *string            `json:"meta_description"`
+	OgImageUrl        *string            `json:"og_image_url"`
+	SeoIndexable      bool               `json:"seo_indexable"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	IsLocked          bool               `json:"is_locked"`
+	ReadTimeMinutes   int32              `json:"read_time_minutes"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	ShareCount        int32              `json:"share_count"`
+	ReshareCount      int32              `json:"reshare_count"`
+	PublishAt         pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory     *string            `json:"guide_category"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
+	Purpose           interface{}        `json:"purpose"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	AuthorAvatarUrl   string             `json:"author_avatar_url"`
+	SpaceName         *string            `json:"space_name"`
+	IsPinned          bool               `json:"is_pinned"`
+}
+
+// Returns the pinned content rows for a space (space_pinned_posts joined to
+// contents) in pin order, with the same visibility gating as
+// ListContentsBySpace so guests never see members/private pins. is_pinned is
+// true by definition for every returned row. The space name returned is the
+// requested space (BUG-010 junction semantics).
+func (q *Queries) ListPinnedContentBySpace(ctx context.Context, arg ListPinnedContentBySpaceParams) ([]ListPinnedContentBySpaceRow, error) {
+	rows, err := q.db.Query(ctx, listPinnedContentBySpace,
+		arg.SpaceID,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPinnedContentBySpaceRow
+	for rows.Next() {
+		var i ListPinnedContentBySpaceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.Purpose,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.AuthorAvatarUrl,
+			&i.SpaceName,
+			&i.IsPinned,
 		); err != nil {
 			return nil, err
 		}
