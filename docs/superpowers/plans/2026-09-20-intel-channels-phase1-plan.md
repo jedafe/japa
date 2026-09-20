@@ -124,7 +124,9 @@ WHERE crawl_method <> 'manual';
 COMMIT;
 ```
 
-Down migration drops both new tables/columns and restores the original CHECKs (original `source_kind` set: `publisher|institution|individual|aggregator`; original status set without `off_topic`), and `categories` column dropped after copying `categories[1]` back to `category` where category was empty.
+Down migration drops both new tables/columns and restores the original CHECKs (original `source_kind` set: `publisher|institution|individual|aggregator`; original status set without `off_topic`) — **before** re-adding the status CHECK, re-state `off_topic` rows: `UPDATE intel_records SET status='rejected' WHERE status='off_topic';` (and re-state any new source_kind values to `publisher`). `categories` column dropped after copying `categories[1]` back to `category` where category was empty.
+
+Note on record tracing: `intel_records` does **not** get a `channel_id` column — the channel is reachable transitively via `raw_document_id → intel_raw_documents.channel_id`, and `UNIQUE(source_id, external_key)` dedup intentionally stays source-level (the same job discovered by two channels of one source dedupes, which is desired).
 
 - [ ] **Step 2: Write `internal/db/queries/intel_channels.sql`**
 
@@ -154,19 +156,36 @@ WHERE c.tenant_id = $1 AND c.enabled AND s.enabled AND s.status = 'active'
 ORDER BY c.last_crawled_at ASC NULLS FIRST LIMIT $2;
 
 -- name: UpdateIntelSourceChannel :one
+-- NOTE: array columns are NOT here — COALESCE can't distinguish "don't
+-- change" from "set empty". Arrays go through UpdateIntelChannelRelevance
+-- (direct assignment, empty allowed) and entity_types through
+-- UpdateIntelChannelEntityTypes.
 UPDATE intel_source_channels SET
   label = COALESCE($3, label), entry_url = COALESCE($4, entry_url),
   crawl_method = COALESCE($5, crawl_method),
-  entity_types = COALESCE($6, entity_types),
-  pipeline = COALESCE($7, pipeline),
-  provider_config = COALESCE($8, provider_config),
-  crawl_frequency_mins = COALESCE($9, crawl_frequency_mins),
-  enabled = COALESCE($10, enabled),
-  relevance_mode = COALESCE($11, relevance_mode),
-  relevance_topics = COALESCE($12, relevance_topics),
-  relevance_url_patterns = COALESCE($13, relevance_url_patterns),
+  pipeline = COALESCE($6, pipeline),
+  provider_config = COALESCE($7, provider_config),
+  crawl_frequency_mins = COALESCE($8, crawl_frequency_mins),
+  enabled = COALESCE($9, enabled),
   updated_at = now()
 WHERE id = $1 AND tenant_id = $2 RETURNING *;
+
+-- name: UpdateIntelChannelEntityTypes :one
+UPDATE intel_source_channels SET entity_types = $3, updated_at = now()
+WHERE id = $1 AND tenant_id = $2 RETURNING *;
+
+-- name: UpdateIntelChannelRelevance :one
+UPDATE intel_source_channels SET
+  relevance_mode = $3, relevance_topics = $4, relevance_url_patterns = $5,
+  updated_at = now()
+WHERE id = $1 AND tenant_id = $2 RETURNING *;
+
+-- name: GetIntelSourceDefaultChannel :one
+-- Legacy intel:fetch_source path resolves the source's oldest enabled
+-- channel (the backfilled 'admin' default) to delegate to fetch_channel.
+SELECT * FROM intel_source_channels
+WHERE source_id = $1 AND tenant_id = $2 AND enabled
+ORDER BY created_at ASC LIMIT 1;
 
 -- name: DeleteIntelSourceChannel :exec
 DELETE FROM intel_source_channels WHERE id = $1 AND tenant_id = $2;
@@ -311,7 +330,7 @@ func TestPreview_SPAMarkers(t *testing.T)           { /* <div id="root"></div> +
 
 - [ ] **Step 2: Implement** `HandleProbeSource` — auth via `requireUser`, decode `{url}`, Valkey `INCR jc:intel:probe_quota:{user_id}` with 1h `EXPIRE` vs `intel.probe.rate_limit_per_hr`, call prober, return report. Wire `Handlers.SetProber(*probe.Prober)`.
 
-- [ ] **Step 3: Extend meta** — `source_kinds` list expands to the 10-kind set with `{value,label}` options; add `channel_pipelines`.
+- [ ] **Step 3: Extend meta** — `source_kinds` list expands to the 10-kind set with `{value,label}` options; add `channel_pipelines`. The public `categories` list in `HandleGetSourcesMeta` is currently hardcoded — extend it with the new categories (`blog`, `event`, `dataset`, `announcement`, `scam_alert`) or derive it from `schemas.RegisteredCategories()` so the propose form can offer multi-category selection (Task 9 registers them).
 
 - [ ] **Step 4: Test + build + commit** `feat(intel): POST /sources/probe endpoint + meta extension`
 
@@ -361,13 +380,15 @@ func TestPreview_SPAMarkers(t *testing.T)           { /* <div id="root"></div> +
 - Modify: `internal/worker/tasks.go`, `enqueuer.go`, `server.go`
 
 **Interfaces:**
-- `scheduler.SelectDue` returns `[]sources.Channel` (joined source fields needed: trust_level, tenant). `intel:fetch_channel` payload `{version, channel_id, source_id}`.
+- `scheduler.SelectDue` returns `[]sources.Channel` (joined source fields needed: trust_level, tenant, status). `intel:fetch_channel` payload `{version, channel_id, source_id}`. `intelDetectChangesPayload` and `intelExtractPayload` gain `channel_id` (bump `intelPayloadVersion`).
 
-- [ ] **Step 1: Failing test** — `HandleIntelScheduleCrawls` enqueues `fetch_channel` per due channel; `fetch_channel` persists raw doc with `channel_id` stamped.
+- [ ] **Step 1: Failing test** — `HandleIntelScheduleCrawls` enqueues `fetch_channel` per due channel; `fetch_channel` persists raw doc with `channel_id` stamped; `detect_changes` propagates `channel_id` into the extract/curate enqueue.
 
-- [ ] **Step 2: Implement** — `HandleIntelFetchChannel`: resolve channel + parent source → enabled/manual/inbound skips → config check → preflight (lock key `jc:intel:channel_lock:{channel_id}`) → `Composite.Fetch(ctx, source, channel)` → persist raw doc (`channel_id` set) → enqueue `detect_changes` with `channel_id`. `Fetch` signature: `Fetch(ctx context.Context, src sources.Source, ch sources.Channel)`.
+- [ ] **Step 2: Implement** — `HandleIntelFetchChannel`: resolve channel via `GetIntelSourceChannel` + parent source → enabled/manual/`InboundMethod` skips → config check → preflight (lock key `jc:intel:channel_lock:{channel_id}`) → `Composite.Fetch(ctx, source, channel)` → persist raw doc (`channel_id` set) → enqueue `detect_changes` with `channel_id`. `Fetch` signature: `Fetch(ctx context.Context, src sources.Source, ch sources.Channel)`.
+- `scheduler.RecordCrawlOutcome` / `EffectiveIntervalMins` callers switch from source_id to **channel_id** — volatility tuning keys become `jc:intel:effective_interval::{channel_id}[:unchanged_count]` per spec.
+- Entity-type resolution order in the extract path becomes: `channel.entity_types` → `source.provider_config.entity_types` → `schemas.CategoryToEntityType(category)` (existing fallback — required so backfilled channels with `entity_types='{}'` keep extracting correctly).
 
-- [ ] **Step 3: Backward compat** — `HandleIntelFetchSource` resolves the source's default channel and delegates to `HandleIntelFetchChannel`.
+- [ ] **Step 3: Backward compat** — `HandleIntelFetchSource` resolves the source's default channel via `GetIntelSourceDefaultChannel` and delegates to `HandleIntelFetchChannel`.
 
 - [ ] **Step 4: Update `Composite.Fetch`** for channel-aware dispatch (phase 1 methods: static/rss/api/pdf/ocr/jsonld/ical/tabular/sitemap; new adapters return `ErrNotImplemented` until Phase 2 — they must not be proposed unless configured).
 
@@ -384,13 +405,15 @@ func TestPreview_SPAMarkers(t *testing.T)           { /* <div id="root"></div> +
 **Interfaces:**
 - `curator.Curate(ctx, body []byte, contentType string, ch sources.Channel) ([]extractor.Extraction, error)` — declared in worker as a port (import-cycle rule). `intel:curate_channel` payload `{version, source_id, channel_id, raw_doc_id}`.
 
-- [ ] **Step 1: Failing test** — RSS fixture → N `Extraction` records with `external_key` = item GUID, confidence 1.0 fields; JSON-LD `JobPosting` fixture → job-shaped extraction.
+- [ ] **Step 1: Register curate-only entity schemas** — add `schemas/article.go`, `event.go`, `dataset.go` (EntitySchema with plain fields, **no prompt template** — they never reach `buildPrompt`); add registry entries; extend `categoryEntityTypes` (`blog`→`article`, `event`→`event`, `dataset`→`dataset`, `announcement`→`news`, `scam_alert`→`scam_alert` if a schema exists else leave unmapped→review) and `RegisteredCategories()` (add `blog`, `event`, `dataset`, `announcement`, `scam_alert`) so `admin_categories` and the public `categories` meta expose them. Guard: `Extract` on a curate-only type must return a clear error (missing prompt template already does this — add an explicit `ErrCurateOnlyEntityType` check in the extractor port for a cleaner message).
 
-- [ ] **Step 2: Implement curators** — `rss_news` (gofeed or existing rss parse), `jsonld` (unmarshal ld+json → field map per @type), `ical` (golang-ical VEVENTs), `tabular` (csv/xlsx → `column_map`). Each emits `extractor.Extraction` + stable `ExternalKey`.
+- [ ] **Step 2: Failing test** — RSS fixture → N `Extraction` records with `external_key` = item GUID, confidence 1.0 fields; JSON-LD `JobPosting` fixture → job-shaped extraction; ICS fixture → `event` records.
 
-- [ ] **Step 3: Worker routing** — in `HandleIntelDetectChanges`, after DecisionChanged/FirstCrawl: load channel → `pipeline=extract` → existing `intel:extract` enqueue; `curate`/`hybrid` → `intel:curate_channel`. `HandleIntelCurateChannel` runs curators → records → relevance gate (Task 10) → trust gate (Task 11) → dedup/publish_gate enqueue. `hybrid`: curator records missing required schema fields get routed individually to `intel:extract`.
+- [ ] **Step 3: Implement curators** — `rss_news` (gofeed or existing rss parse — check `internal/intelligence/extractor/rss_extract.go` for the existing parser to reuse), `jsonld` (unmarshal ld+json → field map per @type: JobPosting→job fields, NewsArticle→news, Event→event, FAQPage→guide-shaped), `ical` (golang-ical VEVENTs incl. RRULE window), `tabular` (csv/xlsx → `provider_config.column_map`). Each emits `extractor.Extraction` + stable `ExternalKey` (feed GUID / ld+json identifier-or-URL / ICS UID / row hash). Curator package may import `extractor` for the `Extraction` type (the import cycle is only through `worker` — the worker consumes curators via a local `intelCuratorPort` interface with mirrored types, same pattern as `intelExtractorPort`).
 
-- [ ] **Step 4: Test + build + commit** `feat(intel): curator package + curate_channel task`
+- [ ] **Step 4: Worker routing** — in `HandleIntelDetectChanges`, after DecisionChanged/FirstCrawl: load channel → `pipeline=extract` → existing `intel:extract` enqueue (with `channel_id`); `curate`/`hybrid` → `intel:curate_channel`. `HandleIntelCurateChannel` runs curators → per-item relevance gate (Task 10) → records → trust gate (Task 11) → dedup/publish_gate enqueue. `hybrid`: curator records missing required schema fields are routed individually to `intel:extract` (with channel_id); curate-only entity types can't take that path — flag them `review_required` instead.
+
+- [ ] **Step 5: Test + build + commit** `feat(intel): curator package + curate_channel task`
 
 ---
 
@@ -407,7 +430,7 @@ func TestPreview_SPAMarkers(t *testing.T)           { /* <div id="root"></div> +
 
 - [ ] **Step 2: Implement** — glob matcher (`path.Match` + `**` support via doublestar or simple prefix rules), token-based scorer (case-insensitive phrase match, score = hits/tokens-weighted), thresholds from settings (`intel.relevance.on_topic_threshold`, `off_topic_threshold`), borderline → AI gateway `category="classification"` bounded by `borderline_rate_cap` per channel-crawl (counter in ctx/Valkey), 7d verdict cache.
 
-- [ ] **Step 3: Wire into worker** — curate path: each item gated; `off_topic` → `intel_records` row status `off_topic` (with `external_key` for dedup) and NOT forwarded to publish_gate. Extract path: item list pre-gated before LLM call per item.
+- [ ] **Step 3: Wire into worker** — **curate/hybrid path**: each curator item gated *before* record creation; `off_topic` → `intel_records` row status `off_topic` (with `external_key` for dedup) and NOT forwarded to publish_gate. **extract path**: the raw body is not itemized pre-LLM, so gating runs *post-extraction* per returned record (evaluate its `title`/`summary`/`article_url` fields) — off-topic records get status `off_topic` instead of `extracted`.
 
 - [ ] **Step 4: Test + build + commit** `feat(intel): per-item relevance gate`
 
@@ -439,7 +462,7 @@ func TestPreview_SPAMarkers(t *testing.T)           { /* <div id="root"></div> +
 
 - [ ] **Step 1: Failing handler tests** — RBAC denial per node; happy-path CRUD; reprobe enqueues task.
 
-- [ ] **Step 2: Implement handlers** + routes + seed migration (nodes: `intel.channels.list|view|create|update|delete|crawl`, `intel.sources.probe`, `intel.inbound.manage`).
+- [ ] **Step 2: Implement handlers** + routes + seed migration (nodes: `intel.channels.list|view|create|update|delete|crawl`, `intel.sources.probe`, `intel.inbound.manage`). The PATCH handler composes up to three sqlc calls: `UpdateIntelSourceChannel` (scalar fields), `UpdateIntelChannelEntityTypes` (when `entity_types` key present — empty array allowed = explicit clear), `UpdateIntelChannelRelevance` (when any `relevance_*` key present). Presence-check via `json.RawMessage` field detection, not zero-value checks.
 
 - [ ] **Step 3: Test + build + commit** `feat(intel): admin channel CRUD + RBAC nodes`
 
