@@ -68,11 +68,11 @@ DELETE FROM intel_source_channels WHERE id = $1;
 -- name: UpdateIntelChannelCrawlStatus :exec
 UPDATE intel_source_channels SET
   last_crawled_at = now(),
-  last_success_at = CASE WHEN $2::boolean THEN now() ELSE last_success_at END,
-  last_error_at   = CASE WHEN $2::boolean THEN last_error_at ELSE now() END,
-  last_error_message = $3,
-  consecutive_failures = CASE WHEN $2::boolean THEN 0 ELSE consecutive_failures + 1 END
-WHERE id = $1;
+  last_success_at = CASE WHEN sqlc.arg(success)::boolean THEN now() ELSE last_success_at END,
+  last_error_at   = CASE WHEN sqlc.arg(success) THEN last_error_at ELSE now() END,
+  last_error_message = sqlc.narg(last_error_message),
+  consecutive_failures = CASE WHEN sqlc.arg(success) THEN 0 ELSE consecutive_failures + 1 END
+WHERE id = sqlc.arg(id);
 
 -- name: UpdateIntelChannelEnabled :exec
 UPDATE intel_source_channels SET enabled = $2, updated_at = now()

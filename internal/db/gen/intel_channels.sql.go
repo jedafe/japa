@@ -323,21 +323,21 @@ func (q *Queries) MarkIntelInboundEvent(ctx context.Context, arg MarkIntelInboun
 const updateIntelChannelCrawlStatus = `-- name: UpdateIntelChannelCrawlStatus :exec
 UPDATE intel_source_channels SET
   last_crawled_at = now(),
-  last_success_at = CASE WHEN $2::boolean THEN now() ELSE last_success_at END,
-  last_error_at   = CASE WHEN $2::boolean THEN last_error_at ELSE now() END,
-  last_error_message = $3,
-  consecutive_failures = CASE WHEN $2::boolean THEN 0 ELSE consecutive_failures + 1 END
-WHERE id = $1
+  last_success_at = CASE WHEN $1::boolean THEN now() ELSE last_success_at END,
+  last_error_at   = CASE WHEN $1 THEN last_error_at ELSE now() END,
+  last_error_message = $2,
+  consecutive_failures = CASE WHEN $1 THEN 0 ELSE consecutive_failures + 1 END
+WHERE id = $3
 `
 
 type UpdateIntelChannelCrawlStatusParams struct {
-	ID               pgtype.UUID `json:"id"`
-	Column2          bool        `json:"column_2"`
+	Success          bool        `json:"success"`
 	LastErrorMessage *string     `json:"last_error_message"`
+	ID               pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateIntelChannelCrawlStatus(ctx context.Context, arg UpdateIntelChannelCrawlStatusParams) error {
-	_, err := q.db.Exec(ctx, updateIntelChannelCrawlStatus, arg.ID, arg.Column2, arg.LastErrorMessage)
+	_, err := q.db.Exec(ctx, updateIntelChannelCrawlStatus, arg.Success, arg.LastErrorMessage, arg.ID)
 	return err
 }
 
