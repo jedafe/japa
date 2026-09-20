@@ -329,6 +329,7 @@ SELECT
  GREATEST(0, (
  SELECT COUNT(*) FROM space_members sm
  WHERE sm.space_id = s.id
+ AND sm.status = 'approved'
  ))::int AS member_count,
  (
  SELECT COUNT(*) FROM content_spaces cs

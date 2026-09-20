@@ -71,9 +71,50 @@ func (s *Service) queueMetadataFetch(ctx context.Context, src Source) {
 	}
 }
 
+// isVideoProviderHost reports whether host is a supported video platform —
+// the same provider set as the video resolver (§106): YouTube, TikTok,
+// Instagram, Vimeo. A 'video'-typed source on one of these hosts is a
+// channel subscription (video_channel), not a crawl target.
+func isVideoProviderHost(host string) bool {
+	host = strings.TrimPrefix(strings.ToLower(host), "www.")
+	host = strings.TrimPrefix(host, "m.")
+
+	switch host {
+	case "youtube.com", "youtu.be", "tiktok.com", "instagram.com", "vimeo.com":
+		return true
+	}
+
+	return false
+}
+
+// videoChannelHost returns the provider host when the source is a video
+// platform URL — derived from the explicit domain first, falling back to
+// parsing source_url.
+func videoChannelHost(domain, sourceURL string) string {
+	if domain != "" {
+		return domain
+	}
+
+	u, err := url.Parse(sourceURL)
+	if err != nil {
+		return ""
+	}
+
+	return u.Hostname()
+}
+
 // Create registers a new source in the registry. Defaults status to 'active'
 // when the caller did not supply a status (e.g. admin creation flow).
 func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (Source, error) {
+	// §106 channel-sync amendment: a 'video' source type on a supported video
+	// platform URL registers a channel subscription (video_channel/manual) —
+	// the video:sync_channels poller owns ingestion, not the intel crawler.
+	if arg.SourceType == string(SourceTypeVideo) && isVideoProviderHost(videoChannelHost(arg.Domain, arg.SourceUrl)) {
+		arg.SourceType = string(SourceTypeVideoChannel)
+		arg.CrawlMethod = string(CrawlMethodManual)
+		arg.CrawlFrequency = string(CrawlFrequencyManual)
+		arg.CrawlFrequencyMins = 0
+	}
 	if arg.Status == nil || arg.Status == "" {
 		arg.Status = "active"
 	}
@@ -144,6 +185,16 @@ func (s *Service) Delete(ctx context.Context, id SourceID) error {
 // category, trust level, crawl settings, license, usage restriction, enabled
 // toggle). Returns the updated source row.
 func (s *Service) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (Source, error) {
+	// Same video→video_channel mapping as Create — editing a source to
+	// source_type='video' on a supported platform must produce a channel
+	// subscription, not an orphan 'video' row the poller ignores.
+	if arg.SourceType == string(SourceTypeVideo) && isVideoProviderHost(videoChannelHost(arg.Domain, arg.SourceUrl)) {
+		arg.SourceType = string(SourceTypeVideoChannel)
+		arg.CrawlMethod = string(CrawlMethodManual)
+		arg.CrawlFrequency = string(CrawlFrequencyManual)
+		arg.CrawlFrequencyMins = 0
+	}
+
 	return s.store.Update(ctx, arg)
 }
 
@@ -254,19 +305,34 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 	now := time.Now().UTC()
 	proposedAt := pgtype.Timestamptz{Time: now, Valid: true}
 
-	crawlMethod := "manual"
-	crawlFrequency := "manual"
+	crawlMethod := string(CrawlMethodManual)
+	crawlFrequency := string(CrawlFrequencyManual)
+
 	switch input.SourceType {
 	case "rss":
-		crawlMethod = "rss"
-		crawlFrequency = "hourly"
-	case "api", "youtube":
-		crawlMethod = "api"
-		crawlFrequency = "daily"
+		crawlMethod = string(CrawlMethodRSS)
+		crawlFrequency = string(CrawlFrequencyHourly)
+	case "api":
+		crawlMethod = string(CrawlMethodAPI)
+		crawlFrequency = string(CrawlFrequencyDaily)
+	case "video", "youtube":
+		// §106 channel-sync amendment: a proposed video-platform URL is a
+		// channel subscription — register it as video_channel/manual so the
+		// video:sync_channels poller imports uploads as real video content.
+		// The intel crawl pipeline never handles it (an api-crawl source here
+		// dead-ended on empty provider_config).
+		switch {
+		case isVideoProviderHost(u.Hostname()):
+			input.SourceType = string(SourceTypeVideoChannel)
+		case input.SourceType == string(SourceTypeVideo):
+			return Source{}, fmt.Errorf("sources: propose: %w: video sources must be a supported video platform URL", errpkg.ErrInvalid)
+		default:
+			crawlMethod = string(CrawlMethodAPI)
+			crawlFrequency = string(CrawlFrequencyDaily)
+		}
 	}
 
 	arg := gen.CreateIntelSourceParams{
-
 		Name:                input.Name,
 		Domain:              input.Domain,
 		SourceUrl:           input.SourceURL,
@@ -324,13 +390,12 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, userID pgtype.UUID, ti
 	slug := s.uniqueSlug(ctx, *title)
 
 	arg := gen.CreateIntelSourceParams{
-
 		Name:               *title,
 		Slug:               &slug,
 		Domain:             domain,
 		SourceUrl:          *sourceURL,
 		Category:           "video",
-		SourceType:         "video_channel",
+		SourceType:         string(SourceTypeVideoChannel),
 		SourceKind:         "publisher",
 		TrustLevel:         2,
 		CrawlMethod:        "manual",
@@ -375,7 +440,6 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, entityID, userID p
 	}
 
 	arg := gen.CreateIntelSourceParams{
-
 		Name:               name,
 		Slug:               &slug,
 		Domain:             domain,
@@ -419,7 +483,6 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, userID pgtype.UUI
 	slug := s.uniqueSlug(ctx, *sourceName)
 
 	arg := gen.CreateIntelSourceParams{
-
 		Name:               *sourceName,
 		Slug:               &slug,
 		Domain:             domain,

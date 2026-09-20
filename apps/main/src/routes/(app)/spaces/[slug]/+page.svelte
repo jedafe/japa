@@ -51,6 +51,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			slug: item.slug,
 			content_type: item.content_type,
 			author_id: item.author_id,
+			author_name: item.author_display_name || item.author_username || null,
+			author_username: item.author_username ?? null,
+			author_avatar_url: item.author_avatar_url || null,
 			created_at: item.published_at,
 			view_count: item.view_count,
 			comment_count: item.comment_count,
@@ -235,11 +238,24 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		}
 		searching = true;
 		const q = encodeURIComponent(searchQuery.trim());
-		// /spaces/:slug/content?q=... returns the SpaceContentItem[] shape the
-		// search tab expects. The Meilisearch /spaces/:id/search endpoint
-		// returns a SearchResponse envelope and is not yet mapped here.
-		const res = await api.get<SpaceContentItem[]>(`/spaces/${space.slug}/content?q=${q}&page_size=20`);
-		searchResults = res.data ?? [];
+		if (authed) {
+			// GET /spaces/{id}/search — Meilisearch-backed space search. The
+			// backend filters status=published and post-filters hits through
+			// the §14 visibility gate, and the tab renders only the fields
+			// SearchResultItem provides (id/title/slug/content_type).
+			const res = await api.get<{
+				results: { type: string; item: { id: string; title: string; slug: string; content_type: string } }[];
+			}>(`/spaces/${space.id}/search?q=${q}&limit=20`);
+			searchResults = (res.data?.results ?? []).map(
+				(r) => r.item as unknown as SpaceContentItem
+			);
+		} else {
+			// Guests: /spaces/{id}/search requires auth — fall back to the
+			// public content listing's ?q= substring search, which is
+			// visibility-gated by OptionalAuth on that route.
+			const res = await api.get<SpaceContentItem[]>(`/spaces/${space.slug}/content?q=${q}&page_size=20`);
+			searchResults = res.data ?? [];
+		}
 		searching = false;
 	}
 
@@ -257,16 +273,16 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		)
 	);
 
-	// Client-side load-more for the space feed (cursor-less page_offset paging).
+	// Client-side load-more for the space feed (?cursor= paging on the last
+	// item's created_at — the backend's default listing ignores page_offset).
 	let feedItems = $state<SpaceContentItem[]>(untrack(() => data.content));
 	let feedLoading = $state(false);
 	let feedEnd = $derived(data.content.length < data.pageSize);
 	let feedError = $state('');
 
-	// Client-side load-more for the members list (page-based paging).
+	// Client-side load-more for the members list (page_offset paging).
 	let membersItems = $state(untrack(() => data.members));
 	let membersLoading = $state(false);
-	let membersPage = $state(1);
 	let membersEnd = $derived(data.members.length < data.pageSize);
 
 	// Moderators + rules + parent spaces — seeded from SSR, mutated client-side
@@ -283,19 +299,29 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		moderators = data.moderators;
 		rules = data.rules;
 		parentSpaces = data.parentSpaces;
-		membersPage = 1;
 		membersEnd = data.members.length < data.pageSize;
 	});
 
 	async function loadMoreFeed() {
 		if (feedLoading || feedEnd) return;
+		// Cursor-paginate on the last item's created_at — the backend's
+		// ?cursor= is the only pagination the default listing supports;
+		// page_offset is silently ignored and would refetch page 1,
+		// producing duplicate keyed-each items.
+		const last = feedItems[feedItems.length - 1];
+		if (!last?.created_at) {
+			feedEnd = true;
+			return;
+		}
 		feedLoading = true;
 		feedError = '';
 		try {
 			const res = await api.get<SpaceContentItem[]>(
-				`/spaces/${space.slug}/content?page_size=${data.pageSize}&page_offset=${feedItems.length}`
+				`/spaces/${space.slug}/content?page_size=${data.pageSize}&cursor=${encodeURIComponent(last.created_at)}`
 			);
-			if (res.data) {
+			if (res.error) {
+				feedError = res.error.message;
+			} else if (res.data) {
 				feedItems = [...feedItems, ...res.data];
 				if (res.data.length < data.pageSize) feedEnd = true;
 			}
@@ -311,7 +337,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	async function reloadFeed() {
 		try {
 			const res = await api.get<SpaceContentItem[]>(
-				`/spaces/${space.slug}/content?page_size=${data.pageSize}&page_offset=0`
+				`/spaces/${space.slug}/content?page_size=${data.pageSize}`
 			);
 			if (res.data) {
 				feedItems = res.data;
@@ -325,14 +351,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	async function loadMoreMembers() {
 		if (membersLoading || membersEnd) return;
 		membersLoading = true;
-		const nextPage = membersPage + 1;
-		const offset = nextPage * data.pageSize;
+		// Offset = items already loaded — the previous (page+1)*pageSize math
+		// skipped an entire page on every click.
 		const res = await api.get<SpaceMember[]>(
-			`/spaces/${space.slug}/members?page_size=${data.pageSize}&page_offset=${offset}`
+			`/spaces/${space.slug}/members?page_size=${data.pageSize}&page_offset=${membersItems.length}`
 		);
 		if (res.data) {
 			membersItems = [...membersItems, ...res.data];
-			membersPage = nextPage;
 			if (res.data.length < data.pageSize) membersEnd = true;
 		}
 		membersLoading = false;
@@ -516,8 +541,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{/if}
 			</div>
 
-			{#if authed}
+			{#if authed || (wikiEnabled && isDestinationWiki)}
 				<div class="flex shrink-0 items-center gap-2 pb-1">
+					{#if authed}
 					<button
 						type="button"
 						onclick={toggleMute}
@@ -561,18 +587,23 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							{t('profile.follow', 'Follow')}
 						{/if}
 					</button>
-					<a
-						href="/wiki/{space.slug}"
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						<BookOpen size={16} /> {t('space.wiki', 'Wiki')}
-					</a>
+					{/if}
+					{#if wikiEnabled && isDestinationWiki}
+						<a
+							href="/wiki/{space.slug}"
+							class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<BookOpen size={16} /> {t('space.wiki', 'Wiki')}
+						</a>
+					{/if}
+					{#if authed}
 					<a
 						href="/create?type=blog_post&space={space.slug}"
 						class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 					>
 						<PenSquare size={16} /> {t('space.post', 'Post')}
 					</a>
+					{/if}
 				</div>
 			{/if}
 		</div>

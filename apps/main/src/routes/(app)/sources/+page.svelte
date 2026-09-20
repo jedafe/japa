@@ -48,7 +48,7 @@
 	const categoryOptions = $derived(data.sourceMeta?.categories ?? []);
 	// ?source_kind= filters the publisher kind (publisher/institution/
 	// individual/aggregator) — NOT the crawl mechanism values in
-	// source_types (rss/youtube/api/static), which belong to the proposal
+	// source_types (rss/video/api/static), which belong to the proposal
 	// form. Using source_types here always produced an empty directory.
 	const sourceKindOptions = $derived(data.sourceMeta?.source_kinds ?? []);
 

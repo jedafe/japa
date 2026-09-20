@@ -132,15 +132,28 @@ func (r *RBAC) HasPermission(ctx context.Context, userID pgtype.UUID, permKey st
 }
 
 // HasSpacePermission checks if a user has a permission in the context of a
-// specific space. For "spaces.moderate", the permission is dynamically
-// resolved by checking the space_moderators table at runtime (Section 03 /
-// RBAC-001) — an assigned moderator can moderate the specific space they
-// were assigned to without holding the static "spaces.moderate.any" node.
-// The assignment record in space_moderators IS the grant.
+// specific space. Four nodes resolve dynamically per space (Section 03 /
+// RBAC-001, Section 05):
+//   - "spaces.moderate": static node, an assigned space_moderators row, or
+//     the space owner (space_members.role='owner'). The owner is the top
+//     manager of their space — they assign moderators, so moderation rights
+//     are implied (pin/rules/join-request management).
+//   - "spaces.edit": static node, an assigned space_moderators row, or the
+//     space owner (§05: "update space (creator/moderator)").
+//   - "spaces.moderator.assign": static node or the space owner only —
+//     moderators cannot delegate moderation further (Section 05: "creator +
+//     admin only").
+//   - "spaces.delete": static node or the space owner only (§05: "creator
+//     only; must have 0 members" — the member-count rule is enforced by the
+//     handler, not here).
+//
 // For all other permission nodes, this falls back to HasPermission.
 func (r *RBAC) HasSpacePermission(ctx context.Context, userID, spaceID pgtype.UUID, permKey string) bool {
-	// Only "spaces.moderate" gets dynamic per-space resolution.
-	if permKey != "spaces.moderate" {
+	// Only space-scoped nodes get dynamic per-space resolution.
+	switch permKey {
+	case "spaces.moderate", "spaces.edit", "spaces.moderator.assign", "spaces.delete":
+		// Resolved dynamically below.
+	default:
 		return r.HasPermission(ctx, userID, permKey)
 	}
 
@@ -153,20 +166,36 @@ func (r *RBAC) HasSpacePermission(ctx context.Context, userID, spaceID pgtype.UU
 	if uc.Permissions[SystemWildcardPermission] {
 		return true
 	}
-	// If the user has the static "spaces.moderate" node (granted to
-	// super_admin and optionally a dedicated moderation UserGroup per
-	// Section 03), they can moderate any space — no per-space check needed.
-	if uc.Permissions["spaces.moderate"] {
+	// If the user has the static node (granted to super_admin and optionally
+	// a dedicated moderation UserGroup per Section 03), they can exercise it
+	// on any space — no per-space check needed.
+	if uc.Permissions[permKey] {
 		return true
 	}
 
-	// Dynamic resolution: check space_moderators for this user + space.
-	// Per Section 03, the assignment record IS the grant — no static RBAC
-	// entry is needed for assigned moderators.
 	if !spaceID.Valid {
 		return false
 	}
 
+	// Dynamic resolution: the space owner (role='owner' in space_members)
+	// can moderate, edit, delete, and assign moderators in their own space.
+	isOwner, err := r.read.CheckSpaceOwnership(ctx, gen.CheckSpaceOwnershipParams{
+		SpaceID: spaceID,
+		UserID:  userID,
+	})
+	if err == nil && isOwner {
+		return true
+	}
+
+	// Moderator assignment and deletion are owner/admin-only — a
+	// space_moderators row does not confer delegation or deletion rights.
+	if permKey == "spaces.moderator.assign" || permKey == "spaces.delete" {
+		return false
+	}
+
+	// For "spaces.moderate" / "spaces.edit": check space_moderators for this
+	// user + space. Per Section 03, the assignment record IS the grant — no
+	// static RBAC entry is needed for assigned moderators.
 	if _, err := r.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{
 		SpaceID: spaceID,
 		UserID:  userID,

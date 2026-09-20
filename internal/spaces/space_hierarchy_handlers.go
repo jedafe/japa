@@ -8,18 +8,59 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 // ---------------------------------------------------------------------------
 // Space Parent Spaces (Many-to-Many Hierarchy) Handlers
 // ---------------------------------------------------------------------------
 
+// canManageOrAdmin returns true when the caller may manage the given space:
+// the space owner, an assigned moderator, or a platform admin holding the
+// spaces.admin node. On failure it writes the appropriate error response and
+// returns false (SPACES-017 — spaces.edit is granted to member_role as
+// "edit own spaces", so route-level RBAC alone cannot scope it per space).
+func (h *Handlers) canManageOrAdmin(w http.ResponseWriter, r *http.Request, spaceID pgtype.UUID) bool {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return false
+	}
+
+	canManage, err := h.Service.CanManageSpace(r.Context(), spaceID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return false
+	}
+
+	if canManage {
+		return true
+	}
+
+	if resolver := rbac.FromContext(r.Context()); resolver != nil &&
+		resolver.HasPermission(r.Context(), user.UserID, "spaces.admin") {
+		return true
+	}
+
+	errpkg.WriteError(w, http.StatusForbidden, "not_space_admin",
+		"Only the space owner, an assigned moderator, or a platform admin can manage this space")
+	return false
+}
+
 // AddParentSpace handles POST /api/v1/spaces/{slug}/parents.
 // Links the space to a parent space via the junction table.
 func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
+		return
+	}
+
+	// SPACES-017: spaces.edit is granted to member_role as "edit own spaces"
+	// — verify the caller manages this space (owner/moderator) or holds
+	// spaces.admin before mutating the hierarchy.
+	if !h.canManageOrAdmin(w, r, space.ID) {
 		return
 	}
 
@@ -74,6 +115,10 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
+		return
+	}
+
+	if !h.canManageOrAdmin(w, r, space.ID) {
 		return
 	}
 

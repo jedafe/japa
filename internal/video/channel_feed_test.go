@@ -1,7 +1,6 @@
 package video
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,12 +20,15 @@ func TestChannelIDFromURL(t *testing.T) {
 		{name: "handle needs resolution", url: "https://www.youtube.com/@daadofficial", want: ""},
 		{name: "c-name needs resolution", url: "https://www.youtube.com/c/DAAD", want: ""},
 		{name: "non-youtube", url: "https://vimeo.com/channel/UCu5J84CUcdoPBFy4LIZrBEQ", want: ""},
+		{name: "youtu.be needs resolution", url: "https://youtu.be/ABC123", want: ""},
 		{name: "watch url", url: "https://www.youtube.com/watch?v=ABC123", want: ""},
 		{name: "garbage", url: "not a url", want: ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := channelIDFromURL(tt.url); got != tt.want {
 				t.Fatalf("channelIDFromURL(%q) = %q, want %q", tt.url, got, tt.want)
 			}
@@ -38,7 +40,9 @@ func TestResolveYouTubeChannelID(t *testing.T) {
 	t.Parallel()
 
 	t.Run("direct id skips fetch", func(t *testing.T) {
-		id, err := resolveYouTubeChannelID(context.Background(), http.DefaultClient,
+		t.Parallel()
+
+		id, err := resolveYouTubeChannelID(t.Context(), http.DefaultClient,
 			"https://www.youtube.com/channel/UCu5J84CUcdoPBFy4LIZrBEQ")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -49,13 +53,15 @@ func TestResolveYouTubeChannelID(t *testing.T) {
 	})
 
 	t.Run("page scrape extracts channelId", func(t *testing.T) {
+		t.Parallel()
+
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte(`<html><head><script>var x = {"channelId":"UCu5J84CUcdoPBFy4LIZrBEQ"};</script></head></html>`))
 		}))
 		t.Cleanup(srv.Close)
 
-		id, err := resolveYouTubeChannelID(context.Background(), srv.Client(), srv.URL+"/@daad")
+		id, err := resolveYouTubeChannelID(t.Context(), srv.Client(), srv.URL+"/@daad")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -65,13 +71,15 @@ func TestResolveYouTubeChannelID(t *testing.T) {
 	})
 
 	t.Run("meta itemprop fallback", func(t *testing.T) {
+		t.Parallel()
+
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte(`<html><head><meta itemprop="identifier" content="UCu5J84CUcdoPBFy4LIZrBEQ"></head></html>`))
 		}))
 		t.Cleanup(srv.Close)
 
-		id, err := resolveYouTubeChannelID(context.Background(), srv.Client(), srv.URL)
+		id, err := resolveYouTubeChannelID(t.Context(), srv.Client(), srv.URL)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -81,12 +89,14 @@ func TestResolveYouTubeChannelID(t *testing.T) {
 	})
 
 	t.Run("no id on page errors", func(t *testing.T) {
+		t.Parallel()
+
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(`<html><body>nothing here</body></html>`))
 		}))
 		t.Cleanup(srv.Close)
 
-		if _, err := resolveYouTubeChannelID(context.Background(), srv.Client(), srv.URL); err == nil {
+		if _, err := resolveYouTubeChannelID(t.Context(), srv.Client(), srv.URL); err == nil {
 			t.Fatal("expected error when channel id absent")
 		}
 	})
@@ -117,7 +127,7 @@ func TestFetchChannelVideoIDs(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	ids, err := fetchChannelVideoIDs(context.Background(), srv.Client(), srv.URL)
+	ids, err := fetchChannelVideoIDs(t.Context(), srv.Client(), srv.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +144,7 @@ func TestFetchChannelVideoIDsHTTPError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	if _, err := fetchChannelVideoIDs(context.Background(), srv.Client(), srv.URL); err == nil {
+	if _, err := fetchChannelVideoIDs(t.Context(), srv.Client(), srv.URL); err == nil {
 		t.Fatal("expected error on 404 feed")
 	}
 }

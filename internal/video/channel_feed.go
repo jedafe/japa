@@ -38,17 +38,31 @@ func youtubeChannelFeedURL(channelID string) string {
 	return youtubeChannelFeedBase + "?channel_id=" + url.QueryEscape(channelID)
 }
 
+// isYouTubeHost reports whether rawURL is a youtube.com URL. Only YouTube
+// channels expose an uploads Atom feed — TikTok/Instagram/Vimeo channel
+// rows are directory listings and are skipped by the sync poller.
+func isYouTubeHost(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	host = strings.TrimPrefix(host, "m.")
+
+	return host == "youtube.com" || host == "youtu.be"
+}
+
 // channelIDFromURL extracts a UC channel ID directly from URL shapes that
 // carry it: youtube.com/channel/UC… or the feeds/videos.xml?channel_id= form.
 // Handle-style URLs (/@x, /c/x, /user/x) return "" and need page resolution.
 func channelIDFromURL(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
+	if !isYouTubeHost(rawURL) {
 		return ""
 	}
 
-	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
-	if host != "youtube.com" {
+	u, err := url.Parse(rawURL)
+	if err != nil {
 		return ""
 	}
 
@@ -83,6 +97,9 @@ func resolveYouTubeChannelID(ctx context.Context, client *http.Client, channelUR
 	}
 	req.Header.Set("User-Agent", "JapaConnect-VideoSync/1.0 (+https://japaconnect.com)")
 	req.Header.Set("Accept-Language", "en")
+	// YouTube redirects EU-region requests through consent.youtube.com;
+	// this cookie bypasses the interstitial so the channel page is served.
+	req.AddCookie(&http.Cookie{Name: "CONSENT", Value: "YES+cb"})
 
 	resp, err := client.Do(req)
 	if err != nil {

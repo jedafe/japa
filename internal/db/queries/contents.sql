@@ -458,12 +458,15 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
- c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
  u.username AS author_username, up.display_name AS author_display_name,
- s.name AS space_name
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ s.name AS space_name,
+ EXISTS(SELECT 1 FROM space_pinned_posts spp
+  WHERE spp.space_id = @space_id AND spp.content_id = c.id) AS is_pinned
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
 LEFT JOIN users u ON u.id = c.author_id
@@ -748,8 +751,52 @@ FROM space_pinned_posts spp
 WHERE spp.space_id = @space_id
 ORDER BY spp.position ASC, spp.created_at ASC;
 
+-- name: ListPinnedContentBySpace :many
+-- Returns the pinned content rows for a space (space_pinned_posts joined to
+-- contents) in pin order, with the same visibility gating as
+-- ListContentsBySpace so guests never see members/private pins. is_pinned is
+-- true by definition for every returned row. The space name returned is the
+-- requested space (BUG-010 junction semantics).
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ s.name AS space_name,
+ true AS is_pinned
+FROM space_pinned_posts spp
+JOIN contents c ON c.id = spp.content_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = spp.space_id
+WHERE spp.space_id = @space_id
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ (@can_see_unpublished::boolean AND @can_see_private::boolean)
+ OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND @can_see_members::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+ )
+ )
+ )
+ORDER BY spp.position ASC, spp.created_at ASC;
+
 -- name: IsContentPinned :one
 SELECT EXISTS(SELECT 1 FROM space_pinned_posts WHERE space_id = @space_id AND content_id = @content_id) AS exists;
+
+-- name: IsContentInSpace :one
+-- True when the content is assigned to the space via the authoritative
+-- content_spaces junction (BUG-010).
+SELECT EXISTS(SELECT 1 FROM content_spaces WHERE space_id = @space_id AND content_id = @content_id) AS exists;
 
 -- =====================
 -- JSON-LD Templates

@@ -61,6 +61,9 @@
 		personas = [] as PersonaItem[],
 		entityTypeOptions = [] as string[],
 		sourceTypeOptions = [] as string[],
+		categoryOptions = [] as string[],
+		crawlMethodOptions = [] as string[],
+		crawlFrequencyOptions = [] as string[],
 		saving = false,
 		errorMessage = '',
 		onSubmit
@@ -70,6 +73,9 @@
 		personas?: PersonaItem[];
 		entityTypeOptions?: string[];
 		sourceTypeOptions?: string[];
+		categoryOptions?: string[];
+		crawlMethodOptions?: string[];
+		crawlFrequencyOptions?: string[];
 		saving?: boolean;
 		errorMessage?: string;
 		onSubmit: (values: SourceFormValues) => void;
@@ -80,7 +86,7 @@
 		domain: '',
 		source_url: '',
 		category: 'scholarship',
-		source_type: 'web',
+		source_type: 'rss',
 		trust_level: 3,
 		crawl_method: 'static',
 		crawl_frequency: 'daily',
@@ -104,7 +110,7 @@
 					domain: source.domain ?? '',
 					source_url: source.source_url ?? '',
 					category: source.category ?? 'scholarship',
-					source_type: source.source_type ?? 'web',
+					source_type: source.source_type ?? 'rss',
 					trust_level: source.trust_level ?? 3,
 					crawl_method: source.crawl_method ?? 'static',
 					crawl_frequency: source.crawl_frequency ?? 'daily',
@@ -122,43 +128,36 @@
 		}
 	});
 
-	const categoryItems = $derived([
-		{ value: 'scholarship', label: t('intel.category_scholarship', 'Scholarship') },
-		{ value: 'job', label: t('intel.category_job', 'Job') },
-		{ value: 'visa', label: t('intel.category_visa', 'Visa') },
-		{ value: 'fx', label: t('intel.category_fx', 'FX') },
-		{ value: 'remittance', label: t('intel.category_remittance', 'Remittance') },
-		{ value: 'news', label: t('intel.category_news', 'News') },
-		{ value: 'travel_alert', label: t('intel.category_travel_alert', 'Travel Alert') },
-		// INTEL-010 fix: add the 9 new domain categories (ADR-112 expansion).
-		{ value: 'housing', label: t('intel.category_housing', 'Housing') },
-		{ value: 'cost_of_living', label: t('intel.category_cost_of_living', 'Cost of Living') },
-		{ value: 'travel_routes', label: t('intel.category_travel_routes', 'Travel Routes') },
-		{ value: 'grants', label: t('intel.category_grants', 'Grants') },
-		{ value: 'admission', label: t('intel.category_admission', 'Admission') },
-		{ value: 'banking', label: t('intel.category_banking', 'Banking') },
-		{ value: 'work_career', label: t('intel.category_work_career', 'Work & Career') },
-		{ value: 'health_insurance', label: t('intel.category_health_insurance', 'Health Insurance') },
-		{ value: 'culture_lifestyle', label: t('intel.category_culture_lifestyle', 'Culture & Lifestyle') },
-		{ value: 'internship', label: t('intel.category_internship', 'Internship') },
-		{ value: 'import_export', label: t('intel.category_import_export', 'Import & Export') }
-	]);
+	// Category/method/frequency options come from /api/v1/sources/meta
+	// (admin_categories, crawl_methods, crawl_frequencies — Rule 16). The
+	// columns are free text in the DB, so the current value is appended when
+	// absent to avoid clobbering legacy/seeded values on edit.
+	const categoryItems = $derived.by(() => {
+		const items = categoryOptions.map((v) => ({
+			value: v,
+			label: t(`intel.category_${v}`, v.replace(/_/g, ' '))
+		}));
+		if (form.category && !categoryOptions.includes(form.category)) {
+			items.push({
+				value: form.category,
+				label: t(`intel.category_${form.category}`, form.category.replace(/_/g, ' '))
+			});
+		}
+		return items;
+	});
 
 	// 'manual' is a backend sentinel for non-crawlable rows (video_channel,
-	// entity-linked sources) — not offered for new sources, but appended
-	// when editing one so the current value is preserved.
+	// entity-linked sources) — not in the meta list, but appended when
+	// editing one so the current value is preserved.
 	const methodItems = $derived.by(() => {
-		const items = [
-			{ value: 'static', label: t('intel.method_static', 'Static (HTML)') },
-			{ value: 'rss', label: t('intel.method_rss', 'RSS / Atom') },
-			{ value: 'api', label: t('intel.method_api', 'REST API') },
-			{ value: 'pdf', label: t('intel.method_pdf', 'PDF') },
-			{ value: 'ocr', label: t('intel.method_ocr', 'OCR') }
-		];
-		if (form.crawl_method && !items.some((m) => m.value === form.crawl_method)) {
+		const items = crawlMethodOptions.map((v) => ({
+			value: v,
+			label: t(`intel.method_${v}`, v.replace(/_/g, ' '))
+		}));
+		if (form.crawl_method && !crawlMethodOptions.includes(form.crawl_method)) {
 			items.push({
 				value: form.crawl_method,
-				label: t(`intel.method_${form.crawl_method}`, form.crawl_method)
+				label: t(`intel.method_${form.crawl_method}`, form.crawl_method.replace(/_/g, ' '))
 			});
 		}
 		return items;
@@ -167,16 +166,14 @@
 	// Same preserve-current-value rule as methodItems: non-crawlable rows
 	// carry crawl_frequency='manual'.
 	const frequencyItems = $derived.by(() => {
-		const items = [
-			{ value: 'hourly', label: t('intel.freq_hourly', 'Hourly') },
-			{ value: 'daily', label: t('intel.freq_daily', 'Daily') },
-			{ value: 'weekly', label: t('intel.freq_weekly', 'Weekly') },
-			{ value: 'monthly', label: t('intel.freq_monthly', 'Monthly') }
-		];
-		if (form.crawl_frequency && !items.some((f) => f.value === form.crawl_frequency)) {
+		const items = crawlFrequencyOptions.map((v) => ({
+			value: v,
+			label: t(`intel.freq_${v}`, v.replace(/_/g, ' '))
+		}));
+		if (form.crawl_frequency && !crawlFrequencyOptions.includes(form.crawl_frequency)) {
 			items.push({
 				value: form.crawl_frequency,
-				label: t(`intel.freq_${form.crawl_frequency}`, form.crawl_frequency)
+				label: t(`intel.freq_${form.crawl_frequency}`, form.crawl_frequency.replace(/_/g, ' '))
 			});
 		}
 		return items;
@@ -241,8 +238,8 @@
 		return [noneItem, ...personas.map((p) => ({ id: p.id, label: p.profile_name, sublabel: p.backing_username }))];
 	}
 
-	function submit(e: SubmitEvent) {
-		e.preventDefault();
+	function submit(e?: SubmitEvent) {
+		e?.preventDefault();
 		if (!valid || saving) return;
 		onSubmit({ ...form });
 	}
@@ -395,6 +392,12 @@
 					</div>
 				</div>
 
+				{#if form.source_type === 'video'}
+					<p class="text-muted-foreground -mt-1 text-xs">
+						{t('intel.type_video_hint', 'Video platform URLs register as a channel subscription (video_channel) — the channel sync imports uploads as video content; crawl method/frequency are set to manual.')}
+					</p>
+				{/if}
+
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-freq" class={labelClass}>{t('intel.field_crawl_frequency', 'Crawl Frequency')}</label>
@@ -496,7 +499,7 @@
 					type="button"
 					class="bg-foreground text-background flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 					disabled={!valid || saving}
-					onclick={(e) => submit(e as unknown as SubmitEvent)}
+					onclick={() => submit()}
 				>
 					{#if saving}
 						<Loader2 class="size-4 animate-spin" />

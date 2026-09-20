@@ -67,6 +67,13 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate the transition — space_members.status is a constrained column;
+	// an arbitrary value would corrupt membership state silently.
+	if input.Status != "approved" && input.Status != "rejected" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be 'approved' or 'rejected'")
+		return
+	}
+
 	err = h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
 		SpaceID: spaceID,
 		UserID:  requestID,
@@ -83,6 +90,11 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 			slog.Error("spaces: failed to increment member_count on join approval",
 				"space_id", spaceID.String(), "user_id", requestID.String(), "error", err)
 		}
+
+		// §64: approval is the moment a pending requester becomes a member —
+		// record space.joined so badge/challenge triggers fire for this
+		// path too (parity with AdminResolveJoinRequest).
+		h.Service.emitActivity(r.Context(), requestID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": requestID.String(), "status": input.Status}})
@@ -115,7 +127,7 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": spaceID.String(), "status": input.Status})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": spaceID.String(), "status": input.Status}})
 }
 
 // GetSpaceAnalytics handles GET /admin/spaces/:id/analytics.
@@ -169,10 +181,15 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Response keys match the Analytics tab contract on the space hub:
+	// total_views / total_posts / total_members / total_followers /
+	// posts_last_30d (Ref: sections/40-platform-analytics-reports.md).
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"member_count":  summary.MemberCount,
-		"content_count": summary.ContentCount,
-		"view_count":    summary.ViewCount,
+		"total_views":     summary.ViewCount,
+		"total_posts":     summary.ContentCount,
+		"total_members":   summary.MemberCount,
+		"total_followers": summary.FollowerCount,
+		"posts_last_30d":  summary.PostsLast30d,
 	}})
 }
 
@@ -260,7 +277,7 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 		h.Service.emitActivity(r.Context(), userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": composite, "status": status})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": composite, "status": status}})
 }
 
 // AdminApproveJoinRequest handles POST /api/v1/admin/join-requests/{id}/approve.

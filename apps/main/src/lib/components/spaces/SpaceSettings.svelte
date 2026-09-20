@@ -204,7 +204,9 @@
 	let modError = $state('');
 	let removingId = $state<string | null>(null);
 
-	const canManageModerators = $derived(isOwner || isModerator);
+	// §05: moderator assignment is "creator + admin only" — the backend
+	// 403s moderators, so the panel must not render for them.
+	const canManageModerators = $derived(isOwner);
 
 	async function addModerator() {
 		const handle = modUsername.trim().replace(/^@/, '');

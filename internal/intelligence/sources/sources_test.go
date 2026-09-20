@@ -33,6 +33,7 @@ func TestCrawlMethodConstants(t *testing.T) {
 		CrawlMethodAPI:    "api",
 		CrawlMethodPDF:    "pdf",
 		CrawlMethodOCR:    "ocr",
+		CrawlMethodManual: "manual",
 	}
 	for cm, want := range cases {
 		if string(cm) != want {
@@ -49,6 +50,7 @@ func TestCrawlFrequencyConstants(t *testing.T) {
 		CrawlFrequencyDaily:   "daily",
 		CrawlFrequencyWeekly:  "weekly",
 		CrawlFrequencyMonthly: "monthly",
+		CrawlFrequencyManual:  "manual",
 	}
 	for cf, want := range cases {
 		if string(cf) != want {
@@ -95,6 +97,41 @@ func TestCrawlNow(t *testing.T) {
 	err := svc.CrawlNow(t.Context(), SourceID{})
 	if err != nil && contains(err.Error(), "Task 22") {
 		t.Errorf("CrawlNow should no longer return the old Task 22 stub error, got: %q", err.Error())
+	}
+}
+
+// TestIsVideoProviderHost covers the §106 channel-sync proposal mapping:
+// 'video'-typed sources on supported video platforms become video_channel
+// subscriptions; other hosts are not treated as video channels.
+func TestIsVideoProviderHost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{"youtube.com", true},
+		{"www.youtube.com", true},
+		{"m.youtube.com", true},
+		{"youtu.be", true},
+		{"tiktok.com", true},
+		{"www.tiktok.com", true},
+		{"instagram.com", true},
+		{"vimeo.com", true},
+		{"example.com", false},
+		{"notyoutube.com", false},
+		{"youtube.com.evil.example", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			t.Parallel()
+
+			if got := isVideoProviderHost(tt.host); got != tt.want {
+				t.Errorf("isVideoProviderHost(%q) = %v, want %v", tt.host, got, tt.want)
+			}
+		})
 	}
 }
 

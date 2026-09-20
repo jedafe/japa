@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	vkcache "github.com/jedafe/japa/internal/valkey"
@@ -910,6 +911,10 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	filters := []FilterExpr{
 
 		Eq{Field: "space_id", Value: spaceID},
+		// The posts index is upserted on every content create/update —
+		// drafts and scheduled rows are indexed too, so status must be
+		// filtered explicitly (§14).
+		Eq{Field: "status", Value: "published"},
 	}
 
 	if ct := r.URL.Query().Get("content_type"); ct != "" {
@@ -931,7 +936,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results := make([]SearchResult, 0, len(resp.Hits))
-	for _, hit := range resp.Hits {
+	for _, hit := range h.filterContentHits(r, resp.Hits) {
 		results = append(results, SearchResult{
 			Type: "content",
 			Item: mapHitToItem("content", hit),
@@ -941,6 +946,57 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": SearchResponse{Results: results},
 	})
+}
+
+// filterContentHits drops posts-index hits the requester may not see. The
+// index carries no `visibility` attribute, so hits are post-filtered through
+// the visibility-gated ListContentsByIDs query (§14) — members-only and
+// private content never leaks to viewers without access. When the queries
+// dependency is not wired (tests) hits pass through unfiltered; on a
+// post-filter error the result set is emptied (fail closed).
+func (h *Handlers) filterContentHits(r *http.Request, hits []Hit) []Hit {
+	if h.queries == nil || len(hits) == 0 {
+		return hits
+	}
+
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := visibility.VisibilityFilterFromRequest(r).Params()
+
+	ids := make([]pgtype.UUID, 0, len(hits))
+	for _, hit := range hits {
+		var id pgtype.UUID
+		if err := id.Scan(stringField(hit, "id")); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return hits
+	}
+
+	rows, err := h.queries.ListContentsByIDs(r.Context(), gen.ListContentsByIDsParams{
+		Ids:               ids,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeePrivate:     canSeePrivate,
+		RequesterID:       requesterID,
+		CanSeeMembers:     canSeeMembers,
+		PageLimit:         int32(len(ids)),
+	})
+	if err != nil {
+		slog.Warn("content hit visibility filter failed", "error", err)
+		return []Hit{}
+	}
+
+	allowed := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		allowed[row.ID.String()] = struct{}{}
+	}
+
+	filtered := hits[:0]
+	for _, hit := range hits {
+		if _, ok := allowed[stringField(hit, "id")]; ok {
+			filtered = append(filtered, hit)
+		}
+	}
+	return filtered
 }
 
 // SearchTag handles GET /api/v1/tags/:slug/search?q=.
@@ -981,6 +1037,9 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 		Filter: andAll(
 
 			Eq{Field: "tag_slugs", Value: tagSlug},
+			// Drafts and scheduled rows are indexed alongside published
+			// content — status must be filtered explicitly (§14).
+			Eq{Field: "status", Value: "published"},
 		),
 		AttributesToRetrieve: searchAttributesToRetrieve,
 	})
@@ -992,7 +1051,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results := make([]SearchResult, 0, len(resp.Hits))
-	for _, hit := range resp.Hits {
+	for _, hit := range h.filterContentHits(r, resp.Hits) {
 		results = append(results, SearchResult{
 			Type: "content",
 			Item: mapHitToItem("content", hit),

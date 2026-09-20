@@ -2804,9 +2804,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/spaces/{slug}", spaceHandlers.GetSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.create")).
 				Post("/spaces", spaceHandlers.CreateSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.edit")).
+			// RequireSpacePermission resolves these nodes per space:
+			// spaces.edit → owner or assigned moderator (§05); spaces.delete
+			// → owner only. Static-node holders (e.g. platform admins) still
+			// pass through the static check.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireSpacePermission(rbacResolver, "spaces.edit")).
 				Patch("/spaces/{id}", spaceHandlers.UpdateSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireSpacePermission(rbacResolver, "spaces.delete")).
 				Delete("/spaces/{id}", spaceHandlers.DeleteSpace)
 			// Space membership (join/leave toggle)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
@@ -2867,17 +2871,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// user's permission cache is flushed immediately after the mutation.
 			// AUDIT-FRESH-NAME-001: consolidated on spaces.moderator.assign
 			// (spaces.moderate.assigned removed as a duplicate node).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
+			// RequireSpacePermission resolves spaces.moderator.assign per-space:
+			// the static node covers admins, the space owner (space_members
+			// role='owner') qualifies dynamically per Section 05
+			// ("creator + admin only"). Moderators cannot delegate.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderator.assign")).
 				Post("/spaces/{slug}/moderators", spaceHandlers.AssignModerator)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderator.assign")).
 				Delete("/spaces/{slug}/moderators/{userId}", spaceHandlers.RemoveModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/moderators", spaceHandlers.ListModerators)
 
 			// Space parent spaces (many-to-many hierarchy)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.edit")).
 				Post("/spaces/{slug}/parents", spaceHandlers.AddParentSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.edit")).
 				Delete("/spaces/{slug}/parents/{parentId}", spaceHandlers.RemoveParentSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/parents", spaceHandlers.ListParentSpaces)
@@ -5441,7 +5449,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/spaces/{id}", spaceHandlers.UpdateSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
 				Delete("/admin/spaces/{id}", spaceHandlers.DeleteSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+			// Per-space join-request queue — RequireSpacePermission resolves
+			// spaces.moderate per space so the space owner and assigned
+			// moderators can work their queue (not just platform moderators).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Get("/admin/spaces/{id}/join-requests", spaceHandlers.ListJoinRequests)
 			// Admin-wide join requests (across all spaces in the admin platform).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
@@ -5450,7 +5461,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/join-requests/{id}/approve", spaceHandlers.AdminApproveJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Post("/admin/join-requests/{id}/reject", spaceHandlers.AdminRejectJoinRequest)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Patch("/admin/spaces/{id}/join-requests/{uid}", spaceHandlers.UpdateJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/admin/spaces/{id}/status", spaceHandlers.UpdateSpaceStatus)
@@ -5459,7 +5470,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
 				Delete("/admin/spaces/{id}/moderators/{moderator_id}", spaceHandlers.AdminRemoveModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+			// RequireSpacePermission resolves spaces.moderate per space so the
+			// space owner and assigned moderators can reorder — parity with the
+			// pin/unpin routes which already use RequireSpacePermission.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Patch("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/suggest-parents", spaceHandlers.SuggestParentSpaces)
 

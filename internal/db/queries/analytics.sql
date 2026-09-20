@@ -239,16 +239,25 @@ ORDER BY gs.day;
 -- =====================
 
 -- name: GetSpaceAnalyticsSummary :one
--- Returns member_count, content_count, and view_count in a single round
--- trip instead of three sequential queries (BUG-020). Each subquery is
--- independent so the planner can parallelise them.
+-- Returns member_count, content_count, view_count, follower_count, and
+-- posts_last_30d in a single round trip instead of sequential queries
+-- (BUG-020). Each subquery is independent so the planner can parallelise
+-- them. member_count counts approved members only (SPACES-006); content
+-- counts use the authoritative content_spaces junction (BUG-010).
 SELECT
  (SELECT COUNT(*) FROM space_members
- WHERE space_members.space_id = @space_id)::int AS member_count,
- (SELECT COUNT(*) FROM contents
- WHERE contents.space_id = @space_id AND contents.status = 'published')::int AS content_count,
+ WHERE space_members.space_id = @space_id AND space_members.status = 'approved')::int AS member_count,
+ (SELECT COUNT(*) FROM content_spaces cs
+ JOIN contents c ON c.id = cs.content_id
+ WHERE cs.space_id = @space_id AND c.deleted_at IS NULL AND c.status = 'published')::int AS content_count,
  (SELECT COUNT(*) FROM content_views
- WHERE content_views.space_id = @space_id)::int AS view_count;
+ WHERE content_views.space_id = @space_id)::int AS view_count,
+ (SELECT COUNT(*) FROM follows f
+ WHERE f.entity_type = 'space' AND f.entity_id = @space_id)::int AS follower_count,
+ (SELECT COUNT(*) FROM content_spaces cs
+ JOIN contents c ON c.id = cs.content_id
+ WHERE cs.space_id = @space_id AND c.deleted_at IS NULL AND c.status = 'published'
+ AND c.created_at >= now() - interval '30 days')::int AS posts_last_30d;
 
 -- name: GetDailyActiveUsers :many
 SELECT date_trunc('day', last_login_at)::date AS day, COUNT(*) AS dau
