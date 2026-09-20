@@ -561,3 +561,114 @@ func (s *Service) IsSourceBlocked(ctx context.Context, blockerID, sourceID pgtyp
 func (s *Service) ListBlockedSourceIDs(ctx context.Context, blockerID pgtype.UUID) ([]pgtype.UUID, error) {
 	return s.store.ListBlockedSourceIDs(ctx, blockerID)
 }
+
+// --- Channels ---
+//
+// A channel is one entry point (entry_url + crawl_method + pipeline) under a
+// source. Validation lives here; persistence is delegated to the Store.
+
+// CreateChannel registers a new channel under a source. Unset enum fields
+// get their schema defaults (pipeline='extract', relevance_mode='filtered',
+// origin='admin') and provider_config defaults to '{}' because the column is
+// NOT NULL — a nil []byte would bind SQL NULL and violate the constraint.
+func (s *Service) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceChannelParams) (Channel, error) {
+	arg.Label = strings.TrimSpace(arg.Label)
+	arg.EntryUrl = strings.TrimSpace(arg.EntryUrl)
+
+	if arg.Pipeline == "" {
+		arg.Pipeline = string(PipelineExtract)
+	}
+	if arg.RelevanceMode == "" {
+		arg.RelevanceMode = string(RelevanceFiltered)
+	}
+	if arg.Origin == "" {
+		arg.Origin = string(ChannelOriginAdmin)
+	}
+	if len(arg.ProviderConfig) == 0 {
+		arg.ProviderConfig = []byte("{}")
+	}
+	if arg.CrawlFrequencyMins <= 0 {
+		arg.CrawlFrequencyMins = 1440
+	}
+
+	if err := validateChannelCreate(arg); err != nil {
+		return Channel{}, err
+	}
+
+	return s.store.CreateChannel(ctx, arg)
+}
+
+// GetChannel retrieves a channel by ID.
+func (s *Service) GetChannel(ctx context.Context, id ChannelID) (Channel, error) {
+	return s.store.GetChannel(ctx, id)
+}
+
+// ListChannels returns all channels owned by a source.
+func (s *Service) ListChannels(ctx context.Context, sourceID SourceID) ([]Channel, error) {
+	return s.store.ListChannels(ctx, sourceID)
+}
+
+// ListDueChannels returns up to limit channels due for a crawl (enabled,
+// parent source active, interval elapsed; inbound and manual excluded).
+func (s *Service) ListDueChannels(ctx context.Context, limit int32) ([]Channel, error) {
+	return s.store.ListDueChannels(ctx, limit)
+}
+
+// UpdateChannel applies a COALESCE-style patch to a channel's scalar fields.
+// The existing row is loaded first so the patch can be checked against the
+// effective state (e.g. switching pipeline to extract/curate while
+// entity_types is empty is rejected) and so missing channels report through
+// the store's wrapped not-found error.
+func (s *Service) UpdateChannel(ctx context.Context, arg gen.UpdateIntelSourceChannelParams) (Channel, error) {
+	if !arg.ID.Valid {
+		return Channel{}, fmt.Errorf("sources: update channel: %w: id", errpkg.ErrRequired)
+	}
+	if err := validateChannelUpdate(arg); err != nil {
+		return Channel{}, err
+	}
+
+	existing, err := s.store.GetChannel(ctx, arg.ID)
+	if err != nil {
+		return Channel{}, err
+	}
+
+	if arg.Pipeline != nil &&
+		pipelineRequiresEntityTypes(Pipeline(*arg.Pipeline)) &&
+		len(existing.EntityTypes) == 0 {
+		return Channel{}, fmt.Errorf("sources: update channel: %w: entity_types required for %s pipeline", errpkg.ErrInvalid, *arg.Pipeline)
+	}
+
+	return s.store.UpdateChannel(ctx, arg)
+}
+
+// UpdateChannelEntityTypes replaces a channel's entity_types array. An empty
+// array is an explicit clear (the runtime falls back to source-level
+// entity_types then category), so no minimum-length validation applies.
+func (s *Service) UpdateChannelEntityTypes(ctx context.Context, arg gen.UpdateIntelChannelEntityTypesParams) (Channel, error) {
+	return s.store.UpdateChannelEntityTypes(ctx, arg)
+}
+
+// UpdateChannelRelevance replaces a channel's relevance gate fields.
+// relevance_mode must be a known mode; topics/patterns may be cleared.
+func (s *Service) UpdateChannelRelevance(ctx context.Context, arg gen.UpdateIntelChannelRelevanceParams) (Channel, error) {
+	if !RelevanceMode(arg.RelevanceMode).IsValid() {
+		return Channel{}, fmt.Errorf("sources: update channel relevance: %w: unknown relevance_mode %q", errpkg.ErrInvalid, arg.RelevanceMode)
+	}
+
+	return s.store.UpdateChannelRelevance(ctx, arg)
+}
+
+// UpdateChannelCrawlStatus records the outcome of a crawl attempt on the
+// channel row (last_crawled_at, success/error stamps, consecutive_failures).
+func (s *Service) UpdateChannelCrawlStatus(ctx context.Context, id ChannelID, success bool, lastErrorMessage *string) error {
+	return s.store.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+		ID:               id,
+		Success:          success,
+		LastErrorMessage: lastErrorMessage,
+	})
+}
+
+// DeleteChannel removes a channel from a source.
+func (s *Service) DeleteChannel(ctx context.Context, id ChannelID) error {
+	return s.store.DeleteChannel(ctx, id)
+}
