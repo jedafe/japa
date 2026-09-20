@@ -288,7 +288,9 @@ Single-page `extract` channels (a visa-rules page on a gov domain) are effective
 ### Control form (`apps/control` — `SourceForm`)
 
 - Same `source_kind` + multi-category inputs; admin keeps crawl-method override.
-- New channels editor on source detail: list/add/edit/disable/crawl-now per channel; per-channel relevance controls (`relevance_mode`, topics, URL patterns); "Re-probe" enqueues `intel:probe_verify`.
+- New channels editor on source detail: list/add/edit/disable/crawl-now per channel; "Re-probe" enqueues `intel:probe_verify`.
+- **Per-channel admin-editable fields** (via `PATCH /api/v1/admin/intel/channels/:id`): `label`, `entry_url`, `crawl_method` (dropdown incl. all new methods), `entity_types[]`, `pipeline` (extract|curate|hybrid), `crawl_frequency_mins`, `enabled`, `provider_config`, `relevance_mode`, `relevance_topics[]`, `relevance_url_patterns[]`. Nothing probe-decided is locked — admins own the final channel config.
+- **Category→method/topic map management**: `intel.category_method_map` is editable through the existing control settings UI (jsonb), letting admins tune which methods, entity types, and topic vocabularies each category implies without a redeploy.
 - Proposal review shows `probe_report` + proposed channels with per-channel approve/edit/reject.
 
 ### Endpoints
