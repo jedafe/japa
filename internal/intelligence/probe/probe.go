@@ -358,14 +358,21 @@ func (r *runState) finalize(out *Report, page *FetchedPage) {
 }
 
 // bypassMethods are proposal methods exempt from the resolved-methods
-// intersection: channel_sync is a routing marker for the §106 video flow,
-// email/webhook are inbound pushes (never listed in category methods), and
-// sitemap is a discovery multiplier no category lists.
+// intersection. channel_sync is a routing marker for the §106 video flow;
+// email/webhook are inbound pushes (never listed in category methods);
+// sitemap is a discovery multiplier no category lists; and social/git are
+// platform-signature methods — the same ground-truth argument as
+// channel_sync: when the URL host IS reddit/t.me/github, dropping the
+// correct proposal because no selected category lists the method would
+// silently lose the source's only viable channel (only dataset lists git;
+// nothing lists social).
 var bypassMethods = map[string]bool{
 	MethodChannelSync:                  true,
 	string(sources.CrawlMethodEmail):   true,
 	string(sources.CrawlMethodWebhook): true,
 	string(sources.CrawlMethodSitemap): true,
+	string(sources.CrawlMethodSocial):  true,
+	string(sources.CrawlMethodGit):     true,
 }
 
 // methodAllowed reports whether a proposal for method survives the

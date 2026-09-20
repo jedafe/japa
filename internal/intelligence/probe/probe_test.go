@@ -447,6 +447,43 @@ func TestPreview_PlatformSignatures(t *testing.T) {
 	}
 }
 
+// TestPreview_PlatformSurvivesCategoryIntersection verifies that
+// platform-signature proposals (social/git) are ground truth: they bypass
+// the category-method intersection just like channel_sync. A
+// channel_profile URL with unrelated categories must not lose its only
+// viable channel to the filter.
+func TestPreview_PlatformSurvivesCategoryIntersection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		url        string
+		categories []string
+		wantMethod string
+	}{
+		{"reddit under visa", "https://www.reddit.com/r/nigeria", []string{"visa"}, "social"},
+		{"telegram under job", "https://t.me/japaconnect", []string{"job"}, "social"},
+		{"github under news", "https://github.com/jedafe/japa", []string{"news"}, "git"},
+		{"youtube under job", "https://www.youtube.com/@JapaStories", []string{"job"}, MethodChannelSync},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			report, err := NewProber(cannedClient(), 5).Preview(t.Context(), tc.url, "", tc.categories)
+			if err != nil {
+				t.Fatalf("Preview(%s): %v", tc.url, err)
+			}
+
+			if _, ok := findChannel(report, tc.wantMethod); !ok {
+				t.Errorf("%q proposal dropped under categories %v: %+v",
+					tc.wantMethod, tc.categories, report.Channels)
+			}
+		})
+	}
+}
+
 // TestPreview_PlatformOnHTTPError verifies host signatures still produce
 // proposals when the entry fetch returns an HTTP error status.
 func TestPreview_PlatformOnHTTPError(t *testing.T) {
