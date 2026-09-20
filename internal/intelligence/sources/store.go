@@ -55,6 +55,12 @@ func (s *Store) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (So
 	return row, nil
 }
 
+// ClearPersona removes the persona attribution from a source. UpdateIntelSource
+// COALESCEs persona_id so it cannot clear to NULL — this is the explicit clear.
+func (s *Store) ClearPersona(ctx context.Context, id SourceID) error {
+	return s.queries.ClearIntelSourcePersona(ctx, id)
+}
+
 // Get fetches a single source by its primary key.
 func (s *Store) Get(ctx context.Context, id SourceID) (Source, error) {
 	row, err := s.queries.GetIntelSource(

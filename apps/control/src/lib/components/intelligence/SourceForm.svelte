@@ -16,6 +16,10 @@
 		source_url: string;
 		category: string;
 		source_type: string;
+		source_kind: string;
+		slug: string;
+		description: string;
+		logo_url: string;
 		trust_level: number;
 		crawl_method: string;
 		crawl_frequency: string;
@@ -35,6 +39,10 @@
 		source_url: string;
 		category: string;
 		source_type: string;
+		source_kind?: string | null;
+		slug?: string | null;
+		description?: string | null;
+		logo_url?: string | null;
 		trust_level: number;
 		crawl_method: string;
 		crawl_frequency: string;
@@ -62,6 +70,7 @@
 		entityTypeOptions = [] as string[],
 		sourceTypeOptions = [] as string[],
 		categoryOptions = [] as string[],
+		sourceKindOptions = [] as string[],
 		crawlMethodOptions = [] as string[],
 		crawlFrequencyOptions = [] as string[],
 		saving = false,
@@ -74,6 +83,7 @@
 		entityTypeOptions?: string[];
 		sourceTypeOptions?: string[];
 		categoryOptions?: string[];
+		sourceKindOptions?: string[];
 		crawlMethodOptions?: string[];
 		crawlFrequencyOptions?: string[];
 		saving?: boolean;
@@ -87,6 +97,10 @@
 		source_url: '',
 		category: 'scholarship',
 		source_type: 'rss',
+		source_kind: 'publisher',
+		slug: '',
+		description: '',
+		logo_url: '',
 		trust_level: 3,
 		crawl_method: 'static',
 		crawl_frequency: 'daily',
@@ -111,6 +125,10 @@
 					source_url: source.source_url ?? '',
 					category: source.category ?? 'scholarship',
 					source_type: source.source_type ?? 'rss',
+					source_kind: source.source_kind ?? 'publisher',
+					slug: source.slug ?? '',
+					description: source.description ?? '',
+					logo_url: source.logo_url ?? '',
 					trust_level: source.trust_level ?? 3,
 					crawl_method: source.crawl_method ?? 'static',
 					crawl_frequency: source.crawl_frequency ?? 'daily',
@@ -174,6 +192,22 @@
 			items.push({
 				value: form.crawl_frequency,
 				label: t(`intel.freq_${form.crawl_frequency}`, form.crawl_frequency.replace(/_/g, ' '))
+			});
+		}
+		return items;
+	});
+
+	// Source-kind options come from meta.source_kinds (publisher/institution/
+	// individual/aggregator — who publishes the source).
+	const kindItems = $derived.by(() => {
+		const items = sourceKindOptions.map((v) => ({
+			value: v,
+			label: t(`intel.kind_${v}`, v.replace(/_/g, ' '))
+		}));
+		if (form.source_kind && !sourceKindOptions.includes(form.source_kind)) {
+			items.push({
+				value: form.source_kind,
+				label: t(`intel.kind_${form.source_kind}`, form.source_kind.replace(/_/g, ' '))
 			});
 		}
 		return items;
@@ -287,11 +321,52 @@
 					</div>
 				</div>
 
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="sf-url" class={labelClass}>
+							{t('intel.field_source_url', 'Source URL')} <span class="text-destructive">*</span>
+						</label>
+						<input id="sf-url" type="url" bind:value={form.source_url} class={inputClass} placeholder="https://www.daad.de/en/" />
+					</div>
+					<div>
+						<label for="sf-logo" class={labelClass}>{t('intel.field_logo_url', 'Logo URL')}</label>
+						<input id="sf-logo" type="url" bind:value={form.logo_url} class={inputClass} placeholder="https://daad.de/logo.png" />
+					</div>
+				</div>
+
 				<div>
-					<label for="sf-url" class={labelClass}>
-						{t('intel.field_source_url', 'Source URL')} <span class="text-destructive">*</span>
-					</label>
-					<input id="sf-url" type="url" bind:value={form.source_url} class={inputClass} placeholder="https://www.daad.de/en/" />
+					<label for="sf-description" class={labelClass}>{t('intel.field_description', 'Description')}</label>
+					<textarea id="sf-description" bind:value={form.description} class={inputClass} rows={2} placeholder={t('intel.field_description_placeholder', 'What this source publishes')}></textarea>
+				</div>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="sf-slug" class={labelClass}>{t('intel.field_slug', 'Slug')}</label>
+						<input id="sf-slug" type="text" bind:value={form.slug} class={inputClass} placeholder={t('intel.field_slug_placeholder', 'auto from name')} />
+					</div>
+					<div>
+						<label for="sf-kind" class={labelClass}>{t('intel.field_source_kind', 'Source Kind')}</label>
+						<Select.Root
+							type="single"
+							value={form.source_kind}
+							onValueChange={(v) => { if (v !== undefined) form.source_kind = v; }}
+						>
+							<Select.Trigger class={inputClass}>
+								<Select.Value placeholder={t('intel.field_source_kind', 'Source Kind')} />
+							</Select.Trigger>
+							<Select.Portal>
+								<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+									<Select.Viewport class="p-1">
+										{#each kindItems as k}
+											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={k.value} label={k.label}>
+												{k.label}
+											</Select.Item>
+										{/each}
+									</Select.Viewport>
+								</Select.Content>
+							</Select.Portal>
+						</Select.Root>
+					</div>
 				</div>
 
 				<div class="grid grid-cols-2 gap-4">
@@ -424,7 +499,7 @@
 					</div>
 					<div>
 						<label for="sf-mins" class={labelClass}>{t('intel.field_crawl_mins', 'Crawl Interval (mins)')}</label>
-						<input id="sf-mins" type="number" min="1" bind:value={form.crawl_frequency_mins} class={inputClass} />
+						<input id="sf-mins" type="number" min="0" bind:value={form.crawl_frequency_mins} class={inputClass} />
 					</div>
 				</div>
 

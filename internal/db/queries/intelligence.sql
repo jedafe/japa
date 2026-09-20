@@ -73,6 +73,9 @@ UPDATE intel_sources SET robots_policy = $2, updated_at = now() WHERE id = $1;
 -- name: UpdateIntelSourceProviderConfig :exec
 UPDATE intel_sources SET provider_config = $2, updated_at = now() WHERE id = $1;
 
+-- name: ClearIntelSourcePersona :exec
+UPDATE intel_sources SET persona_id = NULL, updated_at = now() WHERE id = $1;
+
 -- name: DeleteIntelSource :exec
 DELETE FROM intel_sources WHERE id = $1;
 

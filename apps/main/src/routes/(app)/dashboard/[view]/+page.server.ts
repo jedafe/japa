@@ -29,8 +29,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const loader = DASHBOARD_LOADERS[slug];
-	// Pass URL search params to the loader so views like content can filter
-	// by status/type server-side (Published/Drafts/Scheduled tabs).
+	// Pass URL search params to the loader so views can read filters
+	// server-side (e.g. analytics' ?period=/start/end).
 	const params: Record<string, string | undefined> = {};
 	for (const [k, v] of event.url.searchParams) params[k] = v;
 	const viewData = loader ? await loader(apiContext(event), params) : null;

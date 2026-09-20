@@ -22,6 +22,10 @@
 		source_url: string;
 		category: string;
 		source_type: string;
+		source_kind?: string | null;
+		slug?: string | null;
+		description?: string | null;
+		logo_url?: string | null;
 		trust_level: number;
 		crawl_method: string;
 		crawl_frequency: string;
@@ -65,6 +69,7 @@
 	let entityTypeOptions = $state<string[]>([]);
 	let sourceTypeOptions = $state<string[]>([]);
 	let categoryOptions = $state<string[]>([]);
+	let sourceKindOptions = $state<string[]>([]);
 	let crawlMethodOptions = $state<string[]>([]);
 	let crawlFrequencyOptions = $state<string[]>([]);
 	let personaNameById = $derived.by(() => {
@@ -129,6 +134,7 @@
 				registered_entity_types?: string[];
 				source_types?: string[];
 				admin_categories?: string[];
+				source_kinds?: { value: string; label: string }[];
 				crawl_methods?: string[];
 				crawl_frequencies?: string[];
 			}>('/api/v1/sources/meta');
@@ -136,6 +142,7 @@
 				entityTypeOptions = mresult.data.registered_entity_types ?? [];
 				sourceTypeOptions = mresult.data.source_types ?? [];
 				categoryOptions = mresult.data.admin_categories ?? [];
+				sourceKindOptions = (mresult.data.source_kinds ?? []).map((k) => k.value);
 				crawlMethodOptions = mresult.data.crawl_methods ?? [];
 				crawlFrequencyOptions = mresult.data.crawl_frequencies ?? [];
 			}
@@ -346,12 +353,21 @@
 			? `/api/v1/intel/sources/${editingSource!.id}`
 			: '/api/v1/intel/sources';
 		const method = isEdit ? 'PATCH' : 'POST';
-		// Build the body, only including persona_id when non-empty so the
-		// backend doesn't receive an empty string for a field that should
-		// be NULL when unassigned.
+		// Build the body. persona_id is sent as null when unassigned: on PATCH
+		// an explicit null clears the attribution (the update query COALESCEs,
+		// so null is the only way to clear), and on create nil is skipped.
 		const body: Record<string, unknown> = { ...values };
-		if (!body.persona_id) {
-			delete body.persona_id;
+		body.persona_id = values.persona_id || null;
+		// description/logo_url: null on create stores NULL; on PATCH the raw
+		// string is sent so clearing the field writes "".
+		body.description = isEdit ? values.description : values.description || null;
+		body.logo_url = isEdit ? values.logo_url : values.logo_url || null;
+		// slug is optional — absent lets the backend generate it from the name.
+		if (!body.slug) {
+			delete body.slug;
+		}
+		if (!body.source_kind) {
+			delete body.source_kind;
 		}
 		const result = await api<IntelSource>(path, {
 			method,
@@ -508,6 +524,7 @@
 		entityTypeOptions={entityTypeOptions}
 		sourceTypeOptions={sourceTypeOptions}
 		categoryOptions={categoryOptions}
+		sourceKindOptions={sourceKindOptions}
 		crawlMethodOptions={crawlMethodOptions}
 		crawlFrequencyOptions={crawlFrequencyOptions}
 		saving={formSaving}

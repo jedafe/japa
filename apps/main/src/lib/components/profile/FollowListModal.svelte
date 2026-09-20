@@ -85,6 +85,8 @@
 				return `/tags/${item.username}`;
 			case 'organization':
 				return `/org/${item.username}`;
+			case 'source':
+				return `/sources/${item.username}`;
 			default:
 				return `/u/${item.username}`;
 		}
@@ -98,6 +100,8 @@
 				return t('profile.type.tag', 'Tag');
 			case 'organization':
 				return t('profile.type.organization', 'Organization');
+			case 'source':
+				return t('profile.type.source', 'Source');
 			default:
 				return `@${item.username}`;
 		}

@@ -177,15 +177,30 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header + search (H1/description kept; controls live in the ListPageBar) -->
+	<!-- Header + search (H1/description; Filter + Create controls sit on the heading row) -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
-		<div>
-			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-				<Layers size={20} /> {t('spaces.heading', 'Spaces')}
-			</h1>
-			<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-				{t('spaces.subtitle', 'Join spaces to connect with people who share your interests.')}
-			</p>
+		<div class="flex items-start justify-between gap-3">
+			<div class="min-w-0">
+				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+					<Layers size={20} /> {t('spaces.heading', 'Spaces')}
+				</h1>
+				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
+					{t('spaces.subtitle', 'Join spaces to connect with people who share your interests.')}
+				</p>
+			</div>
+			<!-- Page controls on the heading row: Filters toggle + Create.
+			     PageAction keeps its mobile FAB (portaled to <body>), so this
+			     wrapper only carries the desktop layout. -->
+			<div class="flex shrink-0 items-center gap-2 pt-0.5">
+				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="spaces-filter-panel" />
+				{#if page.data.user}
+					<PageAction
+						onclick={() => (showCreateModal = true)}
+						icon={Plus}
+						label={t('spaces.create', 'Create')}
+					/>
+				{/if}
+			</div>
 		</div>
 
 		<form class="mt-3" action="/spaces" method="get" role="search">
@@ -219,21 +234,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		</form>
 	</div>
 
-	<!-- Filter bar: ListPageBar + FilterToggle + PageAction, same as /guides -->
+	<!-- Results count bar — the Filter/Create controls live on the heading row above. -->
 	<ListPageBar>
 		<span class="flex items-center px-4 text-sm text-[var(--color-muted)]" style="min-height: var(--nav-height)">
 			{visibleTotal} {t('spaces.results', 'spaces')}
 		</span>
-		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="spaces-filter-panel" />
-			{#if page.data.user}
-				<PageAction
-					onclick={() => (showCreateModal = true)}
-					icon={Plus}
-					label={t('spaces.create', 'Create')}
-				/>
-			{/if}
-		{/snippet}
 	</ListPageBar>
 
 	{#if showFilters}
@@ -378,9 +383,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{:else if visibleSpaces.length === 0}
 			<EmptyState icon={Layers} title={t('spaces.empty', 'No spaces yet.')} />
 		{:else}
-			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{visibleTotal} {t('spaces.results', 'spaces')}
-			</p>
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each visibleSpaces as space (space.id)}
 					{@const cardMeta: CardMetaItem[] = [

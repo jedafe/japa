@@ -14,6 +14,7 @@
 		type UrlTab
 	} from '$lib/components/ui';
 	import SourceCard from '$lib/components/source/SourceCard.svelte';
+	import ProposeSourceModal from '$lib/components/source/ProposeSourceModal.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 	import type { Source } from '$lib/types/sources';
@@ -29,6 +30,8 @@
 	);
 
 	// Header state — mirrors /tags header.
+	let proposeOpen = $state(false);
+
 	let query = $state(untrack(() => data.q));
 	let selectedSort = $state(untrack(() => data.sort));
 	let selectedCategory = $state(untrack(() => data.category));
@@ -127,13 +130,14 @@
 				</p>
 			</div>
 			<div class="flex shrink-0 items-center gap-2">
-				<a
-					href="/sources/submit"
+				<button
+					type="button"
+					onclick={() => (proposeOpen = true)}
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 				>
 					<Plus size={15} />
 					{t('sources.propose', 'Propose a source')}
-				</a>
+				</button>
 				<FilterToggle
 					bind:show={showFilters}
 					active={hasActiveFilters}
@@ -293,3 +297,8 @@
 		{/if}
 	</div>
 </div>
+
+<ProposeSourceModal
+	bind:open={proposeOpen}
+	meta={data.sourceMeta ?? { categories: [], source_types: [] }}
+/>

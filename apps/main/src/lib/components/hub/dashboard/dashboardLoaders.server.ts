@@ -1,5 +1,4 @@
 import { apiGet, apiList, type ApiContext } from '$lib/server/api';
-import { buildContentQuery } from './contentQuery';
 import type {
 	MeAnalytics,
 	FollowerGrowthItem,
@@ -154,36 +153,6 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 			deltas: computeDeltas(analytics, previous),
 			followerGrowth: followerGrowth.items,
 			userDashboard
-		};
-	},
-	content: async (ctx, params) => {
-		// Fetch page_size+1 so the client can tell whether a "Load more"
-		// page exists without a separate count query (the API convention
-		// returns { data: [...] } with no total). Ref: §50, api-response-format.
-		const pageSize = 20;
-		const path = buildContentQuery({
-			status: params?.status,
-			type: params?.type,
-			q: params?.q,
-			sort: params?.sort,
-			pageSize: pageSize + 1
-		});
-		let batch: unknown[] = [];
-		try {
-			const contentRes = await apiList<unknown>(ctx, path);
-			batch = contentRes.items;
-		} catch {
-			// Degrade to an empty list rather than 500ing the whole dashboard
-			// when one list endpoint is unhealthy.
-		}
-		const hasMore = batch.length > pageSize;
-		const items = hasMore ? batch.slice(0, pageSize) : batch;
-		return {
-			items,
-			// Rule 16 — content type options come from the API, not hardcoded.
-			contentTypes: (await apiList<unknown>(ctx, '/content-types').catch(() => ({ items: [] }))).items,
-			pageSize,
-			hasMore
 		};
 	},
 	relationships: async (ctx, params = {}) => {

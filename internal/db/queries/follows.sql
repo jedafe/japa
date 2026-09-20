@@ -67,7 +67,10 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  ELSE ''
  END AS entity_slug,
  COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
- COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_avatar_url
+ CASE f.entity_type
+ WHEN 'source' THEN COALESCE((SELECT logo_url FROM intel_sources WHERE id = f.entity_id), '')
+ ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
+ END::text AS entity_avatar_url
 FROM follows f
 WHERE f.follower_id = @follower_id
 ORDER BY f.created_at DESC
@@ -92,7 +95,10 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  ELSE ''
  END AS entity_slug,
  COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
- COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_avatar_url
+ CASE f.entity_type
+ WHEN 'source' THEN COALESCE((SELECT logo_url FROM intel_sources WHERE id = f.entity_id), '')
+ ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
+ END::text AS entity_avatar_url
 FROM follows f
 WHERE f.follower_id = @follower_id AND f.entity_type = @entity_type
 ORDER BY f.created_at DESC

@@ -1,4 +1,7 @@
 <script lang="ts">
+	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §11 — Contents tab:
+	// the member content manager lives here (moved from /dashboard/content,
+	// which now redirects to /studio/contents).
 	import { Dialog } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -8,7 +11,7 @@
 	import { api } from '$lib/api/client';
 	import { publishContent, archiveContent, deleteContent } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import { buildContentQuery } from '$lib/components/hub/dashboard/contentQuery';
+	import { buildContentQuery } from '$lib/studio/contentQuery';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
@@ -106,17 +109,17 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 
 	function switchTab(key: string) {
 		const params = filterParams(key === 'published' ? { status: undefined } : { status: key });
-		goto(`/dashboard/content?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/studio/contents?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
 	function setType(type: string) {
 		const params = filterParams({ type: type || undefined });
-		goto(`/dashboard/content?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/studio/contents?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
 	function setSort(sort: string) {
 		const params = filterParams({ sort: sort || undefined });
-		goto(`/dashboard/content?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/studio/contents?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
 	// Debounced search — update the ?q= query param 350ms after the user
@@ -126,7 +129,7 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 		if (searchTimer) clearTimeout(searchTimer);
 		searchTimer = setTimeout(() => {
 			const params = filterParams({ q: value || undefined });
-			goto(`/dashboard/content?${params.toString()}`, { keepFocus: true, noScroll: true });
+			goto(`/studio/contents?${params.toString()}`, { keepFocus: true, noScroll: true });
 		}, 350);
 	}
 
@@ -245,10 +248,6 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 </script>
 
 <section class="space-y-4">
-	<header>
-		<h1 class="text-lg font-medium text-[var(--color-text)]">{t('dashboard.nav.content')}</h1>
-	</header>
-
 	{#if actionError}
 		<div
 			class="flex items-center justify-between gap-3 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500"
