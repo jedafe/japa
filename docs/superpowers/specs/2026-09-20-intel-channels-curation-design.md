@@ -29,6 +29,7 @@ The intelligence spine (`fetch → detect_changes → extract → dedup → prom
 6. **`source_type` becomes non-user-facing.** The propose form drops it; the backend derives it from `source_kind` + detected methods. The column stays for descriptive/backcompat use.
 7. **`intel_sources.category` stays** for backward compat (first selected category); `categories[]` is the real multi-select axis.
 8. **Push methods are never scheduled.** `email` and `webhook` channels ingest via inbound endpoints writing `intel_inbound_events`; `ListDueChannels` excludes them.
+9. **A relevance gate filters per-item topicality.** Multi-niche sources (NYT, Nairaland) only yield records matching JapaConnect's domain (migration, travel, study-abroad, jobs, scholarships, settlement). Off-topic items are recorded as `off_topic` — never extracted, never promoted.
 
 ---
 
@@ -70,6 +71,10 @@ CREATE TABLE intel_source_channels (
   enabled              boolean NOT NULL DEFAULT true,
   origin               text NOT NULL DEFAULT 'probe'
                          CHECK (origin IN ('probe','admin','user')),
+  relevance_mode       text NOT NULL DEFAULT 'filtered'
+                         CHECK (relevance_mode IN ('open','filtered','custom')),
+  relevance_topics     text[] NOT NULL DEFAULT '{}',
+  relevance_url_patterns text[] NOT NULL DEFAULT '{}',  -- e.g. nairaland.com/travel/*
   last_crawled_at      timestamptz,
   last_success_at      timestamptz,
   last_error_at        timestamptz,
@@ -83,6 +88,8 @@ CREATE TABLE intel_source_channels (
 ```
 
 `intel_raw_documents.channel_id uuid NULL REFERENCES intel_source_channels(id)` added — raw docs trace to the producing channel.
+
+`intel_records.status` CHECK extended with `'off_topic'` — filtered items are still recorded (with their stable `external_key`) so re-crawls dedupe against the verdict instead of re-evaluating, and the review UI can show what was filtered and why.
 
 Existing sources get one backfilled channel each (`entry_url = source_url`, `crawl_method`, `crawl_frequency_mins`, entity_types derived from category via the map, `origin='admin'`). Source-level `crawl_method`/`crawl_frequency*` remain as defaults new channels inherit.
 
@@ -166,14 +173,22 @@ type ChannelProposal struct {
 
 ```json
 {
-  "job":        {"entity_types": ["job"],          "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract"},
-  "news":       {"entity_types": ["news_article"],  "methods": ["rss","jsonld","render","static"],         "pipeline": "curate"},
-  "blog":       {"entity_types": ["article"],       "methods": ["rss","render","static"],                  "pipeline": "curate"},
-  "event":      {"entity_types": ["event"],         "methods": ["ical","jsonld"],                          "pipeline": "curate"},
-  "scholarship":{"entity_types": ["scholarship"],   "methods": ["rss","jsonld","render","static"],         "pipeline": "extract"},
-  "visa":       {"entity_types": ["visa"],          "methods": ["static","pdf","render"],                  "pipeline": "extract"},
-  "dataset":    {"entity_types": ["dataset"],       "methods": ["tabular","git","api"],                    "pipeline": "curate"},
-  "video":      {"entity_types": ["video"],         "methods": ["channel_sync"],                           "pipeline": "curate"}
+  "job":        {"entity_types": ["job"],          "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
+                 "topics": ["job","hiring","vacancy","career","remote work","recruitment"]},
+  "news":       {"entity_types": ["news_article"],  "methods": ["rss","jsonld","render","static"],         "pipeline": "curate",
+                 "topics": ["migration","immigration","japa","diaspora","visa","relocation","travel"]},
+  "blog":       {"entity_types": ["article"],       "methods": ["rss","render","static"],                  "pipeline": "curate",
+                 "topics": ["japa","relocation","study abroad","settlement","expat","diaspora"]},
+  "event":      {"entity_types": ["event"],         "methods": ["ical","jsonld"],                          "pipeline": "curate",
+                 "topics": ["webinar","fair","embassy","orientation","deadline"]},
+  "scholarship":{"entity_types": ["scholarship"],   "methods": ["rss","jsonld","render","static"],         "pipeline": "extract",
+                 "topics": ["scholarship","grant","fellowship","funding","tuition waiver","bursary"]},
+  "visa":       {"entity_types": ["visa"],          "methods": ["static","pdf","render"],                  "pipeline": "extract",
+                 "topics": ["visa","immigration","embassy","residence permit","asylum","border"]},
+  "dataset":    {"entity_types": ["dataset"],       "methods": ["tabular","git","api"],                    "pipeline": "curate",
+                 "topics": ["exchange rate","processing time","visa fee","tuition"]},
+  "video":      {"entity_types": ["video"],         "methods": ["channel_sync"],                           "pipeline": "curate",
+                 "topics": ["japa","relocation","study abroad","visa"]}
 }
 ```
 
@@ -240,6 +255,23 @@ fetch_channel → detect_changes → ┌ extract (LLM)    → intel_records
 - `trust_level ≥ 3` → `intel_records` `extracted` → dedup → review queue → promote on approval.
 - LLM `extract` pipelines always go through `intel_records` (confidence machinery).
 
+### Relevance gate (per-item topicality)
+
+Multi-niche sources (NYT, Nairaland) publish content far outside JapaConnect's domain. The relevance gate runs **per item** — on feed items, JSON-LD blocks, sitemap URLs, social posts — *before* records are created, so off-topic items never consume extraction tokens or review attention.
+
+Evaluation order per item (title + summary + url):
+
+1. **`relevance_url_patterns`** — glob match on the item URL (e.g. `nairaland.com/travel/*`); match → `on_topic` immediately.
+2. **Deterministic topic matcher** — keyword/phrase scoring against `channel.relevance_topics`, seeded from `intel.category_method_map.<category>.topics` (e.g. `job` → `["job","hiring","vacancy","career","remote work"]`, `visa` → `["visa","immigration","embassy","residence permit"]`, plus platform-level japa vocabulary: `relocation`, `study abroad`, `scholarship`, `asylum`, `diaspora`, `NYSC`…). Score ≥ threshold → `on_topic`; far below → `off_topic`.
+3. **Classifier fallback (borderline band only)** — items between thresholds go to a cheap classification call through the existing §20 AI gateway (`category="classification"`): "is this item about migration/relocation/travel/study-abroad/jobs/scholarships/settlement?" Bounded by `intel.relevance.classifier_enabled` + `intel.relevance.borderline_rate_cap` so classification spend stays small. Verdicts cached under `jc:intel:relevance:verdict:{item_hash}` (7d).
+
+**Modes** (`channel.relevance_mode`):
+- `filtered` (default) — deterministic + classifier; off-topic items → `intel_records` status `off_topic`.
+- `open` — everything passes (dedicated niche sources like a scholarship blog).
+- `custom` — only `relevance_topics`/`relevance_url_patterns` set explicitly on the channel are used (ignores category-derived topics).
+
+Single-page `extract` channels (a visa-rules page on a gov domain) are effectively `open` — the page itself is the topic; item-level gating mainly applies to list-producing methods (`rss`, `jsonld`, `sitemap`, `social`, `tabular`, `search`).
+
 **Contract:** `channel.entity_types[]` is the single source of truth for which schema validates each record. `intel_records.external_key` = stable per-item key (feed GUID, JSON-LD `identifier`/URL, ICS UID, row hash) so re-crawls dedupe and editorial overrides keep winning.
 
 ---
@@ -256,7 +288,7 @@ fetch_channel → detect_changes → ┌ extract (LLM)    → intel_records
 ### Control form (`apps/control` — `SourceForm`)
 
 - Same `source_kind` + multi-category inputs; admin keeps crawl-method override.
-- New channels editor on source detail: list/add/edit/disable/crawl-now per channel; "Re-probe" enqueues `intel:probe_verify`.
+- New channels editor on source detail: list/add/edit/disable/crawl-now per channel; per-channel relevance controls (`relevance_mode`, topics, URL patterns); "Re-probe" enqueues `intel:probe_verify`.
 - Proposal review shows `probe_report` + proposed channels with per-channel approve/edit/reject.
 
 ### Endpoints
@@ -309,6 +341,7 @@ POST   /api/v1/intel/inbound/websub/:channel_id    — WebSub push delivery
 | `jc:intel:websub:lease:{channel_id}` | lease lifetime | WebSub subscription state |
 | `jc:intel:inbound:idem:{hash}` | 24h | inbound idempotency |
 | `jc:intel:render:circuit` | 5m | render-service circuit breaker |
+| `jc:intel:relevance:verdict:{item_hash}` | 7d | cached relevance verdict per item |
 | `jc:intel:effective_interval::{channel_id}` | 7d | volatility tuner → channel granularity |
 
 ### System settings
@@ -324,6 +357,10 @@ intel.email.allowed_senders        jsonb
 intel.probe.max_requests           int     preview request budget (default 5)
 intel.probe.rate_limit_per_hr      int     per-user (default 20)
 intel.curate.auto_publish_trust_max int    trust ceiling for direct publish (default 2)
+intel.relevance.classifier_enabled bool    borderline-band LLM classification (default true)
+intel.relevance.borderline_rate_cap int    max classifier calls per channel per crawl (default 50)
+intel.relevance.on_topic_threshold   float deterministic-match threshold
+intel.relevance.off_topic_threshold  float deterministic-reject threshold
 intel.social.enabled_providers     jsonb
 ```
 
@@ -348,7 +385,7 @@ intel.social.enabled_providers     jsonb
 
 ### Testing
 
-- **Unit**: detectors (fixture HTML/feed/ics/csv in `testdata/`), curators (deterministic record assertions), category→method resolution, trust gate, channel bookkeeping.
+- **Unit**: detectors (fixture HTML/feed/ics/csv in `testdata/`), curators (deterministic record assertions), category→method resolution, trust gate, relevance gate (URL patterns, deterministic scorer, borderline classifier routing, `off_topic` status + dedup on re-crawl), channel bookkeeping.
 - **Integration**: propose→probe→approve→channels flow; `fetch→detect→curate→promote` against `httptest` fixtures; per-channel circuit breaker; hybrid LLM fallback only for incomplete records.
 - **Handlers**: RBAC denial per new node; probe rate-limit + SSRF rejection (private IPs, `file://`); email signature verification; WebSub challenge.
 - **Regression**: existing sources crawl identically post-backfill.
