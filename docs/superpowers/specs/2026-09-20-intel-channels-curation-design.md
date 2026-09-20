@@ -175,7 +175,7 @@ type ChannelProposal struct {
 {
   "job":        {"entity_types": ["job"],          "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
                  "topics": ["job","hiring","vacancy","career","remote work","recruitment"]},
-  "news":       {"entity_types": ["news_article"],  "methods": ["rss","jsonld","render","static"],         "pipeline": "curate",
+  "news":       {"entity_types": ["news"],          "methods": ["rss","jsonld","render","static"],         "pipeline": "curate",
                  "topics": ["migration","immigration","japa","diaspora","visa","relocation","travel"]},
   "blog":       {"entity_types": ["article"],       "methods": ["rss","render","static"],                  "pipeline": "curate",
                  "topics": ["japa","relocation","study abroad","settlement","expat","diaspora"]},
@@ -187,10 +187,12 @@ type ChannelProposal struct {
                  "topics": ["visa","immigration","embassy","residence permit","asylum","border"]},
   "dataset":    {"entity_types": ["dataset"],       "methods": ["tabular","git","api"],                    "pipeline": "curate",
                  "topics": ["exchange rate","processing time","visa fee","tuition"]},
-  "video":      {"entity_types": ["video"],         "methods": ["channel_sync"],                           "pipeline": "curate",
+  "video":      {"entity_types": [],                "methods": ["channel_sync"],                           "pipeline": "curate",
                  "topics": ["japa","relocation","study abroad","visa"]}
 }
 ```
+
+Entity types are `schemas` registry keys: `news` exists; `article`, `event`, and `dataset` are **new curate-only schemas** registered in the extractor registry (no prompt template — they never reach `Extract`; `hybrid` fallback for them routes to `news` schema or review). The `video` category is special: `channel_sync` is not an intel crawl method — video-category submissions route to the existing §106 `video_channel` source flow (`video:sync_channels` owns ingestion) rather than producing `intel_source_channels` rows.
 
 The probe intersects detected capabilities × selected categories to rank channel proposals.
 
@@ -257,7 +259,7 @@ fetch_channel → detect_changes → ┌ extract (LLM)    → intel_records
 
 ### Relevance gate (per-item topicality)
 
-Multi-niche sources (NYT, Nairaland) publish content far outside JapaConnect's domain. The relevance gate runs **per item** — on feed items, JSON-LD blocks, sitemap URLs, social posts — *before* records are created, so off-topic items never consume extraction tokens or review attention.
+Multi-niche sources (NYT, Nairaland) publish content far outside JapaConnect's domain. The relevance gate runs **per item** — on feed items, JSON-LD blocks, sitemap URLs, social posts — so off-topic items never consume extraction tokens or review attention. Placement differs by pipeline: **itemized channels** (`curate`, and `hybrid`'s curate phase) gate each item *before* it becomes a record; **page-level `extract` channels** send the whole body to the LLM once and gate each *extracted record* afterward on its title/summary fields (the extraction cost is per-page, not per-record, so nothing is wasted).
 
 Evaluation order per item (title + summary + url):
 
