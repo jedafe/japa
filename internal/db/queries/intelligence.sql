@@ -110,7 +110,7 @@ WHERE id = $1
 RETURNING *;
 
 -- name: CreateIntelRawDocument :one
-INSERT INTO intel_raw_documents (source_id, url, http_status, http_headers, content_type, body, content_hash) VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO intel_raw_documents (source_id, url, http_status, http_headers, content_type, body, content_hash, channel_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
 RETURNING *;
 
