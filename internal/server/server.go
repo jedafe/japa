@@ -82,6 +82,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	intel_fetcher "github.com/jedafe/japa/internal/intelligence/fetcher"
 	intel_handlers "github.com/jedafe/japa/internal/intelligence/handlers"
+	intel_probe "github.com/jedafe/japa/internal/intelligence/probe"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
 	"github.com/jedafe/japa/internal/intelligence/scheduler"
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -2255,6 +2256,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelHandlers.SetContentStore(contentService)
 	intelHandlers.SetReportService(reportsService)
 	intelHandlers.SetTagService(tagsService)
+	// Intel-channels §2 preview probe: POST /sources/probe. The prober's
+	// outbound client is the fetcher safetransport (redirect SSRF guard +
+	// shared pool); the handler adds an entry-URL private-IP check and a
+	// per-user Valkey quota (jc:intel:probe_quota:{user_id}, 1h window).
+	intelHandlers.SetValkey(vkClient.Redis())
+	intelHandlers.SetProber(intel_probe.NewProber(
+		intel_fetcher.NewSafeClient(10*time.Second, 0),
+		settingsService.GetIntOr(context.Background(), "intel.probe.max_requests", intel_probe.DefaultMaxRequests),
+	))
 	worker.RegisterVideoImportProcessor(videoService)
 	worker.RegisterVideoSummaryProcessor(videoService)
 	worker.RegisterVideoChannelSyncer(videoService)
@@ -6335,6 +6345,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/sources/{slug}/items", intelHandlers.HandleListSourceItems)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/propose", intelHandlers.HandleProposeSource)
+			// Live preview probe for the propose form — authenticated and
+			// per-user rate-limited inside the handler (intel-channels §2).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/sources/probe", intelHandlers.HandleProbeSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).

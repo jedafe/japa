@@ -59,13 +59,21 @@ var sourceSortOptions = []sourceOption{
 // by (?source_kind=). They describe WHO publishes the source — distinct from
 // source_types (rss/video/api/static), which describe the crawl mechanism
 // and are only meaningful on the proposal form. Values must stay in sync with
-// the intel_sources.source_kind CHECK constraint. Ref: sources directory v2
-// design (2026-09-11-sources-directory-design.md).
+// the intel_sources.source_kind CHECK constraint — the 10-kind set from the
+// intel-channels expansion (migration 000681; sources.SourceKind.IsValid).
+// Ref: sources directory v2 design (2026-09-11-sources-directory-design.md),
+// intel-channels curation design §1 (2026-09-20-intel-channels-curation-design.md).
 var sourceKindOptions = []sourceOption{
-	{Value: "publisher", Label: "Publisher"},
-	{Value: "institution", Label: "Institution"},
-	{Value: "individual", Label: "Individual"},
-	{Value: "aggregator", Label: "Aggregator"},
+	{Value: string(sources.SourceKindPublisher), Label: "Publisher"},
+	{Value: string(sources.SourceKindInstitution), Label: "Institution"},
+	{Value: string(sources.SourceKindIndividual), Label: "Individual"},
+	{Value: string(sources.SourceKindAggregator), Label: "Aggregator"},
+	{Value: string(sources.SourceKindChannelProfile), Label: "Channel or profile"},
+	{Value: string(sources.SourceKindInstitutionSite), Label: "Institution site"},
+	{Value: string(sources.SourceKindPersonalBlog), Label: "Personal blog"},
+	{Value: string(sources.SourceKindJobBoard), Label: "Job board"},
+	{Value: string(sources.SourceKindGovPortal), Label: "Government portal"},
+	{Value: string(sources.SourceKindCommunity), Label: "Community"},
 }
 
 // sourceItemSortOptions are the sorts exposed by a source's item feed.
@@ -709,12 +717,26 @@ type proposeSourceRequest struct {
 func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
+			// categories is the curated proposal catalog — extended with the
+			// intel-channels categories (blog, event, dataset, announcement,
+			// scam_alert) so the propose form can offer multi-category
+			// selection (categories[] on the source row; spec §6).
 			"categories": []string{
 				"scholarship", "job", "visa", "remittance", "news",
 				"cost_of_living", "university", "video", "organization", "people",
+				"blog", "event", "dataset", "announcement", "scam_alert",
 			},
 			"source_types": []string{"rss", "video", "api", "static"},
 			"source_kinds": sourceKindOptions,
+			// channel_pipelines is the intel_source_channels.pipeline CHECK
+			// set (migration 000681) — extract sends pages to the LLM
+			// extractor, curate promotes itemized records directly, hybrid
+			// runs curate per item + extract per page.
+			"channel_pipelines": []string{
+				string(sources.PipelineExtract),
+				string(sources.PipelineCurate),
+				string(sources.PipelineHybrid),
+			},
 			"entity_types": sourceItemEntityTypes,
 			// admin_* fields carry the canonical option sets for the control
 			// panel's source form (Rule 16) — the public 'categories' list
