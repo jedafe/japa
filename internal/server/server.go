@@ -1986,6 +1986,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelSourcesService.SetMetadataQueue(func(ctx context.Context, sourceID sources.SourceID) error {
 		return taskEnqueuer.EnqueueSourceMetadata(sourceID.String())
 	})
+	// intel-channels §2: approving a proposed source enqueues the deep
+	// verify probe (intel:probe_verify) which materializes its channels.
+	intelSourcesService.SetProbeQueue(func(ctx context.Context, sourceID sources.SourceID) error {
+		return taskEnqueuer.EnqueueIntelProbeVerify(sourceID.String())
+	})
 	agentDeps.IntelSourceManager = intelSourcesService
 	jceService.SetSourceRegistry(intelSourcesService)
 	orgService.SetSourceManager(intelSourcesService)
@@ -2154,6 +2159,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		intel_fetcher.NewComposite(), // composite fetcher: dispatches by crawl_method (BUG-008 fix)
 		intelPreflightChecker,        // pre-flight: crawl lock, rate limit, robots.txt (INTEL-001/006 fix)
 		asynqClient,
+		// intel-channels §2 verify prober for intel:probe_verify — same
+		// safetransport client as the preview prober, larger request
+		// budget (sitemap walk + category-path probes + feed re-checks).
+		intel_probe.NewProber(
+			intel_fetcher.NewSafeClient(10*time.Second, 0),
+			settingsService.GetIntOr(context.Background(), "intel.probe.verify_max_requests", intel_probe.DefaultVerifyMaxRequests),
+		),
 	)
 
 	// ADR-076 Amendment 1: wire the Studio auto-promote port so

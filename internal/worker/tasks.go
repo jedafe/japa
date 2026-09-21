@@ -136,6 +136,7 @@ const (
 	TypeIntelRefreshFreshness  = "intel:refresh_freshness"   // low (daily cron)
 	TypeIntelRetryFailedSource = "intel:retry_failed_source" // default
 	TypeIntelSourceMetadata    = "intel:source_metadata"     // default
+	TypeIntelProbeVerify       = "intel:probe_verify"        // default
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -306,6 +307,7 @@ var handlerRegistry = []struct {
 	{TypeIntelRefreshFreshness, HandleIntelRefreshFreshness},
 	{TypeIntelRetryFailedSource, HandleIntelRetryFailedSource},
 	{TypeIntelSourceMetadata, HandleSourceMetadata},
+	{TypeIntelProbeVerify, HandleIntelProbeVerify},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

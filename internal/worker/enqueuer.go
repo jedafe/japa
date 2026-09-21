@@ -120,6 +120,10 @@ func taskDefaults(taskType string) []asynq.Option {
 	// oEmbed) across a batch of sources — generous timeout, few retries.
 	case TypeVideoSyncChannels:
 		opts = append(opts, asynq.Timeout(10*time.Minute), asynq.MaxRetry(3))
+	// Verify probe: bounded external fetches (up to
+	// intel.probe.verify_max_requests) plus channel materialization.
+	case TypeIntelProbeVerify:
+		opts = append(opts, asynq.Timeout(5*time.Minute), asynq.MaxRetry(2))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -212,6 +216,8 @@ var taskTier = func() map[string]string {
 		TypeIntelRetryFailedSource,
 		// §INTEL — source metadata enrichment, default tier.
 		TypeIntelSourceMetadata,
+		// §intel-channels — deep verify probe on approval, default tier.
+		TypeIntelProbeVerify,
 	} {
 		m[t] = QueueDefault
 	}
@@ -382,6 +388,7 @@ var taskTypeCatalog = []struct {
 	{TypeIntelNotifyDiscoveries, "default", "Fan-out discovery notifications to country space followers"},
 	{TypeIntelRetryFailedSource, "default", "Manual retry trigger for a failed intelligence source"},
 	{TypeIntelSourceMetadata, "default", "Fetch and store public-site metadata for a source"},
+	{TypeIntelProbeVerify, "default", "Deep verify probe for an approved intel source; writes probe_report and materializes channels"},
 	// Low tier
 	{TypeDigestEmail, "low", "Send digest email"},
 	{TypeSitemapGenerate, "low", "Generate sitemap XML"},

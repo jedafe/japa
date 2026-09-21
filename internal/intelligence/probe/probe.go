@@ -90,6 +90,14 @@ func NewProber(client *http.Client, maxRequests int) *Prober {
 // NOT abort — URL/host-level detection (platform signatures) still runs and
 // the status is recorded as a warning.
 func (p *Prober) Preview(ctx context.Context, rawURL, kind string, categories []string) (Report, error) {
+	return p.run(ctx, rawURL, kind, categories, p.maxRequests, nil)
+}
+
+// run is the shared probe driver behind Preview and Verify: validate the
+// entry URL, seed the run state with the request budget, fetch entry +
+// robots.txt, run the detector set, then let an optional deep pass (verify)
+// spend the remaining budget before finalize ranks the proposals.
+func (p *Prober) run(ctx context.Context, rawURL, kind string, categories []string, budget int, deep func(context.Context, *runState, *FetchedPage, *Report)) (Report, error) {
 	if p.client == nil {
 		return Report{}, fmt.Errorf("probe: %w: http client (inject fetcher.NewSafeClient)", errpkg.ErrRequired)
 	}
@@ -100,11 +108,12 @@ func (p *Prober) Preview(ctx context.Context, rawURL, kind string, categories []
 	}
 
 	run := &runState{
-		client:   p.client,
-		kind:     kind,
-		resolved: sources.ResolveCategoryMap(nil, categories),
+		client:     p.client,
+		kind:       kind,
+		categories: categories,
+		resolved:   sources.ResolveCategoryMap(nil, categories),
 	}
-	run.budget.Store(int64(p.maxRequests))
+	run.budget.Store(int64(budget))
 
 	report := Report{
 		Robots:   RobotVerdict{Allowed: true},
@@ -116,6 +125,9 @@ func (p *Prober) Preview(ctx context.Context, rawURL, kind string, categories []
 	if err != nil {
 		return Report{}, fmt.Errorf("probe: fetch %q: %w", entryURL, err)
 	}
+
+	run.markFetched(entryURL)
+	run.markFetched(page.FinalURL)
 
 	report.FinalURL = page.FinalURL
 	if !page.OK() {
@@ -135,6 +147,10 @@ func (p *Prober) Preview(ctx context.Context, rawURL, kind string, categories []
 		platformDetector{}.Detect(ctx, page, &report)
 	}
 
+	if deep != nil {
+		deep(ctx, run, page, &report)
+	}
+
 	run.finalize(&report, page)
 
 	return report, nil
@@ -142,14 +158,21 @@ func (p *Prober) Preview(ctx context.Context, rawURL, kind string, categories []
 
 // runState carries per-probe shared state: the injected client, the
 // remaining request budget (atomic so detectors may run concurrently), the
-// submitter's source_kind hint, and the resolved category→method map used
-// to rank and filter proposals.
+// submitter's source_kind hint, the selected categories (verify uses them
+// for per-category discovery-path probing), and the resolved
+// category→method map used to rank and filter proposals.
 type runState struct {
-	client   *http.Client
-	budget   atomic.Int64
-	kind     string
-	resolved sources.ResolvedMap
+	client     *http.Client
+	budget     atomic.Int64
+	kind       string
+	categories []string
+	resolved   sources.ResolvedMap
 
+	// fetchedPages tracks page URLs already run through detectors so the
+	// verify deep pass does not re-fetch a URL it already analyzed (e.g. a
+	// category path also listed in the sitemap). Detectors run
+	// sequentially, so a plain map suffices.
+	fetchedPages map[string]bool
 	warnedBudget atomic.Bool
 }
 
@@ -165,6 +188,29 @@ func (r *runState) spend() bool {
 			return true
 		}
 	}
+}
+
+// markFetched records a page URL as already detector-analyzed; returns
+// true when it was already marked. wasFetched is the non-mutating check
+// the verify loops use to skip already-analyzed URLs before spending
+// budget on a re-fetch.
+func (r *runState) markFetched(u string) bool {
+	if r.fetchedPages == nil {
+		r.fetchedPages = map[string]bool{}
+	}
+
+	if r.fetchedPages[u] {
+		return true
+	}
+
+	r.fetchedPages[u] = true
+
+	return false
+}
+
+// wasFetched reports whether a page URL was already detector-analyzed.
+func (r *runState) wasFetched(u string) bool {
+	return r.fetchedPages[u]
 }
 
 // noteBudget records the budget-exhaustion warning once per run.

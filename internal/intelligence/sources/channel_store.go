@@ -21,7 +21,22 @@ import (
 // CreateChannel inserts a new intel_source_channels row. A
 // UNIQUE(source_id, entry_url, entity_types) collision maps to
 // errpkg.ErrAlreadyExists.
+//
+// entity_types, relevance_topics, and relevance_url_patterns are
+// text[] NOT NULL DEFAULT '{}' — a nil slice binds SQL NULL, overrides the
+// default, and violates the constraint (SQLSTATE 23502). Normalize here so
+// direct store callers (not just Service.CreateChannel) insert cleanly.
 func (s *Store) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceChannelParams) (Channel, error) {
+	if arg.EntityTypes == nil {
+		arg.EntityTypes = []string{}
+	}
+	if arg.RelevanceTopics == nil {
+		arg.RelevanceTopics = []string{}
+	}
+	if arg.RelevanceUrlPatterns == nil {
+		arg.RelevanceUrlPatterns = []string{}
+	}
+
 	row, err := s.queries.CreateIntelSourceChannel(ctx, arg)
 	if err != nil {
 		var pgErr *pgconn.PgError

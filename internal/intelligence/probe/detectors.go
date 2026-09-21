@@ -20,8 +20,11 @@ import (
 // feedDetector discovers RSS/Atom/JSON feeds: the entry document itself when
 // it is a feed, <link rel="alternate"> tags in the page head, and — when no
 // link was found and budget remains — HEAD probes of common feed paths.
+// noPathProbe disables the common-path HEAD probing (verify sub-pages only
+// scan the document — the category/discovery paths are GET-probed directly).
 type feedDetector struct {
-	run *runState
+	run         *runState
+	noPathProbe bool
 }
 
 // feedLinkTypes maps <link rel="alternate"> type attributes to feed labels.
@@ -73,7 +76,7 @@ func (d *feedDetector) Detect(ctx context.Context, page *FetchedPage, out *Repor
 
 	// Guess common feed paths only when the page declared none — discovered
 	// links are authoritative and probing would just burn budget.
-	if len(out.FeedURLs) == 0 {
+	if len(out.FeedURLs) == 0 && !d.noPathProbe {
 		d.probeCommonPaths(ctx, page, out)
 	}
 }
