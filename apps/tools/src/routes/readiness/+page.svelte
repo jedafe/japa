@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { buildSeoMeta } from '$lib/seo';
+	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -351,9 +351,9 @@
 	/** Resolve a roadmap step's content_slug into a platform link. */
 	function stepHref(slug?: string): string | null {
 		if (!slug) return null;
-		// Content slugs are relative to the main app origin; link absolutely.
+		// Content slugs live on the main app origin; link absolutely.
 		if (slug.startsWith('http')) return slug;
-		return `/content/${slug}`;
+		return mainAppUrl(`/content/${slug}`);
 	}
 </script>
 
@@ -510,7 +510,7 @@
 									{i + 1}
 								</div>
 								<div class="flex-1">
-									<a href="/content/{item.slug}" class="text-sm font-semibold text-text hover:text-primary">
+									<a href={mainAppUrl(`/content/${item.slug}`)} class="text-sm font-semibold text-text hover:text-primary">
 										{item.title}
 									</a>
 									{#if item.excerpt}
@@ -534,7 +534,7 @@
 										{/if}
 									</div>
 									<a
-										href="/content/{item.slug}"
+										href={mainAppUrl(`/content/${item.slug}`)}
 										class="mt-2 inline-block text-xs text-primary hover:text-primary-hover underline"
 									>
 										{t('readiness.read_more', 'Read more')}

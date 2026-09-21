@@ -18,7 +18,7 @@
 	import SearchLauncher from './SearchLauncher.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import AdSlot from './AdSlot.svelte';
-	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
+	import { sanitizeSidebarHtml, safeHref, resolveMenuHref } from '$lib/utils/safeHtml';
 	import { env } from '$env/dynamic/public';
 	import type { SessionUser } from '$lib/types';
 
@@ -86,7 +86,11 @@
 	// than a full window.location reload.
 	function switchLanguage(lang: string) {
 		document.cookie = `jc_locale=${lang}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-		goto(localeHref(lang));
+		// invalidateAll forces a load re-run even when the target URL equals
+		// the current one — switching back to the default language strips the
+		// prefix, producing a same-URL navigation that would otherwise leave
+		// the previous locale rendered.
+		goto(localeHref(lang), { invalidateAll: true });
 	}
 
 	// lucide icon lookup for admin-configured icon names (metric_card.icon,
@@ -278,7 +282,7 @@
 	{@const ctaVariant = String(widgetProps.variant ?? 'primary').toLowerCase()}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<a
-			href={safeHref(typeof widgetProps.url === 'string' ? widgetProps.url : `${mainOrigin}/signup`) || `${mainOrigin}/signup`}
+			href={resolveMenuHref(typeof widgetProps.url === 'string' ? widgetProps.url : '', mainOrigin) || `${mainOrigin}/signup`}
 			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold transition-colors {ctaVariant === 'secondary'
 				? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)] hover:bg-[var(--color-border)]'
 				: ctaVariant === 'outline'

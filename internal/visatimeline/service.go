@@ -116,6 +116,7 @@ type Service struct {
 	store    *Store
 	settings *config.Settings
 	notifier Notifier
+	checker  FeatureChecker
 }
 
 // NewService creates a visa-timeline service.
@@ -128,9 +129,24 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // planninggroups.WithNotifier pattern (§82).
 func (s *Service) WithNotifier(n Notifier) *Service { s.notifier = n; return s }
 
-// Enabled reads the visa_timeline.enabled system_setting toggle (§83 feature
-// flag).
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for reachability (Ref: internal/features/features.go).
+// system_settings is consulted only as a fallback when no checker is injected.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table instead of drifting against system_settings.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the visa_timeline.enabled flag (§83). Prefers the injected
+// FeatureChecker; falls back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "visa_timeline.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}
@@ -287,6 +303,23 @@ var milestoneOrder = map[string]int{
 // (§83 Privacy & Anti-Gaming: implausible sequences are flagged).
 var ErrImplausibleSequence = errors.New("implausible milestone sequence")
 
+// parseOccurredAt parses the API's documented RFC 3339 timestamp format
+// (AddMilestoneInput.OccurredAt). pgtype.Timestamptz.Scan expects the
+// Postgres text format and rejects RFC 3339, so it must not be used for
+// request parsing. A bare date (YYYY-MM-DD, e.g. from HTML date inputs) is
+// accepted as a convenience and interpreted as UTC midnight.
+func parseOccurredAt(s string) (pgtype.Timestamptz, error) {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		t, err = time.Parse("2006-01-02", s)
+		if err != nil {
+			return pgtype.Timestamptz{}, err
+		}
+	}
+
+	return pgtype.Timestamptz{Time: t, Valid: true}, nil
+}
+
 // AddMilestone appends a milestone to a timeline owned by the authenticated
 // user. Ownership is verified against the stored user_id. Implausible
 // milestone sequences (e.g. decision before applied, or a date that precedes
@@ -311,9 +344,12 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, userID pgtype.UU
 
 	var occurredAt pgtype.Timestamptz
 	if input.OccurredAt != "" {
-		if err := occurredAt.Scan(input.OccurredAt); err != nil {
+		ts, err := parseOccurredAt(input.OccurredAt)
+		if err != nil {
 			return MilestoneDTO{}, fmt.Errorf("invalid occurred_at: %w", err)
 		}
+
+		occurredAt = ts
 	}
 
 	// Implausible-sequence check (§83 Privacy & Anti-Gaming). Fetch
@@ -401,9 +437,12 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, 
 	if input.OccurredAt != nil {
 		var ts pgtype.Timestamptz
 		if *input.OccurredAt != "" {
-			if err := ts.Scan(*input.OccurredAt); err != nil {
+			parsed, err := parseOccurredAt(*input.OccurredAt)
+			if err != nil {
 				return fmt.Errorf("invalid occurred_at: %w", err)
 			}
+
+			ts = parsed
 		}
 
 		storeInput.OccurredAt = &ts

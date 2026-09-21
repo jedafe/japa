@@ -35,8 +35,10 @@ export const load: PageServerLoad = async (event) => {
 	let maxKeys = 5;
 	try {
 		const settings = await apiGet<Record<string, unknown>>(ctx, '/site/settings/public');
-		const v = settings['api.keys.max_per_user'];
-		if (typeof v === 'number') maxKeys = v;
+		// system_settings stores values as JSON — int settings can arrive as a
+		// quoted string ("5") depending on how they were written, so accept both.
+		const v = Number(settings['api.keys.max_per_user']);
+		if (Number.isInteger(v) && v > 0) maxKeys = v;
 	} catch {
 		// keep default
 	}

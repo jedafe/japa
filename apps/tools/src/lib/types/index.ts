@@ -29,7 +29,7 @@ export type ToolSurface =
 	| 'visa-routes'
 	| 'embassy-alerter'
 	| 'arrival-checklist'
-	| 'processing-tracker'
+	| 'processing-times'
 	| 'credential-checker'
 	| 'cv-formatter'
 	| 'housing-guide'
@@ -462,12 +462,31 @@ export interface ChatSource {
 	tier: 1 | 2;
 }
 
-export interface ChatConversation {
+/**
+ * Conversation summary returned by GET /ai/conversations. The list endpoint
+ * intentionally omits messages (BUG-005) — fetch /ai/conversations/{id} for
+ * the full turn history.
+ */
+export interface ChatConversationSummary {
+	conversation_id: string;
+	preview: string;
+	turn_count: number;
+	last_entry_at: string;
+}
+
+/** Single Honcho context entry inside GET /ai/conversations/{id}. */
+export interface ChatContextEntry {
 	id: string;
-	title?: string | null;
+	user_id: string;
+	content: string;
+	metadata?: { role?: string; conversation_id?: string; [k: string]: unknown } | null;
 	created_at: string;
-	updated_at: string;
-	messages: ChatMessage[];
+}
+
+export interface ChatConversationDetail {
+	conversation_id: string;
+	entries: ChatContextEntry[];
+	turn_count: number;
 }
 
 export interface ChatResponse {
@@ -588,10 +607,37 @@ export interface ArrivalChecklistItem {
 	created_at: string;
 }
 
+/**
+ * GET /me/arrival-checklists/{guide_id} — same item fields plus the user's
+ * progress merged in (§92 progress persistence).
+ */
+export interface ArrivalChecklistUserItem extends ArrivalChecklistItem {
+	completed: boolean;
+	completed_at?: string | null;
+	notes?: string | null;
+}
+
+/**
+ * GET /me/arrival-checklists — a guide the user has progress on, with
+ * completion counts (§92 progress persistence).
+ */
+export interface UserArrivalChecklist {
+	guide_id: string;
+	destination_space_name?: string | null;
+	destination_space_code?: string | null;
+	visa_category?: string | null;
+	applicant_type: string;
+	total_items: number;
+	completed_items: number;
+	first_progress_at?: string | null;
+	last_progress_at?: string | null;
+}
+
 /* --- §93 Processing Time Tracker (reuses §83 Visa Timeline backend) --- */
 // GET /visa-timelines/stats, GET /visa-timelines/stats/trend
 
 export interface ProcessingStat {
+	id?: string;
 	origin_space_id?: string | null;
 	destination_space_id: string;
 	visa_category: string;
@@ -610,6 +656,33 @@ export interface ProcessingTrendPoint {
 	sample_count: number;
 	avg_days?: number | null;
 	median_days?: number | null;
+}
+
+/* --- §83 Visa Timeline Tracker — personal tracker (/me/visa-timelines) --- */
+
+export interface VisaTimelineMilestone {
+	id: string;
+	timeline_id: string;
+	milestone_type: string;
+	occurred_at: string;
+	notes?: string | null;
+	created_at: string;
+}
+
+export interface VisaTimeline {
+	id: string;
+	user_id: string;
+	origin_space_id?: string | null;
+	destination_space_id: string;
+	visa_category: string;
+	consulate?: string | null;
+	application_method?: string | null;
+	outcome?: string | null;
+	is_shared: boolean;
+	anonymised_at?: string | null;
+	created_at: string;
+	updated_at: string;
+	milestones?: VisaTimelineMilestone[] | null;
 }
 
 /* --- §94 Professional Credential Checker --- */
@@ -890,6 +963,8 @@ export interface CommunityOrg {
 	meeting_frequency?: string | null;
 	contact_info?: string | null;
 	japaconnect_space_id?: string | null;
+	/** Slug of the linked space — public space URLs are /spaces/{slug}. */
+	japaconnect_space_slug?: string | null;
 	japaconnect_org_id?: string | null;
 	claim_status: string;
 	is_verified: boolean;

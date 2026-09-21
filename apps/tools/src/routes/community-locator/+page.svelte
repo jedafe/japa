@@ -576,13 +576,13 @@
 											</span>
 										</div>
 
-									{#if org.claim_status === 'claimed' && org.japaconnect_space_id}
+									{#if org.claim_status === 'claimed' && org.japaconnect_space_slug}
 										<div class="pt-2 border-t border-border mt-2">
 											<p class="text-xs font-medium uppercase tracking-wider text-muted mb-1">
 												{t('community_locator.space_integration', 'JapaConnect Space')}
 											</p>
 											<a
-												href={`/spaces/${org.japaconnect_space_id}`}
+												href={mainAppUrl(`/spaces/${org.japaconnect_space_slug}`)}
 												class="inline-flex items-center gap-1.5 text-sm text-[var(--tool-accent)] hover:underline"
 											>
 												<Icon name="users" size={14} />

@@ -37,7 +37,10 @@ import type { ApiKeySummary } from '$lib/types';
 	// Copied prefix indicator
 	let copiedId = $state<string | null>(null);
 
-	let atLimit = $derived(data.keys.length >= data.maxKeys);
+	// The backend limit counts only active keys (internal/publicapi enforces
+	// api.keys.max_per_user against status='active') — revoked keys don't count.
+	let activeKeyCount = $derived(data.keys.filter((k) => k.status === 'active').length);
+	let atLimit = $derived(activeKeyCount >= data.maxKeys);
 
 	// Fallback scope descriptions for the help section (meta-tooling, not platform content — Ref: §47 ROADMAP 06.05)
 	// Unknown scopes still display — they just use the default description below.
@@ -163,10 +166,10 @@ import type { ApiKeySummary } from '$lib/types';
 			</button>
 			{#if atLimit}
 				<span class="limit-note">
-					{t('api.max_keys_reached', 'Maximum keys reached')} ({data.keys.length}/{data.maxKeys})
+					{t('api.max_keys_reached', 'Maximum keys reached')} ({activeKeyCount}/{data.maxKeys})
 				</span>
 			{:else}
-				<span class="limit-note">{data.keys.length}/{data.maxKeys}</span>
+				<span class="limit-note">{activeKeyCount}/{data.maxKeys}</span>
 			{/if}
 		</div>
 

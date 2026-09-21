@@ -156,10 +156,10 @@
 			</div>
 		{/if}
 
-		{#if org.japaconnect_space_id}
+		{#if org.japaconnect_space_slug}
 			<div class="pt-2 border-t border-border">
 				<a
-					href={mainAppUrl(`/spaces/${org.japaconnect_space_id}`)}
+					href={mainAppUrl(`/spaces/${org.japaconnect_space_slug}`)}
 					class="inline-flex items-center gap-1.5 text-sm text-[var(--tool-accent)] hover:underline"
 				>
 					<Icon name="users" size={14} />

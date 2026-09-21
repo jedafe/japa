@@ -119,6 +119,7 @@ type Service struct {
 	enqueuer     TaskEnqueuer
 	cache        Cache
 	aiDispatcher AIDispatcher
+	checker      FeatureChecker
 }
 
 // NewService creates a CV formatter service.
@@ -142,9 +143,24 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // (jc:cv_quota:{user_id}:{YYYY-MM}). Nil-safe: falls back to DB count.
 func (s *Service) SetCache(c Cache) { s.cache = c }
 
-// Enabled reads the cv_formatter.enabled system_setting toggle
-// (§95 feature flag).
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for reachability (Ref: internal/features/features.go).
+// system_settings is consulted only as a fallback when no checker is injected.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table instead of drifting against system_settings.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the cv_formatter.enabled flag (§95). Prefers the injected
+// FeatureChecker; falls back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "cv_formatter.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}

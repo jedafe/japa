@@ -15,6 +15,10 @@ import { tServer } from '$lib/i18n/dict';
 let specCache: { ts: number; spec: Record<string, unknown> } | null = null;
 const SPEC_TTL_MS = 5 * 60 * 1000;
 
+// Path-item keys that are not HTTP methods (parameters, summary, servers,
+// $ref…) must never produce an operation match.
+const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
+
 async function getOpenApiSpec(): Promise<Record<string, unknown> | null> {
 	const now = Date.now();
 	if (specCache && now - specCache.ts < SPEC_TTL_MS) {
@@ -47,7 +51,9 @@ export const load: PageServerLoad = async (event) => {
 
 	let page: DocPage;
 	try {
-		page = await apiGet<DocPage>(ctx, `/docs/api/${slug}`);
+		// Pass the user's locale for parity with the [audience]/[slug] load
+		// (the backend returns content_lang; translations are not stored yet).
+		page = await apiGet<DocPage>(ctx, `/docs/api/${slug}?lang=${event.locals.locale}`);
 	} catch (err) {
 		if (err instanceof ApiError) {
 			if (err.status === 403) throw redirect(308, '/docs/access-denied');
@@ -77,7 +83,7 @@ export const load: PageServerLoad = async (event) => {
 
 			outer: for (const [path, methods] of Object.entries(paths)) {
 				for (const [method, op] of Object.entries(methods)) {
-					if (method === 'parameters') continue; // skip non-method keys
+					if (!HTTP_METHODS.has(method)) continue;
 					if (op.operationId === slug) {
 						// Exact operationId match — always win
 						bestMatch = { method: method.toUpperCase(), path, summary: op.summary };

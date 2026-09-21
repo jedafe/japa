@@ -42,7 +42,7 @@
 				'processing_tracker.seo_description',
 				'View visa processing time statistics and trends — average, median, and percentile wait times for your corridor.'
 			),
-			path: '/processing-tracker',
+			path: '/processing-times',
 			origin: page.url.origin
 		})
 	);
@@ -151,6 +151,15 @@
 	function getDestinationLabel(id: string): string {
 		return destinations.find((d) => d.id === id)?.name ?? id;
 	}
+
+	// §83 — every corridor has a shareable SEO aggregate page at
+	// /processing-times/{country-slug}/{visa-slug}.
+	const aggregateHref = $derived.by(() => {
+		if (!selectedDest || !visaCategory.trim()) return null;
+		const slug = destinations.find((d) => d.id === selectedDest)?.slug;
+		if (!slug) return null;
+		return `/processing-times/${slug}/${visaCategory.trim().toLowerCase().replace(/[\s_]+/g, '-')}`;
+	});
 </script>
 
 <svelte:head>
@@ -171,15 +180,28 @@
 		<ToolDisabled tool={data.tool} />
 	{:else}
 		<div class="mb-8">
-			<h1 class="text-2xl sm:text-3xl font-bold text-text">
-				{t('processing_tracker.title', 'Visa Processing Time Tracker')}
-			</h1>
-			<p class="mt-2 text-text-subtle">
-				{t(
-					'processing_tracker.subtitle',
-					'See how long visa processing takes — average, median, and percentile wait times for your corridor.'
-				)}
-			</p>
+			<div class="flex items-start justify-between gap-4">
+				<div>
+					<h1 class="text-2xl sm:text-3xl font-bold text-text">
+						{t('processing_tracker.title', 'Visa Processing Time Tracker')}
+					</h1>
+					<p class="mt-2 text-text-subtle">
+						{t(
+							'processing_tracker.subtitle',
+							'See how long visa processing takes — average, median, and percentile wait times for your corridor.'
+						)}
+					</p>
+				</div>
+				{#if data.user}
+					<a
+						href="/processing-times/my-applications"
+						class="flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors"
+					>
+						<Icon name="timer" size={16} />
+						{t('processing_tracker.my_apps_link', 'My applications')}
+					</a>
+				{/if}
+			</div>
 		</div>
 
 		{#if destinations.length === 0}
@@ -272,9 +294,20 @@
 						<h2 class="text-sm font-semibold text-muted uppercase tracking-wide">
 							{t('processing_tracker.headline_stats', 'Processing statistics')}
 						</h2>
-						<span class="text-xs text-muted">
-							{t('processing_tracker.total_samples', '{n} samples').replace('{n}', String(totalSamples))}
-						</span>
+						<div class="flex items-center gap-3">
+							<span class="text-xs text-muted">
+								{t('processing_tracker.total_samples', '{n} samples').replace('{n}', String(totalSamples))}
+							</span>
+							{#if aggregateHref}
+								<a
+									href={aggregateHref}
+									class="inline-flex items-center gap-1 text-xs text-[var(--tool-accent)] hover:underline"
+								>
+									<Icon name="link" size={12} />
+									{t('processing_tracker.shareable_page', 'Shareable page')}
+								</a>
+							{/if}
+						</div>
 					</div>
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { ChatConversation } from '$lib/types';
+import type { ChatConversationSummary } from '$lib/types';
 
 /**
  * JapaBot standalone — §20, §69.
@@ -23,10 +23,10 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let conversations: ChatConversation[] = [];
+	let conversations: ChatConversationSummary[] = [];
 	if (event.locals.user) {
 		try {
-			const res = await apiList<ChatConversation>(ctx, '/ai/conversations');
+			const res = await apiList<ChatConversationSummary>(ctx, '/ai/conversations');
 			conversations = res.items;
 		} catch {
 			conversations = [];

@@ -1,4 +1,4 @@
-import type { Handle } from '@sveltejs/kit';
+import { error, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { SessionUser, DocAudience } from '$lib/types';
@@ -23,14 +23,12 @@ function resolveAudiences(
 	audienceOrder: DocAudience[]
 ): DocAudience[] {
 	const permissions = new Set(user?.permissions ?? []);
-	const audiences: DocAudience[] = ['users', 'api'];
-	for (const aud of audienceOrder) {
+	// Mirror the backend's accessibleAudiences: an audience absent from the
+	// gates map is public; a gated audience requires its permission node.
+	return audienceOrder.filter((aud) => {
 		const required = audienceGates[aud];
-		if (required && permissions.has(required)) {
-			audiences.push(aud);
-		}
-	}
-	return audienceOrder.filter((a) => audiences.includes(a));
+		return !required || permissions.has(required);
+	});
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -81,13 +79,29 @@ export const handle: Handle = async ({ event, resolve }) => {
 			.map((l) => l.trim())
 			.filter(Boolean);
 
+	// A 2-letter prefix that is not an enabled language is not a docs route
+	// (the reroute hook stripped it for route matching) — return a real 404
+	// instead of silently serving default-locale content.
+	if (pathLocale && !enabledLanguages.includes(pathLocale)) {
+		throw error(404, { code: 'not_found', message: 'Not found' });
+	}
+
 	if (pathLocale && enabledLanguages.includes(pathLocale)) {
 		event.locals.locale = pathLocale;
+		// Not HttpOnly: the language_toggle widget writes this cookie from
+		// client JS (switchLanguage), and JS cannot overwrite an HttpOnly
+		// cookie — a HttpOnly set here would permanently break the toggle
+		// for anyone who has ever visited a locale-prefixed URL. The value
+		// is a UI preference (like jc_theme), not a credential.
 		event.cookies.set('jc_locale', pathLocale, {
 			path: '/',
 			maxAge: 60 * 60 * 24 * 365,
+			httpOnly: false,
 			sameSite: 'lax'
 		});
+		// Normalize event.url so downstream loads (sidebar widget resolution,
+		// login redirect targets) see the canonical unprefixed path. Routing
+		// itself is handled by the reroute hook in src/hooks.ts.
 		event.url.pathname = event.url.pathname.slice(3) || '/';
 	} else if (localeCookie && enabledLanguages.includes(localeCookie)) {
 		event.locals.locale = localeCookie;
@@ -113,10 +127,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 
 		// DOC-007: resolve docs audiences from RBAC permission nodes, not groups.
+		// GET /me/permissions returns { permissions: string[] }, not a bare array.
 		if (event.locals.user) {
 			try {
-				const perms = await apiGet<string[]>(apiContext(event), '/me/permissions');
-				event.locals.user.permissions = perms ?? [];
+				const res = await apiGet<{ permissions?: string[] } | string[]>(
+					apiContext(event),
+					'/me/permissions'
+				);
+				event.locals.user.permissions = Array.isArray(res)
+					? res
+					: (res?.permissions ?? []);
 			} catch {
 				event.locals.user.permissions = [];
 			}

@@ -20,7 +20,6 @@
 
 	// Layout data (nav, accessibleAudiences, user, navCollapsed) comes via the
 	// nearest layout — here the root +layout.svelte. We read it from $props.
-	let layout = $derived(data);
 
 	// First page of each accessible audience as a "popular" entry.
 	let popular = $derived(

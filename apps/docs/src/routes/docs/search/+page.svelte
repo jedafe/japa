@@ -105,7 +105,7 @@
 
 		{#if !data.q}
 			<p class="hint">{t('search.start_typing')}</p>
-		{:else if navigating && navigating.to?.url.searchParams.get('q') !== data.q}
+		{:else if navigating.to && navigating.to.url.searchParams.get('q') !== data.q}
 			<!-- Loading skeleton (§54: loading states) -->
 			<div class="results-loading" aria-busy="true" aria-live="polite">
 				{#each Array(5) as _, i (i)}

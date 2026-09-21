@@ -61,7 +61,12 @@
 	);
 	const loadingState = $derived(enrollmentsStore.loading && !enrollmentsStore.enrollments);
 
-	const isEnrolled = $derived(!!enrollment || !!lesson.is_preview);
+	// isEnrolled is strictly the enrollment record — it drives the curriculum
+	// rail's per-lesson lock state (locked = !enrolled && !is_preview).
+	// canInteract additionally admits guests on preview lessons for the
+	// mark-complete button (which redirects them to login).
+	const isEnrolled = $derived(!!enrollment);
+	const canInteract = $derived(isEnrolled || !!lesson.is_preview);
 	const isCompleted = $derived(completedLessonIds.has(lesson.id));
 	const progressPct = $derived(enrollment?.progress_pct ?? 0);
 	const totalLessons = $derived(track.modules.reduce((n, m) => n + m.lessons.length, 0));
@@ -537,7 +542,7 @@
 			<button
 				type="button"
 				onclick={markComplete}
-				disabled={marking || isCompleted || !isEnrolled}
+				disabled={marking || isCompleted || !canInteract}
 				class="inline-flex items-center gap-2 rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {isCompleted ? 'bg-[var(--color-surface-subtle)] text-[var(--color-progress)]' : 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'} disabled:opacity-60"
 			>
 				{#if isCompleted}

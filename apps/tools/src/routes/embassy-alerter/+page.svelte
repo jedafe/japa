@@ -4,6 +4,7 @@
 	import { mainAppUrl, buildSeoMeta } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
@@ -95,7 +96,7 @@
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
-		history.replaceState({}, '', url);
+		replaceState(url, {});
 		loadEmbassies();
 	}
 

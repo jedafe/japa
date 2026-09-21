@@ -209,5 +209,6 @@
 	"sidebar.newsletter_invalid": "Veuillez saisir une adresse e-mail valide",
 	"sidebar.newsletter_error": "L'inscription a échoué. Veuillez réessayer.",
 	"sidebar.newsletter_success": "Vous êtes abonné !",
-	"a11y.sidebar": "Barre latérale"
+	"a11y.sidebar": "Barre latérale",
+	"api.browse_endpoints": "Parcourir les endpoints de l’API →"
 }

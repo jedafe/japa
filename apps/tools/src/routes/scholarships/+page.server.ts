@@ -31,6 +31,7 @@ export const load: PageServerLoad = async (event) => {
 			saved: [],
 			statusOptions: [],
 			renewableOptions: [],
+			levelOptions: [],
 			user: event.locals.user,
 			defaultReminderDays: defaultReminderDays(event.locals.siteSettings),
 			currentPage: 1,
@@ -103,6 +104,17 @@ export const load: PageServerLoad = async (event) => {
 		renewableOptions = [];
 	}
 
+	// Level-of-study filter options from the backend — the canonical distinct
+	// set across all published scholarships, not just the current page of
+	// results (Rule 16 — no deriving filter options from paged data).
+	let levelOptions: CatalogOption[] = [];
+	try {
+		const res = await apiList<CatalogOption>(ctx, '/scholarships/levels');
+		levelOptions = res.items;
+	} catch {
+		levelOptions = [];
+	}
+
 	return {
 		enabled: true,
 		tool,
@@ -111,6 +123,7 @@ export const load: PageServerLoad = async (event) => {
 		saved,
 		statusOptions,
 		renewableOptions,
+		levelOptions,
 		user: event.locals.user,
 		defaultReminderDays: defaultReminderDays(event.locals.siteSettings),
 		currentPage: page,

@@ -5,12 +5,9 @@
 		LayoutDashboard,
 		Settings,
 		LogOut,
-		LogIn,
-		Moon,
-		Sun
+		LogIn
 	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import { theme } from '$lib/stores/theme.svelte';
 	import { env } from '$env/dynamic/public';
 	import { page } from '$app/state';
 	import type { SessionUser } from '$lib/types';
@@ -43,21 +40,6 @@
 </script>
 
 <div class="dropdown">
-	<!-- Theme toggle (separate from the avatar dropdown). -->
-	<button
-		type="button"
-		class="toggle"
-		onclick={() => theme.toggle()}
-		aria-label={theme.current === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
-		title={theme.current === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
-	>
-		{#if theme.current === 'dark'}
-			<Sun size={16} />
-		{:else}
-			<Moon size={16} />
-		{/if}
-	</button>
-
 	<!-- Avatar dropdown menu (Bits UI — portals to body, keyboard accessible). -->
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger
@@ -134,20 +116,5 @@
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
-	}
-	.toggle {
-		display: grid;
-		place-items: center;
-		height: 2.25rem;
-		width: 2.25rem;
-		border-radius: var(--radius);
-		color: var(--color-muted);
-		background: transparent;
-		border: 1px solid var(--color-border);
-		cursor: pointer;
-	}
-	.toggle:hover {
-		color: var(--color-text);
-		border-color: var(--color-border-input-hover);
 	}
 </style>

@@ -77,6 +77,21 @@
 	const progressPct = $derived(enrollment?.progress_pct ?? 0);
 	const isComplete = $derived(progressPct >= 100);
 
+	// Continue target: resume at the enrollment's next lesson, falling back to
+	// the first lesson in the curriculum. Null when the track has no lessons.
+	const continueHref = $derived.by(() => {
+		const next = enrollment?.next_lesson;
+		if (next?.module_slug && next?.slug) {
+			return `/tracks/${track.slug}/${next.module_slug}/${next.slug}`;
+		}
+		const firstModule = track.modules?.[0];
+		const firstLesson = firstModule?.lessons?.[0];
+		if (firstModule && firstLesson) {
+			return `/tracks/${track.slug}/${firstModule.slug}/${firstLesson.slug}`;
+		}
+		return null;
+	});
+
 	// Price label — always shown on the unified University surface.
 	const priceLabel = $derived.by(() => {
 		if (isFreeForUser(track.price_kobo, data.user?.is_pro)) {
@@ -111,8 +126,8 @@
 			// enrollment immediately (Continue Learning, My Progress, etc.).
 			enrollmentsStore.refresh();
 			// Navigate to the first lesson.
-			const firstModule = track.modules[0];
-			const firstLesson = firstModule?.lessons[0];
+			const firstModule = track.modules?.[0];
+			const firstLesson = firstModule?.lessons?.[0];
 			if (firstModule && firstLesson) {
 				goto(`/tracks/${track.slug}/${firstModule.slug}/${firstLesson.slug}`);
 			}
@@ -154,7 +169,7 @@
 			// Re-fetch the reviews list (with aggregate) from the backend so the
 			// UI matches the canonical state rather than a local patch.
 			const listRes = await api.getBody<{ data: TrackReview[]; aggregate: ReviewAggregate }>(
-				`/learn/university/tracks/${track.id}/reviews?limit=10`
+				`/learn/university/tracks/${track.id}/reviews?page_size=10`
 			);
 			if (listRes.data) {
 				reviews = listRes.data.data;
@@ -170,8 +185,8 @@
 	function onCheckoutSuccess() {
 		checkoutOpen = false;
 		enrollmentsStore.refresh();
-		const firstModule = track.modules[0];
-		const firstLesson = firstModule?.lessons[0];
+		const firstModule = track.modules?.[0];
+		const firstLesson = firstModule?.lessons?.[0];
 		if (firstModule && firstLesson) {
 			goto(`/tracks/${track.slug}/${firstModule.slug}/${firstLesson.slug}`);
 		}
@@ -255,12 +270,22 @@
 							<CheckCircle size={18} /> {t('learn.completed')}
 						</span>
 					{:else}
-						<a
-							href="/tracks/{track.slug}/{track.modules[0]?.slug ?? ''}/{track.modules[0]?.lessons[0]?.slug ?? ''}"
-							class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
-						>
-							<PlayCircle size={18} /> {t('learn.continue')} ({progressPct}%)
-						</a>
+						<div class="flex flex-wrap items-center gap-3">
+							{#if continueHref}
+								<a
+									href={continueHref}
+									class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+								>
+									<PlayCircle size={18} /> {t('learn.continue')} ({progressPct}%)
+								</a>
+							{/if}
+							<a
+								href="/tracks/{track.slug}/progress"
+								class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								{t('learn.view_progress')}
+							</a>
+						</div>
 					{/if}
 				{:else}
 					<button

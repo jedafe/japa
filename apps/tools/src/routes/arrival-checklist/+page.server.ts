@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { ArrivalChecklistSelectorEntry, ArrivalChecklistItem, GeoSpaceOption } from '$lib/types';
+import type { ArrivalChecklistSelectorEntry, ArrivalChecklistItem, GeoSpaceOption, UserArrivalChecklist } from '$lib/types';
 
 /**
  * Arrival Checklist — §92, ADR-088.
@@ -31,6 +31,7 @@ export const load: PageServerLoad = async (event) => {
 			destinations: [],
 			items: [],
 			initialDestId: null,
+			myChecklists: [],
 			user: event.locals.user
 		};
 	}
@@ -76,6 +77,17 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// The user's in-progress checklists (§92 — GET /me/arrival-checklists).
+	// Powers the "your checklists" strip so returning users can resume.
+	let myChecklists: UserArrivalChecklist[] = [];
+	if (event.locals.user) {
+		try {
+			myChecklists = (await apiList<UserArrivalChecklist>(ctx, '/me/arrival-checklists')).items;
+		} catch {
+			myChecklists = [];
+		}
+	}
+
 	return {
 		enabled: true,
 		tool,
@@ -83,6 +95,7 @@ export const load: PageServerLoad = async (event) => {
 		destinations,
 		items,
 		initialDestId,
+		myChecklists,
 		user: event.locals.user
 	};
 };

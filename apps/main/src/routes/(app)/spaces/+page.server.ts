@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet, ApiError } from '$lib/server/api';
-import type { Space, SpaceType } from '$lib/types';
+import type { GeoCountry, Space, SpaceType } from '$lib/types';
 
 /**
  * Spaces index at /spaces — public (OptionalAuth), SSR. Lists every
@@ -110,23 +110,23 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	// Fetch region and subregion options for the directory filters.
+	// Country list powers the ?geo= filter picker (was a free-text code input).
+	let countries: GeoCountry[] = [];
+	try {
+		countries = await apiGet<GeoCountry[]>(ctx, '/geo/countries');
+		if (!Array.isArray(countries)) countries = [];
+	} catch {
+		countries = [];
+	}
+
+	// Fetch region options for the directory filters. ?subregion= remains a
+	// valid URL-only param (passed through above) — no dedicated UI control.
 	let regions: string[] = [];
 	try {
 		regions = await apiGet<string[]>(ctx, '/spaces/regions');
 		if (!Array.isArray(regions)) regions = [];
 	} catch {
 		regions = [];
-	}
-
-	let subregions: string[] = [];
-	if (regionFilter) {
-		try {
-			subregions = await apiGet<string[]>(ctx, `/spaces/subregions?region=${encodeURIComponent(regionFilter)}`);
-			if (!Array.isArray(subregions)) subregions = [];
-		} catch {
-			subregions = [];
-		}
 	}
 
 	// Try to resolve the parent filter name so the UI can display a chip.
@@ -153,8 +153,8 @@ export const load: PageServerLoad = async (event) => {
 		parent: parentFilter,
 		joined: joinedOnly,
 		parentName,
+		countries,
 		regions,
-		subregions,
 		page,
 		totalPages,
 		total,

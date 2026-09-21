@@ -1,55 +1,12 @@
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext } from '$lib/server/api';
-import { loadCountries } from '$lib/server/geo';
-import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { GeoSpaceOption, ProcessingStat, ProcessingTrendPoint } from '$lib/types';
 
 /**
- * Visa Processing Time Tracker — §93 (reuses §83 visa timeline backend).
- * SSR loads the destination country list only. Stats and trend data require
- * a destination + visa category selection, so they are fetched client-side.
- *
- * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
- *      GET /visa-timelines/stats?dest=&origin=&visa= — processing stats.
- *      GET /visa-timelines/stats/trend?dest=&visa=&months=12 — trend.
- *
- * Ref: §93 (Processing Time Tracker), ROADMAP-TOOLS 02.06, ADR-088.
+ * Legacy slug redirect — the spec-canonical route is /processing-times
+ * (§93). Keep the old path as a permanent redirect so existing links and
+ * bookmarks keep working.
  */
 export const load: PageServerLoad = async (event) => {
-	// Gate: skip all backend calls when visa_timeline.enabled is false.
-	// Ref: conventions/system-settings-catalog.md, Rule 3.
-	const tool = getTool('processing-tracker')!;
-	const settings = event.locals.siteSettings;
-	if (!isToolEnabled(tool, event.locals.features)) {
-		return {
-			enabled: false,
-			tool,
-			destinations: [],
-			stats: [],
-			trend: [],
-			user: event.locals.user
-		};
-	}
-
-	const ctx = apiContext(event);
-
-	// Destination country list — the primary data axis for every V2 geo-aware
-	// tool (ADR-088). Rule 16 — never hardcode the country list.
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		destinations = await loadCountries(ctx);
-	} catch {
-		destinations = [];
-	}
-
-	// No initial stats/trend load — both require dest + visa selection which
-	// is an interactive client-side action. Seeded as empty arrays.
-	return {
-		enabled: true,
-		tool,
-		destinations,
-		stats: [] as ProcessingStat[],
-		trend: [] as ProcessingTrendPoint[],
-		user: event.locals.user
-	};
+	const search = event.url.search;
+	throw redirect(301, `/processing-times${search}`);
 };

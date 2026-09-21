@@ -202,8 +202,8 @@ export const TOOLS: ToolMeta[] = [
 		keywords: ['arrival', 'checklist', 'post-arrival', 'registration', 'settling in']
 	},
 	{
-		slug: 'processing-tracker',
-		route: '/processing-tracker',
+		slug: 'processing-times',
+		route: '/processing-times',
 		icon: 'timer',
 		name: 'Visa Processing Time Tracker',
 		nameKey: 'tool.processing_tracker.name',

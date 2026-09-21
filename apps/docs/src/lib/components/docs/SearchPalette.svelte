@@ -29,8 +29,12 @@
 
 	// Resolve the active audience from the route (/docs/[audience]/...) when the
 	// caller doesn't pass one explicitly. ADR-060 — audience-filtered search.
+	// /docs/api/* routes have no `audience` param — the api section is scoped
+	// by path prefix instead.
 	let resolvedAudience = $derived<DocAudience | null>(
-		audience ?? (page.params.audience as DocAudience | undefined) ?? null
+		audience ??
+			(page.params.audience as DocAudience | undefined) ??
+			(page.url.pathname.startsWith('/docs/api') ? 'api' : null)
 	);
 
 	// Debounced fetch — 200ms → /docs/search?q=&audience=&limit= (ADR-060).

@@ -1,10 +1,12 @@
 import { generateHTML } from '@tiptap/html';
+import { marked } from 'marked';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
+import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 /**
  * Extensions shared between the docs prose renderer and the editor (admin).
@@ -30,12 +32,60 @@ const extensions = [
  * only ever call this from server load functions regardless.
  */
 export function renderDocContent(content: unknown): string {
-	if (!content || typeof content !== 'object') return '';
+	if (!content) return '';
+
+	// doc_pages.content is jsonb — besides the canonical TipTap document
+	// object, direct API writes and older editors can store a plain string
+	// (markdown, HTML, or raw text). Rendering a string to nothing leaves a
+	// blank article body, so fall back to markdown/HTML rendering instead.
+	if (typeof content === 'string') {
+		return renderStringContent(content);
+	}
+	if (typeof content !== 'object') return '';
 	try {
 		return generateHTML(content as never, extensions);
 	} catch {
 		// Malformed TipTap JSON should never blank the page — degrade to empty.
 		return '';
+	}
+}
+
+function escapeHtmlText(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;');
+}
+
+/**
+ * Render a string body: a JSON-encoded TipTap doc is parsed and delegated to
+ * generateHTML; markdown/plain text goes through marked; anything else is
+ * escaped as a paragraph. Output is always sanitized before rendering.
+ */
+function renderStringContent(content: string): string {
+	const trimmed = content.trim();
+	if (!trimmed) return '';
+
+	// A JSON-encoded document string (e.g. content stored as a quoted string
+	// of a TipTap doc) — parse and render it as a document object.
+	if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+		try {
+			const parsed: unknown = JSON.parse(trimmed);
+			if (parsed && typeof parsed === 'object') {
+				return generateHTML(parsed as never, extensions);
+			}
+		} catch {
+			// Not valid JSON — fall through to markdown.
+		}
+	}
+
+	try {
+		const html = marked.parse(trimmed, { async: false });
+		return sanitizeContentHtml(html);
+	} catch {
+		return `<p>${escapeHtmlText(trimmed)}</p>`;
 	}
 }
 

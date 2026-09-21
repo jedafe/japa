@@ -19,6 +19,7 @@
 package assessment
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -42,11 +43,35 @@ type Handlers struct {
 	service     *Service
 	feedService *feed.Service
 	settings    *config.Settings
+	checker     FeatureChecker
+}
+
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for reachability (Ref: internal/features/features.go).
+// system_settings is consulted only as a fallback when no checker is injected.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // NewHandlers creates assessment handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetFeatureChecker injects the feature flag checker so the assessment.enabled
+// gate reads the feature_flags table instead of drifting against system_settings.
+func (h *Handlers) SetFeatureChecker(c FeatureChecker) { h.checker = c }
+
+// assessmentEnabled resolves the assessment.enabled flag via the injected
+// checker when present, else system_settings (defaults to enabled).
+func (h *Handlers) assessmentEnabled(ctx context.Context) bool {
+	if h.checker != nil {
+		return h.checker.IsEnabled(ctx, "assessment.enabled")
+	}
+	if h.settings == nil {
+		return true
+	}
+	return h.settings.GetBoolOr(ctx, "assessment.enabled", true)
 }
 
 // SetFeedService injects the feed service so the assessment handlers can
@@ -164,11 +189,9 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check the global toggle (assessment.enabled).
-	if h.settings != nil {
-		if enabled := h.settings.GetBoolOr(r.Context(), "assessment.enabled", true); !enabled {
-			errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
-			return
-		}
+	if !h.assessmentEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
+		return
 	}
 
 	form, err := h.service.GetActiveAssessment(r.Context())
@@ -225,11 +248,9 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.settings != nil {
-		if enabled := h.settings.GetBoolOr(r.Context(), "assessment.enabled", true); !enabled {
-			errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
-			return
-		}
+	if !h.assessmentEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
+		return
 	}
 
 	var body struct {

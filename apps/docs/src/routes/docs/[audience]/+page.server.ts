@@ -15,6 +15,12 @@ import { tServer } from '$lib/i18n/dict';
 export const load: PageServerLoad = async (event) => {
 	const audience = event.params.audience as DocAudience;
 
+	// An audience slug outside the canonical list isn't gated — it doesn't
+	// exist. 404 it; access-denied is only for real-but-gated audiences.
+	if (!event.locals.audienceOrder.includes(audience)) {
+		throw error(404, { code: 'not_found', message: 'Audience not found' });
+	}
+
 	// 'api' is fully public; other audiences require membership.
 	if (!event.locals.accessibleAudiences.includes(audience)) {
 		throw redirect(308, '/docs/access-denied');
@@ -44,9 +50,10 @@ export const load: PageServerLoad = async (event) => {
 		{ audience: audienceLabel }
 	);
 
-	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02). Public audiences
-	// (users, api) are indexable.
-	const isGated = audience !== 'users' && audience !== 'api';
+	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02). Presence in the
+	// backend gates map is the source of truth — a new public audience added
+	// upstream must not silently become noindex here.
+	const isGated = event.locals.audienceGates[audience] != null;
 	const meta = buildMeta({
 		title,
 		description,

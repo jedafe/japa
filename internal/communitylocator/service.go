@@ -46,6 +46,7 @@ type OrgDTO struct {
 	MeetingFrequency     string  `json:"meeting_frequency,omitempty"`
 	ContactInfo          string  `json:"contact_info,omitempty"`
 	JapaconnectSpaceID   string  `json:"japaconnect_space_id,omitempty"`
+	JapaconnectSpaceSlug string  `json:"japaconnect_space_slug,omitempty"`
 	JapaconnectOrgID     string  `json:"japaconnect_org_id,omitempty"`
 	ClaimStatus          string  `json:"claim_status"`
 	IsVerified           bool    `json:"is_verified"`
@@ -98,6 +99,7 @@ type Service struct {
 	store      *Store
 	settings   *config.Settings
 	dispatcher AIDispatcher
+	checker    FeatureChecker
 }
 
 // NewService creates a community locator service.
@@ -113,9 +115,25 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // content so a reviewer can fill it manually (graceful degradation).
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
-// Enabled reads the community_locator.enabled system_setting toggle
-// (§101 feature flag).
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for reachability (Ref: internal/features/features.go).
+// system_settings is consulted only as a fallback when no checker is injected.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table instead of drifting against system_settings.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the community_locator.enabled flag (§101). Prefers the
+// injected FeatureChecker; falls back to system_settings for backward
+// compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "community_locator.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}
@@ -798,6 +816,10 @@ func rowToDTO(r OrgRow) OrgDTO {
 
 	if r.JapaconnectSpaceID.Valid {
 		dto.JapaconnectSpaceID = r.JapaconnectSpaceID.String()
+	}
+
+	if r.JapaconnectSpaceSlug != nil {
+		dto.JapaconnectSpaceSlug = *r.JapaconnectSpaceSlug
 	}
 
 	if r.JapaconnectOrgID.Valid {

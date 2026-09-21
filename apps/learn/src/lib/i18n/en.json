@@ -54,6 +54,7 @@
 	"learn.lessons": "lessons",
 	"learn.module": "Module",
 	"learn.progress": "Progress",
+	"learn.view_progress": "View progress",
 	"learn.completed": "Completed",
 	"learn.in_progress": "In Progress",
 	"learn.locked": "Locked",
