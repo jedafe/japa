@@ -245,17 +245,34 @@ type intelSourcePayload struct {
 	SourceID string `json:"source_id"`
 }
 
+// intelChannelPayload is the intel:fetch_channel task payload (intel-channels
+// Phase 1). source_id is advisory — the channel row's source_id is
+// authoritative and is re-resolved at handling time.
+type intelChannelPayload struct {
+	Version   string `json:"version"`
+	ChannelID string `json:"channel_id"`
+	SourceID  string `json:"source_id"`
+}
+
 type intelDetectChangesPayload struct {
 	Version   string `json:"version"`
 	SourceID  string `json:"source_id"`
 	RawDocID  string `json:"raw_doc_id"`
 	PriorHash string `json:"prior_hash"`
+	// ChannelID scopes the crawl outcome bookkeeping to the channel that
+	// produced the raw doc. Empty on legacy fetch_source enqueues — the
+	// handler falls back to source-level behaviour.
+	ChannelID string `json:"channel_id,omitempty"`
 }
 
 type intelExtractPayload struct {
 	Version  string `json:"version"`
 	RecordID string `json:"record_id"`
 	RawDocID string `json:"raw_doc_id"`
+	// ChannelID lets the extract handler apply the channel-first entity-type
+	// precedence (channel.entity_types → provider_config → category).
+	// Empty on legacy enqueues; raw_doc.channel_id is the fallback source.
+	ChannelID string `json:"channel_id,omitempty"`
 }
 
 type intelRecordPayload struct {
@@ -263,6 +280,7 @@ type intelRecordPayload struct {
 	RecordID string `json:"record_id"`
 
 	ReviewerUserID string `json:"reviewer_user_id,omitempty"` // INTEL-026: set on approve, empty on auto-publish
+	ChannelID      string `json:"channel_id,omitempty"`       // propagated through dedup → gate → promote for Task 9 pipeline routing
 }
 
 type intelPostPublishPayload struct {
@@ -283,8 +301,10 @@ type intelNotifyPayload struct {
 // ---------------------------------------------------------------------------
 
 // HandleIntelScheduleCrawls is the cron entry point for the ingestion spine.
-// It selects due sources via the scheduler and enqueues a fetch_source task
-// per due source (Section 4, step 1).
+// It selects due channels via the scheduler and enqueues a fetch_channel
+// task per due channel (Section 4, step 1; intel-channels Phase 1 moved the
+// scheduling granularity from source to channel — ListDueIntelChannels
+// already excludes manual/inbound channels and disabled/inactive parents).
 // // BUG-11/12 fix: the batch size is read from system_settings
 // (intel.schedule_batch_size, default 50) instead of being hardcoded to 100.
 // The intel.enabled toggle is checked before any work — when false, the
@@ -339,31 +359,35 @@ func HandleIntelScheduleCrawls(ctx context.Context, _ *asynq.Task) error {
 		batchSize = appSettings.GetIntOr(ctx, "intel.schedule_batch_size", 50)
 	}
 
-	due, err := intelScheduler.SelectDue(ctx, int32(batchSize)) // #nosec
+	due, err := intelScheduler.SelectDueChannels(ctx, int32(batchSize)) // #nosec
 	if err != nil {
-		return fmt.Errorf("task:intel:schedule_crawls: select due: %w", err)
+		return fmt.Errorf("task:intel:schedule_crawls: select due channels: %w", err)
 	}
 
-	for _, src := range due {
-		if !src.ID.Valid {
+	for _, ch := range due {
+		if !ch.ID.Valid {
 			continue
 		}
 
-		payload := marshalPayload(intelSourcePayload{
-			Version:  intelPayloadVersion,
-			SourceID: src.ID.String(),
+		payload := marshalPayload(intelChannelPayload{
+			Version:   intelPayloadVersion,
+			ChannelID: ch.ID.String(),
+			SourceID:  ch.SourceID.String(),
 		})
 		if payload != nil {
-			enqueueIntel(TypeIntelFetchSource, payload)
+			enqueueIntel(TypeIntelFetchChannel, payload)
 		}
 	}
 
 	return nil
 }
 
-// HandleIntelFetchSource fetches the raw document for a single source and
-// enqueues detect_changes to compare its hash against the prior crawl
-// (Section 4, step 2).
+// HandleIntelFetchSource is the legacy per-source fetch entry point
+// (Section 4, step 2). Intel-channels Phase 1 moved fetching to
+// intel:fetch_channel; this handler remains for queued legacy tasks and the
+// admin/AI "crawl now" triggers — it resolves the source's default channel
+// (GetIntelSourceDefaultChannel: oldest enabled channel, i.e. the backfilled
+// 'admin' row) and delegates to the shared channel fetch path.
 func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	defer recoverPanic("TypeIntelFetchSource")
 	slog.Info("task:intel:fetch_source")
@@ -387,48 +411,145 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		return nil // source gone or disabled — nothing to do
 	}
 
-	sourceIDStr := sourceID.String()
+	ch, err := intelSourcesStore.GetDefaultChannel(ctx, sourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:fetch_source: source has no enabled channel, skipping", "source_id", sourceID.String())
+			return nil
+		}
 
-	// API sources require a provider_config with a non-empty endpoint. Skip
-	// unconfigured sources gracefully — mark the row with the configuration
-	// error and return nil so the Asynq task is not retried and the logs are
-	// not spammed with "provider_config.endpoint is empty" failures.
-	if !intelSourceConfigured(ctx, sourceID, src) {
+		return fmt.Errorf("task:intel:fetch_source: resolve default channel: %w", err)
+	}
+
+	return intelFetchChannel(ctx, "task:intel:fetch_source", src, ch)
+}
+
+// HandleIntelFetchChannel fetches the raw document for a single channel and
+// enqueues detect_changes carrying channel_id (intel-channels Phase 1,
+// Section 4 step 2). It resolves the channel row and its parent source,
+// then delegates to the shared intelFetchChannel core.
+func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
+	defer recoverPanic("TypeIntelFetchChannel")
+	slog.Info("task:intel:fetch_channel")
+
+	if intelFetcher == nil || intelStores == nil || intelSourcesStore == nil {
+		slog.Warn("task:intel:fetch_channel: dependencies not wired, skipping")
 		return nil
 	}
 
-	// Pre-flight checks: crawl lock, rate limit, license, robots.txt
-	// (INTEL-001/INTEL-006 fix). The crawl lock is acquired inside Check;
-	// on success the caller must release it after the fetch completes.
-	if err := intelPreflightCheck(ctx, sourceID, src); err != nil {
+	var p intelChannelPayload
+	if err := parsePayloadOrSkip(t, &p); err != nil {
+		return err
+	}
+
+	channelID, err := scanUUID(p.ChannelID)
+	if err != nil {
+		return fmt.Errorf("task:intel:fetch_channel: %w", err)
+	}
+
+	ch, err := intelSourcesStore.GetChannel(ctx, channelID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:fetch_channel: channel no longer exists, skipping", "channel_id", channelID.String())
+			return nil
+		}
+
+		return fmt.Errorf("task:intel:fetch_channel: load channel: %w", err)
+	}
+
+	if !ch.Enabled {
+		slog.Info("task:intel:fetch_channel: channel is disabled, skipping", "channel_id", channelID.String())
+		return nil
+	}
+
+	method := sources.CrawlMethod(ch.CrawlMethod)
+	switch {
+	case sources.InboundMethod(method):
+		// Push channels ingest via the inbound endpoints — a stray enqueue
+		// must skip cleanly instead of erroring into the circuit-breaker.
+		slog.Info("task:intel:fetch_channel: inbound channel, skipping", "channel_id", channelID.String(), "crawl_method", ch.CrawlMethod)
+		return nil
+	case method == sources.CrawlMethodManual:
+		slog.Info("task:intel:fetch_channel: manual channel, skipping", "channel_id", channelID.String())
+		return nil
+	}
+
+	// Load the parent source for trust_level/license context and the
+	// enabled/active gate. The payload's source_id is advisory; the channel
+	// row's source_id is authoritative.
+	if p.SourceID != "" && p.SourceID != ch.SourceID.String() {
+		slog.Warn("task:intel:fetch_channel: payload source_id disagrees with channel row, using channel's", "channel_id", channelID.String(), "payload_source_id", p.SourceID, "channel_source_id", ch.SourceID.String())
+	}
+
+	src, err := intelSourcesStore.Get(ctx, ch.SourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:fetch_channel: parent source no longer exists, skipping", "channel_id", channelID.String())
+			return nil
+		}
+
+		return fmt.Errorf("task:intel:fetch_channel: load parent source: %w", err)
+	}
+
+	if !src.Enabled || src.Status != "active" {
+		slog.Info("task:intel:fetch_channel: parent source not active, skipping", "channel_id", channelID.String(), "source_id", ch.SourceID.String(), "enabled", src.Enabled, "status", src.Status)
+		return nil
+	}
+
+	return intelFetchChannel(ctx, "task:intel:fetch_channel", src, ch)
+}
+
+// intelFetchChannel is the shared fetch core for intel:fetch_channel and the
+// legacy intel:fetch_source delegation path: channel config check →
+// channel-scoped preflight (crawl lock jc:intel:channel_lock:{id}) →
+// Composite.Fetch(src, ch) → persist raw doc with channel_id stamped →
+// UpdateChannelCrawlStatus → enqueue detect_changes. logPrefix lets the two
+// callers keep their own log/error namespaces.
+func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSource, ch gen.IntelSourceChannel) error {
+	channelIDStr := ch.ID.String()
+
+	// API channels require a provider_config with a non-empty endpoint —
+	// resolved channel-first so a backfilled default channel inherits the
+	// source's config (intelSourceConfigured's channel-level equivalent).
+	// Skip unconfigured channels gracefully: mark the row with the
+	// configuration error and return nil so the task is not retried.
+	if !intelChannelConfigured(ctx, ch, src) {
+		return nil
+	}
+
+	// Pre-flight checks: channel crawl lock, rate limit, license, robots.txt.
+	// The channel lock is acquired inside CheckChannel; on success the caller
+	// must release it after the fetch completes.
+	if err := intelChannelPreflightCheck(ctx, ch, src); err != nil {
 		return err
 	}
 
 	// Capture the prior content hash BEFORE inserting the new raw doc so
-	// detect_changes can compare against the previous crawl, not the one we
-	// just persisted. An error here (no prior doc) degrades to empty string,
-	// which changedetector.Compare treats as DecisionFirstCrawl.
-	priorHash, _ := intelStores.GetLatestIntelRawDocHash(ctx, sourceID)
+	// detect_changes compares against this channel's previous crawl, not
+	// the doc we just persisted (and not a sibling channel's doc). An error
+	// here (no prior doc) degrades to empty string → DecisionFirstCrawl.
+	priorHash, _ := intelStores.GetLatestIntelRawDocHashForChannel(ctx, ch.ID)
 
-	// Dispatch to the composite fetcher (selects adapter by crawl_method).
-	result, err := intelFetcher.Fetch(ctx, src)
+	// Dispatch to the composite fetcher (selects adapter by channel crawl_method).
+	result, err := intelFetcher.Fetch(ctx, src, ch)
 	if err != nil {
-		handleFetchFailure(ctx, sourceID, sourceIDStr, src, err)
+		handleChannelFetchFailure(ctx, ch, err)
 
-		return fmt.Errorf("task:intel:fetch_source: fetch: %w", err)
+		return fmt.Errorf("%s: fetch: %w", logPrefix, err)
 	}
 
-	// Release the crawl lock after a successful fetch (INTEL-001 fix).
+	// Release the crawl lock after a successful fetch.
 	if intelPreflight != nil {
-		intelPreflight.ReleaseCrawlLock(ctx, sourceIDStr)
+		intelPreflight.ReleaseChannelCrawlLock(ctx, channelIDStr)
 	}
 
-	// Persist the raw document (headers + body + hash).
+	// Persist the raw document (headers + body + hash + channel stamp).
 	headersJSON, _ := json.Marshal(result.Headers)
 
 	rawDoc, err := intelStores.CreateIntelRawDocument(ctx, gen.CreateIntelRawDocumentParams{
-		SourceID:    sourceID,
-		Url:         src.SourceUrl,
+		SourceID:    ch.SourceID,
+		ChannelID:   ch.ID,
+		Url:         ch.EntryUrl,
 		HttpStatus:  int32(result.HTTPStatus), // #nosec
 		HttpHeaders: headersJSON,
 		ContentType: strPtr(result.ContentType),
@@ -436,20 +557,21 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		ContentHash: result.ContentHash,
 	})
 	if err != nil {
-		return fmt.Errorf("task:intel:fetch_source: persist raw doc: %w", err)
+		return fmt.Errorf("%s: persist raw doc: %w", logPrefix, err)
 	}
 
-	// Stamp the source's crawl status as successful.
-	_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
-		ID:      sourceID,
+	// Stamp the channel's crawl status as successful.
+	_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+		ID:      ch.ID,
 		Success: true,
 	})
 
-	slog.Info("task:intel:fetch_source: fetched", "source_id", sourceID.String(), "raw_doc_id", rawDoc.ID.String(), "hash", result.ContentHash)
+	slog.Info(logPrefix+": fetched", "channel_id", channelIDStr, "source_id", ch.SourceID.String(), "raw_doc_id", rawDoc.ID.String(), "hash", result.ContentHash)
 
 	payload := marshalPayload(intelDetectChangesPayload{
 		Version:   intelPayloadVersion,
-		SourceID:  p.SourceID,
+		SourceID:  ch.SourceID.String(),
+		ChannelID: channelIDStr,
 		RawDocID:  rawDoc.ID.String(),
 		PriorHash: priorHash,
 	})
@@ -496,18 +618,22 @@ func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceI
 	return sourceID, src, true, nil
 }
 
-// intelSourceConfigured reports whether a source has usable fetch config.
-// API sources require a provider_config with a non-empty endpoint; on a
-// config error it marks the source row with the failure and returns false so
-// the task is skipped rather than retried.
-func intelSourceConfigured(ctx context.Context, sourceID pgtype.UUID, src gen.IntelSource) bool {
-	if sources.CrawlMethod(src.CrawlMethod) != sources.CrawlMethodAPI {
+// intelChannelConfigured is the channel-level equivalent of the retired
+// source-level intelSourceConfigured check: API channels need a
+// provider_config with a non-empty endpoint. The effective config is
+// resolved channel-first via
+// fetcher.ResolveChannelProviderConfig — a channel carrying its own API
+// config uses it; a backfilled default channel ('{}' config) falls back to
+// the parent source's provider_config. On a config error the channel row is
+// marked with the failure and the task is skipped rather than retried.
+func intelChannelConfigured(ctx context.Context, ch gen.IntelSourceChannel, src gen.IntelSource) bool {
+	if sources.CrawlMethod(ch.CrawlMethod) != sources.CrawlMethodAPI {
 		return true
 	}
 
-	if _, err := fetcher.ParseProviderConfig(src.ProviderConfig); err != nil {
-		_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
-			ID:               sourceID,
+	if _, err := fetcher.ParseProviderConfig(fetcher.ResolveChannelProviderConfig(ch, src)); err != nil {
+		_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+			ID:               ch.ID,
 			Success:          false,
 			LastErrorMessage: strPtr(err.Error()),
 		})
@@ -518,62 +644,65 @@ func intelSourceConfigured(ctx context.Context, sourceID pgtype.UUID, src gen.In
 	return true
 }
 
-// intelPreflightCheck runs the preflight gate (crawl lock, rate limit,
-// license, robots.txt — INTEL-001/INTEL-006). Non-lock failures are recorded
-// on the source row; ErrCrawlLocked is a transient "another worker is
-// crawling" signal that does not increment consecutive_failures. The crawl
-// lock is acquired inside Check; on success the caller must release it.
-func intelPreflightCheck(ctx context.Context, sourceID pgtype.UUID, src gen.IntelSource) error {
+// intelChannelPreflightCheck runs the channel-scoped preflight gate (crawl
+// lock jc:intel:channel_lock:{id}, rate limit, license, robots.txt).
+// Non-lock failures are recorded on the channel row; ErrCrawlLocked is a
+// transient "another worker is crawling this channel" signal that does not
+// increment consecutive_failures. The lock is acquired inside CheckChannel;
+// on success the caller must release it via ReleaseChannelCrawlLock.
+func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, src gen.IntelSource) error {
 	if intelPreflight == nil {
 		return nil
 	}
 
-	if err := intelPreflight.Check(ctx, src); err != nil {
+	if err := intelPreflight.CheckChannel(ctx, src, ch); err != nil {
 		if !errors.Is(err, fetcher.ErrCrawlLocked) {
-			_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
-				ID:               sourceID,
+			_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+				ID:               ch.ID,
 				Success:          false,
 				LastErrorMessage: strPtr(err.Error()),
 			})
 		}
 
-		return fmt.Errorf("task:intel:fetch_source: preflight: %w", err)
+		return fmt.Errorf("task:intel:fetch_channel: preflight: %w", err)
 	}
 
 	return nil
 }
 
-// handleFetchFailure performs the bookkeeping for a failed source fetch:
-// releases the crawl lock (INTEL-001), records the failure on the source row
-// so consecutive_failures increments, and auto-disables the source once it
-// crosses the intel.consecutive_failure_disable_threshold (default 5).
-func handleFetchFailure(ctx context.Context, sourceID pgtype.UUID, sourceIDStr string, src gen.IntelSource, fetchErr error) {
-	// Release the crawl lock so the source is not blocked until TTL expiry.
+// handleChannelFetchFailure is the channel-scoped counterpart of the retired
+// source-level handleFetchFailure: releases the channel crawl lock, records
+// the failure on the channel row so consecutive_failures increments, and
+// auto-disables the channel via UpdateIntelChannelEnabled once it crosses
+// the intel.consecutive_failure_disable_threshold (default 5).
+func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, fetchErr error) {
+	channelIDStr := ch.ID.String()
+
+	// Release the crawl lock so the channel is not blocked until TTL expiry.
 	if intelPreflight != nil {
-		intelPreflight.ReleaseCrawlLock(ctx, sourceIDStr)
+		intelPreflight.ReleaseChannelCrawlLock(ctx, channelIDStr)
 	}
-	// Record the failure on the source row so the retry_failed_source
-	// maintenance task can pick it up.
-	_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
-		ID:               sourceID,
+	// Record the failure on the channel row.
+	_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+		ID:               ch.ID,
 		Success:          false,
 		LastErrorMessage: strPtr(fetchErr.Error()),
 	})
 
-	// Auto-disable sources that fail repeatedly (spec §4 failure modes).
+	// Auto-disable channels that fail repeatedly (spec §4 failure modes).
 	threshold := 5
 	if appSettings != nil {
 		threshold = appSettings.GetIntOr(ctx, "intel.consecutive_failure_disable_threshold", 5)
 	}
 
-	if threshold <= 0 || int64(src.ConsecutiveFailures+1) < int64(threshold) {
+	if threshold <= 0 || int64(ch.ConsecutiveFailures+1) < int64(threshold) {
 		return
 	}
 
-	slog.Warn("task:intel:fetch_source: disabling source after consecutive failures", "source_id", sourceIDStr, "consecutive_failures", src.ConsecutiveFailures+1, "threshold", threshold)
+	slog.Warn("task:intel:fetch_channel: disabling channel after consecutive failures", "channel_id", channelIDStr, "consecutive_failures", ch.ConsecutiveFailures+1, "threshold", threshold)
 
-	if disableErr := intelSourcesStore.UpdateEnabled(ctx, sourceID, false); disableErr != nil {
-		slog.Warn("task:intel:fetch_source: failed to disable source", "source_id", sourceIDStr, "error", disableErr)
+	if disableErr := intelSourcesStore.UpdateChannelEnabled(ctx, ch.ID, false); disableErr != nil {
+		slog.Warn("task:intel:fetch_channel: failed to disable channel", "channel_id", channelIDStr, "error", disableErr)
 	}
 }
 
@@ -608,6 +737,11 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:detect_changes: %w", err)
 	}
+	// channel_id is optional — absent on legacy fetch_source enqueues.
+	channelID, err := scanOptionalUUID(p.ChannelID)
+	if err != nil {
+		return fmt.Errorf("task:intel:detect_changes: channel_id: %w", err)
+	}
 	// Load the freshly persisted raw document to get its content_hash.
 	rawDocID, err := scanUUID(p.RawDocID)
 	if err != nil {
@@ -619,20 +753,26 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:detect_changes: load raw doc: %w", err)
 	}
 
-	// Compare the new hash to the prior hash (passed from fetch_source).
+	// Compare the new hash to the prior hash (passed from fetch_channel).
 	decision := changedetector.Compare(rawDoc.ContentHash, p.PriorHash)
-	slog.Info("task:intel:detect_changes: decision", "source_id", p.SourceID, "decision", decision.String(), "new_hash", rawDoc.ContentHash, "prior_hash", p.PriorHash)
+	slog.Info("task:intel:detect_changes: decision", "source_id", p.SourceID, "channel_id", p.ChannelID, "decision", decision.String(), "new_hash", rawDoc.ContentHash, "prior_hash", p.PriorHash)
 
 	switch decision {
 	case changedetector.DecisionUnchanged:
-		// Content unchanged — update last_crawled_at only (already stamped by
-		// fetch_source) and stop the chain. No extraction needed.
-		_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
+		// Content unchanged — the crawl status was already stamped by
+		// fetch_channel; stop the chain. No extraction needed.
+		intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, false)
 		return nil
 	case changedetector.DecisionChanged:
-		// Mark the source as having changed content so the promoter can
-		// detect re-extraction of an already-promoted record.
-		_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
+		// Mark the crawl unit as having changed content so the promoter can
+		// detect re-extraction of an already-promoted record. Channel path
+		// stamps the channel row; the legacy path stamps the source.
+		if channelID.Valid {
+			_ = intelSourcesStore.MarkChannelChanged(ctx, channelID)
+		} else {
+			_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
+		}
+		intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, true)
 	// First crawl — no prior content to mark as changed.
 	case changedetector.DecisionFirstCrawl:
 	}
@@ -641,14 +781,51 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	// raw doc text, run AI extraction, persist the intel_record, and pass the
 	// record id forward to dedup.
 	payload := marshalPayload(intelExtractPayload{
-		Version:  intelPayloadVersion,
-		RawDocID: p.RawDocID,
+		Version:   intelPayloadVersion,
+		RawDocID:  p.RawDocID,
+		ChannelID: p.ChannelID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelExtract, payload)
 	}
 
 	return nil
+}
+
+// intelRecordChannelCrawlOutcome feeds the volatility auto-tuner after a
+// crawl outcome is known (detect_changes). The tuning key is the channel_id
+// when present (jc:intel:effective_interval::{channel_id}) and falls back to
+// source_id for legacy enqueues; the base interval comes from the channel's
+// crawl_frequency_mins, else the source's. Best-effort — resolution or
+// Valkey errors are logged, never fail the task.
+func intelRecordChannelCrawlOutcome(ctx context.Context, sourceID, channelID pgtype.UUID, changed bool) {
+	if intelScheduler == nil || intelSourcesStore == nil {
+		return
+	}
+
+	key := sourceID.String()
+	base := int32(0)
+
+	if channelID.Valid {
+		key = channelID.String()
+		if ch, err := intelSourcesStore.GetChannel(ctx, channelID); err == nil {
+			base = ch.CrawlFrequencyMins
+		}
+	}
+
+	if base <= 0 {
+		if src, err := intelSourcesStore.Get(ctx, sourceID); err == nil {
+			base = src.CrawlFrequencyMins
+		}
+	}
+
+	if base <= 0 {
+		return
+	}
+
+	if err := intelScheduler.RecordCrawlOutcome(ctx, key, base, changed); err != nil {
+		slog.Warn("task:intel:detect_changes: record crawl outcome failed", "key", key, "changed", changed, "error", err)
+	}
 }
 
 // HandleIntelExtract runs AI extraction over the raw document and enqueues
@@ -690,11 +867,12 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 	// Run AI extraction over the raw document body. The extractor adapter
 	// selects the schema by entityType and returns one or more marshalled
-	// extractions + per-record metadata. resolveSourceEntityTypes honours
-	// provider_config.entity_types so a mixed-domain source can emit records
-	// under every type it publishes (one extraction pass per type); without
-	// the override it falls back to the single category-derived type.
-	entityTypes := resolveSourceEntityTypes(src)
+	// extractions + per-record metadata. Entity-type resolution is
+	// channel-first when the raw doc was produced by a channel
+	// (channel.entity_types → source.provider_config.entity_types →
+	// category-derived type); resolveSourceEntityTypes covers the last two
+	// legs for legacy documents with no channel stamped.
+	entityTypes := resolveIntelEntityTypes(ctx, p.ChannelID, rawDoc, src)
 	if len(entityTypes) == 0 {
 		// Unknown / unsupported source category — route to review so an
 		// admin can reclassify the source. No extraction attempted. The
@@ -722,7 +900,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 			return fmt.Errorf("task:intel:extract: %w", extErr)
 		}
 
-		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, entityType, "", results)
+		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, rawDoc.ChannelID, entityType, "", results)
 		if perr != nil {
 			return perr
 		}
@@ -740,6 +918,62 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+// resolveIntelEntityTypes applies the intel-channels Phase 1 entity-type
+// precedence for an extracted document: channel.entity_types →
+// source.provider_config.entity_types → category-derived type. The channel
+// id comes from the extract payload first, then the raw doc's stamped
+// channel_id; when neither resolves to a channel row the source-level
+// resolution runs unchanged (legacy documents keep their behaviour).
+func resolveIntelEntityTypes(ctx context.Context, payloadChannelID string, rawDoc gen.IntelRawDocument, src gen.IntelSource) []string {
+	channelID, err := scanOptionalUUID(payloadChannelID)
+	if err != nil || !channelID.Valid {
+		channelID = rawDoc.ChannelID
+	}
+
+	if channelID.Valid && intelSourcesStore != nil {
+		if ch, gerr := intelSourcesStore.GetChannel(ctx, channelID); gerr == nil {
+			return resolveChannelEntityTypes(ch, src)
+		}
+		// Channel gone or unreadable — fall through to source resolution.
+	}
+
+	return resolveSourceEntityTypes(src)
+}
+
+// resolveChannelEntityTypes returns the extraction entity types for a
+// channel: the channel's entity_types array first (each value must map to a
+// registered extraction schema — unregistered values are dropped with a
+// warning), otherwise the source-level resolution (provider_config override,
+// then category). Backfilled channels carry entity_types='{}' and flow
+// straight to the source fallback.
+func resolveChannelEntityTypes(ch gen.IntelSourceChannel, src gen.IntelSource) []string {
+	if len(ch.EntityTypes) > 0 {
+		out := make([]string, 0, len(ch.EntityTypes))
+		seen := make(map[string]struct{}, len(ch.EntityTypes))
+
+		for _, et := range ch.EntityTypes {
+			if et == "" {
+				continue
+			}
+			if _, ok := schemas.ForEntityType(et); !ok {
+				slog.Warn("task:intel:extract: channel entity type has no registered schema, skipping", "entity_type", et)
+				continue
+			}
+			if _, dup := seen[et]; dup {
+				continue
+			}
+			seen[et] = struct{}{}
+			out = append(out, et)
+		}
+
+		if len(out) > 0 {
+			return out
+		}
+	}
+
+	return resolveSourceEntityTypes(src)
 }
 
 // resolveSourceEntityTypes returns the extraction entity types for a source:
@@ -786,8 +1020,16 @@ func resolveSourceEntityTypes(src gen.IntelSource) []string {
 // created. A (source_id, external_key) unique-violation is skipped rather
 // than failing the task — a multi-type extraction pass can legitimately
 // re-derive a record that already exists under another entity type.
-func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult) (int, error) {
+// // channelID is the raw doc's stamped channel (invalid for legacy
+// documents); it rides the dedup payload so Task 9 can route the record
+// through the channel's pipeline.
+func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, channelID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult) (int, error) {
 	persisted := 0
+
+	channelIDStr := ""
+	if channelID.Valid {
+		channelIDStr = channelID.String()
+	}
 
 	for i, result := range results {
 		record, err := intelStores.CreateIntelRecord(ctx, gen.CreateIntelRecordParams{
@@ -815,8 +1057,9 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype
 		slog.Info("task:intel:extract: extracted", "record_id", record.ID.String(), "index", i, "entity_type", entityType, "confidence", result.ConfidenceOverall)
 
 		payload := marshalPayload(intelRecordPayload{
-			Version:  intelPayloadVersion,
-			RecordID: record.ID.String(),
+			Version:   intelPayloadVersion,
+			RecordID:  record.ID.String(),
+			ChannelID: channelIDStr,
 		})
 		if payload != nil {
 			enqueueIntel(TypeIntelDedup, payload)
@@ -910,8 +1153,9 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	}
 
 	payload := marshalPayload(intelRecordPayload{
-		Version:  intelPayloadVersion,
-		RecordID: p.RecordID,
+		Version:   intelPayloadVersion,
+		RecordID:  p.RecordID,
+		ChannelID: p.ChannelID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelPublishGate, payload)
@@ -1019,8 +1263,9 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 		slog.Info("task:intel:publish_gate: auto-publish", "record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
 
 		payload := marshalPayload(intelRecordPayload{
-			Version:  intelPayloadVersion,
-			RecordID: p.RecordID,
+			Version:   intelPayloadVersion,
+			RecordID:  p.RecordID,
+			ChannelID: p.ChannelID,
 		})
 		if payload != nil {
 			enqueueIntel(TypeIntelPromote, payload)

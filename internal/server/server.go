@@ -1999,7 +1999,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceService.SetSettings(settingsService)
 	authHandlers.SetSourceManager(intelSourcesService)
 	oauthHandlers.SetSourceManager(intelSourcesService)
-	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore}, vkClient.Redis())
+	intelSchedulerSourceLister := &intelSchedulerSourceAdapter{store: intelSourcesStore}
+	intelScheduler := scheduler.NewScheduler(intelSchedulerSourceLister, intelSchedulerSourceLister, vkClient.Redis())
 	intelDedupService := dedup.NewService(intelStores)
 	intelEventPublisher := events.NewAsynqEventPublisher(asynqClient)
 

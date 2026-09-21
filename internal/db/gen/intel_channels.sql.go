@@ -204,6 +204,20 @@ func (q *Queries) GetIntelSourceDefaultChannel(ctx context.Context, sourceID pgt
 	return i, err
 }
 
+const getLatestIntelRawDocHashByChannel = `-- name: GetLatestIntelRawDocHashByChannel :one
+SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
+ORDER BY retrieved_at DESC LIMIT 1
+`
+
+// Channel-scoped prior hash for detect_changes: two channels of the same
+// source must not cross-contaminate each other's hash comparison.
+func (q *Queries) GetLatestIntelRawDocHashByChannel(ctx context.Context, channelID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestIntelRawDocHashByChannel, channelID)
+	var content_hash string
+	err := row.Scan(&content_hash)
+	return content_hash, err
+}
+
 const listDueIntelChannels = `-- name: ListDueIntelChannels :many
 SELECT c.id, c.source_id, c.label, c.entry_url, c.crawl_method, c.entity_types, c.pipeline, c.provider_config, c.crawl_frequency_mins, c.enabled, c.origin, c.relevance_mode, c.relevance_topics, c.relevance_url_patterns, c.last_crawled_at, c.last_success_at, c.last_error_at, c.last_error_message, c.last_changed_at, c.consecutive_failures, c.created_at, c.updated_at FROM intel_source_channels c
 JOIN intel_sources s ON s.id = c.source_id
@@ -303,6 +317,18 @@ func (q *Queries) ListIntelSourceChannels(ctx context.Context, sourceID pgtype.U
 		return nil, err
 	}
 	return items, nil
+}
+
+const markIntelChannelChanged = `-- name: MarkIntelChannelChanged :exec
+UPDATE intel_source_channels SET last_changed_at = now(), updated_at = now()
+WHERE id = $1
+`
+
+// Channel-scoped counterpart of UpdateIntelSourceLastChanged — stamps
+// last_changed_at when detect_changes sees a content change.
+func (q *Queries) MarkIntelChannelChanged(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markIntelChannelChanged, id)
+	return err
 }
 
 const markIntelInboundEvent = `-- name: MarkIntelInboundEvent :exec

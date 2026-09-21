@@ -8,8 +8,8 @@ import (
 )
 
 // Composite is the fetcher adapter that dispatches to the correct per-method
-// fetcher (static, rss, api) based on source.CrawlMethod. PDF and OCR methods
-// use the StaticFetcher to download raw bytes; text extraction happens in the
+// fetcher based on the channel's crawl_method. PDF and OCR methods use the
+// StaticFetcher to download raw bytes; text extraction happens in the
 // extract step. It is the single Fetcher implementation wired into the worker
 // via RegisterIntelDependencies.
 //
@@ -29,24 +29,47 @@ func NewComposite() *Composite {
 	}
 }
 
-// Fetch selects the adapter by source.CrawlMethod and delegates. Returns
-// ErrUnknownCrawlMethod when the source's crawl_method is not one of the
-// supported values.
+// Fetch selects the adapter by ch.CrawlMethod and delegates. The concrete
+// adapters still take a sources.Source, so the channel is folded into an
+// "effective" source: entry_url → SourceUrl, crawl_method → CrawlMethod,
+// and provider_config resolved channel-first (ResolveChannelProviderConfig)
+// so a probe-materialized API channel uses its own endpoint while a
+// backfilled default channel ('{}' config) inherits the source's.
 //
-// For PDF and OCR crawl methods, the StaticFetcher downloads the raw bytes
-// (the PDF file). Text extraction from those bytes happens in the extract
-// step via PDFFetcher.ExtractText / OCRFetcher, not in the fetch step — the
-// fetcher's job is to retrieve raw bytes + compute a content hash for change
-// detection.
-func (c *Composite) Fetch(ctx context.Context, source sources.Source) (FetchResult, error) {
-	switch sources.CrawlMethod(source.CrawlMethod) {
-	case sources.CrawlMethodStatic, sources.CrawlMethodPDF, sources.CrawlMethodOCR:
-		return c.static.Fetch(ctx, source)
+// Phase-1 dispatch (channel design §4):
+//   - static/pdf/ocr → StaticFetcher (pdf/ocr bytes only; text extraction
+//     is a downstream concern)
+//   - ical/tabular → StaticFetcher byte retrieval; parsing is the curator's
+//     job (Task 9) — fetch=bytes, curate=parse
+//   - rss → RSSFetcher
+//   - api → APIFetcher (provider_config resolved channel-first)
+//   - jsonld → static fetch + ld+json block extraction
+//   - sitemap → static fetch + URL/lastmod manifest
+//   - manual/email/webhook → hard error (never fetchable — the scheduler's
+//     ListDueChannels already excludes them; this is the stray-enqueue guard)
+//   - render/git/social/search/wayback/xhr_sniff/oneshot →
+//     ErrMethodNotImplemented until their Phase-2 adapters land
+func (c *Composite) Fetch(ctx context.Context, src sources.Source, ch sources.Channel) (FetchResult, error) {
+	eff := src
+	eff.SourceUrl = ch.EntryUrl
+	eff.CrawlMethod = ch.CrawlMethod
+	eff.ProviderConfig = ResolveChannelProviderConfig(ch, src)
+
+	switch sources.CrawlMethod(ch.CrawlMethod) {
+	case sources.CrawlMethodStatic, sources.CrawlMethodPDF, sources.CrawlMethodOCR,
+		sources.CrawlMethodICal, sources.CrawlMethodTabular:
+		return c.static.Fetch(ctx, eff)
 	case sources.CrawlMethodRSS:
-		return c.rss.Fetch(ctx, source)
+		return c.rss.Fetch(ctx, eff)
 	case sources.CrawlMethodAPI:
-		return c.api.Fetch(ctx, source)
+		return c.api.Fetch(ctx, eff)
+	case sources.CrawlMethodJSONLD:
+		return c.fetchJSONLD(ctx, eff)
+	case sources.CrawlMethodSitemap:
+		return c.fetchSitemapManifest(ctx, eff)
+	case sources.CrawlMethodManual, sources.CrawlMethodEmail, sources.CrawlMethodWebhook:
+		return FetchResult{}, fmt.Errorf("fetcher: crawl_method %q is not fetchable (manual/inbound)", ch.CrawlMethod)
 	default:
-		return FetchResult{}, fmt.Errorf("fetcher: unknown crawl_method %q", source.CrawlMethod)
+		return FetchResult{}, fmt.Errorf("%w: %q", ErrMethodNotImplemented, ch.CrawlMethod)
 	}
 }

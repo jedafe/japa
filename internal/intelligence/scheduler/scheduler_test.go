@@ -64,7 +64,7 @@ func TestSelectDue_PassesBatchSizeAndReturnsRows(t *testing.T) {
 		{Name: "src-b", Domain: "b.example.com"},
 	}
 	fl := &fakeLister{rows: rows}
-	s := NewScheduler(fl, startTestValkey(t))
+	s := NewScheduler(fl, nil, startTestValkey(t))
 
 	got, err := s.SelectDue(t.Context(), 42)
 	if err != nil {
@@ -88,17 +88,83 @@ func TestSelectDue_PropagatesStoreError(t *testing.T) {
 	t.Parallel()
 
 	fl := &fakeLister{err: errors.New("boom")}
-	s := NewScheduler(fl, startTestValkey(t))
+	s := NewScheduler(fl, nil, startTestValkey(t))
 
 	if _, err := s.SelectDue(t.Context(), 10); err == nil {
 		t.Fatal("expected error from store, got nil")
 	}
 }
 
+// fakeChannelLister is a stand-in DueChannelLister so SelectDueChannels can
+// be tested without a *db.DB.
+type fakeChannelLister struct {
+	rows []gen.IntelSourceChannel
+	err  error
+	last int32
+}
+
+func (f *fakeChannelLister) ListDueChannels(_ context.Context, limit int32) ([]gen.IntelSourceChannel, error) {
+	f.last = limit
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	return f.rows, nil
+}
+
+func TestSelectDueChannels_PassesBatchSizeAndReturnsRows(t *testing.T) {
+	t.Parallel()
+
+	rows := []gen.IntelSourceChannel{
+		{Label: "feed", EntryUrl: "https://a.example.com/feed", CrawlMethod: "rss"},
+		{Label: "page", EntryUrl: "https://b.example.com/jobs", CrawlMethod: "static"},
+	}
+	cl := &fakeChannelLister{rows: rows}
+	s := NewScheduler(&fakeLister{}, cl, startTestValkey(t))
+
+	got, err := s.SelectDueChannels(t.Context(), 25)
+	if err != nil {
+		t.Fatalf("SelectDueChannels: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("got %d rows, want 2", len(got))
+	}
+
+	if got[0].EntryUrl != "https://a.example.com/feed" || got[1].CrawlMethod != "static" {
+		t.Errorf("unexpected rows: %+v", got)
+	}
+
+	if cl.last != 25 {
+		t.Errorf("batch size forwarded to store: got %d, want 25", cl.last)
+	}
+}
+
+func TestSelectDueChannels_PropagatesStoreError(t *testing.T) {
+	t.Parallel()
+
+	cl := &fakeChannelLister{err: errors.New("boom")}
+	s := NewScheduler(&fakeLister{}, cl, startTestValkey(t))
+
+	if _, err := s.SelectDueChannels(t.Context(), 10); err == nil {
+		t.Fatal("expected error from store, got nil")
+	}
+}
+
+func TestSelectDueChannels_NilLister(t *testing.T) {
+	t.Parallel()
+
+	s := NewScheduler(&fakeLister{}, nil, startTestValkey(t))
+
+	if _, err := s.SelectDueChannels(t.Context(), 10); err == nil {
+		t.Fatal("expected error with nil channel lister, got nil")
+	}
+}
+
 func TestRecordCrawlOutcome_ChangedHalvesInterval(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb)
+	s := NewScheduler(&fakeLister{}, nil, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -130,7 +196,7 @@ func TestRecordCrawlOutcome_ChangedHalvesInterval(t *testing.T) {
 func TestRecordCrawlOutcome_ChangedFloorsAtBase(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb)
+	s := NewScheduler(&fakeLister{}, nil, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -153,7 +219,7 @@ func TestRecordCrawlOutcome_ChangedFloorsAtBase(t *testing.T) {
 func TestRecordCrawlOutcome_UnchangedIncrementsCounter(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb)
+	s := NewScheduler(&fakeLister{}, nil, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -178,7 +244,7 @@ func TestRecordCrawlOutcome_UnchangedIncrementsCounter(t *testing.T) {
 func TestRecordCrawlOutcome_UnchangedThresholdDoublesInterval(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb)
+	s := NewScheduler(&fakeLister{}, nil, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -208,7 +274,7 @@ func TestRecordCrawlOutcome_UnchangedThresholdDoublesInterval(t *testing.T) {
 func TestRecordCrawlOutcome_DoublesCappedAtMax(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb)
+	s := NewScheduler(&fakeLister{}, nil, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -236,7 +302,7 @@ func TestRecordCrawlOutcome_DoublesCappedAtMax(t *testing.T) {
 
 func TestRecordCrawlOutcome_RejectsEmptyIDAndBadBase(t *testing.T) {
 	t.Parallel()
-	s := NewScheduler(&fakeLister{}, startTestValkey(t))
+	s := NewScheduler(&fakeLister{}, nil, startTestValkey(t))
 	ctx := t.Context()
 
 	if err := s.RecordCrawlOutcome(ctx, "", 60, false); err == nil {
@@ -254,7 +320,7 @@ func TestRecordCrawlOutcome_RejectsEmptyIDAndBadBase(t *testing.T) {
 
 func TestEffectiveIntervalMins_DefaultsToBaseWhenAbsent(t *testing.T) {
 	t.Parallel()
-	s := NewScheduler(&fakeLister{}, startTestValkey(t))
+	s := NewScheduler(&fakeLister{}, nil, startTestValkey(t))
 	ctx := t.Context()
 
 	const base int32 = 90
@@ -272,7 +338,7 @@ func TestEffectiveIntervalMins_DefaultsToBaseWhenAbsent(t *testing.T) {
 func TestRecordCrawlOutcome_ChangeResetsStreakThenUnchangedStartsFresh(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb)
+	s := NewScheduler(&fakeLister{}, nil, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60

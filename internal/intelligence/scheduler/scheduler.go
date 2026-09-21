@@ -1,12 +1,14 @@
-// Package scheduler selects due intelligence sources for crawling and
-// auto-tunes their effective crawl interval based on observed content
-// volatility (source idea §17, Phase 3 Task 20).
-// // The volatility auto-tuner stores a per-source effective interval in Valkey
-// under `jc:intel:effective_interval:{}:{source_id}` (TTL 7d).
+// Package scheduler selects due intelligence sources/channels for crawling
+// and auto-tunes their effective crawl interval based on observed content
+// volatility (source idea §17, Phase 3 Task 20; intel-channels Phase 1 moved
+// the scheduling granularity to channels).
+// // The volatility auto-tuner stores a per-crawl-unit effective interval in
+// Valkey under `jc:intel:effective_interval::{id}` (TTL 7d) — keyed by
+// channel_id on the channel path, source_id on the legacy source path.
 // After 5 consecutive unchanged crawls the interval is doubled (capped at
 // MaxEffectiveIntervalMins); after any change the interval is halved (floored
-// at the source's base crawl_frequency_mins). A separate counter key
-// `jc:intel:effective_interval:{}:{source_id}:unchanged_count`
+// at the channel's/source's base crawl_frequency_mins). A separate counter key
+// `jc:intel:effective_interval::{id}:unchanged_count`
 // tracks the consecutive-unchanged streak so the value survives restarts.
 // All keys are platform-scoped per ADR-112 Amendment 2.
 package scheduler
@@ -32,6 +34,15 @@ type DueSourceLister interface {
 	ListDue(ctx context.Context, limit int32) ([]gen.IntelSource, error)
 }
 
+// DueChannelLister is the subset of sources.Store the scheduler needs to
+// select channels whose crawl interval has elapsed (intel-channels Phase 1
+// — scheduling granularity moved from source to channel). *sources.Store
+// satisfies it via ListDueChannels, which joins intel_sources and already
+// excludes manual/inbound channels and disabled/inactive parents.
+type DueChannelLister interface {
+	ListDueChannels(ctx context.Context, limit int32) ([]gen.IntelSourceChannel, error)
+}
+
 // MaxEffectiveIntervalMins caps how far the auto-tuner can stretch a source's
 // effective interval. Once a source is this stable, further unchanged crawls
 // no longer lengthen the interval.
@@ -48,16 +59,19 @@ const effectiveIntervalTTL = 7 * 24 * time.Hour
 // Scheduler picks due sources and records crawl outcomes so the volatility
 // auto-tuner can adjust each source's effective interval over time.
 type Scheduler struct {
-	sourceStore DueSourceLister
-	rdb         valkeycompat.Cmdable
+	sourceStore  DueSourceLister
+	channelStore DueChannelLister
+	rdb          valkeycompat.Cmdable
 }
 
-// NewScheduler returns a Scheduler backed by the given source store and
-// Valkey (go-redis-compatible) client. A *sources.Store satisfies
-// DueSourceLister, so the concrete store can be passed directly. The
-// ID scopes all Valkey keys per ADR-112 Amendment 2.
-func NewScheduler(sourceStore DueSourceLister, rdb valkeycompat.Cmdable) *Scheduler {
-	return &Scheduler{sourceStore: sourceStore, rdb: rdb}
+// NewScheduler returns a Scheduler backed by the given source/channel stores
+// and Valkey (go-redis-compatible) client. *sources.Store satisfies both
+// lister interfaces, so the concrete store can be passed for both arguments.
+// The ID scopes all Valkey keys per ADR-112 Amendment 2.
+// // channelLister may be nil for source-only callers (SelectDueChannels
+// then returns an error).
+func NewScheduler(sourceStore DueSourceLister, channelLister DueChannelLister, rdb valkeycompat.Cmdable) *Scheduler {
+	return &Scheduler{sourceStore: sourceStore, channelStore: channelLister, rdb: rdb}
 }
 
 // SelectDue returns up to batchSize enabled sources whose crawl interval has
@@ -67,6 +81,24 @@ func (s *Scheduler) SelectDue(ctx context.Context, batchSize int32) ([]sources.S
 	rows, err := s.sourceStore.ListDue(ctx, batchSize)
 	if err != nil {
 		return nil, fmt.Errorf("scheduler: select due: %w", err)
+	}
+
+	return rows, nil
+}
+
+// SelectDueChannels returns up to batchSize enabled channels whose crawl
+// interval has elapsed (or that have never been crawled), oldest-first —
+// the intel-channels Phase 1 scheduling unit. The underlying
+// ListDueIntelChannels query joins intel_sources so channels on disabled or
+// non-active parents are excluded, and skips manual/email/webhook methods.
+func (s *Scheduler) SelectDueChannels(ctx context.Context, batchSize int32) ([]sources.Channel, error) {
+	if s.channelStore == nil {
+		return nil, errors.New("scheduler: select due channels: channel lister not wired")
+	}
+
+	rows, err := s.channelStore.ListDueChannels(ctx, batchSize)
+	if err != nil {
+		return nil, fmt.Errorf("scheduler: select due channels: %w", err)
 	}
 
 	return rows, nil

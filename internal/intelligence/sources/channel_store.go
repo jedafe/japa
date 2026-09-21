@@ -155,6 +155,17 @@ func (s *Store) UpdateChannelCrawlStatus(ctx context.Context, arg gen.UpdateInte
 	return nil
 }
 
+// MarkChannelChanged stamps a channel's last_changed_at when detect_changes
+// observes a content change — the channel-scoped counterpart of
+// MarkLastChanged on the source row.
+func (s *Store) MarkChannelChanged(ctx context.Context, id ChannelID) error {
+	if err := s.queries.MarkIntelChannelChanged(ctx, id); err != nil {
+		return fmt.Errorf("sources: mark channel changed: %w", err)
+	}
+
+	return nil
+}
+
 // DeleteChannel removes a channel. intel_inbound_events and
 // intel_raw_documents references are handled by the FK clauses (CASCADE /
 // SET NULL respectively).

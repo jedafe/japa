@@ -206,6 +206,8 @@ var taskTier = func() map[string]string {
 		TypeReportNotifyAdmin,
 		// §INTEL — ingestion spine tasks, default tier (ADR-112).
 		TypeIntelFetchSource,
+		// §intel-channels Phase 1 — per-channel fetch, default tier.
+		TypeIntelFetchChannel,
 		TypeIntelDetectChanges,
 		TypeIntelExtract,
 		TypeIntelDedup,
@@ -379,6 +381,7 @@ var taskTypeCatalog = []struct {
 	{TypeJapaStageRecommend, "default", "Generate stage-transition recommendations on PATCH /me/japa-stage event (§87)"},
 	// §INTEL — intelligence pipeline tasks, default tier (ADR-112).
 	{TypeIntelFetchSource, "default", "Fetch raw document from a single intelligence source"},
+	{TypeIntelFetchChannel, "default", "Fetch raw document for a single intel source channel (§intel-channels Phase 1)"},
 	{TypeIntelDetectChanges, "default", "Detect content changes vs prior crawl hash"},
 	{TypeIntelExtract, "default", "AI extraction of structured fields from raw document"},
 	{TypeIntelDedup, "default", "Dedup check via (source_id, external_key) uniqueness"},

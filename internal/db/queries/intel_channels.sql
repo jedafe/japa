@@ -89,3 +89,15 @@ WHERE id = $1;
 -- name: UpdateIntelSourceProbe :exec
 UPDATE intel_sources SET probe_report = $2, detected_methods = $3, last_probed_at = now()
 WHERE id = $1;
+
+-- name: GetLatestIntelRawDocHashByChannel :one
+-- Channel-scoped prior hash for detect_changes: two channels of the same
+-- source must not cross-contaminate each other's hash comparison.
+SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
+ORDER BY retrieved_at DESC LIMIT 1;
+
+-- name: MarkIntelChannelChanged :exec
+-- Channel-scoped counterpart of UpdateIntelSourceLastChanged — stamps
+-- last_changed_at when detect_changes sees a content change.
+UPDATE intel_source_channels SET last_changed_at = now(), updated_at = now()
+WHERE id = $1;
