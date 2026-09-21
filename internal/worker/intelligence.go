@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -352,6 +353,14 @@ type intelExtractPayload struct {
 	// precedence (channel.entity_types → provider_config → category).
 	// Empty on legacy enqueues; raw_doc.channel_id is the fallback source.
 	ChannelID string `json:"channel_id,omitempty"`
+	// SkipItemURLs carries the canonical item URLs the curate pass already
+	// claimed for this raw doc. The hybrid pipeline's extract fallback
+	// re-derives the whole document, and extractor keys
+	// (sourceURL|application_url|hash) never collide with curator keys
+	// (feed GUID/link) — without this suppression the already-persisted
+	// items double-persist as duplicate intel_records. Empty on
+	// non-hybrid enqueues.
+	SkipItemURLs []string `json:"skip_item_urls,omitempty"`
 }
 
 // intelCurateChannelPayload is the intel:curate_channel task payload
@@ -1048,6 +1057,15 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	// nil when the gate is not wired.
 	rel := intelRelevanceCallFor(ctx, p.ChannelID, rawDoc, src)
 
+	// Hybrid-fallback suppression (intel-channels Phase 1): when the curate
+	// pass routed this doc to extract because a record was missing required
+	// fields, it also persisted the doc's well-formed items under curator
+	// keys (feed GUID/link). Extract re-derives the whole doc under
+	// extractor keys (sourceURL|application_url|hash) that never collide —
+	// so the claimed item URLs ride the payload and matching results are
+	// skipped before insert. Empty on every non-hybrid enqueue.
+	skipItems := intelNormalizeItemURLSet(p.SkipItemURLs)
+
 	var persisted int
 	var retriesExhausted, curateOnly bool
 	for _, entityType := range entityTypes {
@@ -1082,7 +1100,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 			return fmt.Errorf("task:intel:extract: %w", extErr)
 		}
 
-		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, rawDoc.ChannelID, entityType, "", results, rel)
+		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, rawDoc.ChannelID, entityType, "", results, rel, skipItems)
 		if perr != nil {
 			return perr
 		}
@@ -1209,7 +1227,11 @@ func resolveSourceEntityTypes(src gen.IntelSource) []string {
 // extract pipeline gates post-extraction per record). An off_topic verdict
 // keeps the row (status 'off_topic', external_key preserved for dedup) but
 // skips the dedup enqueue; nil disables gating.
-func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, channelID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult, rel *intelRelevanceCall) (int, error) {
+// // skipItems is the canonical item-URL set carried by the hybrid extract
+// fallback — results matching a URL the doc's curate pass already
+// persisted are skipped BEFORE insert, since extractor keys never collide
+// with curator keys and would otherwise double-persist the same item.
+func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, channelID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult, rel *intelRelevanceCall, skipItems map[string]struct{}) (int, error) {
 	persisted := 0
 
 	channelIDStr := ""
@@ -1218,6 +1240,15 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, chann
 	}
 
 	for i, result := range results {
+		if len(skipItems) > 0 {
+			if u := intelNormalizeItemURL(intelItemFromExtraction(result.RawExtraction).URL); u != "" {
+				if _, dup := skipItems[u]; dup {
+					slog.Info("task:intel:extract: item already claimed by curate pass, skipping", "source_id", sourceID.String(), "external_key", result.ExternalKey, "url", u, "entity_type", entityType)
+					continue
+				}
+			}
+		}
+
 		record, err := intelStores.CreateIntelRecord(ctx, gen.CreateIntelRecordParams{
 			SourceID:          sourceID,
 			RawDocumentID:     rawDocID,
@@ -1366,7 +1397,7 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		// No channel exists to route by — treat the doc like a legacy
 		// source-level fetch and send it through the extract pipeline.
 		slog.Info("task:intel:curate_channel: no channel resolved, falling back to extract", "raw_doc_id", p.RawDocID)
-		intelEnqueueExtractFallback(p.RawDocID, p.ChannelID)
+		intelEnqueueExtractFallback(p.RawDocID, p.ChannelID, nil)
 
 		return nil
 	}
@@ -1385,7 +1416,7 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		// Curator port not wired (dev/test) — degrade to the extract path
 		// rather than dropping the document.
 		slog.Warn("task:intel:curate_channel: curator not wired, falling back to extract", "channel_id", ch.ID.String())
-		intelEnqueueExtractFallback(p.RawDocID, ch.ID.String())
+		intelEnqueueExtractFallback(p.RawDocID, ch.ID.String(), nil)
 
 		return nil
 	}
@@ -1402,7 +1433,7 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 			// (sitemap manifests, api, git, …) — the extract pipeline owns
 			// the document instead.
 			slog.Info("task:intel:curate_channel: no curator for method, falling back to extract", "channel_id", ch.ID.String(), "crawl_method", ch.CrawlMethod)
-			intelEnqueueExtractFallback(p.RawDocID, ch.ID.String())
+			intelEnqueueExtractFallback(p.RawDocID, ch.ID.String(), nil)
 
 			return nil
 		}
@@ -1438,6 +1469,14 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 	var persisted, gated, skipped int
 	extractEnqueued := false
 
+	// claimedURLs tracks the canonical item URL of every record this pass
+	// persisted (or found already persisted — a 23505 re-crawl). The
+	// hybrid extract fallback re-derives the WHOLE doc under extractor
+	// keys that never collide with curator keys, so the extract persist
+	// loop suppresses these URLs — otherwise each already-curated item
+	// would double-persist under a second external_key.
+	var claimedURLs []string
+
 	for _, rec := range records {
 		entityType := rec.EntityType
 		if entityType == "" {
@@ -1449,12 +1488,21 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 			continue
 		}
 
+		item := intelItemFromExtraction(rec.RawExtraction)
+		claimItem := func() {
+			if u := intelNormalizeItemURL(item.URL); u != "" {
+				claimedURLs = append(claimedURLs, u)
+			}
+		}
+
 		// Relevance gate — an off_topic verdict persists the row as
 		// 'off_topic' (auditable + dedupes on re-crawl) and skips the
 		// downstream chain entirely.
-		if rel != nil && rel.verdict(ctx, intelItemFromExtraction(rec.RawExtraction), "task:intel:curate_channel") == relevance.VerdictOffTopic {
+		if rel != nil && rel.verdict(ctx, item, "task:intel:curate_channel") == relevance.VerdictOffTopic {
 			gated++
-			intelPersistOffTopicRecord(ctx, rawDoc, ch, rec, entityType, "task:intel:curate_channel")
+			if intelPersistOffTopicRecord(ctx, rawDoc, ch, rec, entityType, "task:intel:curate_channel") != intelPersistFailed {
+				claimItem()
+			}
 			continue
 		}
 
@@ -1465,8 +1513,13 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		// LLM-extracted, so they park in review_required.
 		if hybrid && intelMissingRequiredFields(rec.RawExtraction, entityType) {
 			if schemas.IsCurateOnly(entityType) {
-				recordID, ok := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
-				if !ok {
+				recordID, outcome := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
+				if outcome != intelPersistInserted {
+					// An already-existing row still claims the item for
+					// the extract fallback's skip set.
+					if outcome == intelPersistExists {
+						claimItem()
+					}
 					skipped++
 					continue
 				}
@@ -1477,23 +1530,27 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 					return fmt.Errorf("task:intel:curate_channel: set review status: %w", uerr)
 				}
 				persisted++
+				claimItem()
 				continue
 			}
 
 			if !extractEnqueued {
 				slog.Info("task:intel:curate_channel: hybrid record missing required fields, routing doc to extract", "raw_doc_id", p.RawDocID, "entity_type", entityType, "external_key", rec.ExternalKey)
-				intelEnqueueExtractFallback(p.RawDocID, channelIDStr)
 				extractEnqueued = true
 			}
 			continue
 		}
 
-		recordID, ok := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
-		if !ok {
+		recordID, outcome := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
+		if outcome != intelPersistInserted {
+			if outcome == intelPersistExists {
+				claimItem()
+			}
 			skipped++
 			continue
 		}
 		persisted++
+		claimItem()
 
 		// Trust gate (Task 11): sources at or below
 		// intel.curate.auto_publish_trust_max (default 2) skip
@@ -1535,6 +1592,13 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
+	// Deferred hybrid enqueue — the payload must carry the COMPLETE
+	// claimed-item URL set, so it fires only after every record has been
+	// evaluated.
+	if extractEnqueued {
+		intelEnqueueExtractFallback(p.RawDocID, channelIDStr, claimedURLs)
+	}
+
 	slog.Info("task:intel:curate_channel: done", "channel_id", channelIDStr, "raw_doc_id", p.RawDocID, "records", len(records), "persisted", persisted, "gated", gated, "skipped", skipped, "extract_fallback", extractEnqueued)
 
 	return nil
@@ -1542,12 +1606,16 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 
 // intelEnqueueExtractFallback enqueues an intel:extract task for the raw
 // doc — the shared fallback when a curate-routed document has no usable
-// curator path.
-func intelEnqueueExtractFallback(rawDocID, channelID string) {
+// curator path. skipItemURLs lists the canonical item URLs the curate pass
+// already persisted for the doc (hybrid missing-fields routing only —
+// nil everywhere else); the extract persist loop suppresses those items
+// so they do not double-persist under extractor-derived external keys.
+func intelEnqueueExtractFallback(rawDocID, channelID string, skipItemURLs []string) {
 	payload := marshalPayload(intelExtractPayload{
-		Version:   intelPayloadVersion,
-		RawDocID:  rawDocID,
-		ChannelID: channelID,
+		Version:      intelPayloadVersion,
+		RawDocID:     rawDocID,
+		ChannelID:    channelID,
+		SkipItemURLs: skipItemURLs,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelExtract, payload)
@@ -1606,12 +1674,26 @@ func intelMissingRequiredFields(rawExtraction []byte, entityType string) bool {
 	return false
 }
 
+// intelPersistOutcome reports how intelPersistCuratedRecord resolved an
+// insert. The distinction matters for the hybrid extract fallback's
+// claimed-item suppression: inserted and exists both mean a row covers
+// the item (claim it), while failed means nothing was persisted (the
+// extract pass may still recover it).
+type intelPersistOutcome int
+
+const (
+	intelPersistFailed   intelPersistOutcome = iota // insert error — no row exists
+	intelPersistInserted                            // new row created
+	intelPersistExists                              // 23505 — a prior crawl's row already claims the key
+)
+
 // intelPersistCuratedRecord inserts one curated record as an intel_record
-// in 'extracted' status and returns its id. A (source_id, external_key)
-// unique-violation is a re-crawl of unchanged content — skipped, not an
-// error. The evidence column notes the curator origin so reviewers can
-// tell deterministic records from LLM extractions.
-func intelPersistCuratedRecord(ctx context.Context, rawDoc gen.IntelRawDocument, ch gen.IntelSourceChannel, rec IntelCuratedRecord, entityType string) (pgtype.UUID, bool) {
+// in 'extracted' status and returns its id plus the outcome. A
+// (source_id, external_key) unique-violation is a re-crawl of unchanged
+// content — reported as intelPersistExists, not an error. The evidence
+// column notes the curator origin so reviewers can tell deterministic
+// records from LLM extractions.
+func intelPersistCuratedRecord(ctx context.Context, rawDoc gen.IntelRawDocument, ch gen.IntelSourceChannel, rec IntelCuratedRecord, entityType string) (pgtype.UUID, intelPersistOutcome) {
 	confidence := rec.ConfidenceOverall
 	if confidence <= 0 {
 		confidence = 1.0 // curated fields are deterministic — full confidence
@@ -1638,17 +1720,17 @@ func intelPersistCuratedRecord(ctx context.Context, rawDoc gen.IntelRawDocument,
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			slog.Info("task:intel:curate_channel: record already exists, skipping", "source_id", rawDoc.SourceID.String(), "external_key", rec.ExternalKey, "entity_type", entityType)
-			return pgtype.UUID{}, false
+			return pgtype.UUID{}, intelPersistExists
 		}
 
 		slog.Error("task:intel:curate_channel: create record failed", "external_key", rec.ExternalKey, "entity_type", entityType, "error", err)
 
-		return pgtype.UUID{}, false
+		return pgtype.UUID{}, intelPersistFailed
 	}
 
 	slog.Info("task:intel:curate_channel: curated", "record_id", record.ID.String(), "entity_type", entityType, "external_key", rec.ExternalKey, "confidence", confidence)
 
-	return record.ID, true
+	return record.ID, intelPersistInserted
 }
 
 // intelCurateAutoPublish reports whether the source's trust level clears
@@ -1829,15 +1911,55 @@ func intelItemFromExtraction(raw []byte) relevance.ItemInput {
 	}
 }
 
+// intelNormalizeItemURL canonicalizes an item URL for cross-path identity
+// matching — the hybrid extract fallback suppresses items the curate pass
+// already persisted, and curator keys (feed GUID/link) never collide with
+// extractor keys (sourceURL|application_url), so the canonical URL is the
+// shared identity. Conservative: lowercase scheme/host, fragment dropped,
+// one trailing slash trimmed; query params are kept since they can carry
+// identity (…?id=123). "" on empty/unparseable input — never matches.
+func intelNormalizeItemURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Fragment = ""
+	u.Path = strings.TrimSuffix(u.Path, "/")
+
+	return u.String()
+}
+
+// intelNormalizeItemURLSet builds the canonical-URL lookup the extract
+// persist loop uses to suppress items the curate pass already claimed.
+// Empty/nil input yields nil — the skip check is then fully disabled.
+func intelNormalizeItemURLSet(raw []string) map[string]struct{} {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	out := make(map[string]struct{}, len(raw))
+	for _, u := range raw {
+		if n := intelNormalizeItemURL(u); n != "" {
+			out[n] = struct{}{}
+		}
+	}
+
+	return out
+}
+
 // intelPersistOffTopicRecord persists a gated-out record as an
 // intel_records row with status 'off_topic' so the item is auditable and
 // re-crawls dedupe on (source_id, external_key). A unique-violation or
 // insert failure is already logged by intelPersistCuratedRecord — the
-// caller just counts it as gated.
-func intelPersistOffTopicRecord(ctx context.Context, rawDoc gen.IntelRawDocument, ch sources.Channel, rec IntelCuratedRecord, entityType, logPrefix string) {
-	recordID, ok := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
-	if !ok {
-		return // 23505 re-crawl dedup or logged insert failure
+// outcome is returned so the caller can claim the item's URL for the
+// hybrid extract fallback's suppression set whenever a row covers it.
+func intelPersistOffTopicRecord(ctx context.Context, rawDoc gen.IntelRawDocument, ch sources.Channel, rec IntelCuratedRecord, entityType, logPrefix string) intelPersistOutcome {
+	recordID, outcome := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
+	if outcome != intelPersistInserted {
+		return outcome // 23505 re-crawl dedup or logged insert failure
 	}
 
 	if err := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
@@ -1846,6 +1968,8 @@ func intelPersistOffTopicRecord(ctx context.Context, rawDoc gen.IntelRawDocument
 	}); err != nil {
 		slog.Error(logPrefix+": set off_topic status failed", "record_id", recordID.String(), "external_key", rec.ExternalKey, "error", err)
 	}
+
+	return intelPersistInserted
 }
 
 // HandleIntelDedup checks (source_id, external_key) uniqueness and enqueues

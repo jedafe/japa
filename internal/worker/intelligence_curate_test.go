@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/hibiken/asynq"
@@ -173,6 +174,53 @@ func TestHandleIntelCurateChannel_NotWired(t *testing.T) {
 	task := asynq.NewTask(TypeIntelCurateChannel, []byte(`{"version":"v1","source_id":"11111111-1111-4111-8111-111111111111","channel_id":"22222222-2222-4222-8222-222222222222","raw_doc_id":"33333333-3333-4333-8333-333333333333"}`))
 	if err := HandleIntelCurateChannel(context.Background(), task); err != nil {
 		t.Fatalf("unwired handler returned error: %v", err)
+	}
+}
+
+// TestIntelNormalizeItemURL pins the canonicalization used for the hybrid
+// fallback's claimed-item suppression: scheme/host case, fragments, and a
+// trailing slash fold together; query params are preserved (they can carry
+// identity); unparseable/empty input yields "" and can never match.
+func TestIntelNormalizeItemURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"plain", "https://example.com/jobs/1", "https://example.com/jobs/1"},
+		{"case folding", "HTTPS://Example.COM/Jobs/1", "https://example.com/Jobs/1"},
+		{"fragment dropped", "https://example.com/jobs/1#details", "https://example.com/jobs/1"},
+		{"trailing slash folded", "https://example.com/jobs/1/", "https://example.com/jobs/1"},
+		{"query kept", "https://example.com/jobs?id=123&utm_source=x", "https://example.com/jobs?id=123&utm_source=x"},
+		{"empty", "", ""},
+		{"blank", "   ", ""},
+		{"unparseable", "not a url", ""},
+		{"scheme-relative", "//example.com/path", "//example.com/path"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := intelNormalizeItemURL(tt.raw); got != tt.want {
+				t.Errorf("intelNormalizeItemURL(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+
+	// The set builder normalizes members and drops unusable entries.
+	set := intelNormalizeItemURLSet([]string{
+		"HTTPS://Example.COM/a/", "not a url", "https://example.com/b",
+	})
+	if _, ok := set["https://example.com/a"]; !ok {
+		t.Errorf("set missing normalized entry: %v", set)
+	}
+	if len(set) != 2 {
+		t.Errorf("set = %v, want 2 usable entries", set)
+	}
+	if intelNormalizeItemURLSet(nil) != nil {
+		t.Error("nil input must yield nil (skip check disabled)")
 	}
 }
 
@@ -761,5 +809,156 @@ func TestHandleIntelCurateChannel_Hybrid(t *testing.T) {
 	// Only the complete record continues to dedup.
 	if n := len(pendingTasks(t, inspector, TypeIntelDedup)); n != 1 {
 		t.Errorf("dedup tasks = %d, want 1", n)
+	}
+}
+
+// TestHandleIntelCurateChannel_HybridExtractSkipSet covers the
+// cross-path duplicate guard: when a hybrid doc is routed to extract
+// because one record is missing required fields, the extract task payload
+// carries the canonical item URLs the curate pass already persisted —
+// and the extract handler suppresses a re-derived result matching one of
+// those URLs, even though its extractor-style external_key never collides
+// with the curator key. Without the suppression the well-formed item
+// would land in intel_records twice (once curated, once extracted).
+func TestHandleIntelCurateChannel_HybridExtractSkipSet(t *testing.T) {
+	database, srcStore, intelDocStore, inspector := wireIntelChannelDeps(t)
+
+	// Isolate from the trust gate (source fixture is trust=1) and the
+	// relevance gate — the skip-set contract is under test alone.
+	oldSettings := appSettings
+	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 0}}
+	t.Cleanup(func() { appSettings = oldSettings })
+	setRelevanceGate(t, nil)
+
+	src := mkIntelTestSource(t, srcStore, "hybrid-skip-src", nil)
+	ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
+		a.CrawlMethod = "jsonld"
+		a.Pipeline = "hybrid"
+		a.EntityTypes = []string{"job"}
+	})
+
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+		SourceID:    src.ID,
+		ChannelID:   ch.ID,
+		Url:         ch.EntryUrl,
+		HttpStatus:  200,
+		HttpHeaders: []byte(`{}`),
+		Body:        []byte("{}"),
+		ContentHash: "hybridskiphash",
+	})
+	if err != nil {
+		t.Fatalf("create raw doc: %v", err)
+	}
+
+	setIntelCurator(t, &fakeIntelCurator{recs: []IntelCuratedRecord{
+		{
+			// Missing required 'country' → routes the doc to extract; the
+			// record itself is NOT persisted or claimed.
+			RawExtraction: marshalCuratedExtraction(t, map[string]any{
+				"title":           "Incomplete job",
+				"application_url": "https://jobs.example.com/incomplete",
+			}),
+			ConfidenceOverall: 1.0,
+			ExternalKey:       "job:incomplete-1",
+			EntityType:        "job",
+		},
+		{
+			// Complete → persisted under the curator key and claimed.
+			RawExtraction: marshalCuratedExtraction(t, map[string]any{
+				"title":           "Complete job",
+				"country":         []any{"GB"},
+				"application_url": "https://jobs.example.com/complete",
+			}),
+			ConfidenceOverall: 1.0,
+			ExternalKey:       "job:complete-1",
+			EntityType:        "job",
+		},
+	}})
+
+	curatePayload, _ := json.Marshal(intelCurateChannelPayload{
+		Version:   intelPayloadVersion,
+		SourceID:  src.ID.String(),
+		ChannelID: ch.ID.String(),
+		RawDocID:  rawDoc.ID.String(),
+	})
+	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, curatePayload)); err != nil {
+		t.Fatalf("HandleIntelCurateChannel: %v", err)
+	}
+
+	// The extract fallback payload must claim the persisted item's
+	// canonical URL — and NOT the deficient item's (extract owns it).
+	extractInfos := pendingTasks(t, inspector, TypeIntelExtract)
+	if len(extractInfos) != 1 {
+		t.Fatalf("extract tasks = %d, want 1", len(extractInfos))
+	}
+	var ep intelExtractPayload
+	if err := json.Unmarshal(extractInfos[0].Payload, &ep); err != nil {
+		t.Fatalf("extract payload: %v", err)
+	}
+	if !slices.Contains(ep.SkipItemURLs, "https://jobs.example.com/complete") {
+		t.Errorf("skip_item_urls = %v, want the claimed item URL", ep.SkipItemURLs)
+	}
+	if slices.Contains(ep.SkipItemURLs, "https://jobs.example.com/incomplete") {
+		t.Errorf("skip_item_urls must not contain the extract-routed item: %v", ep.SkipItemURLs)
+	}
+
+	// Phase 2 — run the enqueued extract task against a fake extractor
+	// that re-derives the claimed item under an extractor-style key (plus
+	// a trailing-slash variant to prove normalization) and recovers the
+	// deficient item under a different key.
+	ext := &fakeIntelExtractor{results: []IntelExtractResult{
+		{
+			RawExtraction: marshalCuratedExtraction(t, map[string]any{
+				"title":           "Complete job",
+				"country":         []any{"GB"},
+				"application_url": "https://jobs.example.com/complete/", // trailing-slash variant
+			}),
+			ConfidenceOverall: 0.9,
+			ExternalKey:       "https://example.com/hybrid-skip-src|dup-1",
+		},
+		{
+			RawExtraction: marshalCuratedExtraction(t, map[string]any{
+				"title":           "Incomplete job",
+				"country":         []any{"GB"},
+				"application_url": "https://jobs.example.com/incomplete",
+			}),
+			ConfidenceOverall: 0.9,
+			ExternalKey:       "https://example.com/hybrid-skip-src|recovered-1",
+		},
+	}}
+	oldExt := intelExtractor
+	intelExtractor = ext
+	t.Cleanup(func() { intelExtractor = oldExt })
+
+	if err := HandleIntelExtract(context.Background(), asynq.NewTask(TypeIntelExtract, extractInfos[0].Payload)); err != nil {
+		t.Fatalf("HandleIntelExtract: %v", err)
+	}
+
+	// Exactly two records exist: the curated 'complete' row and the
+	// extracted 'recovered' row — the claimed item was NOT re-persisted
+	// under the extractor key.
+	var n int
+	if err := database.Writer.QueryRow(context.Background(),
+		`SELECT count(*) FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&n); err != nil {
+		t.Fatalf("count records: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("records = %d, want 2 (claimed item suppressed)", n)
+	}
+
+	var dup int
+	if err := database.Writer.QueryRow(context.Background(),
+		`SELECT count(*) FROM intel_records WHERE raw_document_id = $1 AND external_key = $2`,
+		rawDoc.ID, "https://example.com/hybrid-skip-src|dup-1").Scan(&dup); err != nil {
+		t.Fatalf("count dup: %v", err)
+	}
+	if dup != 0 {
+		t.Error("claimed item double-persisted under the extractor key")
+	}
+
+	// One dedup per persisted record: the curated complete item + the
+	// recovered item — nothing for the suppressed duplicate.
+	if n := len(pendingTasks(t, inspector, TypeIntelDedup)); n != 2 {
+		t.Errorf("dedup tasks = %d, want 2", n)
 	}
 }
