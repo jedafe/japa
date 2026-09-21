@@ -367,6 +367,15 @@ func TestHandleIntelCurateChannel_RelevanceGate(t *testing.T) {
 	// directly so the seam is still nil here.
 	setRelevanceGate(t, intelEvaluateRelevance)
 
+	// Pin the trust gate off so relevance routing is under test in
+	// isolation — the default source fixture is trust_level=1, which would
+	// otherwise auto-publish under the spec-default ceiling (2). The fake
+	// returns reader fallbacks for the relevance knobs, matching the
+	// nil-settings defaults intelEvaluateRelevance uses.
+	oldSettings := appSettings
+	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 0}}
+	t.Cleanup(func() { appSettings = oldSettings })
+
 	// Category "news" seeds map topics (migration, visa, diaspora, …).
 	src := mkIntelTestSource(t, srcStore, "rel-gate-src", nil)
 	ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
