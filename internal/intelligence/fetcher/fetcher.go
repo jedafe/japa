@@ -16,12 +16,30 @@ import (
 )
 
 // ErrMethodNotImplemented is returned by Composite.Fetch when the channel's
-// crawl_method names a fetch strategy that has no Phase-1 adapter yet
-// (render, git, social, search, wayback, xhr_sniff, oneshot). The worker
-// treats it like any fetch failure — the channel's consecutive_failures
-// counter increments and the circuit-breaker disables the channel at the
-// threshold, so unimplemented methods cannot retry-loop forever.
+// crawl_method names a fetch strategy with no adapter yet (search — Phase
+// 3). The worker treats it like any fetch failure — the channel's
+// consecutive_failures counter increments and the circuit-breaker disables
+// the channel at the threshold, so unimplemented methods cannot retry-loop
+// forever.
 var ErrMethodNotImplemented = errors.New("fetcher: crawl method not implemented")
+
+// ErrAdapterDisabled is returned by adapters that exist but are not
+// configured or enabled — render with no intel.render.service_url (or an
+// open jc:intel:render:circuit breaker), social with a provider absent
+// from intel.social.enabled_providers. The worker treats it like
+// ErrCrawlLocked: a benign skip that neither retries nor increments
+// consecutive_failures — a missing config is not a source failure.
+var ErrAdapterDisabled = errors.New("fetcher: adapter not configured")
+
+// AdapterSettings is the hot-reloadable settings port the Phase-2 adapters
+// consult per fetch (render service URL, social provider allowlist).
+// *config.Settings satisfies it; a nil reader leaves every config-gated
+// adapter disabled. Defined locally to avoid an import cycle on
+// internal/config.
+type AdapterSettings interface {
+	GetStringOr(ctx context.Context, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
+}
 
 // Fetcher is the adapter interface. Each implementation fetches a channel's
 // entry URL on behalf of its parent source and returns the raw bytes + a

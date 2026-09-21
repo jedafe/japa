@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/url"
@@ -104,6 +105,40 @@ func (p *PreflightChecker) CheckChannel(ctx context.Context, src sources.Source,
 	}
 
 	return p.check(ctx, lockKey, domain, ch.EntryUrl, src)
+}
+
+// CheckChannelDerived is CheckChannel for a manifest-derived child fetch
+// (Phase-2 sitemap/wayback fan-out): the crawl lock scopes to
+// channel+child URL — jc:intel:channel_lock:{channel_id}:{url_hash} — so
+// the bounded set of children fanned out from one manifest do not starve
+// each other on the shared channel lock (only the first would fetch; the
+// rest would answer ErrCrawlLocked and be lost). Rate limit and robots
+// still key on the child URL's host.
+func (p *PreflightChecker) CheckChannelDerived(ctx context.Context, src sources.Source, ch sources.Channel, childURL string) error {
+	channelID := "unknown"
+	if ch.ID.Valid {
+		channelID = ch.ID.String()
+	}
+
+	domain := src.Domain
+	if u, err := url.Parse(childURL); err == nil && u.Host != "" {
+		domain = u.Host
+	}
+
+	return p.check(ctx, derivedChannelLockKey(channelID, childURL), domain, childURL, src)
+}
+
+// derivedChannelLockKey is the derived-fetch lock key shared by
+// CheckChannelDerived and ReleaseChannelCrawlLockScoped.
+func derivedChannelLockKey(channelID, childURL string) string {
+	sum := sha256.Sum256([]byte(childURL))
+	return fmt.Sprintf("jc:intel:channel_lock:%s:%x", channelID, sum[:8])
+}
+
+// ReleaseChannelCrawlLockScoped releases a derived-fetch crawl lock —
+// the CheckChannelDerived counterpart of ReleaseChannelCrawlLock.
+func (p *PreflightChecker) ReleaseChannelCrawlLockScoped(ctx context.Context, channelID, childURL string) {
+	p.rdb.Del(ctx, derivedChannelLockKey(channelID, childURL))
 }
 
 // check runs the shared pre-flight gate: crawl lock (already keyed by the

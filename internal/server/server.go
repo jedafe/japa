@@ -2193,7 +2193,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		intelDedupService,
 		intelPromoters,
 		intelEventPublisher,
-		intel_fetcher.NewComposite(), // composite fetcher: dispatches by crawl_method (BUG-008 fix)
+		// composite fetcher: dispatches by crawl_method (BUG-008 fix);
+		// settings + valkey feed the Phase-2 config-gated adapters
+		// (render service URL, social allowlist, render circuit).
+		intel_fetcher.NewComposite(settingsService, vkClient.Redis()),
 		intelPreflightChecker,        // pre-flight: crawl lock, rate limit, robots.txt (INTEL-001/006 fix)
 		asynqClient,
 		// intel-channels §2 verify prober for intel:probe_verify — same
@@ -6416,6 +6419,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// per-user rate-limited inside the handler (intel-channels §2).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/probe", intelHandlers.HandleProbeSource)
+			// User-submitted single-URL fetch (share-target/bookmarklet;
+			// intel-channels Phase 2 §3 oneshot). Shares the probe quota.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/sources/oneshot", intelHandlers.HandleOneshotSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).

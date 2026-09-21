@@ -139,6 +139,7 @@ const (
 	TypeIntelRetryFailedSource = "intel:retry_failed_source" // default
 	TypeIntelSourceMetadata    = "intel:source_metadata"     // default
 	TypeIntelProbeVerify       = "intel:probe_verify"        // default
+	TypeIntelXHRSniff          = "intel:xhr_sniff"           // low (intel-channels Phase 2)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -312,6 +313,7 @@ var handlerRegistry = []struct {
 	{TypeIntelRetryFailedSource, HandleIntelRetryFailedSource},
 	{TypeIntelSourceMetadata, HandleSourceMetadata},
 	{TypeIntelProbeVerify, HandleIntelProbeVerify},
+	{TypeIntelXHRSniff, HandleIntelXHRSniff},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

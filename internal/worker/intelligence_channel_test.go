@@ -178,6 +178,7 @@ func wireIntelChannelDeps(t *testing.T) (*db.DB, *sources.Store, *stores.Store, 
 	// (SSRF dial guard on).
 	intelFetcher = fetcher.NewCompositeWithClient(
 		fetcher.NewSafeClientOpts(30*time.Second, 0, fetcher.SafeClientOpts{AllowPrivate: true}),
+		nil, nil,
 	)
 	intelStores = store
 	intelSourcesStore = srcStore

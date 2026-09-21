@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -333,6 +334,14 @@ type intelChannelPayload struct {
 	Version   string `json:"version"`
 	ChannelID string `json:"channel_id"`
 	SourceID  string `json:"source_id"`
+	// URLOverride + ParentDocID implement the Phase-2 manifest fan-out:
+	// a changed sitemap/wayback manifest enqueues one fetch per new or
+	// changed URL. The child fetch uses the static adapter on the
+	// override URL and the persisted raw doc stamps parent_document_id =
+	// the manifest doc — detect_changes treats stamped docs as content
+	// (normal pipeline dispatch), not manifests.
+	URLOverride string `json:"url_override,omitempty"`
+	ParentDocID string `json:"parent_document_id,omitempty"`
 }
 
 type intelDetectChangesPayload struct {
@@ -520,7 +529,7 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:fetch_source: resolve default channel: %w", err)
 	}
 
-	return intelFetchChannel(ctx, "task:intel:fetch_source", src, ch)
+	return intelFetchChannel(ctx, "task:intel:fetch_source", src, ch, intelFetchOpts{})
 }
 
 // HandleIntelFetchChannel fetches the raw document for a single channel and
@@ -571,6 +580,20 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 	case method == sources.CrawlMethodManual:
 		slog.Info("task:intel:fetch_channel: manual channel, skipping", "channel_id", channelID.String())
 		return nil
+	case method == sources.CrawlMethodXHRSniff:
+		// xhr_sniff channels are task-owned — a crawl request (admin
+		// crawl-now) enqueues the headless sniff instead of a fetch; the
+		// task discovers and materializes api channels.
+		slog.Info("task:intel:fetch_channel: xhr_sniff channel, enqueuing sniff task", "channel_id", channelID.String())
+		payload := marshalPayload(intelXHRSniffPayload{
+			Version:   intelPayloadVersion,
+			SourceID:  ch.SourceID.String(),
+			ChannelID: ch.ID.String(),
+		})
+		if payload != nil {
+			enqueueIntel(TypeIntelXHRSniff, payload)
+		}
+		return nil
 	}
 
 	// Load the parent source for trust_level/license context and the
@@ -595,7 +618,39 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	return intelFetchChannel(ctx, "task:intel:fetch_channel", src, ch)
+	var opts intelFetchOpts
+
+	// Derived-fetch overrides (Phase-2 manifest fan-out): the child URL
+	// came from a fetched manifest — validate it like any entry point
+	// (http/https, no private literal) since manifests are
+	// attacker-controlled content.
+	if p.URLOverride != "" {
+		u, uerr := url.Parse(p.URLOverride)
+		if uerr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || sources.IsPrivateIPLiteral(u.Hostname()) {
+			slog.Warn("task:intel:fetch_channel: rejecting invalid url_override", "channel_id", channelID.String(), "url_override", p.URLOverride)
+			return nil
+		}
+		opts.URLOverride = p.URLOverride
+	}
+	if p.ParentDocID != "" {
+		parentID, perr := scanUUID(p.ParentDocID)
+		if perr != nil {
+			return fmt.Errorf("task:intel:fetch_channel: parent_document_id: %w", perr)
+		}
+		opts.ParentDocID = parentID
+	}
+
+	return intelFetchChannel(ctx, "task:intel:fetch_channel", src, ch, opts)
+}
+
+// intelFetchOpts carries the Phase-2 derived-fetch overrides: URLOverride
+// replaces the channel's entry point for this fetch (manifest child URL —
+// fetched via the static adapter) and ParentDocID stamps the raw doc's
+// parent_document_id so detect_changes dispatches it to the channel's
+// pipeline instead of treating it as a manifest.
+type intelFetchOpts struct {
+	URLOverride string
+	ParentDocID pgtype.UUID
 }
 
 // intelFetchChannel is the shared fetch core for intel:fetch_channel and the
@@ -604,7 +659,7 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 // Composite.Fetch(src, ch) → persist raw doc with channel_id stamped →
 // UpdateChannelCrawlStatus → enqueue detect_changes. logPrefix lets the two
 // callers keep their own log/error namespaces.
-func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSource, ch gen.IntelSourceChannel) error {
+func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSource, ch gen.IntelSourceChannel, opts intelFetchOpts) error {
 	channelIDStr := ch.ID.String()
 
 	// API channels require a provider_config with a non-empty endpoint —
@@ -616,10 +671,21 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 		return nil
 	}
 
+	// Derived fetch (Phase-2 manifest fan-out): the effective channel
+	// points at the child URL via the static adapter — robots/rate-limit
+	// preflight and the raw doc's url field must reflect the page actually
+	// fetched. The channel row itself is untouched.
+	effCh := ch
+	if opts.URLOverride != "" {
+		effCh.EntryUrl = opts.URLOverride
+		effCh.CrawlMethod = string(sources.CrawlMethodStatic)
+	}
+
 	// Pre-flight checks: channel crawl lock, rate limit, license, robots.txt.
 	// The channel lock is acquired inside CheckChannel; on success the caller
-	// must release it after the fetch completes.
-	if err := intelChannelPreflightCheck(ctx, ch, src); err != nil {
+	// must release it after the fetch completes. Derived fetches lock on
+	// channel+child URL so fanned-out siblings don't starve each other.
+	if err := intelChannelPreflightCheck(ctx, effCh, src, opts); err != nil {
 		return err
 	}
 
@@ -627,18 +693,36 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 	// detect_changes compares against this channel's previous crawl, not
 	// the doc we just persisted (and not a sibling channel's doc). An error
 	// here (no prior doc) degrades to empty string → DecisionFirstCrawl.
-	priorHash, _ := intelStores.GetLatestIntelRawDocHashForChannel(ctx, ch.ID)
+	// Derived fetches compare per-URL — a child page's previous capture,
+	// not the manifest's hash.
+	var priorHash string
+	if opts.URLOverride != "" {
+		priorHash, _ = intelStores.GetLatestIntelRawDocHashForChannelURL(ctx, ch.ID, opts.URLOverride)
+	} else {
+		priorHash, _ = intelStores.GetLatestIntelRawDocHashForChannel(ctx, ch.ID)
+	}
 
 	// Dispatch to the composite fetcher (selects adapter by channel crawl_method).
-	result, err := intelFetcher.Fetch(ctx, src, ch)
+	result, err := intelFetcher.Fetch(ctx, src, effCh)
 	if err != nil {
-		handleChannelFetchFailure(ctx, ch, err)
+		if errors.Is(err, fetcher.ErrAdapterDisabled) {
+			// Adapter present but not configured (render service URL
+			// unset, social provider not enabled): not a source failure —
+			// release the lock and skip without touching
+			// consecutive_failures, like ErrCrawlLocked.
+			intelReleaseChannelLock(ctx, channelIDStr, opts.URLOverride)
+			slog.Info(logPrefix+": adapter disabled, skipping", "channel_id", channelIDStr, "crawl_method", ch.CrawlMethod)
+
+			return nil
+		}
+
+		handleChannelFetchFailure(ctx, ch, opts.URLOverride, err)
 
 		if errors.Is(err, fetcher.ErrMethodNotImplemented) {
-			// Phase-2 stub method (render/git/social/search/wayback/
-			// xhr_sniff/oneshot — e.g. an admin-created channel): the
-			// failure is recorded so the channel still auto-disables, but
-			// retrying cannot change the outcome until the adapter lands.
+			// Phase-3 stub method (search — e.g. an admin-created
+			// channel): the failure is recorded so the channel still
+			// auto-disables, but retrying cannot change the outcome until
+			// the adapter lands.
 			return nil
 		}
 
@@ -646,22 +730,22 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 	}
 
 	// Release the crawl lock after a successful fetch.
-	if intelPreflight != nil {
-		intelPreflight.ReleaseChannelCrawlLock(ctx, channelIDStr)
-	}
+	intelReleaseChannelLock(ctx, channelIDStr, opts.URLOverride)
 
 	// Persist the raw document (headers + body + hash + channel stamp).
+	// Derived docs record the fetched child URL and the manifest parent.
 	headersJSON, _ := json.Marshal(result.Headers)
 
 	rawDoc, err := intelStores.CreateIntelRawDocument(ctx, gen.CreateIntelRawDocumentParams{
-		SourceID:    ch.SourceID,
-		ChannelID:   ch.ID,
-		Url:         ch.EntryUrl,
-		HttpStatus:  int32(result.HTTPStatus), // #nosec
-		HttpHeaders: headersJSON,
-		ContentType: strPtr(result.ContentType),
-		Body:        result.Body,
-		ContentHash: result.ContentHash,
+		SourceID:         ch.SourceID,
+		ChannelID:        ch.ID,
+		Url:              effCh.EntryUrl,
+		HttpStatus:       int32(result.HTTPStatus), // #nosec
+		HttpHeaders:      headersJSON,
+		ContentType:      strPtr(result.ContentType),
+		Body:             result.Body,
+		ContentHash:      result.ContentHash,
+		ParentDocumentID: opts.ParentDocID,
 	})
 	if err != nil {
 		return fmt.Errorf("%s: persist raw doc: %w", logPrefix, err)
@@ -752,17 +836,25 @@ func intelChannelConfigured(ctx context.Context, ch gen.IntelSourceChannel, src 
 }
 
 // intelChannelPreflightCheck runs the channel-scoped preflight gate (crawl
-// lock jc:intel:channel_lock:{id}, rate limit, license, robots.txt).
+// lock jc:intel:channel_lock:{id} — or the derived
+// jc:intel:channel_lock:{id}:{url_hash} scope when opts.URLOverride is a
+// manifest child — rate limit, license, robots.txt).
 // Non-lock failures are recorded on the channel row; ErrCrawlLocked is a
 // transient "another worker is crawling this channel" signal that does not
 // increment consecutive_failures. The lock is acquired inside CheckChannel;
-// on success the caller must release it via ReleaseChannelCrawlLock.
-func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, src gen.IntelSource) error {
+// on success the caller must release it via intelReleaseChannelLock.
+func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, src gen.IntelSource, opts intelFetchOpts) error {
 	if intelPreflight == nil {
 		return nil
 	}
 
-	if err := intelPreflight.CheckChannel(ctx, src, ch); err != nil {
+	var err error
+	if opts.URLOverride != "" {
+		err = intelPreflight.CheckChannelDerived(ctx, src, ch, opts.URLOverride)
+	} else {
+		err = intelPreflight.CheckChannel(ctx, src, ch)
+	}
+	if err != nil {
 		if !errors.Is(err, fetcher.ErrCrawlLocked) {
 			_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
 				ID:               ch.ID,
@@ -777,18 +869,30 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 	return nil
 }
 
+// intelReleaseChannelLock releases the crawl lock acquired by
+// intelChannelPreflightCheck — the derived (channel+URL) scope when
+// urlOverride is set, else the plain channel scope.
+func intelReleaseChannelLock(ctx context.Context, channelID, urlOverride string) {
+	if intelPreflight == nil {
+		return
+	}
+	if urlOverride != "" {
+		intelPreflight.ReleaseChannelCrawlLockScoped(ctx, channelID, urlOverride)
+		return
+	}
+	intelPreflight.ReleaseChannelCrawlLock(ctx, channelID)
+}
+
 // handleChannelFetchFailure is the channel-scoped counterpart of the retired
 // source-level handleFetchFailure: releases the channel crawl lock, records
 // the failure on the channel row so consecutive_failures increments, and
 // auto-disables the channel via UpdateIntelChannelEnabled once it crosses
 // the intel.consecutive_failure_disable_threshold (default 5).
-func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, fetchErr error) {
+func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, urlOverride string, fetchErr error) {
 	channelIDStr := ch.ID.String()
 
 	// Release the crawl lock so the channel is not blocked until TTL expiry.
-	if intelPreflight != nil {
-		intelPreflight.ReleaseChannelCrawlLock(ctx, channelIDStr)
-	}
+	intelReleaseChannelLock(ctx, channelIDStr, urlOverride)
 	// Record the failure on the channel row.
 	_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
 		ID:               ch.ID,
@@ -892,13 +996,18 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	// preserving the pre-channels behaviour.
 	ch, chResolved := resolveIntelPipelineChannel(ctx, sourceID, channelID)
 
-	// A sitemap channel's raw doc is a url<TAB>lastmod manifest — pure
-	// change-detection signal in Phase 1 (per-URL child fetches are
-	// Phase 2). Dispatching the manifest onward would spend an LLM pass on
-	// a URL list and could only fabricate records from slugs; the crawl
-	// outcome was already recorded above, so the chain ends here.
-	if chResolved && sources.CrawlMethod(ch.CrawlMethod) == sources.CrawlMethodSitemap {
-		slog.Info("task:intel:detect_changes: sitemap manifest channel, chain ends after change detection", "channel_id", ch.ID.String(), "raw_doc_id", p.RawDocID)
+	// Manifest channels (sitemap, wayback) produce url<TAB>stamp bodies —
+	// change-detection signal, not content. Dispatching the manifest
+	// onward would spend an LLM pass on a URL list and could only
+	// fabricate records from slugs; instead the changed/new URLs fan out
+	// as derived fetches (Phase 2). Raw docs stamped with
+	// parent_document_id are those derived pages — real content that
+	// dispatches to the channel's pipeline normally. The crawl outcome
+	// was already recorded above, so the chain ends here either way.
+	if chResolved && intelManifestMethod(ch.CrawlMethod) && !rawDoc.ParentDocumentID.Valid {
+		if decision == changedetector.DecisionChanged || decision == changedetector.DecisionFirstCrawl {
+			intelExpandManifest(ctx, ch, rawDoc)
+		}
 
 		return nil
 	}
@@ -942,6 +1051,118 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+// intelManifestMethod reports whether m produces a url<TAB>stamp manifest
+// rather than page content — sitemap and wayback (Phase 2). Manifests end
+// at detect_changes and fan out derived fetches; they never reach curate
+// or extract.
+func intelManifestMethod(method string) bool {
+	m := sources.CrawlMethod(method)
+	return m == sources.CrawlMethodSitemap || m == sources.CrawlMethodWayback
+}
+
+// intelExpandManifest fans out a changed manifest (Phase-2 manifest
+// fan-out): diffs the new url<TAB>stamp body against the channel's previous
+// manifest doc and enqueues one derived intel:fetch_channel per new/changed
+// URL — bounded by provider_config.max_urls then
+// intel.sitemap.max_children_per_crawl (default 25), filtered by
+// provider_config.url_filter glob on the URL path. Derived fetches stamp
+// parent_document_id so their docs dispatch to the channel's pipeline.
+// Invalid child URLs (non-http, private literals) are skipped — manifests
+// are attacker-controlled content.
+func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifestDoc gen.IntelRawDocument) {
+	var prevBody []byte
+	if prev, err := intelStores.GetPrevIntelRawDocByChannel(ctx, ch.ID, manifestDoc.ID); err == nil {
+		prevBody = prev.Body
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		slog.Warn("task:intel:detect_changes: prev manifest lookup failed, treating all URLs as changed", "channel_id", ch.ID.String(), "error", err)
+	}
+
+	changed := fetcher.DiffManifest(manifestDoc.Body, prevBody)
+	if len(changed) == 0 {
+		return
+	}
+
+	var cfg map[string]any
+	_ = json.Unmarshal(ch.ProviderConfig, &cfg)
+
+	filter := intelCfgString(cfg, "url_filter")
+	maxChildren := intelCfgInt(cfg, "max_urls", 0)
+	if maxChildren <= 0 && appSettings != nil {
+		maxChildren = appSettings.GetIntOr(ctx, "intel.sitemap.max_children_per_crawl", 25)
+	}
+	if maxChildren <= 0 {
+		maxChildren = 25
+	}
+
+	enqueued := 0
+	for _, u := range changed {
+		if enqueued >= maxChildren {
+			slog.Info("task:intel:detect_changes: manifest fan-out capped", "channel_id", ch.ID.String(), "max", maxChildren, "changed_total", len(changed))
+			break
+		}
+		parsed, err := url.Parse(u)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || sources.IsPrivateIPLiteral(parsed.Hostname()) {
+			slog.Warn("task:intel:detect_changes: skipping invalid manifest URL", "channel_id", ch.ID.String(), "url", u)
+			continue
+		}
+		if filter != "" && !intelManifestURLMatch(filter, u) {
+			continue
+		}
+
+		payload := marshalPayload(intelChannelPayload{
+			Version:     intelPayloadVersion,
+			ChannelID:   ch.ID.String(),
+			SourceID:    ch.SourceID.String(),
+			URLOverride: u,
+			ParentDocID: manifestDoc.ID.String(),
+		})
+		if payload == nil {
+			continue
+		}
+		enqueueIntel(TypeIntelFetchChannel, payload)
+		enqueued++
+	}
+
+	slog.Info("task:intel:detect_changes: manifest fan-out", "channel_id", ch.ID.String(), "raw_doc_id", manifestDoc.ID.String(), "changed", len(changed), "enqueued", enqueued)
+}
+
+// intelManifestURLMatch applies provider_config.url_filter — a single glob
+// pattern (path.Match-style, '*'/'?' wildcards, no '**') matched against
+// the URL's path. A malformed pattern matches nothing (fail closed — the
+// admin sees no fan-out rather than an unbounded one).
+func intelManifestURLMatch(pattern, rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	p := u.EscapedPath()
+	if p == "" {
+		p = "/"
+	}
+	matched, err := path.Match(pattern, p)
+	return err == nil && matched
+}
+
+// intelCfgString / intelCfgInt read loosely-typed channel provider_config
+// keys (worker-side counterpart of the fetcher cfg helpers — kept local to
+// avoid coupling worker to fetcher internals).
+func intelCfgString(cfg map[string]any, key string) string {
+	if s, ok := cfg[key].(string); ok {
+		return s
+	}
+	return ""
+}
+
+func intelCfgInt(cfg map[string]any, key string, fallback int) int {
+	switch v := cfg[key].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	}
+	return fallback
 }
 
 // resolveIntelPipelineChannel loads the channel that produced a raw doc for
@@ -1449,13 +1670,15 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 	records, err := intelCurator.Curate(ctx, rawDoc.Body, contentType, ch)
 	if err != nil {
 		if errors.Is(err, ErrIntelNoCurator) {
-			// A sitemap channel's body is a url<TAB>lastmod manifest —
-			// change-detection signal only (child fetches are Phase 2), so
-			// there is nothing for extract to parse. Other curator-less
-			// methods (api, static, git, …) carry real page content and
-			// fall through to the extract pipeline.
-			if sources.CrawlMethod(ch.CrawlMethod) == sources.CrawlMethodSitemap {
-				slog.Info("task:intel:curate_channel: sitemap manifest, skipping extract fallback", "channel_id", ch.ID.String())
+			// A manifest channel's body is a url<TAB>stamp list —
+			// change-detection signal only (derived fetches carry the
+			// content), so there is nothing for extract to parse.
+			// Derived docs (parent_document_id set) still reach extract —
+			// they hold real page content. Other curator-less methods
+			// (api, static, git, …) carry real page content too and fall
+			// through to the extract pipeline.
+			if intelManifestMethod(ch.CrawlMethod) && !rawDoc.ParentDocumentID.Valid {
+				slog.Info("task:intel:curate_channel: manifest body, skipping extract fallback", "channel_id", ch.ID.String())
 				return nil
 			}
 
