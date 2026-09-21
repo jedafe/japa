@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/intelligence/fetcher"
 	"github.com/jedafe/japa/internal/intelligence/probe"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
@@ -172,8 +173,23 @@ func HandleIntelProbeVerify(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:probe_verify: store probe report: %w", err)
 	}
 
+	// Drop proposals whose crawl method has no Phase-1 fetch adapter
+	// (render/git/social/search/wayback/xhr_sniff/oneshot →
+	// fetcher.ErrMethodNotImplemented): materializing them would create
+	// channels that can only ever fail until their adapters land. They
+	// remain visible in the persisted probe_report's method evidence.
+	var inputs []sources.ChannelProposalInput
+	pending := 0
+	for _, in := range proposalInputs(report.Channels) {
+		if fetcher.PendingFetchMethod(in.CrawlMethod) {
+			pending++
+			continue
+		}
+		inputs = append(inputs, in)
+	}
+
 	created, skipped, err := sources.NewService(intelSourcesStore).
-		MaterializeChannels(ctx, sourceID, proposalInputs(report.Channels))
+		MaterializeChannels(ctx, sourceID, inputs)
 	if err != nil {
 		return fmt.Errorf("task:intel:probe_verify: materialize channels: %w", err)
 	}
@@ -183,6 +199,7 @@ func HandleIntelProbeVerify(ctx context.Context, t *asynq.Task) error {
 		"detected_methods", len(methods),
 		"channels_created", created,
 		"channels_skipped", skipped,
+		"proposals_deferred_phase2", pending,
 		"warnings", len(report.Warnings))
 
 	return nil

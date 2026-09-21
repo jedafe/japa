@@ -45,6 +45,29 @@ func NewCompositeWithClient(client *http.Client) *Composite {
 	}
 }
 
+// pendingFetchMethods are the valid channel crawl methods whose fetch
+// adapters land in Phase 2 — Composite.Fetch answers
+// ErrMethodNotImplemented for them (the switch's default arm covers the
+// same set; both must stay in sync). Inbound methods (email/webhook) are
+// deliberately absent: they are never fetched but are valid channel rows.
+var pendingFetchMethods = map[sources.CrawlMethod]bool{
+	sources.CrawlMethodRender:   true,
+	sources.CrawlMethodGit:      true,
+	sources.CrawlMethodSocial:   true,
+	sources.CrawlMethodSearch:   true,
+	sources.CrawlMethodWayback:  true,
+	sources.CrawlMethodXHRSniff: true,
+	sources.CrawlMethodOneshot:  true,
+}
+
+// PendingFetchMethod reports whether m is a known channel crawl method whose
+// fetch adapter is a Phase-2 stub (Composite.Fetch → ErrMethodNotImplemented).
+// The intel:probe_verify worker filters these out of channel proposals so an
+// approved source never gains a channel that can only ever fail.
+func PendingFetchMethod(m string) bool {
+	return pendingFetchMethods[sources.CrawlMethod(m)]
+}
+
 // Fetch selects the adapter by ch.CrawlMethod and delegates. The concrete
 // adapters still take a sources.Source, so the channel is folded into an
 // "effective" source: entry_url → SourceUrl, crawl_method → CrawlMethod,

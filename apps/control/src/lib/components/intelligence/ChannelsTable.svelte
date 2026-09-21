@@ -62,7 +62,7 @@
 	} = $props();
 
 	// Per-action RBAC gates — each admin channel route carries its own
-	// intel.channels.* node (migration 000682); reprobe lives under
+	// intel.channels.* node (migration 000684); reprobe lives under
 	// intel.sources.probe.
 	const canList = $derived(hasAnyPermission(['intel.channels.list', 'intel.channels.*']));
 	const canCreate = $derived(hasAnyPermission(['intel.channels.create', 'intel.channels.*']));

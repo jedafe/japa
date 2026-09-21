@@ -624,6 +624,14 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 	if err != nil {
 		handleChannelFetchFailure(ctx, ch, err)
 
+		if errors.Is(err, fetcher.ErrMethodNotImplemented) {
+			// Phase-2 stub method (render/git/social/search/wayback/
+			// xhr_sniff/oneshot — e.g. an admin-created channel): the
+			// failure is recorded so the channel still auto-disables, but
+			// retrying cannot change the outcome until the adapter lands.
+			return nil
+		}
+
 		return fmt.Errorf("%s: fetch: %w", logPrefix, err)
 	}
 

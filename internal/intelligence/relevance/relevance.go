@@ -15,7 +15,7 @@
 //  3. Borderline band → the Classifier port (§20 AI gateway,
 //     category="classification"), bounded by a per-channel-per-day rate
 //     cap counter (jc:intel:relevance:crawl:{channel_id}:{date}) and
-//     cached under jc:intel:relevance:verdict:{sha256(title|url)} (7d).
+//     cached under jc:intel:relevance:verdict:{sha256(channel_id|title|url)} (7d).
 //
 // Modes (channel.relevance_mode): open → everything passes; filtered →
 // channel topics ∪ category-map topics + classifier; custom → only the
@@ -242,7 +242,7 @@ func (g Gate) thresholds() (on, off float64) {
 // borderline resolves the borderline band: cached verdict → classifier
 // (bounded by the per-channel-per-day cap) → Borderline fail-open.
 func (g Gate) borderline(ctx context.Context, item ItemInput, ch sources.Channel, topics []string) (Verdict, error) {
-	cacheKey := verdictCacheKey(item)
+	cacheKey := verdictCacheKey(item, ch)
 
 	if g.Cache != nil {
 		if cached, err := g.Cache.Get(ctx, cacheKey); err == nil {
@@ -300,11 +300,14 @@ func (g Gate) borderline(ctx context.Context, item ItemInput, ch sources.Channel
 	return verdict, nil
 }
 
-// verdictCacheKey builds jc:intel:relevance:verdict:{sha256(title|url)} —
-// the item hash from spec §4 (title + url concatenated with a separator
-// so concatenation ambiguities cannot collide).
-func verdictCacheKey(item ItemInput) string {
-	h := sha256.Sum256([]byte(item.Title + "|" + item.URL))
+// verdictCacheKey builds jc:intel:relevance:verdict:{sha256(channel_id|title|url)}.
+// The verdict is channel-scoped: the classifier answers "is this item
+// on-topic for THIS channel's vocabulary", so the same title+url must not
+// inherit another channel's verdict. When no channel row exists the
+// worker seeds ch.ID with the source id — the scope degrades to
+// per-source, never cross-source.
+func verdictCacheKey(item ItemInput, ch sources.Channel) string {
+	h := sha256.Sum256([]byte(ch.ID.String() + "|" + item.Title + "|" + item.URL))
 
 	return "jc:intel:relevance:verdict:" + hex.EncodeToString(h[:])
 }

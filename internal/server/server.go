@@ -2161,6 +2161,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		schemas.EntityTypeNews: &intelPromoterPortAdapter{
 			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "news", "", promoter.WithGuideContentType(content.TypeNews), promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
+		// intel-channels Phase 1 curate-only types (spec §6): deterministic
+		// curator output promotes to contents rows like every other
+		// content-projection domain — article → content_type='article',
+		// event → 'event' (spec §5's news|article|event set), dataset →
+		// 'guide' with guide_category='dataset' (the no-projection-table
+		// pattern shared with the guide domains). Without these the
+		// no-promoter branch would flip every curated record back to
+		// review_required after the trust gate already approved it.
+		schemas.EntityTypeArticle: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "article", "", promoter.WithGuideContentType(content.TypeArticle), promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeEvent: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "event", "", promoter.WithGuideContentType(content.TypeEvent), promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeDataset: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, "dataset", "dataset", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
 	}
 
 	// Register the intelligence spine dependencies with the worker package

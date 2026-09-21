@@ -144,6 +144,10 @@ type robotsParser struct {
 	inJapaBlock     bool
 	inWildcardBlock bool
 	disallowed      []string
+	// seenJapaRule flips on the first rule applied inside the dedicated
+	// JapaConnect block — the block is authoritative, so wildcard rules
+	// collected earlier are discarded and wildcard rules stop collecting.
+	seenJapaRule bool
 }
 
 // parseRobotsTXT parses a robots.txt body and extracts the rules applicable
@@ -179,7 +183,7 @@ func (p *robotsParser) applyLine(line, lower string) {
 	// Only collect rules from the JapaConnect block or the wildcard block.
 	// JapaConnect rules take precedence — wildcard rules are only collected
 	// while no JapaConnect rule has been seen.
-	collect := p.inJapaBlock || (p.inWildcardBlock && len(p.disallowed) == 0)
+	collect := p.inJapaBlock || (p.inWildcardBlock && !p.seenJapaRule)
 	if !collect && p.currentUA == "" {
 		return
 	}
@@ -209,13 +213,24 @@ func (p *robotsParser) applyUserAgent(line string) {
 // applyRule applies a Disallow/Allow/Crawl-delay line. collect indicates
 // whether the current block applies to our user agent.
 func (p *robotsParser) applyRule(line, lower string, collect bool) {
+	if p.inJapaBlock && !p.seenJapaRule {
+		// First rule of our dedicated block: the block supersedes every
+		// wildcard rule collected so far (robots.txt group semantics).
+		p.seenJapaRule = true
+		p.disallowed = nil
+	}
+
 	switch {
 	case strings.HasPrefix(lower, "disallow:"):
 		path := strings.TrimSpace(line[len("Disallow:"):])
 		if path == "" {
-			// "Disallow:" with empty value means allow everything.
-			p.policy.Allowed = true
-			p.disallowed = nil
+			// "Disallow:" with empty value means allow everything — but only
+			// when it belongs to a block that applies to us; a foreign
+			// user-agent's bare Disallow must not wipe our collected rules.
+			if collect {
+				p.policy.Allowed = true
+				p.disallowed = nil
+			}
 
 			return
 		}

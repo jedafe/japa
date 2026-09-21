@@ -829,3 +829,61 @@ func TestPreview_ChannelProfileKindWarning(t *testing.T) {
 		t.Errorf("warnings missing channel_profile advisory: %v", report.Warnings)
 	}
 }
+
+// TestParseRobots_WildcardMultipleDisallows pins the collect fix shared
+// with fetcher's parser: every Disallow in the wildcard block is recorded,
+// not just the first.
+func TestParseRobots_WildcardMultipleDisallows(t *testing.T) {
+	t.Parallel()
+
+	v := parseRobots([]byte(
+		"User-agent: *\n" +
+			"Disallow: /admin\n" +
+			"Disallow: /private\n"))
+
+	for _, want := range []string{"/admin", "/private"} {
+		if !slices.Contains(v.DisallowedPaths, want) {
+			t.Errorf("disallowed paths missing %q: %v", want, v.DisallowedPaths)
+		}
+	}
+}
+
+// TestParseRobots_ForeignBlockDoesNotClear pins the empty-Disallow fix: a
+// bare "Disallow:" under another crawler's block must not wipe rules
+// collected for our agent.
+func TestParseRobots_ForeignBlockDoesNotClear(t *testing.T) {
+	t.Parallel()
+
+	v := parseRobots([]byte(
+		"User-agent: *\n" +
+			"Disallow: /admin\n" +
+			"User-agent: googlebot\n" +
+			"Disallow:\n"))
+
+	if !slices.Contains(v.DisallowedPaths, "/admin") {
+		t.Errorf("foreign Disallow cleared our rules: %v", v.DisallowedPaths)
+	}
+}
+
+// TestParseRobots_OurBlockSupersedesWildcard covers UA-group precedence:
+// the dedicated japaconnect block discards wildcard rules collected
+// earlier and blocks later wildcard rules.
+func TestParseRobots_OurBlockSupersedesWildcard(t *testing.T) {
+	t.Parallel()
+
+	v := parseRobots([]byte(
+		"User-agent: *\n" +
+			"Disallow: /wildcard-only\n" +
+			"User-agent: japaconnect\n" +
+			"Disallow: /japa-only\n" +
+			"User-agent: *\n" +
+			"Disallow: /also-ignored\n"))
+
+	if !slices.Contains(v.DisallowedPaths, "/japa-only") {
+		t.Errorf("our block rule missing: %v", v.DisallowedPaths)
+	}
+	if slices.Contains(v.DisallowedPaths, "/wildcard-only") ||
+		slices.Contains(v.DisallowedPaths, "/also-ignored") {
+		t.Errorf("wildcard rules survived the dedicated block: %v", v.DisallowedPaths)
+	}
+}

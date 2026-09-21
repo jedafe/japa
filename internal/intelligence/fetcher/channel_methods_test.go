@@ -289,3 +289,33 @@ func TestResolveChannelProviderConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestPendingFetchMethod pins the Phase-2 stub set the probe_verify worker
+// filters out of channel proposals — the same methods Composite.Fetch
+// answers ErrMethodNotImplemented for. Drift between the two would let
+// un-fetchable channels materialize (or over-filter implemented ones).
+func TestPendingFetchMethod(t *testing.T) {
+	t.Parallel()
+
+	pending := []string{"render", "git", "social", "search", "wayback", "xhr_sniff", "oneshot"}
+	for _, m := range pending {
+		if !PendingFetchMethod(m) {
+			t.Errorf("PendingFetchMethod(%q) = false, want true", m)
+		}
+
+		// The dispatch must agree — a pending method answers
+		// ErrMethodNotImplemented from Fetch.
+		ch := sources.Channel{CrawlMethod: m, EntryUrl: "https://example.com"}
+		_, err := testComposite(nil).Fetch(t.Context(), sources.Source{}, ch)
+		if !errors.Is(err, ErrMethodNotImplemented) {
+			t.Errorf("Fetch(%q) err = %v, want ErrMethodNotImplemented", m, err)
+		}
+	}
+
+	implemented := []string{"static", "rss", "api", "pdf", "ocr", "ical", "tabular", "jsonld", "sitemap", "manual", "email", "webhook"}
+	for _, m := range implemented {
+		if PendingFetchMethod(m) {
+			t.Errorf("PendingFetchMethod(%q) = true, want false", m)
+		}
+	}
+}
