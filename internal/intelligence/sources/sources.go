@@ -60,7 +60,60 @@ const (
 	// CrawlMethodManual marks registry-only rows the crawl scheduler must
 	// skip (video channels, entity-linked sources).
 	CrawlMethodManual CrawlMethod = "manual"
+	// Intel-channels phase-1 adapter methods (migration 000681 / channel
+	// design §4): probe-discovered fetch strategies owned by channels.
+	CrawlMethodRender   CrawlMethod = "render"
+	CrawlMethodJSONLD   CrawlMethod = "jsonld"
+	CrawlMethodTabular  CrawlMethod = "tabular"
+	CrawlMethodSitemap  CrawlMethod = "sitemap"
+	CrawlMethodICal     CrawlMethod = "ical"
+	CrawlMethodGit      CrawlMethod = "git"
+	CrawlMethodSocial   CrawlMethod = "social"
+	CrawlMethodSearch   CrawlMethod = "search"
+	CrawlMethodWayback  CrawlMethod = "wayback"
+	CrawlMethodXHRSniff CrawlMethod = "xhr_sniff"
+	CrawlMethodOneshot  CrawlMethod = "oneshot"
+	// CrawlMethodEmail and CrawlMethodWebhook are inbound push methods —
+	// they ingest via the inbound endpoints writing intel_inbound_events
+	// and are never returned by ListDueChannels.
+	CrawlMethodEmail   CrawlMethod = "email"
+	CrawlMethodWebhook CrawlMethod = "webhook"
 )
+
+// SourceKind classifies who or what a source represents — the expanded
+// CHECK set on intel_sources.source_kind from migration 000681. It drives
+// probe/verify defaults (channel_profile → video/social probes) and public
+// directory labelling.
+type SourceKind string
+
+// Exported const values.
+const (
+	// SourceKindPublisher is an exported constant.
+	SourceKindPublisher       SourceKind = "publisher"
+	SourceKindInstitution     SourceKind = "institution"
+	SourceKindIndividual      SourceKind = "individual"
+	SourceKindAggregator      SourceKind = "aggregator"
+	SourceKindChannelProfile  SourceKind = "channel_profile"
+	SourceKindInstitutionSite SourceKind = "institution_site"
+	SourceKindPersonalBlog    SourceKind = "personal_blog"
+	SourceKindJobBoard        SourceKind = "job_board"
+	SourceKindGovPortal       SourceKind = "gov_portal"
+	SourceKindCommunity       SourceKind = "community"
+)
+
+// IsValid reports whether k is a source_kind value the CHECK constraint
+// allows.
+func (k SourceKind) IsValid() bool {
+	switch k {
+	case SourceKindPublisher, SourceKindInstitution, SourceKindIndividual,
+		SourceKindAggregator, SourceKindChannelProfile, SourceKindInstitutionSite,
+		SourceKindPersonalBlog, SourceKindJobBoard, SourceKindGovPortal,
+		SourceKindCommunity:
+		return true
+	}
+
+	return false
+}
 
 // CrawlFrequency is a volatility bucket.
 type CrawlFrequency string

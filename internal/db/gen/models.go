@@ -1827,6 +1827,18 @@ type InstructorProfile struct {
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
+type IntelInboundEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	ChannelID   pgtype.UUID        `json:"channel_id"`
+	Payload     []byte             `json:"payload"`
+	Headers     []byte             `json:"headers"`
+	ContentType *string            `json:"content_type"`
+	ContentHash string             `json:"content_hash"`
+	ReceivedAt  pgtype.Timestamptz `json:"received_at"`
+	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
+	Status      string             `json:"status"`
+}
+
 type IntelJob struct {
 	ID                 pgtype.UUID        `json:"id"`
 	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
@@ -1869,6 +1881,7 @@ type IntelRawDocument struct {
 	Body        []byte             `json:"body"`
 	ContentHash string             `json:"content_hash"`
 	RetrievedAt pgtype.Timestamptz `json:"retrieved_at"`
+	ChannelID   pgtype.UUID        `json:"channel_id"`
 }
 
 type IntelRecord struct {
@@ -1926,18 +1939,47 @@ type IntelSource struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	PersonaID           pgtype.UUID        `json:"persona_id"`
 	// active | proposed | disabled | rejected
-	Status        string             `json:"status"`
-	ProposedBy    pgtype.UUID        `json:"proposed_by"`
-	ProposedAt    pgtype.Timestamptz `json:"proposed_at"`
-	ApprovedBy    pgtype.UUID        `json:"approved_by"`
-	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
-	Slug          *string            `json:"slug"`
-	Description   *string            `json:"description"`
-	LogoUrl       *string            `json:"logo_url"`
-	FollowerCount int32              `json:"follower_count"`
-	PostCount     int32              `json:"post_count"`
-	SourceKind    string             `json:"source_kind"`
-	Keywords      []string           `json:"keywords"`
+	Status          string             `json:"status"`
+	ProposedBy      pgtype.UUID        `json:"proposed_by"`
+	ProposedAt      pgtype.Timestamptz `json:"proposed_at"`
+	ApprovedBy      pgtype.UUID        `json:"approved_by"`
+	ApprovedAt      pgtype.Timestamptz `json:"approved_at"`
+	Slug            *string            `json:"slug"`
+	Description     *string            `json:"description"`
+	LogoUrl         *string            `json:"logo_url"`
+	FollowerCount   int32              `json:"follower_count"`
+	PostCount       int32              `json:"post_count"`
+	SourceKind      string             `json:"source_kind"`
+	Keywords        []string           `json:"keywords"`
+	Categories      []string           `json:"categories"`
+	ProbeReport     []byte             `json:"probe_report"`
+	DetectedMethods []string           `json:"detected_methods"`
+	LastProbedAt    pgtype.Timestamptz `json:"last_probed_at"`
+}
+
+type IntelSourceChannel struct {
+	ID                   pgtype.UUID        `json:"id"`
+	SourceID             pgtype.UUID        `json:"source_id"`
+	Label                string             `json:"label"`
+	EntryUrl             string             `json:"entry_url"`
+	CrawlMethod          string             `json:"crawl_method"`
+	EntityTypes          []string           `json:"entity_types"`
+	Pipeline             string             `json:"pipeline"`
+	ProviderConfig       []byte             `json:"provider_config"`
+	CrawlFrequencyMins   int32              `json:"crawl_frequency_mins"`
+	Enabled              bool               `json:"enabled"`
+	Origin               string             `json:"origin"`
+	RelevanceMode        string             `json:"relevance_mode"`
+	RelevanceTopics      []string           `json:"relevance_topics"`
+	RelevanceUrlPatterns []string           `json:"relevance_url_patterns"`
+	LastCrawledAt        pgtype.Timestamptz `json:"last_crawled_at"`
+	LastSuccessAt        pgtype.Timestamptz `json:"last_success_at"`
+	LastErrorAt          pgtype.Timestamptz `json:"last_error_at"`
+	LastErrorMessage     *string            `json:"last_error_message"`
+	LastChangedAt        pgtype.Timestamptz `json:"last_changed_at"`
+	ConsecutiveFailures  int32              `json:"consecutive_failures"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
 type IpBlock struct {

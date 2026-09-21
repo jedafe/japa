@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,6 +46,7 @@ func slugify(title string) string {
 type Service struct {
 	store         *Store
 	metadataQueue func(ctx context.Context, sourceID SourceID) error
+	probeQueue    func(ctx context.Context, sourceID SourceID) error
 }
 
 // NewService creates a sources service backed by the given store.
@@ -68,6 +70,41 @@ func (s *Service) queueMetadataFetch(ctx context.Context, src Source) {
 
 	if err := s.metadataQueue(ctx, src.ID); err != nil {
 		slog.Warn("sources: metadata enqueue failed", "source_id", src.ID.String(), "error", err)
+	}
+}
+
+// SetProbeQueue wires a background task enqueue function for the deep
+// verify probe (intel:probe_verify). It is called after a proposed source
+// is approved so the probe can materialize intel_source_channels rows.
+// Same injected-func pattern as SetMetadataQueue — the sources package
+// must not import the worker.
+func (s *Service) SetProbeQueue(q func(ctx context.Context, sourceID SourceID) error) {
+	s.probeQueue = q
+}
+
+// queueProbeVerify enqueues the deep verify probe for an active source.
+// Failures are logged but not returned so DB writes do not fail when the
+// queue is down. video_channel rows are §106 channel subscriptions —
+// video:sync_channels owns ingestion and there is nothing to probe. The
+// same exemption the worker's verifySkipSource applies to registry-only
+// manual rows (crawl_method='manual' with source_type != 'auto') is applied
+// here so the task is never enqueued; approved proposals are manual-by-
+// design but keep source_type='auto', so they still verify.
+func (s *Service) queueProbeVerify(ctx context.Context, src Source) {
+	if s.probeQueue == nil || !src.Enabled || src.Status != "active" || !src.ID.Valid {
+		return
+	}
+
+	if src.SourceType == string(SourceTypeVideoChannel) {
+		return
+	}
+
+	if src.CrawlMethod == string(CrawlMethodManual) && src.SourceType != "auto" {
+		return
+	}
+
+	if err := s.probeQueue(ctx, src.ID); err != nil {
+		slog.Warn("sources: probe verify enqueue failed", "source_id", src.ID.String(), "error", err)
 	}
 }
 
@@ -119,6 +156,18 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 		arg.Status = "active"
 	}
 
+	// Multi-category (intel-channels §6): a non-nil categories array is
+	// normalized like Propose and dual-writes the legacy primary category
+	// when the caller left it empty. A nil array keeps the INSERT's
+	// COALESCE fallback (ARRAY[category]) so back-compat callers that only
+	// set category are untouched.
+	if arg.Categories != nil {
+		arg.Categories = NormalizeCategories(arg.Categories)
+		if arg.Category == "" && len(arg.Categories) > 0 {
+			arg.Category = arg.Categories[0]
+		}
+	}
+
 	// robots_policy and provider_config are NOT NULL in the schema; a nil
 	// []byte binds SQL NULL and overrides the column default, violating the
 	// constraint (SQLSTATE 23502). Default both to an empty object at this
@@ -136,8 +185,105 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 		return Source{}, err
 	}
 
+	// intel-channels Phase 1 (final review I1): the scheduler selects
+	// channels, not sources — an admin-created (or auto-created) crawlable
+	// source needs a Default channel mirroring the 000681 backfill or it is
+	// silently never crawled.
+	s.ensureDefaultChannel(ctx, src)
 	s.queueMetadataFetch(ctx, src)
+	// The deep verify probe discovers additional channels on top of the
+	// Default (dedupe handles the overlap). It no-ops for disabled,
+	// non-active, and video_channel sources internally.
+	s.queueProbeVerify(ctx, src)
 	return src, nil
+}
+
+// sourceCrawlable reports whether a source can own a schedulable pull
+// channel: a non-manual, non-inbound crawl_method, a source_url to point at,
+// and not a §106 video_channel subscription (video:sync_channels owns those).
+// The enabled flag is deliberately not part of crawlability — a disabled
+// source still gets its Default channel, disabled, mirroring the 000681
+// backfill's enabled=source.enabled semantics.
+func sourceCrawlable(src Source) bool {
+	if src.SourceType == string(SourceTypeVideoChannel) || src.SourceUrl == "" {
+		return false
+	}
+
+	m := CrawlMethod(src.CrawlMethod)
+
+	return m.IsValid() && m != CrawlMethodManual && !InboundMethod(m)
+}
+
+// ensureDefaultChannel materializes the source's "Default" channel —
+// the same row the 000681 backfill created for pre-existing sources —
+// when the source is crawlable. It mirrors the backfill shape:
+// entry_url=source_url, crawl_method=source's, enabled=source.enabled,
+// origin='admin', plus the intel-channels enrichments: entity_types and
+// relevance_topics via ResolveCategoryMap on the source's categories,
+// pipeline from the resolved map (default 'extract'),
+// relevance_mode='filtered'.
+//
+// The row goes through Store.CreateChannel rather than Service.CreateChannel
+// because it intentionally allows empty entity_types — like the backfill,
+// whose rows fall back to source-level entity-type resolution at extract
+// time. A source whose categories resolve no entity types must still get
+// its channel or it can never be crawled. The entry_url SSRF literal check
+// runs explicitly so this path shares the channel-create IP guard.
+//
+// Fire-and-forget like queueMetadataFetch: a UNIQUE
+// (source_id, entry_url, entity_types) collision (re-create, probe already
+// materialized the same row) or an insert failure is logged, never returned
+// — source creation must not fail because the channel already exists.
+func (s *Service) ensureDefaultChannel(ctx context.Context, src Source) {
+	if !sourceCrawlable(src) {
+		return
+	}
+
+	method := CrawlMethod(src.CrawlMethod)
+	// Strict literal check ("" = no same-host carve-out): a source_url that
+	// IS a private literal gets no Default channel — the dial guard would
+	// refuse every crawl anyway, so the row would only churn failures.
+	if err := validateChannelEntryURL(src.SourceUrl, method, ""); err != nil {
+		slog.Warn("sources: default channel skipped — entry_url rejected",
+			"source_id", src.ID.String(), "entry_url", src.SourceUrl, "error", err)
+		return
+	}
+
+	resolved := ResolveCategoryMap(nil, sourceCategories(src))
+
+	pipeline := resolved.Pipeline
+	if !pipeline.IsValid() {
+		pipeline = PipelineExtract
+	}
+
+	freq := src.CrawlFrequencyMins
+	if freq <= 0 {
+		freq = 1440
+	}
+
+	_, err := s.store.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
+		SourceID:             src.ID,
+		Label:                "Default",
+		EntryUrl:             src.SourceUrl,
+		CrawlMethod:          src.CrawlMethod,
+		EntityTypes:          resolved.EntityTypes,
+		Pipeline:             string(pipeline),
+		ProviderConfig:       []byte("{}"),
+		CrawlFrequencyMins:   freq,
+		Enabled:              src.Enabled,
+		Origin:               string(ChannelOriginAdmin),
+		RelevanceMode:        string(RelevanceFiltered),
+		RelevanceTopics:      resolved.Topics,
+		RelevanceUrlPatterns: []string{},
+	})
+	if err != nil {
+		if errors.Is(err, errpkg.ErrAlreadyExists) {
+			return // the channel already exists — dedupe, nothing to do
+		}
+
+		slog.Warn("sources: default channel create failed",
+			"source_id", src.ID.String(), "entry_url", src.SourceUrl, "error", err)
+	}
 }
 
 // Get retrieves a source by ID.
@@ -222,6 +368,15 @@ func (s *Service) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelS
 	return s.store.UpdateProviderConfig(ctx, arg)
 }
 
+// UpdateCategories replaces a source's categories array by direct
+// assignment — an empty array is an explicit clear to '{}'. Values are
+// normalized like Propose (trim, lowercase, dedupe, order preserved); the
+// admin PATCH calls this only when the categories key was present.
+func (s *Service) UpdateCategories(ctx context.Context, arg gen.UpdateIntelSourceCategoriesParams) (Source, error) {
+	arg.Categories = NormalizeCategories(arg.Categories)
+	return s.store.UpdateCategories(ctx, arg)
+}
+
 // ListProposed returns a page of sources with status='proposed' for admin
 // review. Platform-scoped.
 func (s *Service) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {
@@ -237,6 +392,10 @@ func (s *Service) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUI
 	}
 
 	s.queueMetadataFetch(ctx, src)
+	// intel-channels §2: approval triggers the deep verify probe — it
+	// writes probe_report + detected_methods and materializes the source's
+	// intel_source_channels rows. Fire-and-forget like the metadata queue.
+	s.queueProbeVerify(ctx, src)
 	return src, nil
 }
 
@@ -258,13 +417,145 @@ func (s *Service) CrawlNow(ctx context.Context, id SourceID) error {
 }
 
 // ProposeInput is the public submission payload for a new source proposal.
+//
+// Category and SourceType are the legacy single-value fields, kept for
+// backward compatibility: Category folds into Categories when Categories is
+// empty, and a legacy 'video'/'youtube' SourceType still implies
+// source_kind=channel_profile (§106 video routing, now kind-driven).
 type ProposeInput struct {
 	Name        string
 	Domain      string
 	SourceURL   string
 	Category    string
+	Categories  []string
 	SourceType  string
+	SourceKind  string
 	Description *string
+	// ProbeSnapshot is the preview-probe report (POST /sources/probe) the
+	// submitter attached to the proposal; stored verbatim in probe_report.
+	ProbeSnapshot []byte
+}
+
+// buildProposeParams validates and normalizes a ProposeInput into create
+// params. It is pure — no store access — so every validation failure is
+// returned before the uniqueness check and the rules are unit-testable
+// without a database.
+func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error) {
+	if input.Name == "" {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
+	}
+	if input.SourceURL == "" {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: source_url", errpkg.ErrRequired)
+	}
+
+	u, err := url.Parse(input.SourceURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: invalid source_url", errpkg.ErrInvalid)
+	}
+
+	domain := input.Domain
+	if domain == "" {
+		domain = u.Hostname()
+	}
+	if domain == "" || strings.Contains(domain, ":") {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: invalid domain", errpkg.ErrInvalid)
+	}
+
+	// Multi-category proposals (intel-channels §6): at least one category is
+	// required. The legacy single 'category' field still counts when the
+	// array is absent.
+	categories := NormalizeCategories(input.Categories)
+	if len(categories) == 0 && input.Category != "" {
+		categories = NormalizeCategories([]string{input.Category})
+	}
+	if len(categories) == 0 {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: categories", errpkg.ErrRequired)
+	}
+
+	// source_kind drives probe/verify defaults. Absent an explicit kind, a
+	// legacy 'video'/'youtube' source_type still implies channel_profile so
+	// old clients keep landing on the §106 video-channel path; anything else
+	// defaults to publisher.
+	kind := SourceKind(input.SourceKind)
+	legacyVideoType := false
+	if input.SourceKind == "" {
+		switch input.SourceType {
+		case "video", "youtube":
+			kind = SourceKindChannelProfile
+			legacyVideoType = true
+		default:
+			kind = SourceKindPublisher
+		}
+	}
+	if !kind.IsValid() {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: unknown source_kind %q", errpkg.ErrInvalid, input.SourceKind)
+	}
+
+	if len(input.ProbeSnapshot) > 0 {
+		var snapshot map[string]json.RawMessage
+		if err := json.Unmarshal(input.ProbeSnapshot, &snapshot); err != nil || snapshot == nil {
+			return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: probe_snapshot must be a JSON object", errpkg.ErrInvalid)
+		}
+	}
+
+	// Channels own crawling after approval, so proposed rows are always
+	// manual/manual — EXCEPT the §106 video path: a channel_profile on a
+	// supported video platform is a video_channel subscription the
+	// video:sync_channels poller picks up (kind-driven, replacing the old
+	// source_type-driven switch).
+	sourceType := "auto"
+	if kind == SourceKindChannelProfile {
+		if isVideoProviderHost(u.Hostname()) {
+			sourceType = string(SourceTypeVideoChannel)
+		} else if legacyVideoType {
+			// A legacy 'video' proposal on a non-platform host keeps its old
+			// rejection — the URL cannot be a channel subscription.
+			return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: video sources must be a supported video platform URL", errpkg.ErrInvalid)
+		}
+	}
+
+	arg := gen.CreateIntelSourceParams{
+		Name:                input.Name,
+		Domain:              domain,
+		SourceUrl:           input.SourceURL,
+		Category:            categories[0], // dual-write: categories[0] is the legacy primary category
+		Categories:          categories,
+		SourceType:          sourceType,
+		SourceKind:          string(kind),
+		TrustLevel:          5,
+		CrawlMethod:         string(CrawlMethodManual),
+		CrawlFrequency:      string(CrawlFrequencyManual),
+		CrawlFrequencyMins:  0,
+		RobotsPolicy:        []byte("{}"),
+		AttributionRequired: false,
+		ProviderConfig:      []byte("{}"),
+		Enabled:             false,
+		Description:         input.Description,
+		Status:              "proposed",
+	}
+	if len(input.ProbeSnapshot) > 0 {
+		arg.ProbeReport = input.ProbeSnapshot
+	}
+
+	return arg, nil
+}
+
+// NormalizeCategories trims, lowercases, and drops empty entries while
+// preserving order and removing duplicates. Exported so the admin
+// create/update handlers apply the same normalization Propose uses.
+func NormalizeCategories(cats []string) []string {
+	out := make([]string, 0, len(cats))
+	seen := make(map[string]bool, len(cats))
+	for _, c := range cats {
+		c = strings.ToLower(strings.TrimSpace(c))
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+
+	return out
 }
 
 // Propose creates a new source proposal from an authenticated user.
@@ -276,31 +567,15 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 	input.Domain = strings.TrimSpace(input.Domain)
 	input.Category = strings.TrimSpace(input.Category)
 	input.SourceType = strings.TrimSpace(input.SourceType)
+	input.SourceKind = strings.TrimSpace(input.SourceKind)
 
-	if input.Name == "" {
-		return Source{}, errpkg.ErrRequired
-	}
-	if input.SourceURL == "" {
-		return Source{}, errpkg.ErrRequired
-	}
-	if input.SourceType == "" {
-		input.SourceType = "rss"
-	}
-
-	u, err := url.Parse(input.SourceURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return Source{}, fmt.Errorf("sources: propose: %w: invalid source_url", errpkg.ErrInvalid)
-	}
-
-	if input.Domain == "" {
-		input.Domain = u.Hostname()
-	}
-	if input.Domain == "" || strings.Contains(input.Domain, ":") {
-		return Source{}, fmt.Errorf("sources: propose: %w: invalid domain", errpkg.ErrInvalid)
+	arg, err := buildProposeParams(input)
+	if err != nil {
+		return Source{}, err
 	}
 
 	// Public URLs must be unique per platform.
-	if _, err := s.store.GetByURL(ctx, input.SourceURL); err == nil {
+	if _, err := s.store.GetByURL(ctx, arg.SourceUrl); err == nil {
 		return Source{}, errpkg.ErrAlreadyExists
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return Source{}, fmt.Errorf("sources: propose: check existing url: %w", err)
@@ -308,57 +583,9 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 
 	slug := s.uniqueSlug(ctx, slugify(input.Name))
 
-	now := time.Now().UTC()
-	proposedAt := pgtype.Timestamptz{Time: now, Valid: true}
-
-	crawlMethod := string(CrawlMethodManual)
-	crawlFrequency := string(CrawlFrequencyManual)
-
-	switch input.SourceType {
-	case "rss":
-		crawlMethod = string(CrawlMethodRSS)
-		crawlFrequency = string(CrawlFrequencyHourly)
-	case "api":
-		crawlMethod = string(CrawlMethodAPI)
-		crawlFrequency = string(CrawlFrequencyDaily)
-	case "video", "youtube":
-		// §106 channel-sync amendment: a proposed video-platform URL is a
-		// channel subscription — register it as video_channel/manual so the
-		// video:sync_channels poller imports uploads as real video content.
-		// The intel crawl pipeline never handles it (an api-crawl source here
-		// dead-ended on empty provider_config).
-		switch {
-		case isVideoProviderHost(u.Hostname()):
-			input.SourceType = string(SourceTypeVideoChannel)
-		case input.SourceType == string(SourceTypeVideo):
-			return Source{}, fmt.Errorf("sources: propose: %w: video sources must be a supported video platform URL", errpkg.ErrInvalid)
-		default:
-			crawlMethod = string(CrawlMethodAPI)
-			crawlFrequency = string(CrawlFrequencyDaily)
-		}
-	}
-
-	arg := gen.CreateIntelSourceParams{
-		Name:                input.Name,
-		Domain:              input.Domain,
-		SourceUrl:           input.SourceURL,
-		Category:            input.Category,
-		SourceType:          input.SourceType,
-		SourceKind:          "publisher",
-		TrustLevel:          5,
-		CrawlMethod:         crawlMethod,
-		CrawlFrequency:      crawlFrequency,
-		CrawlFrequencyMins:  0,
-		RobotsPolicy:        []byte("{}"),
-		AttributionRequired: false,
-		ProviderConfig:      []byte("{}"),
-		Enabled:             false,
-		Slug:                &slug,
-		Description:         input.Description,
-		Status:              "proposed",
-		ProposedBy:          userID,
-		ProposedAt:          proposedAt,
-	}
+	arg.Slug = &slug
+	arg.ProposedBy = userID
+	arg.ProposedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 
 	return s.store.Create(ctx, arg)
 }
@@ -560,4 +787,142 @@ func (s *Service) IsSourceBlocked(ctx context.Context, blockerID, sourceID pgtyp
 // ListBlockedSourceIDs returns the source IDs blocked by the given user.
 func (s *Service) ListBlockedSourceIDs(ctx context.Context, blockerID pgtype.UUID) ([]pgtype.UUID, error) {
 	return s.store.ListBlockedSourceIDs(ctx, blockerID)
+}
+
+// --- Channels ---
+//
+// A channel is one entry point (entry_url + crawl_method + pipeline) under a
+// source. Validation lives here; persistence is delegated to the Store.
+
+// CreateChannel registers a new channel under a source. Unset enum fields
+// get their schema defaults (pipeline='extract', relevance_mode='filtered',
+// origin='admin') and provider_config defaults to '{}' because the column is
+// NOT NULL — a nil []byte would bind SQL NULL and violate the constraint.
+func (s *Service) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceChannelParams) (Channel, error) {
+	arg.Label = strings.TrimSpace(arg.Label)
+	arg.EntryUrl = strings.TrimSpace(arg.EntryUrl)
+
+	if arg.Pipeline == "" {
+		arg.Pipeline = string(PipelineExtract)
+	}
+	if arg.RelevanceMode == "" {
+		arg.RelevanceMode = string(RelevanceFiltered)
+	}
+	if arg.Origin == "" {
+		arg.Origin = string(ChannelOriginAdmin)
+	}
+	if len(arg.ProviderConfig) == 0 {
+		arg.ProviderConfig = []byte("{}")
+	}
+	// entity_types / relevance_topics / relevance_url_patterns are
+	// text[] NOT NULL DEFAULT '{}' — a nil slice binds SQL NULL and
+	// violates the constraint (same failure class as provider_config in
+	// Create). Normalize at this chokepoint so probe materialization and
+	// admin creation both insert cleanly.
+	if arg.EntityTypes == nil {
+		arg.EntityTypes = []string{}
+	}
+	if arg.RelevanceTopics == nil {
+		arg.RelevanceTopics = []string{}
+	}
+	if arg.RelevanceUrlPatterns == nil {
+		arg.RelevanceUrlPatterns = []string{}
+	}
+	if arg.CrawlFrequencyMins <= 0 {
+		arg.CrawlFrequencyMins = 1440
+	}
+
+	// Load the parent source: it must exist anyway (cleaner than an FK
+	// error) and its host[:port] feeds the entry_url literal check — a
+	// private-IP literal matching the source's own host is allowed
+	// (same-host channels cannot escalate past the registered target, and
+	// probe materialization on dev/test 127.0.0.1 sources depends on it);
+	// a literal on any other host is rejected (SSRF, final review C1c).
+	allowedLiteralHost := ""
+	if parent, err := s.Get(ctx, arg.SourceID); err == nil {
+		if u, uerr := url.Parse(parent.SourceUrl); uerr == nil {
+			allowedLiteralHost = u.Host
+		}
+	}
+
+	if err := validateChannelCreate(arg, allowedLiteralHost); err != nil {
+		return Channel{}, err
+	}
+
+	return s.store.CreateChannel(ctx, arg)
+}
+
+// GetChannel retrieves a channel by ID.
+func (s *Service) GetChannel(ctx context.Context, id ChannelID) (Channel, error) {
+	return s.store.GetChannel(ctx, id)
+}
+
+// ListChannels returns all channels owned by a source.
+func (s *Service) ListChannels(ctx context.Context, sourceID SourceID) ([]Channel, error) {
+	return s.store.ListChannels(ctx, sourceID)
+}
+
+// ListDueChannels returns up to limit channels due for a crawl (enabled,
+// parent source active, interval elapsed; inbound and manual excluded).
+func (s *Service) ListDueChannels(ctx context.Context, limit int32) ([]Channel, error) {
+	return s.store.ListDueChannels(ctx, limit)
+}
+
+// UpdateChannel applies a COALESCE-style patch to a channel's scalar fields.
+// The existing row is loaded first so the patch can be checked against the
+// effective state (e.g. switching pipeline to extract/curate while
+// entity_types is empty is rejected) and so missing channels report through
+// the store's wrapped not-found error.
+func (s *Service) UpdateChannel(ctx context.Context, arg gen.UpdateIntelSourceChannelParams) (Channel, error) {
+	if !arg.ID.Valid {
+		return Channel{}, fmt.Errorf("sources: update channel: %w: id", errpkg.ErrRequired)
+	}
+	if err := validateChannelUpdate(arg); err != nil {
+		return Channel{}, err
+	}
+
+	existing, err := s.store.GetChannel(ctx, arg.ID)
+	if err != nil {
+		return Channel{}, err
+	}
+
+	if arg.Pipeline != nil &&
+		pipelineRequiresEntityTypes(Pipeline(*arg.Pipeline)) &&
+		len(existing.EntityTypes) == 0 {
+		return Channel{}, fmt.Errorf("sources: update channel: %w: entity_types required for %s pipeline", errpkg.ErrInvalid, *arg.Pipeline)
+	}
+
+	return s.store.UpdateChannel(ctx, arg)
+}
+
+// UpdateChannelEntityTypes replaces a channel's entity_types array. An empty
+// array is an explicit clear (the runtime falls back to source-level
+// entity_types then category), so no minimum-length validation applies.
+func (s *Service) UpdateChannelEntityTypes(ctx context.Context, arg gen.UpdateIntelChannelEntityTypesParams) (Channel, error) {
+	return s.store.UpdateChannelEntityTypes(ctx, arg)
+}
+
+// UpdateChannelRelevance replaces a channel's relevance gate fields.
+// relevance_mode must be a known mode; topics/patterns may be cleared.
+func (s *Service) UpdateChannelRelevance(ctx context.Context, arg gen.UpdateIntelChannelRelevanceParams) (Channel, error) {
+	if !RelevanceMode(arg.RelevanceMode).IsValid() {
+		return Channel{}, fmt.Errorf("sources: update channel relevance: %w: unknown relevance_mode %q", errpkg.ErrInvalid, arg.RelevanceMode)
+	}
+
+	return s.store.UpdateChannelRelevance(ctx, arg)
+}
+
+// UpdateChannelCrawlStatus records the outcome of a crawl attempt on the
+// channel row (last_crawled_at, success/error stamps, consecutive_failures).
+func (s *Service) UpdateChannelCrawlStatus(ctx context.Context, id ChannelID, success bool, lastErrorMessage *string) error {
+	return s.store.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+		ID:               id,
+		Success:          success,
+		LastErrorMessage: lastErrorMessage,
+	})
+}
+
+// DeleteChannel removes a channel from a source.
+func (s *Service) DeleteChannel(ctx context.Context, id ChannelID) error {
+	return s.store.DeleteChannel(ctx, id)
 }

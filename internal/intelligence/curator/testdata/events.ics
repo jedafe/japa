@@ -1,0 +1,27 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//JapaConnect//Test//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:embassy-orientation-2025-10@events.example.com
+DTSTAMP:20250915T090000Z
+DTSTART;TZID=America/Toronto:20251004T140000
+DTEND;TZID=America/Toronto:20251004T160000
+SUMMARY:Pre-departure orientation — Toronto
+DESCRIPTION:A long description that is folded across
+ two lines per RFC 5545 continuation rules.
+LOCATION:North York Civic Centre\, Toronto
+ORGANIZER;CN=JapaConnect:mailto:events@japaconnect.example
+URL:https://events.example.com/orientation-toronto
+RRULE:FREQ=WEEKLY;COUNT=4
+END:VEVENT
+BEGIN:VEVENT
+UID:visa-webinar-2025-11@events.example.com
+DTSTAMP:20250915T090000Z
+DTSTART:20251105T180000Z
+DTEND:20251105T193000Z
+SUMMARY:UK student visa Q&A webinar
+DESCRIPTION:Live session with an immigration adviser\; bring questions.
+LOCATION:Online
+END:VEVENT
+END:VCALENDAR

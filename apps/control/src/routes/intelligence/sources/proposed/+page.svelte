@@ -11,12 +11,44 @@
 	import { RefreshCw, Database, Eye, CheckCircle, Search } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 
+	// ProbeReport mirrors probe.Report (intel-channels Phase 1, spec §2) —
+	// emitted by sourceToFullEntry so reviewers can see what the probe
+	// detected before approving the source.
+	interface ProbeReport {
+		final_url?: string;
+		detected_kinds?: string[];
+		methods?: { method: string; confidence: number; evidence?: string }[];
+		channels?: {
+			label: string;
+			entry_url: string;
+			crawl_method: string;
+			entity_types?: string[];
+			pipeline?: string;
+			confidence?: number;
+			relevance_topics?: string[];
+		}[];
+		jsonld_types?: string[];
+		feed_urls?: string[];
+		sitemap_urls?: string[];
+		has_websub?: boolean;
+		requires_js?: boolean;
+		robots?: { fetched?: boolean; allowed?: boolean; crawl_delay_secs?: number };
+		warnings?: string[];
+		probed_at?: string;
+	}
+
 	interface ProposedSource {
 		id: string;
 		name: string;
 		domain: string;
 		source_url: string;
 		category: string;
+		categories?: string[] | null;
+		keywords?: string[] | null;
+		source_kind?: string | null;
+		detected_methods?: string[] | null;
+		probe_report?: ProbeReport | null;
+		last_probed_at?: string | null;
 		source_type: string;
 		trust_level: number;
 		crawl_method: string;
@@ -280,7 +312,9 @@
 				{#if detailSource}
 					<div class="mt-4 grid grid-cols-2 gap-4 text-sm">
 						<div class="text-muted-foreground">{t('intel.field_category', 'Category')}</div>
-						<div class="capitalize">{detailSource.category}</div>
+						<div class="capitalize">
+							{detailSource.categories?.length ? detailSource.categories.join(', ') : detailSource.category}
+						</div>
 
 						<div class="text-muted-foreground">{t('intel.field_source_type', 'Type')}</div>
 						<div class="capitalize">{detailSource.source_type}</div>
@@ -309,11 +343,115 @@
 							</a>
 						</div>
 
+						{#if detailSource.keywords?.length}
+							<div class="col-span-2 text-muted-foreground">{t('intel.keywords', 'Keywords')}</div>
+							<div class="col-span-2 flex flex-wrap gap-1">
+								{#each detailSource.keywords as kw}
+									<span class="bg-muted rounded-full px-2 py-0.5 text-xs">{kw}</span>
+								{/each}
+							</div>
+						{/if}
+
 						{#if detailSource.last_error_message}
 							<div class="col-span-2 text-muted-foreground">{t('intel.last_error', 'Last error')}</div>
 							<div class="col-span-2 text-destructive text-xs">{detailSource.last_error_message}</div>
 						{/if}
 					</div>
+
+					<!-- Probe report (intel-channels Phase 1): what the probe
+						detected — methods, platform kinds, and the channel
+						proposals it would materialize on verify. -->
+					{#if detailSource.probe_report || (detailSource.detected_methods?.length ?? 0) > 0}
+						{@const report = detailSource.probe_report}
+						<div class="border-border-card mt-4 rounded-lg border p-4">
+							<div class="flex items-baseline justify-between gap-2">
+								<h3 class="text-foreground text-sm font-semibold">{t('intel.probe_report', 'Probe report')}</h3>
+								{#if detailSource.last_probed_at}
+									<span class="text-muted-foreground text-xs">
+										{t('intel.last_probed', 'Last probed')}: {formatTime(detailSource.last_probed_at)}
+									</span>
+								{/if}
+							</div>
+
+							{#if (detailSource.detected_methods?.length ?? 0) > 0}
+								<div class="mt-2">
+									<span class="text-muted-foreground text-xs">{t('intel.detected_methods', 'Detected methods')}</span>
+									<div class="mt-1 flex flex-wrap gap-1">
+										{#each detailSource.detected_methods ?? [] as m}
+											<span class="bg-muted rounded-full px-2 py-0.5 font-mono text-xs uppercase">{m}</span>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							{#if report}
+								{#if report.detected_kinds?.length}
+									<div class="mt-2 flex flex-wrap items-center gap-1">
+										<span class="text-muted-foreground text-xs">{t('intel.detected_kinds', 'Platform signatures')}</span>
+										{#each report.detected_kinds as k}
+											<span class="rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-500">{k}</span>
+										{/each}
+									</div>
+								{/if}
+
+								<div class="text-muted-foreground mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+									{#if report.requires_js}
+										<span class="text-amber-500">{t('intel.requires_js', 'Requires JS rendering')}</span>
+									{/if}
+									{#if report.has_websub}
+										<span>{t('intel.has_websub', 'WebSub hub advertised')}</span>
+									{/if}
+									{#if report.robots?.fetched}
+										<span class={report.robots.allowed ? '' : 'text-destructive'}>
+											{report.robots.allowed
+												? t('intel.robots_allowed', 'robots.txt allows crawling')
+												: t('intel.robots_disallowed', 'robots.txt disallows crawling')}
+										</span>
+									{/if}
+									{#if report.feed_urls?.length}
+										<span>{t('intel.feeds_found', '{n} feed(s) found').replace('{n}', String(report.feed_urls.length))}</span>
+									{/if}
+								</div>
+
+								{#if report.channels?.length}
+									<div class="mt-3">
+										<span class="text-muted-foreground text-xs">{t('intel.proposed_channels', 'Proposed channels')}</span>
+										<ul class="mt-1 space-y-1.5">
+											{#each report.channels as ch}
+												<li class="bg-background-alt rounded-md px-2.5 py-1.5 text-xs">
+													<div class="flex flex-wrap items-center gap-1">
+														<span class="font-medium">{ch.label}</span>
+														<span class="bg-muted rounded-full px-1.5 py-0.5 font-mono uppercase">{ch.crawl_method}</span>
+														{#if ch.pipeline}
+															<span class="rounded-full bg-sky-500/10 px-1.5 py-0.5 text-sky-600">{ch.pipeline}</span>
+														{/if}
+														{#each ch.entity_types ?? [] as et}
+															<span class="bg-muted rounded-full px-1.5 py-0.5">{et}</span>
+														{/each}
+														{#if ch.confidence != null}
+															<span class="text-muted-foreground ml-auto">{Math.round(ch.confidence * 100)}%</span>
+														{/if}
+													</div>
+													<div class="text-muted-foreground mt-0.5 truncate font-mono" title={ch.entry_url}>{ch.entry_url}</div>
+												</li>
+											{/each}
+										</ul>
+									</div>
+								{/if}
+
+								{#if report.warnings?.length}
+									<div class="mt-3">
+										<span class="text-muted-foreground text-xs">{t('intel.probe_warnings', 'Probe warnings')}</span>
+										<ul class="mt-1 list-inside list-disc space-y-0.5 text-xs text-amber-500">
+											{#each report.warnings as w}
+												<li>{w}</li>
+											{/each}
+										</ul>
+									</div>
+								{/if}
+							{/if}
+						</div>
+					{/if}
 				{/if}
 
 				<div class="mt-6 flex justify-end gap-2">

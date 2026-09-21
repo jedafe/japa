@@ -59,13 +59,21 @@ var sourceSortOptions = []sourceOption{
 // by (?source_kind=). They describe WHO publishes the source — distinct from
 // source_types (rss/video/api/static), which describe the crawl mechanism
 // and are only meaningful on the proposal form. Values must stay in sync with
-// the intel_sources.source_kind CHECK constraint. Ref: sources directory v2
-// design (2026-09-11-sources-directory-design.md).
+// the intel_sources.source_kind CHECK constraint — the 10-kind set from the
+// intel-channels expansion (migration 000681; sources.SourceKind.IsValid).
+// Ref: sources directory v2 design (2026-09-11-sources-directory-design.md),
+// intel-channels curation design §1 (2026-09-20-intel-channels-curation-design.md).
 var sourceKindOptions = []sourceOption{
-	{Value: "publisher", Label: "Publisher"},
-	{Value: "institution", Label: "Institution"},
-	{Value: "individual", Label: "Individual"},
-	{Value: "aggregator", Label: "Aggregator"},
+	{Value: string(sources.SourceKindPublisher), Label: "Publisher"},
+	{Value: string(sources.SourceKindInstitution), Label: "Institution"},
+	{Value: string(sources.SourceKindIndividual), Label: "Individual"},
+	{Value: string(sources.SourceKindAggregator), Label: "Aggregator"},
+	{Value: string(sources.SourceKindChannelProfile), Label: "Channel or profile"},
+	{Value: string(sources.SourceKindInstitutionSite), Label: "Institution site"},
+	{Value: string(sources.SourceKindPersonalBlog), Label: "Personal blog"},
+	{Value: string(sources.SourceKindJobBoard), Label: "Job board"},
+	{Value: string(sources.SourceKindGovPortal), Label: "Government portal"},
+	{Value: string(sources.SourceKindCommunity), Label: "Community"},
 }
 
 // sourceItemSortOptions are the sorts exposed by a source's item feed.
@@ -691,13 +699,22 @@ func pgtypeUUIDString(id pgtype.UUID) string {
 	return id.String()
 }
 
+// proposeSourceRequest is the POST /api/v1/sources/propose body. The
+// intel-channels payload adds `categories`, `source_kind` and
+// `probe_snapshot`; the legacy `category`/`source_type` fields are still
+// accepted for backward compatibility (the service folds category into
+// categories and maps 'video'/'youtube' source_type to
+// source_kind=channel_profile).
 type proposeSourceRequest struct {
-	Name        string  `json:"name"`
-	Domain      string  `json:"domain"`
-	SourceURL   string  `json:"source_url"`
-	Category    string  `json:"category"`
-	SourceType  string  `json:"source_type"`
-	Description *string `json:"description"`
+	Name          string          `json:"name"`
+	Domain        string          `json:"domain"`
+	SourceURL     string          `json:"source_url"`
+	Category      string          `json:"category"`
+	Categories    []string        `json:"categories"`
+	SourceType    string          `json:"source_type"`
+	SourceKind    string          `json:"source_kind"`
+	ProbeSnapshot json.RawMessage `json:"probe_snapshot"`
+	Description   *string         `json:"description"`
 }
 
 // HandleGetSourcesMeta returns the public source form metadata: allowed
@@ -709,12 +726,26 @@ type proposeSourceRequest struct {
 func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
+			// categories is the curated proposal catalog — extended with the
+			// intel-channels categories (blog, event, dataset, announcement,
+			// scam_alert) so the propose form can offer multi-category
+			// selection (categories[] on the source row; spec §6).
 			"categories": []string{
 				"scholarship", "job", "visa", "remittance", "news",
 				"cost_of_living", "university", "video", "organization", "people",
+				"blog", "event", "dataset", "announcement", "scam_alert",
 			},
 			"source_types": []string{"rss", "video", "api", "static"},
 			"source_kinds": sourceKindOptions,
+			// channel_pipelines is the intel_source_channels.pipeline CHECK
+			// set (migration 000681) — extract sends pages to the LLM
+			// extractor, curate promotes itemized records directly, hybrid
+			// runs curate per item + extract per page.
+			"channel_pipelines": []string{
+				string(sources.PipelineExtract),
+				string(sources.PipelineCurate),
+				string(sources.PipelineHybrid),
+			},
 			"entity_types": sourceItemEntityTypes,
 			// admin_* fields carry the canonical option sets for the control
 			// panel's source form (Rule 16) — the public 'categories' list
@@ -759,21 +790,37 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src, err := h.intelSources.Propose(r.Context(), userID, sources.ProposeInput{
-		Name:        req.Name,
-		Domain:      req.Domain,
-		SourceURL:   req.SourceURL,
-		Category:    req.Category,
-		SourceType:  req.SourceType,
-		Description: req.Description,
+		Name:          req.Name,
+		Domain:        req.Domain,
+		SourceURL:     req.SourceURL,
+		Category:      req.Category,
+		Categories:    req.Categories,
+		SourceType:    req.SourceType,
+		SourceKind:    req.SourceKind,
+		ProbeSnapshot: req.ProbeSnapshot,
+		Description:   req.Description,
 	})
 	if err != nil {
 		slog.Error("intel: propose source failed", "error", err)
 
 		switch {
 		case errors.Is(err, errpkg.ErrRequired):
-			errpkg.WriteError(w, http.StatusBadRequest, "missing_required", "Name and source_url are required")
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_required", "Name, source_url and at least one category are required")
 		case errors.Is(err, errpkg.ErrInvalid):
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_url", "source_url must be a valid http/https URL")
+			// ErrInvalid covers bad source_url/domain, an unknown
+			// source_kind, a malformed probe_snapshot, and the §106
+			// video-platform guard — pick the code/message from the
+			// service's field tag so each failure stays identifiable.
+			code, msg := "invalid_source_url", "source_url must be a valid http/https URL"
+			switch {
+			case strings.Contains(err.Error(), "source_kind"):
+				code, msg = "invalid_source_kind", "source_kind is not a supported value"
+			case strings.Contains(err.Error(), "probe_snapshot"):
+				code, msg = "invalid_probe_snapshot", "probe_snapshot must be a JSON object"
+			case strings.Contains(err.Error(), "video"):
+				msg = "video sources must be a supported video platform URL"
+			}
+			errpkg.WriteError(w, http.StatusBadRequest, code, msg)
 		case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_source", "A source with this URL already exists")
 		default:

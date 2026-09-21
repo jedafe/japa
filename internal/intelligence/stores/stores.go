@@ -93,6 +93,19 @@ func (s *Store) GetLatestIntelRawDocHash(ctx context.Context, sourceID pgtype.UU
 	return hash, nil
 }
 
+// GetLatestIntelRawDocHashForChannel returns the content_hash of the most
+// recently retrieved raw document for a channel. detect_changes uses this
+// so two channels of the same source compare against their own prior crawl
+// instead of cross-contaminating each other's hash.
+func (s *Store) GetLatestIntelRawDocHashForChannel(ctx context.Context, channelID pgtype.UUID) (string, error) {
+	hash, err := s.queries.GetLatestIntelRawDocHashByChannel(ctx, channelID)
+	if err != nil {
+		return "", fmt.Errorf("stores: get latest intel raw doc hash by channel: %w", err)
+	}
+
+	return hash, nil
+}
+
 // GetIntelRawDocument fetches a single raw document by its primary key. Used
 // by the control panel moderation surface (raw content pane) to render the
 // fetched HTML/JSON/PDF body for reviewer inspection.

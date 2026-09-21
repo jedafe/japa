@@ -21,10 +21,13 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/valkey-io/valkey-go/valkeycompat"
+
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
+	"github.com/jedafe/japa/internal/intelligence/probe"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/reports"
@@ -48,6 +51,18 @@ const TaskIntelFetchSource = "intel:fetch_source"
 // waiting for the hourly cron (§106 channel-sync amendment).
 // Mirrors worker.TypeVideoSyncChannels without importing the worker package.
 const TaskVideoSyncChannels = "video:sync_channels"
+
+// TaskIntelFetchChannel is the Asynq task name the admin channel-crawl
+// endpoint enqueues to trigger an immediate fetch of a single channel
+// (intel-channels Phase 1, spec §5). Mirrors worker.TypeIntelFetchChannel
+// without importing the worker package.
+const TaskIntelFetchChannel = "intel:fetch_channel"
+
+// TaskIntelProbeVerify is the Asynq task name the admin re-probe endpoint
+// enqueues to re-run the deep verify probe and re-materialize a source's
+// channels (intel-channels Phase 1, spec §5). Mirrors
+// worker.TypeIntelProbeVerify without importing the worker package.
+const TaskIntelProbeVerify = "intel:probe_verify"
 
 // TaskReportNotifyAdmin is the Asynq task name the source-report handler
 // enqueues so moderators with reports.review are notified of a new report —
@@ -95,18 +110,27 @@ type tagService interface {
 	CreateTag(ctx context.Context, input tags.CreateTagInput) (gen.CreateTagRow, error)
 }
 
+// previewProber is the surface of *probe.Prober the probe endpoint needs —
+// satisfied by the concrete Prober (wired via SetProber) and by test stubs
+// injected directly in package tests.
+type previewProber interface {
+	Preview(ctx context.Context, rawURL, kind string, categories []string) (probe.Report, error)
+}
+
 // Handlers exposes the /api/v1/intel/* HTTP routes.
 type Handlers struct {
 	intelStores  *stores.Store
 	intelSources *sources.Service
 	followsSvc   *follows.Service
 	scholarSvc   *scholarships.Service
-	asynqClient  *asynq.Client  // enqueues intel:promote on review approve (BUG-003)
-	settings     SettingsReader // system_settings reader (INTEL-016); nil → hardcoded defaults
-	videos       videoStore     // optional; enables video source item feeds
-	contents     contentStore   // optional; enables comparison source item feeds
-	reportSvc    reportService  // optional; creates source reports from the detail page
-	tagSvc       tagService     // optional; ensures source keyword tags exist
+	asynqClient  *asynq.Client        // enqueues intel:promote on review approve (BUG-003)
+	settings     SettingsReader       // system_settings reader (INTEL-016); nil → hardcoded defaults
+	videos       videoStore           // optional; enables video source item feeds
+	contents     contentStore         // optional; enables comparison source item feeds
+	reportSvc    reportService        // optional; creates source reports from the detail page
+	tagSvc       tagService           // optional; ensures source keyword tags exist
+	prober       previewProber        // optional; enables POST /sources/probe (intel-channels §2)
+	rdb          valkeycompat.Cmdable // optional; probe quota counter (jc:intel:probe_quota:{user_id})
 }
 
 // NewHandlers creates intelligence handlers. The followsSvc and scholarSvc
@@ -153,6 +177,17 @@ func (h *Handlers) SetReportService(rs reportService) { h.reportSvc = rs }
 // SetTagService wires the tag service so source keywords can be auto-created
 // as directory tags and linked from the source header.
 func (h *Handlers) SetTagService(ts tagService) { h.tagSvc = ts }
+
+// SetProber wires the source auto-detection prober behind
+// POST /sources/probe (intel-channels design §2 preview stage). The prober
+// must be constructed with the fetcher package's SSRF-safe client —
+// probe.NewProber(fetcher.NewSafeClient(...), budget).
+func (h *Handlers) SetProber(p *probe.Prober) { h.prober = p }
+
+// SetValkey wires the Valkey client used for the per-user probe quota
+// counter (jc:intel:probe_quota:{user_id}, 1h window). A nil client leaves
+// the quota check disabled (fail-open; the probe's SSRF guard still applies).
+func (h *Handlers) SetValkey(rdb valkeycompat.Cmdable) { h.rdb = rdb }
 
 func (h *Handlers) enqueueIntelPromote(ctx context.Context, recordID, reviewerUserID pgtype.UUID) error {
 	if h.asynqClient == nil {
