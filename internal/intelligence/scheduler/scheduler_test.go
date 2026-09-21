@@ -5,8 +5,10 @@ import (
 	"errors"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -79,8 +81,10 @@ func TestSelectDue_PassesBatchSizeAndReturnsRows(t *testing.T) {
 		t.Errorf("unexpected rows: %+v", got)
 	}
 
-	if fl.last != 42 {
-		t.Errorf("batch size forwarded to store: got %d, want 42", fl.last)
+	// The store limit is batchSize × dueOverFetch — the tuned-interval
+	// post-filter can drop statically-due rows, so the query over-fetches.
+	if fl.last != 42*dueOverFetch {
+		t.Errorf("batch size forwarded to store: got %d, want %d", fl.last, 42*dueOverFetch)
 	}
 }
 
@@ -135,9 +139,89 @@ func TestSelectDueChannels_PassesBatchSizeAndReturnsRows(t *testing.T) {
 		t.Errorf("unexpected rows: %+v", got)
 	}
 
-	if cl.last != 25 {
-		t.Errorf("batch size forwarded to store: got %d, want 25", cl.last)
+	if cl.last != 25*dueOverFetch {
+		t.Errorf("batch size forwarded to store: got %d, want %d", cl.last, 25*dueOverFetch)
 	}
+}
+
+// TestSelectDueChannels_TunedIntervalSuppresses covers the volatility
+// post-filter: a channel crawled more recently than its tuned effective
+// interval is dropped even though the static interval says it is due; a
+// never-crawled channel and one past its tuned interval still pass.
+func TestSelectDueChannels_TunedIntervalSuppresses(t *testing.T) {
+	t.Parallel()
+
+	rdb := startTestValkey(t)
+	ctx := t.Context()
+
+	stableID := mustChannelUUID(t, "33333333-3333-4333-8333-333333333333")
+	volatileID := mustChannelUUID(t, "44444444-4444-4444-8444-444444444444")
+
+	rows := []gen.IntelSourceChannel{
+		{ID: stableID, Label: "stable", EntryUrl: "https://a.example.com/feed",
+			CrawlMethod: "rss", CrawlFrequencyMins: 60,
+			LastCrawledAt: pgtype.Timestamptz{Time: time.Now().Add(-90 * time.Minute), Valid: true}},
+		{ID: volatileID, Label: "volatile", EntryUrl: "https://b.example.com/jobs",
+			CrawlMethod: "static", CrawlFrequencyMins: 60,
+			LastCrawledAt: pgtype.Timestamptz{Time: time.Now().Add(-90 * time.Minute), Valid: true}},
+		{Label: "never", EntryUrl: "https://c.example.com", CrawlMethod: "static"},
+	}
+
+	// stable is tuned to 240min — crawled 90min ago → suppressed.
+	// volatile stays at base 60min → crawled 90min ago → due.
+	if err := rdb.Set(ctx, intervalKey(stableID.String()), "240", 0).Err(); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	cl := &fakeChannelLister{rows: rows}
+	s := NewScheduler(&fakeLister{}, cl, rdb)
+
+	got, err := s.SelectDueChannels(ctx, 10)
+	if err != nil {
+		t.Fatalf("SelectDueChannels: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("got %d channels, want 2 (tuned channel suppressed)", len(got))
+	}
+	for _, ch := range got {
+		if ch.Label == "stable" {
+			t.Error("tuner-suppressed channel returned as due")
+		}
+	}
+}
+
+// TestSelectDueChannels_NilValkeyPassesThrough covers the fail-open path:
+// with no Valkey client the static SQL batch is returned truncated to
+// batchSize — a missing cache must never pause crawling.
+func TestSelectDueChannels_NilValkeyPassesThrough(t *testing.T) {
+	t.Parallel()
+
+	rows := []gen.IntelSourceChannel{
+		{Label: "a", EntryUrl: "https://a.example.com", CrawlMethod: "static"},
+		{Label: "b", EntryUrl: "https://b.example.com", CrawlMethod: "static"},
+	}
+	cl := &fakeChannelLister{rows: rows}
+	s := NewScheduler(&fakeLister{}, cl, nil)
+
+	got, err := s.SelectDueChannels(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("SelectDueChannels: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d channels, want 1 (batch cap without tuner)", len(got))
+	}
+}
+
+func mustChannelUUID(t *testing.T, s string) pgtype.UUID {
+	t.Helper()
+
+	var id pgtype.UUID
+	if err := id.Scan(s); err != nil {
+		t.Fatalf("scan uuid %q: %v", s, err)
+	}
+
+	return id
 }
 
 func TestSelectDueChannels_PropagatesStoreError(t *testing.T) {

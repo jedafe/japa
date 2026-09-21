@@ -115,6 +115,10 @@ const (
 	// spine (RSS rule-based path or LLM) and promoted to contents rows under
 	// this type so they surface on the source feed and /content/{slug}.
 	TypeNews = "news"
+	// Article content type — the promotion target for intel_records with
+	// entity_type 'article' (intel-channels Phase 1: deterministic curator
+	// output from blog/editorial RSS feeds and JSON-LD Article nodes).
+	TypeArticle = "article"
 )
 
 // Visibility values stored in the contents.visibility column.
@@ -159,6 +163,9 @@ var validContentTypes = map[string]bool{
 	TypeVideo: true,
 	// News post — the intel 'news' entity_type promotion target.
 	TypeNews: true,
+	// Article — the intel 'article' entity_type promotion target (curated
+	// blog/editorial feed items).
+	TypeArticle: true,
 }
 
 // IsValidStatus reports whether s is a valid contents.status value.

@@ -111,6 +111,18 @@ func TestResolveCategoryMap(t *testing.T) {
 			wantTopics:   nil,
 		},
 		{
+			name:       "unmapped category resolves entity type via schema registry",
+			categories: []string{"remittance"},
+			// remittance is absent from the category map but maps to the
+			// 'remittance' extraction schema — its channels must still get
+			// entity_types or materialization skips them all.
+			wantEntities: []string{"remittance"},
+			wantMethods:  nil, // unmapped: no method restriction contributed
+			wantPipeline: "",
+			wantTopics:   nil,
+			wantWarnings: []string{`category "remittance" not in category map`},
+		},
+		{
 			name:         "blank and duplicate categories skipped",
 			categories:   []string{"", "  ", "news", "news"},
 			wantEntities: []string{"news"},
@@ -128,16 +140,17 @@ func TestResolveCategoryMap(t *testing.T) {
 			wantTopics:   []string{"visa", "immigration", "embassy", "residence permit", "asylum", "border"},
 		},
 		{
-			name:     "custom settings override default",
-			settings: `{"news":{"entity_types":["article"],"methods":["search"],"pipeline":"hybrid","topics":["custom"]}}`,
+			name:       "custom settings override default",
+			settings:   `{"news":{"entity_types":["article"],"methods":["search"],"pipeline":"hybrid","topics":["custom"]}}`,
 			categories: []string{"news", "job"},
-			// Only news exists in the custom map — job warns; hybrid is the
+			// Only news exists in the custom map — job falls back to the
+			// schemas registry for its entity type (job → job); hybrid is the
 			// first-seen pipeline with no extract present.
-			wantEntities: []string{"article"},
+			wantEntities: []string{"article", "job"},
 			wantMethods:  []string{"search"},
 			wantPipeline: PipelineHybrid,
 			wantTopics:   []string{"custom"},
-			wantWarnings: []string{`unknown category "job"`},
+			wantWarnings: []string{`category "job" not in category map`},
 		},
 		{
 			name:         "malformed settings falls back to default with warning",

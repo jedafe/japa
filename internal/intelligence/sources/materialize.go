@@ -156,7 +156,84 @@ func (s *Service) MaterializeChannels(ctx context.Context, sourceID SourceID, pr
 		created++
 	}
 
+	created += s.materializeFallbackChannel(ctx, src, resolved)
+
 	return created, skipped, nil
+}
+
+// materializeFallbackChannel guarantees an approved source is never left
+// channel-less: when every proposal was skipped or deduped and the source
+// has no channels at all, it creates a minimal static+extract channel on
+// source_url — the same shape the 000681 backfill produced for legacy
+// sources — so the source is still scheduled and produces records (or
+// review stubs for categories with no entity mapping). The row goes
+// through the store path like ensureDefaultChannel so empty entity_types
+// are allowed (runtime resolution falls back to the source's category).
+// Re-probes where channels already exist are untouched — an admin's
+// disabled-channel decision is never overridden. Returns 1 when the
+// fallback row was created, else 0.
+func (s *Service) materializeFallbackChannel(ctx context.Context, src Source, resolved ResolvedMap) int {
+	channels, err := s.store.ListChannels(ctx, src.ID)
+	if err != nil {
+		slog.Warn("sources: materialize channels: fallback check failed",
+			"source_id", src.ID.String(), "error", err)
+		return 0
+	}
+	if len(channels) > 0 {
+		return 0 // channels exist — re-probe dedupe, not a dead source
+	}
+
+	if src.SourceUrl == "" {
+		return 0
+	}
+	// Strict literal check ("" = no same-host carve-out): a private-literal
+	// source_url gets no fallback — the dial guard would refuse every crawl.
+	if err := validateChannelEntryURL(src.SourceUrl, CrawlMethodStatic, ""); err != nil {
+		slog.Warn("sources: materialize channels: fallback entry_url rejected",
+			"source_id", src.ID.String(), "entry_url", src.SourceUrl, "error", err)
+		return 0
+	}
+
+	pipeline := resolved.Pipeline
+	if !pipeline.IsValid() {
+		pipeline = PipelineExtract
+	}
+
+	freq := src.CrawlFrequencyMins
+	if freq <= 0 {
+		freq = 1440
+	}
+
+	_, err = s.store.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
+		SourceID:             src.ID,
+		Label:                "Default",
+		EntryUrl:             src.SourceUrl,
+		CrawlMethod:          string(CrawlMethodStatic),
+		EntityTypes:          resolved.EntityTypes,
+		Pipeline:             string(pipeline),
+		ProviderConfig:       []byte("{}"),
+		CrawlFrequencyMins:   freq,
+		Enabled:              src.Enabled,
+		Origin:               string(ChannelOriginProbe),
+		RelevanceMode:        string(RelevanceFiltered),
+		RelevanceTopics:      resolved.Topics,
+		RelevanceUrlPatterns: []string{},
+	})
+	if err != nil {
+		if errors.Is(err, errpkg.ErrAlreadyExists) {
+			return 0 // raced with a concurrent materialization — nothing to do
+		}
+
+		slog.Warn("sources: materialize channels: fallback channel create failed",
+			"source_id", src.ID.String(), "entry_url", src.SourceUrl, "error", err)
+
+		return 0
+	}
+
+	slog.Warn("sources: materialize channels: no proposals survived; created static fallback channel",
+		"source_id", src.ID.String(), "entry_url", src.SourceUrl)
+
+	return 1
 }
 
 // materializeProposal builds the create params for one probe proposal, or

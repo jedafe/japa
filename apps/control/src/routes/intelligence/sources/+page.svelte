@@ -71,7 +71,7 @@
 	const canDisableSource = $derived(hasAnyPermission(['intel.review.disable_source', 'intel.review.*', 'intel.sources.*']));
 	// intel-channels Phase 1: the channels editor lists a source's
 	// intel_source_channels rows; per-action nodes are enforced inside
-	// ChannelsTable (migration 000682).
+	// ChannelsTable (migration 000684).
 	const canListChannels = $derived(hasAnyPermission(['intel.channels.list', 'intel.channels.*']));
 
 	let sources = $state<IntelSource[]>([]);

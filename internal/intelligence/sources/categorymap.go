@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 )
 
 // defaultCategoryMapJSON holds the canonical category→method/pipeline/topics
@@ -151,8 +153,24 @@ func ResolveCategoryMap(settingsJSON []byte, categories []string) ResolvedMap {
 
 		mapping, ok := catMap[cat]
 		if !ok {
-			resolved.Warnings = append(resolved.Warnings,
-				fmt.Sprintf("unknown category %q skipped", cat))
+			// Categories absent from the map still resolve their entity
+			// type through the schemas registry (remittance, announcement,
+			// housing, …) — otherwise their channels materialize with empty
+			// entity_types and are skipped, leaving the approved source
+			// with no channel at all. Methods/topics stay empty for these:
+			// an unmapped category contributes no method restriction and no
+			// topic vocabulary.
+			if et := schemas.CategoryToEntityType(cat); et != "" {
+				resolved.Warnings = append(resolved.Warnings,
+					fmt.Sprintf("category %q not in category map; entity type resolved via schema registry", cat))
+				if !seenEntity[et] {
+					seenEntity[et] = true
+					resolved.EntityTypes = append(resolved.EntityTypes, et)
+				}
+			} else {
+				resolved.Warnings = append(resolved.Warnings,
+					fmt.Sprintf("unknown category %q skipped", cat))
+			}
 			continue
 		}
 

@@ -603,15 +603,19 @@ func readBodyLimited(r io.Reader, limit int64) ([]byte, error) {
 // robotsParser accumulates the verdict for one robots.txt document while
 // tracking which User-agent block each rule belongs to — mirroring
 // fetcher's robotsParser semantics: a dedicated japaconnect* block wins
-// over the wildcard block, wildcard rules stop accumulating once a path is
-// recorded, and rules outside any user-agent block are ignored. Sitemap:
-// declarations are collected regardless of block.
+// over the wildcard block, wildcard rules stop accumulating once a
+// JapaConnect rule is seen, and rules outside any user-agent block are
+// ignored. Sitemap: declarations are collected regardless of block.
 type robotsParser struct {
 	verdict    RobotVerdict
 	disallowed []string
 	currentUA  string
 	inOurBlock bool
 	inWildcard bool
+	// seenOurRule flips on the first rule applied inside the dedicated
+	// JapaConnect block — the block is authoritative, so wildcard rules
+	// collected earlier are discarded and wildcard rules stop collecting.
+	seenOurRule bool
 }
 
 // parseRobots parses a robots.txt body into a RobotVerdict.
@@ -656,9 +660,16 @@ func (p *robotsParser) applyUserAgent(lower string) {
 // applyRule applies a Disallow/Crawl-delay line when the current block
 // applies to our crawler.
 func (p *robotsParser) applyRule(line, lower string) {
-	collect := p.inOurBlock || (p.inWildcard && len(p.disallowed) == 0)
+	collect := p.inOurBlock || (p.inWildcard && !p.seenOurRule)
 	if !collect && p.currentUA == "" {
 		return
+	}
+
+	if p.inOurBlock && !p.seenOurRule {
+		// First rule of our dedicated block: it supersedes every wildcard
+		// rule collected so far (robots.txt group semantics).
+		p.seenOurRule = true
+		p.disallowed = nil
 	}
 
 	switch {
@@ -674,12 +685,16 @@ func (p *robotsParser) applyRule(line, lower string) {
 }
 
 // applyDisallow records a Disallow rule. An empty value means "allow all"
-// and clears previously collected paths (matching fetcher's parser).
+// and clears previously collected paths — but only when the rule belongs to
+// a block that applies to us; a foreign user-agent's bare Disallow must not
+// wipe our collected rules (matching fetcher's parser).
 func (p *robotsParser) applyDisallow(line string, collect bool) {
 	path := strings.TrimSpace(line[len("Disallow:"):])
 	if path == "" {
-		p.verdict.Allowed = true
-		p.disallowed = nil
+		if collect {
+			p.verdict.Allowed = true
+			p.disallowed = nil
+		}
 
 		return
 	}
