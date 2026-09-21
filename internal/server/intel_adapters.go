@@ -13,12 +13,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/curator"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
+	"github.com/jedafe/japa/internal/intelligence/relevance"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/studio"
@@ -171,6 +173,126 @@ func (a *intelCuratorPortAdapter) Curate(ctx context.Context, body []byte, conte
 	}
 
 	return out, nil
+}
+
+// intelRelevanceClassifierAdapter adapts the §20 AI dispatcher to the
+// worker's relevance.Classifier port for the borderline band (Task 10,
+// spec §4 step 3). It dispatches a cheap yes/no prompt under
+// category="classification"; the model comes from
+// intel.relevance.classifier_model (empty → category-default routing).
+// When no provider serves the category the call errors — the gate treats
+// classifier errors as Borderline and the worker fails open (the item
+// passes), so a missing provider never drops records.
+type intelRelevanceClassifierAdapter struct {
+	d        *ai.Dispatcher
+	settings *config.Settings
+}
+
+// Classify returns true when the item is topically relevant to the
+// channel's domain vocabulary.
+func (a *intelRelevanceClassifierAdapter) Classify(ctx context.Context, item relevance.ItemInput, topics []string) (bool, error) {
+	if a.d == nil || !a.d.HasCategory("classification") {
+		return false, errors.New(`intel: no AI provider registered for category "classification"`)
+	}
+
+	model := ""
+	if a.settings != nil {
+		model = a.settings.GetStringOr(ctx, "intel.relevance.classifier_model", "")
+	}
+
+	var b strings.Builder
+	b.WriteString("You are a topical relevance classifier for JapaConnect, a platform for ")
+	b.WriteString("Nigerians/Africans migrating, relocating, studying abroad, working abroad, or settling overseas.\n")
+	if len(topics) > 0 {
+		b.WriteString("The channel's topic vocabulary is: ")
+		b.WriteString(strings.Join(topics, ", "))
+		b.WriteString(".\n")
+	}
+	b.WriteString("Decide whether this item is topically relevant (migration, relocation, travel, study abroad, jobs, scholarships, settlement, diaspora, visas, or the channel topics above).\n\n")
+	b.WriteString("Title: ")
+	b.WriteString(item.Title)
+	b.WriteString("\nURL: ")
+	b.WriteString(item.URL)
+	if item.Summary != "" {
+		summary := item.Summary
+		if len(summary) > 500 {
+			summary = summary[:500] // bound the prompt — the gate is a cheap pass
+		}
+		b.WriteString("\nSummary: ")
+		b.WriteString(summary)
+	}
+	b.WriteString("\n\nRespond with ONLY a JSON object (no markdown, no explanation): {\"on_topic\": true} or {\"on_topic\": false}")
+
+	resp, err := a.d.Dispatch(ctx, "classification", ai.Request{
+		Category: "classification",
+		Payload: map[string]any{
+			"prompt":     b.String(),
+			"model":      model,
+			"max_tokens": 32,
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("intel: relevance classification dispatch: %w", err)
+	}
+
+	return parseClassifierVerdict(intelClassifierText(resp.Raw))
+}
+
+// intelClassifierText pulls the assistant message text out of an
+// OpenAI-compatible choices array in the dispatch Response.Raw map.
+// Mirrors spam.extractChoiceText (private to that package).
+func intelClassifierText(raw map[string]any) string {
+	choices, ok := raw["choices"].([]any)
+	if !ok || len(choices) == 0 {
+		return ""
+	}
+
+	first, ok := choices[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	msg, ok := first["message"].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	content, _ := msg["content"].(string)
+
+	return content
+}
+
+// parseClassifierVerdict decodes the classifier's answer: the JSON shape
+// {"on_topic": bool} first, then a lenient substring fallback for
+// providers that answer "on_topic"/"off_topic"/"yes"/"no" bare.
+func parseClassifierVerdict(text string) (bool, error) {
+	cleaned := strings.TrimSpace(text)
+	cleaned = strings.TrimPrefix(cleaned, "```json")
+	cleaned = strings.TrimPrefix(cleaned, "```")
+	cleaned = strings.TrimSuffix(cleaned, "```")
+	cleaned = strings.TrimSpace(cleaned)
+
+	var out struct {
+		OnTopic  *bool `json:"on_topic"`
+		Relevant *bool `json:"relevant"`
+	}
+	if err := json.Unmarshal([]byte(cleaned), &out); err == nil {
+		if out.OnTopic != nil {
+			return *out.OnTopic, nil
+		}
+		if out.Relevant != nil {
+			return *out.Relevant, nil
+		}
+	}
+
+	switch strings.ToLower(cleaned) {
+	case "on_topic", "yes", "true", "relevant":
+		return true, nil
+	case "off_topic", "no", "false", "irrelevant", "not relevant":
+		return false, nil
+	}
+
+	return false, fmt.Errorf("intel: unparseable classifier response: %q", cleaned)
 }
 
 // recordsToResults converts validated extractor records into the worker's
