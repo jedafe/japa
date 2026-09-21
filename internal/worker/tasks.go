@@ -126,6 +126,7 @@ const (
 
 	TypeIntelScheduleCrawls    = "intel:schedule_crawls"     // critical (cron)
 	TypeIntelFetchSource       = "intel:fetch_source"        // default
+	TypeIntelFetchChannel      = "intel:fetch_channel"       // default
 	TypeIntelDetectChanges     = "intel:detect_changes"      // default
 	TypeIntelExtract           = "intel:extract"             // default
 	TypeIntelDedup             = "intel:dedup"               // default
@@ -297,6 +298,7 @@ var handlerRegistry = []struct {
 	// Intelligence System (Section INTEL) handlers — ingestion spine.
 	{TypeIntelScheduleCrawls, HandleIntelScheduleCrawls},
 	{TypeIntelFetchSource, HandleIntelFetchSource},
+	{TypeIntelFetchChannel, HandleIntelFetchChannel},
 	{TypeIntelDetectChanges, HandleIntelDetectChanges},
 	{TypeIntelExtract, HandleIntelExtract},
 	{TypeIntelDedup, HandleIntelDedup},

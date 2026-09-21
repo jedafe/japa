@@ -70,15 +70,6 @@ return count
 // blocked until TTL expiry (BUG-10 fix, §4.3/§6.2). Only ErrCrawlLocked
 // (another worker holds the lock) leaves the lock in place.
 func (p *PreflightChecker) Check(ctx context.Context, source sources.Source) error {
-	// Resolve config values from system_settings (Rule 3, INTEL-014 fix).
-	crawlLockTTL := 3600
-	rateLimitPerMin := 10
-
-	if p.settings != nil {
-		crawlLockTTL = p.settings.GetIntOr(ctx, "intel.crawl_lock_ttl_secs", 3600)
-		rateLimitPerMin = p.settings.GetIntOr(ctx, "intel.ratelimit_default_per_min", 10)
-	}
-
 	// 1. Crawl lock. Use the source UUID string as the lock key suffix; only
 	// proceed when the ID is valid.
 	sourceID := "unknown"
@@ -87,6 +78,45 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source) err
 	}
 
 	lockKey := fmt.Sprintf("jc:intel:crawllock::%s", sourceID)
+
+	return p.check(ctx, lockKey, source.Domain, source.SourceUrl, source)
+}
+
+// CheckChannel is the channel-scoped counterpart of Check (intel-channels
+// Phase 1): the crawl lock keys on the channel ID
+// (jc:intel:channel_lock:{channel_id}) so two channels of the same source
+// can crawl concurrently, the rate-limit domain is derived from the
+// channel's entry_url host (a channel may point at a different host than
+// source.domain), and robots.txt is evaluated against entry_url. The
+// license check still reads the parent source's trust_level/source_license —
+// republish policy is a property of the source, not the channel.
+func (p *PreflightChecker) CheckChannel(ctx context.Context, src sources.Source, ch sources.Channel) error {
+	channelID := "unknown"
+	if ch.ID.Valid {
+		channelID = ch.ID.String()
+	}
+
+	lockKey := fmt.Sprintf("jc:intel:channel_lock:%s", channelID)
+
+	domain := src.Domain
+	if u, err := url.Parse(ch.EntryUrl); err == nil && u.Host != "" {
+		domain = u.Host
+	}
+
+	return p.check(ctx, lockKey, domain, ch.EntryUrl, src)
+}
+
+// check runs the shared pre-flight gate: crawl lock (already keyed by the
+// caller), license, per-domain rate limit, and robots.txt against checkURL.
+func (p *PreflightChecker) check(ctx context.Context, lockKey, domain, checkURL string, source sources.Source) error {
+	// Resolve config values from system_settings (Rule 3, INTEL-014 fix).
+	crawlLockTTL := 3600
+	rateLimitPerMin := 10
+
+	if p.settings != nil {
+		crawlLockTTL = p.settings.GetIntOr(ctx, "intel.crawl_lock_ttl_secs", 3600)
+		rateLimitPerMin = p.settings.GetIntOr(ctx, "intel.ratelimit_default_per_min", 10)
+	}
 
 	locked, err := p.rdb.SetNX(ctx, lockKey, "1", time.Duration(crawlLockTTL)*time.Second).Result()
 	if err != nil {
@@ -113,20 +143,20 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source) err
 	}
 
 	// 3. Rate limit (sliding window per domain).
-	if err := p.checkRateLimit(ctx, source, rateLimitPerMin, releaseLock); err != nil {
+	if err := p.checkRateLimit(ctx, domain, rateLimitPerMin, releaseLock); err != nil {
 		return err
 	}
 
 	// 4. Robots.txt check (INTEL-006 fix).
-	return p.checkRobots(ctx, source, releaseLock)
+	return p.checkRobots(ctx, checkURL, releaseLock)
 }
 
 // checkRateLimit enforces the per-domain sliding-window rate limit via the
 // atomic INCR + conditional EXPIRE Lua script (prevents the race where a
 // crash after INCR leaves the key without a TTL, permanently blocking the
 // domain). The lock is released on any failure.
-func (p *PreflightChecker) checkRateLimit(ctx context.Context, source sources.Source, rateLimitPerMin int, releaseLock func()) error {
-	rateKey := fmt.Sprintf("jc:intel:ratelimit::%s", source.Domain)
+func (p *PreflightChecker) checkRateLimit(ctx context.Context, domain string, rateLimitPerMin int, releaseLock func()) error {
+	rateKey := fmt.Sprintf("jc:intel:ratelimit::%s", domain)
 
 	result, err := p.rdb.Eval(ctx, rateLimitScript, []string{rateKey}, 60).Result()
 	if err != nil {
@@ -148,21 +178,21 @@ func (p *PreflightChecker) checkRateLimit(ctx context.Context, source sources.So
 	return nil
 }
 
-// checkRobots verifies the source URL against the domain's robots.txt policy
+// checkRobots verifies checkURL against the domain's robots.txt policy
 // when a RobotsChecker is wired. If robots.txt is unreachable, RobotsChecker
 // defaults to allow-all (conservative). The lock is released on any failure.
-func (p *PreflightChecker) checkRobots(ctx context.Context, source sources.Source, releaseLock func()) error {
-	if p.robots == nil || source.SourceUrl == "" {
+func (p *PreflightChecker) checkRobots(ctx context.Context, checkURL string, releaseLock func()) error {
+	if p.robots == nil || checkURL == "" {
 		return nil
 	}
 
-	policy, err := p.robots.Check(ctx, source.SourceUrl)
+	policy, err := p.robots.Check(ctx, checkURL)
 	if err != nil {
 		releaseLock()
 		return fmt.Errorf("fetcher: robots check: %w", err)
 	}
 
-	parsed, parseErr := url.Parse(source.SourceUrl)
+	parsed, parseErr := url.Parse(checkURL)
 	if parseErr != nil {
 		releaseLock()
 		return fmt.Errorf("fetcher: robots url parse: %w", parseErr)
@@ -191,4 +221,10 @@ func (p *PreflightChecker) checkRobots(ctx context.Context, source sources.Sourc
 // (success or failure) to allow immediate retry if needed.
 func (p *PreflightChecker) ReleaseCrawlLock(ctx context.Context, sourceID string) {
 	p.rdb.Del(ctx, fmt.Sprintf("jc:intel:crawllock::%s", sourceID))
+}
+
+// ReleaseChannelCrawlLock removes a channel-scoped crawl lock acquired by
+// CheckChannel (jc:intel:channel_lock:{channel_id}).
+func (p *PreflightChecker) ReleaseChannelCrawlLock(ctx context.Context, channelID string) {
+	p.rdb.Del(ctx, fmt.Sprintf("jc:intel:channel_lock:%s", channelID))
 }

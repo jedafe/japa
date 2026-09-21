@@ -9,15 +9,28 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"strings"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
-// Fetcher is the adapter interface. Each implementation fetches a source
-// and returns the raw bytes + a normalized content hash for change detection.
+// ErrMethodNotImplemented is returned by Composite.Fetch when the channel's
+// crawl_method names a fetch strategy that has no Phase-1 adapter yet
+// (render, git, social, search, wayback, xhr_sniff, oneshot). The worker
+// treats it like any fetch failure — the channel's consecutive_failures
+// counter increments and the circuit-breaker disables the channel at the
+// threshold, so unimplemented methods cannot retry-loop forever.
+var ErrMethodNotImplemented = errors.New("fetcher: crawl method not implemented")
+
+// Fetcher is the adapter interface. Each implementation fetches a channel's
+// entry URL on behalf of its parent source and returns the raw bytes + a
+// normalized content hash for change detection. The source supplies
+// trust/license context (preflight) and legacy provider_config fallbacks;
+// the channel supplies the entry URL, crawl method, and per-channel
+// provider_config.
 type Fetcher interface {
-	Fetch(ctx context.Context, source sources.Source) (FetchResult, error)
+	Fetch(ctx context.Context, src sources.Source, ch sources.Channel) (FetchResult, error)
 }
 
 // FetchResult is the output of a successful fetch.

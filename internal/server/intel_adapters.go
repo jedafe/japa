@@ -25,9 +25,10 @@ import (
 )
 
 // intelSchedulerSourceAdapter wraps *sources.Store so it satisfies the
-// scheduler.DueSourceLister interface. The sources store exposes ListDue
-// (which wraps the gen.ListDueIntelSources query); the adapter passes the
-// configured ID through. Per ADR-112 Amendment 2, all intelligence
+// scheduler.DueSourceLister and scheduler.DueChannelLister interfaces. The
+// sources store exposes ListDue / ListDueChannels (the gen
+// ListDueIntelSources / ListDueIntelChannels queries); the adapter passes
+// the configured ID through. Per ADR-112 Amendment 2, all intelligence
 // queries are platform-scoped.
 type intelSchedulerSourceAdapter struct {
 	store *sources.Store
@@ -35,6 +36,12 @@ type intelSchedulerSourceAdapter struct {
 
 func (a *intelSchedulerSourceAdapter) ListDue(ctx context.Context, limit int32) ([]gen.IntelSource, error) {
 	return a.store.ListDue(ctx, limit)
+}
+
+// ListDueChannels satisfies scheduler.DueChannelLister — the intel-channels
+// Phase 1 scheduling unit is the channel, not the source.
+func (a *intelSchedulerSourceAdapter) ListDueChannels(ctx context.Context, limit int32) ([]gen.IntelSourceChannel, error) {
+	return a.store.ListDueChannels(ctx, limit)
 }
 
 // intelExtractorPortAdapter wraps *extractor.Extractor so it satisfies the

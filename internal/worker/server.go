@@ -294,7 +294,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// Intelligence System (§INTEL, ADR-112) — two cron entry points.
 	// schedule_crawls runs every 15 min on the critical queue: selects due
-	// intel_sources and enqueues intel:fetch_source per source. The handler
+	// intel_source_channels and enqueues intel:fetch_channel per channel
+	// (intel-channels Phase 1 moved the scheduling unit from source to
+	// channel). The handler
 	// acquires a distributed leader lock (jc:intel:scheduler_leader) so
 	// duplicate replicas do not double-enqueue. refresh_freshness runs daily
 	// at 04:30 UTC (offset from other 04:00 tasks to spread load): decays
