@@ -2780,14 +2780,22 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Collect all entries whose metadata.conversation_id matches the requested id.
+	// Collect all entries whose metadata.conversation_id matches the requested
+	// id. Entries that lack a conversation_id are surfaced in the list response
+	// as pseudo-conversations keyed by entry id — match on entry id as a
+	// fallback so those stay openable.
 	var matched []honcho.ContextEntry
 
 	for _, e := range entries {
 		if e.Metadata != nil {
 			if cid, ok := e.Metadata["conversation_id"].(string); ok && cid == conversationID {
 				matched = append(matched, e)
+				continue
 			}
+		}
+
+		if e.ID == conversationID {
+			matched = append(matched, e)
 		}
 	}
 

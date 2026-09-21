@@ -457,6 +457,11 @@ func (s *Store) GetStats(ctx context.Context, originSpaceID, destSpaceID pgtype.
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		// No filters supplied — match all rows rather than emitting a bare
+		// WHERE (which is a syntax error → 500 on the unfiltered public call).
+		whereClause = "TRUE"
+	}
 
 	q := fmt.Sprintf(`
 SELECT id, origin_space_id, destination_space_id, visa_category,

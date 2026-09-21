@@ -1,4 +1,4 @@
-import type { Handle } from '@sveltejs/kit';
+import { error, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
@@ -33,7 +33,7 @@ const TOOL_SETTINGS_KEYS: Array<{ key: string; surface: ToolSurface }> = [
 	{ key: 'visa_routes', surface: 'visa-routes' },
 	{ key: 'appointment_alert', surface: 'embassy-alerter' },
 	{ key: 'arrival_checklist', surface: 'arrival-checklist' },
-	{ key: 'visa_timeline', surface: 'processing-tracker' },
+	{ key: 'visa_timeline', surface: 'processing-times' },
 	{ key: 'credential_checker', surface: 'credential-checker' },
 	{ key: 'cv_formatter', surface: 'cv-formatter' },
 	{ key: 'housing_guide', surface: 'housing-guide' },
@@ -55,7 +55,7 @@ const DEFAULT_SUBDOMAINS: Record<string, string> = {
 	visa_routes: 'visa-routes',
 	appointment_alert: 'embassy-alerter',
 	arrival_checklist: 'arrival-checklist',
-	visa_timeline: 'processing-tracker',
+	visa_timeline: 'processing-times',
 	credential_checker: 'credential-checker',
 	cv_formatter: 'cv-formatter',
 	housing_guide: 'housing-guide',
@@ -167,6 +167,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 			.split(',')
 			.map((l) => l.trim())
 			.filter(Boolean);
+
+	// The reroute hook (src/hooks.ts) strips any 2-letter path segment before
+	// route matching, so an unsupported prefix like /zz/visa-checklist would
+	// otherwise render the unprefixed page. 404 it to preserve the previous
+	// behavior for non-enabled locales.
+	if (pathLocale && !enabledLanguages.includes(pathLocale)) {
+		throw error(404, { code: 'not_found', message: 'Not found' });
+	}
 
 	if (pathLocale && enabledLanguages.includes(pathLocale)) {
 		event.locals.locale = pathLocale;

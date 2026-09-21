@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api/client';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -122,8 +124,10 @@
 	}
 
 	function downloadUrl(sessionId: string): string {
-		// The download endpoint returns a binary file — link directly.
-		return `/cv-formatter/sessions/${sessionId}/download`;
+		// The download endpoint returns a binary file served by the Go API
+		// under /api/v1 — buildApiUrl prefixes it so the link doesn't hit the
+		// SvelteKit router (which would 404).
+		return buildApiUrl(`/cv-formatter/sessions/${sessionId}/download`, PUBLIC_JC_API_URL);
 	}
 
 	onDestroy(() => {

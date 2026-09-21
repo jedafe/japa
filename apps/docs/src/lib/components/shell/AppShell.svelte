@@ -184,6 +184,12 @@
 					<span>{t('app.name')}</span>
 				</a>
 				<div class="ml-auto"><SearchLauncher keyboardShortcut={false} /></div>
+				<!-- Topbar widgets (theme/language toggles) — the sidebar topbar is
+				     hidden below 768px, so render them here. Search is already in the
+				     bar and the dropdown is handled by the auth affordance. -->
+				{#each topbarWidgets.filter((w) => !['search', 'search_launcher', 'user_dropdown'].includes(w.widget_type)) as widget (widget.id)}
+					<SidebarWidgetRenderer {widget} {user} />
+				{/each}
 				{#if !user}<GuestAuthButtons compact />{/if}
 			</div>
 			{@render children()}
@@ -280,6 +286,12 @@
 					<span>{t('app.name')}</span>
 				</a>
 				<div class="ml-auto"><SearchLauncher keyboardShortcut={false} /></div>
+				<!-- Topbar widgets (theme/language toggles) + account menu — the
+				     sidebar topbar is hidden below 768px. -->
+				{#each topbarWidgets.filter((w) => !['search', 'search_launcher', 'user_dropdown'].includes(w.widget_type)) as widget (widget.id)}
+					<SidebarWidgetRenderer {widget} {user} />
+				{/each}
+				<UserDropdown {user} />
 			</div>
 			{@render children()}
 		</main>

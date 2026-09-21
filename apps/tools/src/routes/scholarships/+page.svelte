@@ -175,11 +175,12 @@
 	// GET /scholarships/statuses (Rule 16 — no hardcoded option lists).
 	// Labels are translated client-side using value-based i18n keys.
 
-	// Derive level-of-study filter options from the fetched scholarship data
-	// (Rule 16 — no hardcoded option lists). The values come from the
-	// level_of_study custom field on scholarship content; we extract the
-	// distinct set from the already-loaded list.
+	// Level-of-study filter options come from GET /scholarships/levels (the
+	// canonical distinct set across all published scholarships — Rule 16).
+	// Falls back to deriving from the loaded page when the endpoint is empty.
 	const levelOptions = $derived.by(() => {
+		const apiLevels = (data.levelOptions ?? []).map((o) => o.value);
+		if (apiLevels.length > 0) return apiLevels;
 		const levels = new Set<string>();
 		for (const s of scholarships) {
 			if (s.level_of_study) levels.add(s.level_of_study);

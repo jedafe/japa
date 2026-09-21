@@ -3,8 +3,9 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Layers, Search, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight, ArrowUpDown, X } from 'lucide-svelte';
-	import { EmptyState, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, FilterToggle, PageAction, type SearchSuggestion, type CardMetaItem } from '$lib/components/ui';
+	import { Layers, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight, X } from 'lucide-svelte';
+	import { EmptyState, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, FilterToggle, PageAction, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '$lib/components/ui';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
 	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
@@ -42,17 +43,33 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let selectedParent = $state<{ id: string; name: string; slug: string } | null>(
 		untrack(() => data.parent ? { id: data.parent, name: data.parentName || data.parent, slug: '' } : null)
 	);
-	let availableSubregions = $state<string[]>(untrack(() => data.subregions ?? []));
-	// "My spaces" is a server-side filter (?joined=1) — the API returns only
+	// "My spaces" is a server-side scope (?joined=1) — the API returns only
 	// spaces the viewer is an approved member of, with correct pagination
 	// (audit fix: the chip used to filter just the current page client-side).
 	let joinedOnly = $state(untrack(() => data.joined ?? false));
 	const searchPlaceholder = $derived(t('spaces.search_placeholder', 'Search spaces…'));
 
-	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
+	// Sync local filter state with the URL-driven server data on navigation
+	// (same pattern as /sources — keeps controls honest on back/forward nav).
+	$effect(() => {
+		query = data.q;
+		selectedType = data.type;
+		selectedLevel = data.level;
+		selectedSort = data.sort;
+		selectedGeo = data.geo;
+		selectedRegion = data.region;
+		selectedSubregion = data.subregion;
+		selectedParent = data.parent
+			? { id: data.parent, name: data.parentName || data.parent, slug: '' }
+			: null;
+		joinedOnly = data.joined ?? false;
+	});
+
+	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /sources).
+	// `joined` is a scope tab now, not a filter, so it doesn't light the dot.
 	const hasActiveFilters = $derived(
 		!!selectedType || !!selectedLevel || !!selectedSort || !!selectedGeo.trim() ||
-		!!selectedRegion || !!selectedSubregion || !!selectedParent || joinedOnly
+		!!selectedRegion || !!selectedSubregion || !!selectedParent
 	);
 	let showFilters = $state(false);
 	$effect(() => {
@@ -76,13 +93,83 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	function humanizeLevel(level: string): string {
 		return level.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 	}
-	const levelOptions = $derived([
-		{ value: '', label: t('spaces.level_all', 'All levels') },
-		...(data.levels ?? ['country', 'state', 'city', 'custom']).map((level) => ({
-			value: level,
-			label: t(`spaces.level_${level}`, humanizeLevel(level))
-		}))
+
+	// Type and level read as one axis to users: the geo types (Country/State/
+	// City) already express the geo levels, and member-created spaces are all
+	// level=custom (SpaceCreationModal hardcodes it). So a single "Type"
+	// picker lists every space type plus the levels no type covers — a
+	// `level:<l>` option still writes ?level=, keeping old URLs working.
+	const typeCoveredLevels = $derived(
+		new Set(data.spaceTypes.flatMap((st) => [st.slug, st.name.toLowerCase()]))
+	);
+	const kindOptions = $derived([
+		{ value: '', label: t('common.all_types', 'All types') },
+		...data.spaceTypes.map((st) => ({ value: st.slug, label: st.name })),
+		...(data.levels ?? [])
+			.filter((l) => !typeCoveredLevels.has(l))
+			.map((l) => ({
+				value: `level:${l}`,
+				label:
+					l === 'custom'
+						? t('spaces.member_created', 'Member-created')
+						: t(`spaces.level_${l}`, humanizeLevel(l))
+			}))
 	]);
+	// The picker's value: the type slug, or `level:<l>` for a level-only
+	// option. A ?level= URL that a type already covers (e.g. level=country)
+	// displays as that type — equivalent filter, cleaner presentation.
+	const kindValue = $derived(
+		selectedType
+			? selectedType
+			: selectedLevel
+				? typeCoveredLevels.has(selectedLevel)
+					? (data.spaceTypes.find(
+							(st) => st.slug === selectedLevel || st.name.toLowerCase() === selectedLevel
+						)?.slug ?? `level:${selectedLevel}`)
+					: `level:${selectedLevel}`
+				: ''
+	);
+	function onKindChange(v: string) {
+		if (v.startsWith('level:')) {
+			selectedType = '';
+			selectedLevel = v.slice('level:'.length);
+		} else {
+			selectedType = v;
+			selectedLevel = '';
+		}
+		onFilterChange();
+	}
+
+	const regionOptions = $derived([
+		{ value: '', label: t('spaces.region_all', 'All regions') },
+		...data.regions.map((r) => ({ value: r, label: r }))
+	]);
+
+	// Scope tabs — ?joined=1 switches between the full directory and the
+	// viewer's memberships (guests only get the directory).
+	const scopeTabs = $derived<UrlTab[]>([
+		{ value: 'all', label: t('spaces.tab_all', 'All spaces') },
+		{ value: 'joined', label: t('spaces.joined_only', 'My spaces') }
+	]);
+
+	// Country picker for ?geo= — filters the server-loaded /geo/countries
+	// list client-side (same pattern as /scholarships), submits the geo_code.
+	function toCountryItems(list: PageData['countries']): AutocompleteItem[] {
+		return list.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
+	}
+	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const filtered = query === ''
+			? data.countries
+			: data.countries.filter(
+					(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+				);
+		return Promise.resolve(toCountryItems(filtered));
+	}
+	const geoSelectedLabel = $derived(
+		data.countries.find((c) => c.geo_code === selectedGeo)?.name ?? (selectedGeo || null)
+	);
+
 	const followingSpaceIdSet = $derived(new Set(data.followingSpaceIds ?? []));
 
 	function buildHref(pageNum: number): string {
@@ -113,7 +200,19 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (selectedParent) params.set('parent', selectedParent.id);
 		if (joinedOnly) params.set('joined', '1');
 		const qs = params.toString();
-		goto(qs ? `/spaces?${qs}` : '/spaces');
+		goto(qs ? `/spaces?${qs}` : '/spaces', { keepFocus: true });
+	}
+
+	// Clear keeps the search query and scope tab — only the panel resets.
+	function clearFilters() {
+		selectedType = '';
+		selectedLevel = '';
+		selectedSort = '';
+		selectedGeo = '';
+		selectedRegion = '';
+		selectedSubregion = '';
+		selectedParent = null;
+		onFilterChange();
 	}
 
 	// Look up the space type name by ID from the data-driven type list.
@@ -133,18 +232,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			return json?.extract ?? '';
 		} catch {
 			return '';
-		}
-	}
-
-	async function fetchSubregions(region: string) {
-		if (!region) {
-			availableSubregions = [];
-			return;
-		}
-		const res = await api.get<string[]>(`/spaces/subregions?region=${encodeURIComponent(region)}`);
-		availableSubregions = res.data ?? [];
-		if (!availableSubregions.includes(selectedSubregion)) {
-			selectedSubregion = '';
 		}
 	}
 
@@ -188,11 +275,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					{t('spaces.subtitle', 'Join spaces to connect with people who share your interests.')}
 				</p>
 			</div>
-			<!-- Page controls on the heading row: Filters toggle + Create.
+			<!-- Page controls on the heading row: Create only — the Filters
+			     toggle lives on the ListPageBar (same pattern as /blog).
 			     PageAction keeps its mobile FAB (portaled to <body>), so this
 			     wrapper only carries the desktop layout. -->
 			<div class="flex shrink-0 items-center gap-2 pt-0.5">
-				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="spaces-filter-panel" />
 				{#if page.data.user}
 					<PageAction
 						onclick={() => (showCreateModal = true)}
@@ -231,140 +318,120 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{#if selectedParent}
 				<input type="hidden" name="parent" value={selectedParent.id} />
 			{/if}
+			{#if joinedOnly}
+				<input type="hidden" name="joined" value="1" />
+			{/if}
 		</form>
 	</div>
 
-	<!-- Results count bar — the Filter/Create controls live on the heading row above. -->
+	<!-- Scope tabs (All / My spaces) + filter toggle — the ListPageBar/UrlTabs
+	     pattern used by /blog and /sources. Guests see the plain count. -->
 	<ListPageBar>
-		<span class="flex items-center px-4 text-sm text-[var(--color-muted)]" style="min-height: var(--nav-height)">
-			{visibleTotal} {t('spaces.results', 'spaces')}
-		</span>
+		{#if page.data.user}
+			<UrlTabs
+				tabs={scopeTabs}
+				value={joinedOnly ? 'joined' : 'all'}
+				onValueChange={(v) => { joinedOnly = v === 'joined'; onFilterChange(); }}
+				class="!border-b-0 !bg-transparent"
+			/>
+		{:else}
+			<span class="flex items-center px-4 text-sm text-[var(--color-muted)]" style="min-height: var(--nav-height)">
+				{visibleTotal} {t('spaces.results', 'spaces')}
+			</span>
+		{/if}
+		{#snippet actions()}
+			{#if page.data.user}
+				<span class="hidden text-xs text-[var(--color-muted)] sm:inline">
+					{visibleTotal} {t('spaces.results', 'spaces')}
+				</span>
+			{/if}
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="spaces-filter-panel" />
+		{/snippet}
 	</ListPageBar>
 
 	{#if showFilters}
+		<!-- Filter panel — one uniform field grid (SelectField/Autocomplete),
+		     same pattern as /sources and /blog. Type+level are merged into a
+		     single picker; ?subregion= stays URL-only (no dedicated control). -->
 		<div id="spaces-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
-		<!-- Space type filter chips (data-driven from GET /space-types) -->
-		{#if data.spaceTypes.length > 0}
-			<div class="mt-3 flex flex-wrap gap-2">
-				<button
-					type="button"
-					onclick={() => { selectedType = ''; onFilterChange(); }}
-					class="rounded-full border px-3 py-1 text-xs transition-colors {selectedType === ''
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
-				>
-					All types
-				</button>
-				{#each data.spaceTypes as st (st.id)}
+			<div class="grid gap-3 sm:grid-cols-3">
+				{#if kindOptions.length > 1}
+					<div>
+						<label for="spaces-filter-type" class="sr-only">{t('spaces.type_label', 'Type')}</label>
+						<SelectField
+							id="spaces-filter-type"
+							value={kindValue}
+							options={kindOptions}
+							placeholder={t('common.all_types', 'All types')}
+							onValueChange={onKindChange}
+							class="w-full"
+						/>
+					</div>
+				{/if}
+
+				<div>
+					<Autocomplete
+						id="spaces-filter-country"
+						placeholder={t('common.all_countries', 'All countries')}
+						ariaLabel={t('spaces.country_label', 'Country')}
+						emptyMessage={t('spaces.no_countries', 'No countries found')}
+						fetcher={countryFetcher}
+						initialFetcher={async () => toCountryItems(data.countries)}
+						selectedId={selectedGeo || null}
+						selectedLabel={geoSelectedLabel}
+						onSelect={(item) => { selectedGeo = item.id; onFilterChange(); }}
+						onClear={() => { selectedGeo = ''; onFilterChange(); }}
+					/>
+				</div>
+
+				{#if regionOptions.length > 1}
+					<div>
+						<label for="spaces-filter-region" class="sr-only">{t('spaces.region_label', 'Region')}</label>
+						<SelectField
+							id="spaces-filter-region"
+							value={selectedRegion}
+							options={regionOptions}
+							placeholder={t('spaces.region_all', 'All regions')}
+							onValueChange={(v) => { selectedRegion = v; selectedSubregion = ''; onFilterChange(); }}
+							class="w-full"
+						/>
+					</div>
+				{/if}
+
+				<div class="sm:col-span-2">
+					<SpaceCombobox
+						parentMode
+						placeholder={t('spaces.parent_placeholder', 'Filter by parent space…')}
+						selected={selectedParent}
+						onSelect={(space) => { selectedParent = space; onFilterChange(); }}
+						onRemove={() => { selectedParent = null; onFilterChange(); }}
+					/>
+				</div>
+
+				<div>
+					<label for="spaces-filter-sort" class="sr-only">{t('spaces.sort_label', 'Sort')}</label>
+					<SelectField
+						id="spaces-filter-sort"
+						value={selectedSort}
+						options={sortOptions}
+						placeholder={t('spaces.sort_label', 'Sort')}
+						onValueChange={(v) => { selectedSort = v; onFilterChange(); }}
+						class="w-full"
+					/>
+				</div>
+			</div>
+
+			{#if hasActiveFilters}
+				<div class="mt-3 flex justify-end">
 					<button
 						type="button"
-						onclick={() => { selectedType = st.slug; onFilterChange(); }}
-						class="rounded-full border px-3 py-1 text-xs transition-colors {selectedType === st.slug
-							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-							: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
+						onclick={clearFilters}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
-						{st.name}
+						<X size={14} /> {t('common.clear_filters', 'Clear filters')}
 					</button>
-				{/each}
-			</div>
-		{/if}
-
-		<!-- Level filter chips (country/state/city/custom) -->
-		<div class="mt-2 flex flex-wrap gap-2">
-			{#each levelOptions as opt (opt.value)}
-				<button
-					type="button"
-					onclick={() => { selectedLevel = opt.value; onFilterChange(); }}
-					class="rounded-full border px-3 py-1 text-xs transition-colors {selectedLevel === opt.value
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
-				>
-					{opt.label}
-				</button>
-			{/each}
-			{#if page.data.user}
-				<button
-					type="button"
-					onclick={() => { joinedOnly = !joinedOnly; onFilterChange(); }}
-					class="rounded-full border px-3 py-1 text-xs transition-colors {joinedOnly
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
-				>
-					{t('spaces.joined_only', 'My spaces')}
-				</button>
+				</div>
 			{/if}
-		</div>
-
-		<!-- Sort selector -->
-		<div class="mt-3 flex flex-wrap items-center gap-3">
-			<div class="flex items-center gap-2">
-				<ArrowUpDown size={16} class="text-[var(--color-muted)]" />
-				<select
-					bind:value={selectedSort}
-					onchange={() => onFilterChange()}
-					class="appearance-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-					aria-label={t('spaces.sort_label', 'Sort')}
-				>
-					{#each sortOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
-			</div>
-
-			<!-- Geo code filter -->
-			<div class="flex items-center gap-2">
-				<span class="text-sm text-[var(--color-muted)]">{t('spaces.geo_label', 'Geo:')}</span>
-				<input
-					type="text"
-					bind:value={selectedGeo}
-					placeholder={t('spaces.geo_placeholder', 'e.g. NG, US')}
-					class="w-28 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-					onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onFilterChange(); } }}
-				/>
-				{#if selectedGeo}
-					<button type="button" onclick={() => { selectedGeo = ''; onFilterChange(); }} class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
-						<X size={14} />
-					</button>
-				{/if}
-			</div>
-
-			<!-- Region / subregion filters -->
-			<div class="flex items-center gap-2">
-				<select
-					bind:value={selectedRegion}
-					onchange={() => { selectedSubregion = ''; fetchSubregions(selectedRegion); onFilterChange(); }}
-					class="appearance-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-				>
-					<option value="">{t('spaces.region_all', 'All regions')}</option>
-					{#each data.regions as r (r)}
-						<option value={r}>{r}</option>
-					{/each}
-				</select>
-				{#if selectedRegion}
-					<select
-						bind:value={selectedSubregion}
-						onchange={() => onFilterChange()}
-						class="appearance-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-					>
-						<option value="">{t('spaces.subregion_all', 'All subregions')}</option>
-						{#each availableSubregions as sr (sr)}
-							<option value={sr}>{sr}</option>
-						{/each}
-					</select>
-				{/if}
-			</div>
-
-			<!-- Parent filter -->
-			<div class="min-w-[14rem] max-w-xs flex-1">
-				<SpaceCombobox
-					parentMode
-					placeholder={t('spaces.parent_placeholder', 'Filter by parent space…')}
-					selected={selectedParent}
-					onSelect={(space) => { selectedParent = space; onFilterChange(); }}
-					onRemove={() => { selectedParent = null; onFilterChange(); }}
-				/>
-			</div>
-		</div>
 		</div>
 	{/if}
 

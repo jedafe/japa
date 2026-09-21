@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
-	import { buildSeoMeta } from '$lib/seo';
+	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -417,7 +417,7 @@
 						<div class="space-y-2">
 							{#each taxConsultants as consultant (consultant.id)}
 								<a
-									href={`/services/${consultant.slug ?? consultant.id}`}
+									href={mainAppUrl(`/services/${consultant.slug ?? consultant.id}`)}
 									class="block p-3 bg-surface border border-border rounded-lg hover:bg-surface-subtle transition-colors"
 								>
 									<p class="text-sm font-medium text-text">{consultant.name}</p>

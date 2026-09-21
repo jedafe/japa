@@ -19,6 +19,7 @@
 
 	let vote = $state<'up' | 'down' | null>(null);
 	let voteError = $state('');
+	let submitting = $state(false);
 
 	const storageKey = $derived(`jc:docs:vote:${pageId}`);
 
@@ -51,6 +52,9 @@
 	}
 
 	async function submitVote(v: 'up' | 'down' | null) {
+		// In-flight guard — the backend only increments aggregate counters, so
+		// a double-click would double-count the vote (DOC-011).
+		if (submitting) return;
 		const newVote = vote === v ? null : v;
 		const previousVote = vote;
 
@@ -66,6 +70,7 @@
 			return;
 		}
 
+		submitting = true;
 		try {
 			const res = await fetch('/api/docs/feedback', {
 				method: 'POST',
@@ -76,14 +81,19 @@
 				body: JSON.stringify({ audience, slug, vote: newVote })
 			});
 			if (!res.ok) {
-				const json = await res.json().catch(() => ({ error: { message: 'Feedback failed' } }));
-				throw new Error(json?.error?.message ?? 'Feedback failed');
+				// SvelteKit endpoint errors serialize as {message} (thrown error())
+				// or {error:{message}} (backend envelope forwarded verbatim) —
+				// read both so "Sign in to leave feedback" reaches the user.
+				const json = await res.json().catch(() => ({}));
+				throw new Error(json?.error?.message ?? json?.message ?? 'Feedback failed');
 			}
 			persistLocal(newVote);
 		} catch (err) {
 			// Revert optimistic UI update on failure.
 			vote = previousVote;
 			voteError = err instanceof Error ? err.message : 'Feedback failed';
+		} finally {
+			submitting = false;
 		}
 	}
 
@@ -119,6 +129,7 @@
 				class="vote-btn"
 				class:active={vote === 'up'}
 				onclick={voteUp}
+				disabled={submitting}
 				aria-label={t('a11y.helpful_yes')}
 				aria-pressed={vote === 'up'}
 			>
@@ -129,6 +140,7 @@
 				class="vote-btn"
 				class:active={vote === 'down'}
 				onclick={voteDown}
+				disabled={submitting}
 				aria-label={t('a11y.helpful_no')}
 				aria-pressed={vote === 'down'}
 			>

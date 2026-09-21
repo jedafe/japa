@@ -700,12 +700,13 @@ SELECT g.id,
        sp.geo_code AS dest_space_code,
        g.visa_category,
        g.applicant_type,
-       COUNT(i.id) AS total_items,
+       (SELECT COUNT(*) FROM arrival_checklist_items ii WHERE ii.guide_id = g.id) AS total_items,
        COUNT(cp.id) FILTER (WHERE cp.completed = true) AS completed_items,
        MIN(cp.created_at) AS first_progress_at,
        MAX(cp.updated_at) AS last_progress_at
 FROM arrival_checklist_guides g
 JOIN arrival_checklist_items i ON i.guide_id = g.id
+LEFT JOIN spaces sp ON sp.id = g.destination_space_id
 LEFT JOIN checklist_progress cp
   ON cp.guide_id = g.id
  AND cp.item_key = i.id::text

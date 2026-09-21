@@ -4,6 +4,8 @@
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.
 	import { t } from '$lib/i18n';
+	import { env } from '$env/dynamic/public';
+	import { resolveMenuHref } from '$lib/utils/safeHtml';
 	import type { Menu, MenuItem, SessionUser } from '$lib/types';
 
 	interface Props {
@@ -14,6 +16,10 @@
 	}
 
 	let { menu, user = null }: Props = $props();
+
+	// Root-relative URLs that aren't docs-local (/, /privacy, /signup, …) live
+	// on the main app — resolve them against the main origin (ADR-054).
+	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 	// Guests see 'all' + 'guest'; authenticated users see 'all' + 'authenticated'.
 	const footerItems = $derived(
@@ -32,7 +38,7 @@
 					{#each footerItems as item (item.id)}
 						<li>
 							<a
-								href={item.url}
+								href={resolveMenuHref(item.url, mainOrigin)}
 								class="footer-link"
 								target={item.target === '_blank' ? '_blank' : undefined}
 								rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}

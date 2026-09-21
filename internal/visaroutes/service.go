@@ -130,6 +130,7 @@ type Service struct {
 	store      *Store
 	settings   *config.Settings
 	dispatcher AIDispatcher
+	checker    FeatureChecker
 }
 
 // NewService creates a visa routes service.
@@ -140,9 +141,24 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // SetDispatcher injects the AI Gateway dispatcher for draft generation.
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
-// Enabled reads the visa_routes.enabled system_setting toggle (§90
-// feature flag).
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for reachability (Ref: internal/features/features.go).
+// system_settings is consulted only as a fallback when no checker is injected.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table instead of drifting against system_settings.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the visa_routes.enabled flag (§90). Prefers the injected
+// FeatureChecker; falls back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "visa_routes.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}

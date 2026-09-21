@@ -49,6 +49,29 @@ var publicCatalogs = map[string][]CatalogOption{
 		{Value: "true", Label: "Yes"},
 		{Value: "false", Label: "No"},
 	},
+	// §83 — canonical milestone sequence for the visa timeline tracker
+	// (visa_timeline_milestones.milestone_type enum, migration 000308).
+	"visa_timeline.milestone_type": {
+		{Value: "applied", Label: "Application submitted"},
+		{Value: "biometrics", Label: "Biometrics"},
+		{Value: "medical", Label: "Medical exam"},
+		{Value: "docs_requested", Label: "Documents requested"},
+		{Value: "decision", Label: "Decision"},
+		{Value: "visa_issued", Label: "Visa issued"},
+	},
+	// §83 — timeline outcome enum (visa_timelines.outcome).
+	"visa_timeline.outcome": {
+		{Value: "pending", Label: "Pending"},
+		{Value: "approved", Label: "Approved"},
+		{Value: "refused", Label: "Refused"},
+		{Value: "withdrawn", Label: "Withdrawn"},
+	},
+	// §83 — how the application was lodged (visa_timelines.application_method).
+	"visa_timeline.application_method": {
+		{Value: "online", Label: "Online"},
+		{Value: "in_person", Label: "In person"},
+		{Value: "agent", Label: "Via agent"},
+	},
 }
 
 // Handlers exposes the public option catalog endpoints.

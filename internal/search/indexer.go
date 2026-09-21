@@ -223,6 +223,13 @@ func tiptapPlainText(body string) string {
 	case '<':
 		// HTML — strip tags.
 		return stripHTMLTags(trimmed)
+	case '"':
+		// JSON-string body (e.g. doc_pages.content stored as a quoted string).
+		// Unwrap it so the excerpt shows the inner text rather than raw quotes.
+		var s string
+		if err := json.Unmarshal([]byte(trimmed), &s); err == nil {
+			return tiptapPlainText(s)
+		}
 	}
 
 	return trimmed

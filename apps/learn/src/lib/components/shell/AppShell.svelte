@@ -127,7 +127,7 @@
 
 		{#if !hideRightSidebar}
 			<div class="shell-sidebar">
-				<RightSidebar {user} rightSidebarWidgets={rightSidebarWidgets} suppressAds={lessonPlayer} />
+				<RightSidebar {user} {sidebar} rightSidebarWidgets={rightSidebarWidgets} suppressAds={lessonPlayer} />
 			</div>
 		{/if}
 	</div>

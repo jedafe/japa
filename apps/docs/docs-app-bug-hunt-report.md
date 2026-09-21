@@ -105,8 +105,176 @@ This pass audited the entire Docs SvelteKit app against the backend API catalog 
 | R1 | `GET /docs/statuses` has no Docs app admin UI | Low | Requires `docs.manage`; the admin surface lives in `apps/admin` / `apps/control`, not `apps/docs`. |
 | R2 | `POST /admin/docs/ai-generate` has no Docs app UI | Low | Admin-only; intentional. |
 | R3 | `SidebarWidgetRenderer` silently no-ops for many widget types | Low | Registry rejects non-docs widget types; no UI requested. |
-| R4 | `/newsletter/subscribe` CSRF for guests may fail if no `csrf_token` cookie | Medium | The docs hook only fetches `/csrf` for authenticated users; guest newsletter submits need either a guest CSRF cookie or an exempt public route. Not a Docs-app-only fix. |
+| R4 | `/newsletter/subscribe` CSRF for guests — **verified working** (guest submit returns 200; backend issues a `csrf_token` cookie independently) | Resolved | Verified live with `curl` + Playwright. |
 | R5 | OpenAPI download proxy at `docs/openapi.json` always fetches from `API_BASE` without `event.locals.token` | Low | The route is public (`/docs/openapi.json`), so no auth needed, but host forwarding is correct. |
+
+---
+
+# Second Pass — Live Browser Audit (Playwright, guest + authenticated)
+
+**Scope:** `/`, `/docs`, `/docs/{audience}`, `/docs/{audience}/{slug}`, `/docs/api`, `/docs/api/{slug}`, `/docs/api/keys`, `/docs/api/playground`, `/docs/search`, locale-prefixed routes (`/fr/*`), invalid slugs, mobile viewport (375px), sidebar widgets (nav tree, audience switcher, TOC, helpful widget, ad slot, newsletter, CTA, social links, user dropdown, theme/language toggles).
+
+**Method:** Playwright MCP browser (guest + `jc_token` authed session), `curl` route-status matrix, backend route/contract review, live DB seed inspection.
+
+## Fixed bugs
+
+### 9. Authenticated users got HTTP 500 on every page (critical)
+
+**Severity:** Critical — the entire Docs app was unusable for signed-in users.
+
+**Cause:** `hooks.server.ts` treated `GET /me/permissions` as a bare `string[]`, but the backend returns `{ data: { permissions: string[] } }` (unwrapped by `apiGet` to `{ permissions: [...] }`). `new Set(user.permissions)` received a non-iterable object → unhandled throw → 500.
+
+**Fix:** `hooks.server.ts` normalizes both shapes (`Array.isArray(res) ? res : res?.permissions ?? []`). Verified: authed `/docs` now 200; `/docs/api/keys`, `/docs/api/playground` render with real key data.
+
+### 10. Locale-prefixed routes 404'd (`/fr/docs`)
+
+**Severity:** High — the language toggle produced 404s; SEO/i18n broken.
+
+**Cause:** `hooks.server.ts` mutated `event.url.pathname`, which does not affect SvelteKit route matching — route matching requires the `reroute` hook.
+
+**Fix:** new `src/hooks.ts` exports a universal `reroute` hook stripping enabled locale prefixes (`/{lang}/docs/...` → `/docs/...`) before matching. `hooks.server.ts` still records `event.locals.locale`, sets the cookie, and now 404s prefixes that aren't enabled languages (`/de/docs` → 404). Verified: `/fr/docs` 200 in French, `/fr/docs/users/test-documentation-page` 200, `/de/docs` 404.
+
+### 11. Language toggle silently broken for anyone who visited a prefixed URL
+
+**Severity:** High — `switchLanguage` writes `jc_locale` via `document.cookie`, but the server set that cookie **HttpOnly**. Browsers refuse JS overwrites of HttpOnly cookies, so the write was silently dropped and the UI stayed in the old locale. Additionally, switching back to the default language produces a same-URL `goto()` that never re-ran loads.
+
+**Fix:** `jc_locale` is now set with `httpOnly: false` (it's a UI preference like `jc_theme`, not a credential); `switchLanguage` uses `goto(href, { invalidateAll: true })`. Verified round-trip: `/docs` (en) → click French → `/fr/docs` French → click English → `/docs` English.
+
+### 12. Search page rendered a permanent loading skeleton
+
+**Severity:** High — `/docs/search?q=...` SSR'd the skeleton and never showed results.
+
+**Cause:** `+page.svelte` checked `navigating && ...`, but `navigating` imported from `$app/state` is **never null** — it's a getter-backed object whose props return `null` when idle (verified in `@sveltejs/kit` runtime source). So the skeleton branch was always taken and both results and the empty state were unreachable.
+
+**Fix:** condition now checks `navigating.to && navigating.to.url.searchParams.get('q') !== data.q`. Verified: `/docs/search?q=debug` shows "Console Debug".
+
+### 13. Invalid audience returned access-denied instead of 404
+
+**Severity:** Medium — `/docs/foobar` showed "Access Denied" for a section that doesn't exist; leaks the audience-gating concept and misleads crawlers.
+
+**Fix:** `[audience]/+page.server.ts` and `[audience]/[slug]/+page.server.ts` first check the slug against `event.locals.audienceOrder` (canonical list from `GET /docs/audiences`); unknown → 404, known-but-inaccessible → `/docs/access-denied`. Verified: `/docs/foobar` → 404, `/docs/admin` → access-denied.
+
+### 14. Root-relative menu/CTA links 404'd on the docs origin
+
+**Severity:** High — admin-authored footer/sidebar links (`/signup`, `/login`, `/privacy`, `/terms`, `/`) are main-app routes; on `docs.japaconnect.com` they 404. The seeded CTA widget "Try JapaConnect" → `/signup` was the most prominent offender.
+
+**Fix:** `resolveMenuHref()` added to `lib/utils/safeHtml.ts` — absolute URLs and `/docs...` stay local; other root-relative paths get `PUBLIC_MAIN_ORIGIN` prefixed. Applied in `GuestFooter.svelte` and `SidebarWidgetRenderer.svelte` (CTA). Migration `000680_docs_footer_and_api_key_limit_fixes.up.sql` also repoints stale seed rows (`/docs/getting-started` → `/docs/users`, deletes `/docs/guides` — neither slug exists as an audience) and sets `api.keys.max_per_user` `is_public=true` so the keys page can read the real limit. Verified: all footer links + CTA resolve to `http://localhost:3000/...` in dev.
+
+### 15. String-valued document bodies rendered a blank article
+
+**Severity:** High — `doc_pages.content` is `jsonb` and may hold a plain string, markdown, HTML, or a JSON-encoded string. `renderDocContent` only handled object-shaped TipTap JSON; everything else produced an empty `<article>` (e.g. the live `test-documentation-page`).
+
+**Fix:** `lib/tiptap/serialize.ts` now parses string content as JSON first (TipTap path), then renders via `marked` (markdown/plain text), escapes raw text as a fallback paragraph, and sanitizes with `sanitizeContentHtml`. `marked@14.1.4` added via `bun add`. Verified: `/docs/users/test-documentation-page` renders `Hello World` heading + paragraph.
+
+### 16. Search excerpts showed escaped JSON (`""`)
+
+**Severity:** Medium — `internal/search/indexer.go` `tiptapPlainText` only dispatched on `{`, `[`, `<`; a JSON-quoted string body fell through and was indexed verbatim.
+
+**Fix:** added a `"` case — `json.Unmarshal` the string and recurse into `tiptapPlainText`. New regression test `internal/search/indexer_test.go` covers quoted strings, markdown, TipTap docs, HTML, and malformed input. **Deployment note:** the running `japa-api` binary predates this fix; the stale `""` excerpt in the live index clears after a backend restart + page re-save/reindex.
+
+### 17. Sidebar `user_dropdown` duplicated the theme toggle
+
+**Severity:** Medium — `UserDropdown.svelte` baked in its own theme toggle button, so authed users saw two identical toggles in the sidebar topbar next to the admin-managed `theme_toggle` widget (which cannot be removed via admin config while hardcoded).
+
+**Fix:** internal toggle removed from `UserDropdown`; theme switching is now solely the admin-managed `theme_toggle` widget.
+
+### 18. Mobile users lost account/theme/language access
+
+**Severity:** Medium — the sidebar topbar is `display:none` below 768px, hiding the user dropdown and both toggles.
+
+**Fix:** `AppShell.svelte` mobile topbar now renders the non-search topbar widgets (`theme_toggle`, `language_toggle`, …) plus `UserDropdown` (authed) / `GuestAuthButtons` (guest). Verified at 375px: all controls visible, no horizontal overflow, drawer works.
+
+### 19. API keys page miscounted the limit and mis-parsed the setting
+
+**Severity:** Medium — revoked keys counted toward `maxKeys` (backend only counts active), and `system_settings` may store the value as JSON string `"5"` which `Number(undefined)`-style reads missed.
+
+**Fix:** `+page.svelte` derives `activeKeyCount` (excludes `revoked`); `+page.server.ts` parses with `Number(...)` accepting int or string. Verified: authed page shows `3/5` against the real public setting.
+
+### 20. OpenAPI fallback listed non-HTTP keys as endpoints
+
+**Severity:** Medium — iterating `spec.paths[path]` emitted `parameters`/`servers`/`summary` as fake endpoint rows.
+
+**Fix:** explicit `HTTP_METHODS` allowlist in `docs/api/+page.server.ts` and `docs/api/[slug]/+page.server.ts`. Verified: `/docs/api` lists 91 real operations, no metadata rows.
+
+### 21. Helpful widget: duplicate submissions + hidden guest error
+
+**Severity:** Medium — rapid clicks fired parallel votes (backend aggregates — no dedupe), and guests saw generic "Feedback failed" instead of the proxy's "Sign in to leave feedback" (SvelteKit `error()` serializes as `{message}`, not `{error:{message}}`).
+
+**Fix:** `submitting` in-flight guard + `disabled` buttons in `HelpfulWidget.svelte`; error reader accepts both envelopes. Verified: guest vote shows "Sign in to leave feedback"; authed vote persists (`aria-pressed`, localStorage).
+
+### 22. Search palette scoped `/docs/api/*` to the wrong audience
+
+**Severity:** Medium — the palette derived scope from `params.audience`, but `/docs/api` is a static route with no audience param, so API-page searches were unscoped.
+
+**Fix:** `SearchPalette.svelte` derives `'api'` when the pathname starts with `/docs/api`.
+
+### 23. Locale-prefixed active-nav highlighting
+
+**Severity:** Low — nav links point at `/docs/...` while the browser URL is `/fr/docs/...`, so the current page never highlighted under a locale prefix.
+
+**Fix:** `DocNavTree.svelte` strips the enabled-locale segment from `page.url.pathname` before comparing.
+
+### 24. Broken sitemap link + relative favicons
+
+**Severity:** Low — `<link rel="sitemap" href="/docs-sitemap.xml">` 404'd (backend serves `/sitemap*.xml` only); `%sveltekit.assets%` rendered `./favicon.png`, resolving to `/fr/favicon.png` on prefixed routes → 404s in console.
+
+**Fix:** removed the bogus sitemap link from `+layout.svelte`; `app.html` uses absolute `/favicon*.png` paths. Verified: no favicon 404s on `/fr/docs`.
+
+### 25. Sidebar resolution coupling + root error page
+
+**Severity:** Low — the two `/sidebars/resolve` calls were coupled; and non-`/docs` 404s rendered SvelteKit's default error page (no shell).
+
+**Fix:** `+layout.server.ts` uses `Promise.allSettled` per position; new `routes/+error.svelte` renders 404/500 inside `AppShell`. Verified: `/nonexistent` → styled 404.
+
+## Verification (pass 2)
+
+| Check | Result |
+|---|---|
+| Guest `/docs`, `/docs/users`, doc pages, `/docs/api`, `/docs/search` | 200, clean render, 0 console errors |
+| Authed `/docs` | 200 (was 500) — user dropdown, audience gating live |
+| `/fr/docs`, `/fr/docs/users/...` | 200, French UI; `/de/docs` → 404 |
+| `/docs/foobar` | 404 (was access-denied); `/docs/admin` → access-denied |
+| Language toggle round-trip en→fr→en | works (cookie + prefix) |
+| Search page `?q=debug` | result renders (was perpetual skeleton) |
+| Doc with markdown content | renders (was blank) |
+| Helpful vote authed / guest | persists / "Sign in to leave feedback" |
+| Footer links + CTA | resolve to `PUBLIC_MAIN_ORIGIN` |
+| `/docs/api` endpoint list | 91 real HTTP ops, no `parameters` leaks |
+| `/docs/api/keys` authed | real keys listed, `3/5` active count |
+| Mobile 375px | drawer + topbar widgets + account reachable, no overflow |
+| `bun run check` / `bun run test` / `bun run build` | 0 errors / 9 pass / success |
+| `go test ./internal/search/` `go vet` `gofmt` | pass / clean / clean |
+
+**Note:** `apps/main` workspace changes in this tree are unrelated pre-existing work and were not touched.
+
+## Files changed (pass 2)
+
+```
+apps/docs/src/hooks.ts                                    (new — reroute)
+apps/docs/src/routes/+error.svelte                        (new)
+apps/docs/src/hooks.server.ts
+apps/docs/src/app.html
+apps/docs/src/lib/tiptap/serialize.ts
+apps/docs/src/lib/utils/safeHtml.ts
+apps/docs/src/lib/components/shell/AppShell.svelte
+apps/docs/src/lib/components/shell/UserDropdown.svelte
+apps/docs/src/lib/components/shell/GuestFooter.svelte
+apps/docs/src/lib/components/shell/SidebarWidgetRenderer.svelte
+apps/docs/src/lib/components/shell/DocNavTree.svelte
+apps/docs/src/lib/components/docs/HelpfulWidget.svelte
+apps/docs/src/lib/components/docs/SearchPalette.svelte
+apps/docs/src/lib/i18n/en.json, fr.json
+apps/docs/src/routes/+layout.svelte, +layout.server.ts
+apps/docs/src/routes/docs/[audience]/+page.server.ts
+apps/docs/src/routes/docs/[audience]/[slug]/+page.server.ts
+apps/docs/src/routes/docs/api/+page.server.ts
+apps/docs/src/routes/docs/api/[slug]/+page.server.ts
+apps/docs/src/routes/docs/api/keys/+page.server.ts, +page.svelte
+apps/docs/src/routes/docs/search/+page.server.ts, +page.svelte
+internal/search/indexer.go
+internal/search/indexer_test.go                           (new)
+migrations/000680_docs_footer_and_api_key_limit_fixes.{up,down}.sql (new)
+```
 
 ## Files changed
 

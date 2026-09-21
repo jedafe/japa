@@ -86,6 +86,7 @@ type Service struct {
 	enqueuer  TaskEnqueuer
 	providers map[string]RateProvider // keyed by provider slug
 	notifier  Notifier
+	checker   FeatureChecker
 }
 
 // NewService creates a remittance service.
@@ -291,8 +292,25 @@ func rfc3339Date(d pgtype.Date) string {
 // Settings helpers
 // ---------------------------------------------------------------------------
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for reachability (Ref: internal/features/features.go).
+// system_settings is consulted only as a fallback when no checker is injected.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so IsEnabled reads the
+// feature_flags table instead of drifting against system_settings.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
 // IsEnabled returns whether the remittance tracker is globally enabled.
+// Prefers the injected FeatureChecker; falls back to system_settings for
+// backward compatibility.
 func (s *Service) IsEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "remittance.enabled")
+	}
+
 	if s.settings == nil {
 		return true
 	}

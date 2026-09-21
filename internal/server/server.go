@@ -1203,6 +1203,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/70-visa-checklist.md (ADR-070)
 	checklistStore := checklist.NewStore(database)
 	checklistService := checklist.NewService(checklistStore, settingsService)
+	checklistService.SetFeatureChecker(featureChecker)
 	checklistService.SetEnqueuer(taskEnqueuer) // wallet:award_points on full completion (§28)
 	checklistHandlers := checklist.NewHandlers(checklistService, settingsService)
 
@@ -1261,6 +1262,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	visaTimelineStore := visatimeline.NewStore(database)
 	visaTimelineService := visatimeline.NewService(visaTimelineStore, settingsService).
 		WithNotifier(notificationService)
+	visaTimelineService.SetFeatureChecker(featureChecker)
 	visaTimelineHandlers := visatimeline.NewHandlers(visaTimelineService, settingsService)
 	// Wire the wallet service for the anti-gaming reputation gate on shared
 	// timelines (§83: contribute to aggregate requires reputation ≥
@@ -1334,6 +1336,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-106)
 	serviceDirStore := servicedir.NewStore(database)
 	serviceDirService := servicedir.NewService(serviceDirStore, contentService, settingsService)
+	serviceDirService.SetFeatureChecker(featureChecker)
 	// BUG-014: §98 spec says GET /services/:slug returns "service detail +
 	// reviews". The adapter bridges the §29 reviews subsystem to the
 	// servicedir.ReviewFetcher interface using the read pool.
@@ -1344,10 +1347,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/90-97,99-101
 	visaRoutesStore := visaroutes.NewStore(database)
 	visaRoutesService := visaroutes.NewService(visaRoutesStore, settingsService)
+	visaRoutesService.SetFeatureChecker(featureChecker)
 	visaRoutesHandlers := visaroutes.NewHandlers(visaRoutesService, settingsService)
 
 	appointmentAlertStore := appointmentalert.NewStore(database)
 	appointmentAlertService := appointmentalert.NewService(appointmentAlertStore, settingsService)
+	appointmentAlertService.SetFeatureChecker(featureChecker)
 	appointmentAlertService.SetEnqueuer(taskEnqueuer)
 	appointmentAlertService.SetNotifier(notificationService)
 	appointmentAlertService.SetCache(vkClient.Redis())
@@ -1364,6 +1369,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	arrivalChecklistStore := arrivalchecklist.NewStore(database)
 	arrivalChecklistService := arrivalchecklist.NewService(arrivalChecklistStore, settingsService)
+	arrivalChecklistService.SetFeatureChecker(featureChecker)
 	arrivalChecklistHandlers := arrivalchecklist.NewHandlers(arrivalChecklistService, settingsService)
 
 	credentialCheckerStore := credentialchecker.NewStore(database)
@@ -1372,6 +1378,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	cvFormatterStore := cvformatter.NewStore(database)
 	cvFormatterService := cvformatter.NewService(cvFormatterStore, settingsService)
+	cvFormatterService.SetFeatureChecker(featureChecker)
 	cvFormatterService.SetRBAC(rbacResolver)
 	cvFormatterService.SetEnqueuer(taskEnqueuer)
 	cvFormatterService.SetCache(&cvFormatterCache{rdb: vkClient.Redis()})
@@ -1379,23 +1386,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	housingGuideStore := housingguide.NewStore(database)
 	housingGuideService := housingguide.NewService(housingGuideStore, settingsService)
+	housingGuideService.SetFeatureChecker(featureChecker)
 	housingGuideService.SetEnqueuer(taskEnqueuer)
 	housingGuideHandlers := housingguide.NewHandlers(housingGuideService, settingsService)
 
 	attestationGuideStore := attestationguide.NewStore(database)
 	attestationGuideService := attestationguide.NewService(attestationGuideStore, settingsService)
+	attestationGuideService.SetFeatureChecker(featureChecker)
 	attestationGuideHandlers := attestationguide.NewHandlers(attestationGuideService, settingsService)
 
 	languageTestHubStore := languagetesthub.NewStore(database)
 	languageTestHubService := languagetesthub.NewService(languageTestHubStore, settingsService)
+	languageTestHubService.SetFeatureChecker(featureChecker)
 	languageTestHubHandlers := languagetesthub.NewHandlers(languageTestHubService, settingsService)
 
 	taxCalculatorStore := taxcalculator.NewStore(database)
 	taxCalculatorService := taxcalculator.NewService(taxCalculatorStore, settingsService)
+	taxCalculatorService.SetFeatureChecker(featureChecker)
 	taxCalculatorHandlers := taxcalculator.NewHandlers(taxCalculatorService, settingsService)
 
 	communityLocatorStore := communitylocator.NewStore(database)
 	communityLocatorService := communitylocator.NewService(communityLocatorStore, settingsService)
+	communityLocatorService.SetFeatureChecker(featureChecker)
 	communityLocatorHandlers := communitylocator.NewHandlers(communityLocatorService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/71-readiness-assessment.md (ADR-071)
@@ -1404,6 +1416,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	assessmentService.SetEnqueuer(taskEnqueuer)
 	assessmentService.SetActivityEmitter(walletService) // §64: japa_ready badge
 	assessmentHandlers := assessment.NewHandlers(assessmentService, settingsService)
+	assessmentHandlers.SetFeatureChecker(featureChecker)
 	assessmentHandlers.SetFeedService(feedService)
 
 	// Wire the Readiness Assessment checker into the japa stage service and
@@ -1421,6 +1434,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/73-scholarship-finder.md (ADR-073)
 	scholarshipsStore := scholarships.NewStore(database)
 	scholarshipsService := scholarships.NewService(scholarshipsStore, settingsService)
+	scholarshipsService.SetFeatureChecker(featureChecker)
 	scholarshipsService.SetEnqueuer(taskEnqueuer)
 	scholarshipsHandlers := scholarships.NewHandlers(scholarshipsService)
 	worker.RegisterScholarshipSyncer(scholarshipsStore)
@@ -1428,6 +1442,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/74-remittance-tracker.md (ADR-075)
 	remittanceStore := remittance.NewStore(database)
 	remittanceService := remittance.NewService(remittanceStore, settingsService)
+	remittanceService.SetFeatureChecker(featureChecker)
 	remittanceService.SetCache(vkClient.Redis())       // VALKEY-004: jc:remit:* corridor rate cache
 	remittanceService.SetEnqueuer(taskEnqueuer)        // admin fetch trigger + alert check tasks
 	remittanceService.SetNotifier(notificationService) // rate-alert notification dispatch (ADR-075 §4)

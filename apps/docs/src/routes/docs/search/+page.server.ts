@@ -12,15 +12,16 @@ import { tServer } from '$lib/i18n/dict';
  */
 export const load: PageServerLoad = async (event) => {
 	const q = (event.url.searchParams.get('q') ?? '').trim();
-	const audience = (event.url.searchParams.get('audience') ?? '').trim() as DocAudience;
+	const rawAudience = (event.url.searchParams.get('audience') ?? '').trim() as DocAudience;
+	// An unrecognized audience param is ignored for the API call and dropped
+	// from page data so the UI doesn't label results with a bogus section.
+	const audience = event.locals.audienceOrder.includes(rawAudience) ? rawAudience : null;
 
 	let results: DocSearchResult[] = [];
 	if (q.length >= 2) {
 		try {
 			const params = new URLSearchParams({ q, limit: '20' });
-			if (audience && event.locals.audienceOrder.includes(audience)) {
-				params.set('audience', audience);
-			}
+			if (audience) params.set('audience', audience);
 			results = await apiGet<DocSearchResult[]>(apiContext(event), `/docs/search?${params}`);
 		} catch {
 			results = [];
@@ -40,5 +41,5 @@ export const load: PageServerLoad = async (event) => {
 		path: q ? `/docs/search?q=${encodeURIComponent(q)}` : '/docs/search'
 	});
 
-	return { q, audience: audience || null, results, meta };
+	return { q, audience, results, meta };
 }

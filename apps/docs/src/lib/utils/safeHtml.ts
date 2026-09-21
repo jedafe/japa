@@ -90,6 +90,27 @@ export function safeHref(url: string | undefined | null): string {
 	return trimmed;
 }
 
+/**
+ * Resolve an admin-authored URL for the docs surface. Menu items and widget
+ * props store root-relative paths that are authored against the main site's
+ * route table ("/privacy", "/signup", "/login"), but the docs app only serves
+ * /docs and /api/* — rendering them verbatim produces 404s on the docs origin.
+ *
+ * Docs-local URLs stay relative ("/docs/...", "/fr/docs/..."); every other
+ * root-relative URL is prefixed with the main app origin. Absolute URLs and
+ * anchors pass through. Dangerous schemes still return ''.
+ *
+ * Ref: ADR-054 (cross-app menus are shared between surfaces).
+ */
+export function resolveMenuHref(url: string | undefined | null, mainOrigin: string): string {
+	const safe = safeHref(url);
+	if (!safe) return '';
+	if (!safe.startsWith('/')) return safe; // absolute URL or anchor
+	if (/^\/docs(\/|$)/.test(safe)) return safe; // docs-local
+	if (/^\/[a-z]{2}\/docs(\/|$)/.test(safe)) return safe; // locale-prefixed docs-local
+	return `${mainOrigin}${safe}`; // main-app route (/, /login, /privacy, …)
+}
+
 function isDangerousUrl(url: string): boolean {
 	// Match `javascript:`, `data:`, `vbscript:` with optional whitespace/control chars.
 	return /^\s*(javascript|data|vbscript)\s*:/i.test(url);

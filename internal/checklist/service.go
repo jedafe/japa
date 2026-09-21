@@ -134,6 +134,7 @@ type Service struct {
 	store    *Store
 	settings *config.Settings
 	enqueuer TaskEnqueuer
+	checker  FeatureChecker
 }
 
 // NewService creates a checklist service.
@@ -147,8 +148,24 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // SetEnqueuer injects the Asynq task enqueuer for completion-points rewards.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
-// Enabled reads the checklist.enabled system_settings toggle.
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for reachability (Ref: internal/features/features.go).
+// system_settings is consulted only as a fallback when no checker is injected.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table instead of drifting against system_settings.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the checklist.enabled flag. Prefers the injected
+// FeatureChecker; falls back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "checklist.enabled")
+	}
+
 	if s.settings == nil {
 		return true
 	}
@@ -168,12 +185,19 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 	}
 
 	origins := make([]CountryOption, 0, len(countrySpaces))
+	// Index country spaces by slug and lowercased name so destination options
+	// derived from guides' free-text destination_country field resolve to a
+	// real Geo Space id (previously emitted as "" — produced duplicate option
+	// keys once more than one destination existed).
+	spaceByKey := make(map[string]CountrySpace, len(countrySpaces)*2)
 	for _, c := range countrySpaces {
 		origins = append(origins, CountryOption{
 			ID:   c.ID.String(),
 			Name: c.Name,
 			Slug: c.Slug,
 		})
+		spaceByKey[c.Slug] = c
+		spaceByKey[strings.ToLower(c.Name)] = c
 	}
 
 	// Steps 2+3: Destinations with nested visa types — from published visa
@@ -200,7 +224,20 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 			}
 
 			if _, ok := destMap[v]; !ok {
-				destMap[v] = &CountryOption{Name: v, Slug: slugify(v)}
+				opt := &CountryOption{Name: v, Slug: slugify(v)}
+				if sp, found := spaceByKey[opt.Slug]; !found {
+					if sp2, found2 := spaceByKey[strings.ToLower(v)]; found2 {
+						opt.ID = sp2.ID.String()
+					}
+				} else {
+					opt.ID = sp.ID.String()
+				}
+				// Fall back to the slug when no Geo Space matches the free-text
+				// value so the option still carries a stable non-empty id.
+				if opt.ID == "" {
+					opt.ID = opt.Slug
+				}
+				destMap[v] = opt
 				destOrder = append(destOrder, v)
 				guideVisaTypes[v] = make(map[string]VisaTypeOption)
 			}
@@ -280,12 +317,15 @@ func prettifyVisaType(v string) string {
 	case "transit":
 		return "Transit"
 	default:
-		// Title-case the first letter as a fallback.
-		if len(v) > 0 {
-			return strings.ToUpper(v[:1]) + v[1:]
+		// Fallback: replace separators and title-case each word so values
+		// like "skilled_worker" render as "Skilled Worker".
+		words := strings.FieldsFunc(v, func(r rune) bool { return r == '_' || r == '-' })
+		for i, w := range words {
+			if len(w) > 0 {
+				words[i] = strings.ToUpper(w[:1]) + w[1:]
+			}
 		}
-
-		return v
+		return strings.Join(words, " ")
 	}
 }
 

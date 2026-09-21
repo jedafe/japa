@@ -53,7 +53,20 @@
 			: [...visibleTrees, { audience: 'api' as const, items: [] }]
 	);
 
-	let activePath = $derived(page.url.pathname);
+	// On locale-prefixed URLs (/fr/docs/…) page.url retains the prefix, so
+	// strip it before comparing against generated /docs/* hrefs — otherwise
+	// active-page highlighting silently breaks on localized pages.
+	const enabledLangs = $derived(
+		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en')
+			.split(',')
+			.map((l) => l.trim())
+			.filter(Boolean)
+	);
+	let activePath = $derived.by(() => {
+		const p = page.url.pathname;
+		const seg = p.split('/')[1];
+		return seg && enabledLangs.includes(seg) ? p.slice(seg.length + 1) || '/' : p;
+	});
 
 	function hrefFor(audience: DocAudience, slug: string): string {
 		return `/docs/${audience}/${slug}`;

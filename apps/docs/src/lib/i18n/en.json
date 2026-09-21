@@ -209,5 +209,6 @@
 	"sidebar.newsletter_invalid": "Please enter a valid email address",
 	"sidebar.newsletter_error": "Subscription failed. Please try again.",
 	"sidebar.newsletter_success": "You are subscribed!",
-	"a11y.sidebar": "Sidebar"
+	"a11y.sidebar": "Sidebar",
+	"api.browse_endpoints": "Browse API endpoints →"
 }

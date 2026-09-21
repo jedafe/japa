@@ -279,6 +279,25 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Access control (Section 36 / ADR-060): preview lessons are public; every
+	// other lesson requires an authenticated enrollment in the parent track.
+	// The frontend redirects a 403 to the track's enroll page.
+	if !lesson.IsPreview {
+		enrolled := false
+		if userID.Valid {
+			if _, e := h.store.GetEnrollment(r.Context(), userID, track.ID); e == nil {
+				enrolled = true
+			} else if !errors.Is(e, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check enrollment")
+				return
+			}
+		}
+		if !enrolled {
+			errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "Enroll in this track to access this lesson")
+			return
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})
 }
 
@@ -841,6 +860,30 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
+	}
+
+	// Same access control as GetLesson (Section 36): non-preview lessons
+	// require an enrollment in the parent track. Lesson UUIDs are exposed in
+	// the public track-detail payload, so authentication alone is not enough.
+	if !lesson.IsPreview {
+		enrolled := false
+		if module, e := h.store.GetModuleByID(r.Context(), lesson.ModuleID); e == nil {
+			user := auth.FromContext(r.Context())
+			if user == nil {
+				errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+				return
+			}
+			if _, e := h.store.GetEnrollment(r.Context(), user.UserID, module.TrackID); e == nil {
+				enrolled = true
+			} else if !errors.Is(e, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check enrollment")
+				return
+			}
+		}
+		if !enrolled {
+			errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "Enroll in this track to access this lesson")
+			return
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})

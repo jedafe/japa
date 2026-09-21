@@ -39,8 +39,6 @@
 </a>
 
 <svelte:head>
-	<!-- Sitemap link (Ref: §26 ROADMAP 07.04) — Go backend serves /docs-sitemap.xml -->
-	<link rel="sitemap" href="/docs-sitemap.xml" />
 	{#if umamiEnabled}
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
 		<script

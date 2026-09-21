@@ -40,7 +40,7 @@ export const load: PageServerLoad = async (event) => {
 		const body = await apiGetBody<{
 			data?: TrackReview[];
 			aggregate?: ReviewAggregate;
-		}>(ctx, `/learn/university/tracks/${track.id}/reviews?limit=10`);
+		}>(ctx, `/learn/university/tracks/${track.id}/reviews?page_size=10`);
 		reviews = body.data ?? [];
 		reviewAggregate = body.aggregate ?? null;
 	} catch {

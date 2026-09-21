@@ -7,6 +7,10 @@ import { tServer } from '$lib/i18n/dict';
 
 type ApiEndpoint = { method: string; path: string; summary: string; tag: string };
 
+// Path-item keys that are not HTTP methods (parameters, summary, servers,
+// $ref…) must never render as endpoint rows.
+const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
+
 /**
  * API audience landing page — lists published API reference pages and links
  * to the interactive playground. 'api' is always public (ADR-060), so no
@@ -43,7 +47,7 @@ export const load: PageServerLoad = async (event) => {
 				const paths: Record<string, Record<string, any>> = spec.paths ?? {};
 				for (const [path, methods] of Object.entries(paths)) {
 					for (const [method, op] of Object.entries(methods)) {
-						if (method === 'parameters') continue;
+						if (!HTTP_METHODS.has(method)) continue;
 						endpoints.push({
 							method: method.toUpperCase(),
 							path,

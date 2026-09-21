@@ -87,6 +87,9 @@ type OrgRow struct {
 	ContactInfo          *string
 	JapaconnectSpaceID   pgtype.UUID
 	JapaconnectOrgID     pgtype.UUID
+	// Slug of the linked Geo Space — needed because the public space URL is
+	// /spaces/{slug}, not /spaces/{id}.
+	JapaconnectSpaceSlug *string
 	ClaimStatus          string
 	IsVerified           bool
 	IsActive             bool
@@ -540,6 +543,7 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
        co.address, co.latitude, co.longitude, co.website_url, co.meeting_frequency,
        co.contact_info, co.japaconnect_space_id, co.japaconnect_org_id,
+       js.slug AS japaconnect_space_slug,
        co.claim_status, co.is_verified, co.is_active, co.is_community_submitted,
        co.status, co.submitted_by, u.username AS submitter_name,
        co.reviewed_by, co.reviewed_at,
@@ -550,6 +554,7 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
+LEFT JOIN spaces js ON js.id = co.japaconnect_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
 WHERE %s
 ORDER BY %s
@@ -574,6 +579,7 @@ LIMIT $%d OFFSET $%d
 			&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 			&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
 			&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
+		&r.JapaconnectSpaceSlug,
 			&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 			&r.Status, &r.SubmittedBy, &r.SubmitterName,
 			&r.ReviewedBy, &r.ReviewedAt,
@@ -615,6 +621,7 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
        co.address, co.latitude, co.longitude, co.website_url, co.meeting_frequency,
        co.contact_info, co.japaconnect_space_id, co.japaconnect_org_id,
+       js.slug AS japaconnect_space_slug,
        co.claim_status, co.is_verified, co.is_active, co.is_community_submitted,
        co.status, co.submitted_by, u.username AS submitter_name,
        co.reviewed_by, co.reviewed_at,
@@ -625,6 +632,7 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
+LEFT JOIN spaces js ON js.id = co.japaconnect_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
 WHERE co.slug = $1 AND co.deleted_at IS NULL
 LIMIT 1
@@ -638,6 +646,7 @@ LIMIT 1
 		&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 		&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
 		&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
+		&r.JapaconnectSpaceSlug,
 		&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 		&r.Status, &r.SubmittedBy, &r.SubmitterName,
 		&r.ReviewedBy, &r.ReviewedAt,
@@ -665,6 +674,7 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
        co.address, co.latitude, co.longitude, co.website_url, co.meeting_frequency,
        co.contact_info, co.japaconnect_space_id, co.japaconnect_org_id,
+       js.slug AS japaconnect_space_slug,
        co.claim_status, co.is_verified, co.is_active, co.is_community_submitted,
        co.status, co.submitted_by, u.username AS submitter_name,
        co.reviewed_by, co.reviewed_at,
@@ -675,6 +685,7 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
+LEFT JOIN spaces js ON js.id = co.japaconnect_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
 WHERE co.id = $1 AND co.deleted_at IS NULL
 LIMIT 1
@@ -688,6 +699,7 @@ LIMIT 1
 		&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 		&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
 		&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
+		&r.JapaconnectSpaceSlug,
 		&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 		&r.Status, &r.SubmittedBy, &r.SubmitterName,
 		&r.ReviewedBy, &r.ReviewedAt,
@@ -836,6 +848,7 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
        co.address, co.latitude, co.longitude, co.website_url, co.meeting_frequency,
        co.contact_info, co.japaconnect_space_id, co.japaconnect_org_id,
+       js.slug AS japaconnect_space_slug,
        co.claim_status, co.is_verified, co.is_active, co.is_community_submitted,
        co.status, co.submitted_by, u.username AS submitter_name,
        co.reviewed_by, co.reviewed_at,
@@ -846,6 +859,7 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
+LEFT JOIN spaces js ON js.id = co.japaconnect_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
 WHERE %s
 ORDER BY %s
@@ -870,6 +884,7 @@ LIMIT $%d OFFSET $%d
 			&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 			&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
 			&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
+		&r.JapaconnectSpaceSlug,
 			&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 			&r.Status, &r.SubmittedBy, &r.SubmitterName,
 			&r.ReviewedBy, &r.ReviewedAt,

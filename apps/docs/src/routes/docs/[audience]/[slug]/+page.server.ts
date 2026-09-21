@@ -18,6 +18,11 @@ export const load: PageServerLoad = async (event) => {
 	const audience = event.params.audience as DocAudience;
 	const slug = event.params.slug;
 
+	// Unknown audience slug → 404 (not access-denied — the section doesn't exist).
+	if (!event.locals.audienceOrder.includes(audience)) {
+		throw error(404, { code: 'not_found', message: 'Audience not found' });
+	}
+
 	if (!event.locals.accessibleAudiences.includes(audience)) {
 		throw redirect(308, '/docs/access-denied');
 	}
@@ -66,8 +71,9 @@ export const load: PageServerLoad = async (event) => {
 		})
 	});
 
-	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02).
-	const isGated = audience !== 'users' && audience !== 'api';
+	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02). Presence in the
+	// backend gates map is the source of truth.
+	const isGated = event.locals.audienceGates[audience] != null;
 
 	// Permission-based edit affordance (§44). Group-name checks are not
 	// reliable because roles vary by platform; the docs.manage node is canonical.

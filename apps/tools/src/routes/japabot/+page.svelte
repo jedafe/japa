@@ -1,13 +1,17 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
-	import { mainAppUrl } from '$lib/seo';
-	import { buildSeoMeta } from '$lib/seo';
+	import { mainAppUrl, buildSeoMeta } from '$lib/seo';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import { t } from '$lib/i18n';
-	import type { ChatMessage, ChatConversation, ChatSource } from '$lib/types';
+	import type {
+		ChatMessage,
+		ChatConversationSummary,
+		ChatConversationDetail,
+		ChatSource
+	} from '$lib/types';
 
 	/**
 	 * JapaBot standalone shell — §20, §69.
@@ -18,20 +22,27 @@
 	let { data } = $props();
 
 	let user = $state(untrack(() => data.user));
-	let conversations = $state<ChatConversation[]>(untrack(() => data.conversations));
+	let conversations = $state<ChatConversationSummary[]>(untrack(() => data.conversations));
+	let loadingConversation = $state(false);
 
 	$effect(() => {
 		if (!user) return;
 		(async () => {
+			// /ai/models already includes the empty-id "Default" option — use the
+			// API list as-is and dedupe by id so the each-block keys stay unique.
 			const modelRes = await api.get<{ id: string; label: string }[]>('/ai/models?category=chat');
 			if (modelRes.data && modelRes.data.length > 0) {
-				models = [{ id: '', label: t('japabot.model_default', 'Default model') }, ...modelRes.data];
+				const seen = new Set<string>();
+				models = modelRes.data.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
 			}
 			const voicesRes = await api.get<{ id: string; name: string }[]>('/ai/voices?page_size=100');
 			if (voicesRes.data) {
+				const seen = new Set<string>(['']);
 				voices = [
 					{ id: '', label: t('japabot.voice_default', 'Default voice') },
-					...voicesRes.data.map((v) => ({ id: v.id, label: v.name }))
+					...voicesRes.data
+						.map((v) => ({ id: v.id, label: v.name }))
+						.filter((v) => (seen.has(v.id) ? false : (seen.add(v.id), true)))
 				];
 			}
 		})();
@@ -94,6 +105,7 @@
 		}
 
 		if (res.data) {
+			const wasNewConversation = !activeConversationId;
 			activeConversationId = res.data.conversation_id;
 			const assistantMessage: ChatMessage = {
 				id: crypto.randomUUID(),
@@ -103,7 +115,15 @@
 				sources: res.data.sources
 			};
 			messages = [...messages, assistantMessage];
+			// A brand-new conversation won't appear in the SSR-loaded sidebar
+			// list — refresh so it shows up with a preview.
+			if (wasNewConversation) refreshConversations();
 		}
+	}
+
+	async function refreshConversations() {
+		const res = await api.get<ChatConversationSummary[]>('/ai/conversations');
+		if (res.data) conversations = res.data;
 	}
 
 	function onKeydown(e: KeyboardEvent) {
@@ -118,14 +138,37 @@
 		activeConversationId = null;
 	}
 
-	async function loadConversation(conv: ChatConversation) {
-		messages = conv.messages ?? [];
-		activeConversationId = conv.id;
+	/**
+	 * Load a past conversation. The list endpoint only returns summaries
+	 * (BUG-005), so the full turn history is fetched from
+	 * GET /ai/conversations/{id} and its Honcho entries mapped to messages.
+	 */
+	async function loadConversation(conv: ChatConversationSummary) {
+		if (loadingConversation) return;
+		loadingConversation = true;
+		activeConversationId = conv.conversation_id;
+		const res = await api.get<ChatConversationDetail>(
+			`/ai/conversations/${conv.conversation_id}`
+		);
+		loadingConversation = false;
+		if (!res.data) return;
+		messages = (res.data.entries ?? [])
+			.filter((e) => e.metadata?.role === 'user' || e.metadata?.role === 'assistant')
+			.map((e) => ({
+				id: e.id,
+				role: e.metadata?.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+				content: e.content,
+				created_at: e.created_at
+			}));
 	}
 
-	// Auto-scroll to bottom on new messages
+	// Auto-scroll to bottom on new messages. Track messages.length + sending so
+	// the effect re-runs whenever a message arrives or the typing indicator
+	// appears (the container ref alone doesn't create a dependency).
 	let messagesContainer: HTMLDivElement | null = $state(null);
 	$effect(() => {
+		messages.length;
+		sending;
 		if (messagesContainer) {
 			messagesContainer.scrollTop = messagesContainer.scrollHeight;
 		}
@@ -189,30 +232,29 @@
 		</div>
 	{:else}
 		<div class="flex flex-1 overflow-hidden">
-			<!-- Conversation sidebar (desktop) -->
-			{#if conversations.length > 0}
-				<aside class="hidden md:flex flex-col w-64 border-r border-border bg-surface">
-					<div class="p-3 border-b border-border">
+			<!-- Conversation sidebar (desktop) — always visible so the
+			     New chat affordance exists even with no prior conversations. -->
+			<aside class="hidden md:flex flex-col w-64 border-r border-border bg-surface">
+				<div class="p-3 border-b border-border">
+					<button
+						onclick={newConversation}
+						class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors"
+					>
+						<Icon name="plus" size={16} />
+						{t('japabot.new_chat', 'New chat')}
+					</button>
+				</div>
+				<div class="flex-1 overflow-y-auto p-2 space-y-1">
+					{#each conversations as conv (conv.conversation_id)}
 						<button
-							onclick={newConversation}
-							class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors"
+							onclick={() => loadConversation(conv)}
+							class="w-full text-left px-3 py-2 text-sm rounded-lg truncate transition-colors {activeConversationId === conv.conversation_id ? 'bg-surface-subtle text-text' : 'text-text-subtle hover:bg-surface-subtle'}"
 						>
-							<Icon name="plus" size={16} />
-							{t('japabot.new_chat', 'New chat')}
+							{conv.preview || t('japabot.new_conversation', 'New conversation')}
 						</button>
-					</div>
-					<div class="flex-1 overflow-y-auto p-2 space-y-1">
-						{#each conversations as conv (conv.id)}
-							<button
-								onclick={() => loadConversation(conv)}
-								class="w-full text-left px-3 py-2 text-sm rounded-lg transition-colors {activeConversationId === conv.id ? 'bg-surface-subtle text-text' : 'text-text-subtle hover:bg-surface-subtle'}"
-							>
-								{conv.title || t('japabot.new_conversation', 'New conversation')}
-							</button>
-						{/each}
-					</div>
-				</aside>
-			{/if}
+					{/each}
+				</div>
+			</aside>
 
 			<!-- Chat area -->
 			<div class="flex-1 flex flex-col">
