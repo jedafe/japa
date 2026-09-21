@@ -128,6 +128,7 @@ const (
 	TypeIntelFetchSource       = "intel:fetch_source"        // default
 	TypeIntelFetchChannel      = "intel:fetch_channel"       // default
 	TypeIntelDetectChanges     = "intel:detect_changes"      // default
+	TypeIntelCurateChannel     = "intel:curate_channel"      // default
 	TypeIntelExtract           = "intel:extract"             // default
 	TypeIntelDedup             = "intel:dedup"               // default
 	TypeIntelPublishGate       = "intel:publish_gate"        // default
@@ -300,6 +301,7 @@ var handlerRegistry = []struct {
 	{TypeIntelFetchSource, HandleIntelFetchSource},
 	{TypeIntelFetchChannel, HandleIntelFetchChannel},
 	{TypeIntelDetectChanges, HandleIntelDetectChanges},
+	{TypeIntelCurateChannel, HandleIntelCurateChannel},
 	{TypeIntelExtract, HandleIntelExtract},
 	{TypeIntelDedup, HandleIntelDedup},
 	{TypeIntelPublishGate, HandleIntelPublishGate},

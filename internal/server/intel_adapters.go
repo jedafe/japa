@@ -15,6 +15,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/intelligence/curator"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
@@ -74,6 +75,14 @@ func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sou
 		return nil, fmt.Errorf("intel: no schema registered for entity type %q", entityType)
 	}
 
+	// Curate-only entity types (article, event, dataset) have no prompt
+	// template and must never reach the LLM — a dispatch here is a
+	// pipeline routing bug. The worker pre-checks via schemas.IsCurateOnly;
+	// this is the defense-in-depth guard at the port boundary.
+	if schemas.IsCurateOnly(entityType) {
+		return nil, fmt.Errorf("%w: %q", schemas.ErrCurateOnlyEntityType, entityType)
+	}
+
 	// Try rule-based extraction first (RSS news feeds). This avoids an
 	// LLM call for structured XML content that can be parsed directly.
 	if rbResult, rbOK := extractor.RuleBasedExtract(schema, sourceURL, sourceType, sourceText); rbOK {
@@ -117,6 +126,51 @@ func (a *intelPromoterPortAdapter) Promote(ctx context.Context, recordID uuid.UU
 
 func (a *intelPromoterPortAdapter) Entity() string {
 	return a.prom.Entity()
+}
+
+// intelCuratorPortAdapter wraps *curator.Registry so it satisfies the
+// worker.intelCuratorPort interface without the worker package importing
+// internal/intelligence/curator (which would close the cycle
+// worker → curator → extractor → ai → auth → worker). The registry
+// dispatches on the channel's crawl_method; a method with no curator maps
+// curator.ErrNoCurator onto the worker's ErrIntelNoCurator sentinel so
+// HandleIntelCurateChannel falls back to intel:extract.
+type intelCuratorPortAdapter struct {
+	reg *curator.Registry
+}
+
+func (a *intelCuratorPortAdapter) Curate(ctx context.Context, body []byte, contentType string, ch sources.Channel) ([]worker.IntelCuratedRecord, error) {
+	recs, err := a.reg.Curate(ctx, body, contentType, ch)
+	if err != nil {
+		if errors.Is(err, curator.ErrNoCurator) {
+			return nil, fmt.Errorf("%w: %w", worker.ErrIntelNoCurator, err)
+		}
+
+		return nil, err
+	}
+
+	out := make([]worker.IntelCuratedRecord, 0, len(recs))
+
+	for i, rec := range recs {
+		raw, err := json.Marshal(rec.Extraction)
+		if err != nil {
+			return nil, fmt.Errorf("intel: marshal curated record %d: %w", i, err)
+		}
+
+		conf := extractor.ConfidenceOverall(rec.Extraction)
+		if conf <= 0 {
+			conf = 1.0 // curated fields are deterministic — full confidence
+		}
+
+		out = append(out, worker.IntelCuratedRecord{
+			RawExtraction:     raw,
+			ConfidenceOverall: conf,
+			ExternalKey:       rec.ExternalKey,
+			EntityType:        rec.EntityType,
+		})
+	}
+
+	return out, nil
 }
 
 // recordsToResults converts validated extractor records into the worker's

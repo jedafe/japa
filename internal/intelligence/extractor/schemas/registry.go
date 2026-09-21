@@ -11,6 +11,16 @@
 // Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md (Section 8)
 package schemas
 
+import "errors"
+
+// ErrCurateOnlyEntityType is returned when an entity type that has a
+// registered schema but no LLM prompt template (article, event, dataset)
+// reaches the extract path. Curate-only types are produced by the
+// deterministic curator pipeline (intel:curate_channel); an extract
+// dispatch on one is a routing bug and must surface as an explicit error
+// rather than the generic "no prompt template" failure.
+var ErrCurateOnlyEntityType = errors.New("schemas: entity type is curate-only (no LLM prompt template)")
+
 // EntityType constants for the intelligence domains. These are the
 // intel_records.entity_type values and the registry keys. The source
 // category on intel_sources.category maps to one of these via
@@ -38,6 +48,14 @@ const (
 	// #nosec G101 -- "credential_pathway" is an entity-type label, not a secret.
 	EntityTypeCredentialPathway = "credential_pathway"
 	EntityTypeNews              = "news"
+	// Curate-only entity types (intel-channels Phase 1): populated by the
+	// deterministic curator package from structured channel bodies (RSS
+	// items, ld+json nodes, iCal VEVENTs, tabular rows). They have schemas
+	// so records validate, but no LLM prompt templates — IsCurateOnly
+	// reports them and the extract dispatch refuses them.
+	EntityTypeArticle = "article"
+	EntityTypeEvent   = "event"
+	EntityTypeDataset = "dataset"
 )
 
 // registry maps entity_type → EntitySchema. Populated by init() so the
@@ -65,6 +83,19 @@ var registry = map[string]EntitySchema{
 	EntityTypeCommunityOrganisation: CommunityOrganisation,
 	EntityTypeCredentialPathway:     CredentialPathway,
 	EntityTypeNews:                  News,
+	EntityTypeArticle:               Article,
+	EntityTypeEvent:                 Event,
+	EntityTypeDataset:               Dataset,
+}
+
+// IsCurateOnly reports whether entityType is a registered schema that is
+// populated only by the deterministic curators — it has no LLM prompt
+// template, so routing it to intel:extract is a pipeline bug. The worker
+// checks this at the extract dispatch point and the server-side extractor
+// adapter returns ErrCurateOnlyEntityType as defense-in-depth.
+func IsCurateOnly(entityType string) bool {
+	s, ok := registry[entityType]
+	return ok && s.CurateOnly
 }
 
 // ForEntityType returns the registered EntitySchema for the given
@@ -121,6 +152,14 @@ var categoryEntityTypes = map[string]string{
 	"credential_pathway":        EntityTypeCredentialPathway,
 	"professional_credential":   EntityTypeCredentialPathway,
 	"news":                      EntityTypeNews,
+	// intel-channels Phase 1 curate-only categories. blog/event/dataset map
+	// to the curator-produced schemas; announcement reuses the news schema
+	// (curated RSS bulletins). scam_alert intentionally has no entity type
+	// — its sources route to the review queue until a schema exists.
+	"blog":         EntityTypeArticle,
+	"event":        EntityTypeEvent,
+	"dataset":      EntityTypeDataset,
+	"announcement": EntityTypeNews,
 }
 
 // CategoryToEntityType maps an intel_sources.category value to the
@@ -143,11 +182,15 @@ func CategoryToEntityType(category string) string {
 func RegisteredCategories() []string {
 	return []string{
 		"admission",
+		"announcement",
 		"banking",
+		"blog",
 		"community_organisation",
 		"cost_of_living",
 		"credential_pathway",
 		"culture_lifestyle",
+		"dataset",
+		"event",
 		"fx",
 		"grants",
 		"health_insurance",
@@ -158,6 +201,7 @@ func RegisteredCategories() []string {
 		"language_test",
 		"news",
 		"remittance",
+		"scam_alert",
 		"scholarship",
 		"tax_obligation",
 		"travel_alert",

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Japa News</title>
+    <link>https://news.example.com/</link>
+    <description>Migration news for Nigerians abroad</description>
+    <item>
+      <title>Canada opens new Express Entry draw</title>
+      <link>https://news.example.com/canada-express-entry-draw</link>
+      <guid isPermaLink="true">https://news.example.com/canada-express-entry-draw</guid>
+      <pubDate>Mon, 15 Sep 2025 09:30:00 +0000</pubDate>
+      <dc:creator>Ada Obi</dc:creator>
+      <category>immigration</category>
+      <category>canada</category>
+      <description>&lt;p&gt;Canada held another Express Entry draw inviting 3,000 candidates.&lt;/p&gt;</description>
+      <content:encoded>&lt;p&gt;Canada held another Express Entry draw inviting 3,000 candidates with CRS scores above 480.&lt;/p&gt;</content:encoded>
+    </item>
+    <item>
+      <title>UK raises student visa proof-of-funds</title>
+      <link>https://news.example.com/uk-student-funds</link>
+      <pubDate>Tue, 16 Sep 2025 12:00:00 +0000</pubDate>
+      <author>editor@news.example.com (Tunde Bakare)</author>
+      <category>visa</category>
+      <description>The UK Home Office raised the maintenance requirement for student visas.</description>
+    </item>
+    <item>
+      <title>Community webinar: settling in Toronto</title>
+      <pubDate>Wed, 17 Sep 2025 18:45:00 +0000</pubDate>
+      <description>A free webinar on housing and banking for newcomers.</description>
+    </item>
+  </channel>
+</rss>
