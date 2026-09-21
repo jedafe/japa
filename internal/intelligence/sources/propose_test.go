@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -394,7 +396,13 @@ func TestPropose_PersistsPayloadFields(t *testing.T) {
 	defer database.Close()
 
 	svc := NewService(NewStore(database))
-	userID := mustUUID("550e8400-e29b-41d4-a716-446655440000")
+
+	// proposed_by has an FK to users(id) — use a real user row rather than
+	// a fabricated UUID.
+	var userID pgtype.UUID
+	if err := database.Writer.QueryRow(ctx, "SELECT id FROM users LIMIT 1").Scan(&userID); err != nil {
+		t.Skipf("no users row available for proposed_by FK: %v", err)
+	}
 
 	src, err := svc.Propose(ctx, userID, ProposeInput{
 		Name:          "Propose Test Source",

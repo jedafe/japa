@@ -46,6 +46,7 @@ func slugify(title string) string {
 type Service struct {
 	store         *Store
 	metadataQueue func(ctx context.Context, sourceID SourceID) error
+	probeQueue    func(ctx context.Context, sourceID SourceID) error
 }
 
 // NewService creates a sources service backed by the given store.
@@ -69,6 +70,33 @@ func (s *Service) queueMetadataFetch(ctx context.Context, src Source) {
 
 	if err := s.metadataQueue(ctx, src.ID); err != nil {
 		slog.Warn("sources: metadata enqueue failed", "source_id", src.ID.String(), "error", err)
+	}
+}
+
+// SetProbeQueue wires a background task enqueue function for the deep
+// verify probe (intel:probe_verify). It is called after a proposed source
+// is approved so the probe can materialize intel_source_channels rows.
+// Same injected-func pattern as SetMetadataQueue — the sources package
+// must not import the worker.
+func (s *Service) SetProbeQueue(q func(ctx context.Context, sourceID SourceID) error) {
+	s.probeQueue = q
+}
+
+// queueProbeVerify enqueues the deep verify probe for an active source.
+// Failures are logged but not returned so DB writes do not fail when the
+// queue is down. video_channel rows are §106 channel subscriptions —
+// video:sync_channels owns ingestion and there is nothing to probe.
+func (s *Service) queueProbeVerify(ctx context.Context, src Source) {
+	if s.probeQueue == nil || !src.Enabled || src.Status != "active" || !src.ID.Valid {
+		return
+	}
+
+	if src.SourceType == string(SourceTypeVideoChannel) {
+		return
+	}
+
+	if err := s.probeQueue(ctx, src.ID); err != nil {
+		slog.Warn("sources: probe verify enqueue failed", "source_id", src.ID.String(), "error", err)
 	}
 }
 
@@ -238,6 +266,10 @@ func (s *Service) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUI
 	}
 
 	s.queueMetadataFetch(ctx, src)
+	// intel-channels §2: approval triggers the deep verify probe — it
+	// writes probe_report + detected_methods and materializes the source's
+	// intel_source_channels rows. Fire-and-forget like the metadata queue.
+	s.queueProbeVerify(ctx, src)
 	return src, nil
 }
 
@@ -654,6 +686,20 @@ func (s *Service) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceCh
 	}
 	if len(arg.ProviderConfig) == 0 {
 		arg.ProviderConfig = []byte("{}")
+	}
+	// entity_types / relevance_topics / relevance_url_patterns are
+	// text[] NOT NULL DEFAULT '{}' — a nil slice binds SQL NULL and
+	// violates the constraint (same failure class as provider_config in
+	// Create). Normalize at this chokepoint so probe materialization and
+	// admin creation both insert cleanly.
+	if arg.EntityTypes == nil {
+		arg.EntityTypes = []string{}
+	}
+	if arg.RelevanceTopics == nil {
+		arg.RelevanceTopics = []string{}
+	}
+	if arg.RelevanceUrlPatterns == nil {
+		arg.RelevanceUrlPatterns = []string{}
 	}
 	if arg.CrawlFrequencyMins <= 0 {
 		arg.CrawlFrequencyMins = 1440

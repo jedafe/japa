@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/fetcher"
+	"github.com/jedafe/japa/internal/intelligence/probe"
 	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 	"github.com/jedafe/japa/internal/intelligence/scheduler"
 	"github.com/jedafe/japa/internal/intelligence/services"
@@ -149,6 +150,9 @@ var (
 // registers one adapter per domain (scholarship, job, visa, fx, remittance,
 // cost_of_living, housing). HandleIntelPromote dispatches by the record's
 // entity_type.
+// // prober is the verify-configured probe.Prober (safetransport client,
+// larger request budget) used by HandleIntelProbeVerify — nil leaves the
+// verify task a logged skip.
 func RegisterIntelDependencies(
 	srcStore *sources.Store,
 	store *stores.Store,
@@ -160,6 +164,7 @@ func RegisterIntelDependencies(
 	f fetcher.Fetcher,
 	preflight *fetcher.PreflightChecker,
 	client *asynq.Client,
+	prober *probe.Prober,
 ) {
 	intelSourcesStore = srcStore
 	intelStores = store
@@ -171,6 +176,7 @@ func RegisterIntelDependencies(
 	intelFetcher = f
 	intelPreflight = preflight
 	intelAsynqClient = client
+	intelProber = prober
 }
 
 // RegisterIntelStudioAutoPromoter wires the Studio auto-promote port so
