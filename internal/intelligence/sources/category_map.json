@@ -1,0 +1,18 @@
+{
+  "job":        {"entity_types": ["job"],          "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
+                 "topics": ["job","hiring","vacancy","career","remote work","recruitment"]},
+  "news":       {"entity_types": ["news"],          "methods": ["rss","jsonld","render","static"],         "pipeline": "curate",
+                 "topics": ["migration","immigration","japa","diaspora","visa","relocation","travel"]},
+  "blog":       {"entity_types": ["article"],       "methods": ["rss","render","static"],                  "pipeline": "curate",
+                 "topics": ["japa","relocation","study abroad","settlement","expat","diaspora"]},
+  "event":      {"entity_types": ["event"],         "methods": ["ical","jsonld"],                          "pipeline": "curate",
+                 "topics": ["webinar","fair","embassy","orientation","deadline"]},
+  "scholarship":{"entity_types": ["scholarship"],   "methods": ["rss","jsonld","render","static"],         "pipeline": "extract",
+                 "topics": ["scholarship","grant","fellowship","funding","tuition waiver","bursary"]},
+  "visa":       {"entity_types": ["visa"],          "methods": ["static","pdf","render"],                  "pipeline": "extract",
+                 "topics": ["visa","immigration","embassy","residence permit","asylum","border"]},
+  "dataset":    {"entity_types": ["dataset"],       "methods": ["tabular","git","api"],                    "pipeline": "curate",
+                 "topics": ["exchange rate","processing time","visa fee","tuition"]},
+  "video":      {"entity_types": [],                "methods": ["channel_sync"],                           "pipeline": "curate",
+                 "topics": ["japa","relocation","study abroad","visa"]}
+}

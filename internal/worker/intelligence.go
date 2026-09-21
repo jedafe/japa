@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,8 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/fetcher"
+	"github.com/jedafe/japa/internal/intelligence/probe"
+	"github.com/jedafe/japa/internal/intelligence/relevance"
 	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 	"github.com/jedafe/japa/internal/intelligence/scheduler"
 	"github.com/jedafe/japa/internal/intelligence/services"
@@ -110,6 +113,34 @@ type IntelExtractResult struct {
 // extractor package.
 var ErrIntelExtractionRetriesExhausted = errors.New("intel: extraction retries exhausted")
 
+// intelCuratorPort mirrors the curator.Registry dispatch the worker needs,
+// declared locally to avoid the import cycle (worker → curator → extractor
+// → ai → auth → worker). server.go registers an adapter wrapping the
+// concrete *curator.Registry; the adapter dispatches on the channel's
+// crawl_method internally so the worker only passes the raw doc body.
+type intelCuratorPort interface {
+	Curate(ctx context.Context, body []byte, contentType string, ch sources.Channel) ([]IntelCuratedRecord, error)
+}
+
+// IntelCuratedRecord mirrors one curator.Record as persisted by the worker:
+// the marshalled extraction, its aggregate confidence, the stable
+// external_key, and the record's entity type (the curator's per-item
+// override — e.g. a ld+json @type mapping — or "" for the channel default).
+// Exported so the server package can build port adapters that satisfy
+// intelCuratorPort from outside the worker package.
+type IntelCuratedRecord struct {
+	RawExtraction     []byte
+	ConfidenceOverall float32
+	ExternalKey       string
+	EntityType        string
+}
+
+// ErrIntelNoCurator is the port-level sentinel returned by the curator
+// adapter when no deterministic curator exists for the channel's crawl
+// method (sitemap, git, api, …). HandleIntelCurateChannel falls back to the
+// intel:extract pipeline for those channels.
+var ErrIntelNoCurator = errors.New("intel: no curator for crawl method")
+
 // IntelStudioAutoPromoter is the port through which the intelligence spine
 // auto-creates Studio jobs for high-confidence extracted records (ADR-076
 // Amendment 1). Declared locally to avoid the worker → studio import cycle.
@@ -130,6 +161,7 @@ var (
 	intelStores            *stores.Store
 	intelScheduler         *scheduler.Scheduler
 	intelExtractor         intelExtractorPort
+	intelCurator           intelCuratorPort
 	intelDedupService      *dedup.Service
 	intelPromoters         map[string]IntelPromoterPort // keyed by entity_type
 	intelEventPublisher    events.DomainEventPublisher
@@ -149,6 +181,9 @@ var (
 // registers one adapter per domain (scholarship, job, visa, fx, remittance,
 // cost_of_living, housing). HandleIntelPromote dispatches by the record's
 // entity_type.
+// // prober is the verify-configured probe.Prober (safetransport client,
+// larger request budget) used by HandleIntelProbeVerify — nil leaves the
+// verify task a logged skip.
 func RegisterIntelDependencies(
 	srcStore *sources.Store,
 	store *stores.Store,
@@ -160,6 +195,7 @@ func RegisterIntelDependencies(
 	f fetcher.Fetcher,
 	preflight *fetcher.PreflightChecker,
 	client *asynq.Client,
+	prober *probe.Prober,
 ) {
 	intelSourcesStore = srcStore
 	intelStores = store
@@ -171,6 +207,13 @@ func RegisterIntelDependencies(
 	intelFetcher = f
 	intelPreflight = preflight
 	intelAsynqClient = client
+	intelProber = prober
+
+	// Install the production relevance gate (Task 10). It reads the
+	// intel.relevance.* settings live and uses the registered classifier
+	// port + Valkey cache; both may be nil → deterministic-only gating.
+	// Tests override via RegisterIntelRelevanceGate.
+	intelRelevanceGate = intelEvaluateRelevance
 }
 
 // RegisterIntelStudioAutoPromoter wires the Studio auto-promote port so
@@ -180,6 +223,48 @@ func RegisterIntelDependencies(
 // Pass nil to disable auto-promote (the default).
 func RegisterIntelStudioAutoPromoter(p IntelStudioAutoPromoter) {
 	intelStudioAutoPromote = p
+}
+
+// RegisterIntelCurator wires the curator port so HandleIntelCurateChannel
+// can dispatch raw doc bodies to the deterministic curators
+// (intel-channels Phase 1). Called from server.go after
+// RegisterIntelDependencies. Pass nil to leave the curate pipeline
+// unwired — HandleIntelCurateChannel then falls back to intel:extract.
+func RegisterIntelCurator(c intelCuratorPort) {
+	intelCurator = c
+}
+
+// intelRelevanceGate is the per-item relevance-gate seam (Task 10). It
+// supersedes Task 9's bool-returning intelCurateRelevanceGate hook: the
+// verdict is returned so the caller can persist an 'off_topic'
+// intel_records row (external_key preserved for re-crawl dedup) instead
+// of silently dropping the item. The signature mirrors
+// relevance.Evaluate — item carries the title/summary/url the scorer
+// sees, mapTopics the resolved category-map topics. nil → the gate is
+// disabled and every item passes; RegisterIntelDependencies installs the
+// production implementation (intelEvaluateRelevance).
+var intelRelevanceGate func(ctx context.Context, item relevance.ItemInput, ch sources.Channel, mapTopics []string) (relevance.Verdict, error)
+
+// intelRelevanceClassifier is the borderline-band classifier port (§20 AI
+// gateway, category="classification"). Nil → borderline items stay
+// Borderline and pass through (deterministic gating only). Registered
+// from server.go via RegisterIntelRelevanceClassifier — the worker cannot
+// import internal/ai (cycle through auth).
+var intelRelevanceClassifier relevance.Classifier
+
+// RegisterIntelRelevanceGate installs the per-item relevance gate
+// consulted by HandleIntelCurateChannel (pre-persist) and
+// HandleIntelExtract (post-extraction). Pass nil to disable gating;
+// RegisterIntelDependencies installs intelEvaluateRelevance by default.
+func RegisterIntelRelevanceGate(fn func(ctx context.Context, item relevance.ItemInput, ch sources.Channel, mapTopics []string) (relevance.Verdict, error)) {
+	intelRelevanceGate = fn
+}
+
+// RegisterIntelRelevanceClassifier wires the borderline-band classifier
+// port (server.go registers the AI-gateway adapter). Pass nil to run the
+// deterministic gate only.
+func RegisterIntelRelevanceClassifier(c relevance.Classifier) {
+	intelRelevanceClassifier = c
 }
 
 // enqueueIntel enqueues a follow-up intelligence task on the shared Asynq
@@ -239,17 +324,44 @@ type intelSourcePayload struct {
 	SourceID string `json:"source_id"`
 }
 
+// intelChannelPayload is the intel:fetch_channel task payload (intel-channels
+// Phase 1). source_id is advisory — the channel row's source_id is
+// authoritative and is re-resolved at handling time.
+type intelChannelPayload struct {
+	Version   string `json:"version"`
+	ChannelID string `json:"channel_id"`
+	SourceID  string `json:"source_id"`
+}
+
 type intelDetectChangesPayload struct {
 	Version   string `json:"version"`
 	SourceID  string `json:"source_id"`
 	RawDocID  string `json:"raw_doc_id"`
 	PriorHash string `json:"prior_hash"`
+	// ChannelID scopes the crawl outcome bookkeeping to the channel that
+	// produced the raw doc. Empty on legacy fetch_source enqueues — the
+	// handler falls back to source-level behaviour.
+	ChannelID string `json:"channel_id,omitempty"`
 }
 
 type intelExtractPayload struct {
 	Version  string `json:"version"`
 	RecordID string `json:"record_id"`
 	RawDocID string `json:"raw_doc_id"`
+	// ChannelID lets the extract handler apply the channel-first entity-type
+	// precedence (channel.entity_types → provider_config → category).
+	// Empty on legacy enqueues; raw_doc.channel_id is the fallback source.
+	ChannelID string `json:"channel_id,omitempty"`
+}
+
+// intelCurateChannelPayload is the intel:curate_channel task payload
+// (intel-channels Phase 1). channel_id selects the crawl-method curator and
+// the channel-first entity-type contract; raw_doc_id carries the body.
+type intelCurateChannelPayload struct {
+	Version   string `json:"version"`
+	SourceID  string `json:"source_id"`
+	ChannelID string `json:"channel_id"`
+	RawDocID  string `json:"raw_doc_id"`
 }
 
 type intelRecordPayload struct {
@@ -257,6 +369,7 @@ type intelRecordPayload struct {
 	RecordID string `json:"record_id"`
 
 	ReviewerUserID string `json:"reviewer_user_id,omitempty"` // INTEL-026: set on approve, empty on auto-publish
+	ChannelID      string `json:"channel_id,omitempty"`       // propagated through dedup → gate → promote for Task 9 pipeline routing
 }
 
 type intelPostPublishPayload struct {
@@ -277,8 +390,10 @@ type intelNotifyPayload struct {
 // ---------------------------------------------------------------------------
 
 // HandleIntelScheduleCrawls is the cron entry point for the ingestion spine.
-// It selects due sources via the scheduler and enqueues a fetch_source task
-// per due source (Section 4, step 1).
+// It selects due channels via the scheduler and enqueues a fetch_channel
+// task per due channel (Section 4, step 1; intel-channels Phase 1 moved the
+// scheduling granularity from source to channel — ListDueIntelChannels
+// already excludes manual/inbound channels and disabled/inactive parents).
 // // BUG-11/12 fix: the batch size is read from system_settings
 // (intel.schedule_batch_size, default 50) instead of being hardcoded to 100.
 // The intel.enabled toggle is checked before any work — when false, the
@@ -333,31 +448,35 @@ func HandleIntelScheduleCrawls(ctx context.Context, _ *asynq.Task) error {
 		batchSize = appSettings.GetIntOr(ctx, "intel.schedule_batch_size", 50)
 	}
 
-	due, err := intelScheduler.SelectDue(ctx, int32(batchSize)) // #nosec
+	due, err := intelScheduler.SelectDueChannels(ctx, int32(batchSize)) // #nosec
 	if err != nil {
-		return fmt.Errorf("task:intel:schedule_crawls: select due: %w", err)
+		return fmt.Errorf("task:intel:schedule_crawls: select due channels: %w", err)
 	}
 
-	for _, src := range due {
-		if !src.ID.Valid {
+	for _, ch := range due {
+		if !ch.ID.Valid {
 			continue
 		}
 
-		payload := marshalPayload(intelSourcePayload{
-			Version:  intelPayloadVersion,
-			SourceID: src.ID.String(),
+		payload := marshalPayload(intelChannelPayload{
+			Version:   intelPayloadVersion,
+			ChannelID: ch.ID.String(),
+			SourceID:  ch.SourceID.String(),
 		})
 		if payload != nil {
-			enqueueIntel(TypeIntelFetchSource, payload)
+			enqueueIntel(TypeIntelFetchChannel, payload)
 		}
 	}
 
 	return nil
 }
 
-// HandleIntelFetchSource fetches the raw document for a single source and
-// enqueues detect_changes to compare its hash against the prior crawl
-// (Section 4, step 2).
+// HandleIntelFetchSource is the legacy per-source fetch entry point
+// (Section 4, step 2). Intel-channels Phase 1 moved fetching to
+// intel:fetch_channel; this handler remains for queued legacy tasks and the
+// admin/AI "crawl now" triggers — it resolves the source's default channel
+// (GetIntelSourceDefaultChannel: oldest enabled channel, i.e. the backfilled
+// 'admin' row) and delegates to the shared channel fetch path.
 func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	defer recoverPanic("TypeIntelFetchSource")
 	slog.Info("task:intel:fetch_source")
@@ -381,48 +500,145 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		return nil // source gone or disabled — nothing to do
 	}
 
-	sourceIDStr := sourceID.String()
+	ch, err := intelSourcesStore.GetDefaultChannel(ctx, sourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:fetch_source: source has no enabled channel, skipping", "source_id", sourceID.String())
+			return nil
+		}
 
-	// API sources require a provider_config with a non-empty endpoint. Skip
-	// unconfigured sources gracefully — mark the row with the configuration
-	// error and return nil so the Asynq task is not retried and the logs are
-	// not spammed with "provider_config.endpoint is empty" failures.
-	if !intelSourceConfigured(ctx, sourceID, src) {
+		return fmt.Errorf("task:intel:fetch_source: resolve default channel: %w", err)
+	}
+
+	return intelFetchChannel(ctx, "task:intel:fetch_source", src, ch)
+}
+
+// HandleIntelFetchChannel fetches the raw document for a single channel and
+// enqueues detect_changes carrying channel_id (intel-channels Phase 1,
+// Section 4 step 2). It resolves the channel row and its parent source,
+// then delegates to the shared intelFetchChannel core.
+func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
+	defer recoverPanic("TypeIntelFetchChannel")
+	slog.Info("task:intel:fetch_channel")
+
+	if intelFetcher == nil || intelStores == nil || intelSourcesStore == nil {
+		slog.Warn("task:intel:fetch_channel: dependencies not wired, skipping")
 		return nil
 	}
 
-	// Pre-flight checks: crawl lock, rate limit, license, robots.txt
-	// (INTEL-001/INTEL-006 fix). The crawl lock is acquired inside Check;
-	// on success the caller must release it after the fetch completes.
-	if err := intelPreflightCheck(ctx, sourceID, src); err != nil {
+	var p intelChannelPayload
+	if err := parsePayloadOrSkip(t, &p); err != nil {
+		return err
+	}
+
+	channelID, err := scanUUID(p.ChannelID)
+	if err != nil {
+		return fmt.Errorf("task:intel:fetch_channel: %w", err)
+	}
+
+	ch, err := intelSourcesStore.GetChannel(ctx, channelID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:fetch_channel: channel no longer exists, skipping", "channel_id", channelID.String())
+			return nil
+		}
+
+		return fmt.Errorf("task:intel:fetch_channel: load channel: %w", err)
+	}
+
+	if !ch.Enabled {
+		slog.Info("task:intel:fetch_channel: channel is disabled, skipping", "channel_id", channelID.String())
+		return nil
+	}
+
+	method := sources.CrawlMethod(ch.CrawlMethod)
+	switch {
+	case sources.InboundMethod(method):
+		// Push channels ingest via the inbound endpoints — a stray enqueue
+		// must skip cleanly instead of erroring into the circuit-breaker.
+		slog.Info("task:intel:fetch_channel: inbound channel, skipping", "channel_id", channelID.String(), "crawl_method", ch.CrawlMethod)
+		return nil
+	case method == sources.CrawlMethodManual:
+		slog.Info("task:intel:fetch_channel: manual channel, skipping", "channel_id", channelID.String())
+		return nil
+	}
+
+	// Load the parent source for trust_level/license context and the
+	// enabled/active gate. The payload's source_id is advisory; the channel
+	// row's source_id is authoritative.
+	if p.SourceID != "" && p.SourceID != ch.SourceID.String() {
+		slog.Warn("task:intel:fetch_channel: payload source_id disagrees with channel row, using channel's", "channel_id", channelID.String(), "payload_source_id", p.SourceID, "channel_source_id", ch.SourceID.String())
+	}
+
+	src, err := intelSourcesStore.Get(ctx, ch.SourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:fetch_channel: parent source no longer exists, skipping", "channel_id", channelID.String())
+			return nil
+		}
+
+		return fmt.Errorf("task:intel:fetch_channel: load parent source: %w", err)
+	}
+
+	if !src.Enabled || src.Status != "active" {
+		slog.Info("task:intel:fetch_channel: parent source not active, skipping", "channel_id", channelID.String(), "source_id", ch.SourceID.String(), "enabled", src.Enabled, "status", src.Status)
+		return nil
+	}
+
+	return intelFetchChannel(ctx, "task:intel:fetch_channel", src, ch)
+}
+
+// intelFetchChannel is the shared fetch core for intel:fetch_channel and the
+// legacy intel:fetch_source delegation path: channel config check →
+// channel-scoped preflight (crawl lock jc:intel:channel_lock:{id}) →
+// Composite.Fetch(src, ch) → persist raw doc with channel_id stamped →
+// UpdateChannelCrawlStatus → enqueue detect_changes. logPrefix lets the two
+// callers keep their own log/error namespaces.
+func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSource, ch gen.IntelSourceChannel) error {
+	channelIDStr := ch.ID.String()
+
+	// API channels require a provider_config with a non-empty endpoint —
+	// resolved channel-first so a backfilled default channel inherits the
+	// source's config (intelSourceConfigured's channel-level equivalent).
+	// Skip unconfigured channels gracefully: mark the row with the
+	// configuration error and return nil so the task is not retried.
+	if !intelChannelConfigured(ctx, ch, src) {
+		return nil
+	}
+
+	// Pre-flight checks: channel crawl lock, rate limit, license, robots.txt.
+	// The channel lock is acquired inside CheckChannel; on success the caller
+	// must release it after the fetch completes.
+	if err := intelChannelPreflightCheck(ctx, ch, src); err != nil {
 		return err
 	}
 
 	// Capture the prior content hash BEFORE inserting the new raw doc so
-	// detect_changes can compare against the previous crawl, not the one we
-	// just persisted. An error here (no prior doc) degrades to empty string,
-	// which changedetector.Compare treats as DecisionFirstCrawl.
-	priorHash, _ := intelStores.GetLatestIntelRawDocHash(ctx, sourceID)
+	// detect_changes compares against this channel's previous crawl, not
+	// the doc we just persisted (and not a sibling channel's doc). An error
+	// here (no prior doc) degrades to empty string → DecisionFirstCrawl.
+	priorHash, _ := intelStores.GetLatestIntelRawDocHashForChannel(ctx, ch.ID)
 
-	// Dispatch to the composite fetcher (selects adapter by crawl_method).
-	result, err := intelFetcher.Fetch(ctx, src)
+	// Dispatch to the composite fetcher (selects adapter by channel crawl_method).
+	result, err := intelFetcher.Fetch(ctx, src, ch)
 	if err != nil {
-		handleFetchFailure(ctx, sourceID, sourceIDStr, src, err)
+		handleChannelFetchFailure(ctx, ch, err)
 
-		return fmt.Errorf("task:intel:fetch_source: fetch: %w", err)
+		return fmt.Errorf("%s: fetch: %w", logPrefix, err)
 	}
 
-	// Release the crawl lock after a successful fetch (INTEL-001 fix).
+	// Release the crawl lock after a successful fetch.
 	if intelPreflight != nil {
-		intelPreflight.ReleaseCrawlLock(ctx, sourceIDStr)
+		intelPreflight.ReleaseChannelCrawlLock(ctx, channelIDStr)
 	}
 
-	// Persist the raw document (headers + body + hash).
+	// Persist the raw document (headers + body + hash + channel stamp).
 	headersJSON, _ := json.Marshal(result.Headers)
 
 	rawDoc, err := intelStores.CreateIntelRawDocument(ctx, gen.CreateIntelRawDocumentParams{
-		SourceID:    sourceID,
-		Url:         src.SourceUrl,
+		SourceID:    ch.SourceID,
+		ChannelID:   ch.ID,
+		Url:         ch.EntryUrl,
 		HttpStatus:  int32(result.HTTPStatus), // #nosec
 		HttpHeaders: headersJSON,
 		ContentType: strPtr(result.ContentType),
@@ -430,20 +646,21 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		ContentHash: result.ContentHash,
 	})
 	if err != nil {
-		return fmt.Errorf("task:intel:fetch_source: persist raw doc: %w", err)
+		return fmt.Errorf("%s: persist raw doc: %w", logPrefix, err)
 	}
 
-	// Stamp the source's crawl status as successful.
-	_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
-		ID:      sourceID,
+	// Stamp the channel's crawl status as successful.
+	_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+		ID:      ch.ID,
 		Success: true,
 	})
 
-	slog.Info("task:intel:fetch_source: fetched", "source_id", sourceID.String(), "raw_doc_id", rawDoc.ID.String(), "hash", result.ContentHash)
+	slog.Info(logPrefix+": fetched", "channel_id", channelIDStr, "source_id", ch.SourceID.String(), "raw_doc_id", rawDoc.ID.String(), "hash", result.ContentHash)
 
 	payload := marshalPayload(intelDetectChangesPayload{
 		Version:   intelPayloadVersion,
-		SourceID:  p.SourceID,
+		SourceID:  ch.SourceID.String(),
+		ChannelID: channelIDStr,
 		RawDocID:  rawDoc.ID.String(),
 		PriorHash: priorHash,
 	})
@@ -490,18 +707,22 @@ func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceI
 	return sourceID, src, true, nil
 }
 
-// intelSourceConfigured reports whether a source has usable fetch config.
-// API sources require a provider_config with a non-empty endpoint; on a
-// config error it marks the source row with the failure and returns false so
-// the task is skipped rather than retried.
-func intelSourceConfigured(ctx context.Context, sourceID pgtype.UUID, src gen.IntelSource) bool {
-	if sources.CrawlMethod(src.CrawlMethod) != sources.CrawlMethodAPI {
+// intelChannelConfigured is the channel-level equivalent of the retired
+// source-level intelSourceConfigured check: API channels need a
+// provider_config with a non-empty endpoint. The effective config is
+// resolved channel-first via
+// fetcher.ResolveChannelProviderConfig — a channel carrying its own API
+// config uses it; a backfilled default channel ('{}' config) falls back to
+// the parent source's provider_config. On a config error the channel row is
+// marked with the failure and the task is skipped rather than retried.
+func intelChannelConfigured(ctx context.Context, ch gen.IntelSourceChannel, src gen.IntelSource) bool {
+	if sources.CrawlMethod(ch.CrawlMethod) != sources.CrawlMethodAPI {
 		return true
 	}
 
-	if _, err := fetcher.ParseProviderConfig(src.ProviderConfig); err != nil {
-		_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
-			ID:               sourceID,
+	if _, err := fetcher.ParseProviderConfig(fetcher.ResolveChannelProviderConfig(ch, src)); err != nil {
+		_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+			ID:               ch.ID,
 			Success:          false,
 			LastErrorMessage: strPtr(err.Error()),
 		})
@@ -512,62 +733,65 @@ func intelSourceConfigured(ctx context.Context, sourceID pgtype.UUID, src gen.In
 	return true
 }
 
-// intelPreflightCheck runs the preflight gate (crawl lock, rate limit,
-// license, robots.txt — INTEL-001/INTEL-006). Non-lock failures are recorded
-// on the source row; ErrCrawlLocked is a transient "another worker is
-// crawling" signal that does not increment consecutive_failures. The crawl
-// lock is acquired inside Check; on success the caller must release it.
-func intelPreflightCheck(ctx context.Context, sourceID pgtype.UUID, src gen.IntelSource) error {
+// intelChannelPreflightCheck runs the channel-scoped preflight gate (crawl
+// lock jc:intel:channel_lock:{id}, rate limit, license, robots.txt).
+// Non-lock failures are recorded on the channel row; ErrCrawlLocked is a
+// transient "another worker is crawling this channel" signal that does not
+// increment consecutive_failures. The lock is acquired inside CheckChannel;
+// on success the caller must release it via ReleaseChannelCrawlLock.
+func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, src gen.IntelSource) error {
 	if intelPreflight == nil {
 		return nil
 	}
 
-	if err := intelPreflight.Check(ctx, src); err != nil {
+	if err := intelPreflight.CheckChannel(ctx, src, ch); err != nil {
 		if !errors.Is(err, fetcher.ErrCrawlLocked) {
-			_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
-				ID:               sourceID,
+			_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+				ID:               ch.ID,
 				Success:          false,
 				LastErrorMessage: strPtr(err.Error()),
 			})
 		}
 
-		return fmt.Errorf("task:intel:fetch_source: preflight: %w", err)
+		return fmt.Errorf("task:intel:fetch_channel: preflight: %w", err)
 	}
 
 	return nil
 }
 
-// handleFetchFailure performs the bookkeeping for a failed source fetch:
-// releases the crawl lock (INTEL-001), records the failure on the source row
-// so consecutive_failures increments, and auto-disables the source once it
-// crosses the intel.consecutive_failure_disable_threshold (default 5).
-func handleFetchFailure(ctx context.Context, sourceID pgtype.UUID, sourceIDStr string, src gen.IntelSource, fetchErr error) {
-	// Release the crawl lock so the source is not blocked until TTL expiry.
+// handleChannelFetchFailure is the channel-scoped counterpart of the retired
+// source-level handleFetchFailure: releases the channel crawl lock, records
+// the failure on the channel row so consecutive_failures increments, and
+// auto-disables the channel via UpdateIntelChannelEnabled once it crosses
+// the intel.consecutive_failure_disable_threshold (default 5).
+func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, fetchErr error) {
+	channelIDStr := ch.ID.String()
+
+	// Release the crawl lock so the channel is not blocked until TTL expiry.
 	if intelPreflight != nil {
-		intelPreflight.ReleaseCrawlLock(ctx, sourceIDStr)
+		intelPreflight.ReleaseChannelCrawlLock(ctx, channelIDStr)
 	}
-	// Record the failure on the source row so the retry_failed_source
-	// maintenance task can pick it up.
-	_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
-		ID:               sourceID,
+	// Record the failure on the channel row.
+	_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+		ID:               ch.ID,
 		Success:          false,
 		LastErrorMessage: strPtr(fetchErr.Error()),
 	})
 
-	// Auto-disable sources that fail repeatedly (spec §4 failure modes).
+	// Auto-disable channels that fail repeatedly (spec §4 failure modes).
 	threshold := 5
 	if appSettings != nil {
 		threshold = appSettings.GetIntOr(ctx, "intel.consecutive_failure_disable_threshold", 5)
 	}
 
-	if threshold <= 0 || int64(src.ConsecutiveFailures+1) < int64(threshold) {
+	if threshold <= 0 || int64(ch.ConsecutiveFailures+1) < int64(threshold) {
 		return
 	}
 
-	slog.Warn("task:intel:fetch_source: disabling source after consecutive failures", "source_id", sourceIDStr, "consecutive_failures", src.ConsecutiveFailures+1, "threshold", threshold)
+	slog.Warn("task:intel:fetch_channel: disabling channel after consecutive failures", "channel_id", channelIDStr, "consecutive_failures", ch.ConsecutiveFailures+1, "threshold", threshold)
 
-	if disableErr := intelSourcesStore.UpdateEnabled(ctx, sourceID, false); disableErr != nil {
-		slog.Warn("task:intel:fetch_source: failed to disable source", "source_id", sourceIDStr, "error", disableErr)
+	if disableErr := intelSourcesStore.UpdateChannelEnabled(ctx, ch.ID, false); disableErr != nil {
+		slog.Warn("task:intel:fetch_channel: failed to disable channel", "channel_id", channelIDStr, "error", disableErr)
 	}
 }
 
@@ -602,6 +826,11 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:detect_changes: %w", err)
 	}
+	// channel_id is optional — absent on legacy fetch_source enqueues.
+	channelID, err := scanOptionalUUID(p.ChannelID)
+	if err != nil {
+		return fmt.Errorf("task:intel:detect_changes: channel_id: %w", err)
+	}
 	// Load the freshly persisted raw document to get its content_hash.
 	rawDocID, err := scanUUID(p.RawDocID)
 	if err != nil {
@@ -613,36 +842,138 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:detect_changes: load raw doc: %w", err)
 	}
 
-	// Compare the new hash to the prior hash (passed from fetch_source).
+	// Compare the new hash to the prior hash (passed from fetch_channel).
 	decision := changedetector.Compare(rawDoc.ContentHash, p.PriorHash)
-	slog.Info("task:intel:detect_changes: decision", "source_id", p.SourceID, "decision", decision.String(), "new_hash", rawDoc.ContentHash, "prior_hash", p.PriorHash)
+	slog.Info("task:intel:detect_changes: decision", "source_id", p.SourceID, "channel_id", p.ChannelID, "decision", decision.String(), "new_hash", rawDoc.ContentHash, "prior_hash", p.PriorHash)
 
 	switch decision {
 	case changedetector.DecisionUnchanged:
-		// Content unchanged — update last_crawled_at only (already stamped by
-		// fetch_source) and stop the chain. No extraction needed.
-		_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
+		// Content unchanged — the crawl status was already stamped by
+		// fetch_channel; stop the chain. No extraction needed.
+		intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, false)
 		return nil
 	case changedetector.DecisionChanged:
-		// Mark the source as having changed content so the promoter can
-		// detect re-extraction of an already-promoted record.
-		_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
+		// Mark the crawl unit as having changed content so the promoter can
+		// detect re-extraction of an already-promoted record. Channel path
+		// stamps the channel row; the legacy path stamps the source.
+		if channelID.Valid {
+			_ = intelSourcesStore.MarkChannelChanged(ctx, channelID)
+		} else {
+			_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
+		}
+		intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, true)
 	// First crawl — no prior content to mark as changed.
 	case changedetector.DecisionFirstCrawl:
+	}
+
+	// Pipeline routing (intel-channels Phase 1): the channel's pipeline field
+	// selects the processing path — 'extract' enqueues intel:extract (LLM),
+	// 'curate'/'hybrid' enqueue intel:curate_channel (deterministic
+	// curators). Legacy payloads without channel_id resolve the source's
+	// default channel; when no channel resolves the path is 'extract',
+	// preserving the pre-channels behaviour.
+	ch, chResolved := resolveIntelPipelineChannel(ctx, sourceID, channelID)
+
+	pipeline := sources.PipelineExtract
+	if chResolved {
+		if p2 := sources.Pipeline(ch.Pipeline); p2.IsValid() {
+			pipeline = p2
+		}
+	}
+
+	channelIDStr := p.ChannelID
+	if channelIDStr == "" && chResolved {
+		channelIDStr = ch.ID.String()
+	}
+
+	if pipeline == sources.PipelineCurate || pipeline == sources.PipelineHybrid {
+		payload := marshalPayload(intelCurateChannelPayload{
+			Version:   intelPayloadVersion,
+			SourceID:  p.SourceID,
+			ChannelID: channelIDStr,
+			RawDocID:  p.RawDocID,
+		})
+		if payload != nil {
+			enqueueIntel(TypeIntelCurateChannel, payload)
+		}
+
+		return nil
 	}
 
 	// Enqueue extract with the raw doc id. The extract handler will load the
 	// raw doc text, run AI extraction, persist the intel_record, and pass the
 	// record id forward to dedup.
 	payload := marshalPayload(intelExtractPayload{
-		Version:  intelPayloadVersion,
-		RawDocID: p.RawDocID,
+		Version:   intelPayloadVersion,
+		RawDocID:  p.RawDocID,
+		ChannelID: channelIDStr,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelExtract, payload)
 	}
 
 	return nil
+}
+
+// resolveIntelPipelineChannel loads the channel that produced a raw doc for
+// pipeline routing: the payload's channel_id first, then — for legacy
+// enqueues or a deleted channel row — the source's default channel
+// (GetIntelSourceDefaultChannel: oldest enabled, i.e. the backfilled
+// 'admin' row). ok=false means no channel exists and the caller uses the
+// default 'extract' path.
+func resolveIntelPipelineChannel(ctx context.Context, sourceID, channelID pgtype.UUID) (gen.IntelSourceChannel, bool) {
+	if intelSourcesStore == nil {
+		return gen.IntelSourceChannel{}, false
+	}
+
+	if channelID.Valid {
+		if ch, err := intelSourcesStore.GetChannel(ctx, channelID); err == nil {
+			return ch, true
+		}
+		// Channel row gone — fall through to the default channel.
+	}
+
+	if ch, err := intelSourcesStore.GetDefaultChannel(ctx, sourceID); err == nil {
+		return ch, true
+	}
+
+	return gen.IntelSourceChannel{}, false
+}
+
+// intelRecordChannelCrawlOutcome feeds the volatility auto-tuner after a
+// crawl outcome is known (detect_changes). The tuning key is the channel_id
+// when present (jc:intel:effective_interval::{channel_id}) and falls back to
+// source_id for legacy enqueues; the base interval comes from the channel's
+// crawl_frequency_mins, else the source's. Best-effort — resolution or
+// Valkey errors are logged, never fail the task.
+func intelRecordChannelCrawlOutcome(ctx context.Context, sourceID, channelID pgtype.UUID, changed bool) {
+	if intelScheduler == nil || intelSourcesStore == nil {
+		return
+	}
+
+	key := sourceID.String()
+	base := int32(0)
+
+	if channelID.Valid {
+		key = channelID.String()
+		if ch, err := intelSourcesStore.GetChannel(ctx, channelID); err == nil {
+			base = ch.CrawlFrequencyMins
+		}
+	}
+
+	if base <= 0 {
+		if src, err := intelSourcesStore.Get(ctx, sourceID); err == nil {
+			base = src.CrawlFrequencyMins
+		}
+	}
+
+	if base <= 0 {
+		return
+	}
+
+	if err := intelScheduler.RecordCrawlOutcome(ctx, key, base, changed); err != nil {
+		slog.Warn("task:intel:detect_changes: record crawl outcome failed", "key", key, "changed", changed, "error", err)
+	}
 }
 
 // HandleIntelExtract runs AI extraction over the raw document and enqueues
@@ -684,11 +1015,12 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 	// Run AI extraction over the raw document body. The extractor adapter
 	// selects the schema by entityType and returns one or more marshalled
-	// extractions + per-record metadata. resolveSourceEntityTypes honours
-	// provider_config.entity_types so a mixed-domain source can emit records
-	// under every type it publishes (one extraction pass per type); without
-	// the override it falls back to the single category-derived type.
-	entityTypes := resolveSourceEntityTypes(src)
+	// extractions + per-record metadata. Entity-type resolution is
+	// channel-first when the raw doc was produced by a channel
+	// (channel.entity_types → source.provider_config.entity_types →
+	// category-derived type); resolveSourceEntityTypes covers the last two
+	// legs for legacy documents with no channel stamped.
+	entityTypes := resolveIntelEntityTypes(ctx, p.ChannelID, rawDoc, src)
 	if len(entityTypes) == 0 {
 		// Unknown / unsupported source category — route to review so an
 		// admin can reclassify the source. No extraction attempted. The
@@ -700,9 +1032,28 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 	sourceText := string(rawDoc.Body)
 
+	// Relevance gate (Task 10, extract path): the raw body is not itemized
+	// pre-LLM, so gating runs post-extraction per returned record on its
+	// title/summary/article_url fields. Channel context resolves
+	// payload.channel_id → raw doc stamp → source default channel; with no
+	// channel the record is treated as 'filtered' on category topics only.
+	// nil when the gate is not wired.
+	rel := intelRelevanceCallFor(ctx, p.ChannelID, rawDoc, src)
+
 	var persisted int
-	var retriesExhausted bool
+	var retriesExhausted, curateOnly bool
 	for _, entityType := range entityTypes {
+		// Curate-only entity types (article, event, dataset) have no LLM
+		// prompt template — a dispatch here means a curate/hybrid channel
+		// was misrouted to intel:extract. Skip the type instead of burning
+		// an LLM call on a guaranteed failure; when every resolved type is
+		// curate-only the doc routes to the review queue below.
+		if schemas.IsCurateOnly(entityType) {
+			slog.Warn("task:intel:extract: curate-only entity type reached extract, skipping", "raw_doc_id", p.RawDocID, "entity_type", entityType)
+			curateOnly = true
+			continue
+		}
+
 		results, extErr := intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
 		if extErr != nil {
 			if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
@@ -712,11 +1063,18 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 				retriesExhausted = true
 				continue
 			}
+			if errors.Is(extErr, schemas.ErrCurateOnlyEntityType) {
+				// Defense-in-depth: the adapter refused a curate-only type
+				// the worker-side guard missed.
+				slog.Warn("task:intel:extract: adapter refused curate-only entity type", "raw_doc_id", p.RawDocID, "entity_type", entityType)
+				curateOnly = true
+				continue
+			}
 
 			return fmt.Errorf("task:intel:extract: %w", extErr)
 		}
 
-		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, entityType, "", results)
+		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, rawDoc.ChannelID, entityType, "", results, rel)
 		if perr != nil {
 			return perr
 		}
@@ -724,8 +1082,8 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if persisted == 0 {
-		if retriesExhausted {
-			slog.Warn("task:intel:extract: all entity types exhausted retries, routing to review", "raw_doc_id", p.RawDocID)
+		if retriesExhausted || curateOnly {
+			slog.Warn("task:intel:extract: no extractable entity types, routing to review", "raw_doc_id", p.RawDocID, "retries_exhausted", retriesExhausted, "curate_only", curateOnly)
 
 			return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, entityTypes[0])
 		}
@@ -734,6 +1092,62 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+// resolveIntelEntityTypes applies the intel-channels Phase 1 entity-type
+// precedence for an extracted document: channel.entity_types →
+// source.provider_config.entity_types → category-derived type. The channel
+// id comes from the extract payload first, then the raw doc's stamped
+// channel_id; when neither resolves to a channel row the source-level
+// resolution runs unchanged (legacy documents keep their behaviour).
+func resolveIntelEntityTypes(ctx context.Context, payloadChannelID string, rawDoc gen.IntelRawDocument, src gen.IntelSource) []string {
+	channelID, err := scanOptionalUUID(payloadChannelID)
+	if err != nil || !channelID.Valid {
+		channelID = rawDoc.ChannelID
+	}
+
+	if channelID.Valid && intelSourcesStore != nil {
+		if ch, gerr := intelSourcesStore.GetChannel(ctx, channelID); gerr == nil {
+			return resolveChannelEntityTypes(ch, src)
+		}
+		// Channel gone or unreadable — fall through to source resolution.
+	}
+
+	return resolveSourceEntityTypes(src)
+}
+
+// resolveChannelEntityTypes returns the extraction entity types for a
+// channel: the channel's entity_types array first (each value must map to a
+// registered extraction schema — unregistered values are dropped with a
+// warning), otherwise the source-level resolution (provider_config override,
+// then category). Backfilled channels carry entity_types='{}' and flow
+// straight to the source fallback.
+func resolveChannelEntityTypes(ch gen.IntelSourceChannel, src gen.IntelSource) []string {
+	if len(ch.EntityTypes) > 0 {
+		out := make([]string, 0, len(ch.EntityTypes))
+		seen := make(map[string]struct{}, len(ch.EntityTypes))
+
+		for _, et := range ch.EntityTypes {
+			if et == "" {
+				continue
+			}
+			if _, ok := schemas.ForEntityType(et); !ok {
+				slog.Warn("task:intel:extract: channel entity type has no registered schema, skipping", "entity_type", et)
+				continue
+			}
+			if _, dup := seen[et]; dup {
+				continue
+			}
+			seen[et] = struct{}{}
+			out = append(out, et)
+		}
+
+		if len(out) > 0 {
+			return out
+		}
+	}
+
+	return resolveSourceEntityTypes(src)
 }
 
 // resolveSourceEntityTypes returns the extraction entity types for a source:
@@ -780,8 +1194,20 @@ func resolveSourceEntityTypes(src gen.IntelSource) []string {
 // created. A (source_id, external_key) unique-violation is skipped rather
 // than failing the task — a multi-type extraction pass can legitimately
 // re-derive a record that already exists under another entity type.
-func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult) (int, error) {
+// // channelID is the raw doc's stamped channel (invalid for legacy
+// documents); it rides the dedup payload so Task 9 can route the record
+// through the channel's pipeline.
+// // rel is the resolved relevance-gate context (Task 10, spec §4 — the
+// extract pipeline gates post-extraction per record). An off_topic verdict
+// keeps the row (status 'off_topic', external_key preserved for dedup) but
+// skips the dedup enqueue; nil disables gating.
+func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, channelID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult, rel *intelRelevanceCall) (int, error) {
 	persisted := 0
+
+	channelIDStr := ""
+	if channelID.Valid {
+		channelIDStr = channelID.String()
+	}
 
 	for i, result := range results {
 		record, err := intelStores.CreateIntelRecord(ctx, gen.CreateIntelRecordParams{
@@ -806,11 +1232,27 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID pgtype
 		}
 
 		persisted++
+
+		// Relevance gate (Task 10): an off_topic verdict flips the row to
+		// 'off_topic' and stops the chain — no dedup/publish enqueue.
+		if rel != nil && rel.verdict(ctx, intelItemFromExtraction(result.RawExtraction), "task:intel:extract") == relevance.VerdictOffTopic {
+			if uerr := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+				ID:     record.ID,
+				Status: "off_topic",
+			}); uerr != nil {
+				return persisted, fmt.Errorf("task:intel:extract: set off_topic status: %w", uerr)
+			}
+
+			slog.Info("task:intel:extract: record off-topic", "record_id", record.ID.String(), "index", i, "entity_type", entityType, "external_key", result.ExternalKey)
+			continue
+		}
+
 		slog.Info("task:intel:extract: extracted", "record_id", record.ID.String(), "index", i, "entity_type", entityType, "confidence", result.ConfidenceOverall)
 
 		payload := marshalPayload(intelRecordPayload{
-			Version:  intelPayloadVersion,
-			RecordID: record.ID.String(),
+			Version:   intelPayloadVersion,
+			RecordID:  record.ID.String(),
+			ChannelID: channelIDStr,
 		})
 		if payload != nil {
 			enqueueIntel(TypeIntelDedup, payload)
@@ -856,6 +1298,546 @@ func intelCreateReviewStub(ctx context.Context, sourceID, rawDocID pgtype.UUID, 
 	}
 
 	return nil // do NOT retry — record is in the review queue
+}
+
+// ---------------------------------------------------------------------------
+// intel:curate_channel (intel-channels Phase 1)
+// ---------------------------------------------------------------------------
+
+// HandleIntelCurateChannel runs the deterministic curator for a channel's
+// raw document: the curator registry dispatches on channel.crawl_method
+// (rss → feed items, jsonld → ld+json nodes, ical → VEVENTs, tabular →
+// rows) and each produced record is persisted as an intel_record with the
+// curator's stable external_key, then routed onward — trusted sources
+// (trust_level <= intel.curate.auto_publish_trust_max, default 2) go
+// straight to intel:promote as 'auto_published', everything else to
+// intel:dedup.
+// // Crawl methods with no curator (sitemap, git, api, static, …) fall back
+// to intel:extract so a curate/hybrid pipeline never dead-ends. Each
+// curated record runs the Task 10 relevance gate (intelRelevanceGate) on
+// its title/summary/url before persistence — off_topic records are kept
+// as 'off_topic' intel_records rows for audit + re-crawl dedup; a nil
+// gate passes everything.
+func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
+	defer recoverPanic("TypeIntelCurateChannel")
+	slog.Info("task:intel:curate_channel")
+
+	if intelStores == nil || intelSourcesStore == nil {
+		slog.Warn("task:intel:curate_channel: dependencies not wired, skipping")
+		return nil
+	}
+
+	var p intelCurateChannelPayload
+	if err := parsePayloadOrSkip(t, &p); err != nil {
+		return err
+	}
+
+	rawDocID, err := scanUUID(p.RawDocID)
+	if err != nil {
+		return fmt.Errorf("task:intel:curate_channel: raw_doc_id: %w", err)
+	}
+
+	rawDoc, err := intelStores.GetIntelRawDocument(ctx, rawDocID)
+	if err != nil {
+		return fmt.Errorf("task:intel:curate_channel: load raw doc: %w", err)
+	}
+
+	// The raw doc's stamped source/channel are authoritative — payload
+	// fields are advisory. channel_id falls back to the raw doc's stamp,
+	// then to the source's default channel for legacy enqueues.
+	channelID, err := scanOptionalUUID(p.ChannelID)
+	if err != nil {
+		return fmt.Errorf("task:intel:curate_channel: channel_id: %w", err)
+	}
+	if !channelID.Valid {
+		channelID = rawDoc.ChannelID
+	}
+
+	ch, chResolved := resolveIntelPipelineChannel(ctx, rawDoc.SourceID, channelID)
+	if !chResolved {
+		// No channel exists to route by — treat the doc like a legacy
+		// source-level fetch and send it through the extract pipeline.
+		slog.Info("task:intel:curate_channel: no channel resolved, falling back to extract", "raw_doc_id", p.RawDocID)
+		intelEnqueueExtractFallback(p.RawDocID, p.ChannelID)
+
+		return nil
+	}
+
+	src, err := intelSourcesStore.Get(ctx, rawDoc.SourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:curate_channel: source no longer exists, skipping", "source_id", rawDoc.SourceID.String())
+			return nil
+		}
+
+		return fmt.Errorf("task:intel:curate_channel: load source: %w", err)
+	}
+
+	if intelCurator == nil {
+		// Curator port not wired (dev/test) — degrade to the extract path
+		// rather than dropping the document.
+		slog.Warn("task:intel:curate_channel: curator not wired, falling back to extract", "channel_id", ch.ID.String())
+		intelEnqueueExtractFallback(p.RawDocID, ch.ID.String())
+
+		return nil
+	}
+
+	contentType := ""
+	if rawDoc.ContentType != nil {
+		contentType = *rawDoc.ContentType
+	}
+
+	records, err := intelCurator.Curate(ctx, rawDoc.Body, contentType, ch)
+	if err != nil {
+		if errors.Is(err, ErrIntelNoCurator) {
+			// The channel's crawl method has no deterministic curator
+			// (sitemap manifests, api, git, …) — the extract pipeline owns
+			// the document instead.
+			slog.Info("task:intel:curate_channel: no curator for method, falling back to extract", "channel_id", ch.ID.String(), "crawl_method", ch.CrawlMethod)
+			intelEnqueueExtractFallback(p.RawDocID, ch.ID.String())
+
+			return nil
+		}
+
+		// A parse failure on a deterministic document will not heal on
+		// retry — park the doc in the review queue instead of burning
+		// retries.
+		slog.Warn("task:intel:curate_channel: curator failed, routing to review", "channel_id", ch.ID.String(), "crawl_method", ch.CrawlMethod, "error", err)
+
+		return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, intelCurateDefaultEntityType(ch, src))
+	}
+
+	if len(records) == 0 {
+		slog.Info("task:intel:curate_channel: curator produced no records", "channel_id", ch.ID.String())
+		return nil
+	}
+
+	defaultEntityType := intelCurateDefaultEntityType(ch, src)
+	hybrid := ch.Pipeline == string(sources.PipelineHybrid)
+
+	channelIDStr := ch.ID.String()
+
+	// Relevance gate (Task 10): resolve the category-map topic vocabulary
+	// once per task when the gate is wired; each curated record is then
+	// evaluated on its title/summary/url before persistence. off_topic
+	// records are persisted with status 'off_topic' (external_key kept for
+	// re-crawl dedup) and never reach dedup/publish_gate.
+	var rel *intelRelevanceCall
+	if intelRelevanceGate != nil {
+		rel = &intelRelevanceCall{ch: ch, mapTopics: intelRelevanceMapTopics(ctx, ch, src)}
+	}
+
+	var persisted, gated, skipped int
+	extractEnqueued := false
+
+	for _, rec := range records {
+		entityType := rec.EntityType
+		if entityType == "" {
+			entityType = defaultEntityType
+		}
+		if entityType == "" {
+			slog.Warn("task:intel:curate_channel: record has no resolvable entity type, skipping", "channel_id", channelIDStr, "external_key", rec.ExternalKey)
+			skipped++
+			continue
+		}
+
+		// Relevance gate — an off_topic verdict persists the row as
+		// 'off_topic' (auditable + dedupes on re-crawl) and skips the
+		// downstream chain entirely.
+		if rel != nil && rel.verdict(ctx, intelItemFromExtraction(rec.RawExtraction), "task:intel:curate_channel") == relevance.VerdictOffTopic {
+			gated++
+			intelPersistOffTopicRecord(ctx, rawDoc, ch, rec, entityType, "task:intel:curate_channel")
+			continue
+		}
+
+		// Hybrid pipeline: a curated record missing required schema fields
+		// can't stand on the deterministic fields alone. Extractable
+		// entity types route the whole doc to intel:extract (once — the
+		// task is per-document); curate-only types can never be
+		// LLM-extracted, so they park in review_required.
+		if hybrid && intelMissingRequiredFields(rec.RawExtraction, entityType) {
+			if schemas.IsCurateOnly(entityType) {
+				recordID, ok := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
+				if !ok {
+					skipped++
+					continue
+				}
+				if uerr := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+					ID:     recordID,
+					Status: "review_required",
+				}); uerr != nil {
+					return fmt.Errorf("task:intel:curate_channel: set review status: %w", uerr)
+				}
+				persisted++
+				continue
+			}
+
+			if !extractEnqueued {
+				slog.Info("task:intel:curate_channel: hybrid record missing required fields, routing doc to extract", "raw_doc_id", p.RawDocID, "entity_type", entityType, "external_key", rec.ExternalKey)
+				intelEnqueueExtractFallback(p.RawDocID, channelIDStr)
+				extractEnqueued = true
+			}
+			continue
+		}
+
+		recordID, ok := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
+		if !ok {
+			skipped++
+			continue
+		}
+		persisted++
+
+		// Trust gate (Task 11): sources at or below
+		// intel.curate.auto_publish_trust_max (default 2) skip
+		// dedup+publish_gate and promote directly as 'auto_published' —
+		// UNLESS the record's entity type is high-stakes: ADR-088 makes the
+		// immigration/financial/grants/health review gate unconditional, so
+		// those records always take the dedup → publish_gate path where
+		// services.Classify routes them to review regardless of trust.
+		// The promote handler + promoters select records by id/entity_type
+		// with no status filter, so 'auto_published' rows are processed
+		// exactly like gate-approved ones — and they never enter the
+		// review queue, which lists only 'review_required'.
+		if intelCurateShouldAutoPublish(ctx, src, entityType) {
+			if uerr := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+				ID:     recordID,
+				Status: "auto_published",
+			}); uerr != nil {
+				return fmt.Errorf("task:intel:curate_channel: set auto_published status: %w", uerr)
+			}
+
+			payload := marshalPayload(intelRecordPayload{
+				Version:   intelPayloadVersion,
+				RecordID:  recordID.String(),
+				ChannelID: channelIDStr,
+			})
+			if payload != nil {
+				enqueueIntel(TypeIntelPromote, payload)
+			}
+			continue
+		}
+
+		payload := marshalPayload(intelRecordPayload{
+			Version:   intelPayloadVersion,
+			RecordID:  recordID.String(),
+			ChannelID: channelIDStr,
+		})
+		if payload != nil {
+			enqueueIntel(TypeIntelDedup, payload)
+		}
+	}
+
+	slog.Info("task:intel:curate_channel: done", "channel_id", channelIDStr, "raw_doc_id", p.RawDocID, "records", len(records), "persisted", persisted, "gated", gated, "skipped", skipped, "extract_fallback", extractEnqueued)
+
+	return nil
+}
+
+// intelEnqueueExtractFallback enqueues an intel:extract task for the raw
+// doc — the shared fallback when a curate-routed document has no usable
+// curator path.
+func intelEnqueueExtractFallback(rawDocID, channelID string) {
+	payload := marshalPayload(intelExtractPayload{
+		Version:   intelPayloadVersion,
+		RawDocID:  rawDocID,
+		ChannelID: channelID,
+	})
+	if payload != nil {
+		enqueueIntel(TypeIntelExtract, payload)
+	}
+}
+
+// intelCurateDefaultEntityType resolves the record entity type when a
+// curator record carries no per-item override: the channel's first declared
+// entity_type, then the full channel-first resolution (provider_config →
+// category). "" means nothing is resolvable and the record is skipped.
+func intelCurateDefaultEntityType(ch gen.IntelSourceChannel, src gen.IntelSource) string {
+	for _, et := range ch.EntityTypes {
+		if et != "" {
+			return et
+		}
+	}
+
+	if types := resolveChannelEntityTypes(ch, src); len(types) > 0 {
+		return types[0]
+	}
+
+	return ""
+}
+
+// intelMissingRequiredFields reports whether the marshalled extraction is
+// missing any field the entity schema declares Required — the hybrid
+// pipeline's "route to extract" trigger. An unregistered entity type or a
+// malformed payload cannot be checked and reports false (the record stands
+// as curated).
+func intelMissingRequiredFields(rawExtraction []byte, entityType string) bool {
+	schema, ok := schemas.ForEntityType(entityType)
+	if !ok {
+		return false
+	}
+
+	var fields map[string]struct {
+		Value any `json:"value"`
+	}
+	if err := json.Unmarshal(rawExtraction, &fields); err != nil {
+		return false
+	}
+
+	for _, f := range schema.Fields {
+		if !f.Required {
+			continue
+		}
+		fe, ok := fields[f.Name]
+		if !ok || fe.Value == nil {
+			return true
+		}
+		if s, ok := fe.Value.(string); ok && strings.TrimSpace(s) == "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// intelPersistCuratedRecord inserts one curated record as an intel_record
+// in 'extracted' status and returns its id. A (source_id, external_key)
+// unique-violation is a re-crawl of unchanged content — skipped, not an
+// error. The evidence column notes the curator origin so reviewers can
+// tell deterministic records from LLM extractions.
+func intelPersistCuratedRecord(ctx context.Context, rawDoc gen.IntelRawDocument, ch gen.IntelSourceChannel, rec IntelCuratedRecord, entityType string) (pgtype.UUID, bool) {
+	confidence := rec.ConfidenceOverall
+	if confidence <= 0 {
+		confidence = 1.0 // curated fields are deterministic — full confidence
+	}
+
+	evidence, _ := json.Marshal(map[string]string{
+		"origin":       "curator",
+		"crawl_method": ch.CrawlMethod,
+		"channel_id":   ch.ID.String(),
+	})
+
+	record, err := intelStores.CreateIntelRecord(ctx, gen.CreateIntelRecordParams{
+		SourceID:          rawDoc.SourceID,
+		RawDocumentID:     rawDoc.ID,
+		EntityType:        entityType,
+		ExternalKey:       rec.ExternalKey,
+		Extracted:         rec.RawExtraction,
+		Confidence:        []byte(`{}`),
+		Evidence:          evidence,
+		ConfidenceOverall: confidence,
+		GeoSpaceIds:       []pgtype.UUID{},
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			slog.Info("task:intel:curate_channel: record already exists, skipping", "source_id", rawDoc.SourceID.String(), "external_key", rec.ExternalKey, "entity_type", entityType)
+			return pgtype.UUID{}, false
+		}
+
+		slog.Error("task:intel:curate_channel: create record failed", "external_key", rec.ExternalKey, "entity_type", entityType, "error", err)
+
+		return pgtype.UUID{}, false
+	}
+
+	slog.Info("task:intel:curate_channel: curated", "record_id", record.ID.String(), "entity_type", entityType, "external_key", rec.ExternalKey, "confidence", confidence)
+
+	return record.ID, true
+}
+
+// intelCurateAutoPublish reports whether the source's trust level clears
+// the curated auto-publish gate: trust_level <=
+// intel.curate.auto_publish_trust_max. The spec default is 2 — trusted
+// sources (trust 1–2) promote directly while aggregators take the
+// dedup → publish_gate review path. An admin can raise the ceiling or
+// set the setting to 0 to disable auto-publish entirely (Rule 3). A nil
+// settings reader still applies the spec default, matching the relevance
+// gate's nil→defaults convention.
+func intelCurateAutoPublish(ctx context.Context, src gen.IntelSource) bool {
+	maxTrust := 2
+	if appSettings != nil {
+		maxTrust = appSettings.GetIntOr(ctx, "intel.curate.auto_publish_trust_max", 2)
+	}
+
+	return maxTrust > 0 && int64(src.TrustLevel) <= int64(maxTrust)
+}
+
+// intelCurateShouldAutoPublish is the full auto-publish decision for a
+// curated record: trust within the ceiling AND the entity type NOT in the
+// ADR-088 high-stakes set (services.IsHighStakes — the same unconditional
+// set services.Classify enforces). High-stakes curated records route to
+// dedup → publish_gate regardless of source trust so they always land in
+// the review queue; the gate cannot be bypassed by raising the trust max.
+func intelCurateShouldAutoPublish(ctx context.Context, src gen.IntelSource, entityType string) bool {
+	return intelCurateAutoPublish(ctx, src) && !services.IsHighStakes(entityType)
+}
+
+// ---------------------------------------------------------------------------
+// Relevance gate (Task 10, spec §4)
+// ---------------------------------------------------------------------------
+
+// intelRelevanceCall bundles the resolved channel and category-map topics
+// so the per-item gate calls inside one task share a single resolution.
+// Built once per handler invocation by intelRelevanceCallFor (extract
+// path) or inline in HandleIntelCurateChannel.
+type intelRelevanceCall struct {
+	ch        sources.Channel
+	mapTopics []string
+}
+
+// verdict evaluates one item through the registered gate. Gate errors
+// fail open — a broken gate must never silently drop records, so the item
+// passes with a warning.
+func (rc *intelRelevanceCall) verdict(ctx context.Context, item relevance.ItemInput, logPrefix string) relevance.Verdict {
+	v, err := intelRelevanceGate(ctx, item, rc.ch, rc.mapTopics)
+	if err != nil {
+		slog.Warn(logPrefix+": relevance gate error, passing item", "channel_id", rc.ch.ID.String(), "error", err)
+
+		return relevance.VerdictOnTopic
+	}
+
+	return v
+}
+
+// intelRelevanceCallFor resolves the gate context for the extract path:
+// the payload's channel_id first, then the raw doc's stamped channel, then
+// the source's default channel (resolveIntelPipelineChannel already covers
+// all three legs). When no channel row exists at all the spec treats the
+// evaluation as 'filtered' with category topics only — the synthetic
+// channel carries the source id so the classifier rate-cap key stays
+// per-source. Returns nil when the gate is not wired (dev/test).
+func intelRelevanceCallFor(ctx context.Context, payloadChannelID string, rawDoc gen.IntelRawDocument, src gen.IntelSource) *intelRelevanceCall {
+	if intelRelevanceGate == nil {
+		return nil
+	}
+
+	channelID, err := scanOptionalUUID(payloadChannelID)
+	if err != nil || !channelID.Valid {
+		channelID = rawDoc.ChannelID
+	}
+
+	ch, resolved := resolveIntelPipelineChannel(ctx, rawDoc.SourceID, channelID)
+	if !resolved {
+		ch = sources.Channel{RelevanceMode: string(sources.RelevanceFiltered)}
+		ch.ID = src.ID // crawl-scope fallback for the rate-cap key
+	}
+
+	return &intelRelevanceCall{ch: ch, mapTopics: intelRelevanceMapTopics(ctx, ch, src)}
+}
+
+// intelEvaluateRelevance is the production gate installed by
+// RegisterIntelDependencies: a relevance.Gate built per call so the
+// hot-reloadable intel.relevance.* settings apply to every item, backed
+// by the registered classifier port and the shared Valkey client.
+func intelEvaluateRelevance(ctx context.Context, item relevance.ItemInput, ch sources.Channel, mapTopics []string) (relevance.Verdict, error) {
+	g := relevance.Gate{
+		OnTopicThreshold:  relevance.DefaultOnTopicThreshold,
+		OffTopicThreshold: relevance.DefaultOffTopicThreshold,
+		ClassifierEnabled: true,
+		BorderlineRateCap: relevance.DefaultBorderlineRateCap,
+		Classifier:        intelRelevanceClassifier,
+		Cache:             intelRelevanceCache(),
+	}
+
+	if appSettings != nil {
+		g.OnTopicThreshold = appSettings.GetFloatOr(ctx, "intel.relevance.on_topic_threshold", g.OnTopicThreshold)
+		g.OffTopicThreshold = appSettings.GetFloatOr(ctx, "intel.relevance.off_topic_threshold", g.OffTopicThreshold)
+		g.ClassifierEnabled = appSettings.GetBoolOr(ctx, "intel.relevance.classifier_enabled", true)
+		g.BorderlineRateCap = appSettings.GetIntOr(ctx, "intel.relevance.borderline_rate_cap", g.BorderlineRateCap)
+	}
+
+	return g.Evaluate(ctx, item, ch, mapTopics)
+}
+
+// intelRelevanceCache adapts the worker's shared Valkey client to the
+// relevance.Cache port; nil when Valkey is not wired (the gate then runs
+// deterministic-only — the classifier cap cannot be enforced without a
+// counter store).
+func intelRelevanceCache() relevance.Cache {
+	if rdb == nil {
+		return nil
+	}
+
+	return relevance.ValkeyCache{Rdb: rdb}
+}
+
+// intelRelevanceMapTopics resolves the category-map topic vocabulary for a
+// channel's parent source: the source's categories (multi-category array
+// first, legacy scalar fallback) are resolved against
+// system_settings.intel.category_method_map (empty/malformed → embedded
+// default via sources.ResolveCategoryMap). Custom-mode channels ignore
+// category topics entirely — nil is returned without a settings read.
+func intelRelevanceMapTopics(ctx context.Context, ch sources.Channel, src gen.IntelSource) []string {
+	if sources.RelevanceMode(ch.RelevanceMode) == sources.RelevanceCustom {
+		return nil
+	}
+
+	cats := src.Categories
+	if len(cats) == 0 && src.Category != "" {
+		cats = []string{src.Category}
+	}
+	if len(cats) == 0 {
+		return nil
+	}
+
+	var mapJSON []byte
+	if appSettings != nil {
+		if s := appSettings.GetStringOr(ctx, "intel.category_method_map", ""); s != "" {
+			mapJSON = []byte(s)
+		}
+	}
+
+	return sources.ResolveCategoryMap(mapJSON, cats).Topics
+}
+
+// intelItemFromExtraction derives the gate's ItemInput from a marshalled
+// extraction payload (field → {value, confidence, evidence}). Field names
+// fall back across the schema vocabulary: title|name|headline,
+// summary|description, article_url|url|link|application_url|source_url.
+func intelItemFromExtraction(raw []byte) relevance.ItemInput {
+	var fields map[string]struct {
+		Value any `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return relevance.ItemInput{}
+	}
+
+	pick := func(names ...string) string {
+		for _, n := range names {
+			f, ok := fields[n]
+			if !ok {
+				continue
+			}
+			if s, ok := f.Value.(string); ok && strings.TrimSpace(s) != "" {
+				return s
+			}
+		}
+
+		return ""
+	}
+
+	return relevance.ItemInput{
+		Title:   pick("title", "name", "headline"),
+		Summary: pick("summary", "description"),
+		URL:     pick("article_url", "url", "link", "application_url", "source_url"),
+	}
+}
+
+// intelPersistOffTopicRecord persists a gated-out record as an
+// intel_records row with status 'off_topic' so the item is auditable and
+// re-crawls dedupe on (source_id, external_key). A unique-violation or
+// insert failure is already logged by intelPersistCuratedRecord — the
+// caller just counts it as gated.
+func intelPersistOffTopicRecord(ctx context.Context, rawDoc gen.IntelRawDocument, ch sources.Channel, rec IntelCuratedRecord, entityType, logPrefix string) {
+	recordID, ok := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
+	if !ok {
+		return // 23505 re-crawl dedup or logged insert failure
+	}
+
+	if err := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+		ID:     recordID,
+		Status: "off_topic",
+	}); err != nil {
+		slog.Error(logPrefix+": set off_topic status failed", "record_id", recordID.String(), "external_key", rec.ExternalKey, "error", err)
+	}
 }
 
 // HandleIntelDedup checks (source_id, external_key) uniqueness and enqueues
@@ -904,8 +1886,9 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	}
 
 	payload := marshalPayload(intelRecordPayload{
-		Version:  intelPayloadVersion,
-		RecordID: p.RecordID,
+		Version:   intelPayloadVersion,
+		RecordID:  p.RecordID,
+		ChannelID: p.ChannelID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelPublishGate, payload)
@@ -1013,8 +1996,9 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 		slog.Info("task:intel:publish_gate: auto-publish", "record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
 
 		payload := marshalPayload(intelRecordPayload{
-			Version:  intelPayloadVersion,
-			RecordID: p.RecordID,
+			Version:   intelPayloadVersion,
+			RecordID:  p.RecordID,
+			ChannelID: p.ChannelID,
 		})
 		if payload != nil {
 			enqueueIntel(TypeIntelPromote, payload)
@@ -1444,4 +2428,21 @@ func HandleIntelRetryFailedSource(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+// EnqueueIntelFetchChannel builds and enqueues an intel:fetch_channel task
+// for a single channel — used by the admin channel-crawl endpoint and any
+// future control-panel trigger that needs an immediate per-channel fetch.
+// Mirrors EnqueueIntelProbeVerify (intel_probe.go).
+func (e *Enqueuer) EnqueueIntelFetchChannel(channelID, sourceID string) error {
+	payload, err := json.Marshal(intelChannelPayload{
+		Version:   intelPayloadVersion,
+		ChannelID: channelID,
+		SourceID:  sourceID,
+	})
+	if err != nil {
+		return err
+	}
+
+	return e.Enqueue(TypeIntelFetchChannel, payload)
 }

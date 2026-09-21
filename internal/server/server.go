@@ -76,12 +76,14 @@ import (
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/i18n"
 	"github.com/jedafe/japa/internal/impersonation"
+	"github.com/jedafe/japa/internal/intelligence/curator"
 	"github.com/jedafe/japa/internal/intelligence/dedup"
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	intel_fetcher "github.com/jedafe/japa/internal/intelligence/fetcher"
 	intel_handlers "github.com/jedafe/japa/internal/intelligence/handlers"
+	intel_probe "github.com/jedafe/japa/internal/intelligence/probe"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
 	"github.com/jedafe/japa/internal/intelligence/scheduler"
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -1626,7 +1628,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		aiDispatcher.RegisterProvider("chat", xiaomiProvider)
 		aiDispatcher.RegisterProvider("moderation", xiaomiProvider)
 		aiDispatcher.RegisterProvider("extraction", xiaomiProvider)
-		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash, "categories", []string{"content_generation", "chat", "moderation", "extraction"})
+		// "classification" serves the intel relevance gate's borderline
+		// band (spec §4) — cheap yes/no calls, same provider.
+		aiDispatcher.RegisterProvider("classification", xiaomiProvider)
+		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash, "categories", []string{"content_generation", "chat", "moderation", "extraction", "classification"})
 	}
 
 	// Wire the AI classifier into the spam pipeline so the
@@ -1985,6 +1990,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelSourcesService.SetMetadataQueue(func(ctx context.Context, sourceID sources.SourceID) error {
 		return taskEnqueuer.EnqueueSourceMetadata(sourceID.String())
 	})
+	// intel-channels §2: approving a proposed source enqueues the deep
+	// verify probe (intel:probe_verify) which materializes its channels.
+	intelSourcesService.SetProbeQueue(func(ctx context.Context, sourceID sources.SourceID) error {
+		return taskEnqueuer.EnqueueIntelProbeVerify(sourceID.String())
+	})
 	agentDeps.IntelSourceManager = intelSourcesService
 	jceService.SetSourceRegistry(intelSourcesService)
 	orgService.SetSourceManager(intelSourcesService)
@@ -1993,7 +2003,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceService.SetSettings(settingsService)
 	authHandlers.SetSourceManager(intelSourcesService)
 	oauthHandlers.SetSourceManager(intelSourcesService)
-	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore}, vkClient.Redis())
+	intelSchedulerSourceLister := &intelSchedulerSourceAdapter{store: intelSourcesStore}
+	intelScheduler := scheduler.NewScheduler(intelSchedulerSourceLister, intelSchedulerSourceLister, vkClient.Redis())
 	intelDedupService := dedup.NewService(intelStores)
 	intelEventPublisher := events.NewAsynqEventPublisher(asynqClient)
 
@@ -2153,7 +2164,32 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		intel_fetcher.NewComposite(), // composite fetcher: dispatches by crawl_method (BUG-008 fix)
 		intelPreflightChecker,        // pre-flight: crawl lock, rate limit, robots.txt (INTEL-001/006 fix)
 		asynqClient,
+		// intel-channels §2 verify prober for intel:probe_verify — same
+		// safetransport client as the preview prober, larger request
+		// budget (sitemap walk + category-path probes + feed re-checks).
+		intel_probe.NewProber(
+			intel_fetcher.NewSafeClient(10*time.Second, 0),
+			settingsService.GetIntOr(context.Background(), "intel.probe.verify_max_requests", intel_probe.DefaultVerifyMaxRequests),
+		),
 	)
+
+	// intel-channels Phase 1: wire the deterministic curator registry so
+	// HandleIntelCurateChannel can normalize curate/hybrid-pipeline channel
+	// bodies (rss/jsonld/ical/tabular) without an LLM call. The adapter
+	// wraps curator.Default() and keeps the import cycle in the wiring
+	// layer like the extractor/promoter adapters above.
+	worker.RegisterIntelCurator(&intelCuratorPortAdapter{reg: curator.Default()})
+
+	// intel-channels Phase 1 (Task 10): wire the borderline-band relevance
+	// classifier port — the AI gateway's "classification" category decides
+	// items the deterministic scorer can't resolve. RegisterIntelDependencies
+	// already installed the production gate (deterministic scorer + URL
+	// patterns); this adds the classifier leg. With no "classification"
+	// provider the adapter errors per call and the gate fails open.
+	worker.RegisterIntelRelevanceClassifier(&intelRelevanceClassifierAdapter{
+		d:        aiDispatcher,
+		settings: settingsService,
+	})
 
 	// ADR-076 Amendment 1: wire the Studio auto-promote port so
 	// HandleIntelPromote can auto-create Studio jobs for high-confidence
@@ -2255,6 +2291,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelHandlers.SetContentStore(contentService)
 	intelHandlers.SetReportService(reportsService)
 	intelHandlers.SetTagService(tagsService)
+	// Intel-channels §2 preview probe: POST /sources/probe. The prober's
+	// outbound client is the fetcher safetransport (redirect SSRF guard +
+	// shared pool); the handler adds an entry-URL private-IP check and a
+	// per-user Valkey quota (jc:intel:probe_quota:{user_id}, 1h window).
+	intelHandlers.SetValkey(vkClient.Redis())
+	intelHandlers.SetProber(intel_probe.NewProber(
+		intel_fetcher.NewSafeClient(10*time.Second, 0),
+		settingsService.GetIntOr(context.Background(), "intel.probe.max_requests", intel_probe.DefaultMaxRequests),
+	))
 	worker.RegisterVideoImportProcessor(videoService)
 	worker.RegisterVideoSummaryProcessor(videoService)
 	worker.RegisterVideoChannelSyncer(videoService)
@@ -6335,6 +6380,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/sources/{slug}/items", intelHandlers.HandleListSourceItems)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/propose", intelHandlers.HandleProposeSource)
+			// Live preview probe for the propose form — authenticated and
+			// per-user rate-limited inside the handler (intel-channels §2).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/sources/probe", intelHandlers.HandleProbeSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -6356,6 +6405,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// RBAC-gated by intel.review.disable_source (migration 000431).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.disable_source")).
 				Post("/intel/sources/{id}/disable", intelHandlers.HandleDisableSource)
+
+			// Channel admin endpoints — per-channel CRUD + manual crawl
+			// trigger on the /admin/intel surface (intel-channels Phase 1,
+			// spec §5). Each action is RBAC-gated by its own intel.channels.*
+			// node seeded in migration 000684.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.list")).
+				Get("/admin/intel/sources/{id}/channels", intelHandlers.HandleAdminListSourceChannels)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.create")).
+				Post("/admin/intel/sources/{id}/channels", intelHandlers.HandleAdminCreateChannel)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.view")).
+				Get("/admin/intel/channels/{id}", intelHandlers.HandleAdminGetChannel)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.update")).
+				Patch("/admin/intel/channels/{id}", intelHandlers.HandleAdminUpdateChannel)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.delete")).
+				Delete("/admin/intel/channels/{id}", intelHandlers.HandleAdminDeleteChannel)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.crawl")).
+				Post("/admin/intel/channels/{id}/crawl", intelHandlers.HandleAdminCrawlChannel)
+			// Re-probe — enqueues intel:probe_verify to re-run the deep verify
+			// probe and re-materialize channels. RBAC-gated by
+			// intel.sources.probe (migration 000684).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.probe")).
+				Post("/admin/intel/sources/{id}/reprobe", intelHandlers.HandleAdminReprobeSource)
 			// Raw document fetch — RBAC-gated by intel.review.view (control panel
 			// four-pane moderation raw content pane). BUG-003 fix.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.view")).

@@ -162,6 +162,98 @@ func TestPreflightCheck_RateLimited(t *testing.T) {
 	}
 }
 
+// channelUUID returns a deterministic valid pgtype.UUID distinct from
+// validUUID so channel and source lock keys never collide in tests.
+func channelUUID(b byte) pgtype.UUID {
+	return pgtype.UUID{Bytes: [16]byte{b, b, b, b, b, b, b, b, b, b, b, b, b, b, b, b}, Valid: true}
+}
+
+// TestPreflightCheckChannel_ChannelLock verifies the channel-scoped crawl
+// lock: the same channel locks on re-check, a sibling channel on the same
+// source is not blocked, and the lock key is the documented
+// jc:intel:channel_lock:{channel_id} format.
+func TestPreflightCheckChannel_ChannelLock(t *testing.T) {
+	t.Parallel()
+	p := newTestChecker(t, 3600, 10)
+
+	src := sources.Source{ID: validUUID(), Domain: "example.com", TrustLevel: 1}
+	chA := sources.Channel{ID: channelUUID(0xAA), EntryUrl: "https://example.com/a", CrawlMethod: "static"}
+	chB := sources.Channel{ID: channelUUID(0xBB), EntryUrl: "https://example.com/b", CrawlMethod: "rss"}
+
+	if err := p.CheckChannel(t.Context(), src, chA); err != nil {
+		t.Fatalf("first channel check: %v", err)
+	}
+	// Same channel → locked.
+	if err := p.CheckChannel(t.Context(), src, chA); !errors.Is(err, ErrCrawlLocked) {
+		t.Errorf("same channel re-check: got %v, want ErrCrawlLocked", err)
+	}
+	// A different channel on the same source is NOT blocked — the lock is
+	// channel-scoped, not source-scoped.
+	if err := p.CheckChannel(t.Context(), src, chB); err != nil {
+		t.Errorf("sibling channel: got %v, want nil", err)
+	}
+}
+
+// TestPreflightCheckChannel_Release verifies ReleaseChannelCrawlLock frees
+// the channel lock.
+func TestPreflightCheckChannel_Release(t *testing.T) {
+	t.Parallel()
+	p := newTestChecker(t, 3600, 10)
+
+	src := sources.Source{ID: validUUID(), Domain: "example.com", TrustLevel: 1}
+	ch := sources.Channel{ID: channelUUID(0xCC), EntryUrl: "https://example.com/c", CrawlMethod: "static"}
+
+	if err := p.CheckChannel(t.Context(), src, ch); err != nil {
+		t.Fatalf("check: %v", err)
+	}
+
+	p.ReleaseChannelCrawlLock(t.Context(), ch.ID.String())
+
+	if err := p.CheckChannel(t.Context(), src, ch); err != nil {
+		t.Errorf("check after release: got %v, want nil", err)
+	}
+}
+
+// TestPreflightCheckChannel_LicenseFromSource: the license check reads the
+// parent source's trust_level/license — the channel carries no license
+// fields of its own.
+func TestPreflightCheckChannel_LicenseFromSource(t *testing.T) {
+	t.Parallel()
+	p := newTestChecker(t, 3600, 10)
+
+	proprietary := "proprietary"
+	src := sources.Source{ID: validUUID(), Domain: "blog.example.com", TrustLevel: 3, SourceLicense: &proprietary}
+	ch := sources.Channel{ID: channelUUID(0xDD), EntryUrl: "https://blog.example.com/feed", CrawlMethod: "rss"}
+
+	if err := p.CheckChannel(t.Context(), src, ch); !errors.Is(err, ErrLicenseRepublish) {
+		t.Errorf("got %v, want ErrLicenseRepublish", err)
+	}
+}
+
+// TestPreflightCheckChannel_RateLimitEntryHost: the per-domain rate limit
+// keys on the channel entry_url host, not source.domain — a channel that
+// points at a different host gets its own budget.
+func TestPreflightCheckChannel_RateLimitEntryHost(t *testing.T) {
+	t.Parallel()
+	p := newTestChecker(t, 3600, 1) // 1 req/min
+
+	src := sources.Source{ID: validUUID(), Domain: "source.example", TrustLevel: 1}
+	chOther := sources.Channel{ID: channelUUID(0xE1), EntryUrl: "https://other.example/x", CrawlMethod: "static"}
+	chSource := sources.Channel{ID: channelUUID(0xE2), EntryUrl: "https://source.example/y", CrawlMethod: "static"}
+
+	// First request to other.example consumes that host's budget.
+	if err := p.CheckChannel(t.Context(), src, chOther); err != nil {
+		t.Fatalf("check 1: %v", err)
+	}
+	// A different host (source.example) still has budget — the counter is
+	// per entry_url host.
+	if err := p.CheckChannel(t.Context(), src, chSource); err != nil {
+		t.Errorf("check different host: got %v, want nil", err)
+	}
+	p.ReleaseChannelCrawlLock(t.Context(), chSource.ID.String())
+	p.ReleaseChannelCrawlLock(t.Context(), chOther.ID.String())
+}
+
 func TestNormalizeForHash(t *testing.T) {
 	t.Parallel()
 	// HTML content is whitespace-collapsed before hashing.

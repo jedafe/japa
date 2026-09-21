@@ -13,11 +13,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/intelligence/curator"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
+	"github.com/jedafe/japa/internal/intelligence/relevance"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/studio"
@@ -25,9 +28,10 @@ import (
 )
 
 // intelSchedulerSourceAdapter wraps *sources.Store so it satisfies the
-// scheduler.DueSourceLister interface. The sources store exposes ListDue
-// (which wraps the gen.ListDueIntelSources query); the adapter passes the
-// configured ID through. Per ADR-112 Amendment 2, all intelligence
+// scheduler.DueSourceLister and scheduler.DueChannelLister interfaces. The
+// sources store exposes ListDue / ListDueChannels (the gen
+// ListDueIntelSources / ListDueIntelChannels queries); the adapter passes
+// the configured ID through. Per ADR-112 Amendment 2, all intelligence
 // queries are platform-scoped.
 type intelSchedulerSourceAdapter struct {
 	store *sources.Store
@@ -35,6 +39,12 @@ type intelSchedulerSourceAdapter struct {
 
 func (a *intelSchedulerSourceAdapter) ListDue(ctx context.Context, limit int32) ([]gen.IntelSource, error) {
 	return a.store.ListDue(ctx, limit)
+}
+
+// ListDueChannels satisfies scheduler.DueChannelLister — the intel-channels
+// Phase 1 scheduling unit is the channel, not the source.
+func (a *intelSchedulerSourceAdapter) ListDueChannels(ctx context.Context, limit int32) ([]gen.IntelSourceChannel, error) {
+	return a.store.ListDueChannels(ctx, limit)
 }
 
 // intelExtractorPortAdapter wraps *extractor.Extractor so it satisfies the
@@ -65,6 +75,14 @@ func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sou
 	schema, ok := schemas.ForEntityType(entityType)
 	if !ok {
 		return nil, fmt.Errorf("intel: no schema registered for entity type %q", entityType)
+	}
+
+	// Curate-only entity types (article, event, dataset) have no prompt
+	// template and must never reach the LLM — a dispatch here is a
+	// pipeline routing bug. The worker pre-checks via schemas.IsCurateOnly;
+	// this is the defense-in-depth guard at the port boundary.
+	if schemas.IsCurateOnly(entityType) {
+		return nil, fmt.Errorf("%w: %q", schemas.ErrCurateOnlyEntityType, entityType)
 	}
 
 	// Try rule-based extraction first (RSS news feeds). This avoids an
@@ -110,6 +128,171 @@ func (a *intelPromoterPortAdapter) Promote(ctx context.Context, recordID uuid.UU
 
 func (a *intelPromoterPortAdapter) Entity() string {
 	return a.prom.Entity()
+}
+
+// intelCuratorPortAdapter wraps *curator.Registry so it satisfies the
+// worker.intelCuratorPort interface without the worker package importing
+// internal/intelligence/curator (which would close the cycle
+// worker → curator → extractor → ai → auth → worker). The registry
+// dispatches on the channel's crawl_method; a method with no curator maps
+// curator.ErrNoCurator onto the worker's ErrIntelNoCurator sentinel so
+// HandleIntelCurateChannel falls back to intel:extract.
+type intelCuratorPortAdapter struct {
+	reg *curator.Registry
+}
+
+func (a *intelCuratorPortAdapter) Curate(ctx context.Context, body []byte, contentType string, ch sources.Channel) ([]worker.IntelCuratedRecord, error) {
+	recs, err := a.reg.Curate(ctx, body, contentType, ch)
+	if err != nil {
+		if errors.Is(err, curator.ErrNoCurator) {
+			return nil, fmt.Errorf("%w: %w", worker.ErrIntelNoCurator, err)
+		}
+
+		return nil, err
+	}
+
+	out := make([]worker.IntelCuratedRecord, 0, len(recs))
+
+	for i, rec := range recs {
+		raw, err := json.Marshal(rec.Extraction)
+		if err != nil {
+			return nil, fmt.Errorf("intel: marshal curated record %d: %w", i, err)
+		}
+
+		conf := extractor.ConfidenceOverall(rec.Extraction)
+		if conf <= 0 {
+			conf = 1.0 // curated fields are deterministic — full confidence
+		}
+
+		out = append(out, worker.IntelCuratedRecord{
+			RawExtraction:     raw,
+			ConfidenceOverall: conf,
+			ExternalKey:       rec.ExternalKey,
+			EntityType:        rec.EntityType,
+		})
+	}
+
+	return out, nil
+}
+
+// intelRelevanceClassifierAdapter adapts the §20 AI dispatcher to the
+// worker's relevance.Classifier port for the borderline band (Task 10,
+// spec §4 step 3). It dispatches a cheap yes/no prompt under
+// category="classification"; the model comes from
+// intel.relevance.classifier_model (empty → category-default routing).
+// When no provider serves the category the call errors — the gate treats
+// classifier errors as Borderline and the worker fails open (the item
+// passes), so a missing provider never drops records.
+type intelRelevanceClassifierAdapter struct {
+	d        *ai.Dispatcher
+	settings *config.Settings
+}
+
+// Classify returns true when the item is topically relevant to the
+// channel's domain vocabulary.
+func (a *intelRelevanceClassifierAdapter) Classify(ctx context.Context, item relevance.ItemInput, topics []string) (bool, error) {
+	if a.d == nil || !a.d.HasCategory("classification") {
+		return false, errors.New(`intel: no AI provider registered for category "classification"`)
+	}
+
+	model := ""
+	if a.settings != nil {
+		model = a.settings.GetStringOr(ctx, "intel.relevance.classifier_model", "")
+	}
+
+	var b strings.Builder
+	b.WriteString("You are a topical relevance classifier for JapaConnect, a platform for ")
+	b.WriteString("Nigerians/Africans migrating, relocating, studying abroad, working abroad, or settling overseas.\n")
+	if len(topics) > 0 {
+		b.WriteString("The channel's topic vocabulary is: ")
+		b.WriteString(strings.Join(topics, ", "))
+		b.WriteString(".\n")
+	}
+	b.WriteString("Decide whether this item is topically relevant (migration, relocation, travel, study abroad, jobs, scholarships, settlement, diaspora, visas, or the channel topics above).\n\n")
+	b.WriteString("Title: ")
+	b.WriteString(item.Title)
+	b.WriteString("\nURL: ")
+	b.WriteString(item.URL)
+	if item.Summary != "" {
+		summary := item.Summary
+		if len(summary) > 500 {
+			summary = summary[:500] // bound the prompt — the gate is a cheap pass
+		}
+		b.WriteString("\nSummary: ")
+		b.WriteString(summary)
+	}
+	b.WriteString("\n\nRespond with ONLY a JSON object (no markdown, no explanation): {\"on_topic\": true} or {\"on_topic\": false}")
+
+	resp, err := a.d.Dispatch(ctx, "classification", ai.Request{
+		Category: "classification",
+		Payload: map[string]any{
+			"prompt":     b.String(),
+			"model":      model,
+			"max_tokens": 32,
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("intel: relevance classification dispatch: %w", err)
+	}
+
+	return parseClassifierVerdict(intelClassifierText(resp.Raw))
+}
+
+// intelClassifierText pulls the assistant message text out of an
+// OpenAI-compatible choices array in the dispatch Response.Raw map.
+// Mirrors spam.extractChoiceText (private to that package).
+func intelClassifierText(raw map[string]any) string {
+	choices, ok := raw["choices"].([]any)
+	if !ok || len(choices) == 0 {
+		return ""
+	}
+
+	first, ok := choices[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	msg, ok := first["message"].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	content, _ := msg["content"].(string)
+
+	return content
+}
+
+// parseClassifierVerdict decodes the classifier's answer: the JSON shape
+// {"on_topic": bool} first, then a lenient substring fallback for
+// providers that answer "on_topic"/"off_topic"/"yes"/"no" bare.
+func parseClassifierVerdict(text string) (bool, error) {
+	cleaned := strings.TrimSpace(text)
+	cleaned = strings.TrimPrefix(cleaned, "```json")
+	cleaned = strings.TrimPrefix(cleaned, "```")
+	cleaned = strings.TrimSuffix(cleaned, "```")
+	cleaned = strings.TrimSpace(cleaned)
+
+	var out struct {
+		OnTopic  *bool `json:"on_topic"`
+		Relevant *bool `json:"relevant"`
+	}
+	if err := json.Unmarshal([]byte(cleaned), &out); err == nil {
+		if out.OnTopic != nil {
+			return *out.OnTopic, nil
+		}
+		if out.Relevant != nil {
+			return *out.Relevant, nil
+		}
+	}
+
+	switch strings.ToLower(cleaned) {
+	case "on_topic", "yes", "true", "relevant":
+		return true, nil
+	case "off_topic", "no", "false", "irrelevant", "not relevant":
+		return false, nil
+	}
+
+	return false, fmt.Errorf("intel: unparseable classifier response: %q", cleaned)
 }
 
 // recordsToResults converts validated extractor records into the worker's

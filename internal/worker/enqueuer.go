@@ -114,12 +114,18 @@ func taskDefaults(taskType string) []asynq.Option {
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(5))
 	// Source metadata enrichment: external HTTP fetch, short timeout,
 	// limited retries because failures are often site-side and permanent.
-	case TypeIntelSourceMetadata:
+	// Channel curation shares the shape: local parse + DB writes, and a
+	// deterministic parse failure should not burn many retries.
+	case TypeIntelSourceMetadata, TypeIntelCurateChannel:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(3))
 	// Channel sync: external fetches (channel page + Atom feed + per-video
 	// oEmbed) across a batch of sources — generous timeout, few retries.
 	case TypeVideoSyncChannels:
 		opts = append(opts, asynq.Timeout(10*time.Minute), asynq.MaxRetry(3))
+	// Verify probe: bounded external fetches (up to
+	// intel.probe.verify_max_requests) plus channel materialization.
+	case TypeIntelProbeVerify:
+		opts = append(opts, asynq.Timeout(5*time.Minute), asynq.MaxRetry(2))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -202,7 +208,11 @@ var taskTier = func() map[string]string {
 		TypeReportNotifyAdmin,
 		// §INTEL — ingestion spine tasks, default tier (ADR-112).
 		TypeIntelFetchSource,
+		// §intel-channels Phase 1 — per-channel fetch, default tier.
+		TypeIntelFetchChannel,
 		TypeIntelDetectChanges,
+		// §intel-channels Phase 1 — deterministic curate pipeline, default tier.
+		TypeIntelCurateChannel,
 		TypeIntelExtract,
 		TypeIntelDedup,
 		TypeIntelPublishGate,
@@ -212,6 +222,8 @@ var taskTier = func() map[string]string {
 		TypeIntelRetryFailedSource,
 		// §INTEL — source metadata enrichment, default tier.
 		TypeIntelSourceMetadata,
+		// §intel-channels — deep verify probe on approval, default tier.
+		TypeIntelProbeVerify,
 	} {
 		m[t] = QueueDefault
 	}
@@ -373,7 +385,9 @@ var taskTypeCatalog = []struct {
 	{TypeJapaStageRecommend, "default", "Generate stage-transition recommendations on PATCH /me/japa-stage event (§87)"},
 	// §INTEL — intelligence pipeline tasks, default tier (ADR-112).
 	{TypeIntelFetchSource, "default", "Fetch raw document from a single intelligence source"},
+	{TypeIntelFetchChannel, "default", "Fetch raw document for a single intel source channel (§intel-channels Phase 1)"},
 	{TypeIntelDetectChanges, "default", "Detect content changes vs prior crawl hash"},
+	{TypeIntelCurateChannel, "default", "Deterministic no-LLM curation of a channel's raw document into intel records (§intel-channels Phase 1)"},
 	{TypeIntelExtract, "default", "AI extraction of structured fields from raw document"},
 	{TypeIntelDedup, "default", "Dedup check via (source_id, external_key) uniqueness"},
 	{TypeIntelPublishGate, "default", "Confidence x trust-tier routing decision"},
@@ -382,6 +396,7 @@ var taskTypeCatalog = []struct {
 	{TypeIntelNotifyDiscoveries, "default", "Fan-out discovery notifications to country space followers"},
 	{TypeIntelRetryFailedSource, "default", "Manual retry trigger for a failed intelligence source"},
 	{TypeIntelSourceMetadata, "default", "Fetch and store public-site metadata for a source"},
+	{TypeIntelProbeVerify, "default", "Deep verify probe for an approved intel source; writes probe_report and materializes channels"},
 	// Low tier
 	{TypeDigestEmail, "low", "Send digest email"},
 	{TypeSitemapGenerate, "low", "Generate sitemap XML"},

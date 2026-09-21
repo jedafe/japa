@@ -21,6 +21,9 @@ export interface Source {
 	domain: string;
 	source_url?: string;
 	category: string;
+	/** Multi-category set (intel-channels Phase 1) — present on proposal and
+	 *  admin payloads; `category` remains the primary/first entry. */
+	categories?: string[];
 	source_type: string;
 	source_kind: string;
 	trust_level: number;
@@ -70,12 +73,59 @@ export interface SourceOption {
 export interface SourceMeta {
 	categories: string[];
 	source_types: string[];
-	/** Publisher-kind options for the directory ?source_kind= filter —
-	 *  distinct from source_types (crawl mechanism, proposal form only). */
+	/** Publisher-kind options ({value,label}) for the propose form's
+	 *  source_kind select and the directory ?source_kind= filter — distinct
+	 *  from source_types (crawl mechanism, no longer user-facing). */
 	source_kinds?: SourceOption[];
+	/** intel_source_channels.pipeline CHECK set (extract|curate|hybrid). */
+	channel_pipelines?: string[];
 	entity_types?: SourceEntityType[];
 	sorts?: SourceOption[];
 	item_sorts?: SourceOption[];
+}
+
+// --- Probe preview (POST /api/v1/sources/probe) ---------------------------
+// Mirrors probe.Report in the Go backend (intel-channels design §2).
+
+export interface ProbeDetectedMethod {
+	method: string;
+	confidence: number;
+	evidence: string;
+}
+
+export interface ProbeChannelProposal {
+	label: string;
+	entry_url: string;
+	crawl_method: string;
+	entity_types?: string[];
+	/** extract | curate | hybrid */
+	pipeline: string;
+	confidence: number;
+	provider_config?: Record<string, unknown>;
+	relevance_topics?: string[];
+}
+
+export interface ProbeRobotVerdict {
+	fetched: boolean;
+	allowed: boolean;
+	crawl_delay_secs?: number;
+	disallowed_paths?: string[];
+	sitemap_urls?: string[];
+}
+
+export interface ProbeReport {
+	final_url: string;
+	detected_kinds?: string[];
+	methods?: ProbeDetectedMethod[] | null;
+	channels?: ProbeChannelProposal[] | null;
+	jsonld_types?: string[];
+	feed_urls?: string[];
+	sitemap_urls?: string[];
+	has_websub: boolean;
+	requires_js: boolean;
+	robots: ProbeRobotVerdict;
+	warnings?: string[];
+	probed_at: string;
 }
 
 export interface SourceCollection {

@@ -27,6 +27,10 @@ type sourceDirectoryEntry struct {
 	Domain              string  `json:"domain"`
 	SourceURL           string  `json:"source_url"`
 	Category            string  `json:"category"`
+	// Categories is the multi-category array (intel-channels §6); always
+	// serialized (empty → []) so admin create/update responses echo the
+	// normalized set that was just written.
+	Categories          []string `json:"categories"`
 	SourceType          string  `json:"source_type"`
 	SourceKind          string  `json:"source_kind"`
 	TrustLevel          int16   `json:"trust_level"`
@@ -69,6 +73,11 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 		entry.Slug = *s.Slug
 	}
 	entry.Description = s.Description
+
+	entry.Categories = s.Categories
+	if entry.Categories == nil {
+		entry.Categories = []string{}
+	}
 
 	return entry
 }
@@ -239,6 +248,29 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 	// as a first-class field so the control panel form can prefill it without
 	// exposing the rest of the config document.
 	entry["entity_types"] = sources.EntityTypesFromProviderConfig(s.ProviderConfig)
+
+	// intel-channels Phase 1: multi-category + probe state. The proposal
+	// review surface shows probe_report + detected_methods so admins can see
+	// what the probe discovered before approving/editing channels.
+	categories := s.Categories
+	if categories == nil {
+		categories = []string{}
+	}
+	entry["categories"] = categories
+
+	keywords := s.Keywords
+	if keywords == nil {
+		keywords = []string{}
+	}
+	entry["keywords"] = keywords
+
+	methods := s.DetectedMethods
+	if methods == nil {
+		methods = []string{}
+	}
+	entry["detected_methods"] = methods
+	entry["probe_report"] = jsonBlobToRawMessage(s.ProbeReport)
+	entry["last_probed_at"] = s.LastProbedAt
 
 	entry["proposed_at"] = s.ProposedAt
 	if s.ProposedBy.Valid {

@@ -126,7 +126,9 @@ const (
 
 	TypeIntelScheduleCrawls    = "intel:schedule_crawls"     // critical (cron)
 	TypeIntelFetchSource       = "intel:fetch_source"        // default
+	TypeIntelFetchChannel      = "intel:fetch_channel"       // default
 	TypeIntelDetectChanges     = "intel:detect_changes"      // default
+	TypeIntelCurateChannel     = "intel:curate_channel"      // default
 	TypeIntelExtract           = "intel:extract"             // default
 	TypeIntelDedup             = "intel:dedup"               // default
 	TypeIntelPublishGate       = "intel:publish_gate"        // default
@@ -136,6 +138,7 @@ const (
 	TypeIntelRefreshFreshness  = "intel:refresh_freshness"   // low (daily cron)
 	TypeIntelRetryFailedSource = "intel:retry_failed_source" // default
 	TypeIntelSourceMetadata    = "intel:source_metadata"     // default
+	TypeIntelProbeVerify       = "intel:probe_verify"        // default
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -296,7 +299,9 @@ var handlerRegistry = []struct {
 	// Intelligence System (Section INTEL) handlers — ingestion spine.
 	{TypeIntelScheduleCrawls, HandleIntelScheduleCrawls},
 	{TypeIntelFetchSource, HandleIntelFetchSource},
+	{TypeIntelFetchChannel, HandleIntelFetchChannel},
 	{TypeIntelDetectChanges, HandleIntelDetectChanges},
+	{TypeIntelCurateChannel, HandleIntelCurateChannel},
 	{TypeIntelExtract, HandleIntelExtract},
 	{TypeIntelDedup, HandleIntelDedup},
 	{TypeIntelPublishGate, HandleIntelPublishGate},
@@ -306,6 +311,7 @@ var handlerRegistry = []struct {
 	{TypeIntelRefreshFreshness, HandleIntelRefreshFreshness},
 	{TypeIntelRetryFailedSource, HandleIntelRetryFailedSource},
 	{TypeIntelSourceMetadata, HandleSourceMetadata},
+	{TypeIntelProbeVerify, HandleIntelProbeVerify},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.
