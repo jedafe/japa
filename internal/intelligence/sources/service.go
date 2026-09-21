@@ -251,7 +251,11 @@ func (s *Service) ensureDefaultChannel(ctx context.Context, src Source) {
 
 	resolved := ResolveCategoryMap(nil, sourceCategories(src))
 
-	pipeline := resolved.Pipeline
+	// Per-channel resolution (exit scenario): the Default channel takes the
+	// entity types and pipeline of the categories that nominate the
+	// source's crawl method — an rss source on [news, job] curates (news)
+	// rather than inheriting the merged source-level extract pipeline.
+	entityTypes, pipeline := resolveChannelMapForMethod(method, resolved)
 	if !pipeline.IsValid() {
 		pipeline = PipelineExtract
 	}
@@ -266,7 +270,7 @@ func (s *Service) ensureDefaultChannel(ctx context.Context, src Source) {
 		Label:                "Default",
 		EntryUrl:             src.SourceUrl,
 		CrawlMethod:          src.CrawlMethod,
-		EntityTypes:          resolved.EntityTypes,
+		EntityTypes:          entityTypes,
 		Pipeline:             string(pipeline),
 		ProviderConfig:       []byte("{}"),
 		CrawlFrequencyMins:   freq,

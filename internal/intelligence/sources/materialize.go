@@ -83,6 +83,44 @@ func defaultChannelPipeline(method CrawlMethod) Pipeline {
 	return PipelineExtract
 }
 
+// resolveChannelMapForMethod returns the per-method slice of the resolved
+// category map — the entity types and pipeline of the categories that
+// nominate the method — falling back to the merged map when no category
+// nominates it (empty or map-absent selections). Mirror of the probe's
+// per-proposal fill so channels materialized outside the proposal path
+// (default/fallback channels) follow the same attribution.
+func resolveChannelMapForMethod(method CrawlMethod, resolved ResolvedMap) (entityTypes []string, pipeline Pipeline) {
+	entityTypes = resolved.EntityTypes
+	pipeline = resolved.Pipeline
+
+	if m, ok := resolved.ForMethod(string(method)); ok {
+		if len(m.EntityTypes) > 0 {
+			entityTypes = m.EntityTypes
+		}
+		if m.Pipeline.IsValid() {
+			pipeline = m.Pipeline
+		}
+	}
+
+	return entityTypes, pipeline
+}
+
+// channelPipelineForMethod resolves a channel pipeline for the defensive
+// materializer fill: platform/inbound/discovery methods always take their
+// method default; category-ranked methods take the nominating categories'
+// merge first, then the source-level resolved pipeline, then the method
+// default. Mirror of probe.pipelineFor.
+func channelPipelineForMethod(method CrawlMethod, resolved ResolvedMap) Pipeline {
+	if platformProbeMethods[method] {
+		return defaultChannelPipeline(method)
+	}
+	if _, pipeline := resolveChannelMapForMethod(method, resolved); pipeline.IsValid() {
+		return pipeline
+	}
+
+	return defaultChannelPipeline(method)
+}
+
 // sourceCategories returns the source's effective category list — the
 // multi-category array first, the legacy scalar as fallback.
 func sourceCategories(src Source) []string {
@@ -194,7 +232,11 @@ func (s *Service) materializeFallbackChannel(ctx context.Context, src Source, re
 		return 0
 	}
 
-	pipeline := resolved.Pipeline
+	// Per-channel resolution (exit scenario): the static fallback takes the
+	// entity types and pipeline of the categories that nominate 'static',
+	// not the source-level merge — a news-only source curates rather than
+	// inheriting a sibling extract category's pipeline.
+	entityTypes, pipeline := resolveChannelMapForMethod(CrawlMethodStatic, resolved)
 	if !pipeline.IsValid() {
 		pipeline = PipelineExtract
 	}
@@ -209,7 +251,7 @@ func (s *Service) materializeFallbackChannel(ctx context.Context, src Source, re
 		Label:                "Default",
 		EntryUrl:             src.SourceUrl,
 		CrawlMethod:          string(CrawlMethodStatic),
-		EntityTypes:          resolved.EntityTypes,
+		EntityTypes:          entityTypes,
 		Pipeline:             string(pipeline),
 		ProviderConfig:       []byte("{}"),
 		CrawlFrequencyMins:   freq,
@@ -251,14 +293,15 @@ func materializeProposal(sourceID SourceID, prop ChannelProposalInput, resolved 
 
 	pipeline := Pipeline(strings.TrimSpace(prop.Pipeline))
 	if !pipeline.IsValid() {
-		if resolved.Pipeline.IsValid() && !platformProbeMethods[method] {
-			pipeline = resolved.Pipeline
-		} else {
-			pipeline = defaultChannelPipeline(method)
-		}
+		pipeline = channelPipelineForMethod(method, resolved)
 	}
 
 	entityTypes := prop.EntityTypes
+	if len(entityTypes) == 0 && !platformProbeMethods[method] {
+		if m, ok := resolved.ForMethod(string(method)); ok && len(m.EntityTypes) > 0 {
+			entityTypes = m.EntityTypes
+		}
+	}
 	if len(entityTypes) == 0 {
 		entityTypes = resolved.EntityTypes
 	}

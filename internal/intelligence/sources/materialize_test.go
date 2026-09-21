@@ -79,7 +79,7 @@ func TestMaterializeProposal(t *testing.T) {
 		}
 	})
 
-	t.Run("empty entity_types fill from resolved map", func(t *testing.T) {
+	t.Run("empty entity_types fill from nominating categories", func(t *testing.T) {
 		t.Parallel()
 		prop := rssProposal()
 		prop.EntityTypes = nil
@@ -88,8 +88,11 @@ func TestMaterializeProposal(t *testing.T) {
 		if reason != "" {
 			t.Fatalf("skip reason = %q, want none", reason)
 		}
-		if !slices.Equal(arg.EntityTypes, resolved.EntityTypes) {
-			t.Errorf("entity_types = %v, want resolved %v", arg.EntityTypes, resolved.EntityTypes)
+		// rss is nominated by 'news' alone on a [job, news] source — the
+		// channel carries the nominating category's vocabulary, not the
+		// source-wide union.
+		if !slices.Equal(arg.EntityTypes, []string{"news"}) {
+			t.Errorf("entity_types = %v, want [news]", arg.EntityTypes)
 		}
 	})
 
@@ -105,15 +108,49 @@ func TestMaterializeProposal(t *testing.T) {
 		}
 	})
 
-	t.Run("empty pipeline resolves from category map", func(t *testing.T) {
+	t.Run("empty pipeline resolves from nominating category", func(t *testing.T) {
 		t.Parallel()
 		prop := rssProposal()
 		prop.Pipeline = ""
 
 		arg, _ := materializeProposal(sourceID, prop, resolved)
-		// job maps to extract and any-extract wins.
+		// rss is nominated by 'news' (curate) — the merged source-level
+		// extract pipeline ('job' forces it) does NOT leak onto a channel
+		// no extract category nominated.
+		if arg.Pipeline != "curate" {
+			t.Errorf("pipeline = %q, want curate (news nominates rss)", arg.Pipeline)
+		}
+	})
+
+	t.Run("method nominated by an extract category extracts", func(t *testing.T) {
+		t.Parallel()
+		prop := rssProposal()
+		prop.CrawlMethod = "api" // nominated by job (extract) on [job, news]
+		prop.EntityTypes = nil
+		prop.Pipeline = ""
+
+		arg, _ := materializeProposal(sourceID, prop, resolved)
 		if arg.Pipeline != "extract" {
-			t.Errorf("pipeline = %q, want extract (resolved)", arg.Pipeline)
+			t.Errorf("pipeline = %q, want extract (job nominates api)", arg.Pipeline)
+		}
+		if !slices.Equal(arg.EntityTypes, []string{"job"}) {
+			t.Errorf("entity_types = %v, want [job]", arg.EntityTypes)
+		}
+	})
+
+	t.Run("method nominated by both categories merges", func(t *testing.T) {
+		t.Parallel()
+		prop := rssProposal()
+		prop.CrawlMethod = "jsonld" // nominated by job AND news on [job, news]
+		prop.EntityTypes = nil
+		prop.Pipeline = ""
+
+		arg, _ := materializeProposal(sourceID, prop, resolved)
+		if arg.Pipeline != "extract" {
+			t.Errorf("pipeline = %q, want extract (any extract nominator wins)", arg.Pipeline)
+		}
+		if !slices.Equal(arg.EntityTypes, []string{"job", "news"}) {
+			t.Errorf("entity_types = %v, want [job news]", arg.EntityTypes)
 		}
 	})
 
