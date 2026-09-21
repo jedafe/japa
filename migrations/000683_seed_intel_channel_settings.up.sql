@@ -10,17 +10,20 @@
 -- same document embedded at internal/intelligence/sources/category_map.json.
 -- An empty/malformed value resolves against the embedded default, so this
 -- seed exists to make the map admin-editable in place.
+--
+-- Post-de-tenant convention (000668 dropped system_settings.tenant_id):
+-- rows are keyed globally on `key`; conflicts use ON CONFLICT (key).
 
 BEGIN;
 
-INSERT INTO system_settings (tenant_id, key, value) VALUES
+INSERT INTO system_settings (key, value) VALUES
     -- Probe (§2 preview + verify stages)
-    ('00000000-0000-0000-0000-000000000001', 'intel.probe.max_requests', to_jsonb(5)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.probe.verify_max_requests', to_jsonb(25)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.probe.max_urls', to_jsonb(50)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.probe.rate_limit_per_hr', to_jsonb(20)),
+    ('intel.probe.max_requests', to_jsonb(5)),
+    ('intel.probe.verify_max_requests', to_jsonb(25)),
+    ('intel.probe.max_urls', to_jsonb(50)),
+    ('intel.probe.rate_limit_per_hr', to_jsonb(20)),
     -- Category → method/pipeline/topics map (spec §2)
-    ('00000000-0000-0000-0000-000000000001', 'intel.category_method_map', '{
+    ('intel.category_method_map', '{
   "job":        {"entity_types": ["job"],          "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
                  "topics": ["job","hiring","vacancy","career","remote work","recruitment"]},
   "news":       {"entity_types": ["news"],          "methods": ["rss","jsonld","render","static"],         "pipeline": "curate",
@@ -39,23 +42,23 @@ INSERT INTO system_settings (tenant_id, key, value) VALUES
                  "topics": ["japa","relocation","study abroad","visa"]}
 }'::jsonb),
     -- Curate pipeline (§4)
-    ('00000000-0000-0000-0000-000000000001', 'intel.curate.auto_publish_trust_max', to_jsonb(2)),
+    ('intel.curate.auto_publish_trust_max', to_jsonb(2)),
     -- Relevance gate (§4)
-    ('00000000-0000-0000-0000-000000000001', 'intel.relevance.on_topic_threshold', to_jsonb(0.15)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.relevance.off_topic_threshold', to_jsonb(0.03)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.relevance.borderline_rate_cap', to_jsonb(50)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.relevance.classifier_enabled', to_jsonb(true)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.relevance.classifier_model', to_jsonb(''::text)),
+    ('intel.relevance.on_topic_threshold', to_jsonb(0.15)),
+    ('intel.relevance.off_topic_threshold', to_jsonb(0.03)),
+    ('intel.relevance.borderline_rate_cap', to_jsonb(50)),
+    ('intel.relevance.classifier_enabled', to_jsonb(true)),
+    ('intel.relevance.classifier_model', to_jsonb(''::text)),
     -- Channel failure auto-disable (pre-existing consumer, now catalogued)
-    ('00000000-0000-0000-0000-000000000001', 'intel.consecutive_failure_disable_threshold', to_jsonb(5)),
+    ('intel.consecutive_failure_disable_threshold', to_jsonb(5)),
     -- Phase 2/3 placeholders (spec §System settings) — no Phase 1 consumer
-    ('00000000-0000-0000-0000-000000000001', 'intel.render.service_url', to_jsonb(''::text)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.render.timeout_ms', to_jsonb(30000)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.search.provider', to_jsonb(''::text)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.search.api_key', to_jsonb(''::text)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.email.inbound_domain', to_jsonb(''::text)),
-    ('00000000-0000-0000-0000-000000000001', 'intel.email.allowed_senders', '[]'::jsonb),
-    ('00000000-0000-0000-0000-000000000001', 'intel.social.enabled_providers', '[]'::jsonb)
-ON CONFLICT (tenant_id, key) DO NOTHING;
+    ('intel.render.service_url', to_jsonb(''::text)),
+    ('intel.render.timeout_ms', to_jsonb(30000)),
+    ('intel.search.provider', to_jsonb(''::text)),
+    ('intel.search.api_key', to_jsonb(''::text)),
+    ('intel.email.inbound_domain', to_jsonb(''::text)),
+    ('intel.email.allowed_senders', '[]'::jsonb),
+    ('intel.social.enabled_providers', '[]'::jsonb)
+ON CONFLICT (key) DO NOTHING;
 
 COMMIT;
