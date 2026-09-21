@@ -452,7 +452,16 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: source_url", errpkg.ErrRequired)
 	}
 
-	u, err := url.Parse(input.SourceURL)
+	// Scheme-less input gets https:// — the probe endpoint accepts bare
+	// domains (same normalization) and the form's URL check is loose, so
+	// "jobberman.com" must not 400 on the submit step that follows a
+	// successful probe.
+	sourceURL := strings.TrimSpace(input.SourceURL)
+	if !strings.Contains(sourceURL, "://") {
+		sourceURL = "https://" + sourceURL
+	}
+
+	u, err := url.Parse(sourceURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: invalid source_url", errpkg.ErrInvalid)
 	}
@@ -521,7 +530,7 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	arg := gen.CreateIntelSourceParams{
 		Name:                input.Name,
 		Domain:              domain,
-		SourceUrl:           input.SourceURL,
+		SourceUrl:           sourceURL,
 		Category:            categories[0], // dual-write: categories[0] is the legacy primary category
 		Categories:          categories,
 		SourceType:          sourceType,

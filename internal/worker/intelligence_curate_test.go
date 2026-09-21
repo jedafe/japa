@@ -470,7 +470,7 @@ func TestHandleIntelCurateChannel_NoCuratorFallsBack(t *testing.T) {
 
 	src := mkIntelTestSource(t, srcStore, "nocurator-src", nil)
 	ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
-		a.CrawlMethod = "sitemap"
+		a.CrawlMethod = "api" // fetchable method with no registered curator
 		a.Pipeline = "curate"
 		a.EntityTypes = []string{"news"}
 	})
@@ -481,14 +481,14 @@ func TestHandleIntelCurateChannel_NoCuratorFallsBack(t *testing.T) {
 		Url:         ch.EntryUrl,
 		HttpStatus:  200,
 		HttpHeaders: []byte(`{}`),
-		Body:        []byte("https://example.com/a\t2025-01-01\n"),
+		Body:        []byte(`{"items": []}`),
 		ContentHash: "nocuratorhash",
 	})
 	if err != nil {
 		t.Fatalf("create raw doc: %v", err)
 	}
 
-	setIntelCurator(t, &fakeIntelCurator{err: fmt.Errorf("%w: %q", ErrIntelNoCurator, "sitemap")})
+	setIntelCurator(t, &fakeIntelCurator{err: fmt.Errorf("%w: %q", ErrIntelNoCurator, "api")})
 
 	payload, _ := json.Marshal(intelCurateChannelPayload{
 		Version:   intelPayloadVersion,
@@ -511,6 +511,101 @@ func TestHandleIntelCurateChannel_NoCuratorFallsBack(t *testing.T) {
 	}
 	if ep.ChannelID != ch.ID.String() {
 		t.Errorf("extract channel_id = %q, want %q", ep.ChannelID, ch.ID.String())
+	}
+}
+
+// TestHandleIntelCurateChannel_SitemapManifestSkipsExtract covers the
+// sitemap carve-out of the no-curator fallback: a sitemap channel's raw doc
+// is a url<TAB>lastmod manifest (change-detection signal only — per-URL
+// child fetches are Phase 2), so ErrIntelNoCurator must NOT route it to
+// intel:extract where an LLM pass could only fabricate records from slugs.
+func TestHandleIntelCurateChannel_SitemapManifestSkipsExtract(t *testing.T) {
+	_, srcStore, intelDocStore, inspector := wireIntelChannelDeps(t)
+
+	src := mkIntelTestSource(t, srcStore, "sitemap-src", nil)
+	ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
+		a.CrawlMethod = "sitemap"
+		a.Pipeline = "curate"
+		a.EntityTypes = []string{"news"}
+	})
+
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+		SourceID:    src.ID,
+		ChannelID:   ch.ID,
+		Url:         ch.EntryUrl,
+		HttpStatus:  200,
+		HttpHeaders: []byte(`{}`),
+		ContentType: strPtr("text/plain; charset=utf-8"),
+		Body:        []byte("https://example.com/a\t2025-01-01\n"),
+		ContentHash: "sitemaphash",
+	})
+	if err != nil {
+		t.Fatalf("create raw doc: %v", err)
+	}
+
+	setIntelCurator(t, &fakeIntelCurator{err: fmt.Errorf("%w: %q", ErrIntelNoCurator, "sitemap")})
+
+	payload, _ := json.Marshal(intelCurateChannelPayload{
+		Version:   intelPayloadVersion,
+		SourceID:  src.ID.String(),
+		ChannelID: ch.ID.String(),
+		RawDocID:  rawDoc.ID.String(),
+	})
+
+	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+		t.Fatalf("HandleIntelCurateChannel: %v", err)
+	}
+
+	if n := len(pendingTasks(t, inspector, TypeIntelExtract)); n != 0 {
+		t.Errorf("sitemap manifest enqueued %d intel:extract tasks, want 0", n)
+	}
+}
+
+// TestHandleIntelDetectChanges_SitemapStopsChain covers the dispatch-side
+// half of the same rule: a changed sitemap manifest records the crawl
+// outcome (volatility tuner + last_changed_at) but enqueues neither
+// intel:curate_channel nor intel:extract.
+func TestHandleIntelDetectChanges_SitemapStopsChain(t *testing.T) {
+	_, srcStore, intelDocStore, inspector := wireIntelChannelDeps(t)
+
+	src := mkIntelTestSource(t, srcStore, "sitemap-dc", nil)
+	ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
+		a.CrawlMethod = "sitemap"
+		a.Pipeline = "curate"
+		a.EntityTypes = []string{"news"}
+	})
+
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+		SourceID:    src.ID,
+		ChannelID:   ch.ID,
+		Url:         ch.EntryUrl,
+		HttpStatus:  200,
+		HttpHeaders: []byte(`{}`),
+		ContentType: strPtr("text/plain; charset=utf-8"),
+		Body:        []byte("https://example.com/a\t2025-01-01\n"),
+		ContentHash: "sitemaphash2",
+	})
+	if err != nil {
+		t.Fatalf("create raw doc: %v", err)
+	}
+
+	payload, _ := json.Marshal(intelDetectChangesPayload{
+		Version:   intelPayloadVersion,
+		SourceID:  src.ID.String(),
+		ChannelID: ch.ID.String(),
+		RawDocID:  rawDoc.ID.String(),
+		PriorHash: "", // first crawl → downstream would fire without the guard
+	})
+
+	if err := HandleIntelDetectChanges(context.Background(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
+		t.Fatalf("HandleIntelDetectChanges: %v", err)
+	}
+
+	if n := len(pendingTasks(t, inspector, TypeIntelCurateChannel)); n != 0 {
+		t.Errorf("sitemap manifest enqueued %d intel:curate_channel tasks, want 0", n)
+	}
+	if n := len(pendingTasks(t, inspector, TypeIntelExtract)); n != 0 {
+		t.Errorf("sitemap manifest enqueued %d intel:extract tasks, want 0", n)
 	}
 }
 
