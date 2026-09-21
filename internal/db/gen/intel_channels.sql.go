@@ -471,6 +471,68 @@ func (q *Queries) UpdateIntelChannelRelevance(ctx context.Context, arg UpdateInt
 	return i, err
 }
 
+const updateIntelSourceCategories = `-- name: UpdateIntelSourceCategories :one
+UPDATE intel_sources SET categories = $2, updated_at = now()
+WHERE id = $1 RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at
+`
+
+type UpdateIntelSourceCategoriesParams struct {
+	ID         pgtype.UUID `json:"id"`
+	Categories []string    `json:"categories"`
+}
+
+// Direct assignment like UpdateIntelChannelEntityTypes — the admin source
+// PATCH detects JSON key presence, so a present-but-empty array is an
+// explicit clear to '{}' rather than a COALESCE no-op.
+func (q *Queries) UpdateIntelSourceCategories(ctx context.Context, arg UpdateIntelSourceCategoriesParams) (IntelSource, error) {
+	row := q.db.QueryRow(ctx, updateIntelSourceCategories, arg.ID, arg.Categories)
+	var i IntelSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Domain,
+		&i.SourceUrl,
+		&i.Category,
+		&i.SourceType,
+		&i.TrustLevel,
+		&i.CrawlMethod,
+		&i.CrawlFrequency,
+		&i.CrawlFrequencyMins,
+		&i.RobotsPolicy,
+		&i.SourceLicense,
+		&i.AttributionRequired,
+		&i.UsageRestriction,
+		&i.ProviderConfig,
+		&i.Enabled,
+		&i.LastCrawledAt,
+		&i.LastSuccessAt,
+		&i.LastErrorAt,
+		&i.LastErrorMessage,
+		&i.LastChangedAt,
+		&i.ConsecutiveFailures,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PersonaID,
+		&i.Status,
+		&i.ProposedBy,
+		&i.ProposedAt,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.Slug,
+		&i.Description,
+		&i.LogoUrl,
+		&i.FollowerCount,
+		&i.PostCount,
+		&i.SourceKind,
+		&i.Keywords,
+		&i.Categories,
+		&i.ProbeReport,
+		&i.DetectedMethods,
+		&i.LastProbedAt,
+	)
+	return i, err
+}
+
 const updateIntelSourceChannel = `-- name: UpdateIntelSourceChannel :one
 UPDATE intel_source_channels SET
   label = COALESCE($2, label),

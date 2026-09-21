@@ -90,6 +90,13 @@ WHERE id = $1;
 UPDATE intel_sources SET probe_report = $2, detected_methods = $3, last_probed_at = now()
 WHERE id = $1;
 
+-- name: UpdateIntelSourceCategories :one
+-- Direct assignment like UpdateIntelChannelEntityTypes — the admin source
+-- PATCH detects JSON key presence, so a present-but-empty array is an
+-- explicit clear to '{}' rather than a COALESCE no-op.
+UPDATE intel_sources SET categories = $2, updated_at = now()
+WHERE id = $1 RETURNING *;
+
 -- name: GetLatestIntelRawDocHashByChannel :one
 -- Channel-scoped prior hash for detect_changes: two channels of the same
 -- source must not cross-contaminate each other's hash comparison.
