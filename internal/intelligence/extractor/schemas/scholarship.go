@@ -16,6 +16,11 @@ type FieldSpec struct {
 type EntitySchema struct {
 	EntityType string
 	Fields     []FieldSpec
+	// CurateOnly marks schemas populated only by the deterministic curator
+	// pipeline (intel:curate_channel). They validate records but have no
+	// LLM prompt template, so the extract path must refuse them — see
+	// IsCurateOnly / ErrCurateOnlyEntityType in registry.go.
+	CurateOnly bool
 }
 
 // Scholarship is the v1 entity schema for the scholarship domain.

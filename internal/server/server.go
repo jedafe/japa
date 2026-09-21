@@ -76,6 +76,7 @@ import (
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/i18n"
 	"github.com/jedafe/japa/internal/impersonation"
+	"github.com/jedafe/japa/internal/intelligence/curator"
 	"github.com/jedafe/japa/internal/intelligence/dedup"
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
@@ -2168,6 +2169,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			settingsService.GetIntOr(context.Background(), "intel.probe.verify_max_requests", intel_probe.DefaultVerifyMaxRequests),
 		),
 	)
+
+	// intel-channels Phase 1: wire the deterministic curator registry so
+	// HandleIntelCurateChannel can normalize curate/hybrid-pipeline channel
+	// bodies (rss/jsonld/ical/tabular) without an LLM call. The adapter
+	// wraps curator.Default() and keeps the import cycle in the wiring
+	// layer like the extractor/promoter adapters above.
+	worker.RegisterIntelCurator(&intelCuratorPortAdapter{reg: curator.Default()})
 
 	// ADR-076 Amendment 1: wire the Studio auto-promote port so
 	// HandleIntelPromote can auto-create Studio jobs for high-confidence
