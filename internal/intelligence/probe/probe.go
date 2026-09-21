@@ -460,12 +460,13 @@ var jsonldEntityFallback = map[string]bool{
 }
 
 // fillProposal applies the resolved category map to a detector-produced
-// proposal: entity types (resolved map first, JSON-LD-derived fallback for
-// page-level methods), pipeline (resolved when valid, else the method
-// default), and relevance topics for category-filtered methods.
+// proposal: entity types (the nominating categories' vocabulary first,
+// JSON-LD-derived fallback for page-level methods), pipeline (the
+// nominating categories' merge, else the method default), and relevance
+// topics for category-filtered methods.
 func (r *runState) fillProposal(prop *ChannelProposal, out *Report) {
 	if len(prop.EntityTypes) == 0 {
-		prop.EntityTypes = slices.Clone(r.resolved.EntityTypes)
+		prop.EntityTypes = r.entityTypesFor(prop.CrawlMethod)
 	}
 
 	if len(prop.EntityTypes) == 0 && jsonldEntityFallback[prop.CrawlMethod] {
@@ -481,11 +482,38 @@ func (r *runState) fillProposal(prop *ChannelProposal, out *Report) {
 	}
 }
 
-// pipelineFor picks the proposal pipeline: the resolved category pipeline
-// when it is valid and the method is category-ranked, else the method's
-// default.
+// entityTypesFor narrows a proposal's entity vocabulary to the categories
+// that nominated its crawl method — on a [news, job] source the /feed rss
+// channel is nominated by 'news' alone, so it carries [news] and feed
+// items type as news articles rather than inheriting the source-wide
+// union (where a leading 'job' would mistype them). Methods no category
+// nominated (bypass/platform methods, unmapped selections) keep the
+// merged union.
+func (r *runState) entityTypesFor(method string) []string {
+	if !bypassMethods[method] {
+		if m, ok := r.resolved.ForMethod(method); ok && len(m.EntityTypes) > 0 {
+			return m.EntityTypes
+		}
+	}
+
+	return slices.Clone(r.resolved.EntityTypes)
+}
+
+// pipelineFor picks the proposal pipeline. Non-bypass methods take the
+// pipeline of the categories that nominated them — extract when ANY
+// nominator maps to extract — so a /feed rss channel on a [news, job]
+// source curates (news) while its sibling /jobs jsonld channel extracts
+// (job): the intel-channels exit scenario. The merged source-level
+// pipeline remains the fallback when no category nominated the method
+// (empty or unmapped selections); bypass methods use the method default.
 func (r *runState) pipelineFor(method string) string {
-	if r.resolved.Pipeline.IsValid() && !bypassMethods[method] {
+	if bypassMethods[method] {
+		return defaultPipeline(method)
+	}
+	if m, ok := r.resolved.ForMethod(method); ok && m.Pipeline.IsValid() {
+		return string(m.Pipeline)
+	}
+	if r.resolved.Pipeline.IsValid() {
 		return string(r.resolved.Pipeline)
 	}
 

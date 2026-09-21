@@ -813,6 +813,45 @@ func TestPreview_CategoryEntityTypes(t *testing.T) {
 	}
 }
 
+// TestPreview_MixedCategoryAttribution pins the intel-channels exit
+// scenario's channel assignment: on a [news, job] source the feed channel
+// is nominated by 'news' alone, so it materializes rss→curate→news —
+// 'job' forcing extract at the source level must not leak onto a channel
+// it did not nominate. The entry-page jsonld channel is co-nominated by
+// both categories, so it extracts with the union vocabulary.
+func TestPreview_MixedCategoryAttribution(t *testing.T) {
+	t.Parallel()
+
+	srv := serveFixture(t, "feed_jsonld.html", nil)
+
+	report, err := NewProber(srv.Client(), 5).Preview(t.Context(), srv.URL+"/", "", []string{"news", "job"})
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+
+	rss, ok := findChannel(report, "rss")
+	if !ok {
+		t.Fatalf("channels missing rss proposal: %+v", report.Channels)
+	}
+	if rss.Pipeline != string(sources.PipelineCurate) {
+		t.Errorf("rss pipeline = %q, want curate (news nominates rss)", rss.Pipeline)
+	}
+	if !slices.Equal(rss.EntityTypes, []string{"news"}) {
+		t.Errorf("rss entity_types = %v, want [news]", rss.EntityTypes)
+	}
+
+	jsonld, ok := findChannel(report, "jsonld")
+	if !ok {
+		t.Fatalf("channels missing jsonld proposal: %+v", report.Channels)
+	}
+	if jsonld.Pipeline != string(sources.PipelineExtract) {
+		t.Errorf("jsonld pipeline = %q, want extract (job nominates jsonld)", jsonld.Pipeline)
+	}
+	if !slices.Equal(jsonld.EntityTypes, []string{"news", "job"}) {
+		t.Errorf("jsonld entity_types = %v, want [news job]", jsonld.EntityTypes)
+	}
+}
+
 // TestPreview_ChannelProfileKindWarning verifies the advisory warning when a
 // channel_profile submission matches no platform signature.
 func TestPreview_ChannelProfileKindWarning(t *testing.T) {

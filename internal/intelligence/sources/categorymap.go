@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
@@ -52,19 +53,95 @@ type ResolvedMap struct {
 	// Methods is the union of the selected categories' methods in
 	// first-seen order — ranking probe candidates.
 	Methods []string
-	// Pipeline is extract when ANY selected category maps to extract
-	// (a single LLM-pipeline category forces extraction for the source's
-	// mixed records); otherwise the first-seen pipeline of the resolved
-	// categories. Empty when no category resolved.
+	// Pipeline is the SOURCE-LEVEL merge: extract when ANY selected category
+	// maps to extract; otherwise the first-seen pipeline of the resolved
+	// categories. Empty when no category resolved. Per-channel assignment
+	// uses ForMethod instead — a channel takes the pipeline of the
+	// categories that nominated its method, so a /feed rss channel on a
+	// [news, job] source curates (news) even though the merged pipeline is
+	// extract (job forces it at the source level).
 	Pipeline Pipeline
 	// Topics is the union of the selected categories' topics in
 	// first-seen order.
 	Topics []string
+	// Entries preserves each resolved category→mapping pair in input
+	// order — the basis for per-method channel attribution (ForMethod).
+	// Categories absent from the map are omitted: they may still
+	// contribute a schema-registry entity type to the merged union but
+	// nominate no methods.
+	Entries []CategoryEntry
 	// Warnings lists non-fatal resolution issues: unknown categories that
 	// were skipped and a fallen-back-to-default note when settingsJSON
 	// was unparseable. Callers decide whether to surface or log them;
 	// resolution never errors on bad input.
 	Warnings []string
+}
+
+// CategoryEntry is one resolved category→mapping pair, recorded in the
+// input category order.
+type CategoryEntry struct {
+	Category string
+	Mapping  CategoryMapping
+}
+
+// MethodResolution is the per-channel slice of the resolved map for one
+// crawl method: the categories that listed the method nominate the
+// channel's entity vocabulary and pipeline.
+type MethodResolution struct {
+	// EntityTypes is the union of the nominating categories' entity types,
+	// first-seen order.
+	EntityTypes []string
+	// Pipeline is extract when ANY nominating category maps to extract;
+	// otherwise the first-seen nominating pipeline.
+	Pipeline Pipeline
+}
+
+// ForMethod resolves the channel-scoped view of the map for one crawl
+// method. ok=false when no resolved category nominates the method —
+// callers then fall back to the merged ResolvedMap fields (empty or
+// map-absent selections) or the method default.
+//
+// The intel-channels exit scenario depends on this: on a [news, job]
+// source the /feed rss channel is nominated by 'news' alone, so it
+// materializes rss→curate→news even though the merged pipeline is
+// extract ('job' forces extract at the source level).
+func (r ResolvedMap) ForMethod(method string) (MethodResolution, bool) {
+	var (
+		out        MethodResolution
+		first      Pipeline
+		seenEntity = map[string]bool{}
+		found      bool
+	)
+
+	for _, e := range r.Entries {
+		if !slices.Contains(e.Mapping.Methods, method) {
+			continue
+		}
+		found = true
+
+		for _, et := range e.Mapping.EntityTypes {
+			if et == "" || seenEntity[et] {
+				continue
+			}
+			seenEntity[et] = true
+			out.EntityTypes = append(out.EntityTypes, et)
+		}
+		if first == "" {
+			first = e.Mapping.Pipeline
+		}
+		if e.Mapping.Pipeline == PipelineExtract {
+			out.Pipeline = PipelineExtract
+		}
+	}
+
+	if !found {
+		return MethodResolution{}, false
+	}
+	if out.Pipeline != PipelineExtract {
+		out.Pipeline = first
+	}
+
+	return out, true
 }
 
 // DefaultCategoryMap returns the embedded canonical category→method map JSON
@@ -152,6 +229,9 @@ func ResolveCategoryMap(settingsJSON []byte, categories []string) ResolvedMap {
 		seenCat[cat] = true
 
 		mapping, ok := catMap[cat]
+		if ok {
+			resolved.Entries = append(resolved.Entries, CategoryEntry{Category: cat, Mapping: mapping})
+		}
 		if !ok {
 			// Categories absent from the map still resolve their entity
 			// type through the schemas registry (remittance, announcement,

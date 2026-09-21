@@ -201,6 +201,88 @@ func TestResolveCategoryMap(t *testing.T) {
 	}
 }
 
+// TestResolvedMapForMethod pins the per-channel attribution behind the
+// intel-channels exit scenario: a channel's entity types and pipeline come
+// from the categories that NOMINATED its method, not the source-level
+// merge — /feed (rss) on a [news, job] source curates as news while /jobs
+// (jsonld, co-nominated by extract 'job') extracts.
+func TestResolvedMapForMethod(t *testing.T) {
+	t.Parallel()
+
+	resolved := ResolveCategoryMap(nil, []string{"news", "job"})
+
+	tests := []struct {
+		method       string
+		wantOK       bool
+		wantEntities []string
+		wantPipeline Pipeline
+	}{
+		// rss is listed only under news → curate, [news].
+		{"rss", true, []string{"news"}, PipelineCurate},
+		// jsonld is listed under both → any-extract wins, union types.
+		{"jsonld", true, []string{"news", "job"}, PipelineExtract},
+		// api is listed only under job → extract, [job].
+		{"api", true, []string{"job"}, PipelineExtract},
+		// static/render are listed under both → extract, union.
+		{"static", true, []string{"news", "job"}, PipelineExtract},
+		// Not nominated by either category.
+		{"ical", false, nil, ""},
+		{"telepathy", false, nil, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := resolved.ForMethod(tt.method)
+			if ok != tt.wantOK {
+				t.Fatalf("ForMethod(%q) ok = %v, want %v", tt.method, ok, tt.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if !slices.Equal(got.EntityTypes, tt.wantEntities) {
+				t.Errorf("EntityTypes = %v, want %v", got.EntityTypes, tt.wantEntities)
+			}
+			if got.Pipeline != tt.wantPipeline {
+				t.Errorf("Pipeline = %q, want %q", got.Pipeline, tt.wantPipeline)
+			}
+		})
+	}
+}
+
+// TestResolvedMapForMethod_Edges covers resolution without nominators:
+// an all-curate map keeps first-seen order, and an empty/map-absent
+// selection reports ok=false so callers take the merged fallback.
+func TestResolvedMapForMethod_Edges(t *testing.T) {
+	t.Parallel()
+
+	if _, ok := ResolveCategoryMap(nil, nil).ForMethod("rss"); ok {
+		t.Error("empty selection must not nominate methods")
+	}
+
+	// Schema-registry-only category contributes entity types to the merged
+	// union but nominates no methods.
+	if _, ok := ResolveCategoryMap(nil, []string{"remittance"}).ForMethod("rss"); ok {
+		t.Error("map-absent category must not nominate methods")
+	}
+
+	// Custom map: a category that nominates a method with an empty
+	// pipeline contributes its entity types but yields an invalid
+	// pipeline for the caller to default.
+	custom := `{"x":{"entity_types":["news"],"methods":["rss"],"pipeline":"","topics":[]}}`
+	m, ok := ResolveCategoryMap([]byte(custom), []string{"x"}).ForMethod("rss")
+	if !ok {
+		t.Fatal("custom category must nominate rss")
+	}
+	if m.Pipeline.IsValid() {
+		t.Errorf("Pipeline = %q, want invalid for empty map pipeline", m.Pipeline)
+	}
+	if !slices.Equal(m.EntityTypes, []string{"news"}) {
+		t.Errorf("EntityTypes = %v, want [news]", m.EntityTypes)
+	}
+}
+
 func TestDefaultCategoryMap(t *testing.T) {
 	t.Parallel()
 
