@@ -6405,6 +6405,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// RBAC-gated by intel.review.disable_source (migration 000431).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.disable_source")).
 				Post("/intel/sources/{id}/disable", intelHandlers.HandleDisableSource)
+
+			// Channel admin endpoints — per-channel CRUD + manual crawl
+			// trigger on the /admin/intel surface (intel-channels Phase 1,
+			// spec §5). Each action is RBAC-gated by its own intel.channels.*
+			// node seeded in migration 000682.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.list")).
+				Get("/admin/intel/sources/{id}/channels", intelHandlers.HandleAdminListSourceChannels)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.create")).
+				Post("/admin/intel/sources/{id}/channels", intelHandlers.HandleAdminCreateChannel)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.view")).
+				Get("/admin/intel/channels/{id}", intelHandlers.HandleAdminGetChannel)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.update")).
+				Patch("/admin/intel/channels/{id}", intelHandlers.HandleAdminUpdateChannel)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.delete")).
+				Delete("/admin/intel/channels/{id}", intelHandlers.HandleAdminDeleteChannel)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.crawl")).
+				Post("/admin/intel/channels/{id}/crawl", intelHandlers.HandleAdminCrawlChannel)
+			// Re-probe — enqueues intel:probe_verify to re-run the deep verify
+			// probe and re-materialize channels. RBAC-gated by
+			// intel.sources.probe (migration 000682).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.probe")).
+				Post("/admin/intel/sources/{id}/reprobe", intelHandlers.HandleAdminReprobeSource)
 			// Raw document fetch — RBAC-gated by intel.review.view (control panel
 			// four-pane moderation raw content pane). BUG-003 fix.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.view")).
