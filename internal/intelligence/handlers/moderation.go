@@ -27,6 +27,10 @@ type sourceDirectoryEntry struct {
 	Domain              string  `json:"domain"`
 	SourceURL           string  `json:"source_url"`
 	Category            string  `json:"category"`
+	// Categories is the multi-category array (intel-channels §6); always
+	// serialized (empty → []) so admin create/update responses echo the
+	// normalized set that was just written.
+	Categories          []string `json:"categories"`
 	SourceType          string  `json:"source_type"`
 	SourceKind          string  `json:"source_kind"`
 	TrustLevel          int16   `json:"trust_level"`
@@ -69,6 +73,11 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 		entry.Slug = *s.Slug
 	}
 	entry.Description = s.Description
+
+	entry.Categories = s.Categories
+	if entry.Categories == nil {
+		entry.Categories = []string{}
+	}
 
 	return entry
 }

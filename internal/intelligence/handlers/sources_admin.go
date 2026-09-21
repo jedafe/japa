@@ -31,6 +31,11 @@ type handleSourceCreateBody struct {
 	SourceURL           string  `json:"source_url"`
 	Description         *string `json:"description"`
 	Category            string  `json:"category"`
+	// Categories is the multi-category array (intel-channels §6). On create
+	// it is normalized like Propose and dual-writes the legacy scalar
+	// category when category is empty; on PATCH the key's presence decides
+	// whether the column is replaced (empty array clears to '{}').
+	Categories          []string `json:"categories"`
 	SourceType          string  `json:"source_type"`
 	SourceKind          *string `json:"source_kind"`
 	TrustLevel          int16   `json:"trust_level"`
@@ -140,6 +145,15 @@ func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody)
 	body.CrawlMethod = strings.TrimSpace(body.CrawlMethod)
 	body.CrawlFrequency = strings.TrimSpace(body.CrawlFrequency)
 
+	// Multi-category (intel-channels §6): normalize like Propose, then
+	// dual-write the legacy scalar from categories[0] when the caller sent
+	// the array without a category — so a categories-only submission still
+	// satisfies the required-field check below.
+	categories := sources.NormalizeCategories(body.Categories)
+	if body.Category == "" && len(categories) > 0 {
+		body.Category = categories[0]
+	}
+
 	if body.Name == "" || body.SourceURL == "" || body.Category == "" || body.CrawlMethod == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name, source_url, category, and crawl_method are required")
 		return gen.CreateIntelSourceParams{}, false
@@ -175,6 +189,10 @@ func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody)
 		k := "publisher"
 		sourceKind = &k
 	}
+	if !sources.SourceKind(*sourceKind).IsValid() {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_kind", "source_kind is not a recognized value")
+		return gen.CreateIntelSourceParams{}, false
+	}
 
 	params := gen.CreateIntelSourceParams{
 		Name:                body.Name,
@@ -196,6 +214,13 @@ func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody)
 		ProviderConfig:      providerConfigWithEntityTypes(nil, body.EntityTypes),
 		LogoUrl:             logoURL,
 		Enabled:             enabled,
+	}
+
+	// Only a non-empty normalized array is bound: nil keeps the INSERT's
+	// COALESCE fallback (ARRAY[category]) for back-compat callers, and an
+	// explicit empty array would otherwise mask the dual-write.
+	if len(categories) > 0 {
+		params.Categories = categories
 	}
 
 	if body.PersonaID != nil && *body.PersonaID != "" {
@@ -315,6 +340,13 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// source_kind is patchable (the merge below applies it); validate the
+	// 10-kind enum here so an unknown value is a 400, not a CHECK violation.
+	if body.SourceKind != nil && *body.SourceKind != "" && !sources.SourceKind(*body.SourceKind).IsValid() {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_kind", "source_kind is not a recognized value")
+		return
+	}
+
 	// Merge: only non-zero / non-nil body fields override the existing row.
 	params := gen.UpdateIntelSourceParams{
 		ID:                  sourceID,
@@ -338,12 +370,44 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// categories is a presence-detected array field (same semantics as the
+	// channel PATCH): absent leaves the column untouched, present replaces
+	// it — an empty array or null clears to '{}'. It cannot ride the main
+	// update (the query's COALESCE can't express "set empty"), so it goes
+	// through the dedicated UpdateCategories after the scalar write.
+	categoriesPresent := false
+	var newCategories []string
+	if _, present := presence["categories"]; present {
+		categoriesPresent = true
+		newCategories = sources.NormalizeCategories(body.Categories)
+		// Dual-write: the legacy primary follows categories[0] unless the
+		// patch set category explicitly (applied by mergeSourcePatch).
+		if _, catPresent := presence["category"]; !catPresent && len(newCategories) > 0 {
+			params.Category = newCategories[0]
+		}
+	}
+
 	src, err := h.intelSources.Update(r.Context(), params)
 	if err != nil {
 		slog.Error("intel: update source failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source")
 
 		return
+	}
+
+	if categoriesPresent {
+		updated, cerr := h.intelSources.UpdateCategories(r.Context(), gen.UpdateIntelSourceCategoriesParams{
+			ID:         sourceID,
+			Categories: newCategories,
+		})
+		if cerr != nil {
+			slog.Error("intel: update source categories failed", "source_id", sourceID.String(), "error", cerr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source categories")
+
+			return
+		}
+		// updated reflects both writes — the response echoes the fresh row.
+		src = updated
 	}
 
 	// persona_id: an explicit JSON null clears the attribution — the update

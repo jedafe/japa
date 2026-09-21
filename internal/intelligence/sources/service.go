@@ -148,6 +148,18 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 		arg.Status = "active"
 	}
 
+	// Multi-category (intel-channels §6): a non-nil categories array is
+	// normalized like Propose and dual-writes the legacy primary category
+	// when the caller left it empty. A nil array keeps the INSERT's
+	// COALESCE fallback (ARRAY[category]) so back-compat callers that only
+	// set category are untouched.
+	if arg.Categories != nil {
+		arg.Categories = NormalizeCategories(arg.Categories)
+		if arg.Category == "" && len(arg.Categories) > 0 {
+			arg.Category = arg.Categories[0]
+		}
+	}
+
 	// robots_policy and provider_config are NOT NULL in the schema; a nil
 	// []byte binds SQL NULL and overrides the column default, violating the
 	// constraint (SQLSTATE 23502). Default both to an empty object at this
@@ -251,6 +263,15 @@ func (s *Service) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelS
 	return s.store.UpdateProviderConfig(ctx, arg)
 }
 
+// UpdateCategories replaces a source's categories array by direct
+// assignment — an empty array is an explicit clear to '{}'. Values are
+// normalized like Propose (trim, lowercase, dedupe, order preserved); the
+// admin PATCH calls this only when the categories key was present.
+func (s *Service) UpdateCategories(ctx context.Context, arg gen.UpdateIntelSourceCategoriesParams) (Source, error) {
+	arg.Categories = NormalizeCategories(arg.Categories)
+	return s.store.UpdateCategories(ctx, arg)
+}
+
 // ListProposed returns a page of sources with status='proposed' for admin
 // review. Platform-scoped.
 func (s *Service) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {
@@ -338,9 +359,9 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	// Multi-category proposals (intel-channels §6): at least one category is
 	// required. The legacy single 'category' field still counts when the
 	// array is absent.
-	categories := normalizeCategories(input.Categories)
+	categories := NormalizeCategories(input.Categories)
 	if len(categories) == 0 && input.Category != "" {
-		categories = normalizeCategories([]string{input.Category})
+		categories = NormalizeCategories([]string{input.Category})
 	}
 	if len(categories) == 0 {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: categories", errpkg.ErrRequired)
@@ -414,9 +435,10 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	return arg, nil
 }
 
-// normalizeCategories trims, lowercases, and drops empty entries while
-// preserving order and removing duplicates.
-func normalizeCategories(cats []string) []string {
+// NormalizeCategories trims, lowercases, and drops empty entries while
+// preserving order and removing duplicates. Exported so the admin
+// create/update handlers apply the same normalization Propose uses.
+func NormalizeCategories(cats []string) []string {
 	out := make([]string, 0, len(cats))
 	seen := make(map[string]bool, len(cats))
 	for _, c := range cats {

@@ -211,6 +211,18 @@ func (s *Store) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelSou
 	return nil
 }
 
+// UpdateCategories replaces a source's categories array. Direct assignment
+// (not COALESCE) so an empty array is an explicit clear — the caller decides
+// presence semantics (the admin PATCH clears to '{}' on categories:[]).
+func (s *Store) UpdateCategories(ctx context.Context, arg gen.UpdateIntelSourceCategoriesParams) (Source, error) {
+	row, err := s.queries.UpdateIntelSourceCategories(ctx, arg)
+	if err != nil {
+		return Source{}, fmt.Errorf("sources: update categories: %w", err)
+	}
+
+	return row, nil
+}
+
 // MarkLastChanged stamps last_changed_at for a source, signalling that the
 // upstream content has changed since the previous crawl.
 func (s *Store) MarkLastChanged(ctx context.Context, id SourceID) error {
