@@ -116,13 +116,17 @@ func RegisterEmailGateway(d *email.EmailDispatcher) {
 // jc:cache:feed:rss:blog:{} (blog-only), and by
 // HandleMaintenanceRegenerateLLMsTxt to invalidate llms.txt caches.
 // Also used by the intelligence cron handlers for the scheduler leader
-// lock (jc:intel:scheduler_leader, BUG-13 fix).
+// lock (jc:intel:scheduler_leader, BUG-13 fix) and by the Task 10
+// relevance gate for verdict caching + the classifier rate-cap counter
+// (Incr/Expire, jc:intel:relevance:* keys).
 // valkeycompat.Cmdable satisfies this interface.
 type redisCache interface {
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
 	Get(ctx context.Context, key string) *valkeycompat.StringCmd
 	Del(ctx context.Context, keys ...string) *valkeycompat.IntCmd
 	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.BoolCmd
+	Incr(ctx context.Context, key string) *valkeycompat.IntCmd
+	Expire(ctx context.Context, key string, expiration time.Duration) *valkeycompat.BoolCmd
 }
 
 // RegisterDBPool sets the database connection pool for worker handlers.

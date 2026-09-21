@@ -1628,7 +1628,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		aiDispatcher.RegisterProvider("chat", xiaomiProvider)
 		aiDispatcher.RegisterProvider("moderation", xiaomiProvider)
 		aiDispatcher.RegisterProvider("extraction", xiaomiProvider)
-		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash, "categories", []string{"content_generation", "chat", "moderation", "extraction"})
+		// "classification" serves the intel relevance gate's borderline
+		// band (spec §4) — cheap yes/no calls, same provider.
+		aiDispatcher.RegisterProvider("classification", xiaomiProvider)
+		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash, "categories", []string{"content_generation", "chat", "moderation", "extraction", "classification"})
 	}
 
 	// Wire the AI classifier into the spam pipeline so the
@@ -2176,6 +2179,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// wraps curator.Default() and keeps the import cycle in the wiring
 	// layer like the extractor/promoter adapters above.
 	worker.RegisterIntelCurator(&intelCuratorPortAdapter{reg: curator.Default()})
+
+	// intel-channels Phase 1 (Task 10): wire the borderline-band relevance
+	// classifier port — the AI gateway's "classification" category decides
+	// items the deterministic scorer can't resolve. RegisterIntelDependencies
+	// already installed the production gate (deterministic scorer + URL
+	// patterns); this adds the classifier leg. With no "classification"
+	// provider the adapter errors per call and the gate fails open.
+	worker.RegisterIntelRelevanceClassifier(&intelRelevanceClassifierAdapter{
+		d:        aiDispatcher,
+		settings: settingsService,
+	})
 
 	// ADR-076 Amendment 1: wire the Studio auto-promote port so
 	// HandleIntelPromote can auto-create Studio jobs for high-confidence

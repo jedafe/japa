@@ -528,11 +528,12 @@ func SupportedProviderTypes() []string {
 
 // SupportedAICategories returns the canonical dispatcher categories used by
 // Request.Category and the provider registry. Keep this in sync with any new
-// category introduced by generation, chat, embedding, moderation, or
-// extraction surfaces.
+// category introduced by generation, chat, embedding, moderation,
+// extraction, or classification surfaces.
 func SupportedAICategories() []string {
 	return []string{
 		"chat",
+		"classification",
 		"content_generation",
 		"embedding",
 		"extraction",

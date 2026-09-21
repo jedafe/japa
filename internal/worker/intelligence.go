@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/fetcher"
 	"github.com/jedafe/japa/internal/intelligence/probe"
+	"github.com/jedafe/japa/internal/intelligence/relevance"
 	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 	"github.com/jedafe/japa/internal/intelligence/scheduler"
 	"github.com/jedafe/japa/internal/intelligence/services"
@@ -207,6 +208,12 @@ func RegisterIntelDependencies(
 	intelPreflight = preflight
 	intelAsynqClient = client
 	intelProber = prober
+
+	// Install the production relevance gate (Task 10). It reads the
+	// intel.relevance.* settings live and uses the registered classifier
+	// port + Valkey cache; both may be nil → deterministic-only gating.
+	// Tests override via RegisterIntelRelevanceGate.
+	intelRelevanceGate = intelEvaluateRelevance
 }
 
 // RegisterIntelStudioAutoPromoter wires the Studio auto-promote port so
@@ -227,17 +234,37 @@ func RegisterIntelCurator(c intelCuratorPort) {
 	intelCurator = c
 }
 
-// intelCurateRelevanceGate is the per-record relevance-gate seam (Task 10).
-// Registered via RegisterIntelCurateRelevanceGate; when nil every curated
-// record passes — the gate is opt-in until the scoring implementation
-// lands. Return false to drop a record before it is persisted.
-var intelCurateRelevanceGate func(ctx context.Context, ch sources.Channel, rec IntelCuratedRecord) bool
+// intelRelevanceGate is the per-item relevance-gate seam (Task 10). It
+// supersedes Task 9's bool-returning intelCurateRelevanceGate hook: the
+// verdict is returned so the caller can persist an 'off_topic'
+// intel_records row (external_key preserved for re-crawl dedup) instead
+// of silently dropping the item. The signature mirrors
+// relevance.Evaluate — item carries the title/summary/url the scorer
+// sees, mapTopics the resolved category-map topics. nil → the gate is
+// disabled and every item passes; RegisterIntelDependencies installs the
+// production implementation (intelEvaluateRelevance).
+var intelRelevanceGate func(ctx context.Context, item relevance.ItemInput, ch sources.Channel, mapTopics []string) (relevance.Verdict, error)
 
-// RegisterIntelCurateRelevanceGate installs the per-record relevance gate
-// consulted by HandleIntelCurateChannel (Task 10 wires the scoring
-// implementation). Pass nil to disable gating.
-func RegisterIntelCurateRelevanceGate(fn func(ctx context.Context, ch sources.Channel, rec IntelCuratedRecord) bool) {
-	intelCurateRelevanceGate = fn
+// intelRelevanceClassifier is the borderline-band classifier port (§20 AI
+// gateway, category="classification"). Nil → borderline items stay
+// Borderline and pass through (deterministic gating only). Registered
+// from server.go via RegisterIntelRelevanceClassifier — the worker cannot
+// import internal/ai (cycle through auth).
+var intelRelevanceClassifier relevance.Classifier
+
+// RegisterIntelRelevanceGate installs the per-item relevance gate
+// consulted by HandleIntelCurateChannel (pre-persist) and
+// HandleIntelExtract (post-extraction). Pass nil to disable gating;
+// RegisterIntelDependencies installs intelEvaluateRelevance by default.
+func RegisterIntelRelevanceGate(fn func(ctx context.Context, item relevance.ItemInput, ch sources.Channel, mapTopics []string) (relevance.Verdict, error)) {
+	intelRelevanceGate = fn
+}
+
+// RegisterIntelRelevanceClassifier wires the borderline-band classifier
+// port (server.go registers the AI-gateway adapter). Pass nil to run the
+// deterministic gate only.
+func RegisterIntelRelevanceClassifier(c relevance.Classifier) {
+	intelRelevanceClassifier = c
 }
 
 // enqueueIntel enqueues a follow-up intelligence task on the shared Asynq
@@ -1005,6 +1032,14 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 	sourceText := string(rawDoc.Body)
 
+	// Relevance gate (Task 10, extract path): the raw body is not itemized
+	// pre-LLM, so gating runs post-extraction per returned record on its
+	// title/summary/article_url fields. Channel context resolves
+	// payload.channel_id → raw doc stamp → source default channel; with no
+	// channel the record is treated as 'filtered' on category topics only.
+	// nil when the gate is not wired.
+	rel := intelRelevanceCallFor(ctx, p.ChannelID, rawDoc, src)
+
 	var persisted int
 	var retriesExhausted, curateOnly bool
 	for _, entityType := range entityTypes {
@@ -1039,7 +1074,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 			return fmt.Errorf("task:intel:extract: %w", extErr)
 		}
 
-		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, rawDoc.ChannelID, entityType, "", results)
+		n, perr := intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, rawDoc.ChannelID, entityType, "", results, rel)
 		if perr != nil {
 			return perr
 		}
@@ -1162,7 +1197,11 @@ func resolveSourceEntityTypes(src gen.IntelSource) []string {
 // // channelID is the raw doc's stamped channel (invalid for legacy
 // documents); it rides the dedup payload so Task 9 can route the record
 // through the channel's pipeline.
-func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, channelID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult) (int, error) {
+// // rel is the resolved relevance-gate context (Task 10, spec §4 — the
+// extract pipeline gates post-extraction per record). An off_topic verdict
+// keeps the row (status 'off_topic', external_key preserved for dedup) but
+// skips the dedup enqueue; nil disables gating.
+func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, channelID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult, rel *intelRelevanceCall) (int, error) {
 	persisted := 0
 
 	channelIDStr := ""
@@ -1193,6 +1232,21 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, chann
 		}
 
 		persisted++
+
+		// Relevance gate (Task 10): an off_topic verdict flips the row to
+		// 'off_topic' and stops the chain — no dedup/publish enqueue.
+		if rel != nil && rel.verdict(ctx, intelItemFromExtraction(result.RawExtraction), "task:intel:extract") == relevance.VerdictOffTopic {
+			if uerr := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+				ID:     record.ID,
+				Status: "off_topic",
+			}); uerr != nil {
+				return persisted, fmt.Errorf("task:intel:extract: set off_topic status: %w", uerr)
+			}
+
+			slog.Info("task:intel:extract: record off-topic", "record_id", record.ID.String(), "index", i, "entity_type", entityType, "external_key", result.ExternalKey)
+			continue
+		}
+
 		slog.Info("task:intel:extract: extracted", "record_id", record.ID.String(), "index", i, "entity_type", entityType, "confidence", result.ConfidenceOverall)
 
 		payload := marshalPayload(intelRecordPayload{
@@ -1258,9 +1312,11 @@ func intelCreateReviewStub(ctx context.Context, sourceID, rawDocID pgtype.UUID, 
 // (trust_level <= intel.curate.auto_publish_trust_max) go straight to
 // intel:promote as 'auto_published', everything else to intel:dedup.
 // // Crawl methods with no curator (sitemap, git, api, static, …) fall back
-// to intel:extract so a curate/hybrid pipeline never dead-ends. The
-// per-record relevance gate is Task 10 — the intelCurateRelevanceGate hook
-// below is the marked seam; nil means every record passes.
+// to intel:extract so a curate/hybrid pipeline never dead-ends. Each
+// curated record runs the Task 10 relevance gate (intelRelevanceGate) on
+// its title/summary/url before persistence — off_topic records are kept
+// as 'off_topic' intel_records rows for audit + re-crawl dedup; a nil
+// gate passes everything.
 func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 	defer recoverPanic("TypeIntelCurateChannel")
 	slog.Info("task:intel:curate_channel")
@@ -1360,6 +1416,16 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 
 	channelIDStr := ch.ID.String()
 
+	// Relevance gate (Task 10): resolve the category-map topic vocabulary
+	// once per task when the gate is wired; each curated record is then
+	// evaluated on its title/summary/url before persistence. off_topic
+	// records are persisted with status 'off_topic' (external_key kept for
+	// re-crawl dedup) and never reach dedup/publish_gate.
+	var rel *intelRelevanceCall
+	if intelRelevanceGate != nil {
+		rel = &intelRelevanceCall{ch: ch, mapTopics: intelRelevanceMapTopics(ctx, ch, src)}
+	}
+
 	var persisted, gated, skipped int
 	extractEnqueued := false
 
@@ -1374,9 +1440,12 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 			continue
 		}
 
-		// Relevance gate seam — Task 10 plugs per-record scoring in here.
-		if intelCurateRelevanceGate != nil && !intelCurateRelevanceGate(ctx, ch, rec) {
+		// Relevance gate — an off_topic verdict persists the row as
+		// 'off_topic' (auditable + dedupes on re-crawl) and skips the
+		// downstream chain entirely.
+		if rel != nil && rel.verdict(ctx, intelItemFromExtraction(rec.RawExtraction), "task:intel:curate_channel") == relevance.VerdictOffTopic {
 			gated++
+			intelPersistOffTopicRecord(ctx, rawDoc, ch, rec, entityType, "task:intel:curate_channel")
 			continue
 		}
 
@@ -1580,6 +1649,176 @@ func intelCurateAutoPublish(ctx context.Context, src gen.IntelSource) bool {
 	maxTrust := appSettings.GetIntOr(ctx, "intel.curate.auto_publish_trust_max", 0)
 
 	return maxTrust > 0 && int64(src.TrustLevel) <= int64(maxTrust)
+}
+
+// ---------------------------------------------------------------------------
+// Relevance gate (Task 10, spec §4)
+// ---------------------------------------------------------------------------
+
+// intelRelevanceCall bundles the resolved channel and category-map topics
+// so the per-item gate calls inside one task share a single resolution.
+// Built once per handler invocation by intelRelevanceCallFor (extract
+// path) or inline in HandleIntelCurateChannel.
+type intelRelevanceCall struct {
+	ch        sources.Channel
+	mapTopics []string
+}
+
+// verdict evaluates one item through the registered gate. Gate errors
+// fail open — a broken gate must never silently drop records, so the item
+// passes with a warning.
+func (rc *intelRelevanceCall) verdict(ctx context.Context, item relevance.ItemInput, logPrefix string) relevance.Verdict {
+	v, err := intelRelevanceGate(ctx, item, rc.ch, rc.mapTopics)
+	if err != nil {
+		slog.Warn(logPrefix+": relevance gate error, passing item", "channel_id", rc.ch.ID.String(), "error", err)
+
+		return relevance.VerdictOnTopic
+	}
+
+	return v
+}
+
+// intelRelevanceCallFor resolves the gate context for the extract path:
+// the payload's channel_id first, then the raw doc's stamped channel, then
+// the source's default channel (resolveIntelPipelineChannel already covers
+// all three legs). When no channel row exists at all the spec treats the
+// evaluation as 'filtered' with category topics only — the synthetic
+// channel carries the source id so the classifier rate-cap key stays
+// per-source. Returns nil when the gate is not wired (dev/test).
+func intelRelevanceCallFor(ctx context.Context, payloadChannelID string, rawDoc gen.IntelRawDocument, src gen.IntelSource) *intelRelevanceCall {
+	if intelRelevanceGate == nil {
+		return nil
+	}
+
+	channelID, err := scanOptionalUUID(payloadChannelID)
+	if err != nil || !channelID.Valid {
+		channelID = rawDoc.ChannelID
+	}
+
+	ch, resolved := resolveIntelPipelineChannel(ctx, rawDoc.SourceID, channelID)
+	if !resolved {
+		ch = sources.Channel{RelevanceMode: string(sources.RelevanceFiltered)}
+		ch.ID = src.ID // crawl-scope fallback for the rate-cap key
+	}
+
+	return &intelRelevanceCall{ch: ch, mapTopics: intelRelevanceMapTopics(ctx, ch, src)}
+}
+
+// intelEvaluateRelevance is the production gate installed by
+// RegisterIntelDependencies: a relevance.Gate built per call so the
+// hot-reloadable intel.relevance.* settings apply to every item, backed
+// by the registered classifier port and the shared Valkey client.
+func intelEvaluateRelevance(ctx context.Context, item relevance.ItemInput, ch sources.Channel, mapTopics []string) (relevance.Verdict, error) {
+	g := relevance.Gate{
+		OnTopicThreshold:  relevance.DefaultOnTopicThreshold,
+		OffTopicThreshold: relevance.DefaultOffTopicThreshold,
+		ClassifierEnabled: true,
+		BorderlineRateCap: relevance.DefaultBorderlineRateCap,
+		Classifier:        intelRelevanceClassifier,
+		Cache:             intelRelevanceCache(),
+	}
+
+	if appSettings != nil {
+		g.OnTopicThreshold = appSettings.GetFloatOr(ctx, "intel.relevance.on_topic_threshold", g.OnTopicThreshold)
+		g.OffTopicThreshold = appSettings.GetFloatOr(ctx, "intel.relevance.off_topic_threshold", g.OffTopicThreshold)
+		g.ClassifierEnabled = appSettings.GetBoolOr(ctx, "intel.relevance.classifier_enabled", true)
+		g.BorderlineRateCap = appSettings.GetIntOr(ctx, "intel.relevance.borderline_rate_cap", g.BorderlineRateCap)
+	}
+
+	return g.Evaluate(ctx, item, ch, mapTopics)
+}
+
+// intelRelevanceCache adapts the worker's shared Valkey client to the
+// relevance.Cache port; nil when Valkey is not wired (the gate then runs
+// deterministic-only — the classifier cap cannot be enforced without a
+// counter store).
+func intelRelevanceCache() relevance.Cache {
+	if rdb == nil {
+		return nil
+	}
+
+	return relevance.ValkeyCache{Rdb: rdb}
+}
+
+// intelRelevanceMapTopics resolves the category-map topic vocabulary for a
+// channel's parent source: the source's categories (multi-category array
+// first, legacy scalar fallback) are resolved against
+// system_settings.intel.category_method_map (empty/malformed → embedded
+// default via sources.ResolveCategoryMap). Custom-mode channels ignore
+// category topics entirely — nil is returned without a settings read.
+func intelRelevanceMapTopics(ctx context.Context, ch sources.Channel, src gen.IntelSource) []string {
+	if sources.RelevanceMode(ch.RelevanceMode) == sources.RelevanceCustom {
+		return nil
+	}
+
+	cats := src.Categories
+	if len(cats) == 0 && src.Category != "" {
+		cats = []string{src.Category}
+	}
+	if len(cats) == 0 {
+		return nil
+	}
+
+	var mapJSON []byte
+	if appSettings != nil {
+		if s := appSettings.GetStringOr(ctx, "intel.category_method_map", ""); s != "" {
+			mapJSON = []byte(s)
+		}
+	}
+
+	return sources.ResolveCategoryMap(mapJSON, cats).Topics
+}
+
+// intelItemFromExtraction derives the gate's ItemInput from a marshalled
+// extraction payload (field → {value, confidence, evidence}). Field names
+// fall back across the schema vocabulary: title|name|headline,
+// summary|description, article_url|url|link|application_url|source_url.
+func intelItemFromExtraction(raw []byte) relevance.ItemInput {
+	var fields map[string]struct {
+		Value any `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return relevance.ItemInput{}
+	}
+
+	pick := func(names ...string) string {
+		for _, n := range names {
+			f, ok := fields[n]
+			if !ok {
+				continue
+			}
+			if s, ok := f.Value.(string); ok && strings.TrimSpace(s) != "" {
+				return s
+			}
+		}
+
+		return ""
+	}
+
+	return relevance.ItemInput{
+		Title:   pick("title", "name", "headline"),
+		Summary: pick("summary", "description"),
+		URL:     pick("article_url", "url", "link", "application_url", "source_url"),
+	}
+}
+
+// intelPersistOffTopicRecord persists a gated-out record as an
+// intel_records row with status 'off_topic' so the item is auditable and
+// re-crawls dedupe on (source_id, external_key). A unique-violation or
+// insert failure is already logged by intelPersistCuratedRecord — the
+// caller just counts it as gated.
+func intelPersistOffTopicRecord(ctx context.Context, rawDoc gen.IntelRawDocument, ch sources.Channel, rec IntelCuratedRecord, entityType, logPrefix string) {
+	recordID, ok := intelPersistCuratedRecord(ctx, rawDoc, ch, rec, entityType)
+	if !ok {
+		return // 23505 re-crawl dedup or logged insert failure
+	}
+
+	if err := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+		ID:     recordID,
+		Status: "off_topic",
+	}); err != nil {
+		slog.Error(logPrefix+": set off_topic status failed", "record_id", recordID.String(), "external_key", rec.ExternalKey, "error", err)
+	}
 }
 
 // HandleIntelDedup checks (source_id, external_key) uniqueness and enqueues
