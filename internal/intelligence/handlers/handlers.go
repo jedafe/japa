@@ -52,6 +52,18 @@ const TaskIntelFetchSource = "intel:fetch_source"
 // Mirrors worker.TypeVideoSyncChannels without importing the worker package.
 const TaskVideoSyncChannels = "video:sync_channels"
 
+// TaskIntelFetchChannel is the Asynq task name the admin channel-crawl
+// endpoint enqueues to trigger an immediate fetch of a single channel
+// (intel-channels Phase 1, spec §5). Mirrors worker.TypeIntelFetchChannel
+// without importing the worker package.
+const TaskIntelFetchChannel = "intel:fetch_channel"
+
+// TaskIntelProbeVerify is the Asynq task name the admin re-probe endpoint
+// enqueues to re-run the deep verify probe and re-materialize a source's
+// channels (intel-channels Phase 1, spec §5). Mirrors
+// worker.TypeIntelProbeVerify without importing the worker package.
+const TaskIntelProbeVerify = "intel:probe_verify"
+
 // TaskReportNotifyAdmin is the Asynq task name the source-report handler
 // enqueues so moderators with reports.review are notified of a new report —
 // the same fan-out the content/comment/user report handlers run (Section 51).

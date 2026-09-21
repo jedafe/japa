@@ -967,3 +967,670 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Channel admin endpoints (intel-channels Phase 1, spec §5).
+//
+// A channel is one entry point (entry_url + crawl_method + pipeline) under an
+// intel_sources row. These handlers back the control panel's per-source
+// channels editor: list/add/edit/disable/crawl-now per channel plus the
+// "Re-probe" action that re-runs the deep verify probe.
+//
+// Routes live under /api/v1/admin/intel/* and are RBAC-gated per action by
+// the intel.channels.* nodes (migration 000682); RBAC is enforced by route
+// middleware, so the handlers only authenticate + validate.
+// ---------------------------------------------------------------------------
+
+// channelAdminEntry is the admin-facing shape for one intel_source_channels
+// row. provider_config is emitted as inline JSON (jsonb) rather than a
+// base64 string, matching the raw-document response convention.
+func channelToAdminEntry(ch sources.Channel) map[string]interface{} {
+	// text[] columns marshal nil as null — the control panel form expects
+	// arrays, so normalize empty slices to [] for a stable shape.
+	entityTypes := ch.EntityTypes
+	if entityTypes == nil {
+		entityTypes = []string{}
+	}
+	topics := ch.RelevanceTopics
+	if topics == nil {
+		topics = []string{}
+	}
+	patterns := ch.RelevanceUrlPatterns
+	if patterns == nil {
+		patterns = []string{}
+	}
+
+	entry := map[string]interface{}{
+		"id":                     pgUUIDString(ch.ID),
+		"source_id":              pgUUIDString(ch.SourceID),
+		"label":                  ch.Label,
+		"entry_url":              ch.EntryUrl,
+		"crawl_method":           ch.CrawlMethod,
+		"entity_types":           entityTypes,
+		"pipeline":               ch.Pipeline,
+		"provider_config":        jsonBlobToRawMessage(ch.ProviderConfig),
+		"crawl_frequency_mins":   ch.CrawlFrequencyMins,
+		"enabled":                ch.Enabled,
+		"origin":                 ch.Origin,
+		"relevance_mode":         ch.RelevanceMode,
+		"relevance_topics":       topics,
+		"relevance_url_patterns": patterns,
+		"consecutive_failures":   ch.ConsecutiveFailures,
+		"last_crawled_at":        ch.LastCrawledAt,
+		"last_success_at":        ch.LastSuccessAt,
+		"last_error_at":          ch.LastErrorAt,
+		"last_changed_at":        ch.LastChangedAt,
+		"created_at":             ch.CreatedAt,
+		"updated_at":             ch.UpdatedAt,
+	}
+	if ch.LastErrorMessage != nil {
+		entry["last_error_message"] = *ch.LastErrorMessage
+	} else {
+		entry["last_error_message"] = nil
+	}
+
+	return entry
+}
+
+// writeChannelServiceErr maps sources-service errors onto HTTP responses for
+// the channel endpoints: validation sentinels → 400, uniqueness → 409,
+// missing rows → 404, everything else → 500 (logged).
+func writeChannelServiceErr(w http.ResponseWriter, err error, logMsg, failCode, failMsg string) {
+	switch {
+	case errors.Is(err, errpkg.ErrInvalid), errors.Is(err, errpkg.ErrRequired):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+	case errors.Is(err, errpkg.ErrAlreadyExists):
+		errpkg.WriteError(w, http.StatusConflict, "already_exists",
+			"A channel with this entry URL and entity types already exists for the source")
+	case errors.Is(err, pgx.ErrNoRows):
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", failMsg)
+	default:
+		slog.Error(logMsg, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, failCode, failMsg)
+	}
+}
+
+// parseProviderConfigRaw validates a provider_config JSON value from a
+// request body: it must decode to a JSON object (null is normalized to {}).
+// Returns ok=false after writing the error response on invalid input.
+func parseProviderConfigRaw(w http.ResponseWriter, raw json.RawMessage) ([]byte, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return []byte(`{}`), true
+	}
+
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_provider_config", "provider_config must be a JSON object")
+		return nil, false
+	}
+
+	return []byte(raw), true
+}
+
+// HandleAdminListSourceChannels returns every channel owned by a source,
+// ordered by created_at. Used by the control panel channels editor on the
+// source detail page and by the proposal-review surface (probe-materialized
+// channels appear here with origin='probe').
+// // GET /api/v1/admin/intel/sources/{id}/channels
+// // Requires: intel.channels.list
+func (h *Handlers) HandleAdminListSourceChannels(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	sourceID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	// Verify the source exists so a typo'd id reports 404 instead of an
+	// empty channel list that looks like "no channels yet".
+	if _, err := h.intelSources.Get(r.Context(), sourceID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
+			return
+		}
+
+		slog.Error("intel: list channels source lookup failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+
+		return
+	}
+
+	channels, err := h.intelSources.ListChannels(r.Context(), sourceID)
+	if err != nil {
+		slog.Error("intel: list channels failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list channels")
+
+		return
+	}
+
+	entries := make([]map[string]interface{}, 0, len(channels))
+	for _, ch := range channels {
+		entries = append(entries, channelToAdminEntry(ch))
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": entries,
+		"meta": map[string]interface{}{"count": len(entries)},
+	})
+}
+
+// handleChannelCreateBody is the JSON body for
+// POST /api/v1/admin/intel/sources/{id}/channels. The service fills the
+// schema defaults (pipeline='extract', relevance_mode='filtered',
+// origin='admin', provider_config='{}', crawl_frequency_mins=1440) for
+// fields the caller omits.
+type handleChannelCreateBody struct {
+	Label                string          `json:"label"`
+	EntryURL             string          `json:"entry_url"`
+	CrawlMethod          string          `json:"crawl_method"`
+	EntityTypes          []string        `json:"entity_types"`
+	Pipeline             string          `json:"pipeline"`
+	ProviderConfig       json.RawMessage `json:"provider_config"`
+	CrawlFrequencyMins   int32           `json:"crawl_frequency_mins"`
+	Enabled              *bool           `json:"enabled"`
+	RelevanceMode        string          `json:"relevance_mode"`
+	RelevanceTopics      []string        `json:"relevance_topics"`
+	RelevanceURLPatterns []string        `json:"relevance_url_patterns"`
+}
+
+// HandleAdminCreateChannel registers a new channel under a source
+// (origin='admin' via the service default). The body carries the
+// channel-editable fields from spec §5; domain validation (known
+// crawl_method/pipeline/relevance_mode, http(s) entry URL for pull methods,
+// entity_types required for extract|curate pipelines) lives in
+// sources.Service.CreateChannel.
+// // POST /api/v1/admin/intel/sources/{id}/channels
+// // Requires: intel.channels.create
+func (h *Handlers) HandleAdminCreateChannel(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	sourceID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body handleChannelCreateBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	// Verify the source exists before validating the body — a 404 on a
+	// typo'd source id beats a channel-validation error on a dead parent.
+	if _, err := h.intelSources.Get(r.Context(), sourceID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
+			return
+		}
+
+		slog.Error("intel: create channel source lookup failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+
+		return
+	}
+
+	if bad := validateEntityTypes(body.EntityTypes); bad != "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_types contains an unregistered type: "+bad)
+		return
+	}
+
+	params := gen.CreateIntelSourceChannelParams{
+		SourceID:             sourceID,
+		Label:                body.Label,
+		EntryUrl:             body.EntryURL,
+		CrawlMethod:          body.CrawlMethod,
+		EntityTypes:          body.EntityTypes,
+		Pipeline:             body.Pipeline,
+		CrawlFrequencyMins:   body.CrawlFrequencyMins,
+		RelevanceMode:        body.RelevanceMode,
+		RelevanceTopics:      body.RelevanceTopics,
+		RelevanceUrlPatterns: body.RelevanceURLPatterns,
+		Enabled:              true, // channels are created enabled unless explicitly disabled
+	}
+	if body.Enabled != nil {
+		params.Enabled = *body.Enabled
+	}
+
+	if len(body.ProviderConfig) > 0 {
+		pc, ok := parseProviderConfigRaw(w, body.ProviderConfig)
+		if !ok {
+			return
+		}
+		params.ProviderConfig = pc
+	}
+
+	ch, err := h.intelSources.CreateChannel(r.Context(), params)
+	if err != nil {
+		writeChannelServiceErr(w, err, "intel: create channel failed", "create_failed", "Failed to create channel")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
+		"data": channelToAdminEntry(ch),
+	})
+}
+
+// HandleAdminGetChannel returns a single channel with its full config and
+// crawl bookkeeping. Used by the channels editor to prefill the edit form.
+// // GET /api/v1/admin/intel/channels/{id}
+// // Requires: intel.channels.view
+func (h *Handlers) HandleAdminGetChannel(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	channelID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	ch, err := h.intelSources.GetChannel(r.Context(), channelID)
+	if err != nil {
+		writeChannelServiceErr(w, err, "intel: get channel failed", "lookup_failed", "Channel not found")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": channelToAdminEntry(ch),
+	})
+}
+
+// handleChannelPatchBody is the JSON body for
+// PATCH /api/v1/admin/intel/channels/{id}. All fields are optional; JSON key
+// presence (detected on the raw body) decides which update path runs:
+//   - entity_types present (even [] or null → explicit clear) →
+//     UpdateChannelEntityTypes
+//   - any relevance_mode|relevance_topics|relevance_url_patterns key →
+//     UpdateChannelRelevance (absent keys keep their current values)
+//   - any scalar key (label/entry_url/crawl_method/pipeline/provider_config/
+//     crawl_frequency_mins/enabled) → UpdateChannel
+type handleChannelPatchBody struct {
+	Label                *string         `json:"label"`
+	EntryURL             *string         `json:"entry_url"`
+	CrawlMethod          *string         `json:"crawl_method"`
+	Pipeline             *string         `json:"pipeline"`
+	ProviderConfig       json.RawMessage `json:"provider_config"`
+	CrawlFrequencyMins   *int32          `json:"crawl_frequency_mins"`
+	Enabled              *bool           `json:"enabled"`
+	EntityTypes          []string        `json:"entity_types"`
+	RelevanceMode        *string         `json:"relevance_mode"`
+	RelevanceTopics      []string        `json:"relevance_topics"`
+	RelevanceURLPatterns []string        `json:"relevance_url_patterns"`
+}
+
+// channelRelevanceKeys are the JSON keys that route through
+// UpdateChannelRelevance (direct assignment, empty arrays allowed).
+var channelRelevanceKeys = []string{"relevance_mode", "relevance_topics", "relevance_url_patterns"}
+
+// HandleAdminUpdateChannel applies a partial update to a channel. Presence
+// semantics (spec §5): an array key that is present — even empty — is an
+// explicit set/clear, while absent keys leave the column untouched. The
+// patch composes up to three service calls: entity_types first (so a
+// simultaneous pipeline switch sees the new types), then relevance, then
+// scalar fields.
+// // PATCH /api/v1/admin/intel/channels/{id}
+// // Requires: intel.channels.update
+func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	channelID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
+		return
+	}
+
+	var presence map[string]json.RawMessage
+	if err := json.Unmarshal(rawBody, &presence); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	var body handleChannelPatchBody
+	if err := json.Unmarshal(rawBody, &body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	entityTypesPresent := false
+	if _, ok := presence["entity_types"]; ok {
+		entityTypesPresent = true
+		if bad := validateEntityTypes(body.EntityTypes); bad != "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_types contains an unregistered type: "+bad)
+			return
+		}
+	}
+
+	relevancePresent := false
+	for _, k := range channelRelevanceKeys {
+		if _, ok := presence[k]; ok {
+			relevancePresent = true
+			break
+		}
+	}
+
+	scalar := gen.UpdateIntelSourceChannelParams{ID: channelID}
+	scalarPresent := false
+	if body.Label != nil {
+		scalar.Label = body.Label
+		scalarPresent = true
+	}
+	if body.EntryURL != nil {
+		scalar.EntryUrl = body.EntryURL
+		scalarPresent = true
+	}
+	if body.CrawlMethod != nil {
+		scalar.CrawlMethod = body.CrawlMethod
+		scalarPresent = true
+	}
+	if body.Pipeline != nil {
+		scalar.Pipeline = body.Pipeline
+		scalarPresent = true
+	}
+	if raw, ok := presence["provider_config"]; ok {
+		pc, ok := parseProviderConfigRaw(w, raw)
+		if !ok {
+			return
+		}
+		scalar.ProviderConfig = pc
+		scalarPresent = true
+	}
+	if body.CrawlFrequencyMins != nil {
+		if *body.CrawlFrequencyMins <= 0 {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "crawl_frequency_mins must be positive")
+			return
+		}
+		scalar.CrawlFrequencyMins = body.CrawlFrequencyMins
+		scalarPresent = true
+	}
+	if body.Enabled != nil {
+		scalar.Enabled = body.Enabled
+		scalarPresent = true
+	}
+
+	if !entityTypesPresent && !relevancePresent && !scalarPresent {
+		errpkg.WriteError(w, http.StatusBadRequest, "empty_patch", "No editable channel fields in request body")
+		return
+	}
+
+	// Load the existing row only once the patch is known to carry work:
+	// needed for the 404 contract and for merging absent relevance keys
+	// into the direct-assignment update.
+	existing, err := h.intelSources.GetChannel(r.Context(), channelID)
+	if err != nil {
+		writeChannelServiceErr(w, err, "intel: update channel lookup failed", "lookup_failed", "Channel not found")
+		return
+	}
+
+	updated := existing
+
+	// entity_types first: a same-patch pipeline switch to extract|curate
+	// must see the new types when UpdateChannel runs its cross-field check.
+	if entityTypesPresent {
+		types := body.EntityTypes
+		if types == nil { // explicit null → clear
+			types = []string{}
+		}
+		updated, err = h.intelSources.UpdateChannelEntityTypes(r.Context(), gen.UpdateIntelChannelEntityTypesParams{
+			ID:          channelID,
+			EntityTypes: types,
+		})
+		if err != nil {
+			writeChannelServiceErr(w, err, "intel: update channel entity types failed", "update_failed", "Failed to update channel")
+			return
+		}
+	}
+
+	if relevancePresent {
+		relParams := gen.UpdateIntelChannelRelevanceParams{
+			ID:                   channelID,
+			RelevanceMode:        updated.RelevanceMode,
+			RelevanceTopics:      updated.RelevanceTopics,
+			RelevanceUrlPatterns: updated.RelevanceUrlPatterns,
+		}
+		if body.RelevanceMode != nil {
+			relParams.RelevanceMode = *body.RelevanceMode
+		}
+		if _, ok := presence["relevance_topics"]; ok {
+			relParams.RelevanceTopics = body.RelevanceTopics
+			if relParams.RelevanceTopics == nil { // explicit null → clear
+				relParams.RelevanceTopics = []string{}
+			}
+		}
+		if _, ok := presence["relevance_url_patterns"]; ok {
+			relParams.RelevanceUrlPatterns = body.RelevanceURLPatterns
+			if relParams.RelevanceUrlPatterns == nil {
+				relParams.RelevanceUrlPatterns = []string{}
+			}
+		}
+
+		updated, err = h.intelSources.UpdateChannelRelevance(r.Context(), relParams)
+		if err != nil {
+			writeChannelServiceErr(w, err, "intel: update channel relevance failed", "update_failed", "Failed to update channel")
+			return
+		}
+	}
+
+	if scalarPresent {
+		updated, err = h.intelSources.UpdateChannel(r.Context(), scalar)
+		if err != nil {
+			writeChannelServiceErr(w, err, "intel: update channel failed", "update_failed", "Failed to update channel")
+			return
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": channelToAdminEntry(updated),
+	})
+}
+
+// HandleAdminDeleteChannel removes a channel from a source. Raw documents
+// reference the channel with ON DELETE SET NULL and inbound events cascade,
+// so deleting a channel never orphans pipeline state.
+// // DELETE /api/v1/admin/intel/channels/{id}
+// // Requires: intel.channels.delete
+func (h *Handlers) HandleAdminDeleteChannel(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	channelID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	// Verify the channel exists so a typo'd id reports 404 (the DELETE
+	// statement itself is a no-op on missing rows).
+	if _, err := h.intelSources.GetChannel(r.Context(), channelID); err != nil {
+		writeChannelServiceErr(w, err, "intel: delete channel lookup failed", "lookup_failed", "Channel not found")
+		return
+	}
+
+	if err := h.intelSources.DeleteChannel(r.Context(), channelID); err != nil {
+		slog.Error("intel: delete channel failed", "channel_id", channelID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete channel")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{"deleted": true},
+	})
+}
+
+// HandleAdminCrawlChannel enqueues an intel:fetch_channel task for an
+// immediate crawl of a single channel — the channel-granular counterpart of
+// HandleCrawlNow (intel-channels Phase 1 moved scheduling to channels).
+// Disabled channels and methods the worker cannot fetch (manual, email,
+// webhook — the same set ListDueChannels excludes and HandleIntelFetchChannel
+// skips) are rejected with 409 so a queued-but-no-op enqueue never misleads.
+// // POST /api/v1/admin/intel/channels/{id}/crawl
+// // Requires: intel.channels.crawl
+func (h *Handlers) HandleAdminCrawlChannel(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil || h.asynqClient == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	channelID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	ch, err := h.intelSources.GetChannel(r.Context(), channelID)
+	if err != nil {
+		writeChannelServiceErr(w, err, "intel: crawl channel lookup failed", "lookup_failed", "Channel not found")
+		return
+	}
+
+	if !ch.Enabled {
+		errpkg.WriteError(w, http.StatusConflict, "channel_disabled", "Cannot crawl a disabled channel — enable it first")
+		return
+	}
+
+	method := sources.CrawlMethod(ch.CrawlMethod)
+	if sources.InboundMethod(method) || method == sources.CrawlMethodManual {
+		errpkg.WriteError(w, http.StatusConflict, "channel_not_crawlable",
+			"Channels with crawl_method manual, email, or webhook are never fetched — inbound endpoints own ingestion")
+		return
+	}
+
+	// Payload mirrors worker.intelChannelPayload: source_id is advisory (the
+	// channel row's source_id is authoritative at handling time).
+	payload, err := json.Marshal(map[string]string{
+		"version":    "v1",
+		"channel_id": channelID.String(),
+		"source_id":  ch.SourceID.String(),
+	})
+	if err != nil {
+		slog.Error("intel: crawl channel marshal failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to build task payload")
+
+		return
+	}
+
+	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelFetchChannel, payload)); err != nil {
+		slog.Error("intel: crawl channel enqueue failed", "channel_id", channelID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue crawl task")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+		"data": map[string]interface{}{
+			"channel_id": channelID.String(),
+			"status":     "queued",
+			"task":       TaskIntelFetchChannel,
+		},
+	})
+}
+
+// HandleAdminReprobeSource enqueues an intel:probe_verify task to re-run the
+// deep verify probe for a source — the "Re-probe" action in the control
+// panel channels editor (spec §5). The probe rewrites probe_report /
+// detected_methods and materializes channels idempotently (existing rows
+// are deduped on source_id+entry_url+entity_types). The worker still applies
+// its own gates (disabled source, verify-exempt source_type).
+// // POST /api/v1/admin/intel/sources/{id}/reprobe
+// // Requires: intel.sources.probe
+func (h *Handlers) HandleAdminReprobeSource(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil || h.asynqClient == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	sourceID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	// Verify the source exists before enqueuing (a stray id would enqueue a
+	// task the worker immediately discards).
+	src, err := h.intelSources.Get(r.Context(), sourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
+			return
+		}
+
+		slog.Error("intel: reprobe source lookup failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+
+		return
+	}
+
+	if !src.Enabled {
+		errpkg.WriteError(w, http.StatusConflict, "source_disabled", "Cannot re-probe a disabled source — enable it first")
+		return
+	}
+
+	// Payload mirrors worker.intelSourcePayload.
+	payload, err := json.Marshal(map[string]string{
+		"version":   "v1",
+		"source_id": sourceID.String(),
+	})
+	if err != nil {
+		slog.Error("intel: reprobe marshal failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to build task payload")
+
+		return
+	}
+
+	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelProbeVerify, payload)); err != nil {
+		slog.Error("intel: reprobe enqueue failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue probe task")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+		"data": map[string]interface{}{
+			"source_id": sourceID.String(),
+			"status":    "queued",
+			"task":      TaskIntelProbeVerify,
+		},
+	})
+}

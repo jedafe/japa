@@ -2415,3 +2415,20 @@ func HandleIntelRetryFailedSource(ctx context.Context, t *asynq.Task) error {
 
 	return nil
 }
+
+// EnqueueIntelFetchChannel builds and enqueues an intel:fetch_channel task
+// for a single channel — used by the admin channel-crawl endpoint and any
+// future control-panel trigger that needs an immediate per-channel fetch.
+// Mirrors EnqueueIntelProbeVerify (intel_probe.go).
+func (e *Enqueuer) EnqueueIntelFetchChannel(channelID, sourceID string) error {
+	payload, err := json.Marshal(intelChannelPayload{
+		Version:   intelPayloadVersion,
+		ChannelID: channelID,
+		SourceID:  sourceID,
+	})
+	if err != nil {
+		return err
+	}
+
+	return e.Enqueue(TypeIntelFetchChannel, payload)
+}

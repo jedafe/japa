@@ -240,6 +240,29 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 	// exposing the rest of the config document.
 	entry["entity_types"] = sources.EntityTypesFromProviderConfig(s.ProviderConfig)
 
+	// intel-channels Phase 1: multi-category + probe state. The proposal
+	// review surface shows probe_report + detected_methods so admins can see
+	// what the probe discovered before approving/editing channels.
+	categories := s.Categories
+	if categories == nil {
+		categories = []string{}
+	}
+	entry["categories"] = categories
+
+	keywords := s.Keywords
+	if keywords == nil {
+		keywords = []string{}
+	}
+	entry["keywords"] = keywords
+
+	methods := s.DetectedMethods
+	if methods == nil {
+		methods = []string{}
+	}
+	entry["detected_methods"] = methods
+	entry["probe_report"] = jsonBlobToRawMessage(s.ProbeReport)
+	entry["last_probed_at"] = s.LastProbedAt
+
 	entry["proposed_at"] = s.ProposedAt
 	if s.ProposedBy.Valid {
 		entry["proposed_by"] = s.ProposedBy.String()
