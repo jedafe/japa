@@ -36,10 +36,12 @@ var highStakesEntityTypes = map[string]bool{
 	"credential_pathway": true, // professional licensing — high-stakes immigration/career path (§94)
 }
 
-// isHighStakes returns true if the entity type is in the high-stakes set
+// IsHighStakes returns true if the entity type is in the high-stakes set
 // (immigration, financial, grants, health, professional licensing). The check
-// is unconditional and cannot be bypassed via config (ADR-088).
-func isHighStakes(entityType string) bool {
+// is unconditional and cannot be bypassed via config (ADR-088). Exported so
+// callers outside the Classify path — e.g. the worker's curated-record trust
+// gate — apply the same unconditional review requirement.
+func IsHighStakes(entityType string) bool {
 	return highStakesEntityTypes[entityType]
 }
 
@@ -49,7 +51,7 @@ func Classify(in GateInput) GateDecision {
 	// High-stakes gate (ADR-088): immigration, financial, grants, and health
 	// content ALWAYS require human review, regardless of confidence or trust
 	// level. This gate is unconditional and cannot be bypassed via config.
-	if isHighStakes(in.EntityType) {
+	if IsHighStakes(in.EntityType) {
 		return GateReviewRequired
 	}
 

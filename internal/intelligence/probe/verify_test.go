@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -351,6 +352,86 @@ func TestVerify_SitemapIndex(t *testing.T) {
 
 	if !found {
 		t.Errorf("channels missing sitemapindex-expanded /jobs/1 jsonld proposal: %+v", report.Channels)
+	}
+}
+
+// TestVerify_SkipsPrivateIPLiteralDiscoveredURLs covers the SSRF guard on
+// content-discovered URLs (final review C1d): a sitemap <loc> or feed link
+// pointing at a private/reserved IP literal on a FOREIGN host must be
+// skipped without spending a request — the report records warnings instead.
+// Same-host literals (like this fixture's own 127.0.0.1 locs) stay
+// fetchable; names are left to the fetcher dial guard.
+func TestVerify_SkipsPrivateIPLiteralDiscoveredURLs(t *testing.T) {
+	t.Parallel()
+
+	var srvURL string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(longHTML(
+			`<link rel="alternate" type="application/rss+xml" href="http://169.254.169.254/feed">`)))
+	})
+	mux.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>` + srvURL + `/jobs</loc></url>
+  <url><loc>http://169.254.169.254/latest/meta-data</loc></url>
+  <url><loc>http://10.0.0.5/internal/secret</loc></url>
+  <url><loc>http://[::1]:8500/v1/status</loc></url>
+</urlset>`))
+	})
+	mux.HandleFunc("/jobs", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(longHTML(jobPostingLD)))
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	srvURL = srv.URL
+
+	report, err := NewProber(srv.Client(), DefaultVerifyMaxRequests).
+		Verify(t.Context(), srv.URL+"/", "", []string{"job"}, VerifyOpts{})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+
+	// The same-host loc was fetched and produced its channel.
+	var jobsProp *ChannelProposal
+	for i := range report.Channels {
+		if report.Channels[i].EntryURL == srvURL+"/jobs" {
+			jobsProp = &report.Channels[i]
+		}
+	}
+	if jobsProp == nil {
+		t.Fatalf("channels missing same-host /jobs proposal: %+v", report.Channels)
+	}
+
+	// No channel may carry a private-literal entry URL.
+	for _, ch := range report.Channels {
+		if strings.Contains(ch.EntryURL, "169.254.169.254") ||
+			strings.Contains(ch.EntryURL, "10.0.0.5") ||
+			strings.Contains(ch.EntryURL, "[::1]") {
+			t.Errorf("private-literal channel proposal leaked through: %+v", ch)
+		}
+	}
+
+	// The private feed was dropped from feed_urls and its rss proposal.
+	for _, f := range report.FeedURLs {
+		if strings.Contains(f, "169.254.169.254") {
+			t.Errorf("private feed survived recheck: %v", report.FeedURLs)
+		}
+	}
+	for _, ch := range report.Channels {
+		if ch.CrawlMethod == "rss" {
+			t.Errorf("private feed kept an rss channel proposal: %+v", ch)
+		}
+	}
+
+	// The skips are surfaced as warnings, not silent.
+	if !hasWarning(report, "private/reserved") {
+		t.Errorf("warnings missing SSRF skip note: %v", report.Warnings)
 	}
 }
 

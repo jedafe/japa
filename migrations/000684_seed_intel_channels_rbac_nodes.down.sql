@@ -1,5 +1,5 @@
--- 000682_seed_intel_channels_rbac_nodes.down.sql
--- Remove the intel source-channel admin RBAC nodes seeded by 000682.
+-- 000684_seed_intel_channels_rbac_nodes.down.sql
+-- Remove the intel source-channel admin RBAC nodes seeded by 000684.
 
 BEGIN;
 

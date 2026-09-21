@@ -454,7 +454,7 @@ func TestPreview_SPAMarkers(t *testing.T)           { /* <div id="root"></div> +
 
 **Files:**
 - Modify: `internal/intelligence/handlers/sources_admin.go` (channel handlers)
-- Create: `migrations/000682_seed_intel_channels_rbac_nodes.up/down.sql`
+- Create: `migrations/000684_seed_intel_channels_rbac_nodes.up/down.sql`
 - Modify: `internal/server/server.go` routes
 
 **Interfaces:**
@@ -496,7 +496,7 @@ func TestPreview_SPAMarkers(t *testing.T)           { /* <div id="root"></div> +
 ### Task 15: Settings seeds + catalogs
 
 **Files:**
-- Create: `migrations/000683_seed_intel_channel_settings.up/down.sql`
+- Create: `migrations/000685_seed_intel_channel_settings.up/down.sql`
 - Modify: `.jeos/conventions/{api-routes-catalog.md,asynq-tasks.md,valkey-keys.md,system-settings.md}`
 
 - [ ] **Step 1:** Seed settings rows: `intel.category_method_map` (spec §2 JSON), `intel.probe.max_requests=5`, `intel.probe.rate_limit_per_hr=20`, `intel.curate.auto_publish_trust_max=2`, `intel.relevance.*` (classifier_enabled=true, borderline_rate_cap=50, thresholds), `intel.render.service_url=''`, `intel.search.provider=''`, `intel.social.enabled_providers=[]`.

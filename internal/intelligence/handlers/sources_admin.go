@@ -1041,7 +1041,7 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 // "Re-probe" action that re-runs the deep verify probe.
 //
 // Routes live under /api/v1/admin/intel/* and are RBAC-gated per action by
-// the intel.channels.* nodes (migration 000682); RBAC is enforced by route
+// the intel.channels.* nodes (migration 000684); RBAC is enforced by route
 // middleware, so the handlers only authenticate + validate.
 // ---------------------------------------------------------------------------
 

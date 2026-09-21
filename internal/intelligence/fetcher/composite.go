@@ -3,6 +3,7 @@ package fetcher
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
@@ -20,12 +21,27 @@ type Composite struct {
 	api    *APIFetcher
 }
 
-// NewComposite returns a Composite fetcher with all adapters wired.
+// NewComposite returns a Composite fetcher with all adapters wired, each
+// backed by an SSRF-safe client (dial-time private-IP guard + redirect
+// guard).
 func NewComposite() *Composite {
 	return &Composite{
 		static: NewStaticFetcher(),
 		rss:    NewRSSFetcher(),
 		api:    NewAPIFetcher(),
+	}
+}
+
+// NewCompositeWithClient returns a Composite whose adapters all share the
+// given HTTP client — the test-only opt-out for httptest fixtures bound to
+// 127.0.0.1. Production wiring uses NewComposite (SSRF-safe clients).
+// Tests typically pass NewSafeClientOpts(…, SafeClientOpts{AllowPrivate: true})
+// or the fixture's srv.Client().
+func NewCompositeWithClient(client *http.Client) *Composite {
+	return &Composite{
+		static: &StaticFetcher{client: client},
+		rss:    &RSSFetcher{client: client},
+		api:    &APIFetcher{client: client},
 	}
 }
 

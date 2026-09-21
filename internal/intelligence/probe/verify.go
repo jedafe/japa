@@ -135,12 +135,26 @@ func (r *runState) detectSubPage(ctx context.Context, page *FetchedPage, out *Re
 	}
 
 	for _, f := range sub.FeedURLs {
+		if r.blockedDiscoveredURL(f) {
+			// A sub-page <link> can re-smuggle a foreign private-literal
+			// feed AFTER the recheck pass — same SSRF rule as sitemap locs.
+			continue
+		}
+
 		if !slices.Contains(out.FeedURLs, f) {
 			out.FeedURLs = append(out.FeedURLs, f)
 		}
 	}
 
-	out.Channels = append(out.Channels, sub.Channels...)
+	for _, prop := range sub.Channels {
+		// Drop proposals whose entry point is a foreign private literal —
+		// e.g. an rss proposal for a blocked feed URL (SSRF, review C1d).
+		if r.blockedDiscoveredURL(prop.EntryURL) {
+			continue
+		}
+
+		out.Channels = append(out.Channels, prop)
+	}
 
 	if len(sub.JSONLDTypes) > 0 {
 		out.Channels = append(out.Channels, ChannelProposal{
@@ -159,13 +173,36 @@ func (r *runState) detectSubPage(ctx context.Context, page *FetchedPage, out *Re
 	}
 }
 
+// blockedDiscoveredURL reports whether a content-discovered URL must not be
+// fetched: its host is a private/reserved IP literal on a DIFFERENT host
+// than the (already-fetched) entry page. Same-host literals pass — they are
+// no riskier than the entry request itself, and tests serve fixtures from
+// 127.0.0.1. Named hosts pass here regardless of what they resolve to —
+// the fetcher safetransport's dial-time guard rejects private DNS answers.
+// (intel-channels final review C1d)
+func (r *runState) blockedDiscoveredURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	host := u.Hostname()
+	if host == "" || strings.EqualFold(host, r.entryHost) {
+		return false
+	}
+
+	return sources.IsPrivateIPLiteral(host)
+}
+
 // recheckFeeds GETs each discovered feed URL and drops the ones that no
 // longer answer with feed content (dead link-guessed alternates, SPA
 // catch-alls, 404s). Only a definitive response — non-2xx status, or a 2xx
 // non-feed body — is evidence of death: transport failures and
 // budget-exhausted skips keep the feed. Dropped feeds lose both their
 // feed_urls entry and their rss channel proposal; methods evidence is
-// left as detection history.
+// left as detection history. Feeds pointing at foreign private-IP literals
+// are dropped without a request (SSRF — a materialized channel would have
+// been rejected at insert anyway).
 func (r *runState) recheckFeeds(ctx context.Context, out *Report) {
 	if len(out.FeedURLs) == 0 {
 		return
@@ -175,6 +212,14 @@ func (r *runState) recheckFeeds(ctx context.Context, out *Report) {
 	dead := map[string]bool{}
 
 	for i, feedURL := range out.FeedURLs {
+		if r.blockedDiscoveredURL(feedURL) {
+			dead[feedURL] = true
+			out.Warnings = append(out.Warnings,
+				fmt.Sprintf("verify: feed %s targets a private/reserved address; dropped (SSRF)", feedURL))
+
+			continue
+		}
+
 		page, err := r.get(ctx, feedURL)
 		if errors.Is(err, errBudgetExhausted) {
 			r.noteBudget(out)
@@ -337,6 +382,7 @@ func (r *runState) walkSitemaps(ctx context.Context, page *FetchedPage, maxURLs 
 	var (
 		pageURLs []string
 		fetched  int
+		blocked  int
 	)
 
 	seen := map[string]bool{}
@@ -350,6 +396,15 @@ func (r *runState) walkSitemaps(ctx context.Context, page *FetchedPage, maxURLs 
 			continue
 		}
 		seen[smURL] = true
+
+		if r.blockedDiscoveredURL(smURL) {
+			// robots.txt Sitemap: declarations and sitemapindex <loc>s are
+			// attacker-controlled — a foreign private-IP literal must never
+			// be dialed (SSRF, review C1d).
+			blocked++
+
+			continue
+		}
 
 		doc, err := r.get(ctx, smURL)
 		if errors.Is(err, errBudgetExhausted) {
@@ -379,6 +434,14 @@ func (r *runState) walkSitemaps(ctx context.Context, page *FetchedPage, maxURLs 
 			continue // already detector-analyzed (entry or category path)
 		}
 
+		if r.blockedDiscoveredURL(u) {
+			// A hostile sitemap can name internal addresses in <loc> —
+			// never fetch them (SSRF, review C1d).
+			blocked++
+
+			continue
+		}
+
 		sub, err := r.get(ctx, u)
 		if errors.Is(err, errBudgetExhausted) {
 			r.noteBudget(out)
@@ -391,5 +454,10 @@ func (r *runState) walkSitemaps(ctx context.Context, page *FetchedPage, maxURLs 
 		}
 
 		r.detectSubPage(ctx, sub, out)
+	}
+
+	if blocked > 0 {
+		out.Warnings = append(out.Warnings,
+			fmt.Sprintf("verify: sitemap walk skipped %d private/reserved-address URLs (SSRF)", blocked))
 	}
 }

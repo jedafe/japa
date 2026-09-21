@@ -2,6 +2,7 @@ package sources
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 
@@ -137,8 +138,9 @@ func InboundMethod(m CrawlMethod) bool {
 // origin, a fetchable http(s) entry_url for pull methods (inbound channels
 // only require a non-empty entry point — email/webhook entry URLs may be
 // mailto: addresses or provider identifiers), and entity_types for the
-// record-producing pipelines.
-func validateChannelCreate(arg gen.CreateIntelSourceChannelParams) error {
+// record-producing pipelines. allowedLiteralHost is the parent source's
+// host[:port] for the same-host private-literal carve-out ("" = strict).
+func validateChannelCreate(arg gen.CreateIntelSourceChannelParams, allowedLiteralHost string) error {
 	if !arg.SourceID.Valid {
 		return fmt.Errorf("sources: channel: %w: source_id", errpkg.ErrRequired)
 	}
@@ -151,7 +153,7 @@ func validateChannelCreate(arg gen.CreateIntelSourceChannelParams) error {
 		return fmt.Errorf("sources: channel: %w: unknown crawl_method %q", errpkg.ErrInvalid, arg.CrawlMethod)
 	}
 
-	if err := validateChannelEntryURL(arg.EntryUrl, method); err != nil {
+	if err := validateChannelEntryURL(arg.EntryUrl, method, allowedLiteralHost); err != nil {
 		return err
 	}
 
@@ -173,10 +175,97 @@ func validateChannelCreate(arg gen.CreateIntelSourceChannelParams) error {
 	return nil
 }
 
+// privateIPNets are the private/reserved ranges a channel entry_url host
+// must not point at — the same range set as
+// internal/linkpreview/ssrf.go and fetcher's safetransport privateNets
+// (the import graph forces a third copy: sources cannot import fetcher —
+// fetcher already imports sources — and linkpreview pulls internal/auth,
+// which would close a cycle through internal/worker). The check applied
+// here is a cheap net.ParseIP literal check at insert time; hostname
+// resolution is deliberately NOT done — the fetcher's dial-time guard
+// covers resolved names.
+var privateIPNets = []net.IPNet{
+	mustCIDR("127.0.0.0/8"),        // loopback
+	mustCIDR("10.0.0.0/8"),         // private class A
+	mustCIDR("172.16.0.0/12"),      // private class B
+	mustCIDR("192.168.0.0/16"),     // private class C
+	mustCIDR("169.254.0.0/16"),     // link-local
+	mustCIDR("0.0.0.0/8"),          // current network
+	mustCIDR("100.64.0.0/10"),      // shared address space (CGNAT)
+	mustCIDR("192.0.0.0/24"),       // IETF protocol assignments
+	mustCIDR("192.0.2.0/24"),       // TEST-NET-1
+	mustCIDR("198.51.100.0/24"),    // TEST-NET-2
+	mustCIDR("203.0.113.0/24"),     // TEST-NET-3
+	mustCIDR("224.0.0.0/4"),        // IPv4 multicast
+	mustCIDR("240.0.0.0/4"),        // reserved
+	mustCIDR("255.255.255.255/32"), // broadcast
+	mustCIDR("::1/128"),            // IPv6 loopback
+	mustCIDR("fc00::/7"),           // IPv6 unique local
+	mustCIDR("fe80::/10"),          // IPv6 link-local
+	mustCIDR("ff00::/8"),           // IPv6 multicast
+}
+
+func mustCIDR(s string) net.IPNet {
+	_, n, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(fmt.Sprintf("sources: invalid private CIDR %q: %v", s, err))
+	}
+
+	return *n
+}
+
+// IsPrivateIPLiteral reports whether host is an IP literal in a
+// private/reserved range (loopback, RFC1918, link-local, CGNAT, ULA,
+// multicast, unspecified, documentation/reserved). Non-literal hosts return
+// false — name resolution is a dial-time concern (fetcher's guarded
+// DialContext), not an insert-time one. Exported for the probe's
+// discovered-URL checks (probe imports sources already).
+func IsPrivateIPLiteral(host string) bool {
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil {
+		return false
+	}
+
+	return IsPrivateIP(ip)
+}
+
+// IsPrivateIP reports whether ip falls in any private/reserved range,
+// normalizing IPv4-mapped IPv6 literals so they are caught by the IPv4 CIDRs.
+func IsPrivateIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+
+	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() {
+		return true
+	}
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+
+	for _, n := range privateIPNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // validateChannelEntryURL enforces the entry point shape: pull methods must
-// be fetchable http(s) URLs; inbound methods accept any non-empty entry
-// point (mailto:, provider address, webhook slug).
-func validateChannelEntryURL(entryURL string, method CrawlMethod) error {
+// be fetchable http(s) URLs whose host is not a private/reserved IP literal
+// (SSRF — a literal target would be crawled on schedule and its body
+// persisted into intel_raw_documents); inbound methods accept any non-empty
+// entry point (mailto:, provider address, webhook slug).
+//
+// allowedLiteralHost (host[:port] of the parent source_url, "" when
+// unknown) carves out same-host literals: a channel on the source's own
+// host is never an SSRF escalation beyond the already-registered target —
+// and keeps dev/test environments (sources on 127.0.0.1) functional. A
+// literal on any OTHER host is always rejected; names are left to the
+// fetcher's dial-time guard.
+func validateChannelEntryURL(entryURL string, method CrawlMethod, allowedLiteralHost string) error {
 	if entryURL == "" {
 		return fmt.Errorf("sources: channel: %w: entry_url", errpkg.ErrRequired)
 	}
@@ -187,6 +276,10 @@ func validateChannelEntryURL(entryURL string, method CrawlMethod) error {
 	u, err := url.Parse(entryURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return fmt.Errorf("sources: channel: %w: entry_url must be an http(s) URL", errpkg.ErrInvalid)
+	}
+
+	if IsPrivateIPLiteral(u.Hostname()) && !strings.EqualFold(u.Host, allowedLiteralHost) {
+		return fmt.Errorf("sources: channel: %w: entry_url targets a private/reserved IP", errpkg.ErrInvalid)
 	}
 
 	return nil
@@ -214,6 +307,9 @@ func validateChannelUpdate(arg gen.UpdateIntelSourceChannelParams) error {
 		u, err := url.Parse(entryURL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("sources: channel: %w: entry_url must be an http(s) URL", errpkg.ErrInvalid)
+		}
+		if IsPrivateIPLiteral(u.Hostname()) {
+			return fmt.Errorf("sources: channel: %w: entry_url targets a private/reserved IP", errpkg.ErrInvalid)
 		}
 		*arg.EntryUrl = entryURL
 	}

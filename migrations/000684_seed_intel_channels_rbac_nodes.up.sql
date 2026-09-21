@@ -1,4 +1,4 @@
--- 000682_seed_intel_channels_rbac_nodes.up.sql
+-- 000684_seed_intel_channels_rbac_nodes.up.sql
 -- Add RBAC nodes for the intel source-channel admin endpoints
 -- (intel-channels Phase 1, spec §5). intel.inbound.manage is seeded now for
 -- the Phase 3 inbound-events admin surface (no routes consume it yet).
