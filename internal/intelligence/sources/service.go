@@ -603,6 +603,121 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 	return s.store.Create(ctx, arg)
 }
 
+// Oneshot system source — the shared container under which user-submitted
+// single-URL fetches materialize (intel-channels Phase 2, spec §3
+// oneshot). Channels hang off it with crawl_method='oneshot' and are fired
+// once by POST /sources/oneshot; ListDueChannels never schedules them.
+const (
+	oneshotSourceSlug = "user-oneshot-submissions"
+	oneshotSourceName = "User Oneshot Submissions"
+	oneshotSourceURL  = "https://japaconnect.com/"
+	oneshotDomain     = "japaconnect.com"
+)
+
+// SubmitOneshot records a user-submitted URL as a oneshot channel on the
+// shared system source (created lazily) and returns the channel. The
+// UNIQUE(source_id, entry_url, entity_types) constraint dedupes repeats —
+// a re-submission returns the existing row with created=false so the
+// caller can re-fire a fetch without growing channel rows.
+//
+// The channel's entity_types come from the caller-supplied categories via
+// the category map (empty is allowed — pipeline 'hybrid' tolerates it and
+// extract falls back to the source category, landing unresolvable docs in
+// the review queue).
+func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories []string) (Channel, bool, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return Channel{}, false, fmt.Errorf("sources: oneshot: %w: url", errpkg.ErrRequired)
+	}
+	if !strings.Contains(rawURL, "://") {
+		rawURL = "https://" + rawURL
+	}
+	if err := validateChannelEntryURL(rawURL, CrawlMethodOneshot, ""); err != nil {
+		return Channel{}, false, fmt.Errorf("sources: oneshot: %w", err)
+	}
+
+	src, err := s.oneshotSource(ctx)
+	if err != nil {
+		return Channel{}, false, err
+	}
+
+	cats := NormalizeCategories(categories)
+	var entityTypes []string
+	if len(cats) > 0 {
+		entityTypes = ResolveCategoryMap(nil, cats).EntityTypes
+	}
+
+	ch, err := s.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
+		SourceID:    src.ID,
+		Label:       "Oneshot",
+		EntryUrl:    rawURL,
+		CrawlMethod: string(CrawlMethodOneshot),
+		EntityTypes: entityTypes,
+		Pipeline:    string(PipelineHybrid),
+		Enabled:     true,
+		Origin:      string(ChannelOriginUser),
+	})
+	if err == nil {
+		return ch, true, nil
+	}
+	if !errors.Is(err, errpkg.ErrAlreadyExists) {
+		return Channel{}, false, fmt.Errorf("sources: oneshot: create channel: %w", err)
+	}
+
+	// Dedupe hit — find the existing row for re-fire.
+	channels, lerr := s.store.ListChannels(ctx, src.ID)
+	if lerr != nil {
+		return Channel{}, false, fmt.Errorf("sources: oneshot: list channels: %w", lerr)
+	}
+	for _, c := range channels {
+		if c.EntryUrl == rawURL && c.CrawlMethod == string(CrawlMethodOneshot) {
+			return c, false, nil
+		}
+	}
+
+	return Channel{}, false, fmt.Errorf("sources: oneshot: channel exists but could not be loaded")
+}
+
+// oneshotSource returns the shared system source, creating it on first
+// submission. A concurrent first submission can race the insert — on a
+// slug/URL conflict the row is re-fetched.
+func (s *Service) oneshotSource(ctx context.Context) (Source, error) {
+	if src, err := s.store.GetBySlug(ctx, oneshotSourceSlug); err == nil {
+		return src, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return Source{}, fmt.Errorf("sources: oneshot: load system source: %w", err)
+	}
+
+	slug := oneshotSourceSlug
+	src, err := s.store.Create(ctx, gen.CreateIntelSourceParams{
+		Name:               oneshotSourceName,
+		Slug:               &slug,
+		Domain:             oneshotDomain,
+		SourceUrl:          oneshotSourceURL,
+		Category:           "announcement",
+		Categories:         []string{"announcement"},
+		SourceType:         "auto",
+		SourceKind:         string(SourceKindAggregator),
+		TrustLevel:         5,
+		CrawlMethod:        string(CrawlMethodManual),
+		CrawlFrequency:     string(CrawlFrequencyManual),
+		CrawlFrequencyMins: 0,
+		RobotsPolicy:       []byte("{}"),
+		ProviderConfig:     []byte("{}"),
+		Enabled:            true,
+		Status:             "active",
+	})
+	if err != nil {
+		if retry, gerr := s.store.GetBySlug(ctx, oneshotSourceSlug); gerr == nil {
+			return retry, nil // raced with a concurrent first submission
+		}
+
+		return Source{}, fmt.Errorf("sources: oneshot: create system source: %w", err)
+	}
+
+	return src, nil
+}
+
 func derefString(s *string) string {
 	if s == nil {
 		return ""

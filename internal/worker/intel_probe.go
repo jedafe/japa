@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
@@ -173,15 +174,23 @@ func HandleIntelProbeVerify(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:probe_verify: store probe report: %w", err)
 	}
 
-	// Drop proposals whose crawl method has no Phase-1 fetch adapter
-	// (render/git/social/search/wayback/xhr_sniff/oneshot →
-	// fetcher.ErrMethodNotImplemented): materializing them would create
-	// channels that can only ever fail until their adapters land. They
-	// remain visible in the persisted probe_report's method evidence.
+	// Drop proposals whose crawl method has no fetch adapter (search →
+	// fetcher.ErrMethodNotImplemented until Phase 3): materializing them
+	// would create channels that can only ever fail. Render proposals are
+	// also suppressed while intel.render.service_url is unset — the
+	// adapter exists but the environment has no service, so the channel
+	// would permanently answer ErrAdapterDisabled. Both remain visible in
+	// the persisted probe_report's method evidence.
+	renderConfigured := false
+	if appSettings != nil {
+		renderConfigured = strings.TrimSpace(appSettings.GetStringOr(ctx, "intel.render.service_url", "")) != ""
+	}
+
 	var inputs []sources.ChannelProposalInput
 	pending := 0
 	for _, in := range proposalInputs(report.Channels) {
-		if fetcher.PendingFetchMethod(in.CrawlMethod) {
+		if fetcher.PendingFetchMethod(in.CrawlMethod) ||
+			(in.CrawlMethod == string(sources.CrawlMethodRender) && !renderConfigured) {
 			pending++
 			continue
 		}
@@ -199,8 +208,20 @@ func HandleIntelProbeVerify(ctx context.Context, t *asynq.Task) error {
 		"detected_methods", len(methods),
 		"channels_created", created,
 		"channels_skipped", skipped,
-		"proposals_deferred_phase2", pending,
+		"proposals_deferred", pending,
 		"warnings", len(report.Warnings))
+
+	// requires_js → the site renders client-side; the headless sniffer
+	// discovers its JSON API surface when a render service is configured.
+	if report.RequiresJS && renderConfigured {
+		payload := marshalPayload(intelXHRSniffPayload{
+			Version:  intelPayloadVersion,
+			SourceID: sourceID.String(),
+		})
+		if payload != nil {
+			enqueueIntel(TypeIntelXHRSniff, payload)
+		}
+	}
 
 	return nil
 }

@@ -222,7 +222,7 @@ const listDueIntelChannels = `-- name: ListDueIntelChannels :many
 SELECT c.id, c.source_id, c.label, c.entry_url, c.crawl_method, c.entity_types, c.pipeline, c.provider_config, c.crawl_frequency_mins, c.enabled, c.origin, c.relevance_mode, c.relevance_topics, c.relevance_url_patterns, c.last_crawled_at, c.last_success_at, c.last_error_at, c.last_error_message, c.last_changed_at, c.consecutive_failures, c.created_at, c.updated_at FROM intel_source_channels c
 JOIN intel_sources s ON s.id = c.source_id
 WHERE c.enabled AND s.enabled AND s.status = 'active'
-  AND c.crawl_method NOT IN ('manual','email','webhook')
+  AND c.crawl_method NOT IN ('manual','email','webhook','oneshot','xhr_sniff')
   AND (c.last_crawled_at IS NULL
        OR c.last_crawled_at < now() - make_interval(mins => c.crawl_frequency_mins))
 ORDER BY c.last_crawled_at ASC NULLS FIRST LIMIT $1

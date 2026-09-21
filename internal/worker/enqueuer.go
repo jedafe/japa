@@ -126,6 +126,10 @@ func taskDefaults(taskType string) []asynq.Option {
 	// intel.probe.verify_max_requests) plus channel materialization.
 	case TypeIntelProbeVerify:
 		opts = append(opts, asynq.Timeout(5*time.Minute), asynq.MaxRetry(2))
+	// XHR sniff: one headless HAR capture + channel materialization;
+	// bounded like the verify probe but lighter.
+	case TypeIntelXHRSniff:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(2))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -291,6 +295,8 @@ var taskTier = func() map[string]string {
 		TypeIntelRefreshFreshness,
 		// §106 channel-sync amendment — hourly Atom-feed poll, low tier.
 		TypeVideoSyncChannels,
+		// §intel-channels Phase 2 — headless XHR sniff, low tier.
+		TypeIntelXHRSniff,
 	} {
 		m[t] = QueueLow
 	}
@@ -397,6 +403,7 @@ var taskTypeCatalog = []struct {
 	{TypeIntelRetryFailedSource, "default", "Manual retry trigger for a failed intelligence source"},
 	{TypeIntelSourceMetadata, "default", "Fetch and store public-site metadata for a source"},
 	{TypeIntelProbeVerify, "default", "Deep verify probe for an approved intel source; writes probe_report and materializes channels"},
+	{TypeIntelXHRSniff, "low", "Headless XHR/fetch capture; materializes discovered api channels (§intel-channels Phase 2)"},
 	// Low tier
 	{TypeDigestEmail, "low", "Send digest email"},
 	{TypeSitemapGenerate, "low", "Generate sitemap XML"},

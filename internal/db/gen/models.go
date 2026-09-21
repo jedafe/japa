@@ -1872,16 +1872,17 @@ type IntelJob struct {
 }
 
 type IntelRawDocument struct {
-	ID          pgtype.UUID        `json:"id"`
-	SourceID    pgtype.UUID        `json:"source_id"`
-	Url         string             `json:"url"`
-	HttpStatus  int32              `json:"http_status"`
-	HttpHeaders []byte             `json:"http_headers"`
-	ContentType *string            `json:"content_type"`
-	Body        []byte             `json:"body"`
-	ContentHash string             `json:"content_hash"`
-	RetrievedAt pgtype.Timestamptz `json:"retrieved_at"`
-	ChannelID   pgtype.UUID        `json:"channel_id"`
+	ID               pgtype.UUID        `json:"id"`
+	SourceID         pgtype.UUID        `json:"source_id"`
+	Url              string             `json:"url"`
+	HttpStatus       int32              `json:"http_status"`
+	HttpHeaders      []byte             `json:"http_headers"`
+	ContentType      *string            `json:"content_type"`
+	Body             []byte             `json:"body"`
+	ContentHash      string             `json:"content_hash"`
+	RetrievedAt      pgtype.Timestamptz `json:"retrieved_at"`
+	ChannelID        pgtype.UUID        `json:"channel_id"`
+	ParentDocumentID pgtype.UUID        `json:"parent_document_id"`
 }
 
 type IntelRecord struct {

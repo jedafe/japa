@@ -145,20 +145,21 @@ func (q *Queries) CountPublicSources(ctx context.Context, arg CountPublicSources
 }
 
 const createIntelRawDocument = `-- name: CreateIntelRawDocument :one
-INSERT INTO intel_raw_documents (source_id, url, http_status, http_headers, content_type, body, content_hash, channel_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO intel_raw_documents (source_id, url, http_status, http_headers, content_type, body, content_hash, channel_id, parent_document_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
-RETURNING id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, channel_id
+RETURNING id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, channel_id, parent_document_id
 `
 
 type CreateIntelRawDocumentParams struct {
-	SourceID    pgtype.UUID `json:"source_id"`
-	Url         string      `json:"url"`
-	HttpStatus  int32       `json:"http_status"`
-	HttpHeaders []byte      `json:"http_headers"`
-	ContentType *string     `json:"content_type"`
-	Body        []byte      `json:"body"`
-	ContentHash string      `json:"content_hash"`
-	ChannelID   pgtype.UUID `json:"channel_id"`
+	SourceID         pgtype.UUID `json:"source_id"`
+	Url              string      `json:"url"`
+	HttpStatus       int32       `json:"http_status"`
+	HttpHeaders      []byte      `json:"http_headers"`
+	ContentType      *string     `json:"content_type"`
+	Body             []byte      `json:"body"`
+	ContentHash      string      `json:"content_hash"`
+	ChannelID        pgtype.UUID `json:"channel_id"`
+	ParentDocumentID pgtype.UUID `json:"parent_document_id"`
 }
 
 func (q *Queries) CreateIntelRawDocument(ctx context.Context, arg CreateIntelRawDocumentParams) (IntelRawDocument, error) {
@@ -171,6 +172,7 @@ func (q *Queries) CreateIntelRawDocument(ctx context.Context, arg CreateIntelRaw
 		arg.Body,
 		arg.ContentHash,
 		arg.ChannelID,
+		arg.ParentDocumentID,
 	)
 	var i IntelRawDocument
 	err := row.Scan(
@@ -184,6 +186,7 @@ func (q *Queries) CreateIntelRawDocument(ctx context.Context, arg CreateIntelRaw
 		&i.ContentHash,
 		&i.RetrievedAt,
 		&i.ChannelID,
+		&i.ParentDocumentID,
 	)
 	return i, err
 }
@@ -471,7 +474,7 @@ func (q *Queries) GetIntelPersonaUserID(ctx context.Context, id pgtype.UUID) (pg
 }
 
 const getIntelRawDocument = `-- name: GetIntelRawDocument :one
-SELECT id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, channel_id FROM intel_raw_documents WHERE id = $1
+SELECT id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, channel_id, parent_document_id FROM intel_raw_documents WHERE id = $1
 `
 
 func (q *Queries) GetIntelRawDocument(ctx context.Context, id pgtype.UUID) (IntelRawDocument, error) {
@@ -488,6 +491,7 @@ func (q *Queries) GetIntelRawDocument(ctx context.Context, id pgtype.UUID) (Inte
 		&i.ContentHash,
 		&i.RetrievedAt,
 		&i.ChannelID,
+		&i.ParentDocumentID,
 	)
 	return i, err
 }
@@ -837,6 +841,61 @@ func (q *Queries) GetLatestIntelRawDocHash(ctx context.Context, sourceID pgtype.
 	var content_hash string
 	err := row.Scan(&content_hash)
 	return content_hash, err
+}
+
+const getLatestIntelRawDocHashForChannelURL = `-- name: GetLatestIntelRawDocHashForChannelURL :one
+SELECT content_hash FROM intel_raw_documents
+WHERE channel_id = $1 AND url = $2 ORDER BY retrieved_at DESC LIMIT 1
+`
+
+type GetLatestIntelRawDocHashForChannelURLParams struct {
+	ChannelID pgtype.UUID `json:"channel_id"`
+	Url       string      `json:"url"`
+}
+
+// Derived-fetch (Phase 2 manifest fan-out) prior hash: the newest raw doc
+// for this channel captured from the same URL — child pages compare
+// against their own previous capture, not the manifest's.
+func (q *Queries) GetLatestIntelRawDocHashForChannelURL(ctx context.Context, arg GetLatestIntelRawDocHashForChannelURLParams) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestIntelRawDocHashForChannelURL, arg.ChannelID, arg.Url)
+	var content_hash string
+	err := row.Scan(&content_hash)
+	return content_hash, err
+}
+
+const getPrevIntelRawDocByChannel = `-- name: GetPrevIntelRawDocByChannel :one
+SELECT id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, channel_id, parent_document_id FROM intel_raw_documents WHERE channel_id = $1 AND id != $2
+  AND parent_document_id IS NULL
+ORDER BY retrieved_at DESC LIMIT 1
+`
+
+type GetPrevIntelRawDocByChannelParams struct {
+	ChannelID pgtype.UUID `json:"channel_id"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// The previous MANIFEST document for a channel (excluding the given doc) —
+// manifest-diff fan-out (sitemap/wayback Phase 2) compares the new
+// manifest body against this one to find new/changed URLs. Derived child
+// docs share channel_id but are page content, not manifests, so they are
+// excluded via parent_document_id IS NULL.
+func (q *Queries) GetPrevIntelRawDocByChannel(ctx context.Context, arg GetPrevIntelRawDocByChannelParams) (IntelRawDocument, error) {
+	row := q.db.QueryRow(ctx, getPrevIntelRawDocByChannel, arg.ChannelID, arg.ID)
+	var i IntelRawDocument
+	err := row.Scan(
+		&i.ID,
+		&i.SourceID,
+		&i.Url,
+		&i.HttpStatus,
+		&i.HttpHeaders,
+		&i.ContentType,
+		&i.Body,
+		&i.ContentHash,
+		&i.RetrievedAt,
+		&i.ChannelID,
+		&i.ParentDocumentID,
+	)
+	return i, err
 }
 
 const incrementSourcePostCount = `-- name: IncrementSourcePostCount :exec

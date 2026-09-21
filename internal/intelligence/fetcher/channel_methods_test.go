@@ -14,11 +14,7 @@ import (
 // HTTP client (bypassing the SSRF-safe transport so httptest's loopback
 // listener is reachable), mirroring how rss_test.go injects srv.Client().
 func testComposite(client *http.Client) *Composite {
-	return &Composite{
-		static: &StaticFetcher{client: client},
-		rss:    &RSSFetcher{client: client},
-		api:    &APIFetcher{client: client},
-	}
+	return NewCompositeWithClient(client, nil, nil)
 }
 
 func channelFixture(t *testing.T, handler http.Handler) (*httptest.Server, *Composite) {
@@ -55,9 +51,13 @@ func TestCompositeFetch_ChannelEntryURL(t *testing.T) {
 	}
 }
 
-// TestCompositeFetch_MethodDispatch covers the Phase-1 dispatch contract:
-// pull methods route to an adapter, inbound/manual methods hard-error, and
-// not-yet-implemented methods return ErrMethodNotImplemented.
+// TestCompositeFetch_MethodDispatch covers the dispatch contract:
+// pull methods route to an adapter, inbound/manual/task methods
+// hard-error, config-gated adapters answer ErrAdapterDisabled when
+// unconfigured, and Phase-3 stubs return ErrMethodNotImplemented.
+// Entry URLs point at unroutable addresses where a live adapter would
+// otherwise reach the network — the test asserts error classes, not
+// successful fetches.
 func TestCompositeFetch_MethodDispatch(t *testing.T) {
 	t.Parallel()
 
@@ -65,28 +65,37 @@ func TestCompositeFetch_MethodDispatch(t *testing.T) {
 
 	tests := []struct {
 		method    string
+		entryURL  string
+		provider  string
 		wantErr   bool
 		sentinel  error
 		errSubstr string
 	}{
-		{"manual", true, nil, "not fetchable"},
-		{"email", true, nil, "not fetchable"},
-		{"webhook", true, nil, "not fetchable"},
-		{"render", true, ErrMethodNotImplemented, ""},
-		{"git", true, ErrMethodNotImplemented, ""},
-		{"social", true, ErrMethodNotImplemented, ""},
-		{"search", true, ErrMethodNotImplemented, ""},
-		{"wayback", true, ErrMethodNotImplemented, ""},
-		{"xhr_sniff", true, ErrMethodNotImplemented, ""},
-		{"oneshot", true, ErrMethodNotImplemented, ""},
-		{"bogus_method", true, ErrMethodNotImplemented, ""},
+		{"manual", "", "", true, nil, "not fetchable"},
+		{"email", "", "", true, nil, "not fetchable"},
+		{"webhook", "", "", true, nil, "not fetchable"},
+		{"xhr_sniff", "", "", true, nil, "not fetchable"},
+		{"render", "", "", true, ErrAdapterDisabled, ""},
+		{"social", "", `{"provider":"reddit","handle":"r/test"}`, true, ErrAdapterDisabled, ""},
+		{"git", "", `{"repo":"http://127.0.0.1:0/x"}`, true, nil, "private IP"},
+		{"search", "", "", true, ErrMethodNotImplemented, ""},
+		{"bogus_method", "", "", true, ErrMethodNotImplemented, ""},
+		{"oneshot", "https://127.0.0.1:0/page", "", true, nil, ""},
+		{"wayback", "", `{"cdx_endpoint":"http://127.0.0.1:0/"}`, true, nil, "wayback"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.method, func(t *testing.T) {
 			t.Parallel()
 
-			ch := sources.Channel{EntryUrl: "https://example.com", CrawlMethod: tt.method}
+			entryURL := tt.entryURL
+			if entryURL == "" {
+				entryURL = "https://example.com"
+			}
+			ch := sources.Channel{EntryUrl: entryURL, CrawlMethod: tt.method}
+			if tt.provider != "" {
+				ch.ProviderConfig = []byte(tt.provider)
+			}
 			_, err := testComposite(http.DefaultClient).Fetch(t.Context(), src, ch)
 			if err == nil {
 				t.Fatalf("method %q: expected error, got nil", tt.method)
@@ -257,14 +266,17 @@ func TestResolveChannelProviderConfig(t *testing.T) {
 
 	tests := []struct {
 		name     string
+		method   string
 		ch, src  []byte
 		wantJSON string
 	}{
-		{"channel config wins", chCfg, srcCfg, "api.channel.example"},
-		{"empty channel falls back to source", nil, srcCfg, "api.source.example"},
-		{"{} channel falls back to source", []byte(`{}`), srcCfg, "api.source.example"},
-		{"probe-stamped channel falls back to source", []byte(`{"probe_confidence":0.9}`), srcCfg, "api.source.example"},
-		{"both empty yields source raw", nil, nil, ""},
+		{"channel config wins", "api", chCfg, srcCfg, "api.channel.example"},
+		{"empty channel falls back to source", "api", nil, srcCfg, "api.source.example"},
+		{"{} channel falls back to source", "api", []byte(`{}`), srcCfg, "api.source.example"},
+		{"probe-stamped api channel falls back to source", "api", []byte(`{"probe_confidence":0.9}`), srcCfg, "api.source.example"},
+		{"non-api channel config wins over source", "social", []byte(`{"provider":"reddit"}`), srcCfg, `"provider":"reddit"`},
+		{"non-api {} channel falls back to source", "social", []byte(`{}`), srcCfg, "api.source.example"},
+		{"both empty yields source raw", "api", nil, nil, ""},
 	}
 
 	for _, tt := range tests {
@@ -272,7 +284,7 @@ func TestResolveChannelProviderConfig(t *testing.T) {
 			t.Parallel()
 
 			got := ResolveChannelProviderConfig(
-				sources.Channel{ProviderConfig: tt.ch},
+				sources.Channel{ProviderConfig: tt.ch, CrawlMethod: tt.method},
 				sources.Source{ProviderConfig: tt.src},
 			)
 
@@ -290,14 +302,14 @@ func TestResolveChannelProviderConfig(t *testing.T) {
 	}
 }
 
-// TestPendingFetchMethod pins the Phase-2 stub set the probe_verify worker
+// TestPendingFetchMethod pins the Phase-3 stub set the probe_verify worker
 // filters out of channel proposals — the same methods Composite.Fetch
 // answers ErrMethodNotImplemented for. Drift between the two would let
 // un-fetchable channels materialize (or over-filter implemented ones).
 func TestPendingFetchMethod(t *testing.T) {
 	t.Parallel()
 
-	pending := []string{"render", "git", "social", "search", "wayback", "xhr_sniff", "oneshot"}
+	pending := []string{"search"}
 	for _, m := range pending {
 		if !PendingFetchMethod(m) {
 			t.Errorf("PendingFetchMethod(%q) = false, want true", m)
@@ -312,7 +324,7 @@ func TestPendingFetchMethod(t *testing.T) {
 		}
 	}
 
-	implemented := []string{"static", "rss", "api", "pdf", "ocr", "ical", "tabular", "jsonld", "sitemap", "manual", "email", "webhook"}
+	implemented := []string{"static", "rss", "api", "pdf", "ocr", "ical", "tabular", "jsonld", "sitemap", "render", "git", "social", "wayback", "oneshot", "manual", "email", "webhook", "xhr_sniff"}
 	for _, m := range implemented {
 		if PendingFetchMethod(m) {
 			t.Errorf("PendingFetchMethod(%q) = true, want false", m)

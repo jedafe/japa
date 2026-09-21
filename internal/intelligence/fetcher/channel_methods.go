@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -20,13 +21,26 @@ import (
 // computes the change-detection hash.
 
 // ResolveChannelProviderConfig returns the provider_config a channel fetch
-// should use: the channel's own document when it parses as a valid API
-// provider config, otherwise the parent source's. Backfilled default
-// channels carry '{}' — for API channels the source's config holds the real
-// endpoint — while probe-materialized channels carry their own endpoint
-// and must win over a stale source-level document.
+// should use. Backfilled default channels carry '{}' — the source's config
+// holds the real values — while probe-materialized channels carry their
+// own config and must win over a stale source-level document.
+//
+// Validity is method-aware: api channels keep the strict API-config check
+// (a channel carrying only probe metadata like {"probe_confidence":0.9}
+// still inherits the source's endpoint); every other method accepts any
+// non-empty JSON object — render/social/git configs would not parse as an
+// API config but are complete channel configs.
 func ResolveChannelProviderConfig(ch sources.Channel, src sources.Source) []byte {
-	if _, err := ParseProviderConfig(ch.ProviderConfig); err == nil {
+	if sources.CrawlMethod(ch.CrawlMethod) == sources.CrawlMethodAPI {
+		if _, err := ParseProviderConfig(ch.ProviderConfig); err == nil {
+			return ch.ProviderConfig
+		}
+
+		return src.ProviderConfig
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(ch.ProviderConfig, &m); err == nil && len(m) > 0 {
 		return ch.ProviderConfig
 	}
 
@@ -122,6 +136,51 @@ func (c *Composite) fetchSitemapManifest(ctx context.Context, src sources.Source
 		Body:        manifest,
 		ContentHash: NormalizeForHash(manifest, contentType),
 	}, nil
+}
+
+// ParseManifest decodes the url<TAB>stamp manifest format shared by the
+// sitemap and wayback adapters (Phase 2): one "url<TAB>stamp" line per
+// entry — lastmod for sitemaps, snapshot timestamp for wayback. Returns
+// url → stamp so callers can diff captures.
+func ParseManifest(body []byte) map[string]string {
+	out := make(map[string]string)
+
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		u, stamp, _ := strings.Cut(line, "\t")
+		if u = strings.TrimSpace(u); u != "" {
+			out[u] = strings.TrimSpace(stamp)
+		}
+	}
+
+	return out
+}
+
+// DiffManifest returns the URLs in cur that are absent from prev or carry
+// a different stamp — the new/changed set for the Phase-2 manifest
+// fan-out. Input order is preserved.
+func DiffManifest(cur, prev []byte) []string {
+	prevMap := ParseManifest(prev)
+
+	var changed []string
+	seen := map[string]bool{}
+
+	for _, line := range strings.Split(string(cur), "\n") {
+		u, stamp, _ := strings.Cut(strings.TrimSpace(line), "\t")
+		if u = strings.TrimSpace(u); u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+
+		if old, ok := prevMap[u]; !ok || old != strings.TrimSpace(stamp) {
+			changed = append(changed, u)
+		}
+	}
+
+	return changed
 }
 
 // sitemapManifest parses a sitemap urlset or sitemapindex document and

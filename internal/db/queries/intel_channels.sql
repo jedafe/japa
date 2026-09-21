@@ -24,7 +24,7 @@ WHERE source_id = $1 ORDER BY created_at;
 SELECT c.* FROM intel_source_channels c
 JOIN intel_sources s ON s.id = c.source_id
 WHERE c.enabled AND s.enabled AND s.status = 'active'
-  AND c.crawl_method NOT IN ('manual','email','webhook')
+  AND c.crawl_method NOT IN ('manual','email','webhook','oneshot','xhr_sniff')
   AND (c.last_crawled_at IS NULL
        OR c.last_crawled_at < now() - make_interval(mins => c.crawl_frequency_mins))
 ORDER BY c.last_crawled_at ASC NULLS FIRST LIMIT $1;

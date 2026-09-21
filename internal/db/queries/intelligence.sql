@@ -113,7 +113,7 @@ WHERE id = $1
 RETURNING *;
 
 -- name: CreateIntelRawDocument :one
-INSERT INTO intel_raw_documents (source_id, url, http_status, http_headers, content_type, body, content_hash, channel_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO intel_raw_documents (source_id, url, http_status, http_headers, content_type, body, content_hash, channel_id, parent_document_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
 RETURNING *;
 
@@ -122,6 +122,23 @@ SELECT * FROM intel_raw_documents WHERE id = $1;
 
 -- name: GetLatestIntelRawDocHash :one
 SELECT content_hash FROM intel_raw_documents WHERE source_id = $1 ORDER BY retrieved_at DESC LIMIT 1;
+
+-- name: GetLatestIntelRawDocHashForChannelURL :one
+-- Derived-fetch (Phase 2 manifest fan-out) prior hash: the newest raw doc
+-- for this channel captured from the same URL — child pages compare
+-- against their own previous capture, not the manifest's.
+SELECT content_hash FROM intel_raw_documents
+WHERE channel_id = $1 AND url = $2 ORDER BY retrieved_at DESC LIMIT 1;
+
+-- name: GetPrevIntelRawDocByChannel :one
+-- The previous MANIFEST document for a channel (excluding the given doc) —
+-- manifest-diff fan-out (sitemap/wayback Phase 2) compares the new
+-- manifest body against this one to find new/changed URLs. Derived child
+-- docs share channel_id but are page content, not manifests, so they are
+-- excluded via parent_document_id IS NULL.
+SELECT * FROM intel_raw_documents WHERE channel_id = $1 AND id != $2
+  AND parent_document_id IS NULL
+ORDER BY retrieved_at DESC LIMIT 1;
 
 -- name: CreateIntelRecord :one
 INSERT INTO intel_records (source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, geo_space_ids) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'extracted', $9)

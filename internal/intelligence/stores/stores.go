@@ -106,6 +106,37 @@ func (s *Store) GetLatestIntelRawDocHashForChannel(ctx context.Context, channelI
 	return hash, nil
 }
 
+// GetLatestIntelRawDocHashForChannelURL returns the content_hash of the most
+// recently retrieved raw document a channel captured from a specific URL —
+// the prior hash for derived fetches (Phase-2 manifest fan-out), whose pages
+// compare against their own previous capture rather than the manifest's.
+func (s *Store) GetLatestIntelRawDocHashForChannelURL(ctx context.Context, channelID pgtype.UUID, url string) (string, error) {
+	hash, err := s.queries.GetLatestIntelRawDocHashForChannelURL(ctx, gen.GetLatestIntelRawDocHashForChannelURLParams{
+		ChannelID: channelID,
+		Url:       url,
+	})
+	if err != nil {
+		return "", fmt.Errorf("stores: get latest intel raw doc hash by channel+url: %w", err)
+	}
+
+	return hash, nil
+}
+
+// GetPrevIntelRawDocByChannel returns the newest raw document for a channel
+// excluding the given one — the previous manifest a sitemap/wayback diff
+// compares against during Phase-2 fan-out.
+func (s *Store) GetPrevIntelRawDocByChannel(ctx context.Context, channelID, excludeID pgtype.UUID) (gen.IntelRawDocument, error) {
+	row, err := s.queries.GetPrevIntelRawDocByChannel(ctx, gen.GetPrevIntelRawDocByChannelParams{
+		ChannelID: channelID,
+		ID:        excludeID,
+	})
+	if err != nil {
+		return gen.IntelRawDocument{}, fmt.Errorf("stores: get prev intel raw doc by channel: %w", err)
+	}
+
+	return row, nil
+}
+
 // GetIntelRawDocument fetches a single raw document by its primary key. Used
 // by the control panel moderation surface (raw content pane) to render the
 // fetched HTML/JSON/PDF body for reviewer inspection.
