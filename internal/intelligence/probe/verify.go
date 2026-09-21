@@ -144,9 +144,15 @@ func (r *runState) detectSubPage(ctx context.Context, page *FetchedPage, out *Re
 
 	if len(sub.JSONLDTypes) > 0 {
 		out.Channels = append(out.Channels, ChannelProposal{
-			Label:          "JSON-LD structured data",
-			EntryURL:       page.FinalURL,
-			CrawlMethod:    string(sources.CrawlMethodJSONLD),
+			Label:       "JSON-LD structured data",
+			EntryURL:    page.FinalURL,
+			CrawlMethod: string(sources.CrawlMethodJSONLD),
+			// Stamp the SUB-page's own detected types — leaving this empty
+			// would let fillProposal fall back to out.JSONLDTypes, which is
+			// entry-page-only by design; an uncategorized source's /jobs
+			// JobPosting proposal would then carry the entry page's types
+			// (or none → extract/curate skip at materialize).
+			EntityTypes:    entityTypesFromJSONLD(sub.JSONLDTypes),
 			Confidence:     weightJSONLD,
 			ProviderConfig: map[string]any{"jsonld_types": sub.JSONLDTypes},
 		})
@@ -155,9 +161,11 @@ func (r *runState) detectSubPage(ctx context.Context, page *FetchedPage, out *Re
 
 // recheckFeeds GETs each discovered feed URL and drops the ones that no
 // longer answer with feed content (dead link-guessed alternates, SPA
-// catch-alls, 404s). Dropped feeds lose both their feed_urls entry and
-// their rss channel proposal; methods evidence is left as detection
-// history.
+// catch-alls, 404s). Only a definitive response — non-2xx status, or a 2xx
+// non-feed body — is evidence of death: transport failures and
+// budget-exhausted skips keep the feed. Dropped feeds lose both their
+// feed_urls entry and their rss channel proposal; methods evidence is
+// left as detection history.
 func (r *runState) recheckFeeds(ctx context.Context, out *Report) {
 	if len(out.FeedURLs) == 0 {
 		return
@@ -177,7 +185,18 @@ func (r *runState) recheckFeeds(ctx context.Context, out *Report) {
 			break
 		}
 
-		if err != nil || !page.OK() || !(isFeedContent(page.ContentType) || looksLikeFeedBody(page.Body)) {
+		if err != nil {
+			// Transport failure (DNS blip, timeout, reset) is not evidence
+			// of death — only a definitive response is. Keep the feed like
+			// the unchecked case and note the failure.
+			live = append(live, feedURL)
+			out.Warnings = append(out.Warnings,
+				fmt.Sprintf("verify: feed %s re-check failed (%v); kept", feedURL, err))
+
+			continue
+		}
+
+		if !page.OK() || !(isFeedContent(page.ContentType) || looksLikeFeedBody(page.Body)) {
 			dead[feedURL] = true
 
 			continue
