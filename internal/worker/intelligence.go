@@ -1309,8 +1309,9 @@ func intelCreateReviewStub(ctx context.Context, sourceID, rawDocID pgtype.UUID, 
 // (rss → feed items, jsonld → ld+json nodes, ical → VEVENTs, tabular →
 // rows) and each produced record is persisted as an intel_record with the
 // curator's stable external_key, then routed onward — trusted sources
-// (trust_level <= intel.curate.auto_publish_trust_max) go straight to
-// intel:promote as 'auto_published', everything else to intel:dedup.
+// (trust_level <= intel.curate.auto_publish_trust_max, default 2) go
+// straight to intel:promote as 'auto_published', everything else to
+// intel:dedup.
 // // Crawl methods with no curator (sitemap, git, api, static, …) fall back
 // to intel:extract so a curate/hybrid pipeline never dead-ends. Each
 // curated record runs the Task 10 relevance gate (intelRelevanceGate) on
@@ -1486,11 +1487,13 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		}
 		persisted++
 
-		// Trust gate (Task 11 seam — implemented inline while trivial):
-		// sources at or below intel.curate.auto_publish_trust_max skip
-		// dedup+publish_gate and promote directly. Default 0 disables
-		// auto-publish so every curated record takes the review path until
-		// the setting is tuned.
+		// Trust gate (Task 11): sources at or below
+		// intel.curate.auto_publish_trust_max (default 2) skip
+		// dedup+publish_gate and promote directly as 'auto_published'.
+		// The promote handler + promoters select records by id/entity_type
+		// with no status filter, so 'auto_published' rows are processed
+		// exactly like gate-approved ones — and they never enter the
+		// review queue, which lists only 'review_required'.
 		if intelCurateAutoPublish(ctx, src) {
 			if uerr := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 				ID:     recordID,
@@ -1638,15 +1641,17 @@ func intelPersistCuratedRecord(ctx context.Context, rawDoc gen.IntelRawDocument,
 
 // intelCurateAutoPublish reports whether the source's trust level clears
 // the curated auto-publish gate: trust_level <=
-// intel.curate.auto_publish_trust_max. The default (0) disables the gate —
-// trust levels run 1..4, so every curated record takes the dedup →
-// publish_gate path until an admin tunes the setting (Rule 3).
+// intel.curate.auto_publish_trust_max. The spec default is 2 — trusted
+// sources (trust 1–2) promote directly while aggregators take the
+// dedup → publish_gate review path. An admin can raise the ceiling or
+// set the setting to 0 to disable auto-publish entirely (Rule 3). A nil
+// settings reader still applies the spec default, matching the relevance
+// gate's nil→defaults convention.
 func intelCurateAutoPublish(ctx context.Context, src gen.IntelSource) bool {
-	if appSettings == nil {
-		return false
+	maxTrust := 2
+	if appSettings != nil {
+		maxTrust = appSettings.GetIntOr(ctx, "intel.curate.auto_publish_trust_max", 2)
 	}
-
-	maxTrust := appSettings.GetIntOr(ctx, "intel.curate.auto_publish_trust_max", 0)
 
 	return maxTrust > 0 && int64(src.TrustLevel) <= int64(maxTrust)
 }

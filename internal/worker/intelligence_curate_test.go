@@ -120,6 +120,49 @@ func TestIntelMissingRequiredFields(t *testing.T) {
 	}
 }
 
+// TestIntelCurateAutoPublish covers the trust-gate routing predicate:
+// trust_level <= intel.curate.auto_publish_trust_max with a spec default
+// of 2 — applied even when the settings reader is nil (matching the
+// relevance gate's nil→defaults convention) — while an admin-set 0
+// disables the gate and a raised ceiling widens it.
+func TestIntelCurateAutoPublish(t *testing.T) {
+	// Not parallel: mutates the appSettings package var.
+	ctx := context.Background()
+
+	oldSettings := appSettings
+	t.Cleanup(func() { appSettings = oldSettings })
+
+	src := func(trust int16) gen.IntelSource { return gen.IntelSource{TrustLevel: trust} }
+
+	tests := []struct {
+		name     string
+		settings settingsReader // nil → reader unwired
+		trust    int16
+		want     bool
+	}{
+		{"nil reader: trust=1 auto-publishes", nil, 1, true},
+		{"nil reader: trust=2 auto-publishes", nil, 2, true},
+		{"nil reader: trust=3 stays on review path", nil, 3, false},
+		{"nil reader: trust=4 stays on review path", nil, 4, false},
+		{"no override row: trust=2 auto-publishes", fakeSettingsReader{ints: map[string]int{}}, 2, true},
+		{"no override row: trust=3 stays on review path", fakeSettingsReader{ints: map[string]int{}}, 3, false},
+		{"override 0 disables gate for trust=1", fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 0}}, 1, false},
+		{"override 1 keeps trust=1, drops trust=2", fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 1}}, 2, false},
+		{"override 4 pulls trust=4 into direct publish", fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 4}}, 4, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			appSettings = tt.settings
+			defer func() { appSettings = oldSettings }()
+
+			if got := intelCurateAutoPublish(ctx, src(tt.trust)); got != tt.want {
+				t.Errorf("intelCurateAutoPublish(trust=%d) = %v, want %v", tt.trust, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestHandleIntelCurateChannel_NotWired verifies the handler degrades to a
 // logged skip when the intel dependencies were never registered.
 func TestHandleIntelCurateChannel_NotWired(t *testing.T) {
@@ -238,12 +281,18 @@ func TestHandleIntelDetectChanges_PipelineRouting(t *testing.T) {
 // TestHandleIntelCurateChannel_LiveDB exercises the happy path: a fake
 // curator returns two records; both land in intel_records as 'extracted'
 // with curator-origin evidence and confidence 1.0, and each enqueues
-// intel:dedup (trust gate default keeps records on the review path).
+// intel:dedup (trust 3 exceeds the spec-default auto-publish ceiling of 2).
 func TestHandleIntelCurateChannel_LiveDB(t *testing.T) {
 	database, srcStore, intelDocStore, inspector := wireIntelChannelDeps(t)
 
+	// Settings wired with no override row — the trust gate resolves its
+	// spec default (2), which trust_level=3 does not clear.
+	oldSettings := appSettings
+	appSettings = fakeSettingsReader{ints: map[string]int{}}
+	t.Cleanup(func() { appSettings = oldSettings })
+
 	src := mkIntelTestSource(t, srcStore, "curate-src", func(a *gen.CreateIntelSourceParams) {
-		a.TrustLevel = 3 // aggregator — below any sane auto-publish trust max
+		a.TrustLevel = 3 // aggregator — above the default auto-publish ceiling (2)
 	})
 	ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
 		a.CrawlMethod = "rss"
@@ -341,7 +390,7 @@ func TestHandleIntelCurateChannel_LiveDB(t *testing.T) {
 		}
 	}
 	if n := len(pendingTasks(t, inspector, TypeIntelPromote)); n != 0 {
-		t.Errorf("promote tasks = %d, want 0 (trust gate default off)", n)
+		t.Errorf("promote tasks = %d, want 0 (trust 3 exceeds default ceiling 2)", n)
 	}
 }
 
@@ -477,11 +526,131 @@ func TestHandleIntelCurateChannel_TrustAutoPublish(t *testing.T) {
 		t.Errorf("record status = %q, want auto_published", status)
 	}
 
-	if n := len(pendingTasks(t, inspector, TypeIntelPromote)); n != 1 {
-		t.Errorf("promote tasks = %d, want 1", n)
+	// The promote enqueue carries everything the promoter needs: the
+	// persisted record id (loaded by HandleIntelPromote → GetIntelRecord)
+	// plus the channel stamp.
+	infos := pendingTasks(t, inspector, TypeIntelPromote)
+	if len(infos) != 1 {
+		t.Fatalf("promote tasks = %d, want 1", len(infos))
+	}
+	var rp intelRecordPayload
+	if err := json.Unmarshal(infos[0].Payload, &rp); err != nil {
+		t.Fatalf("promote payload: %v", err)
+	}
+	var recordID string
+	if err := database.Writer.QueryRow(context.Background(),
+		`SELECT id::text FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&recordID); err != nil {
+		t.Fatalf("load record id: %v", err)
+	}
+	if rp.RecordID != recordID {
+		t.Errorf("promote payload record_id = %q, want %q", rp.RecordID, recordID)
+	}
+	if rp.ChannelID != ch.ID.String() {
+		t.Errorf("promote payload channel_id = %q, want %q", rp.ChannelID, ch.ID.String())
 	}
 	if n := len(pendingTasks(t, inspector, TypeIntelDedup)); n != 0 {
 		t.Errorf("dedup tasks = %d, want 0 (auto-publish skips dedup)", n)
+	}
+}
+
+// TestHandleIntelCurateChannel_TrustGateRouting is the Task 11 routing
+// contract end to end: with the spec-default trust ceiling (2 — no
+// override row) a trust=1 source's curated records land 'auto_published'
+// with intel:promote enqueued; trust=4 stays on the dedup → publish_gate
+// review path; an admin override of 0 disables the gate entirely; and a
+// raised ceiling pulls higher-trust-level sources into direct publish.
+func TestHandleIntelCurateChannel_TrustGateRouting(t *testing.T) {
+	cases := []struct {
+		name        string
+		trustLevel  int16
+		trustMax    int  // setting value when hasOverride
+		hasOverride bool // false → no settings row → spec default (2)
+		wantStatus  string
+		wantTask    string
+		wantAbsent  string
+	}{
+		{"default ceiling publishes trust=1", 1, 0, false, "auto_published", TypeIntelPromote, TypeIntelDedup},
+		{"default ceiling routes trust=4 to dedup", 4, 0, false, "extracted", TypeIntelDedup, TypeIntelPromote},
+		{"override 0 disables the gate", 1, 0, true, "extracted", TypeIntelDedup, TypeIntelPromote},
+		{"override 4 publishes trust=4", 4, 4, true, "auto_published", TypeIntelPromote, TypeIntelDedup},
+	}
+
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			database, srcStore, intelDocStore, inspector := wireIntelChannelDeps(t)
+
+			ints := map[string]int{}
+			if tc.hasOverride {
+				ints["intel.curate.auto_publish_trust_max"] = tc.trustMax
+			}
+			oldSettings := appSettings
+			appSettings = fakeSettingsReader{ints: ints}
+			t.Cleanup(func() { appSettings = oldSettings })
+
+			src := mkIntelTestSource(t, srcStore, fmt.Sprintf("trust-gate-%d", i), func(a *gen.CreateIntelSourceParams) {
+				a.TrustLevel = tc.trustLevel
+			})
+			ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
+				a.CrawlMethod = "rss"
+				a.Pipeline = "curate"
+				a.EntityTypes = []string{"news"}
+			})
+
+			rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+				SourceID:    src.ID,
+				ChannelID:   ch.ID,
+				Url:         ch.EntryUrl,
+				HttpStatus:  200,
+				HttpHeaders: []byte(`{}`),
+				Body:        []byte("<rss/>trust-gate"),
+				ContentHash: fmt.Sprintf("trustgatehash-%d", i),
+			})
+			if err != nil {
+				t.Fatalf("create raw doc: %v", err)
+			}
+
+			setIntelCurator(t, &fakeIntelCurator{recs: []IntelCuratedRecord{{
+				RawExtraction:     marshalCuratedExtraction(t, map[string]any{"title": "Gate item", "article_url": "https://news.example.com/gate"}),
+				ConfidenceOverall: 1.0,
+				ExternalKey:       fmt.Sprintf("https://news.example.com/gate-%d", i),
+				EntityType:        "news",
+			}}})
+
+			payload, _ := json.Marshal(intelCurateChannelPayload{
+				Version:   intelPayloadVersion,
+				SourceID:  src.ID.String(),
+				ChannelID: ch.ID.String(),
+				RawDocID:  rawDoc.ID.String(),
+			})
+
+			if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+				t.Fatalf("HandleIntelCurateChannel: %v", err)
+			}
+
+			var status, recordID string
+			if err := database.Writer.QueryRow(context.Background(),
+				`SELECT status, id::text FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&status, &recordID); err != nil {
+				t.Fatalf("load record: %v", err)
+			}
+			if status != tc.wantStatus {
+				t.Errorf("record status = %q, want %q", status, tc.wantStatus)
+			}
+
+			infos := pendingTasks(t, inspector, tc.wantTask)
+			if len(infos) != 1 {
+				t.Fatalf("%s tasks = %d, want 1", tc.wantTask, len(infos))
+			}
+			var rp intelRecordPayload
+			if err := json.Unmarshal(infos[0].Payload, &rp); err != nil {
+				t.Fatalf("%s payload: %v", tc.wantTask, err)
+			}
+			if rp.RecordID != recordID || rp.ChannelID != ch.ID.String() {
+				t.Errorf("%s payload = %+v, want record_id=%q channel_id=%q", tc.wantTask, rp, recordID, ch.ID.String())
+			}
+			if n := len(pendingTasks(t, inspector, tc.wantAbsent)); n != 0 {
+				t.Errorf("%s tasks = %d, want 0", tc.wantAbsent, n)
+			}
+		})
 	}
 }
 
@@ -491,6 +660,13 @@ func TestHandleIntelCurateChannel_TrustAutoPublish(t *testing.T) {
 // type (which can never be LLM-extracted) persists with review_required.
 func TestHandleIntelCurateChannel_Hybrid(t *testing.T) {
 	database, srcStore, intelDocStore, inspector := wireIntelChannelDeps(t)
+
+	// Pin the trust gate off so hybrid routing is under test in isolation —
+	// the default source fixture is trust_level=1, which would otherwise
+	// auto-publish under the spec-default ceiling (2).
+	oldSettings := appSettings
+	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 0}}
+	t.Cleanup(func() { appSettings = oldSettings })
 
 	src := mkIntelTestSource(t, srcStore, "hybrid-src", nil)
 	ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
