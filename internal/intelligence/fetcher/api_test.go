@@ -110,7 +110,9 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 	defer srv.Close()
 
 	cfg, _ := json.Marshal(APIProviderConfig{Endpoint: srv.URL, Path: "data.opportunityData.opportunityDetails"})
-	f := NewAPIFetcher()
+	// httptest binds 127.0.0.1 — inject its client (mirroring rss_test.go)
+	// since NewAPIFetcher's SSRF dial guard would reject the loopback dial.
+	f := &APIFetcher{client: srv.Client()}
 
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
@@ -213,7 +215,7 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 		Body:     postBody,
 		Path:     "data.opportunityData.opportunityDetails",
 	})
-	f := NewAPIFetcher()
+	f := &APIFetcher{client: srv.Client()}
 
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
@@ -270,7 +272,7 @@ func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
 		Endpoint: srv.URL,
 		Headers:  map[string]string{"Authorization": "Bearer test-token"},
 	})
-	f := NewAPIFetcher()
+	f := &APIFetcher{client: srv.Client()}
 
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/hibiken/asynq"
@@ -172,7 +173,12 @@ func wireIntelChannelDeps(t *testing.T) (*db.DB, *sources.Store, *stores.Store, 
 	oldSched, oldPreflight, oldClient := intelScheduler, intelPreflight, intelAsynqClient
 	oldRdb := rdb
 
-	intelFetcher = fetcher.NewComposite()
+	// The composite fetcher runs against httptest fixtures on 127.0.0.1, so
+	// it needs the AllowPrivate opt-out — production uses fetcher.NewComposite
+	// (SSRF dial guard on).
+	intelFetcher = fetcher.NewCompositeWithClient(
+		fetcher.NewSafeClientOpts(30*time.Second, 0, fetcher.SafeClientOpts{AllowPrivate: true}),
+	)
 	intelStores = store
 	intelSourcesStore = srcStore
 	intelScheduler = scheduler.NewScheduler(srcStore, srcStore, adapter)

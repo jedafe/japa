@@ -1,4 +1,4 @@
--- 000683_seed_intel_channel_settings.up.sql
+-- 000685_seed_intel_channel_settings.up.sql
 -- Seed the intel-channels Phase 1 system_settings rows (intel-channels
 -- curation spec, §System settings) so every consumed key is listed in the
 -- control settings UI with its code default instead of falling back to an

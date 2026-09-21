@@ -1489,12 +1489,16 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 
 		// Trust gate (Task 11): sources at or below
 		// intel.curate.auto_publish_trust_max (default 2) skip
-		// dedup+publish_gate and promote directly as 'auto_published'.
+		// dedup+publish_gate and promote directly as 'auto_published' —
+		// UNLESS the record's entity type is high-stakes: ADR-088 makes the
+		// immigration/financial/grants/health review gate unconditional, so
+		// those records always take the dedup → publish_gate path where
+		// services.Classify routes them to review regardless of trust.
 		// The promote handler + promoters select records by id/entity_type
 		// with no status filter, so 'auto_published' rows are processed
 		// exactly like gate-approved ones — and they never enter the
 		// review queue, which lists only 'review_required'.
-		if intelCurateAutoPublish(ctx, src) {
+		if intelCurateShouldAutoPublish(ctx, src, entityType) {
 			if uerr := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 				ID:     recordID,
 				Status: "auto_published",
@@ -1654,6 +1658,16 @@ func intelCurateAutoPublish(ctx context.Context, src gen.IntelSource) bool {
 	}
 
 	return maxTrust > 0 && int64(src.TrustLevel) <= int64(maxTrust)
+}
+
+// intelCurateShouldAutoPublish is the full auto-publish decision for a
+// curated record: trust within the ceiling AND the entity type NOT in the
+// ADR-088 high-stakes set (services.IsHighStakes — the same unconditional
+// set services.Classify enforces). High-stakes curated records route to
+// dedup → publish_gate regardless of source trust so they always land in
+// the review queue; the gate cannot be bypassed by raising the trust max.
+func intelCurateShouldAutoPublish(ctx context.Context, src gen.IntelSource, entityType string) bool {
+	return intelCurateAutoPublish(ctx, src) && !services.IsHighStakes(entityType)
 }
 
 // ---------------------------------------------------------------------------

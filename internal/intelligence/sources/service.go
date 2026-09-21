@@ -85,13 +85,21 @@ func (s *Service) SetProbeQueue(q func(ctx context.Context, sourceID SourceID) e
 // queueProbeVerify enqueues the deep verify probe for an active source.
 // Failures are logged but not returned so DB writes do not fail when the
 // queue is down. video_channel rows are §106 channel subscriptions —
-// video:sync_channels owns ingestion and there is nothing to probe.
+// video:sync_channels owns ingestion and there is nothing to probe. The
+// same exemption the worker's verifySkipSource applies to registry-only
+// manual rows (crawl_method='manual' with source_type != 'auto') is applied
+// here so the task is never enqueued; approved proposals are manual-by-
+// design but keep source_type='auto', so they still verify.
 func (s *Service) queueProbeVerify(ctx context.Context, src Source) {
 	if s.probeQueue == nil || !src.Enabled || src.Status != "active" || !src.ID.Valid {
 		return
 	}
 
 	if src.SourceType == string(SourceTypeVideoChannel) {
+		return
+	}
+
+	if src.CrawlMethod == string(CrawlMethodManual) && src.SourceType != "auto" {
 		return
 	}
 
@@ -177,8 +185,105 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 		return Source{}, err
 	}
 
+	// intel-channels Phase 1 (final review I1): the scheduler selects
+	// channels, not sources — an admin-created (or auto-created) crawlable
+	// source needs a Default channel mirroring the 000681 backfill or it is
+	// silently never crawled.
+	s.ensureDefaultChannel(ctx, src)
 	s.queueMetadataFetch(ctx, src)
+	// The deep verify probe discovers additional channels on top of the
+	// Default (dedupe handles the overlap). It no-ops for disabled,
+	// non-active, and video_channel sources internally.
+	s.queueProbeVerify(ctx, src)
 	return src, nil
+}
+
+// sourceCrawlable reports whether a source can own a schedulable pull
+// channel: a non-manual, non-inbound crawl_method, a source_url to point at,
+// and not a §106 video_channel subscription (video:sync_channels owns those).
+// The enabled flag is deliberately not part of crawlability — a disabled
+// source still gets its Default channel, disabled, mirroring the 000681
+// backfill's enabled=source.enabled semantics.
+func sourceCrawlable(src Source) bool {
+	if src.SourceType == string(SourceTypeVideoChannel) || src.SourceUrl == "" {
+		return false
+	}
+
+	m := CrawlMethod(src.CrawlMethod)
+
+	return m.IsValid() && m != CrawlMethodManual && !InboundMethod(m)
+}
+
+// ensureDefaultChannel materializes the source's "Default" channel —
+// the same row the 000681 backfill created for pre-existing sources —
+// when the source is crawlable. It mirrors the backfill shape:
+// entry_url=source_url, crawl_method=source's, enabled=source.enabled,
+// origin='admin', plus the intel-channels enrichments: entity_types and
+// relevance_topics via ResolveCategoryMap on the source's categories,
+// pipeline from the resolved map (default 'extract'),
+// relevance_mode='filtered'.
+//
+// The row goes through Store.CreateChannel rather than Service.CreateChannel
+// because it intentionally allows empty entity_types — like the backfill,
+// whose rows fall back to source-level entity-type resolution at extract
+// time. A source whose categories resolve no entity types must still get
+// its channel or it can never be crawled. The entry_url SSRF literal check
+// runs explicitly so this path shares the channel-create IP guard.
+//
+// Fire-and-forget like queueMetadataFetch: a UNIQUE
+// (source_id, entry_url, entity_types) collision (re-create, probe already
+// materialized the same row) or an insert failure is logged, never returned
+// — source creation must not fail because the channel already exists.
+func (s *Service) ensureDefaultChannel(ctx context.Context, src Source) {
+	if !sourceCrawlable(src) {
+		return
+	}
+
+	method := CrawlMethod(src.CrawlMethod)
+	// Strict literal check ("" = no same-host carve-out): a source_url that
+	// IS a private literal gets no Default channel — the dial guard would
+	// refuse every crawl anyway, so the row would only churn failures.
+	if err := validateChannelEntryURL(src.SourceUrl, method, ""); err != nil {
+		slog.Warn("sources: default channel skipped — entry_url rejected",
+			"source_id", src.ID.String(), "entry_url", src.SourceUrl, "error", err)
+		return
+	}
+
+	resolved := ResolveCategoryMap(nil, sourceCategories(src))
+
+	pipeline := resolved.Pipeline
+	if !pipeline.IsValid() {
+		pipeline = PipelineExtract
+	}
+
+	freq := src.CrawlFrequencyMins
+	if freq <= 0 {
+		freq = 1440
+	}
+
+	_, err := s.store.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
+		SourceID:             src.ID,
+		Label:                "Default",
+		EntryUrl:             src.SourceUrl,
+		CrawlMethod:          src.CrawlMethod,
+		EntityTypes:          resolved.EntityTypes,
+		Pipeline:             string(pipeline),
+		ProviderConfig:       []byte("{}"),
+		CrawlFrequencyMins:   freq,
+		Enabled:              src.Enabled,
+		Origin:               string(ChannelOriginAdmin),
+		RelevanceMode:        string(RelevanceFiltered),
+		RelevanceTopics:      resolved.Topics,
+		RelevanceUrlPatterns: []string{},
+	})
+	if err != nil {
+		if errors.Is(err, errpkg.ErrAlreadyExists) {
+			return // the channel already exists — dedupe, nothing to do
+		}
+
+		slog.Warn("sources: default channel create failed",
+			"source_id", src.ID.String(), "entry_url", src.SourceUrl, "error", err)
+	}
 }
 
 // Get retrieves a source by ID.
@@ -727,7 +832,20 @@ func (s *Service) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceCh
 		arg.CrawlFrequencyMins = 1440
 	}
 
-	if err := validateChannelCreate(arg); err != nil {
+	// Load the parent source: it must exist anyway (cleaner than an FK
+	// error) and its host[:port] feeds the entry_url literal check — a
+	// private-IP literal matching the source's own host is allowed
+	// (same-host channels cannot escalate past the registered target, and
+	// probe materialization on dev/test 127.0.0.1 sources depends on it);
+	// a literal on any other host is rejected (SSRF, final review C1c).
+	allowedLiteralHost := ""
+	if parent, err := s.Get(ctx, arg.SourceID); err == nil {
+		if u, uerr := url.Parse(parent.SourceUrl); uerr == nil {
+			allowedLiteralHost = u.Host
+		}
+	}
+
+	if err := validateChannelCreate(arg, allowedLiteralHost); err != nil {
 		return Channel{}, err
 	}
 

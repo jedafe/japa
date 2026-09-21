@@ -6409,7 +6409,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Channel admin endpoints — per-channel CRUD + manual crawl
 			// trigger on the /admin/intel surface (intel-channels Phase 1,
 			// spec §5). Each action is RBAC-gated by its own intel.channels.*
-			// node seeded in migration 000682.
+			// node seeded in migration 000684.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.list")).
 				Get("/admin/intel/sources/{id}/channels", intelHandlers.HandleAdminListSourceChannels)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.create")).
@@ -6424,7 +6424,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/intel/channels/{id}/crawl", intelHandlers.HandleAdminCrawlChannel)
 			// Re-probe — enqueues intel:probe_verify to re-run the deep verify
 			// probe and re-materialize channels. RBAC-gated by
-			// intel.sources.probe (migration 000682).
+			// intel.sources.probe (migration 000684).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.probe")).
 				Post("/admin/intel/sources/{id}/reprobe", intelHandlers.HandleAdminReprobeSource)
 			// Raw document fetch — RBAC-gated by intel.review.view (control panel

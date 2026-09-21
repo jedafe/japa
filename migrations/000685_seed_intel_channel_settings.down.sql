@@ -1,5 +1,5 @@
--- 000683_seed_intel_channel_settings.down.sql
--- Remove the intel-channels settings rows seeded by 000683. Code falls back
+-- 000685_seed_intel_channel_settings.down.sql
+-- Remove the intel-channels settings rows seeded by 000685. Code falls back
 -- to the embedded/in-code defaults when a key is absent, so the down
 -- migration does not change runtime behaviour.
 

@@ -129,6 +129,14 @@ func (p *Prober) run(ctx context.Context, rawURL, kind string, categories []stri
 	run.markFetched(entryURL)
 	run.markFetched(page.FinalURL)
 
+	// Record the entry hostname (post-redirect) so the verify deep pass can
+	// tell same-host discovered URLs — which are as trustworthy as the
+	// entry fetch itself — from foreign private-IP literals smuggled into
+	// sitemaps/feed links (SSRF, review C1d).
+	if u, uerr := url.Parse(page.FinalURL); uerr == nil {
+		run.entryHost = u.Hostname()
+	}
+
 	report.FinalURL = page.FinalURL
 	if !page.OK() {
 		report.Warnings = append(report.Warnings,
@@ -174,6 +182,15 @@ type runState struct {
 	// sequentially, so a plain map suffices.
 	fetchedPages map[string]bool
 	warnedBudget atomic.Bool
+
+	// entryHost is the entry page's post-redirect hostname — the baseline
+	// the verify deep pass compares discovered URLs against: a private-IP
+	// literal on a DIFFERENT hostname is an SSRF attempt and is skipped
+	// before any request is spent. Same-hostname literals are as safe as
+	// the entry fetch itself — and keep httptest fixtures working (a
+	// production entry is never a private literal; the fetcher dial guard
+	// would refuse it anyway).
+	entryHost string
 }
 
 // spend consumes one request from the budget; false when exhausted.

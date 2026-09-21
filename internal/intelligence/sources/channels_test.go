@@ -169,7 +169,7 @@ func TestValidateChannelCreate(t *testing.T) {
 
 	t.Run("valid params pass", func(t *testing.T) {
 		t.Parallel()
-		if err := validateChannelCreate(validChannelParams()); err != nil {
+		if err := validateChannelCreate(validChannelParams(), ""); err != nil {
 			t.Fatalf("validateChannelCreate(valid) = %v, want nil", err)
 		}
 	})
@@ -179,7 +179,7 @@ func TestValidateChannelCreate(t *testing.T) {
 		arg := validChannelParams()
 		arg.CrawlMethod = string(CrawlMethodEmail)
 		arg.EntryUrl = "mailto:intake@example.com"
-		if err := validateChannelCreate(arg); err != nil {
+		if err := validateChannelCreate(arg, ""); err != nil {
 			t.Fatalf("validateChannelCreate(email channel) = %v, want nil", err)
 		}
 	})
@@ -194,6 +194,16 @@ func TestValidateChannelCreate(t *testing.T) {
 		{"missing entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "" }, errpkg.ErrRequired},
 		{"non-http entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "ftp://example.com/x" }, errpkg.ErrInvalid},
 		{"hostless entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "https://" }, errpkg.ErrInvalid},
+		// SSRF (final review C1c): pull-channel entry URLs must not point at
+		// private/reserved IP literals — a scheduled crawl would fetch them
+		// and persist the body into intel_raw_documents.
+		{"loopback literal entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "http://127.0.0.1:8080/x" }, errpkg.ErrInvalid},
+		{"metadata literal entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "http://169.254.169.254/latest/meta-data" }, errpkg.ErrInvalid},
+		{"rfc1918 literal entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "http://10.0.0.5/internal" }, errpkg.ErrInvalid},
+		{"cgnat literal entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "http://100.64.1.2/x" }, errpkg.ErrInvalid},
+		{"ipv6 loopback literal entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "http://[::1]/x" }, errpkg.ErrInvalid},
+		{"ipv6 ula literal entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "http://[fd00::7]/x" }, errpkg.ErrInvalid},
+		{"ipv4-mapped ipv6 literal entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "http://[::ffff:10.0.0.1]/x" }, errpkg.ErrInvalid},
 		{"unknown crawl_method", func(a *gen.CreateIntelSourceChannelParams) { a.CrawlMethod = "telepathy" }, errpkg.ErrInvalid},
 		{"unknown pipeline", func(a *gen.CreateIntelSourceChannelParams) { a.Pipeline = "llm" }, errpkg.ErrInvalid},
 		{"extract without entity_types", func(a *gen.CreateIntelSourceChannelParams) { a.EntityTypes = nil }, errpkg.ErrInvalid},
@@ -212,7 +222,7 @@ func TestValidateChannelCreate(t *testing.T) {
 			arg := validChannelParams()
 			tt.mutate(&arg)
 
-			err := validateChannelCreate(arg)
+			err := validateChannelCreate(arg, "")
 			if err == nil {
 				t.Fatalf("validateChannelCreate(%s) = nil, want %v", tt.name, tt.sent)
 			}
@@ -221,6 +231,17 @@ func TestValidateChannelCreate(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("public literal and hostname entry_urls pass", func(t *testing.T) {
+		t.Parallel()
+		for _, u := range []string{"http://8.8.8.8/feed", "https://example.com/feed", "https://internal.corp.example/feed"} {
+			arg := validChannelParams()
+			arg.EntryUrl = u
+			if err := validateChannelCreate(arg, ""); err != nil {
+				t.Errorf("validateChannelCreate(%s) = %v, want nil (literal check must not reject names)", u, err)
+			}
+		}
+	})
 }
 
 // TestValidateChannelUpdate exercises the per-field rules UpdateChannel
@@ -244,6 +265,8 @@ func TestValidateChannelUpdate(t *testing.T) {
 	}{
 		{"blank label", func(a *gen.UpdateIntelSourceChannelParams) { a.Label = strPtr("  ") }},
 		{"non-http entry_url", func(a *gen.UpdateIntelSourceChannelParams) { a.EntryUrl = strPtr("ftp://x") }},
+		{"private literal entry_url", func(a *gen.UpdateIntelSourceChannelParams) { a.EntryUrl = strPtr("http://169.254.169.254/x") }},
+		{"loopback literal entry_url", func(a *gen.UpdateIntelSourceChannelParams) { a.EntryUrl = strPtr("http://127.0.0.1/x") }},
 		{"unknown crawl_method", func(a *gen.UpdateIntelSourceChannelParams) { a.CrawlMethod = strPtr("nope") }},
 		{"unknown pipeline", func(a *gen.UpdateIntelSourceChannelParams) { a.Pipeline = strPtr("nope") }},
 	}
