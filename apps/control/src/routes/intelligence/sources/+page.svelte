@@ -6,12 +6,13 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import SourceForm from '$lib/components/intelligence/SourceForm.svelte';
-	import type { SourceFormValues } from '$lib/components/intelligence/SourceForm.svelte';
+	import type { SourceFormValues, SourceKindOption } from '$lib/components/intelligence/SourceForm.svelte';
+	import ChannelsTable from '$lib/components/intelligence/ChannelsTable.svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Plus, Pencil, Trash2, Power, RefreshCw, Database, Zap, Ban } from 'lucide-svelte';
+	import { Plus, Pencil, Trash2, Power, RefreshCw, Database, Zap, Ban, Waypoints } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
@@ -21,6 +22,7 @@
 		domain: string;
 		source_url: string;
 		category: string;
+		categories?: string[] | null;
 		source_type: string;
 		source_kind?: string | null;
 		slug?: string | null;
@@ -38,6 +40,10 @@
 		/** Extraction-domain override from provider_config.entity_types —
 		 *  a mixed-domain source declares every entity type it publishes. */
 		entity_types?: string[] | null;
+		keywords?: string[] | null;
+		detected_methods?: string[] | null;
+		probe_report?: Record<string, unknown> | null;
+		last_probed_at?: string | null;
 		last_crawled_at?: string | null;
 		last_success_at?: string | null;
 		last_error_at?: string | null;
@@ -63,15 +69,20 @@
 	// INTEL-018 fix: crawl-now and disable-source permissions.
 	const canCrawlNow = $derived(hasAnyPermission(['intel.sources.crawl_now', 'intel.sources.*']));
 	const canDisableSource = $derived(hasAnyPermission(['intel.review.disable_source', 'intel.review.*', 'intel.sources.*']));
+	// intel-channels Phase 1: the channels editor lists a source's
+	// intel_source_channels rows; per-action nodes are enforced inside
+	// ChannelsTable (migration 000682).
+	const canListChannels = $derived(hasAnyPermission(['intel.channels.list', 'intel.channels.*']));
 
 	let sources = $state<IntelSource[]>([]);
 	let personas = $state<PersonaItem[]>([]);
 	let entityTypeOptions = $state<string[]>([]);
 	let sourceTypeOptions = $state<string[]>([]);
 	let categoryOptions = $state<string[]>([]);
-	let sourceKindOptions = $state<string[]>([]);
+	let sourceKindOptions = $state<SourceKindOption[]>([]);
 	let crawlMethodOptions = $state<string[]>([]);
 	let crawlFrequencyOptions = $state<string[]>([]);
+	let pipelineOptions = $state<string[]>([]);
 	let personaNameById = $derived.by(() => {
 		const m = new Map<string, string>();
 		for (const p of personas) m.set(p.id, p.profile_name);
@@ -93,6 +104,9 @@
 	let editingSource = $state<IntelSource | null>(null);
 	let formSaving = $state(false);
 	let formError = $state('');
+
+	let channelsOpen = $state(false);
+	let channelsSource = $state<IntelSource | null>(null);
 
 	let confirmDelete = $state<IntelSource | null>(null);
 	let deleteOpen = $state(false);
@@ -137,14 +151,16 @@
 				source_kinds?: { value: string; label: string }[];
 				crawl_methods?: string[];
 				crawl_frequencies?: string[];
+				channel_pipelines?: string[];
 			}>('/api/v1/sources/meta');
 			if (mresult.ok && mresult.data) {
 				entityTypeOptions = mresult.data.registered_entity_types ?? [];
 				sourceTypeOptions = mresult.data.source_types ?? [];
 				categoryOptions = mresult.data.admin_categories ?? [];
-				sourceKindOptions = (mresult.data.source_kinds ?? []).map((k) => k.value);
+				sourceKindOptions = mresult.data.source_kinds ?? [];
 				crawlMethodOptions = mresult.data.crawl_methods ?? [];
 				crawlFrequencyOptions = mresult.data.crawl_frequencies ?? [];
+				pipelineOptions = mresult.data.channel_pipelines ?? [];
 			}
 		}
 		loading = false;
@@ -231,7 +247,11 @@
 			key: 'category',
 			label: t('intel.field_category', 'Category'),
 			sortable: true,
-			render: (val) => `<span class="text-muted-foreground capitalize">${escapeHtml(val)}</span>`
+			render: (val, row) => {
+				const cats = (row as unknown as IntelSource).categories;
+				const extra = cats && cats.length > 1 ? ` <span class="text-xs">+${cats.length - 1}</span>` : '';
+				return `<span class="text-muted-foreground capitalize">${escapeHtml(val)}</span>${extra}`;
+			}
 		},
 		{
 			key: 'persona_id',
@@ -280,6 +300,13 @@
 				label: t('intel.crawl_now', 'Crawl Now'),
 				icon: Zap,
 				onClick: (row) => crawlNow(row as unknown as IntelSource)
+			});
+		}
+		if (canListChannels) {
+			acts.push({
+				label: t('intel.channels_title', 'Channels'),
+				icon: Waypoints,
+				onClick: (row) => openChannels(row as unknown as IntelSource)
 			});
 		}
 		if (canManage) {
@@ -343,6 +370,11 @@
 		formOpen = true;
 	}
 
+	function openChannels(s: IntelSource) {
+		channelsSource = s;
+		channelsOpen = true;
+	}
+
 	async function handleSubmit(values: SourceFormValues) {
 		formSaving = true;
 		formError = '';
@@ -369,6 +401,11 @@
 		if (!body.source_kind) {
 			delete body.source_kind;
 		}
+		// Dual-write categories: the admin create/update handlers still read
+		// the single `category` field (already set to categories[0] by the
+		// form), while `categories` carries the full multi-select for the
+		// intel-channels schema — the backend ignores it until the handlers
+		// accept the column.
 		const result = await api<IntelSource>(path, {
 			method,
 			body
@@ -530,6 +567,14 @@
 		saving={formSaving}
 		errorMessage={formError}
 		onSubmit={handleSubmit}
+	/>
+
+	<ChannelsTable
+		bind:open={channelsOpen}
+		source={channelsSource}
+		entityTypeOptions={entityTypeOptions}
+		crawlMethodOptions={crawlMethodOptions}
+		pipelineOptions={pipelineOptions}
 	/>
 
 	<ConfirmModal

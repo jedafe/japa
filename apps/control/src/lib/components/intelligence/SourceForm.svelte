@@ -15,6 +15,7 @@
 		domain: string;
 		source_url: string;
 		category: string;
+		categories: string[];
 		source_type: string;
 		source_kind: string;
 		slug: string;
@@ -38,6 +39,7 @@
 		domain: string;
 		source_url: string;
 		category: string;
+		categories?: string[] | null;
 		source_type: string;
 		source_kind?: string | null;
 		slug?: string | null;
@@ -63,6 +65,13 @@
 		status?: string;
 	}
 
+	// SourceKindOption mirrors the {value,label} pairs returned by
+	// /api/v1/sources/meta source_kinds (Rule 16 — backend-driven options).
+	export interface SourceKindOption {
+		value: string;
+		label: string;
+	}
+
 	let {
 		open = $bindable(false),
 		source = null as SourceLike | null,
@@ -70,7 +79,7 @@
 		entityTypeOptions = [] as string[],
 		sourceTypeOptions = [] as string[],
 		categoryOptions = [] as string[],
-		sourceKindOptions = [] as string[],
+		sourceKindOptions = [] as SourceKindOption[],
 		crawlMethodOptions = [] as string[],
 		crawlFrequencyOptions = [] as string[],
 		saving = false,
@@ -83,7 +92,7 @@
 		entityTypeOptions?: string[];
 		sourceTypeOptions?: string[];
 		categoryOptions?: string[];
-		sourceKindOptions?: string[];
+		sourceKindOptions?: SourceKindOption[];
 		crawlMethodOptions?: string[];
 		crawlFrequencyOptions?: string[];
 		saving?: boolean;
@@ -96,6 +105,7 @@
 		domain: '',
 		source_url: '',
 		category: 'scholarship',
+		categories: ['scholarship'],
 		source_type: 'rss',
 		source_kind: 'publisher',
 		slug: '',
@@ -119,11 +129,20 @@
 	$effect(() => {
 		if (open) {
 			if (source) {
+				// categories seeds from the multi-category column; legacy rows
+				// with an empty categories[] fall back to the single category
+				// so the multi-select always reflects the effective set.
+				const cats = source.categories?.length
+					? [...source.categories]
+					: source.category
+						? [source.category]
+						: [];
 				form = {
 					name: source.name ?? '',
 					domain: source.domain ?? '',
 					source_url: source.source_url ?? '',
-					category: source.category ?? 'scholarship',
+					category: cats[0] ?? source.category ?? 'scholarship',
+					categories: cats,
 					source_type: source.source_type ?? 'rss',
 					source_kind: source.source_kind ?? 'publisher',
 					slug: source.slug ?? '',
@@ -164,6 +183,23 @@
 		return items;
 	});
 
+	// Multi-category checklist (intel-channels Phase 1): the meta catalog
+	// plus every selected value not in it, so editing a source whose
+	// categories predate the catalog never silently drops them.
+	const categoryChecklist = $derived.by(() => {
+		const seen = new Set<string>();
+		const items: { value: string; label: string }[] = [];
+		for (const v of [...categoryOptions, ...form.categories]) {
+			if (!v || seen.has(v)) continue;
+			seen.add(v);
+			items.push({
+				value: v,
+				label: t(`intel.category_${v}`, v.replace(/_/g, ' '))
+			});
+		}
+		return items;
+	});
+
 	// 'manual' is a backend sentinel for non-crawlable rows (video_channel,
 	// entity-linked sources) — not in the meta list, but appended when
 	// editing one so the current value is preserved.
@@ -197,14 +233,15 @@
 		return items;
 	});
 
-	// Source-kind options come from meta.source_kinds (publisher/institution/
-	// individual/aggregator — who publishes the source).
+	// Source-kind options come from meta.source_kinds ({value,label} pairs —
+	// who publishes the source). The meta label wins; the i18n key is the
+	// fallback for values appended off-catalog.
 	const kindItems = $derived.by(() => {
-		const items = sourceKindOptions.map((v) => ({
-			value: v,
-			label: t(`intel.kind_${v}`, v.replace(/_/g, ' '))
+		const items = sourceKindOptions.map((k) => ({
+			value: k.value,
+			label: k.label || t(`intel.kind_${k.value}`, k.value.replace(/_/g, ' '))
 		}));
-		if (form.source_kind && !sourceKindOptions.includes(form.source_kind)) {
+		if (form.source_kind && !sourceKindOptions.some((k) => k.value === form.source_kind)) {
 			items.push({
 				value: form.source_kind,
 				label: t(`intel.kind_${form.source_kind}`, form.source_kind.replace(/_/g, ' '))
@@ -239,7 +276,11 @@
 	]);
 
 	const isEdit = $derived(!!source?.id);
-	const valid = $derived(form.name.trim().length > 0 && form.source_url.trim().length > 0);
+	const valid = $derived(
+		form.name.trim().length > 0 &&
+			form.source_url.trim().length > 0 &&
+			(form.categories.length > 0 || form.category.trim().length > 0)
+	);
 
 	// Sentinel for the "No persona" option. The Autocomplete fetcher
 	// includes this as a selectable item; onPersonaChange converts it
@@ -248,6 +289,16 @@
 
 	function onPersonaChange(v: string | undefined) {
 		form.persona_id = !v || v === NONE_PERSONA ? '' : v;
+	}
+
+	// Multi-category toggle: categories[] is the submitted set; category is
+	// kept as the first selection for back-compat with the single-category
+	// column the admin create/update endpoints still write.
+	function toggleCategory(value: string, checked: boolean) {
+		form.categories = checked
+			? [...form.categories, value]
+			: form.categories.filter((v) => v !== value);
+		form.category = form.categories[0] ?? '';
 	}
 
 	function toggleEntityType(value: string, checked: boolean) {
@@ -275,7 +326,10 @@
 	function submit(e?: SubmitEvent) {
 		e?.preventDefault();
 		if (!valid || saving) return;
-		onSubmit({ ...form });
+		// Dual-write: categories[] carries the full multi-select while
+		// category stays the first selection (the admin create/update
+		// handlers still key off the single category field).
+		onSubmit({ ...form, category: form.categories[0] ?? form.category });
 	}
 
 	const inputClass =
@@ -369,9 +423,28 @@
 					</div>
 				</div>
 
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<label for="sf-category" class={labelClass}>{t('intel.field_category', 'Category')}</label>
+				<div>
+					<span class={labelClass}>{t('intel.field_categories', 'Categories')}</span>
+					<p class="text-muted-foreground mt-1 text-xs">
+						{t('intel.field_categories_hint', 'Every domain this source publishes — the first selection is stored as the primary category.')}
+					</p>
+					{#if categoryChecklist.length > 0}
+						<div class="mt-2 grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto sm:grid-cols-3">
+							{#each categoryChecklist as c (c.value)}
+								<label class="flex cursor-pointer items-center gap-2 text-sm">
+									<input
+										type="checkbox"
+										checked={form.categories.includes(c.value)}
+										onchange={(e) => toggleCategory(c.value, e.currentTarget.checked)}
+										class="border-border-input bg-background size-3.5 rounded-sm accent-accent-foreground"
+									/>
+									{c.label}
+								</label>
+							{/each}
+						</div>
+					{:else}
+						<!-- Fallback when the meta catalog failed to load: keep the
+							legacy single-category select rather than a dead form. -->
 						<Select.Root
 							type="single"
 							value={form.category}
@@ -392,7 +465,10 @@
 								</Select.Content>
 							</Select.Portal>
 						</Select.Root>
-					</div>
+					{/if}
+				</div>
+
+				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-type" class={labelClass}>{t('intel.field_source_type', 'Source Type')}</label>
 						<Select.Root
