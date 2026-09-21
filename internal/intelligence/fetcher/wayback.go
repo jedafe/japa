@@ -93,10 +93,10 @@ func (f *WaybackFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRe
 
 	return FetchResult{
 		HTTPStatus:  resp.StatusCode,
-		Headers:     map[string]string{"Content-Type": "text/plain"},
-		ContentType: "text/plain",
+		Headers:     map[string]string{"Content-Type": ManifestContentType},
+		ContentType: ManifestContentType,
 		Body:        manifest,
-		ContentHash: NormalizeForHash(manifest, "text/plain"),
+		ContentHash: NormalizeForHash(manifest, ManifestContentType),
 	}, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -199,7 +200,7 @@ func (f *GitFetcher) fetchFiles(ctx context.Context, repoURL string, cfg map[str
 		count++
 		return nil
 	})
-	if err != nil && err != errGitStopWalk {
+	if err != nil && !errors.Is(err, errGitStopWalk) {
 		return nil, fmt.Errorf("fetcher: git walk: %w", err)
 	}
 

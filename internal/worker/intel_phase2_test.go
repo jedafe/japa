@@ -171,9 +171,9 @@ func TestIntelSniffEndpoints(t *testing.T) {
 	}
 
 	got := intelSniffEndpoints(env)
-	want := []string{
-		"https://api.example.com/v1/jobs",   // query deduped
-		"https://api.example.com/v1/search", // POST JSON kept
+	want := []sniffEndpoint{
+		{Method: "GET", URL: "https://api.example.com/v1/jobs"},   // query deduped
+		{Method: "POST", URL: "https://api.example.com/v1/search"}, // POST JSON kept
 	}
 	if len(got) != len(want) {
 		t.Fatalf("endpoints = %v, want %v", got, want)

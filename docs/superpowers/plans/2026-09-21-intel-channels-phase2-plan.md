@@ -38,6 +38,35 @@ original task text:
   `intel.sitemap.max_children_per_crawl` (25). Catalogs updated for the
   new task, route, Valkey keys, and setting.
 
+**Review-hardening pass (post-implementation audit):**
+
+- Manifest docs carry the `application/x-intel-manifest` content-type
+  marker — `detect_changes`/`curate_channel` identify manifests by the
+  doc, not the channel row, so the guard survives channel
+  deletion/repurposing (docs' `channel_id` is ON DELETE SET NULL).
+- `GetLatestIntelRawDocHashByChannel` and `GetPrevIntelRawDocByChannel`
+  both filter `parent_document_id IS NULL` — otherwise child docs would
+  become the manifest's diff/hash baseline and every crawl would read as
+  "changed".
+- Derived children do not stamp `channel.last_crawled_at`, do not record
+  crawl outcomes/`MarkChannelChanged` (a 25-child fan-out would skew the
+  adaptive-interval signal), and their fetch/preflight failures do not
+  increment the channel's `consecutive_failures` (5 dead manifest URLs
+  must not auto-disable a healthy channel). They still return errors so
+  Asynq retry policy applies to the child task.
+- Derived docs of manifest channels route straight to `extract` — the
+  curator registry dispatches on `crawl_method` and none handles
+  sitemap/wayback, so `curate` was a guaranteed dead hop.
+- `ErrAdapterDisabled` on the *primary* method enters the
+  `fallback_methods` ladder (render-unconfigured → static is the designed
+  degradation); if all hops fail the original error is returned,
+  preserving benign-skip semantics.
+- xhr_sniff proposals carry the real HTTP method (GET/POST) — a POST
+  endpoint materialized as `method:GET` would 405 forever.
+- The oneshot system source uses `source_type='system'` so
+  `verifySkipSource` skips admin reprobes (prevents probing
+  japaconnect.com and materializing channels onto the shared source).
+
 ## Global Constraints
 
 - Layered architecture: Handler → Service → Store (sqlc only). Migrations via golang-migrate pairs (next number: **000686**).

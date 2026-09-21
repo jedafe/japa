@@ -128,12 +128,16 @@ func (c *Composite) Fetch(ctx context.Context, src sources.Source, ch sources.Ch
 	if err == nil {
 		return result, nil
 	}
-	if errors.Is(err, ErrAdapterDisabled) || errors.Is(err, ErrMethodNotImplemented) {
+	if errors.Is(err, ErrMethodNotImplemented) {
 		return FetchResult{}, err
 	}
 
 	// Degradation ladder (spec §3): try each configured fallback method in
-	// order — bounded, no repeats, transient fetch errors only.
+	// order — bounded, no repeats. ErrAdapterDisabled on the primary also
+	// enters the ladder: render-unconfigured → static is exactly the
+	// designed degradation; if every hop is disabled/fails the ORIGINAL
+	// error is returned, preserving its ErrAdapterDisabled benign-skip
+	// semantics.
 	seen := map[string]bool{ch.CrawlMethod: true}
 	hops := 0
 	for _, m := range fallbackMethods(eff.ProviderConfig) {

@@ -99,8 +99,12 @@ WHERE id = $1 RETURNING *;
 
 -- name: GetLatestIntelRawDocHashByChannel :one
 -- Channel-scoped prior hash for detect_changes: two channels of the same
--- source must not cross-contaminate each other's hash comparison.
+-- source must not cross-contaminate each other's hash comparison. Derived
+-- (manifest child) docs are excluded — a sitemap/wayback manifest must
+-- compare against the previous manifest, not a child's page hash, or every
+-- crawl after fan-out would read as "changed" (Phase 2).
 SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
+  AND parent_document_id IS NULL
 ORDER BY retrieved_at DESC LIMIT 1;
 
 -- name: MarkIntelChannelChanged :exec

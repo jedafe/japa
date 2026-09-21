@@ -206,11 +206,15 @@ func (q *Queries) GetIntelSourceDefaultChannel(ctx context.Context, sourceID pgt
 
 const getLatestIntelRawDocHashByChannel = `-- name: GetLatestIntelRawDocHashByChannel :one
 SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
+  AND parent_document_id IS NULL
 ORDER BY retrieved_at DESC LIMIT 1
 `
 
 // Channel-scoped prior hash for detect_changes: two channels of the same
-// source must not cross-contaminate each other's hash comparison.
+// source must not cross-contaminate each other's hash comparison. Derived
+// (manifest child) docs are excluded — a sitemap/wayback manifest must
+// compare against the previous manifest, not a child's page hash, or every
+// crawl after fan-out would read as "changed" (Phase 2).
 func (q *Queries) GetLatestIntelRawDocHashByChannel(ctx context.Context, channelID pgtype.UUID) (string, error) {
 	row := q.db.QueryRow(ctx, getLatestIntelRawDocHashByChannel, channelID)
 	var content_hash string

@@ -10,6 +10,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/intelligence/fetcher"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
@@ -535,7 +536,7 @@ func TestHandleIntelCurateChannel_SitemapManifestSkipsExtract(t *testing.T) {
 		Url:         ch.EntryUrl,
 		HttpStatus:  200,
 		HttpHeaders: []byte(`{}`),
-		ContentType: strPtr("text/plain; charset=utf-8"),
+		ContentType: strPtr(fetcher.ManifestContentType),
 		Body:        []byte("https://example.com/a\t2025-01-01\n"),
 		ContentHash: "sitemaphash",
 	})
@@ -581,7 +582,7 @@ func TestHandleIntelDetectChanges_SitemapStopsChain(t *testing.T) {
 		Url:         ch.EntryUrl,
 		HttpStatus:  200,
 		HttpHeaders: []byte(`{}`),
-		ContentType: strPtr("text/plain; charset=utf-8"),
+		ContentType: strPtr(fetcher.ManifestContentType),
 		Body:        []byte("https://example.com/a\t2025-01-01\n"),
 		ContentHash: "sitemaphash2",
 	})

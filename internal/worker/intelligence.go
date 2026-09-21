@@ -716,7 +716,18 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 			return nil
 		}
 
-		handleChannelFetchFailure(ctx, ch, opts.URLOverride, err)
+		if opts.URLOverride != "" {
+			// Derived manifest child: a gone/erroring page is not the
+			// channel's failure — release the scoped lock and return the
+			// error for the task's retry policy without touching
+			// consecutive_failures or auto-disable.
+			intelReleaseChannelLock(ctx, channelIDStr, opts.URLOverride)
+			slog.Warn(logPrefix+": derived fetch failed", "channel_id", channelIDStr, "url", opts.URLOverride, "error", err)
+
+			return fmt.Errorf("%s: derived fetch: %w", logPrefix, err)
+		}
+
+		handleChannelFetchFailure(ctx, ch, err)
 
 		if errors.Is(err, fetcher.ErrMethodNotImplemented) {
 			// Phase-3 stub method (search — e.g. an admin-created
@@ -751,11 +762,15 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 		return fmt.Errorf("%s: persist raw doc: %w", logPrefix, err)
 	}
 
-	// Stamp the channel's crawl status as successful.
-	_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
-		ID:      ch.ID,
-		Success: true,
-	})
+	// Stamp the channel's crawl status as successful — but not for derived
+	// fetches: a manifest child stamping last_crawled_at would push the
+	// channel's next scheduled manifest crawl forward on every fan-out.
+	if opts.URLOverride == "" {
+		_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+			ID:      ch.ID,
+			Success: true,
+		})
+	}
 
 	slog.Info(logPrefix+": fetched", "channel_id", channelIDStr, "source_id", ch.SourceID.String(), "raw_doc_id", rawDoc.ID.String(), "hash", result.ContentHash)
 
@@ -855,7 +870,10 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 		err = intelPreflight.CheckChannel(ctx, src, ch)
 	}
 	if err != nil {
-		if !errors.Is(err, fetcher.ErrCrawlLocked) {
+		if !errors.Is(err, fetcher.ErrCrawlLocked) && opts.URLOverride == "" {
+			// Derived-child preflight failures (robots, rate limit) are the
+			// child URL's problem — recording them on the channel row would
+			// let 5 dead manifest URLs auto-disable a healthy channel.
 			_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
 				ID:               ch.ID,
 				Success:          false,
@@ -888,11 +906,11 @@ func intelReleaseChannelLock(ctx context.Context, channelID, urlOverride string)
 // the failure on the channel row so consecutive_failures increments, and
 // auto-disables the channel via UpdateIntelChannelEnabled once it crosses
 // the intel.consecutive_failure_disable_threshold (default 5).
-func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, urlOverride string, fetchErr error) {
+func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, fetchErr error) {
 	channelIDStr := ch.ID.String()
 
 	// Release the crawl lock so the channel is not blocked until TTL expiry.
-	intelReleaseChannelLock(ctx, channelIDStr, urlOverride)
+	intelReleaseChannelLock(ctx, channelIDStr, "")
 	// Record the failure on the channel row.
 	_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
 		ID:               ch.ID,
@@ -968,22 +986,32 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	decision := changedetector.Compare(rawDoc.ContentHash, p.PriorHash)
 	slog.Info("task:intel:detect_changes: decision", "source_id", p.SourceID, "channel_id", p.ChannelID, "decision", decision.String(), "new_hash", rawDoc.ContentHash, "prior_hash", p.PriorHash)
 
+	// Derived manifest children (Phase-2 fan-out) must not feed the
+	// channel's adaptive-interval signal or mark it changed — the manifest
+	// crawl owns the channel's volatility bookkeeping, and a 25-URL fan-out
+	// would otherwise skew it 25:1 toward "changed".
+	derived := rawDoc.ParentDocumentID.Valid
+
 	switch decision {
 	case changedetector.DecisionUnchanged:
 		// Content unchanged — the crawl status was already stamped by
 		// fetch_channel; stop the chain. No extraction needed.
-		intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, false)
+		if !derived {
+			intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, false)
+		}
 		return nil
 	case changedetector.DecisionChanged:
 		// Mark the crawl unit as having changed content so the promoter can
 		// detect re-extraction of an already-promoted record. Channel path
 		// stamps the channel row; the legacy path stamps the source.
-		if channelID.Valid {
-			_ = intelSourcesStore.MarkChannelChanged(ctx, channelID)
-		} else {
-			_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
+		if !derived {
+			if channelID.Valid {
+				_ = intelSourcesStore.MarkChannelChanged(ctx, channelID)
+			} else {
+				_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
+			}
+			intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, true)
 		}
-		intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, true)
 	// First crawl — no prior content to mark as changed.
 	case changedetector.DecisionFirstCrawl:
 	}
@@ -996,16 +1024,24 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	// preserving the pre-channels behaviour.
 	ch, chResolved := resolveIntelPipelineChannel(ctx, sourceID, channelID)
 
-	// Manifest channels (sitemap, wayback) produce url<TAB>stamp bodies —
-	// change-detection signal, not content. Dispatching the manifest
-	// onward would spend an LLM pass on a URL list and could only
-	// fabricate records from slugs; instead the changed/new URLs fan out
-	// as derived fetches (Phase 2). Raw docs stamped with
-	// parent_document_id are those derived pages — real content that
-	// dispatches to the channel's pipeline normally. The crawl outcome
-	// was already recorded above, so the chain ends here either way.
-	if chResolved && intelManifestMethod(ch.CrawlMethod) && !rawDoc.ParentDocumentID.Valid {
-		if decision == changedetector.DecisionChanged || decision == changedetector.DecisionFirstCrawl {
+	// Manifest documents (sitemap/wayback fetchers stamp the
+	// application/x-intel-manifest marker) are change-detection signal,
+	// not content — dispatching one onward would spend an LLM pass on a
+	// URL list and could only fabricate records from slugs. The marker
+	// (not the channel's crawl_method) identifies a manifest so the guard
+	// still holds if the channel row was deleted or repurposed between
+	// fetch and detect. Instead the changed/new URLs fan out as derived
+	// fetches (Phase 2). Raw docs stamped with parent_document_id are
+	// those derived pages — real content that dispatches to the channel's
+	// pipeline normally. The crawl outcome was already recorded above, so
+	// the chain ends here either way.
+	if intelIsManifestDoc(rawDoc) {
+		// Fan-out only when the resolved channel is itself a manifest
+		// channel — a deleted/repurposed channel resolves to the source's
+		// default, and fanning children out under a foreign channel's
+		// config would be wrong. The doc still stops here either way.
+		if chResolved && intelManifestMethod(ch.CrawlMethod) &&
+			(decision == changedetector.DecisionChanged || decision == changedetector.DecisionFirstCrawl) {
 			intelExpandManifest(ctx, ch, rawDoc)
 		}
 
@@ -1017,6 +1053,15 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 		if p2 := sources.Pipeline(ch.Pipeline); p2.IsValid() {
 			pipeline = p2
 		}
+	}
+
+	// A derived child of a manifest channel (sitemap/wayback) fetched via
+	// the static adapter can never match a curator — the registry
+	// dispatches on crawl_method and no curator handles 'sitemap'/'wayback'
+	// — so a curate/hybrid pipeline would burn a dead task hop before the
+	// extract fallback. Route derived docs straight to extract.
+	if derived && chResolved && intelManifestMethod(ch.CrawlMethod) {
+		pipeline = sources.PipelineExtract
 	}
 
 	channelIDStr := p.ChannelID
@@ -1054,12 +1099,20 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 }
 
 // intelManifestMethod reports whether m produces a url<TAB>stamp manifest
-// rather than page content — sitemap and wayback (Phase 2). Manifests end
-// at detect_changes and fan out derived fetches; they never reach curate
-// or extract.
+// rather than page content — sitemap and wayback (Phase 2).
 func intelManifestMethod(method string) bool {
 	m := sources.CrawlMethod(method)
 	return m == sources.CrawlMethodSitemap || m == sources.CrawlMethodWayback
+}
+
+// intelIsManifestDoc reports whether a raw document is a sitemap/wayback
+// manifest — change-detection signal only, never pipeline content. The
+// content-type marker (not the channel's crawl_method) is authoritative so
+// the check survives channel deletion/repurposing; a derived child doc
+// (parent_document_id set) is never a manifest even though its parent is.
+func intelIsManifestDoc(doc gen.IntelRawDocument) bool {
+	return !doc.ParentDocumentID.Valid &&
+		doc.ContentType != nil && *doc.ContentType == fetcher.ManifestContentType
 }
 
 // intelExpandManifest fans out a changed manifest (Phase-2 manifest
@@ -1670,14 +1723,15 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 	records, err := intelCurator.Curate(ctx, rawDoc.Body, contentType, ch)
 	if err != nil {
 		if errors.Is(err, ErrIntelNoCurator) {
-			// A manifest channel's body is a url<TAB>stamp list —
+			// A manifest doc's body is a url<TAB>stamp list —
 			// change-detection signal only (derived fetches carry the
-			// content), so there is nothing for extract to parse.
-			// Derived docs (parent_document_id set) still reach extract —
-			// they hold real page content. Other curator-less methods
-			// (api, static, git, …) carry real page content too and fall
-			// through to the extract pipeline.
-			if intelManifestMethod(ch.CrawlMethod) && !rawDoc.ParentDocumentID.Valid {
+			// content), so there is nothing for extract to parse. The
+			// content-type marker is authoritative — the check holds even
+			// if the channel row was repurposed. Derived docs still reach
+			// extract — they hold real page content. Other curator-less
+			// methods (api, static, git, …) carry real page content too
+			// and fall through to the extract pipeline.
+			if intelIsManifestDoc(rawDoc) {
 				slog.Info("task:intel:curate_channel: manifest body, skipping extract fallback", "channel_id", ch.ID.String())
 				return nil
 			}
