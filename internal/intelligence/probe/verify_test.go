@@ -155,6 +155,115 @@ func TestVerify_RechecksDeadFeed(t *testing.T) {
 	}
 }
 
+// TestVerify_RecheckTransportErrorKeepsFeed verifies that a transport
+// failure during the feed re-check (connection refused, DNS blip,
+// timeout) is NOT treated as a dead feed — only a definitive non-2xx or
+// non-feed response is. The feed survives in feed_urls and keeps its rss
+// channel proposal, with a warning noting the failed re-check.
+func TestVerify_RecheckTransportErrorKeepsFeed(t *testing.T) {
+	t.Parallel()
+
+	// Stand up a real feed server so discovery is honest, then kill it so
+	// the verify re-check hits a connection-refused transport error.
+	feedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel/></rss>`))
+	}))
+	feedURL := feedSrv.URL + "/feed"
+	feedSrv.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(longHTML(
+				`<link rel="alternate" type="application/rss+xml" href="` + feedURL + `">`)))
+
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	report, err := NewProber(srv.Client(), DefaultVerifyMaxRequests).
+		Verify(t.Context(), srv.URL+"/", "", nil, VerifyOpts{})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+
+	if !slices.Contains(report.FeedURLs, feedURL) {
+		t.Errorf("transport-failed feed dropped from feed_urls: %v", report.FeedURLs)
+	}
+
+	feed, ok := findChannel(report, "rss")
+	if !ok || feed.EntryURL != feedURL {
+		t.Errorf("transport-failed feed lost its rss channel: %+v", report.Channels)
+	}
+
+	if !hasWarning(report, "re-check failed") {
+		t.Errorf("warnings missing failed re-check note: %v", report.Warnings)
+	}
+}
+
+// TestVerify_SubPageJSONLDEntityTypes verifies a sub-page JSON-LD
+// detection stamps its own entity types on the channel proposal — with
+// no categories and no entry-page ld+json, a /jobs JobPosting must still
+// yield entity_types=[job] so the extract/curate materialize gate does
+// not silently drop the channel.
+func TestVerify_SubPageJSONLDEntityTypes(t *testing.T) {
+	t.Parallel()
+
+	var srvURL string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(longHTML(""))) // no ld+json on the entry page
+	})
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("User-agent: *\nAllow: /\nSitemap: " + srvURL + "/sitemap.xml\n"))
+	})
+	mux.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>` + srvURL + `/jobs</loc></url></urlset>`))
+	})
+	mux.HandleFunc("/jobs", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(longHTML(jobPostingLD)))
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	srvURL = srv.URL
+
+	report, err := NewProber(srv.Client(), DefaultVerifyMaxRequests).
+		Verify(t.Context(), srv.URL+"/", "", nil, VerifyOpts{})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+
+	var jobsProp *ChannelProposal
+
+	for i := range report.Channels {
+		if report.Channels[i].EntryURL == srvURL+"/jobs" {
+			jobsProp = &report.Channels[i]
+		}
+	}
+
+	if jobsProp == nil {
+		t.Fatalf("channels missing /jobs proposal: %+v", report.Channels)
+	}
+
+	if !slices.Contains(jobsProp.EntityTypes, "job") {
+		t.Errorf("/jobs proposal entity_types = %v, want [job] from sub-page ld+json", jobsProp.EntityTypes)
+	}
+
+	// The entry page must NOT absorb the sub-page's types.
+	if slices.Contains(report.JSONLDTypes, "JobPosting") {
+		t.Errorf("entry-page jsonld_types absorbed sub-page type: %v", report.JSONLDTypes)
+	}
+}
+
 // TestVerify_EntryErrorSkipsDeepPass verifies an HTTP-error entry page
 // runs only the host-level detectors — no path probes or sitemap fetches.
 func TestVerify_EntryErrorSkipsDeepPass(t *testing.T) {
