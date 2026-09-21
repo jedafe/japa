@@ -140,10 +140,9 @@ type Gate struct {
 	// Classifier is the borderline-band port; nil leaves borderline
 	// items Borderline.
 	Classifier Classifier
-	// Cache backs the verdict cache + rate counter; nil disables both
-	// (classifier still runs uncapped calls are bounded by cap only when
-	// a counter store exists — with nil Cache every borderline item calls
-	// the classifier).
+	// Cache backs the verdict cache + rate counter; nil disables both —
+	// the borderline path then skips the classifier entirely since the
+	// per-day cap cannot be enforced (spend-safety over recall).
 	Cache Cache
 	// Now overrides the clock for the rate-counter day bucket (tests).
 	Now func() time.Time

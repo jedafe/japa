@@ -158,6 +158,28 @@ func TestBuildProposeParams_SourceKind(t *testing.T) {
 	})
 }
 
+// TestBuildProposeParams_BareDomain covers the scheme-less URL
+// normalization: the probe endpoint accepts bare domains, so the submit
+// step must too — "jobberman.com" normalizes to https://jobberman.com for
+// both validation and the stored source_url.
+func TestBuildProposeParams_BareDomain(t *testing.T) {
+	t.Parallel()
+
+	input := validProposeInput()
+	input.SourceURL = "jobberman.com"
+
+	arg, err := buildProposeParams(input)
+	if err != nil {
+		t.Fatalf("buildProposeParams(bare domain) = %v, want nil", err)
+	}
+	if arg.SourceUrl != "https://jobberman.com" {
+		t.Errorf("source_url = %q, want %q", arg.SourceUrl, "https://jobberman.com")
+	}
+	if arg.Domain != "jobberman.com" {
+		t.Errorf("domain = %q, want %q", arg.Domain, "jobberman.com")
+	}
+}
+
 // TestBuildProposeParams_ManualCrawl covers the spec change: proposed rows
 // are always crawl_method/crawl_frequency 'manual' because channels own
 // crawling after approval — a legacy 'rss' source_type no longer maps to an

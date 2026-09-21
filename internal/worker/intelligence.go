@@ -300,14 +300,15 @@ func marshalPayload(v any) []byte {
 }
 
 // recoverPanic is a shared defer helper for intelligence task handlers
-// (INTEL-020 fix). It catches panics so a single handler crash does not
-// bring down the entire Asynq worker process. The panic is logged and
-// re-panic'd only if the context is already cancelled; otherwise the
-// handler returns normally (Asynq will retry based on the task's retry
-// policy).
+// (INTEL-020 fix). It logs the panic with the task type for greppability,
+// then re-panics so asynq's processor-level recoverer converts it into a
+// task failure — the retry policy applies instead of the task silently
+// succeeding mid-pipeline (which could also strand the channel crawl lock
+// until TTL).
 func recoverPanic(taskType string) {
 	if r := recover(); r != nil {
 		slog.Error("intel: task handler panicked", "task", taskType, "panic", r)
+		panic(r)
 	}
 }
 
@@ -891,6 +892,17 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	// preserving the pre-channels behaviour.
 	ch, chResolved := resolveIntelPipelineChannel(ctx, sourceID, channelID)
 
+	// A sitemap channel's raw doc is a url<TAB>lastmod manifest — pure
+	// change-detection signal in Phase 1 (per-URL child fetches are
+	// Phase 2). Dispatching the manifest onward would spend an LLM pass on
+	// a URL list and could only fabricate records from slugs; the crawl
+	// outcome was already recorded above, so the chain ends here.
+	if chResolved && sources.CrawlMethod(ch.CrawlMethod) == sources.CrawlMethodSitemap {
+		slog.Info("task:intel:detect_changes: sitemap manifest channel, chain ends after change detection", "channel_id", ch.ID.String(), "raw_doc_id", p.RawDocID)
+
+		return nil
+	}
+
 	pipeline := sources.PipelineExtract
 	if chResolved {
 		if p2 := sources.Pipeline(ch.Pipeline); p2.IsValid() {
@@ -1114,7 +1126,15 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 			return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, entityTypes[0])
 		}
 
-		return errors.New("task:intel:extract: no records extracted")
+		// Terminal non-failure: the extractor ran clean but yielded zero
+		// records (empty listing page, or every result deduped on the
+		// 23505 unique key / hybrid skip-set). Retrying the same body
+		// cannot produce records — it would only burn an LLM call per
+		// asynq retry — so report success. The next changed document gets
+		// its own extraction pass.
+		slog.Warn("task:intel:extract: extraction produced no records", "raw_doc_id", p.RawDocID)
+
+		return nil
 	}
 
 	return nil
@@ -1429,9 +1449,16 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 	records, err := intelCurator.Curate(ctx, rawDoc.Body, contentType, ch)
 	if err != nil {
 		if errors.Is(err, ErrIntelNoCurator) {
-			// The channel's crawl method has no deterministic curator
-			// (sitemap manifests, api, git, …) — the extract pipeline owns
-			// the document instead.
+			// A sitemap channel's body is a url<TAB>lastmod manifest —
+			// change-detection signal only (child fetches are Phase 2), so
+			// there is nothing for extract to parse. Other curator-less
+			// methods (api, static, git, …) carry real page content and
+			// fall through to the extract pipeline.
+			if sources.CrawlMethod(ch.CrawlMethod) == sources.CrawlMethodSitemap {
+				slog.Info("task:intel:curate_channel: sitemap manifest, skipping extract fallback", "channel_id", ch.ID.String())
+				return nil
+			}
+
 			slog.Info("task:intel:curate_channel: no curator for method, falling back to extract", "channel_id", ch.ID.String(), "crawl_method", ch.CrawlMethod)
 			intelEnqueueExtractFallback(p.RawDocID, ch.ID.String(), nil)
 
