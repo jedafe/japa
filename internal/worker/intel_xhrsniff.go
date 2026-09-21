@@ -146,22 +146,14 @@ func HandleIntelXHRSniff(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// The sniff target is the channel's entry_url when a specific xhr_sniff
-	// channel fired this task, else the source URL.
+	// channel fired this task, else the source URL. wait_ms (page-settle
+	// budget) is a provider_config override on the same row.
 	target := src.SourceUrl
-	if p.ChannelID != "" {
-		if chID, cerr := scanUUID(p.ChannelID); cerr == nil {
-			if ch, gerr := intelSourcesStore.GetChannel(ctx, chID); gerr == nil {
-				target = ch.EntryUrl
-			}
-		}
-	}
-
-	// Page-settle budget for the headless pass — the render service caps
-	// itself at intel.render.timeout_ms on its side.
 	waitMs := 5000
 	if p.ChannelID != "" {
 		if chID, cerr := scanUUID(p.ChannelID); cerr == nil {
 			if ch, gerr := intelSourcesStore.GetChannel(ctx, chID); gerr == nil {
+				target = ch.EntryUrl
 				var cfg map[string]any
 				if json.Unmarshal(ch.ProviderConfig, &cfg) == nil {
 					if ms, ok := cfg["wait_ms"].(float64); ok && ms > 0 {
@@ -186,13 +178,13 @@ func HandleIntelXHRSniff(ctx context.Context, t *asynq.Task) error {
 	var inputs []sources.ChannelProposalInput
 	for _, ep := range endpoints {
 		cfg, _ := json.Marshal(map[string]any{
-			"endpoint":       ep,
-			"method":         "GET",
+			"endpoint":       ep.URL,
+			"method":         ep.Method,
 			"discovered_via": "xhr_sniff",
 		})
 		inputs = append(inputs, sources.ChannelProposalInput{
-			Label:          "Discovered API " + ep,
-			EntryURL:       ep,
+			Label:          "Discovered API " + ep.Method + " " + ep.URL,
+			EntryURL:       ep.URL,
 			CrawlMethod:    string(sources.CrawlMethodAPI),
 			Pipeline:       string(sources.PipelineExtract),
 			ProviderConfig: cfg,
@@ -247,14 +239,21 @@ func intelSniffHAR(ctx context.Context, serviceURL, target string, waitMs int) (
 	return env, nil
 }
 
+// sniffEndpoint is one discovered JSON XHR endpoint — method + clean URL
+// (query stripped; query variance dedupes to the same endpoint).
+type sniffEndpoint struct {
+	Method string
+	URL    string
+}
+
 // intelSniffEndpoints extracts deduplicated JSON API endpoints from a HAR —
 // GET/POST entries whose response MIME is JSON. Dedupe key is
 // method+host+path (query variance ignored); private-literal hosts are
 // dropped (the HAR is attacker-influenced content). Bounded at 10
 // endpoints — beyond that the page is a firehose, not an API surface.
-func intelSniffEndpoints(env harEnvelope) []string {
+func intelSniffEndpoints(env harEnvelope) []sniffEndpoint {
 	seen := map[string]bool{}
-	var out []string
+	var out []sniffEndpoint
 
 	for _, e := range env.entries() {
 		if len(out) >= 10 {
@@ -282,7 +281,10 @@ func intelSniffEndpoints(env harEnvelope) []string {
 			continue
 		}
 		seen[key] = true
-		out = append(out, u.Scheme+"://"+u.Host+u.EscapedPath())
+		out = append(out, sniffEndpoint{
+			Method: method,
+			URL:    u.Scheme + "://" + u.Host + u.EscapedPath(),
+		})
 	}
 
 	return out

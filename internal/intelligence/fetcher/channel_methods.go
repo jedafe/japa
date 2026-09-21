@@ -96,6 +96,14 @@ func extractLDJSONBlocks(body []byte) ([]string, error) {
 	return blocks, nil
 }
 
+// ManifestContentType is the internal marker content type stamped on
+// sitemap/wayback manifest documents — url<TAB>stamp change-detection
+// bodies that must never reach curate/extract. detect_changes identifies
+// manifests by this marker (independent of the channel row, which can be
+// deleted/re-purposed between fetch and detect) — a manifest doc is
+// ManifestContentType AND parent_document_id IS NULL.
+const ManifestContentType = "application/x-intel-manifest"
+
 // sitemapURLSet / sitemapIndex mirror the two sitemap document shapes.
 type sitemapURLSet struct {
 	URLs []struct {
@@ -127,14 +135,12 @@ func (c *Composite) fetchSitemapManifest(ctx context.Context, src sources.Source
 		return FetchResult{}, err
 	}
 
-	contentType := "text/plain; charset=utf-8"
-
 	return FetchResult{
 		HTTPStatus:  res.HTTPStatus,
 		Headers:     res.Headers,
-		ContentType: contentType,
+		ContentType: ManifestContentType,
 		Body:        manifest,
-		ContentHash: NormalizeForHash(manifest, contentType),
+		ContentHash: NormalizeForHash(manifest, ManifestContentType),
 	}, nil
 }
 

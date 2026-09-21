@@ -696,7 +696,10 @@ func (s *Service) oneshotSource(ctx context.Context) (Source, error) {
 		SourceUrl:          oneshotSourceURL,
 		Category:           "announcement",
 		Categories:         []string{"announcement"},
-		SourceType:         "auto",
+		// "system" + crawl_method manual → verifySkipSource skips a reprobe
+		// (an admin reprobe must not probe japaconnect.com and materialize
+		// channels onto the shared submissions source).
+		SourceType:         "system",
 		SourceKind:         string(SourceKindAggregator),
 		TrustLevel:         5,
 		CrawlMethod:        string(CrawlMethodManual),
