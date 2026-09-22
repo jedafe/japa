@@ -33,15 +33,15 @@ const (
 // educationRank orders education levels so `edu_min` conditions can be
 // evaluated as "level >= min".
 var educationRank = map[string]int{
-	"none":             0,
-	"secondary":        1,
-	"one_year_post":    2,
-	"two_year_post":    3,
-	"bachelors":        4,
-	"two_or_more":      5,
-	"masters":          6,
-	"professional":     7,
-	"phd":              8,
+	"none":          0,
+	"secondary":     1,
+	"one_year_post": 2,
+	"two_year_post": 3,
+	"bachelors":     4,
+	"two_or_more":   5,
+	"masters":       6,
+	"professional":  7,
+	"phd":           8,
 }
 
 // CLBScores carries per-skill Canadian Language Benchmark scores.
@@ -77,21 +77,21 @@ type SpouseInput struct {
 
 // CalculateRequest is the POST /crs/calculate profile.
 type CalculateRequest struct {
-	MaritalStatus              string     `json:"marital_status"` // single|married
-	Age                        int        `json:"age"`
-	Education                  string     `json:"education"`
-	CLBFirst                   CLBScores  `json:"clb_first"`
-	CLBSecond                  *CLBScores `json:"clb_second,omitempty"`
-	CanadianExpYears           int        `json:"canadian_experience_years"`
-	ForeignExpYears            int        `json:"foreign_experience_years"`
-	CertificateOfQualification bool       `json:"certificate_of_qualification"`
+	MaritalStatus              string       `json:"marital_status"` // single|married
+	Age                        int          `json:"age"`
+	Education                  string       `json:"education"`
+	CLBFirst                   CLBScores    `json:"clb_first"`
+	CLBSecond                  *CLBScores   `json:"clb_second,omitempty"`
+	CanadianExpYears           int          `json:"canadian_experience_years"`
+	ForeignExpYears            int          `json:"foreign_experience_years"`
+	CertificateOfQualification bool         `json:"certificate_of_qualification"`
 	Spouse                     *SpouseInput `json:"spouse,omitempty"`
-	ProvincialNomination       bool       `json:"provincial_nomination"`
-	JobOffer                   bool       `json:"job_offer"`
-	SiblingInCanada            bool       `json:"sibling_in_canada"`
-	FrenchCLB                  *CLBScores `json:"french_clb,omitempty"`
-	CanadianEducation          string     `json:"canadian_education"` // none|one_or_two_years|three_plus_years
-	RulesetVersion             string     `json:"ruleset_version,omitempty"`
+	ProvincialNomination       bool         `json:"provincial_nomination"`
+	JobOffer                   bool         `json:"job_offer"`
+	SiblingInCanada            bool         `json:"sibling_in_canada"`
+	FrenchCLB                  *CLBScores   `json:"french_clb,omitempty"`
+	CanadianEducation          string       `json:"canadian_education"` // none|one_or_two_years|three_plus_years
+	RulesetVersion             string       `json:"ruleset_version,omitempty"`
 }
 
 // BreakdownItem is one awarded factor in the score breakdown.
@@ -112,11 +112,11 @@ type CalculateResult struct {
 
 // RulesetDTO is the API shape for a ruleset.
 type RulesetDTO struct {
-	ID           string `json:"id"`
-	VersionLabel string `json:"version_label"`
+	ID            string `json:"id"`
+	VersionLabel  string `json:"version_label"`
 	EffectiveDate string `json:"effective_date"`
-	Status       string `json:"status"`
-	SourceURL    string `json:"source_url,omitempty"`
+	Status        string `json:"status"`
+	SourceURL     string `json:"source_url,omitempty"`
 }
 
 // FactorDTO is the API shape for one factor row.
@@ -159,9 +159,9 @@ type ScoreHistoryDTO struct {
 
 // Admin request bodies.
 type CreateRulesetRequest struct {
-	VersionLabel  string          `json:"version_label"`
-	EffectiveDate string          `json:"effective_date"`
-	SourceURL     string          `json:"source_url"`
+	VersionLabel  string           `json:"version_label"`
+	EffectiveDate string           `json:"effective_date"`
+	SourceURL     string           `json:"source_url"`
 	Factors       []FactorRowInput `json:"factors"`
 }
 
