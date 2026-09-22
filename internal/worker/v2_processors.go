@@ -195,6 +195,13 @@ type CvFormatterProcessor interface {
 	PurgeExpiredSessions(ctx context.Context) (int64, error)
 }
 
+// SopProcessor handles the AI SOP Generator background task (§110,
+// ADR-121). ProcessDraft loads a queued draft, dispatches to the AI
+// Gateway, and marks it generated/failed. Idempotent on draft_id.
+type SopProcessor interface {
+	ProcessDraft(ctx context.Context, draftID pgtype.UUID) error
+}
+
 // DigestProcessor handles Community Digest Widget background tasks (§84,
 // ADR-092). GenerateEdition assembles a new digest edition from platform
 // analytics (top threads, new members, events, featured story, poll) and
@@ -272,6 +279,7 @@ var (
 	calendarProcessor       CalendarProcessor
 	mutualAidProcessor      MutualAidProcessor
 	cvFormatterProcessor    CvFormatterProcessor
+	sopProcessor            SopProcessor
 	digestProcessor         DigestProcessor
 	agentDraftProcessor     AgentDraftProcessor
 	japaStageProcessor      JapaStageProcessor
@@ -329,6 +337,9 @@ func RegisterMutualAidProcessor(p MutualAidProcessor) { mutualAidProcessor = p }
 
 // RegisterCvFormatterProcessor is an exported function.
 func RegisterCvFormatterProcessor(p CvFormatterProcessor) { cvFormatterProcessor = p }
+
+// RegisterSopProcessor is an exported function.
+func RegisterSopProcessor(p SopProcessor) { sopProcessor = p }
 
 // RegisterDigestProcessor is an exported function.
 func RegisterDigestProcessor(p DigestProcessor) { digestProcessor = p }
@@ -425,6 +436,11 @@ const (
 	// nightly on the low queue, deleting sessions past their expires_at.
 	TypeCvFormatProcess       = "cv_format:process"
 	TypeCvFormatSessionsPurge = "cv_format_sessions:purge"
+
+	// TypeSopGenerate — §110 AI SOP Generator (ADR-121).
+	// sop:generate runs on the default queue, generating a single queued
+	// draft via the AI Gateway.
+	TypeSopGenerate = "sop:generate"
 
 	// TypeDigestGenerate — §84 Community Digest Widget (ADR-092).
 	// digest:generate runs weekly on Sunday 22:00 UTC on the low queue,
@@ -1047,6 +1063,17 @@ func HandleCvFormatProcess(ctx context.Context, t *asynq.Task) error {
 func HandleCvFormatSessionsPurge(ctx context.Context, _ *asynq.Task) error {
 	return countTask(ctx, "cv_format_sessions:purge", "purged expired sessions", cvFormatterProcessor != nil,
 		func(ctx context.Context) (int64, error) { return cvFormatterProcessor.PurgeExpiredSessions(ctx) })
+}
+
+// HandleSopGenerate generates a single queued SOP draft via the AI
+// Gateway (§110, ADR-121). The draft_id is carried in the JSON payload.
+// Default queue. Idempotent on draft_id — re-processing a
+// generated/failed draft is a no-op.
+func HandleSopGenerate(ctx context.Context, t *asynq.Task) error {
+	return procTask(ctx, t, "sop:generate", sopProcessor != nil, []string{"draft_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return sopProcessor.ProcessDraft(ctx, ids[0])
+		})
 }
 
 // HandleDigestGenerate assembles a new community digest edition from platform

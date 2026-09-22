@@ -177,6 +177,87 @@ func TestHandleIntelInboundEmail(t *testing.T) {
 	}
 }
 
+// TestHandleIntelInboundEmail_ClaimLoss covers the atomic claim (Phase-3
+// hardening): a second run that loses the received → processing CAS must
+// no-op without materializing, and the admin redrive releases a stuck
+// 'processing' event back for processing.
+func TestHandleIntelInboundEmail_ClaimLoss(t *testing.T) {
+	database, srcStore, _, _ := wireIntelChannelDeps(t)
+
+	src := mkIntelTestSource(t, srcStore, "claim-loss-src", nil)
+	ch := mkIntelTestChannel(t, srcStore, src, func(p *gen.CreateIntelSourceChannelParams) {
+		p.CrawlMethod = "email"
+		p.ProviderConfig = []byte(`{"inbound_address":"intel@inbound.japa.example"}`)
+	})
+
+	env, _ := json.Marshal(map[string]string{
+		"from": "a@b.example", "to": "intel@inbound.japa.example",
+		"subject": "s", "message_id": "<claim@b>", "text": "body",
+	})
+	event, err := srcStore.CreateInboundEvent(t.Context(), gen.CreateIntelInboundEventParams{
+		ChannelID:   ch.ID,
+		Payload:     env,
+		Headers:     []byte(`{}`),
+		ContentType: strPtr("application/x-intel-email"),
+		ContentHash: "hash-claim-1",
+	})
+	if err != nil {
+		t.Fatalf("create inbound event: %v", err)
+	}
+
+	// Simulate the competing worker winning the claim — this run must see
+	// 'processing' and no-op without persisting a raw doc.
+	claimed, err := srcStore.ClaimInboundEvent(t.Context(), event.ID)
+	if err != nil || !claimed {
+		t.Fatalf("first claim = %v, %v — want true", claimed, err)
+	}
+	if claimed2, _ := srcStore.ClaimInboundEvent(t.Context(), event.ID); claimed2 {
+		t.Fatal("second claim won — CAS is not atomic")
+	}
+
+	// A live claim is NOT redrivable — the stuck-age guard protects the
+	// in-flight worker from being hijacked into a duplicate materialize.
+	if redriven, _ := srcStore.RedriveInboundEvent(t.Context(), event.ID, 900); redriven {
+		t.Fatal("fresh 'processing' claim was redrivable — live claim not protected")
+	}
+
+	payload := marshalPayload(map[string]string{"version": "v1", "event_id": event.ID.String()})
+	if err := HandleIntelInboundEmail(t.Context(), asynq.NewTask(TypeIntelInboundEmail, payload)); err != nil {
+		t.Fatalf("claimed-out run: %v", err)
+	}
+	if n := countChannelRawDocs(t, database, ch.ID); n != 0 {
+		t.Fatalf("raw docs = %d, want 0 (claim held by another run)", n)
+	}
+
+	// A crashed claimant leaves the event stuck in 'processing' — the
+	// admin redrive releases it once the claim ages out, and the next run
+	// materializes normally.
+	if _, err := database.Writer.Exec(t.Context(),
+		"UPDATE intel_inbound_events SET claimed_at = now() - interval '20 minutes' WHERE id = $1",
+		event.ID); err != nil {
+		t.Fatalf("backdate claim: %v", err)
+	}
+	redriven, err := srcStore.RedriveInboundEvent(t.Context(), event.ID, 900)
+	if err != nil || !redriven {
+		t.Fatalf("redrive = %v, %v — want true", redriven, err)
+	}
+	if err := HandleIntelInboundEmail(t.Context(), asynq.NewTask(TypeIntelInboundEmail, payload)); err != nil {
+		t.Fatalf("post-redrive run: %v", err)
+	}
+	if n := countChannelRawDocs(t, database, ch.ID); n != 1 {
+		t.Fatalf("raw docs = %d, want 1", n)
+	}
+	got, _ := srcStore.GetInboundEvent(t.Context(), event.ID)
+	if got.Status != "processed" {
+		t.Errorf("event status = %q, want processed", got.Status)
+	}
+
+	// Terminal events are not redrivable — the CAS rejects them.
+	if redriven, _ := srcStore.RedriveInboundEvent(t.Context(), event.ID, 900); redriven {
+		t.Error("processed event was redrivable")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Phase-3 WebSub — the subscribe task POSTs the hub form and arms renewal.
 // ---------------------------------------------------------------------------

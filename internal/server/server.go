@@ -133,6 +133,7 @@ import (
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/servicedir"
 	"github.com/jedafe/japa/internal/sidebars"
+	"github.com/jedafe/japa/internal/sopgenerator"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/stock"
@@ -1465,6 +1466,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ecaGuideService := ecaguide.NewService(ecaGuideStore, settingsService)
 	ecaGuideHandlers := ecaguide.NewHandlers(ecaGuideService, settingsService)
 
+	sopGeneratorStore := sopgenerator.NewStore(database)
+	sopGeneratorService := sopgenerator.NewService(sopGeneratorStore, settingsService)
+	sopGeneratorService.SetEnqueuer(taskEnqueuer)
+	sopGeneratorService.SetCache(&sopQuotaCache{rdb: vkClient.Redis()})
+	sopGeneratorHandlers := sopgenerator.NewHandlers(sopGeneratorService, settingsService)
+
 	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (ADR-079)
 	adsSelfServeStore := adsselfserve.NewStore(database)
 	adsSelfServeService := adsselfserve.NewService(adsSelfServeStore, settingsService)
@@ -2000,6 +2007,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Asynq task processor (ADR-103).
 	cvFormatterService.SetAIDispatcher(&cvFormatterAIDispatcher{dispatcher: aiDispatcher})
 	worker.RegisterCvFormatterProcessor(cvFormatterService)
+
+	// §110 AI SOP Generator — wire the AI Gateway dispatcher and register
+	// the service as the sop:generate Asynq task processor (ADR-121).
+	sopGeneratorService.SetAIDispatcher(&sopAIDispatcher{dispatcher: aiDispatcher})
+	worker.RegisterSopProcessor(sopGeneratorService)
 
 	// Wire the AI Gateway dispatcher into the credential checker service
 	// so GeneratePathwayDraft can call the Content Agent (§20, ADR-088).
@@ -6722,6 +6734,31 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/admin/eca-guides/updates", ecaGuideHandlers.HandleAdminListUpdates)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
 					Patch("/admin/eca-guides/updates/{id}", ecaGuideHandlers.HandleAdminModerateUpdate)
+			})
+
+			// §110 — AI SOP Generator (ADR-121)
+			r.With(features.Gate(featureChecker, "sop_generator.enabled")).Group(func(r chi.Router) {
+				r.Get("/sop/templates", sopGeneratorHandlers.HandleListTemplates)
+				r.Get("/sop/samples", sopGeneratorHandlers.HandleListSamples)
+				r.Get("/sop/samples/{id}", sopGeneratorHandlers.HandleGetSample)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.generate")).
+					Get("/sop/quota", sopGeneratorHandlers.HandleQuota)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.generate")).
+					Post("/sop/generate", sopGeneratorHandlers.HandleGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.generate")).
+					Get("/sop/drafts", sopGeneratorHandlers.HandleListDrafts)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.generate")).
+					Get("/sop/drafts/{id}", sopGeneratorHandlers.HandleGetDraft)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.generate")).
+					Patch("/sop/drafts/{id}", sopGeneratorHandlers.HandleUpdateDraft)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.generate")).
+					Delete("/sop/drafts/{id}", sopGeneratorHandlers.HandleDeleteDraft)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Get("/admin/sop/templates", sopGeneratorHandlers.HandleAdminListTemplates)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Post("/admin/sop/templates/generate", sopGeneratorHandlers.HandleAdminGenerateTemplate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Patch("/admin/sop/samples/{id}/approve", sopGeneratorHandlers.HandleAdminApproveSample)
 			})
 
 			// §95 — CV Formatter (ADR-103)

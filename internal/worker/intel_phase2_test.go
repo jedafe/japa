@@ -282,6 +282,9 @@ func TestIntelSniffEndpoints(t *testing.T) {
 		{"request":{"method":"POST","url":"https://api.example.com/v1/search",
 		 "postData":{"mimeType":"application/json","text":"{\"q\":\"visa\",\"limit\":10}"}},
 		 "response":{"status":200,"content":{"mimeType":"application/json; charset=utf-8"}}},
+		{"request":{"method":"POST","url":"https://api.example.com/v1/form",
+		 "postData":{"mimeType":"application/x-www-form-urlencoded","text":"q=visa&page=2"}},
+		 "response":{"status":200,"content":{"mimeType":"application/vnd.api+json"}}},
 		{"request":{"method":"GET","url":"https://api.example.com/v1/err"},
 		 "response":{"status":500,"content":{"mimeType":"application/json"}}},
 		{"request":{"method":"GET","url":"http://169.254.169.254/latest/meta"},
@@ -297,13 +300,16 @@ func TestIntelSniffEndpoints(t *testing.T) {
 	want := []sniffEndpoint{
 		{Method: "GET", URL: "https://api.example.com/v1/jobs"}, // query deduped
 		// POST JSON kept, request body carried from postData.
-		{Method: "POST", URL: "https://api.example.com/v1/search", Body: []byte(`{"q":"visa","limit":10}`)},
+		{Method: "POST", URL: "https://api.example.com/v1/search", Body: []byte(`{"q":"visa","limit":10}`), BodyMime: "application/json"},
+		// Non-JSON postData kept too — body + mime replay into the proposal.
+		{Method: "POST", URL: "https://api.example.com/v1/form", Body: []byte("q=visa&page=2"), BodyMime: "application/x-www-form-urlencoded"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("endpoints = %v, want %v", got, want)
 	}
 	for i := range want {
-		if got[i].Method != want[i].Method || got[i].URL != want[i].URL || string(got[i].Body) != string(want[i].Body) {
+		if got[i].Method != want[i].Method || got[i].URL != want[i].URL ||
+			string(got[i].Body) != string(want[i].Body) || got[i].BodyMime != want[i].BodyMime {
 			t.Fatalf("endpoints = %v, want %v", got, want)
 		}
 	}
@@ -330,18 +336,28 @@ func TestIntelSniffProposalInput(t *testing.T) {
 		}
 	})
 
-	t.Run("non-JSON body dropped", func(t *testing.T) {
+	t.Run("non-JSON body stored as string with mime", func(t *testing.T) {
 		in := intelSniffProposalInput(sniffEndpoint{
 			Method: "POST", URL: "https://api.example.com/v1/search",
-			Body: []byte("a=1&b=2"),
+			Body:     []byte("a=1&b=2"),
+			BodyMime: "application/x-www-form-urlencoded",
 		})
 
 		var cfg map[string]json.RawMessage
 		if err := json.Unmarshal(in.ProviderConfig, &cfg); err != nil {
 			t.Fatalf("provider_config decode: %v", err)
 		}
-		if _, present := cfg["body"]; present {
-			t.Fatalf("form-encoded postData must not land in provider_config.body: %s", cfg["body"])
+		// Stored as a JSON string — the api fetcher sends it unquoted.
+		var body string
+		if err := json.Unmarshal(cfg["body"], &body); err != nil || body != "a=1&b=2" {
+			t.Fatalf("body = %s, want JSON-encoded string %q", cfg["body"], "a=1&b=2")
+		}
+		var headers map[string]string
+		if err := json.Unmarshal(cfg["headers"], &headers); err != nil {
+			t.Fatalf("headers decode: %v", err)
+		}
+		if headers["Content-Type"] != "application/x-www-form-urlencoded" {
+			t.Fatalf("Content-Type header = %q", headers["Content-Type"])
 		}
 	})
 
