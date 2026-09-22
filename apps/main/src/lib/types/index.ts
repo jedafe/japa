@@ -4024,3 +4024,250 @@ export interface GuestHomeData {
 	stats: GuestHomeStat[];
 	categories: GuestHomeCategory[];
 }
+
+/* --- SEO Growth Tools (§§107–110, ADR-118..121) --- */
+
+/** GET /crs/factors — a versioned CRS ruleset + factor point tables. */
+export interface CrsRuleset {
+	id: string;
+	version_label: string;
+	effective_date: string;
+	status: string;
+	source_url?: string;
+}
+
+export interface CrsFactor {
+	group: string;
+	key: string;
+	input_descriptor: Record<string, unknown>;
+	label: string;
+	points_single: number;
+	points_with_spouse?: number;
+	sort_order: number;
+}
+
+export interface CrsFactorsResponse {
+	ruleset: CrsRuleset;
+	factors: CrsFactor[];
+}
+
+/** POST /crs/calculate request. */
+export interface CrsCalculateInput {
+	marital_status: 'single' | 'married';
+	age: number;
+	education: string;
+	clb_first: { listening: number; reading: number; writing: number; speaking: number };
+	clb_second?: { listening: number; reading: number; writing: number; speaking: number };
+	canadian_experience_years: number;
+	foreign_experience_years: number;
+	certificate_of_qualification: boolean;
+	spouse?: {
+		education: string;
+		clb_first: { listening: number; reading: number; writing: number; speaking: number };
+		canadian_experience_years: number;
+	};
+	provincial_nomination: boolean;
+	job_offer: boolean;
+	sibling_in_canada: boolean;
+	french_clb?: { listening: number; reading: number; writing: number; speaking: number };
+	canadian_education: string;
+	ruleset_version?: string;
+}
+
+/** POST /crs/calculate response. */
+export interface CrsBreakdownItem {
+	group: string;
+	key: string;
+	label: string;
+	points: number;
+}
+
+export interface CrsCalculateResult {
+	ruleset_version: string;
+	score: number;
+	breakdown: CrsBreakdownItem[];
+	saved: boolean;
+}
+
+/** GET /crs/draws + /crs/draws/latest — Express Entry draw history. */
+export interface CrsDraw {
+	id: string;
+	draw_number?: number;
+	draw_date: string;
+	category: string;
+	crs_cutoff: number;
+	invitations_issued: number;
+	tie_break_rule?: string;
+	source_url?: string;
+}
+
+/** GET /me/crs-scores — saved score history (auth). */
+export interface CrsScoreHistoryItem {
+	id: string;
+	score: number;
+	inputs: Record<string, unknown>;
+	breakdown: CrsBreakdownItem[];
+	created_at: string;
+}
+
+/** GET /pof/requirements — a proof-of-funds requirement row. */
+export interface PofRequirement {
+	id: string;
+	destination_space_id: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	visa_type: string;
+	program_label: string;
+	amount_schedule: PofScheduleBand[] | PofScheduleFormula;
+	currency: string;
+	funds_must_be_liquid: boolean;
+	accepted_proof?: string[];
+	notes?: string;
+	effective_date: string;
+	source_url?: string;
+	status: string;
+	is_active: boolean;
+	ai_generated: boolean;
+	is_japabot_indexed: boolean;
+}
+
+export interface PofScheduleBand {
+	members: number;
+	amount: number;
+	per_additional?: number;
+}
+
+export interface PofScheduleFormula {
+	base: number;
+	base_members: number;
+	per_additional: number;
+}
+
+/** GET /pof/calculate response. */
+export interface PofCalculateResult {
+	requirement_id: string;
+	program_label: string;
+	household: number;
+	amount: number;
+	currency: string;
+	ngn_equivalent?: number;
+	usd_equivalent?: number;
+	funds_must_be_liquid: boolean;
+	accepted_proof?: string[];
+	notes?: string;
+	effective_date: string;
+	source_url?: string;
+}
+
+/** GET /eca/providers — an ECA provider directory entry. */
+export interface EcaProvider {
+	id: string;
+	slug: string;
+	name: string;
+	website?: string;
+	is_active?: boolean;
+}
+
+/** GET /eca/guides + /eca/guides/:id — an ECA guide. */
+export interface EcaGuide {
+	id: string;
+	destination_space_id: string;
+	provider_id: string;
+	provider_slug?: string;
+	provider_name?: string;
+	purpose: string;
+	pathway_steps: EcaPathwayStep[];
+	fee_estimate?: string;
+	currency?: string;
+	timeline_estimate?: string;
+	documents_required?: string[];
+	accepted_for?: string[];
+	official_url?: string;
+	source_url_last_checked?: string;
+	status: string;
+	is_active: boolean;
+	ai_generated: boolean;
+	is_japabot_indexed: boolean;
+}
+
+export interface EcaPathwayStep {
+	step: number;
+	title: string;
+	detail: string;
+	duration?: string;
+}
+
+/** GET /eca/guides/:id — guide detail + approved community updates. */
+export interface EcaGuideDetail {
+	guide: EcaGuide;
+	updates: EcaCommunityUpdate[];
+}
+
+export interface EcaCommunityUpdate {
+	id: string;
+	guide_id: string;
+	user_name?: string;
+	step_index?: number;
+	fee_estimate?: string;
+	turnaround_days?: number;
+	note?: string;
+	status: string;
+	created_at: string;
+}
+
+/** GET /eca/compare — side-by-side provider comparison. */
+export interface EcaCompareResponse {
+	providers: EcaProvider[];
+	guides: EcaGuide[];
+}
+
+/** GET /sop/templates — a public SOP template. */
+export interface SopTemplate {
+	id: string;
+	destination_space_id?: string;
+	purpose: string;
+	title: string;
+	structure: SopTemplateSection[];
+}
+
+export interface SopTemplateSection {
+	section: string;
+	guidance: string;
+	min_words?: number;
+}
+
+/** GET /sop/samples + /sop/samples/:id — a published SOP sample. */
+export interface SopSample {
+	id: string;
+	destination_space_name?: string;
+	program_level: string;
+	field_of_study?: string;
+	title: string;
+	body: string;
+	word_count?: number;
+	ai_generated: boolean;
+}
+
+/** GET /sop/drafts + /sop/drafts/:id — a user-owned draft. */
+export interface SopDraft {
+	id: string;
+	destination_space_id?: string;
+	purpose: string;
+	program?: string;
+	institution?: string;
+	title?: string;
+	inputs: Record<string, unknown>;
+	generated_text?: string;
+	status: 'queued' | 'generated' | 'failed';
+	ai_model?: string;
+	version: number;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /sop/quota — remaining monthly generations (auth). */
+export interface SopQuota {
+	limit: number;
+	used: number;
+	remaining: number;
+}

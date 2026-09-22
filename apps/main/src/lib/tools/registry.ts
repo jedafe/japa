@@ -12,7 +12,6 @@
  *
  * Ref: §78 (Tools Web Surface), conventions/system-settings-catalog.md.
  */
-import { toolsUrl } from '$lib/appOrigins';
 
 export type ToolSection = 'planning' | 'immigration' | 'education' | 'career' | 'finance' | 'settlement';
 
@@ -159,32 +158,32 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		enabledSetting: 'tax_calculator.enabled',
 		sections: ['finance', 'settlement']
 	},
-	// --- §§107–110 functional tools — hosted on the Tools surface
-	// (tools.japaconnect.com), linked out via toolsUrl(). Categories are
-	// journey-stage based, same as the in-app tools above. ---
+	// --- §§107–110 functional tools — in-app routes like the tools above.
+	// The same tools are mirrored on the dedicated Tools surface
+	// (tools.japaconnect.com) for standalone use. ---
 	{
-		href: toolsUrl('/crs-calculator'),
+		href: '/tools/crs-calculator',
 		labelKey: 'tools.crs_calculator',
 		descKey: 'tools.crs_calculator_desc',
 		enabledSetting: 'crs_calculator.enabled',
 		sections: ['immigration', 'planning']
 	},
 	{
-		href: toolsUrl('/pof-calculator'),
+		href: '/tools/pof-calculator',
 		labelKey: 'tools.pof_calculator',
 		descKey: 'tools.pof_calculator_desc',
 		enabledSetting: 'pof_calculator.enabled',
 		sections: ['finance', 'immigration']
 	},
 	{
-		href: toolsUrl('/eca-guide'),
+		href: '/tools/eca-guide',
 		labelKey: 'tools.eca_guide',
 		descKey: 'tools.eca_guide_desc',
 		enabledSetting: 'eca_guide.enabled',
 		sections: ['education', 'career', 'immigration']
 	},
 	{
-		href: toolsUrl('/sop-generator'),
+		href: '/tools/sop-generator',
 		labelKey: 'tools.sop_generator',
 		descKey: 'tools.sop_generator_desc',
 		enabledSetting: 'sop_generator.enabled',
