@@ -436,3 +436,111 @@ func TestChannelStore_CreateAndList(t *testing.T) {
 		t.Fatalf("delete channel: %v", err)
 	}
 }
+
+// TestChannelStore_PurgeInboundEvents exercises the retention sweep query
+// against a live Postgres — gated on JC_TEST_DATABASE_URL like
+// TestChannelStore_CreateAndList.
+func TestChannelStore_PurgeInboundEvents(t *testing.T) {
+	dsn := os.Getenv("JC_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("JC_TEST_DATABASE_URL not set — skipping live Postgres test")
+	}
+
+	ctx := t.Context()
+
+	database, err := db.New(ctx, dsn)
+	if err != nil {
+		t.Skipf("test database unreachable: %v", err)
+	}
+	defer database.Close()
+
+	store := NewStore(database)
+
+	src, err := store.Create(ctx, gen.CreateIntelSourceParams{
+		Name:               "Purge Test Source",
+		Domain:             "example.com",
+		SourceUrl:          "https://example.com",
+		Category:           "news",
+		SourceType:         "static",
+		SourceKind:         "publisher",
+		TrustLevel:         3,
+		CrawlMethod:        "static",
+		CrawlFrequency:     "daily",
+		CrawlFrequencyMins: 1440,
+		RobotsPolicy:       []byte("{}"),
+		ProviderConfig:     []byte("{}"),
+		Enabled:            true,
+		Status:             "active",
+	})
+	if err != nil {
+		t.Fatalf("create parent source: %v", err)
+	}
+	defer func() { _ = store.Delete(ctx, src.ID) }()
+
+	ch, err := store.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
+		SourceID:           src.ID,
+		Label:              "Inbound Email",
+		EntryUrl:           "intel+purge-test@inbound.example",
+		CrawlMethod:        string(CrawlMethodEmail),
+		Pipeline:           string(PipelineCurate),
+		ProviderConfig:     []byte("{}"),
+		CrawlFrequencyMins: 1440,
+		Enabled:            true,
+		Origin:             string(ChannelOriginAdmin),
+		RelevanceMode:      string(RelevanceFiltered),
+	})
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	defer func() {
+		_, _ = database.Writer.Exec(ctx, "DELETE FROM intel_inbound_events WHERE channel_id=$1", ch.ID)
+	}()
+
+	mkEvent := func(hash string) gen.IntelInboundEvent {
+		ev, err := store.CreateInboundEvent(ctx, gen.CreateIntelInboundEventParams{
+			ChannelID:   ch.ID,
+			Payload:     []byte("test delivery"),
+			ContentHash: hash,
+		})
+		if err != nil {
+			t.Fatalf("create inbound event: %v", err)
+		}
+		return ev
+	}
+
+	old := mkEvent("purge-old")
+	fresh := mkEvent("purge-fresh")
+
+	// Backdate one event past the 30-day retention window.
+	if _, err := database.Writer.Exec(ctx,
+		"UPDATE intel_inbound_events SET received_at = now() - interval '40 days' WHERE id=$1",
+		old.ID); err != nil {
+		t.Fatalf("backdate event: %v", err)
+	}
+
+	deleted, err := store.PurgeInboundEvents(ctx, 30)
+	if err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if deleted < 1 {
+		t.Fatalf("purge deleted %d rows, want >= 1", deleted)
+	}
+
+	if _, err := store.GetInboundEvent(ctx, old.ID); err == nil {
+		t.Error("old event still present after purge")
+	}
+	if _, err := store.GetInboundEvent(ctx, fresh.ID); err != nil {
+		t.Errorf("fresh event purged: %v", err)
+	}
+
+	// retention_days <= 0 is the cataloged keep-forever sentinel — nothing
+	// may be deleted even for the backdated row.
+	if _, err := database.Writer.Exec(ctx,
+		"UPDATE intel_inbound_events SET received_at = now() - interval '40 days' WHERE id=$1",
+		fresh.ID); err != nil {
+		t.Fatalf("re-backdate event: %v", err)
+	}
+	if deleted, err := store.PurgeInboundEvents(ctx, 0); err != nil || deleted != 0 {
+		t.Errorf("purge(0) deleted %d rows (err=%v), want 0", deleted, err)
+	}
+}

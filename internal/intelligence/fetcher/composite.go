@@ -236,9 +236,7 @@ func fallbackMethods(providerConfig []byte) []string {
 // fetchableMethod reports whether a crawl method can produce a fetch
 // result — excludes the non-fetchable set (manual, inbound email/webhook,
 // task-owned xhr_sniff, trigger-only oneshot) that fetchMethod hard-errors
-// on or that are semantically meaningless as fallbacks. Pending methods
-// (search) are allowed through: they resolve to ErrMethodNotImplemented in
-// the ladder and self-heal when the Phase-3 adapter lands.
+// on or that are semantically meaningless as fallbacks.
 func fetchableMethod(m sources.CrawlMethod) bool {
 	switch m {
 	case sources.CrawlMethodManual, sources.CrawlMethodEmail, sources.CrawlMethodWebhook,

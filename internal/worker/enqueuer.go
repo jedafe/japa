@@ -322,6 +322,8 @@ var taskTier = func() map[string]string {
 		// §intel-channels Phase 3 — hub subscription lifecycle, low tier.
 		TypeIntelWebSubSubscribe,
 		TypeIntelWebSubRenew,
+		// §intel-channels — daily inbound-event retention sweep, low tier.
+		TypeIntelPurgeInboundEvents,
 	} {
 		m[t] = QueueLow
 	}
@@ -431,9 +433,10 @@ var taskTypeCatalog = []struct {
 	{TypeIntelXHRSniff, "low", "Headless XHR/fetch capture; materializes discovered api channels (§intel-channels Phase 2)"},
 	// §intel-channels Phase 3 — push adapters + SERP poll.
 	{TypeIntelInboundEmail, "critical", "Process a persisted intel_inbound_events email delivery into a raw doc + detect_changes (§intel-channels Phase 3)"},
-	{TypeIntelWebSubSubscribe, "low", "POST hub.mode=subscribe for a webhook channel and arm the renewal chain (§intel-channels Phase 3)"},
-	{TypeIntelWebSubRenew, "low", "Re-subscribe a webhook channel before the hub lease lapses and re-arm (§intel-channels Phase 3)"},
+	{TypeIntelWebSubSubscribe, "low", "POST hub.mode=subscribe for a webhook channel; the hub's verify callback arms renewal (§intel-channels Phase 3)"},
+	{TypeIntelWebSubRenew, "low", "Re-subscribe a webhook channel before the hub-granted lease lapses (§intel-channels Phase 3)"},
 	{TypeIntelSearchPoll, "default", "Poll the configured SERP provider for a search channel; stores the result page as NDJSON (§intel-channels Phase 3)"},
+	{TypeIntelPurgeInboundEvents, "low", "Daily sweep deleting intel_inbound_events rows older than intel.inbound.retention_days (§intel-channels)"},
 	// Low tier
 	{TypeDigestEmail, "low", "Send digest email"},
 	{TypeSitemapGenerate, "low", "Generate sitemap XML"},

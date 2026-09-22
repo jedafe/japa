@@ -124,26 +124,27 @@ const (
 
 	// ---- Intelligence System (Section INTEL) ----.
 
-	TypeIntelScheduleCrawls    = "intel:schedule_crawls"     // critical (cron)
-	TypeIntelFetchSource       = "intel:fetch_source"        // default
-	TypeIntelFetchChannel      = "intel:fetch_channel"       // default
-	TypeIntelDetectChanges     = "intel:detect_changes"      // default
-	TypeIntelCurateChannel     = "intel:curate_channel"      // default
-	TypeIntelExtract           = "intel:extract"             // default
-	TypeIntelDedup             = "intel:dedup"               // default
-	TypeIntelPublishGate       = "intel:publish_gate"        // default
-	TypeIntelPromote           = "intel:promote"             // default
-	TypeIntelPostPublish       = "intel:post_publish"        // default
-	TypeIntelNotifyDiscoveries = "intel:notify_discoveries"  // default
-	TypeIntelRefreshFreshness  = "intel:refresh_freshness"   // low (daily cron)
-	TypeIntelRetryFailedSource = "intel:retry_failed_source" // default
-	TypeIntelSourceMetadata    = "intel:source_metadata"     // default
-	TypeIntelProbeVerify       = "intel:probe_verify"        // default
-	TypeIntelXHRSniff          = "intel:xhr_sniff"           // low (intel-channels Phase 2)
-	TypeIntelInboundEmail      = "intel:inbound_email"       // critical (intel-channels Phase 3)
-	TypeIntelWebSubSubscribe   = "intel:websub_subscribe"    // low (intel-channels Phase 3)
-	TypeIntelWebSubRenew       = "intel:websub_renew"        // low (intel-channels Phase 3)
-	TypeIntelSearchPoll        = "intel:search_poll"         // default (intel-channels Phase 3)
+	TypeIntelScheduleCrawls     = "intel:schedule_crawls"      // critical (cron)
+	TypeIntelFetchSource        = "intel:fetch_source"         // default
+	TypeIntelFetchChannel       = "intel:fetch_channel"        // default
+	TypeIntelDetectChanges      = "intel:detect_changes"       // default
+	TypeIntelCurateChannel      = "intel:curate_channel"       // default
+	TypeIntelExtract            = "intel:extract"              // default
+	TypeIntelDedup              = "intel:dedup"                // default
+	TypeIntelPublishGate        = "intel:publish_gate"         // default
+	TypeIntelPromote            = "intel:promote"              // default
+	TypeIntelPostPublish        = "intel:post_publish"         // default
+	TypeIntelNotifyDiscoveries  = "intel:notify_discoveries"   // default
+	TypeIntelRefreshFreshness   = "intel:refresh_freshness"    // low (daily cron)
+	TypeIntelRetryFailedSource  = "intel:retry_failed_source"  // default
+	TypeIntelSourceMetadata     = "intel:source_metadata"      // default
+	TypeIntelProbeVerify        = "intel:probe_verify"         // default
+	TypeIntelXHRSniff           = "intel:xhr_sniff"            // low (intel-channels Phase 2)
+	TypeIntelInboundEmail       = "intel:inbound_email"        // critical (intel-channels Phase 3)
+	TypeIntelWebSubSubscribe    = "intel:websub_subscribe"     // low (intel-channels Phase 3)
+	TypeIntelWebSubRenew        = "intel:websub_renew"         // low (intel-channels Phase 3)
+	TypeIntelSearchPoll         = "intel:search_poll"          // default (intel-channels Phase 3)
+	TypeIntelPurgeInboundEvents = "intel:purge_inbound_events" // low (daily retention sweep)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -326,6 +327,7 @@ var handlerRegistry = []struct {
 	{TypeIntelWebSubSubscribe, HandleIntelWebSubSubscribe},
 	{TypeIntelWebSubRenew, HandleIntelWebSubRenew},
 	{TypeIntelSearchPoll, HandleIntelSearchPoll},
+	{TypeIntelPurgeInboundEvents, HandleIntelPurgeInboundEvents},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

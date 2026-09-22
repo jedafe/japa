@@ -764,10 +764,9 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 		handleChannelFetchFailure(ctx, ch, err)
 
 		if errors.Is(err, fetcher.ErrMethodNotImplemented) {
-			// Phase-3 stub method (search — e.g. an admin-created
-			// channel): the failure is recorded so the channel still
-			// auto-disables, but retrying cannot change the outcome until
-			// the adapter lands.
+			// A method with no fetch adapter: the failure is recorded so
+			// the channel still auto-disables, but retrying cannot change
+			// the outcome — no adapter is coming mid-flight.
 			return nil
 		}
 

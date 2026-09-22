@@ -20,10 +20,12 @@ import (
 )
 
 // WebSub subscription lifecycle (intel-channels Phase 3, spec §3/§6):
-// intel:websub_subscribe POSTs the subscription form to the channel's hub
-// and chains an intel:websub_renew before the lease lapses; the renew task
-// re-subscribes and re-arms itself until the channel is disabled or
-// deleted. The hub-side verify/push endpoints live in the handlers package.
+// intel:websub_subscribe/renew POST the subscription form to the channel's
+// hub; the hub's verification callback (HandleWebSubVerify) records the
+// GRANTED lease and arms the next intel:websub_renew from it, so a hub
+// that shortens the requested term never outlives its renewal. A channel
+// that is disabled, deleted, or repurposed ends the chain silently. The
+// hub-side verify/push endpoints live in the handlers package.
 
 // intelSiteURL is the public base URL (JC_SITE_URL) used to build the
 // hub.callback address — the hub must reach back into this deployment.
@@ -50,8 +52,9 @@ type intelWebSubPayload struct {
 
 // HandleIntelWebSubSubscribe performs the initial (or explicit) hub
 // subscription for a webhook channel: POST hub.mode=subscribe with the
-// callback URL, topic, secret, and lease request — then arms the renewal
-// chain. Config-incomplete channels skip cleanly.
+// callback URL, topic, secret, and lease request. The hub's verification
+// callback arms the renewal chain from the granted lease.
+// Config-incomplete channels skip cleanly.
 func HandleIntelWebSubSubscribe(ctx context.Context, t *asynq.Task) error {
 	defer recoverPanic("TypeIntelWebSubSubscribe")
 	slog.Info("task:intel:websub_subscribe")
@@ -59,10 +62,10 @@ func HandleIntelWebSubSubscribe(ctx context.Context, t *asynq.Task) error {
 	return intelWebSubSubscribe(ctx, t.Payload())
 }
 
-// HandleIntelWebSubRenew re-subscribes before the lease expires and
-// re-enqueues itself for the next window — the self-perpetuating half of
-// the subscription lifecycle. A disabled/deleted/repurposed channel ends
-// the chain silently.
+// HandleIntelWebSubRenew re-subscribes before the lease expires; the
+// renewal POST's verification callback arms the next window — the
+// self-perpetuating half of the subscription lifecycle. A
+// disabled/deleted/repurposed channel ends the chain silently.
 func HandleIntelWebSubRenew(ctx context.Context, t *asynq.Task) error {
 	defer recoverPanic("TypeIntelWebSubRenew")
 	slog.Info("task:intel:websub_renew")
@@ -71,9 +74,10 @@ func HandleIntelWebSubRenew(ctx context.Context, t *asynq.Task) error {
 }
 
 // intelWebSubSubscribe implements both tasks: load + gate the channel,
-// POST the subscription form, arm the next renewal on success.
+// POST the subscription form. The hub's async verification callback
+// records the granted lease and arms the next renewal.
 func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
-	if intelSourcesStore == nil || intelAsynqClient == nil {
+	if intelSourcesStore == nil {
 		slog.Warn("task:intel:websub: dependencies not wired, skipping")
 		return nil
 	}
@@ -155,32 +159,7 @@ func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
 		return fmt.Errorf("task:intel:websub: hub returned %d", resp.StatusCode)
 	}
 
-	// Arm the renewal before the lease lapses — margin of the smaller of
-	// one day or a tenth of the term keeps short leases honest. The delay
-	// floors at one minute: a pathological tiny lease (lease ≤ margin)
-	// must not enqueue an immediate re-run — that would POST the hub in
-	// a tight unthrottled loop.
-	margin := leaseSecs / 10
-	if max := int64(24 * 3600); margin > max {
-		margin = max
-	}
-	if margin < 60 {
-		margin = 60
-	}
-	delay := time.Duration(leaseSecs-margin) * time.Second
-	if delay < time.Minute {
-		delay = time.Minute
-	}
-
-	payload := marshalPayload(intelWebSubPayload{Version: intelPayloadVersion, ChannelID: ch.ID.String()})
-	if payload != nil {
-		if _, err := intelAsynqClient.EnqueueContext(ctx, asynq.NewTask(TypeIntelWebSubRenew, payload),
-			append(TaskOpts(TypeIntelWebSubRenew), asynq.ProcessIn(delay))...); err != nil {
-			slog.Warn("task:intel:websub: renew enqueue failed", "channel_id", ch.ID.String(), "error", err)
-		}
-	}
-
-	slog.Info("task:intel:websub: subscribed", "channel_id", ch.ID.String(), "hub", cfg.Hub, "topic", cfg.Topic, "renew_in", delay.String())
+	slog.Info("task:intel:websub: subscribed", "channel_id", ch.ID.String(), "hub", cfg.Hub, "topic", cfg.Topic, "requested_lease_s", leaseSecs)
 
 	return nil
 }

@@ -1649,7 +1649,8 @@ func (h *Handlers) HandleAdminCrawlChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelFetchChannel, payload)); err != nil {
+	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelFetchChannel, payload),
+		worker.TaskOpts(worker.TypeIntelFetchChannel)...); err != nil {
 		slog.Error("intel: crawl channel enqueue failed", "channel_id", channelID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue crawl task")
 
@@ -1720,7 +1721,8 @@ func (h *Handlers) HandleAdminReprobeSource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelProbeVerify, payload)); err != nil {
+	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelProbeVerify, payload),
+		worker.TaskOpts(worker.TypeIntelProbeVerify)...); err != nil {
 		slog.Error("intel: reprobe enqueue failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue probe task")
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"mime/multipart"
 	"net/mail"
 	"strings"
+	"unicode"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
@@ -99,10 +101,22 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 	mark := func(status string) {
 		_ = intelSourcesStore.MarkInboundEvent(ctx, gen.MarkIntelInboundEventParams{ID: event.ID, Status: status})
 	}
+	// Transient failures (DB/queue blips) release the claim back to
+	// 'received' and return the error so the task's configured retries can
+	// win the CAS again — marking 'failed' on a recoverable error would
+	// strand the delivery on manual redrive while the remaining retries
+	// no-op against the terminal status.
+	release := func() {
+		_ = intelSourcesStore.ReleaseInboundEvent(ctx, event.ID)
+	}
 
 	ch, err := intelSourcesStore.GetChannel(ctx, event.ChannelID)
 	if err != nil {
-		mark("failed")
+		if errors.Is(err, pgx.ErrNoRows) {
+			mark("ignored") // channel deleted between ingest and task — permanently unprocessable
+			return nil
+		}
+		release()
 		return fmt.Errorf("task:intel:inbound_email: load channel: %w", err)
 	}
 	// The channel may have been disabled or repurposed between ingest and
@@ -116,7 +130,11 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 	}
 	src, err := intelSourcesStore.Get(ctx, ch.SourceID)
 	if err != nil {
-		mark("failed")
+		if errors.Is(err, pgx.ErrNoRows) {
+			mark("ignored") // source deleted between ingest and task
+			return nil
+		}
+		release()
 		return fmt.Errorf("task:intel:inbound_email: load source: %w", err)
 	}
 	if !src.Enabled || src.Status != "active" {
@@ -127,8 +145,11 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 
 	env, err := intelInboundEmailEnvelope(event)
 	if err != nil {
+		// The stored payload is immutable — a retry can never parse it.
+		// 'failed' is the honest terminal state; the event row is the audit.
 		mark("failed")
-		return fmt.Errorf("task:intel:inbound_email: parse delivery: %w", err)
+		slog.Warn("task:intel:inbound_email: unparseable delivery", "event_id", p.EventID, "error", err)
+		return nil
 	}
 	env.HTML = "" // already folded into Text — don't duplicate it in the raw doc
 
@@ -153,7 +174,7 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 	contentHashHex := hex.EncodeToString(contentHash[:])
 	rawDocID, found, err := intelStores.GetIntelRawDocIDByChannelURLHash(ctx, ch.ID, docURL, contentHashHex)
 	if err != nil {
-		mark("failed")
+		release()
 		return fmt.Errorf("task:intel:inbound_email: lookup existing raw doc: %w", err)
 	}
 	if !found {
@@ -168,7 +189,7 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 			ContentHash: contentHashHex,
 		})
 		if err != nil {
-			mark("failed")
+			release()
 			return fmt.Errorf("task:intel:inbound_email: persist raw doc: %w", err)
 		}
 		rawDocID = rawDoc.ID
@@ -198,7 +219,7 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 	// terminal — an enqueue failure here would lose the delivery forever.
 	if _, err := intelAsynqClient.EnqueueContext(ctx, asynq.NewTask(TypeIntelDetectChanges, payload),
 		TaskOpts(TypeIntelDetectChanges)...); err != nil {
-		mark("failed")
+		release()
 		return fmt.Errorf("task:intel:inbound_email: enqueue detect_changes: %w", err)
 	}
 
@@ -257,6 +278,7 @@ func parseMIMEMessage(raw []byte) (intelEmailEnvelope, error) {
 	if err != nil {
 		return env, err
 	}
+	body = decodeMIMETransfer(body, msg.Header.Get("Content-Transfer-Encoding"))
 	if mediaType == "text/html" {
 		env.Text = stripHTMLWorker(string(body))
 	} else {
@@ -266,37 +288,96 @@ func parseMIMEMessage(raw []byte) (intelEmailEnvelope, error) {
 	return env, nil
 }
 
-// bestMIMEPartText walks a multipart tree and returns the preferred body:
-// the first text/plain wins; otherwise the first text/html stripped of
-// tags; otherwise the first non-attachment part's bytes.
-func bestMIMEPartText(r *multipart.Reader) string {
-	var html, first []byte
+// mimeLeaf is one decoded leaf part of a (possibly nested) multipart tree.
+type mimeLeaf struct {
+	mediaType  string
+	attachment bool
+	body       []byte
+}
 
+// walkMIMEParts flattens a multipart tree into its leaf parts in document
+// order — real-world mail routinely nests multipart/alternative inside
+// multipart/mixed (any mail with an attachment), and multipart.Related/
+// NextPart do not recurse, so without the descent the leaf is the raw
+// nested-MIME blob. Depth and part count are capped so a pathological
+// tree cannot loop the worker.
+func walkMIMEParts(r *multipart.Reader, out *[]mimeLeaf, depth int) {
+	if depth > 8 || len(*out) >= 128 {
+		return
+	}
 	for {
 		part, err := r.NextPart()
-		if errors.Is(err, io.EOF) {
-			break
-		}
 		if err != nil {
-			break
+			return // io.EOF at the end of this level, or a malformed boundary
+		}
+		mt, params, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
+		if mt == "" {
+			mt = "text/plain" // RFC 2046 §5.1: parts default to text/plain
+		}
+		if strings.HasPrefix(mt, "multipart/") && params["boundary"] != "" {
+			walkMIMEParts(multipart.NewReader(part, params["boundary"]), out, depth+1)
+			continue
 		}
 		b, err := io.ReadAll(io.LimitReader(part, 2<<20))
 		if err != nil {
 			continue
 		}
-		ct := part.Header.Get("Content-Type")
-		mt, _, _ := mime.ParseMediaType(ct)
+		*out = append(*out, mimeLeaf{
+			mediaType:  mt,
+			attachment: part.FileName() != "",
+			body:       decodeMIMETransfer(b, part.Header.Get("Content-Transfer-Encoding")),
+		})
+	}
+}
+
+// decodeMIMETransfer applies a part's Content-Transfer-Encoding: base64
+// bodies are decoded (folding whitespace stripped first — CTE base64 is
+// CRLF-wrapped and strict DecodeString only tolerates \r\n); quoted-
+// printable is already transparently decoded by multipart.Reader;
+// 7bit/8bit/binary pass through.
+func decodeMIMETransfer(b []byte, cte string) []byte {
+	if !strings.EqualFold(strings.TrimSpace(cte), "base64") {
+		return b
+	}
+	compact := bytes.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, b)
+	if d, err := base64.StdEncoding.DecodeString(string(compact)); err == nil {
+		return d
+	}
+
+	return b
+}
+
+// bestMIMEPartText picks the preferred body across the flattened leaf
+// parts: the first non-attachment text/plain wins; otherwise the first
+// text/plain (even an attachment — better than nothing); otherwise the
+// first non-attachment text/html stripped of tags; otherwise the first
+// non-attachment part's bytes.
+func bestMIMEPartText(r *multipart.Reader) string {
+	var parts []mimeLeaf
+	walkMIMEParts(r, &parts, 0)
+
+	var plain, html, first []byte
+	for _, p := range parts {
 		switch {
-		case mt == "text/plain":
-			return string(b)
-		case mt == "text/html" && html == nil:
-			html = b
-		case first == nil && part.FileName() == "":
-			first = b
+		case p.mediaType == "text/plain" && !p.attachment:
+			return string(p.body)
+		case p.mediaType == "text/plain" && plain == nil:
+			plain = p.body
+		case p.mediaType == "text/html" && !p.attachment && html == nil:
+			html = p.body
+		case first == nil && !p.attachment:
+			first = p.body
 		}
 	}
 
 	switch {
+	case plain != nil:
+		return string(plain)
 	case html != nil:
 		return stripHTMLWorker(string(html))
 	default:
@@ -331,4 +412,39 @@ func firstNonEmptyWorker(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// HandleIntelPurgeInboundEvents is the intel:purge_inbound_events task
+// handler (daily cron, low queue): deletes intel_inbound_events rows whose
+// received_at is older than intel.inbound.retention_days (default 30). Raw
+// delivery payloads carry sender PII (addresses, subjects, bodies), so
+// retention is bounded — terminal rows are history, and a received or
+// processing row that old is a lost delivery whose redrive value has
+// expired. retention_days <= 0 disables the sweep entirely.
+func HandleIntelPurgeInboundEvents(ctx context.Context, t *asynq.Task) error {
+	defer recoverPanic("TypeIntelPurgeInboundEvents")
+	slog.Info("task:intel:purge_inbound_events")
+
+	if intelSourcesStore == nil {
+		slog.Warn("task:intel:purge_inbound_events: dependencies not wired, skipping")
+		return nil
+	}
+
+	days := 30
+	if appSettings != nil {
+		days = appSettings.GetIntOr(ctx, "intel.inbound.retention_days", 30)
+	}
+	if days <= 0 {
+		slog.Info("task:intel:purge_inbound_events: retention disabled (retention_days <= 0), skipping")
+		return nil
+	}
+
+	deleted, err := intelSourcesStore.PurgeInboundEvents(ctx, int32(days))
+	if err != nil {
+		return fmt.Errorf("task:intel:purge_inbound_events: %w", err)
+	}
+
+	slog.Info("task:intel:purge_inbound_events: sweep complete", "deleted", deleted, "retention_days", days)
+
+	return nil
 }

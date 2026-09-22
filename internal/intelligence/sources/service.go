@@ -941,15 +941,19 @@ func (s *Service) ListBlockedSourceIDs(ctx context.Context, blockerID pgtype.UUI
 // source. Validation lives here; persistence is delegated to the Store.
 
 // CreateChannel registers a new channel under a source. Unset enum fields
-// get their schema defaults (pipeline='extract', relevance_mode='filtered',
-// origin='admin') and provider_config defaults to '{}' because the column is
-// NOT NULL — a nil []byte would bind SQL NULL and violate the constraint.
+// get their schema defaults (relevance_mode='filtered', origin='admin'),
+// an unset pipeline takes the per-method default (defaultChannelPipeline —
+// curate for itemized/inbound methods, extract otherwise — matching probe
+// materialization so an admin-created email/webhook/search channel reaches
+// its deterministic curator, not the LLM extractor), and provider_config
+// defaults to '{}' because the column is NOT NULL — a nil []byte would
+// bind SQL NULL and violate the constraint.
 func (s *Service) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceChannelParams) (Channel, error) {
 	arg.Label = strings.TrimSpace(arg.Label)
 	arg.EntryUrl = strings.TrimSpace(arg.EntryUrl)
 
 	if arg.Pipeline == "" {
-		arg.Pipeline = string(PipelineExtract)
+		arg.Pipeline = string(defaultChannelPipeline(CrawlMethod(arg.CrawlMethod)))
 	}
 	if arg.RelevanceMode == "" {
 		arg.RelevanceMode = string(RelevanceFiltered)
@@ -1118,6 +1122,13 @@ func (s *Service) ClaimInboundEvent(ctx context.Context, id pgtype.UUID) (bool, 
 // still waiting.
 func (s *Service) RedriveInboundEvent(ctx context.Context, id pgtype.UUID, stuckSecs float64) (bool, error) {
 	return s.store.RedriveInboundEvent(ctx, id, stuckSecs)
+}
+
+// PurgeInboundEvents deletes inbound events older than retentionDays —
+// the intel:purge_inbound_events retention sweep (raw payloads carry
+// sender PII, so retention is bounded).
+func (s *Service) PurgeInboundEvents(ctx context.Context, retentionDays int32) (int64, error) {
+	return s.store.PurgeInboundEvents(ctx, retentionDays)
 }
 
 // NoteChannelError flags a non-crawl error on the channel row without

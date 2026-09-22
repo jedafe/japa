@@ -470,12 +470,34 @@ func (q *Queries) NoteIntelChannelError(ctx context.Context, arg NoteIntelChanne
 	return err
 }
 
+const purgeIntelInboundEvents = `-- name: PurgeIntelInboundEvents :execrows
+DELETE FROM intel_inbound_events
+WHERE $1::int > 0
+  AND received_at < now() - make_interval(days => $1::int)
+`
+
+// Retention sweep (intel:purge_inbound_events): deletes every event whose
+// received_at is older than $1 days — raw payloads carry sender PII, so
+// retention is bounded by intel.inbound.retention_days. Any status is
+// covered: terminal rows are history, and a received/processing row that
+// old is a lost delivery whose redrive value has expired. $1 <= 0 deletes
+// nothing (the cataloged "keep forever" sentinel can't be bypassed by a
+// stray call). Returns the deleted row count.
+func (q *Queries) PurgeIntelInboundEvents(ctx context.Context, retentionDays int32) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeIntelInboundEvents, retentionDays)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const redriveIntelInboundEvent = `-- name: RedriveIntelInboundEvent :execrows
 UPDATE intel_inbound_events SET status = 'received', processed_at = NULL, claimed_at = NULL
 WHERE id = $1 AND (
   status IN ('failed','ignored')
   OR (status = 'processing'
       AND (claimed_at IS NULL OR claimed_at < now() - make_interval(secs => $2)))
+  OR (status = 'received' AND received_at < now() - make_interval(secs => $2))
 )
 `
 
@@ -488,14 +510,34 @@ type RedriveIntelInboundEventParams struct {
 // 'received' so the follow-up task re-processes it. A 'processing' event
 // is only redrivable once its claim is older than $2 seconds — anything
 // fresher is a live worker mid-flight and must not be hijacked (that
-// would double-materialize the delivery). 0 rows = terminal-processed,
-// actively claimed, or still waiting.
+// would double-materialize the delivery). A 'received' event is only
+// redrivable past the same window: a fresh one is queued-but-not-yet-run,
+// while a stale one means the enqueued task was lost (queue flush) — the
+// claim CAS makes a late-running duplicate a no-op anyway. 0 rows =
+// terminal-processed, actively claimed, or still waiting.
 func (q *Queries) RedriveIntelInboundEvent(ctx context.Context, arg RedriveIntelInboundEventParams) (int64, error) {
 	result, err := q.db.Exec(ctx, redriveIntelInboundEvent, arg.ID, arg.Secs)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const releaseIntelInboundEvent = `-- name: ReleaseIntelInboundEvent :exec
+UPDATE intel_inbound_events SET status = 'received', claimed_at = NULL
+WHERE id = $1 AND status = 'processing'
+`
+
+// Returns a claimed event to 'received' when the processing run fails on
+// a transient error and the task is being retried — the next attempt must
+// be able to win the claim CAS again (the task's early-out skips any
+// non-'received' status). Clears claimed_at so the stale-claim window in
+// RedriveIntelInboundEvent starts fresh on the next claim. Only
+// 'processing' rows transition — a concurrently-marked terminal event is
+// left alone.
+func (q *Queries) ReleaseIntelInboundEvent(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, releaseIntelInboundEvent, id)
+	return err
 }
 
 const updateIntelChannelCrawlStatus = `-- name: UpdateIntelChannelCrawlStatus :exec
