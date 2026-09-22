@@ -237,22 +237,27 @@ func (s *Service) GetFactors(ctx context.Context, version string) (*FactorsRespo
 
 	factors := make([]FactorDTO, 0, len(rows))
 	for _, f := range rows {
-		d := FactorDTO{
-			Group:           f.FactorGroup,
-			Key:             f.FactorKey,
-			InputDescriptor: json.RawMessage(f.InputDescriptor),
-			Label:           f.Label,
-			PointsSingle:    f.PointsSingle,
-			SortOrder:       f.SortOrder,
-		}
-		if f.PointsWithSpouse.Valid {
-			v := f.PointsWithSpouse.Int32
-			d.PointsWithSpouse = &v
-		}
-		factors = append(factors, d)
+		factors = append(factors, factorDTO(f))
 	}
 
 	return &FactorsResponse{Ruleset: rulesetDTO(ruleset), Factors: factors}, nil
+}
+
+// factorDTO maps a factor row to the API shape.
+func factorDTO(f FactorRow) FactorDTO {
+	d := FactorDTO{
+		Group:           f.FactorGroup,
+		Key:             f.FactorKey,
+		InputDescriptor: json.RawMessage(f.InputDescriptor),
+		Label:           f.Label,
+		PointsSingle:    f.PointsSingle,
+		SortOrder:       f.SortOrder,
+	}
+	if f.PointsWithSpouse.Valid {
+		v := f.PointsWithSpouse.Int32
+		d.PointsWithSpouse = &v
+	}
+	return d
 }
 
 // Calculate scores a profile and persists history when the caller is
@@ -403,6 +408,67 @@ func (s *Service) CreateRuleset(ctx context.Context, in CreateRulesetRequest) (*
 // ApproveRuleset activates a ruleset and supersedes the prior active one.
 func (s *Service) ApproveRuleset(ctx context.Context, id, reviewerID pgtype.UUID) error {
 	return s.store.ApproveRuleset(ctx, id, reviewerID)
+}
+
+// GetRulesetDetail returns a ruleset with its factor rows (admin).
+func (s *Service) GetRulesetDetail(ctx context.Context, id pgtype.UUID) (*FactorsResponse, error) {
+	r, err := s.store.GetRuleset(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	factors, err := s.store.ListFactorPoints(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := &FactorsResponse{Ruleset: rulesetDTO(r), Factors: make([]FactorDTO, 0, len(factors))}
+	for _, f := range factors {
+		out.Factors = append(out.Factors, factorDTO(f))
+	}
+	return out, nil
+}
+
+// UpdateRuleset updates a non-active ruleset. Factor rows are replaced
+// wholesale when in.Factors is non-nil.
+func (s *Service) UpdateRuleset(ctx context.Context, id pgtype.UUID, in CreateRulesetRequest) error {
+	var d pgtype.Date
+	if in.EffectiveDate != "" {
+		if err := d.Scan(in.EffectiveDate); err != nil {
+			return fmt.Errorf("invalid effective_date")
+		}
+	}
+	var factors []FactorRow
+	if in.Factors != nil {
+		factors = make([]FactorRow, 0, len(in.Factors))
+		for i, f := range in.Factors {
+			row := FactorRow{
+				RulesetID:       id,
+				FactorGroup:     f.FactorGroup,
+				FactorKey:       f.FactorKey,
+				InputDescriptor: f.InputDescriptor,
+				Label:           f.Label,
+				PointsSingle:    f.PointsSingle,
+				SortOrder:       int32(i),
+			}
+			if f.SortOrder != 0 {
+				row.SortOrder = f.SortOrder
+			}
+			if f.PointsWithSpouse != nil {
+				row.PointsWithSpouse = pgtype.Int4{Int32: *f.PointsWithSpouse, Valid: true}
+			}
+			factors = append(factors, row)
+		}
+	}
+	return s.store.UpdateRuleset(ctx, id, in.VersionLabel, d, in.SourceURL, factors)
+}
+
+// DeleteRuleset removes a draft/rejected ruleset.
+func (s *Service) DeleteRuleset(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteRuleset(ctx, id)
+}
+
+// DeleteDraw removes a draw entry.
+func (s *Service) DeleteDraw(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteDraw(ctx, id)
 }
 
 // CreateDraw records a draw entry (admin).

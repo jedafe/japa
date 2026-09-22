@@ -331,3 +331,92 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusPublished}})
 }
+
+// HandleAdminGet handles GET /admin/pof-requirements/:id — requirement
+// detail (any status). Admin-only.
+func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	req, err := h.service.GetRequirement(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
+			return
+		}
+		slog.Error("pofcalculator: get failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to load requirement")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": req})
+}
+
+// HandleAdminDelete handles DELETE /admin/pof-requirements/:id —
+// removes a non-published requirement. Admin-only.
+func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteRequirement(r.Context(), id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found or is published")
+			return
+		}
+		slog.Error("pofcalculator: delete failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete requirement")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminReject handles PATCH /admin/pof-requirements/:id/reject —
+// HITL reject.
+func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body ApproveRequest
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if err := h.service.RejectRequirement(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
+			return
+		}
+		slog.Error("pofcalculator: reject failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject requirement")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
+}

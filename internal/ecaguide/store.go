@@ -432,3 +432,85 @@ func (s *Store) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, not
 	}
 	return nil
 }
+
+// DeleteGuide removes a non-published guide. Published guides are
+// protected — deactivate them instead (is_active=false).
+func (s *Store) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		DELETE FROM eca_guides
+		WHERE id = $1 AND status IN ('draft','ai_draft','pending','rejected')`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// AdminListProviders returns all providers including inactive (admin).
+func (s *Store) AdminListProviders(ctx context.Context) ([]ProviderRow, error) {
+	rows, err := s.pool.Reader.Query(ctx, `
+		SELECT id, slug, name, website, is_active
+		FROM eca_providers ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ProviderRow
+	for rows.Next() {
+		var p ProviderRow
+		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.Website, &p.IsActive); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// CreateProvider inserts a provider (admin).
+func (s *Store) CreateProvider(ctx context.Context, slug, name string, website *string, isActive pgtype.Bool) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	err := s.pool.Writer.QueryRow(ctx, `
+		INSERT INTO eca_providers (slug, name, website, is_active)
+		VALUES ($1, $2, $3, COALESCE($4, true))
+		RETURNING id`, slug, name, website, isActive).Scan(&id)
+	return id, err
+}
+
+// UpdateProvider applies a partial update (admin). Empty strings and
+// invalid pgtype values leave the column unchanged.
+func (s *Store) UpdateProvider(ctx context.Context, id pgtype.UUID, slug, name string, website *string, isActive pgtype.Bool) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		UPDATE eca_providers SET
+		  slug = COALESCE(NULLIF($2,''), slug),
+		  name = COALESCE(NULLIF($3,''), name),
+		  website = COALESCE($4, website),
+		  is_active = COALESCE($5, is_active),
+		  updated_at = now()
+		WHERE id = $1`, id, slug, name, website, isActive)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteProvider removes a provider only when no guides reference it —
+// eca_guides.provider_id is RESTRICT, so this returns an error rather
+// than orphaning guides.
+func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		DELETE FROM eca_providers WHERE id = $1
+		AND NOT EXISTS (SELECT 1 FROM eca_guides WHERE provider_id = $1)`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

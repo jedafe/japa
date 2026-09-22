@@ -450,3 +450,173 @@ func (h *Handlers) HandleAdminModerateUpdate(w http.ResponseWriter, r *http.Requ
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": input.Status}})
 }
+
+// HandleAdminDelete handles DELETE /admin/eca-guides/:id — removes a
+// non-published guide. Admin-only.
+func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteGuide(r.Context(), id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found or is published")
+			return
+		}
+		slog.Error("ecaguide: delete failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete guide")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminReject handles PATCH /admin/eca-guides/:id/reject — HITL
+// reject. Admin-only.
+func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		ReviewNotes string `json:"review_notes"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	if err := h.service.RejectGuide(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
+			return
+		}
+		slog.Error("ecaguide: reject failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject guide")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
+}
+
+// HandleAdminListProviders handles GET /admin/eca-providers — all
+// providers including inactive. Admin-only.
+func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	providers, err := h.service.AdminListProviders(r.Context())
+	if err != nil {
+		slog.Error("ecaguide: list providers failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list providers")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
+}
+
+// HandleAdminCreateProvider handles POST /admin/eca-providers. Admin-only.
+func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	var input ProviderRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	provider, err := h.service.CreateProvider(r.Context(), input)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": provider})
+}
+
+// HandleAdminUpdateProvider handles PATCH /admin/eca-providers/:id.
+// Admin-only.
+func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input ProviderRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if err := h.service.UpdateProvider(r.Context(), id, input); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Provider not found")
+			return
+		}
+		slog.Error("ecaguide: update provider failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update provider")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminDeleteProvider handles DELETE /admin/eca-providers/:id —
+// removes a provider only when no guides reference it. Admin-only.
+func (h *Handlers) HandleAdminDeleteProvider(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteProvider(r.Context(), id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusConflict, "provider_in_use", "Provider not found or has guides referencing it")
+			return
+		}
+		slog.Error("ecaguide: delete provider failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete provider")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}

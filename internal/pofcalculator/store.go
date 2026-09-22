@@ -273,6 +273,39 @@ func nullDate(d pgtype.Date) any {
 	return d
 }
 
+// GetRequirement returns a requirement by ID regardless of status
+// (admin detail view).
+func (s *Store) GetRequirement(ctx context.Context, id pgtype.UUID) (RequirementRow, error) {
+	rows, err := s.pool.Reader.Query(ctx, reqSelect+` WHERE p.id = $1`, id)
+	if err != nil {
+		return RequirementRow{}, err
+	}
+	defer rows.Close()
+	out, err := scanRequirements(rows)
+	if err != nil {
+		return RequirementRow{}, err
+	}
+	if len(out) == 0 {
+		return RequirementRow{}, pgx.ErrNoRows
+	}
+	return out[0], nil
+}
+
+// DeleteRequirement removes a non-published requirement. Published rows
+// are protected — they feed the public calculator.
+func (s *Store) DeleteRequirement(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		DELETE FROM pof_requirements
+		WHERE id = $1 AND status IN ('draft','ai_draft','pending','rejected')`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // RejectRequirement marks a pending/draft requirement rejected (HITL).
 func (s *Store) RejectRequirement(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	res, err := s.pool.Writer.Exec(ctx, `

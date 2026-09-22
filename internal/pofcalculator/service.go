@@ -431,6 +431,21 @@ func (s *Service) RejectRequirement(ctx context.Context, id, reviewerID pgtype.U
 	return s.store.RejectRequirement(ctx, id, reviewerID, notes)
 }
 
+// GetRequirement returns a requirement by ID regardless of status
+// (admin detail view).
+func (s *Service) GetRequirement(ctx context.Context, id pgtype.UUID) (RequirementDTO, error) {
+	row, err := s.store.GetRequirement(ctx, id)
+	if err != nil {
+		return RequirementDTO{}, err
+	}
+	return requirementDTO(row), nil
+}
+
+// DeleteRequirement removes a non-published requirement.
+func (s *Service) DeleteRequirement(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteRequirement(ctx, id)
+}
+
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks —
 // used to fire search:index_entity on publish so the row reaches the
 // pof_requirements Meilisearch index (ADR-088 is_japabot_indexed gate

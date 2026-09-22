@@ -20,10 +20,11 @@ import (
 
 // ProviderDTO is the API shape for an ECA provider.
 type ProviderDTO struct {
-	ID      string `json:"id"`
-	Slug    string `json:"slug"`
-	Name    string `json:"name"`
-	Website string `json:"website,omitempty"`
+	ID       string `json:"id"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Website  string `json:"website,omitempty"`
+	IsActive *bool  `json:"is_active,omitempty"`
 }
 
 // GuideDTO is the API shape for an ECA guide.
@@ -97,6 +98,14 @@ type ModerateRequest struct {
 	Status string `json:"status"` // approved|rejected
 }
 
+// ProviderRequest is the admin create/update body for a provider.
+type ProviderRequest struct {
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Website  string `json:"website"`
+	IsActive *bool  `json:"is_active"`
+}
+
 // AIDispatcher is the §20 AI Gateway seam for Content Agent drafts.
 type AIDispatcher interface {
 	Dispatch(ctx context.Context, category string, req AIRequest) (AIResponse, error)
@@ -160,13 +169,25 @@ func (s *Service) ListProviders(ctx context.Context, destSpaceID pgtype.UUID) ([
 	}
 	out := make([]ProviderDTO, 0, len(rows))
 	for _, p := range rows {
-		d := ProviderDTO{ID: uuidStr(p.ID), Slug: p.Slug, Name: p.Name}
-		if p.Website != nil {
-			d.Website = *p.Website
-		}
-		out = append(out, d)
+		out = append(out, providerDTO(p))
 	}
 	return out, nil
+}
+
+// providerDTO maps a store row to the API shape.
+func providerDTO(p ProviderRow) ProviderDTO {
+	d := ProviderDTO{ID: uuidStr(p.ID), Slug: p.Slug, Name: p.Name}
+	if p.Website != nil {
+		d.Website = *p.Website
+	}
+	return d
+}
+
+// providerDTOAdmin includes is_active for the admin list.
+func providerDTOAdmin(p ProviderRow) ProviderDTO {
+	d := providerDTO(p)
+	d.IsActive = &p.IsActive
+	return d
 }
 
 // ListGuides returns published guides.
@@ -424,6 +445,66 @@ func uuidStr(u pgtype.UUID) string {
 // unified moderation queue).
 func (s *Service) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	return s.store.RejectGuide(ctx, id, reviewerID, notes)
+}
+
+// AdminListProviders returns all providers including inactive (admin).
+func (s *Service) AdminListProviders(ctx context.Context) ([]ProviderDTO, error) {
+	rows, err := s.store.AdminListProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ProviderDTO, 0, len(rows))
+	for _, p := range rows {
+		out = append(out, providerDTOAdmin(p))
+	}
+	return out, nil
+}
+
+// CreateProvider inserts a provider (admin).
+func (s *Service) CreateProvider(ctx context.Context, in ProviderRequest) (ProviderDTO, error) {
+	if in.Slug == "" || in.Name == "" {
+		return ProviderDTO{}, errors.New("slug and name are required")
+	}
+	var website *string
+	if in.Website != "" {
+		website = &in.Website
+	}
+	var active pgtype.Bool
+	if in.IsActive != nil {
+		active = pgtype.Bool{Bool: *in.IsActive, Valid: true}
+	}
+	id, err := s.store.CreateProvider(ctx, in.Slug, in.Name, website, active)
+	if err != nil {
+		return ProviderDTO{}, err
+	}
+	row := ProviderRow{ID: id, Slug: in.Slug, Name: in.Name, Website: website, IsActive: true}
+	if in.IsActive != nil {
+		row.IsActive = *in.IsActive
+	}
+	return providerDTO(row), nil
+}
+
+// UpdateProvider applies a partial update (admin).
+func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, in ProviderRequest) error {
+	var website *string
+	if in.Website != "" {
+		website = &in.Website
+	}
+	var active pgtype.Bool
+	if in.IsActive != nil {
+		active = pgtype.Bool{Bool: *in.IsActive, Valid: true}
+	}
+	return s.store.UpdateProvider(ctx, id, in.Slug, in.Name, website, active)
+}
+
+// DeleteProvider removes a provider with no referencing guides.
+func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteProvider(ctx, id)
+}
+
+// DeleteGuide removes a non-published guide.
+func (s *Service) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteGuide(ctx, id)
 }
 
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks —
