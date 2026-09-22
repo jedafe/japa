@@ -233,15 +233,9 @@
 					{#each providers as provider (provider.id)}
 						<div class="rounded-lg border border-border bg-surface p-4">
 							<div class="font-medium">{provider.name}</div>
-							{#if provider.description}
-								<p class="mt-1 text-xs text-muted line-clamp-2">{provider.description}</p>
-							{/if}
 							<div class="mt-2 flex items-center gap-3 text-xs text-muted">
-								{#if provider.fee_estimate}
-									<span>{provider.fee_estimate}{provider.currency ? ` ${provider.currency}` : ''}</span>
-								{/if}
-								{#if provider.processing_time}
-									<span>{provider.processing_time}</span>
+								{#if provider.website}
+									<a href={provider.website} target="_blank" rel="noopener" class="underline">{provider.website}</a>
 								{/if}
 							</div>
 						</div>
