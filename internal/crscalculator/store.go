@@ -118,13 +118,15 @@ func (s *Store) GetActiveRuleset(ctx context.Context) (RulesetRow, error) {
 	return r, err
 }
 
-// GetRulesetByVersion returns a ruleset by its version label.
+// GetRulesetByVersion returns a ruleset by its version label. Public
+// callers may score against active or superseded (historical) rulesets —
+// draft/rejected rulesets are admin-only and resolve to ErrNoRows here.
 func (s *Store) GetRulesetByVersion(ctx context.Context, version string) (RulesetRow, error) {
 	var r RulesetRow
 	err := s.pool.Reader.QueryRow(ctx, `
 		SELECT id, version_label, effective_date, status, source_url
 		FROM crs_rulesets
-		WHERE version_label = $1`, version).
+		WHERE version_label = $1 AND status IN ('active','superseded')`, version).
 		Scan(&r.ID, &r.VersionLabel, &r.EffectiveDate, &r.Status, &r.SourceURL)
 	return r, err
 }
@@ -204,6 +206,23 @@ func (s *Store) ListDraws(ctx context.Context, category string, limit int32) ([]
 	return scanDraws(rows)
 }
 
+// AdminListDraws returns draws in any status (admin surface).
+func (s *Store) AdminListDraws(ctx context.Context, limit int32) ([]DrawRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	rows, err := s.pool.Reader.Query(ctx, `
+		SELECT id, draw_number, draw_date, category, crs_cutoff,
+		       invitations_issued, tie_break_rule, source_url, status
+		FROM crs_draws
+		ORDER BY draw_date DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanDraws(rows)
+}
+
 // LatestDraws returns the most recent published draw per category.
 func (s *Store) LatestDraws(ctx context.Context) ([]DrawRow, error) {
 	rows, err := s.pool.Reader.Query(ctx, `
@@ -275,13 +294,18 @@ func (s *Store) ListScoreHistory(ctx context.Context, userID pgtype.UUID, page, 
 	return out, total, rows.Err()
 }
 
-// CreateRuleset inserts a new ruleset in draft status.
-func (s *Store) CreateRuleset(ctx context.Context, tx pgx.Tx, versionLabel string, effectiveDate pgtype.Date, sourceURL string) (pgtype.UUID, error) {
+// CreateRuleset inserts a new ruleset in the given status ('draft' for
+// admin rows, 'ai_draft' for Content Agent output).
+func (s *Store) CreateRuleset(ctx context.Context, tx pgx.Tx, versionLabel string, effectiveDate pgtype.Date, sourceURL string, aiGenerated bool) (pgtype.UUID, error) {
+	status := "draft"
+	if aiGenerated {
+		status = "ai_draft"
+	}
 	var id pgtype.UUID
 	err := tx.QueryRow(ctx, `
-		INSERT INTO crs_rulesets (version_label, effective_date, status, source_url)
-		VALUES ($1, $2, 'draft', NULLIF($3, ''))
-		RETURNING id`, versionLabel, effectiveDate, sourceURL).Scan(&id)
+		INSERT INTO crs_rulesets (version_label, effective_date, status, source_url, ai_generated)
+		VALUES ($1, $2, $4, NULLIF($3, ''), $5)
+		RETURNING id`, versionLabel, effectiveDate, sourceURL, status, aiGenerated).Scan(&id)
 	return id, err
 }
 

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -98,10 +99,11 @@ type ApproveRequest struct {
 
 // Service orchestrates POF lookups and calculation.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	fx       FXConverter
-	enqueuer TaskEnqueuer
+	store        *Store
+	settings     *config.Settings
+	fx           FXConverter
+	enqueuer     TaskEnqueuer
+	aiDispatcher AIDispatcher
 }
 
 // NewService creates the service.
@@ -440,6 +442,173 @@ type TaskEnqueuer interface {
 // SetEnqueuer injects the Asynq task enqueuer for search indexing.
 // Nil-safe: indexing becomes a graceful no-op.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// AIDispatcher is the §20 AI Gateway seam for Content Agent drafts.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req AIRequest) (AIResponse, error)
+}
+
+// AIRequest / AIResponse are the provider-agnostic envelopes.
+type AIRequest struct {
+	SystemPrompt string
+	UserPrompt   string
+}
+
+// AIResponse carries the generated text.
+type AIResponse struct {
+	Text  string
+	Model string
+}
+
+// SetAIDispatcher injects the AI Gateway dispatcher for
+// POST /admin/pof-requirements/generate (tool:generate_draft task).
+func (s *Service) SetAIDispatcher(d AIDispatcher) { s.aiDispatcher = d }
+
+// EnqueueGenerate fires tool:generate_draft for a POF requirement draft
+// (fire-and-forget — the admin polls the moderation queue for the
+// ai_draft row). destination_space_id is required.
+func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string) error {
+	if s.enqueuer == nil {
+		return errors.New("pofcalculator: task enqueuer not configured")
+	}
+	if params["destination_space_id"] == "" {
+		return errors.New("destination_space_id is required")
+	}
+	payload := map[string]string{"entity_type": "pof_requirement"}
+	for k, v := range params {
+		payload[k] = v
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return s.enqueuer.Enqueue("tool:generate_draft", raw)
+}
+
+// GenerateRequirementDraft implements the POF branch of the
+// tool:generate_draft worker task — the AI Gateway returns a requirement
+// JSON document which is validated and inserted as an ai_draft row for
+// HITL review (ADR-088). Params carry the admin form hints
+// (destination_space_id is required — the row must join a space).
+func (s *Service) GenerateRequirementDraft(ctx context.Context, params map[string]string) error {
+	if s.aiDispatcher == nil {
+		return errors.New("pofcalculator: no AI dispatcher configured")
+	}
+	dest, err := uuidParam(params, "destination_space_id")
+	if err != nil {
+		return err
+	}
+
+	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
+		SystemPrompt: "You are the JapaConnect Content Agent. Produce a proof-of-funds " +
+			"requirement as STRICT JSON (no markdown fences): " +
+			`{"visa_type":"...","program_label":"...","currency":"ISO-4217",` +
+			`"amount_schedule":[{"members":1,"amount":15290,"per_additional":0}]` +
+			` OR {"base":13347,"base_members":1,"per_additional":680},` +
+			`"funds_must_be_liquid":true,"accepted_proof":["..."],"notes":"...",` +
+			`"effective_date":"YYYY-MM-DD","source_url":""}. ` +
+			"amount_schedule is either a band array (members → amount, optional " +
+			"per_additional overage) or a formula object (base + per_additional).",
+		UserPrompt: formatParams(params),
+	})
+	if err != nil {
+		return fmt.Errorf("pofcalculator: generate draft: AI dispatch: %w", err)
+	}
+
+	var out struct {
+		VisaType          string           `json:"visa_type"`
+		ProgramLabel      string           `json:"program_label"`
+		Currency          string           `json:"currency"`
+		AmountSchedule    *json.RawMessage `json:"amount_schedule"`
+		FundsMustBeLiquid *bool            `json:"funds_must_be_liquid"`
+		AcceptedProof     *json.RawMessage `json:"accepted_proof"`
+		Notes             *string          `json:"notes"`
+		EffectiveDate     string           `json:"effective_date"`
+		SourceURL         *string          `json:"source_url"`
+	}
+	if err := json.Unmarshal(extractJSON(resp.Text), &out); err != nil {
+		return fmt.Errorf("pofcalculator: generate draft: unparseable AI output: %w", err)
+	}
+	if out.VisaType == "" || out.ProgramLabel == "" || out.Currency == "" ||
+		out.AmountSchedule == nil || out.EffectiveDate == "" {
+		return errors.New("pofcalculator: generate draft: AI output missing required fields")
+	}
+	if _, err := resolveSchedule(*out.AmountSchedule, 1); err != nil {
+		return fmt.Errorf("pofcalculator: generate draft: invalid amount_schedule: %w", err)
+	}
+	var eff pgtype.Date
+	if err := eff.Scan(out.EffectiveDate); err != nil {
+		return fmt.Errorf("pofcalculator: generate draft: invalid effective_date")
+	}
+
+	row := RequirementRow{
+		DestinationSpaceID: dest,
+		VisaType:           out.VisaType,
+		ProgramLabel:       out.ProgramLabel,
+		AmountSchedule:     *out.AmountSchedule,
+		Currency:           out.Currency,
+		EffectiveDate:      eff,
+		SourceURL:          out.SourceURL,
+		Notes:              out.Notes,
+		Status:             StatusAIDraft,
+		AIGenerated:        true,
+	}
+	if out.FundsMustBeLiquid != nil {
+		row.FundsMustBeLiquid = pgtype.Bool{Bool: *out.FundsMustBeLiquid, Valid: true}
+	} else {
+		row.FundsMustBeLiquid = pgtype.Bool{Bool: true, Valid: true}
+	}
+	if out.AcceptedProof != nil {
+		row.AcceptedProof = *out.AcceptedProof
+	}
+	_, err = s.store.CreateRequirement(ctx, row)
+	return err
+}
+
+// uuidParam parses a required UUID param.
+func uuidParam(params map[string]string, key string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	v := params[key]
+	if v == "" {
+		return id, fmt.Errorf("pofcalculator: %s param is required", key)
+	}
+	if err := id.Scan(v); err != nil {
+		return id, fmt.Errorf("pofcalculator: invalid %s", key)
+	}
+	return id, nil
+}
+
+// extractJSON strips markdown fences around a model's JSON response.
+func extractJSON(s string) []byte {
+	s = strings.TrimSpace(s)
+	if i := strings.Index(s, "```"); i >= 0 {
+		s = s[i:]
+		if j := strings.Index(s, "\n"); j >= 0 {
+			s = s[j+1:]
+		}
+		if k := strings.LastIndex(s, "```"); k >= 0 {
+			s = s[:k]
+		}
+	}
+	start := strings.IndexAny(s, "{[")
+	if start < 0 {
+		return []byte(s)
+	}
+	return []byte(s[start:])
+}
+
+// formatParams renders admin form hints for the prompt.
+func formatParams(params map[string]string) string {
+	if len(params) == 0 {
+		return "Generate the requirement."
+	}
+	var b strings.Builder
+	b.WriteString("Generate a proof-of-funds requirement with these hints:\n")
+	for k, v := range params {
+		fmt.Fprintf(&b, "- %s: %s\n", k, v)
+	}
+	return b.String()
+}
 
 // enqueueIndex fires search:index_entity for a requirement (Rule 8 —
 // fire-and-forget; enqueue failure is logged, not returned).

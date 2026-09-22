@@ -260,9 +260,26 @@ func (h *Handlers) HandleAdminCreateRuleset(w http.ResponseWriter, r *http.Reque
 }
 
 // HandleAdminGenerateRuleset handles POST /admin/crs/rulesets/generate —
-// Content Agent draft placeholder. Returns 202. Admin-only.
+// enqueues tool:generate_draft; the Content Agent writes an ai_draft
+// ruleset for HITL review (ADR-088). Body carries optional generation
+// hints (version_label, effective_date, notes). Admin-only.
 func (h *Handlers) HandleAdminGenerateRuleset(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	var body map[string]string
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body) // hints are optional
+	}
+
+	if err := h.service.EnqueueGenerate(r.Context(), body); err != nil {
+		slog.Error("crscalculator: enqueue generate failed", "error", err)
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "generate_unavailable", "Generation is not configured")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "queued"}})
@@ -309,7 +326,7 @@ func (h *Handlers) HandleAdminListDraws(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	draws, err := h.service.ListDraws(r.Context(), "", 500)
+	draws, err := h.service.AdminListDraws(r.Context(), 500)
 	if err != nil {
 		slog.Error("crscalculator: admin list draws failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list draws")

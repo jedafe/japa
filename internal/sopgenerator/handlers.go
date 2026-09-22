@@ -87,10 +87,10 @@ func unavailable(w http.ResponseWriter) {
 
 func serviceErr(w http.ResponseWriter, r *http.Request, err error, notFoundMsg string) {
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
+	case errors.Is(err, pgx.ErrNoRows), errors.Is(err, ErrNotOwner):
+		// Not-owner resolves to 404 — a 403 would confirm the draft
+		// exists for enumeration.
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", notFoundMsg)
-	case errors.Is(err, ErrNotOwner):
-		errpkg.WriteError(w, http.StatusForbidden, "not_owner", "Draft belongs to a different user")
 	case errors.Is(err, ErrQuotaExceeded):
 		errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Monthly generation quota reached")
 	default:
@@ -355,9 +355,25 @@ func (h *Handlers) HandleAdminListTemplates(w http.ResponseWriter, r *http.Reque
 }
 
 // HandleAdminGenerateTemplate handles POST /admin/sop/templates/generate —
-// Content Agent draft placeholder. Returns 202.
+// enqueues tool:generate_draft; the Content Agent writes an ai_draft
+// template for HITL review (ADR-088). Body carries optional hints
+// (destination_space_id, purpose).
 func (h *Handlers) HandleAdminGenerateTemplate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	var body map[string]string
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	if err := h.service.EnqueueGenerate(r.Context(), body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "queued"}})

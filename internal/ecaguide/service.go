@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -96,16 +97,59 @@ type ModerateRequest struct {
 	Status string `json:"status"` // approved|rejected
 }
 
+// AIDispatcher is the §20 AI Gateway seam for Content Agent drafts.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req AIRequest) (AIResponse, error)
+}
+
+// AIRequest / AIResponse are the provider-agnostic envelopes.
+type AIRequest struct {
+	SystemPrompt string
+	UserPrompt   string
+}
+
+// AIResponse carries the generated text.
+type AIResponse struct {
+	Text  string
+	Model string
+}
+
 // Service orchestrates the ECA guide.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	enqueuer TaskEnqueuer
+	store        *Store
+	settings     *config.Settings
+	enqueuer     TaskEnqueuer
+	aiDispatcher AIDispatcher
 }
 
 // NewService creates the service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
+}
+
+// SetAIDispatcher injects the AI Gateway dispatcher for
+// POST /admin/eca-guides/generate (tool:generate_draft task).
+func (s *Service) SetAIDispatcher(d AIDispatcher) { s.aiDispatcher = d }
+
+// EnqueueGenerate fires tool:generate_draft for an ECA guide draft
+// (fire-and-forget — the admin polls the moderation queue for the
+// ai_draft row). destination_space_id and provider_id are required.
+func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string) error {
+	if s.enqueuer == nil {
+		return errors.New("ecaguide: task enqueuer not configured")
+	}
+	if params["destination_space_id"] == "" || params["provider_id"] == "" {
+		return errors.New("destination_space_id and provider_id are required")
+	}
+	payload := map[string]string{"entity_type": "eca_guide"}
+	for k, v := range params {
+		payload[k] = v
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return s.enqueuer.Enqueue("tool:generate_draft", raw)
 }
 
 // ListProviders returns active providers, optionally destination-scoped.
@@ -391,6 +435,108 @@ type TaskEnqueuer interface {
 // SetEnqueuer injects the Asynq task enqueuer for search indexing.
 // Nil-safe: indexing becomes a graceful no-op.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// GenerateGuideDraft implements the ECA branch of the
+// tool:generate_draft worker task — the AI Gateway returns a guide JSON
+// document which is validated and inserted as an ai_draft row for HITL
+// review (ADR-088). destination_space_id and provider_id params are
+// required (the row must join real entities).
+func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]string) error {
+	if s.aiDispatcher == nil {
+		return errors.New("ecaguide: no AI dispatcher configured")
+	}
+	var dest, provider pgtype.UUID
+	if err := dest.Scan(params["destination_space_id"]); err != nil {
+		return errors.New("ecaguide: destination_space_id param is required")
+	}
+	if err := provider.Scan(params["provider_id"]); err != nil {
+		return errors.New("ecaguide: provider_id param is required")
+	}
+
+	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
+		SystemPrompt: "You are the JapaConnect Content Agent. Produce an ECA guide as " +
+			"STRICT JSON (no markdown fences): " +
+			`{"purpose":"immigration|study|employment|professional_licensure",` +
+			`"pathway_steps":[{"step":1,"title":"...","detail":"...","duration":"..."}],` +
+			`"fee_estimate":"...","currency":"ISO-4217","timeline_estimate":"...",` +
+			`"documents_required":["..."],"accepted_for":["..."],"official_url":"https://..."}. ` +
+			"pathway_steps must cover account creation through report delivery.",
+		UserPrompt: formatParams(params),
+	})
+	if err != nil {
+		return fmt.Errorf("ecaguide: generate draft: AI dispatch: %w", err)
+	}
+
+	var out struct {
+		Purpose           string           `json:"purpose"`
+		PathwaySteps      *json.RawMessage `json:"pathway_steps"`
+		FeeEstimate       *string          `json:"fee_estimate"`
+		Currency          *string          `json:"currency"`
+		TimelineEstimate  *string          `json:"timeline_estimate"`
+		DocumentsRequired *json.RawMessage `json:"documents_required"`
+		AcceptedFor       *json.RawMessage `json:"accepted_for"`
+		OfficialURL       *string          `json:"official_url"`
+	}
+	if err := json.Unmarshal(extractJSON(resp.Text), &out); err != nil {
+		return fmt.Errorf("ecaguide: generate draft: unparseable AI output: %w", err)
+	}
+	if out.Purpose == "" || out.PathwaySteps == nil {
+		return errors.New("ecaguide: generate draft: AI output missing required fields")
+	}
+
+	row := GuideRow{
+		DestinationSpaceID: dest,
+		ProviderID:         provider,
+		Purpose:            out.Purpose,
+		PathwaySteps:       *out.PathwaySteps,
+		FeeEstimate:        out.FeeEstimate,
+		Currency:           out.Currency,
+		TimelineEstimate:   out.TimelineEstimate,
+		OfficialURL:        out.OfficialURL,
+		Status:             StatusAIDraft,
+		AIGenerated:        true,
+	}
+	if out.DocumentsRequired != nil {
+		row.DocumentsRequired = *out.DocumentsRequired
+	}
+	if out.AcceptedFor != nil {
+		row.AcceptedFor = *out.AcceptedFor
+	}
+	_, err = s.store.CreateGuide(ctx, row)
+	return err
+}
+
+// extractJSON strips markdown fences around a model's JSON response.
+func extractJSON(s string) []byte {
+	s = strings.TrimSpace(s)
+	if i := strings.Index(s, "```"); i >= 0 {
+		s = s[i:]
+		if j := strings.Index(s, "\n"); j >= 0 {
+			s = s[j+1:]
+		}
+		if k := strings.LastIndex(s, "```"); k >= 0 {
+			s = s[:k]
+		}
+	}
+	start := strings.IndexAny(s, "{[")
+	if start < 0 {
+		return []byte(s)
+	}
+	return []byte(s[start:])
+}
+
+// formatParams renders admin form hints for the prompt.
+func formatParams(params map[string]string) string {
+	if len(params) == 0 {
+		return "Generate the guide."
+	}
+	var b strings.Builder
+	b.WriteString("Generate an ECA guide with these hints:\n")
+	for k, v := range params {
+		fmt.Fprintf(&b, "- %s: %s\n", k, v)
+	}
+	return b.String()
+}
 
 // enqueueIndex fires search:index_entity for a guide (fire-and-forget,
 // Rule 8).

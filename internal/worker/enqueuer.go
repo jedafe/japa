@@ -218,6 +218,8 @@ var taskTier = func() map[string]string {
 		TypeCvFormatProcess,
 		// §110 AI SOP Generator (ADR-121) — draft generation on default tier.
 		TypeSopGenerate,
+		// §§107–110 SEO growth tools (ADR-118..121) — Content Agent drafts, default tier.
+		TypeToolGenerateDraft,
 		// §84 Community Digest Widget (ADR-092) — email send on publish, default tier.
 		TypeDigestSendEmail,
 		// §87 Japa Stage Profiles (ADR-095) — stage-change recommendation fan-out, default tier.
@@ -427,6 +429,11 @@ var taskTypeCatalog = []struct {
 	{TypeIntelSourceMetadata, "default", "Fetch and store public-site metadata for a source"},
 	{TypeIntelProbeVerify, "default", "Deep verify probe for an approved intel source; writes probe_report and materializes channels"},
 	{TypeIntelXHRSniff, "low", "Headless XHR/fetch capture; materializes discovered api channels (§intel-channels Phase 2)"},
+	// §intel-channels Phase 3 — push adapters + SERP poll.
+	{TypeIntelInboundEmail, "critical", "Process a persisted intel_inbound_events email delivery into a raw doc + detect_changes (§intel-channels Phase 3)"},
+	{TypeIntelWebSubSubscribe, "low", "POST hub.mode=subscribe for a webhook channel and arm the renewal chain (§intel-channels Phase 3)"},
+	{TypeIntelWebSubRenew, "low", "Re-subscribe a webhook channel before the hub lease lapses and re-arm (§intel-channels Phase 3)"},
+	{TypeIntelSearchPoll, "default", "Poll the configured SERP provider for a search channel; stores the result page as NDJSON (§intel-channels Phase 3)"},
 	// Low tier
 	{TypeDigestEmail, "low", "Send digest email"},
 	{TypeSitemapGenerate, "low", "Generate sitemap XML"},
@@ -484,6 +491,8 @@ var taskTypeCatalog = []struct {
 	{TypeCvFormatSessionsPurge, "low", "Purge expired CV format sessions past their expires_at"},
 	// §110 AI SOP Generator (ADR-121)
 	{TypeSopGenerate, "default", "Generate a queued SOP draft via the AI Gateway"},
+	// §§107–110 SEO growth tools (ADR-118..121)
+	{TypeToolGenerateDraft, "default", "Generate a Content Agent draft row for a tool entity via the AI Gateway"},
 	// §84 Community Digest Widget (ADR-092)
 	{TypeDigestGenerate, "low", "Assemble a new community digest edition from platform analytics"},
 	{TypeDigestAutoPublish, "low", "Publish draft/review digest editions past their 1-hour review window and enqueue email send (§84)"},

@@ -123,3 +123,28 @@ func (a *toolReviewAdapter) HandleToolReview(ctx context.Context, id, reviewerID
 
 	return false, "", nil
 }
+
+// toolDraftAdapter implements worker.ToolDraftProcessor — it routes the
+// tool:generate_draft task to the §§107–110 service matching entity_type.
+// Unknown entity types are an error so a typo doesn't silently no-op.
+type toolDraftAdapter struct {
+	crs *crscalculator.Service
+	pof *pofcalculator.Service
+	eca *ecaguide.Service
+	sop *sopgenerator.Service
+}
+
+func (a *toolDraftAdapter) GenerateDraft(ctx context.Context, entityType string, params map[string]string) error {
+	switch entityType {
+	case "crs_ruleset":
+		return a.crs.GenerateRulesetDraft(ctx, params)
+	case "pof_requirement":
+		return a.pof.GenerateRequirementDraft(ctx, params)
+	case "eca_guide":
+		return a.eca.GenerateGuideDraft(ctx, params)
+	case "sop_template":
+		return a.sop.GenerateTemplateDraft(ctx, params)
+	default:
+		return errors.New("toolreview: unknown entity_type " + entityType)
+	}
+}

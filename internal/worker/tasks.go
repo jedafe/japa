@@ -290,6 +290,8 @@ var handlerRegistry = []struct {
 	{TypeCvFormatSessionsPurge, HandleCvFormatSessionsPurge},
 	// §110 AI SOP Generator handlers (ADR-121).
 	{TypeSopGenerate, HandleSopGenerate},
+	// §§107–110 SEO growth tools — Content Agent draft generation (ADR-118..121).
+	{TypeToolGenerateDraft, HandleToolGenerateDraft},
 	// §84 Community Digest Widget handlers (ADR-092).
 	{TypeDigestGenerate, HandleDigestGenerate},
 	{TypeDigestAutoPublish, HandleDigestAutoPublish},

@@ -235,6 +235,10 @@ func (h *Handlers) HandleCreateUpdate(w http.ResponseWriter, r *http.Request) {
 
 	id, err := h.service.CreateCommunityUpdate(r.Context(), guideID, user.UserID, input)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
+			return
+		}
 		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
 		return
 	}
@@ -296,10 +300,25 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": guide})
 }
 
-// HandleAdminGenerate handles POST /admin/eca-guides/generate — Content
-// Agent draft placeholder. Returns 202.
+// HandleAdminGenerate handles POST /admin/eca-guides/generate — enqueues
+// tool:generate_draft; the Content Agent writes an ai_draft guide for
+// HITL review (ADR-088). Body requires destination_space_id + provider_id.
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	var body map[string]string
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	if err := h.service.EnqueueGenerate(r.Context(), body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "queued"}})
