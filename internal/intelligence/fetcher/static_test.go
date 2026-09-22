@@ -1,9 +1,13 @@
 package fetcher
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
 // TestStaticFetcher_NormalizationStable verifies that running normalizeHTML
@@ -42,5 +46,22 @@ func TestStaticFetcher_NormalizationStripsScripts(t *testing.T) {
 
 	if strings.Contains(normalized, "display:none") {
 		t.Errorf("style content leaked into normalized text: %q", normalized)
+	}
+}
+
+// TestStaticFetcher_ErrorStatus: non-2xx responses are fetch failures, not
+// documents — an error page must not be stored as channel content.
+func TestStaticFetcher_ErrorStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("<html><body>500 error page</body></html>"))
+	}))
+	t.Cleanup(srv.Close)
+
+	f := &StaticFetcher{client: srv.Client()}
+	if _, err := f.Fetch(t.Context(), sources.Source{SourceUrl: srv.URL}); err == nil {
+		t.Fatal("500 response: expected fetch error, got nil")
 	}
 }

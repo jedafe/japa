@@ -130,6 +130,14 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 
 	defer func() { _ = resp.Body.Close() }()
 
+	// Error responses are fetch failures, not documents — matching the
+	// rss/social/wayback/render convention. Without the check an endpoint
+	// that 500s stores the error body as content, resets
+	// consecutive_failures, and never enters the fallback ladder.
+	if resp.StatusCode >= 400 {
+		return FetchResult{}, fmt.Errorf("api: unexpected HTTP status %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("api: read body: %w", err)

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -253,6 +254,164 @@ func TestCompositeFetch_BytePassthroughMethods(t *testing.T) {
 			t.Errorf("%s body = %q, want raw bytes", method, res.Body)
 		}
 	}
+}
+
+// TestFallbackMethods_Validation: never-fetchable and unknown methods are
+// validated out of the degradation ladder — manual/inbound (email,
+// webhook), task-owned (xhr_sniff), and trigger-only (oneshot) can never
+// produce a fetch result; unknown strings would resolve to
+// ErrMethodNotImplemented.
+func TestFallbackMethods_Validation(t *testing.T) {
+	t.Parallel()
+
+	got := fallbackMethods([]byte(`{"fallback_methods":["rss","manual","email","webhook","oneshot","xhr_sniff","bogus","static"]}`))
+	want := []string{"rss", "static"}
+	if len(got) != len(want) {
+		t.Fatalf("fallbackMethods = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("fallbackMethods = %v, want %v", got, want)
+		}
+	}
+
+	// Unparseable config → no ladder.
+	if got := fallbackMethods([]byte(`{bad`)); len(got) != 0 {
+		t.Errorf("malformed config = %v, want nil", got)
+	}
+}
+
+// TestCompositeFetch_FallbackLadder covers the spec §3 degradation ladder:
+// hops run in order against the same entry_url, bounded at 3, no repeats,
+// non-fetchable entries filtered, ErrAdapterDisabled on the primary enters
+// the ladder, and all-fail returns the ORIGINAL error.
+func TestCompositeFetch_FallbackLadder(t *testing.T) {
+	t.Parallel()
+
+	t.Run("static fallback rescues failed sitemap", func(t *testing.T) {
+		t.Parallel()
+
+		srv, c := channelFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html><body>plain page</body></html>"))
+		}))
+
+		ch := sources.Channel{
+			EntryUrl:       srv.URL + "/page",
+			CrawlMethod:    "sitemap",
+			ProviderConfig: []byte(`{"fallback_methods":["static"]}`),
+		}
+		res, err := c.Fetch(t.Context(), sources.Source{}, ch)
+		if err != nil {
+			t.Fatalf("Fetch: %v", err)
+		}
+		if !strings.Contains(string(res.Body), "plain page") {
+			t.Errorf("body = %q, want static fallback result", res.Body)
+		}
+		if res.ContentType == ManifestContentType {
+			t.Error("fallback result must not carry the manifest marker")
+		}
+	})
+
+	t.Run("order and no repeats", func(t *testing.T) {
+		t.Parallel()
+
+		var requests int32
+		srv, c := channelFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			atomic.AddInt32(&requests, 1)
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html><body>plain page</body></html>"))
+		}))
+
+		ch := sources.Channel{
+			EntryUrl:       srv.URL + "/page",
+			CrawlMethod:    "sitemap",
+			ProviderConfig: []byte(`{"fallback_methods":["jsonld","jsonld","static"]}`),
+		}
+		if _, err := c.Fetch(t.Context(), sources.Source{}, ch); err != nil {
+			t.Fatalf("Fetch: %v", err)
+		}
+		// sitemap(1) + jsonld(1; the dup is skipped) + static(1) = 3.
+		if got := atomic.LoadInt32(&requests); got != 3 {
+			t.Errorf("requests = %d, want 3 (dup jsonld hop skipped)", got)
+		}
+	})
+
+	t.Run("all hops fail returns primary error", func(t *testing.T) {
+		t.Parallel()
+
+		srv, c := channelFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html><body>plain page</body></html>"))
+		}))
+
+		ch := sources.Channel{
+			EntryUrl:       srv.URL + "/page",
+			CrawlMethod:    "sitemap",
+			ProviderConfig: []byte(`{"fallback_methods":["jsonld"]}`),
+		}
+		_, err := c.Fetch(t.Context(), sources.Source{}, ch)
+		if err == nil || !strings.Contains(err.Error(), "sitemap") {
+			t.Fatalf("err = %v, want the primary sitemap error", err)
+		}
+	})
+
+	t.Run("ErrAdapterDisabled primary enters ladder", func(t *testing.T) {
+		t.Parallel()
+
+		srv, c := channelFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html><body>rendered-equivalent</body></html>"))
+		}))
+
+		// render with no service_url → ErrAdapterDisabled → static hop.
+		ch := sources.Channel{
+			EntryUrl:       srv.URL + "/spa",
+			CrawlMethod:    "render",
+			ProviderConfig: []byte(`{"fallback_methods":["static"]}`),
+		}
+		res, err := c.Fetch(t.Context(), sources.Source{}, ch)
+		if err != nil {
+			t.Fatalf("Fetch: %v", err)
+		}
+		if !strings.Contains(string(res.Body), "rendered-equivalent") {
+			t.Errorf("body = %q, want static fallback result", res.Body)
+		}
+	})
+
+	t.Run("bounded at three hops", func(t *testing.T) {
+		t.Parallel()
+
+		var requests int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&requests, 1)
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html><body>plain page</body></html>"))
+		}))
+		t.Cleanup(srv.Close)
+		c := testComposite(srv.Client())
+
+		// Deterministic failures without depending on parser internals:
+		// render → ErrAdapterDisabled (no service_url), git → empty repo
+		// fails the http(s) remote guard, wayback → cdx_endpoint returns
+		// HTML that is not a CDX JSON body. static + sitemap sit beyond the
+		// 3-hop bound and must never be attempted (static would succeed).
+		ch := sources.Channel{
+			EntryUrl:    srv.URL + "/page",
+			CrawlMethod: "jsonld",
+			ProviderConfig: []byte(`{"cdx_endpoint":"` + srv.URL + `/cdx",
+				"fallback_methods":["render","git","wayback","static","sitemap"]}`),
+		}
+		_, err := c.Fetch(t.Context(), sources.Source{}, ch)
+		if err == nil || !strings.Contains(err.Error(), "ld+json") {
+			t.Fatalf("err = %v, want the primary jsonld error", err)
+		}
+		// jsonld → /page and wayback → /cdx are the only network calls;
+		// render/git fail before any request.
+		if got := atomic.LoadInt32(&requests); got != 2 {
+			t.Errorf("requests = %d, want 2 (primary jsonld + wayback hop)", got)
+		}
+	})
 }
 
 // TestResolveChannelProviderConfig covers the channel-first provider_config

@@ -224,3 +224,18 @@ CREATE INDEX IF NOT EXISTS idx_intel_raw_documents_parent
 - `render`/`xhr_sniff` are unverifiable end-to-end without a deployed service — mitigate with httptest contract tests + `ErrAdapterDisabled` clean-skip semantics so unconfigured channels never churn.
 - go-git clone of a hostile repo — bound by depth=1, memory fs, size cap on read files.
 - Derived-fetch fan-out cardinality — bounded by per-crawl caps + url_filter.
+
+---
+
+### Post-review fix pass (2026-09-22)
+
+Corrections landed after a full implementation audit:
+
+- **Wayback `limit` sign bug fixed** — `wayback.go` now sends `limit=-{max_snapshots}`; CDX `limit=N` returns the *first* N captures, which would have pinned the manifest to a page's oldest snapshots and silently stopped change detection once a page exceeded the cap.
+- **Wayback `since` fallback wired** — `Composite.Fetch` injects `provider_config.since` from `channel.last_success_at` (explicit config wins) so manifests list only captures newer than the last successful crawl.
+- **Render circuit = 3 consecutive failures** — matches the original N=3 spec; consecutive count lives in `jc:intel:render:circuit_failures` (5m TTL, reset on success), `jc:intel:render:circuit` trips at the threshold. A single transient timeout no longer blackouts every render channel.
+- **`fallback_methods` validation** — non-fetchable entries (`manual`, `email`, `webhook`, `xhr_sniff`, `oneshot`) and unknown strings are filtered out of the ladder before dispatch.
+- **Oneshot resubmit re-arms** — an explicit resubmission of a channel auto-disabled by the failure breaker re-enables it, so a `202 queued` response can never silently no-op.
+- **`intel:xhr_sniff` retry/timeout now apply** — `enqueueIntel` passes `taskDefaults`, so the declared 2m/2-retry options actually reach follow-up enqueues.
+- **Git**: `via=releases` → `tags` fallback now logs a warning; `ls-remote` uses `ListContext` so cancellation/timeout applies.
+- **Tests added** — oneshot dedupe + re-arm + input rejection (live DB), fallback ladder ordering/dedupe/hop-bound/original-error/disabled-primary, telegram normalization, git files+tags against a local fixture repo, wayback `limit`/`since` assertions, render circuit threshold + reset.

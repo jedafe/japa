@@ -42,6 +42,13 @@ func (f *StaticFetcher) Fetch(ctx context.Context, source sources.Source) (Fetch
 
 	defer func() { _ = resp.Body.Close() }()
 
+	// Error responses are fetch failures, not documents — an error page is
+	// not channel content and must not reset consecutive_failures or feed
+	// the pipeline. Same convention as rss/social/wayback.
+	if resp.StatusCode >= 400 {
+		return FetchResult{}, fmt.Errorf("static: unexpected HTTP status %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("static: read body: %w", err)

@@ -75,6 +75,12 @@ func GetAppliedMigrations(ctx context.Context, pool *pgxpool.Pool) (map[string]b
 // ApplyMigration executes a single migration's SQL in a transaction and
 // records it as applied. If the SQL fails, the transaction rolls back and
 // the filename is not recorded, so a retry will apply it again.
+//
+// The filename is re-checked inside the transaction before the body runs:
+// ApplyPending snapshots the applied set once, so a filename registered
+// mid-run (e.g. by 000000_register_renumbered_migrations.sql marking a
+// renumbered file as applied) or by a concurrent migrator process must not
+// execute its body again.
 func ApplyMigration(ctx context.Context, pool *pgxpool.Pool, filename, sql string) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -82,6 +88,14 @@ func ApplyMigration(ctx context.Context, pool *pgxpool.Pool, filename, sql strin
 	}
 
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	var alreadyApplied bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = $1)", filename).Scan(&alreadyApplied); err != nil {
+		return fmt.Errorf("checking applied state: %w", err)
+	}
+	if alreadyApplied {
+		return nil
+	}
 
 	if _, err := tx.Exec(ctx, sql); err != nil {
 		return fmt.Errorf("executing SQL: %w", err)
