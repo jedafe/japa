@@ -439,3 +439,144 @@ func (s *Store) RejectSample(ctx context.Context, id, reviewerID pgtype.UUID, no
 	}
 	return nil
 }
+
+// UpdateTemplate applies a partial update (admin).
+func (s *Store) UpdateTemplate(ctx context.Context, id pgtype.UUID, t TemplateRow) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		UPDATE sop_templates SET
+		  destination_space_id = COALESCE($2, destination_space_id),
+		  purpose = COALESCE(NULLIF($3,''), purpose),
+		  title = COALESCE(NULLIF($4,''), title),
+		  structure = COALESCE($5, structure),
+		  is_active = COALESCE($6, is_active),
+		  updated_at = now()
+		WHERE id = $1`,
+		id, t.DestinationSpaceID, t.Purpose, t.Title,
+		nullBytes(t.Structure), t.IsActive)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteTemplate removes a non-published template.
+func (s *Store) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		DELETE FROM sop_templates
+		WHERE id = $1 AND status IN ('draft','ai_draft','pending','rejected')`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// AdminListSamples returns all samples regardless of status (admin).
+func (s *Store) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID, status string, page, limit int32) ([]SampleRow, int64, error) {
+	where := ` WHERE true`
+	args := []any{}
+	if destSpaceID.Valid {
+		args = append(args, destSpaceID)
+		where += ` AND s.destination_space_id = $` + itoa(len(args))
+	}
+	if status != "" {
+		args = append(args, status)
+		where += ` AND s.status = $` + itoa(len(args))
+	}
+
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx,
+		`SELECT count(*) FROM sop_samples s`+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	args = append(args, limit, (page-1)*limit)
+	rows, err := s.pool.Reader.Query(ctx, `
+		SELECT s.id, s.destination_space_id, sp.name, s.program_level,
+		       s.field_of_study, s.title, s.body, s.word_count, s.status,
+		       s.ai_generated, s.is_japabot_indexed, s.created_at
+		FROM sop_samples s
+		LEFT JOIN spaces sp ON sp.id = s.destination_space_id`+
+		where+` ORDER BY s.updated_at DESC LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var out []SampleRow
+	for rows.Next() {
+		var r SampleRow
+		if err := rows.Scan(&r.ID, &r.DestinationSpaceID, &r.DestinationName,
+			&r.ProgramLevel, &r.FieldOfStudy, &r.Title, &r.Body,
+			&r.WordCount, &r.Status, &r.AIGenerated, &r.IsJapabotIndexed,
+			&r.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, r)
+	}
+	return out, total, rows.Err()
+}
+
+// CreateSample inserts a sample (admin).
+func (s *Store) CreateSample(ctx context.Context, r SampleRow) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	err := s.pool.Writer.QueryRow(ctx, `
+		INSERT INTO sop_samples
+		  (destination_space_id, program_level, field_of_study, title, body,
+		   word_count, status, ai_generated)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		RETURNING id`,
+		r.DestinationSpaceID, r.ProgramLevel, r.FieldOfStudy, r.Title,
+		r.Body, r.WordCount, r.Status, r.AIGenerated).Scan(&id)
+	return id, err
+}
+
+// UpdateSample applies a partial update (admin).
+func (s *Store) UpdateSample(ctx context.Context, id pgtype.UUID, r SampleRow) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		UPDATE sop_samples SET
+		  destination_space_id = COALESCE($2, destination_space_id),
+		  program_level = COALESCE(NULLIF($3,''), program_level),
+		  field_of_study = COALESCE($4, field_of_study),
+		  title = COALESCE(NULLIF($5,''), title),
+		  body = COALESCE(NULLIF($6,''), body),
+		  word_count = COALESCE($7, word_count),
+		  updated_at = now()
+		WHERE id = $1`,
+		id, r.DestinationSpaceID, r.ProgramLevel, r.FieldOfStudy,
+		r.Title, r.Body, r.WordCount)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteSample removes a non-published sample.
+func (s *Store) DeleteSample(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		DELETE FROM sop_samples
+		WHERE id = $1 AND status IN ('draft','ai_draft','pending','rejected')`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// nullBytes returns nil for empty byte slices (COALESCE pattern).
+func nullBytes(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return b
+}

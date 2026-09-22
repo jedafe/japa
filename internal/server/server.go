@@ -6533,8 +6533,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/intel/channels/{id}/crawl", intelHandlers.HandleAdminCrawlChannel)
 			// Inbound-event re-drive — resets a failed/stuck/ignored delivery
 			// to 'received' and re-runs its channel pipeline (intel-channels
-			// Phase 3). RBAC-gated by intel.channels.update.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.update")).
+			// Phase 3). RBAC-gated by intel.inbound.manage (migration 000684).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.inbound.manage")).
 				Post("/admin/intel/inbound-events/{id}/redrive", intelHandlers.HandleAdminRedriveInboundEvent)
 			// Re-probe — enqueues intel:probe_verify to re-run the deep verify
 			// probe and re-materialize channels. RBAC-gated by
@@ -6714,11 +6714,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
 					Patch("/admin/crs/rulesets/{id}/approve", crsCalculatorHandlers.HandleAdminApproveRuleset)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Get("/admin/crs/rulesets/{id}", crsCalculatorHandlers.HandleAdminGetRuleset)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Patch("/admin/crs/rulesets/{id}", crsCalculatorHandlers.HandleAdminUpdateRuleset)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Delete("/admin/crs/rulesets/{id}", crsCalculatorHandlers.HandleAdminDeleteRuleset)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Patch("/admin/crs/rulesets/{id}/reject", crsCalculatorHandlers.HandleAdminRejectRuleset)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
 					Get("/admin/crs/draws", crsCalculatorHandlers.HandleAdminListDraws)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
 					Post("/admin/crs/draws", crsCalculatorHandlers.HandleAdminCreateDraw)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
 					Patch("/admin/crs/draws/{id}", crsCalculatorHandlers.HandleAdminUpdateDraw)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Delete("/admin/crs/draws/{id}", crsCalculatorHandlers.HandleAdminDeleteDraw)
 			})
 
 			// §108 — POF Calculator (ADR-119)
@@ -6736,6 +6746,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/pof-requirements/{id}", pofCalculatorHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
 					Patch("/admin/pof-requirements/{id}/approve", pofCalculatorHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
+					Get("/admin/pof-requirements/{id}", pofCalculatorHandlers.HandleAdminGet)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
+					Delete("/admin/pof-requirements/{id}", pofCalculatorHandlers.HandleAdminDelete)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
+					Patch("/admin/pof-requirements/{id}/reject", pofCalculatorHandlers.HandleAdminReject)
 			})
 
 			// §109 — ECA Guide (ADR-120)
@@ -6756,6 +6772,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/eca-guides/{id}", ecaGuideHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
 					Patch("/admin/eca-guides/{id}/approve", ecaGuideHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Delete("/admin/eca-guides/{id}", ecaGuideHandlers.HandleAdminDelete)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Patch("/admin/eca-guides/{id}/reject", ecaGuideHandlers.HandleAdminReject)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Get("/admin/eca-providers", ecaGuideHandlers.HandleAdminListProviders)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Post("/admin/eca-providers", ecaGuideHandlers.HandleAdminCreateProvider)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Patch("/admin/eca-providers/{id}", ecaGuideHandlers.HandleAdminUpdateProvider)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Delete("/admin/eca-providers/{id}", ecaGuideHandlers.HandleAdminDeleteProvider)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
 					Get("/admin/eca-guides/updates", ecaGuideHandlers.HandleAdminListUpdates)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
@@ -6785,6 +6813,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/sop/templates/generate", sopGeneratorHandlers.HandleAdminGenerateTemplate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
 					Patch("/admin/sop/samples/{id}/approve", sopGeneratorHandlers.HandleAdminApproveSample)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Post("/admin/sop/templates", sopGeneratorHandlers.HandleAdminCreateTemplate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Patch("/admin/sop/templates/{id}", sopGeneratorHandlers.HandleAdminUpdateTemplate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Delete("/admin/sop/templates/{id}", sopGeneratorHandlers.HandleAdminDeleteTemplate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Patch("/admin/sop/templates/{id}/approve", sopGeneratorHandlers.HandleAdminApproveTemplate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Patch("/admin/sop/templates/{id}/reject", sopGeneratorHandlers.HandleAdminRejectTemplate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Get("/admin/sop/samples", sopGeneratorHandlers.HandleAdminListSamples)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Post("/admin/sop/samples", sopGeneratorHandlers.HandleAdminCreateSample)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Patch("/admin/sop/samples/{id}", sopGeneratorHandlers.HandleAdminUpdateSample)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Delete("/admin/sop/samples/{id}", sopGeneratorHandlers.HandleAdminDeleteSample)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Patch("/admin/sop/samples/{id}/reject", sopGeneratorHandlers.HandleAdminRejectSample)
 			})
 
 			// §95 — CV Formatter (ADR-103)

@@ -406,3 +406,80 @@ func (s *Store) RejectRuleset(ctx context.Context, id, reviewerID pgtype.UUID, n
 	}
 	return nil
 }
+
+// GetRuleset returns a ruleset by ID regardless of status (admin detail).
+func (s *Store) GetRuleset(ctx context.Context, id pgtype.UUID) (RulesetRow, error) {
+	var r RulesetRow
+	err := s.pool.Reader.QueryRow(ctx, `
+		SELECT id, version_label, effective_date, status, source_url
+		FROM crs_rulesets WHERE id = $1`, id).Scan(
+		&r.ID, &r.VersionLabel, &r.EffectiveDate, &r.Status, &r.SourceURL)
+	return r, err
+}
+
+// UpdateRuleset updates a non-active ruleset's metadata. Active/superseded
+// rulesets are immutable — create a new version instead (§107 versioning).
+// Factor rows are replaced wholesale when the request carries a factors list.
+func (s *Store) UpdateRuleset(ctx context.Context, id pgtype.UUID, versionLabel string, effectiveDate pgtype.Date, sourceURL string, factors []FactorRow) error {
+	tx, err := s.pool.Writer.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	res, err := tx.Exec(ctx, `
+		UPDATE crs_rulesets
+		SET version_label = COALESCE(NULLIF($2,''), version_label),
+		    effective_date = COALESCE($3, effective_date),
+		    source_url = COALESCE(NULLIF($4,''), source_url),
+		    updated_at = now()
+		WHERE id = $1 AND status NOT IN ('active','superseded')`,
+		id, versionLabel, effectiveDate, sourceURL)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+
+	if factors != nil {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM crs_factor_points WHERE ruleset_id = $1`, id); err != nil {
+			return err
+		}
+		for _, f := range factors {
+			if err := s.CreateFactorPoint(ctx, tx, f); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// DeleteRuleset removes a draft/rejected ruleset. Active and superseded
+// rulesets are protected — they may be referenced by crs_score_history.
+func (s *Store) DeleteRuleset(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		DELETE FROM crs_rulesets
+		WHERE id = $1 AND status IN ('draft','ai_draft','rejected')`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteDraw removes a draw entry.
+func (s *Store) DeleteDraw(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx,
+		`DELETE FROM crs_draws WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

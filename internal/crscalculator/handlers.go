@@ -259,6 +259,161 @@ func (h *Handlers) HandleAdminCreateRuleset(w http.ResponseWriter, r *http.Reque
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": ruleset})
 }
 
+// HandleAdminGetRuleset handles GET /admin/crs/rulesets/:id — ruleset
+// detail with its factor rows. Admin-only.
+func (h *Handlers) HandleAdminGetRuleset(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	detail, err := h.service.GetRulesetDetail(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found")
+			return
+		}
+		slog.Error("crscalculator: get ruleset failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to load ruleset")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
+}
+
+// HandleAdminUpdateRuleset handles PATCH /admin/crs/rulesets/:id —
+// update a non-active ruleset; factor rows are replaced wholesale when
+// the body carries a factors array. Admin-only.
+func (h *Handlers) HandleAdminUpdateRuleset(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input CreateRulesetRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if err := h.service.UpdateRuleset(r.Context(), id, input); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found or is active/superseded")
+			return
+		}
+		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminDeleteRuleset handles DELETE /admin/crs/rulesets/:id —
+// removes a draft/rejected ruleset; active and superseded are protected.
+// Admin-only.
+func (h *Handlers) HandleAdminDeleteRuleset(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteRuleset(r.Context(), id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found or is protected")
+			return
+		}
+		slog.Error("crscalculator: delete ruleset failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete ruleset")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminRejectRuleset handles PATCH /admin/crs/rulesets/:id/reject —
+// HITL reject path. Admin-only.
+func (h *Handlers) HandleAdminRejectRuleset(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		ReviewNotes string `json:"review_notes"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	if err := h.service.RejectRuleset(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found")
+			return
+		}
+		slog.Error("crscalculator: reject ruleset failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject ruleset")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "rejected"}})
+}
+
+// HandleAdminDeleteDraw handles DELETE /admin/crs/draws/:id. Admin-only.
+func (h *Handlers) HandleAdminDeleteDraw(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteDraw(r.Context(), id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "draw_not_found", "Draw not found")
+			return
+		}
+		slog.Error("crscalculator: delete draw failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete draw")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
 // HandleAdminGenerateRuleset handles POST /admin/crs/rulesets/generate —
 // enqueues tool:generate_draft; the Content Agent writes an ai_draft
 // ruleset for HITL review (ADR-088). Body carries optional generation

@@ -69,18 +69,21 @@ type TemplateDTO struct {
 	Purpose            string          `json:"purpose"`
 	Title              string          `json:"title"`
 	Structure          json.RawMessage `json:"structure"`
+	Status             string          `json:"status,omitempty"`
 }
 
 // SampleDTO is the API shape for a published sample.
 type SampleDTO struct {
-	ID              string `json:"id"`
-	DestinationName string `json:"destination_space_name,omitempty"`
-	ProgramLevel    string `json:"program_level"`
-	FieldOfStudy    string `json:"field_of_study,omitempty"`
-	Title           string `json:"title"`
-	Body            string `json:"body"`
-	WordCount       *int32 `json:"word_count,omitempty"`
-	AIGenerated     bool   `json:"ai_generated"`
+	ID                 string `json:"id"`
+	DestinationName    string `json:"destination_space_name,omitempty"`
+	DestinationSpaceID string `json:"destination_space_id,omitempty"`
+	ProgramLevel       string `json:"program_level"`
+	FieldOfStudy       string `json:"field_of_study,omitempty"`
+	Title              string `json:"title"`
+	Body               string `json:"body"`
+	WordCount          *int32 `json:"word_count,omitempty"`
+	Status             string `json:"status,omitempty"`
+	AIGenerated        bool   `json:"ai_generated"`
 }
 
 // DraftDTO is the API shape for a user draft.
@@ -116,6 +119,25 @@ type UpdateDraftRequest struct {
 	Program       *string `json:"program"`
 	Institution   *string `json:"institution"`
 	GeneratedText *string `json:"generated_text"`
+}
+
+// TemplateRequest is the admin create/update body for a template.
+type TemplateRequest struct {
+	DestinationSpaceID string          `json:"destination_space_id"`
+	Purpose            string          `json:"purpose"`
+	Title              string          `json:"title"`
+	Structure          json.RawMessage `json:"structure"`
+	IsActive           *bool           `json:"is_active"`
+}
+
+// SampleRequest is the admin create/update body for a sample.
+type SampleRequest struct {
+	DestinationSpaceID string  `json:"destination_space_id"`
+	ProgramLevel       string  `json:"program_level"`
+	FieldOfStudy       string  `json:"field_of_study"`
+	Title              string  `json:"title"`
+	Body               string  `json:"body"`
+	WordCount          *int32  `json:"word_count"`
 }
 
 // QuotaDTO is the GET /sop/quota response.
@@ -546,6 +568,124 @@ func (s *Service) RejectTemplate(ctx context.Context, id pgtype.UUID) error {
 // RejectSample marks a pending/draft sample rejected (HITL reject).
 func (s *Service) RejectSample(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	return s.store.RejectSample(ctx, id, reviewerID, notes)
+}
+
+// CreateTemplate inserts a draft template (admin).
+func (s *Service) CreateTemplate(ctx context.Context, in TemplateRequest) (TemplateDTO, error) {
+	if in.Purpose == "" || in.Title == "" || len(in.Structure) == 0 {
+		return TemplateDTO{}, errors.New("purpose, title and structure are required")
+	}
+	row := TemplateRow{
+		Purpose: in.Purpose, Title: in.Title, Structure: in.Structure,
+		Status: StatusDraft,
+	}
+	if in.DestinationSpaceID != "" {
+		var sid pgtype.UUID
+		if err := sid.Scan(in.DestinationSpaceID); err != nil {
+			return TemplateDTO{}, fmt.Errorf("invalid destination_space_id")
+		}
+		row.DestinationSpaceID = sid
+	}
+	id, err := s.store.CreateTemplate(ctx, row)
+	if err != nil {
+		return TemplateDTO{}, err
+	}
+	return TemplateDTO{ID: uuidStr(id), DestinationSpaceID: in.DestinationSpaceID, Purpose: in.Purpose, Title: in.Title, Structure: in.Structure, Status: StatusDraft}, nil
+}
+
+// UpdateTemplate applies a partial update (admin).
+func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, in TemplateRequest) error {
+	row := TemplateRow{Purpose: in.Purpose, Title: in.Title, Structure: in.Structure}
+	if in.DestinationSpaceID != "" {
+		var sid pgtype.UUID
+		if err := sid.Scan(in.DestinationSpaceID); err != nil {
+			return fmt.Errorf("invalid destination_space_id")
+		}
+		row.DestinationSpaceID = sid
+	}
+	if in.IsActive != nil {
+		row.IsActive = pgtype.Bool{Bool: *in.IsActive, Valid: true}
+	}
+	return s.store.UpdateTemplate(ctx, id, row)
+}
+
+// DeleteTemplate removes a non-published template.
+func (s *Service) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteTemplate(ctx, id)
+}
+
+// AdminListSamples returns all samples regardless of status (admin).
+func (s *Service) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID, status string, page, limit int32) ([]SampleDTO, int64, error) {
+	rows, total, err := s.store.AdminListSamples(ctx, destSpaceID, status, page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := sampleDTOs(rows)
+	for i, r := range rows {
+		out[i].Status = r.Status
+		if r.DestinationSpaceID.Valid {
+			out[i].DestinationSpaceID = uuidStr(r.DestinationSpaceID)
+		}
+	}
+	return out, total, nil
+}
+
+// CreateSample inserts a draft sample (admin).
+func (s *Service) CreateSample(ctx context.Context, in SampleRequest) (SampleDTO, error) {
+	if in.ProgramLevel == "" || in.Title == "" || in.Body == "" {
+		return SampleDTO{}, errors.New("program_level, title and body are required")
+	}
+	row := SampleRow{
+		ProgramLevel: in.ProgramLevel, Title: in.Title, Body: in.Body,
+		Status: StatusDraft,
+	}
+	if in.FieldOfStudy != "" {
+		row.FieldOfStudy = &in.FieldOfStudy
+	}
+	if in.WordCount != nil {
+		row.WordCount = pgtype.Int4{Int32: *in.WordCount, Valid: true}
+	} else {
+		row.WordCount = pgtype.Int4{Int32: int32(len(strings.Fields(in.Body))), Valid: true}
+	}
+	if in.DestinationSpaceID != "" {
+		var sid pgtype.UUID
+		if err := sid.Scan(in.DestinationSpaceID); err != nil {
+			return SampleDTO{}, fmt.Errorf("invalid destination_space_id")
+		}
+		row.DestinationSpaceID = sid
+	}
+	id, err := s.store.CreateSample(ctx, row)
+	if err != nil {
+		return SampleDTO{}, err
+	}
+	out := sampleDTOs([]SampleRow{row})[0]
+	out.ID = uuidStr(id)
+	out.Status = StatusDraft
+	return out, nil
+}
+
+// UpdateSample applies a partial update (admin).
+func (s *Service) UpdateSample(ctx context.Context, id pgtype.UUID, in SampleRequest) error {
+	row := SampleRow{ProgramLevel: in.ProgramLevel, Title: in.Title, Body: in.Body}
+	if in.FieldOfStudy != "" {
+		row.FieldOfStudy = &in.FieldOfStudy
+	}
+	if in.WordCount != nil {
+		row.WordCount = pgtype.Int4{Int32: *in.WordCount, Valid: true}
+	}
+	if in.DestinationSpaceID != "" {
+		var sid pgtype.UUID
+		if err := sid.Scan(in.DestinationSpaceID); err != nil {
+			return fmt.Errorf("invalid destination_space_id")
+		}
+		row.DestinationSpaceID = sid
+	}
+	return s.store.UpdateSample(ctx, id, row)
+}
+
+// DeleteSample removes a non-published sample.
+func (s *Service) DeleteSample(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteSample(ctx, id)
 }
 
 // ---------------------------------------------------------------------

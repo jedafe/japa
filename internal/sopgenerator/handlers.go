@@ -408,3 +408,264 @@ func (h *Handlers) HandleAdminApproveSample(w http.ResponseWriter, r *http.Reque
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusPublished}})
 }
+
+// HandleAdminCreateTemplate handles POST /admin/sop/templates — create a
+// draft template. Admin-only.
+func (h *Handlers) HandleAdminCreateTemplate(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	var input TemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	tpl, err := h.service.CreateTemplate(r.Context(), input)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tpl})
+}
+
+// HandleAdminUpdateTemplate handles PATCH /admin/sop/templates/:id —
+// partial update. Admin-only.
+func (h *Handlers) HandleAdminUpdateTemplate(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input TemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if err := h.service.UpdateTemplate(r.Context(), id, input); err != nil {
+		serviceErr(w, r, err, "Template not found")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminDeleteTemplate handles DELETE /admin/sop/templates/:id —
+// removes a non-published template. Admin-only.
+func (h *Handlers) HandleAdminDeleteTemplate(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteTemplate(r.Context(), id); err != nil {
+		serviceErr(w, r, err, "Template not found or is published")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminApproveTemplate handles PATCH /admin/sop/templates/:id/approve
+// — HITL publish. Admin-only.
+func (h *Handlers) HandleAdminApproveTemplate(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.ApproveTemplate(r.Context(), id, user.UserID); err != nil {
+		serviceErr(w, r, err, "Template not found")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusPublished}})
+}
+
+// HandleAdminRejectTemplate handles PATCH /admin/sop/templates/:id/reject
+// — HITL reject. Admin-only.
+func (h *Handlers) HandleAdminRejectTemplate(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.RejectTemplate(r.Context(), id); err != nil {
+		serviceErr(w, r, err, "Template not found")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
+}
+
+// HandleAdminListSamples handles GET /admin/sop/samples — all samples
+// regardless of status. Admin-only.
+func (h *Handlers) HandleAdminListSamples(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	page, limit := parsePageParams(r)
+	var destID pgtype.UUID
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := destID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
+			return
+		}
+	}
+	samples, total, err := h.service.AdminListSamples(r.Context(), destID, r.URL.Query().Get("status"), page, limit)
+	if err != nil {
+		slog.Error("sopgenerator: admin samples failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list samples")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":       samples,
+		"pagination": map[string]any{"page": page, "limit": limit, "total": total},
+	})
+}
+
+// HandleAdminCreateSample handles POST /admin/sop/samples — create a
+// draft sample. Admin-only.
+func (h *Handlers) HandleAdminCreateSample(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	var input SampleRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	sample, err := h.service.CreateSample(r.Context(), input)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": sample})
+}
+
+// HandleAdminUpdateSample handles PATCH /admin/sop/samples/:id —
+// partial update. Admin-only.
+func (h *Handlers) HandleAdminUpdateSample(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input SampleRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if err := h.service.UpdateSample(r.Context(), id, input); err != nil {
+		serviceErr(w, r, err, "Sample not found")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminDeleteSample handles DELETE /admin/sop/samples/:id —
+// removes a non-published sample. Admin-only.
+func (h *Handlers) HandleAdminDeleteSample(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteSample(r.Context(), id); err != nil {
+		serviceErr(w, r, err, "Sample not found or is published")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminRejectSample handles PATCH /admin/sop/samples/:id/reject —
+// HITL reject. Admin-only.
+func (h *Handlers) HandleAdminRejectSample(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		ReviewNotes string `json:"review_notes"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if err := h.service.RejectSample(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
+		serviceErr(w, r, err, "Sample not found")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
+}
