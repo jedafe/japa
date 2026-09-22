@@ -51,6 +51,7 @@ import (
 	"github.com/jedafe/japa/internal/costofliving"
 	"github.com/jedafe/japa/internal/coupons"
 	"github.com/jedafe/japa/internal/credentialchecker"
+	"github.com/jedafe/japa/internal/crscalculator"
 	"github.com/jedafe/japa/internal/csrf"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/cvformatter"
@@ -1410,6 +1411,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	communityLocatorService := communitylocator.NewService(communityLocatorStore, settingsService)
 	communityLocatorService.SetFeatureChecker(featureChecker)
 	communityLocatorHandlers := communitylocator.NewHandlers(communityLocatorService, settingsService)
+
+	crsCalculatorStore := crscalculator.NewStore(database)
+	crsCalculatorService := crscalculator.NewService(crsCalculatorStore, settingsService)
+	crsCalculatorHandlers := crscalculator.NewHandlers(crsCalculatorService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/71-readiness-assessment.md (ADR-071)
 	assessmentStore := assessment.NewStore(database)
@@ -6477,6 +6482,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/intel/channels/{id}", intelHandlers.HandleAdminDeleteChannel)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.crawl")).
 				Post("/admin/intel/channels/{id}/crawl", intelHandlers.HandleAdminCrawlChannel)
+			// Inbound-event re-drive — resets a failed/stuck/ignored delivery
+			// to 'received' and re-runs its channel pipeline (intel-channels
+			// Phase 3). RBAC-gated by intel.channels.update.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.channels.update")).
+				Post("/admin/intel/inbound-events/{id}/redrive", intelHandlers.HandleAdminRedriveInboundEvent)
 			// Re-probe — enqueues intel:probe_verify to re-run the deep verify
 			// probe and re-materialize channels. RBAC-gated by
 			// intel.sources.probe (migration 000684).
@@ -6636,6 +6646,30 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/credentials/{id}", credentialCheckerHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
 					Patch("/admin/credentials/{id}/approve", credentialCheckerHandlers.HandleAdminApprove)
+			})
+
+			// §107 — Express Entry CRS Calculator (ADR-118)
+			r.With(features.Gate(featureChecker, "crs_calculator.enabled")).Group(func(r chi.Router) {
+				r.Get("/crs/factors", crsCalculatorHandlers.HandleGetFactors)
+				r.Post("/crs/calculate", crsCalculatorHandlers.HandleCalculate)
+				r.Get("/crs/draws", crsCalculatorHandlers.HandleListDraws)
+				r.Get("/crs/draws/latest", crsCalculatorHandlers.HandleLatestDraws)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.history")).
+					Get("/me/crs-scores", crsCalculatorHandlers.HandleScoreHistory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Get("/admin/crs/rulesets", crsCalculatorHandlers.HandleAdminListRulesets)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Post("/admin/crs/rulesets", crsCalculatorHandlers.HandleAdminCreateRuleset)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Post("/admin/crs/rulesets/generate", crsCalculatorHandlers.HandleAdminGenerateRuleset)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Patch("/admin/crs/rulesets/{id}/approve", crsCalculatorHandlers.HandleAdminApproveRuleset)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Get("/admin/crs/draws", crsCalculatorHandlers.HandleAdminListDraws)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Post("/admin/crs/draws", crsCalculatorHandlers.HandleAdminCreateDraw)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "crs_calculator.manage")).
+					Patch("/admin/crs/draws/{id}", crsCalculatorHandlers.HandleAdminUpdateDraw)
 			})
 
 			// §95 — CV Formatter (ADR-103)
