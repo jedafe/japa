@@ -132,6 +132,66 @@ func (q *Queries) DeleteIntelSourceChannel(ctx context.Context, id pgtype.UUID) 
 	return err
 }
 
+const getIntelEmailChannelByAddress = `-- name: GetIntelEmailChannelByAddress :one
+SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_source_channels
+WHERE crawl_method = 'email' AND enabled
+  AND lower(provider_config->>'inbound_address') = lower($1)
+LIMIT 1
+`
+
+// Inbound-email routing (Phase 3): resolve the delivery's recipient to the
+// enabled email channel carrying it in provider_config.inbound_address.
+func (q *Queries) GetIntelEmailChannelByAddress(ctx context.Context, lower string) (IntelSourceChannel, error) {
+	row := q.db.QueryRow(ctx, getIntelEmailChannelByAddress, lower)
+	var i IntelSourceChannel
+	err := row.Scan(
+		&i.ID,
+		&i.SourceID,
+		&i.Label,
+		&i.EntryUrl,
+		&i.CrawlMethod,
+		&i.EntityTypes,
+		&i.Pipeline,
+		&i.ProviderConfig,
+		&i.CrawlFrequencyMins,
+		&i.Enabled,
+		&i.Origin,
+		&i.RelevanceMode,
+		&i.RelevanceTopics,
+		&i.RelevanceUrlPatterns,
+		&i.LastCrawledAt,
+		&i.LastSuccessAt,
+		&i.LastErrorAt,
+		&i.LastErrorMessage,
+		&i.LastChangedAt,
+		&i.ConsecutiveFailures,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getIntelInboundEvent = `-- name: GetIntelInboundEvent :one
+SELECT id, channel_id, payload, headers, content_type, content_hash, received_at, processed_at, status FROM intel_inbound_events WHERE id = $1
+`
+
+func (q *Queries) GetIntelInboundEvent(ctx context.Context, id pgtype.UUID) (IntelInboundEvent, error) {
+	row := q.db.QueryRow(ctx, getIntelInboundEvent, id)
+	var i IntelInboundEvent
+	err := row.Scan(
+		&i.ID,
+		&i.ChannelID,
+		&i.Payload,
+		&i.Headers,
+		&i.ContentType,
+		&i.ContentHash,
+		&i.ReceivedAt,
+		&i.ProcessedAt,
+		&i.Status,
+	)
+	return i, err
+}
+
 const getIntelSourceChannel = `-- name: GetIntelSourceChannel :one
 SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_source_channels WHERE id = $1
 `
@@ -202,6 +262,24 @@ func (q *Queries) GetIntelSourceDefaultChannel(ctx context.Context, sourceID pgt
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getLatestIntelManifestDocHashByChannel = `-- name: GetLatestIntelManifestDocHashByChannel :one
+SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
+  AND parent_document_id IS NULL
+  AND content_type = 'application/x-intel-manifest'
+ORDER BY retrieved_at DESC LIMIT 1
+`
+
+// Manifest-channel prior hash (Phase 2): the newest MANIFEST doc only —
+// the content_type marker keeps a fallback-ladder document (e.g. a static
+// fetch that covered a failed sitemap crawl) from becoming the manifest's
+// diff baseline and reading "changed" on every subsequent crawl.
+func (q *Queries) GetLatestIntelManifestDocHashByChannel(ctx context.Context, channelID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestIntelManifestDocHashByChannel, channelID)
+	var content_hash string
+	err := row.Scan(&content_hash)
+	return content_hash, err
 }
 
 const getLatestIntelRawDocHashByChannel = `-- name: GetLatestIntelRawDocHashByChannel :one
@@ -337,7 +415,7 @@ func (q *Queries) MarkIntelChannelChanged(ctx context.Context, id pgtype.UUID) e
 
 const markIntelInboundEvent = `-- name: MarkIntelInboundEvent :exec
 UPDATE intel_inbound_events SET status = $2, processed_at = now()
-WHERE id = $1
+WHERE id = $1 AND status = 'received'
 `
 
 type MarkIntelInboundEventParams struct {
@@ -345,6 +423,9 @@ type MarkIntelInboundEventParams struct {
 	Status string      `json:"status"`
 }
 
+// Transitions are one-way out of 'received': a terminal event
+// (processed/failed/ignored) is immutable so a late duplicate task run
+// can never flip a finished delivery back or forward.
 func (q *Queries) MarkIntelInboundEvent(ctx context.Context, arg MarkIntelInboundEventParams) error {
 	_, err := q.db.Exec(ctx, markIntelInboundEvent, arg.ID, arg.Status)
 	return err

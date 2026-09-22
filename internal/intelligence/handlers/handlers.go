@@ -75,6 +75,7 @@ const TaskReportNotifyAdmin = "report:notify_admin"
 // avoids an import cycle on internal/config.
 type SettingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // videoStore is the small surface of the video store needed for source item

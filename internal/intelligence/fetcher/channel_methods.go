@@ -119,21 +119,45 @@ type sitemapIndex struct {
 	} `xml:"sitemap"`
 }
 
+// manifestKindURLSet / manifestKindIndex identify the sitemap document
+// shape a manifest was built from. The value rides the raw doc's
+// http_headers as X-Intel-Manifest-Kind so detect_changes knows whether
+// fanned-out children are content pages (urlset → static fetch) or
+// member sitemaps (index → sitemap fetch, producing a nested manifest).
+const (
+	// ManifestKindURLSet marks a manifest built from a sitemap urlset —
+	// fanned-out children are content pages fetched via the static adapter.
+	ManifestKindURLSet = "urlset"
+	// ManifestKindIndex marks a manifest built from a sitemapindex —
+	// fanned-out children are member sitemaps fetched via the sitemap
+	// adapter, producing nested manifest docs.
+	ManifestKindIndex = "index"
+
+	// ManifestKindHeader is the http_headers key recording the manifest's
+	// source shape on the persisted raw document.
+	ManifestKindHeader = "X-Intel-Manifest-Kind"
+)
+
 // fetchSitemapManifest retrieves the sitemap via the static path and rewrites
 // the body as a URL+lastmod manifest (one "url<TAB>lastmod" line per entry,
 // lastmod empty when absent) — the compact document the curator diffs and
-// walks. Sitemap indexes are flattened the same way (member sitemap URLs
-// become manifest rows; the curator decides whether to crawl them).
+// walks. Sitemap indexes are flattened the same way, but the doc records
+// the source shape so member sitemaps fan out as nested manifests rather
+// than static page fetches.
 func (c *Composite) fetchSitemapManifest(ctx context.Context, src sources.Source) (FetchResult, error) {
 	res, err := c.static.Fetch(ctx, src)
 	if err != nil {
 		return FetchResult{}, err
 	}
 
-	manifest, err := sitemapManifest(res.Body)
+	manifest, kind, err := sitemapManifest(res.Body)
 	if err != nil {
 		return FetchResult{}, err
 	}
+	if res.Headers == nil {
+		res.Headers = map[string]string{}
+	}
+	res.Headers[ManifestKindHeader] = kind
 
 	return FetchResult{
 		HTTPStatus:  res.HTTPStatus,
@@ -190,10 +214,11 @@ func DiffManifest(cur, prev []byte) []string {
 }
 
 // sitemapManifest parses a sitemap urlset or sitemapindex document and
-// returns the URL+lastmod manifest. An empty urlset is an error — an
-// empty sitemap is almost always a fetch or parse defect, and surfacing it
-// beats hashing an empty manifest into a "changed" detection cycle.
-func sitemapManifest(body []byte) ([]byte, error) {
+// returns the URL+lastmod manifest plus the document kind ("urlset" or
+// "index"). An empty urlset is an error — an empty sitemap is almost
+// always a fetch or parse defect, and surfacing it beats hashing an empty
+// manifest into a "changed" detection cycle.
+func sitemapManifest(body []byte) (manifest []byte, kind string, err error) {
 	var b strings.Builder
 
 	var urlset sitemapURLSet
@@ -202,7 +227,7 @@ func sitemapManifest(body []byte) ([]byte, error) {
 			fmt.Fprintf(&b, "%s\t%s\n", strings.TrimSpace(u.Loc), strings.TrimSpace(u.LastMod))
 		}
 
-		return []byte(b.String()), nil
+		return []byte(b.String()), ManifestKindURLSet, nil
 	}
 
 	var index sitemapIndex
@@ -211,8 +236,8 @@ func sitemapManifest(body []byte) ([]byte, error) {
 			fmt.Fprintf(&b, "%s\t%s\n", strings.TrimSpace(sm.Loc), strings.TrimSpace(sm.LastMod))
 		}
 
-		return []byte(b.String()), nil
+		return []byte(b.String()), ManifestKindIndex, nil
 	}
 
-	return nil, errors.New("fetcher: sitemap: no url or sitemap entries found")
+	return nil, "", errors.New("fetcher: sitemap: no url or sitemap entries found")
 }

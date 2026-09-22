@@ -13,8 +13,10 @@
 package comparison
 
 import (
+	"context"
 	"math"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/comparison/resolver"
@@ -82,15 +84,22 @@ var DefaultComparisonTypes = []struct {
 	{Name: "Courses", Slug: "courses", Description: "Compare courses and training programs", ItemLabel: "Course"},
 }
 
+// TierResolver resolves a user's effective unified tier (regular/pro/business)
+// for per-tier quota lookups. Implemented by the tiers package.
+type TierResolver interface {
+	ResolveUserTier(ctx context.Context, userID pgtype.UUID) (string, error)
+}
+
 // Service provides comparison operations with reader/writer pool separation.
 type Service struct {
-	store       *Store
-	db          *db.DB
-	contentSvc  *content.Service
-	cfSvc       *customfields.Service
-	settingsSvc *config.Settings
-	resolver    *resolver.Registry
-	vk          valkeycompat.Cmdable
+	store        *Store
+	db           *db.DB
+	contentSvc   *content.Service
+	cfSvc        *customfields.Service
+	settingsSvc  *config.Settings
+	resolver     *resolver.Registry
+	vk           valkeycompat.Cmdable
+	tierResolver TierResolver
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -125,4 +134,10 @@ func (s *Service) SetResolver(r *resolver.Registry) {
 // SetValkey injects the Valkey client for selection-token and cache operations.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) {
 	s.vk = vk
+}
+
+// SetTierResolver injects the unified-tier resolver used for per-tier quota
+// lookups (e.g. jce.comparisons.max_per_day.{tier}).
+func (s *Service) SetTierResolver(tr TierResolver) {
+	s.tierResolver = tr
 }

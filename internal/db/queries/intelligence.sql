@@ -121,7 +121,11 @@ RETURNING *;
 SELECT * FROM intel_raw_documents WHERE id = $1;
 
 -- name: GetLatestIntelRawDocHash :one
-SELECT content_hash FROM intel_raw_documents WHERE source_id = $1 ORDER BY retrieved_at DESC LIMIT 1;
+-- Derived (manifest child) docs are excluded — a source-level baseline
+-- must compare against top-level captures, not fan-out pages (Phase 2).
+SELECT content_hash FROM intel_raw_documents WHERE source_id = $1
+  AND parent_document_id IS NULL
+ORDER BY retrieved_at DESC LIMIT 1;
 
 -- name: GetLatestIntelRawDocHashForChannelURL :one
 -- Derived-fetch (Phase 2 manifest fan-out) prior hash: the newest raw doc
@@ -135,9 +139,21 @@ WHERE channel_id = $1 AND url = $2 ORDER BY retrieved_at DESC LIMIT 1;
 -- manifest-diff fan-out (sitemap/wayback Phase 2) compares the new
 -- manifest body against this one to find new/changed URLs. Derived child
 -- docs share channel_id but are page content, not manifests, so they are
--- excluded via parent_document_id IS NULL.
+-- excluded via parent_document_id IS NULL; the content_type marker
+-- additionally keeps non-manifest fallback-ladder docs (e.g. a static
+-- fetch that covered a failed sitemap crawl) out of the diff baseline.
 SELECT * FROM intel_raw_documents WHERE channel_id = $1 AND id != $2
   AND parent_document_id IS NULL
+  AND content_type = 'application/x-intel-manifest'
+ORDER BY retrieved_at DESC LIMIT 1;
+
+-- name: GetPrevIntelRawDocForChannelURL :one
+-- The previous MANIFEST document for one derived child URL (excluding the
+-- given doc) — nested manifest expansion (sitemapindex member fetched as
+-- a derived sitemap doc) diffs against the previous capture of THAT URL,
+-- not the channel's top-level manifest.
+SELECT * FROM intel_raw_documents WHERE channel_id = $1 AND url = $2 AND id != $3
+  AND content_type = 'application/x-intel-manifest'
 ORDER BY retrieved_at DESC LIMIT 1;
 
 -- name: CreateIntelRecord :one

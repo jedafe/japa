@@ -279,14 +279,12 @@ func enqueueIntel(taskType string, payload []byte) {
 		return
 	}
 
-	queue := QueueForTask(taskType)
-	// taskDefaults applies the per-task Timeout/MaxRetry declared in
-	// enqueuer.go (e.g. intel:xhr_sniff's 2m/2) — without it, follow-up
-	// enqueues silently fell back to asynq's global defaults.
-	opts := append([]asynq.Option{asynq.Queue(queue)}, taskDefaults(taskType)...)
+	// TaskOpts applies the queue tier + per-task Timeout/MaxRetry declared
+	// in enqueuer.go — without it, follow-up enqueues silently fell back
+	// to asynq's global defaults.
 	if _, err := intelAsynqClient.Enqueue(
 		asynq.NewTask(taskType, payload),
-		opts...,
+		TaskOpts(taskType)...,
 	); err != nil {
 		slog.Error("intel: failed to enqueue follow-up task", "task", taskType, "error", err)
 	}
@@ -346,6 +344,10 @@ type intelChannelPayload struct {
 	// (normal pipeline dispatch), not manifests.
 	URLOverride string `json:"url_override,omitempty"`
 	ParentDocID string `json:"parent_document_id,omitempty"`
+	// SitemapChild marks a derived fetch of a sitemapindex member: the
+	// child is itself a sitemap, so it fetches via the sitemap adapter
+	// (producing a nested manifest doc) instead of the static adapter.
+	SitemapChild bool `json:"sitemap_child,omitempty"`
 }
 
 type intelDetectChangesPayload struct {
@@ -598,6 +600,20 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 			enqueueIntel(TypeIntelXHRSniff, payload)
 		}
 		return nil
+	case method == sources.CrawlMethodSearch:
+		// search channels poll the configured SERP provider via their own
+		// task (queue tier + observability per the Phase-3 plan); the task
+		// re-enters the shared fetch core below.
+		slog.Info("task:intel:fetch_channel: search channel, enqueuing search poll", "channel_id", channelID.String())
+		payload := marshalPayload(intelChannelPayload{
+			Version:   intelPayloadVersion,
+			SourceID:  ch.SourceID.String(),
+			ChannelID: ch.ID.String(),
+		})
+		if payload != nil {
+			enqueueIntel(TypeIntelSearchPoll, payload)
+		}
+		return nil
 	}
 
 	// Load the parent source for trust_level/license context and the
@@ -643,18 +659,21 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 		}
 		opts.ParentDocID = parentID
 	}
+	opts.SitemapChild = p.SitemapChild
 
 	return intelFetchChannel(ctx, "task:intel:fetch_channel", src, ch, opts)
 }
 
 // intelFetchOpts carries the Phase-2 derived-fetch overrides: URLOverride
 // replaces the channel's entry point for this fetch (manifest child URL —
-// fetched via the static adapter) and ParentDocID stamps the raw doc's
+// fetched via the static adapter, or the sitemap adapter when SitemapChild
+// marks a sitemapindex member) and ParentDocID stamps the raw doc's
 // parent_document_id so detect_changes dispatches it to the channel's
 // pipeline instead of treating it as a manifest.
 type intelFetchOpts struct {
-	URLOverride string
-	ParentDocID pgtype.UUID
+	URLOverride  string
+	ParentDocID  pgtype.UUID
+	SitemapChild bool
 }
 
 // intelFetchChannel is the shared fetch core for intel:fetch_channel and the
@@ -676,13 +695,18 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 	}
 
 	// Derived fetch (Phase-2 manifest fan-out): the effective channel
-	// points at the child URL via the static adapter — robots/rate-limit
-	// preflight and the raw doc's url field must reflect the page actually
-	// fetched. The channel row itself is untouched.
+	// points at the child URL via the static adapter — or the sitemap
+	// adapter when the child is a sitemapindex member (nested manifest) —
+	// robots/rate-limit preflight and the raw doc's url field must reflect
+	// the page actually fetched. The channel row itself is untouched.
 	effCh := ch
 	if opts.URLOverride != "" {
 		effCh.EntryUrl = opts.URLOverride
-		effCh.CrawlMethod = string(sources.CrawlMethodStatic)
+		if opts.SitemapChild {
+			effCh.CrawlMethod = string(sources.CrawlMethodSitemap)
+		} else {
+			effCh.CrawlMethod = string(sources.CrawlMethodStatic)
+		}
 	}
 
 	// Pre-flight checks: channel crawl lock, rate limit, license, robots.txt.
@@ -700,9 +724,15 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 	// Derived fetches compare per-URL — a child page's previous capture,
 	// not the manifest's hash.
 	var priorHash string
-	if opts.URLOverride != "" {
+	switch {
+	case opts.URLOverride != "":
 		priorHash, _ = intelStores.GetLatestIntelRawDocHashForChannelURL(ctx, ch.ID, opts.URLOverride)
-	} else {
+	case intelManifestMethod(ch.CrawlMethod):
+		// Manifest channels compare against the previous MANIFEST doc —
+		// a fallback-ladder doc (e.g. static fetch covering a failed
+		// sitemap crawl) must not become the diff baseline.
+		priorHash, _ = intelStores.GetLatestIntelManifestDocHashByChannel(ctx, ch.ID)
+	default:
 		priorHash, _ = intelStores.GetLatestIntelRawDocHashForChannel(ctx, ch.ID)
 	}
 
@@ -1112,28 +1142,45 @@ func intelManifestMethod(method string) bool {
 // intelIsManifestDoc reports whether a raw document is a sitemap/wayback
 // manifest — change-detection signal only, never pipeline content. The
 // content-type marker (not the channel's crawl_method) is authoritative so
-// the check survives channel deletion/repurposing; a derived child doc
-// (parent_document_id set) is never a manifest even though its parent is.
+// the check survives channel deletion/repurposing. A derived doc can still
+// be a manifest: sitemapindex members fetched via the sitemap adapter
+// produce nested manifest docs (parent_document_id set) that expand again.
 func intelIsManifestDoc(doc gen.IntelRawDocument) bool {
-	return !doc.ParentDocumentID.Valid &&
-		doc.ContentType != nil && *doc.ContentType == fetcher.ManifestContentType
+	return doc.ContentType != nil && *doc.ContentType == fetcher.ManifestContentType
 }
 
 // intelExpandManifest fans out a changed manifest (Phase-2 manifest
-// fan-out): diffs the new url<TAB>stamp body against the channel's previous
-// manifest doc and enqueues one derived intel:fetch_channel per new/changed
-// URL — bounded by provider_config.max_urls then
+// fan-out): diffs the new url<TAB>stamp body against the previous manifest
+// and enqueues one derived intel:fetch_channel per new/changed URL —
+// bounded by provider_config.max_urls then
 // intel.sitemap.max_children_per_crawl (default 25), filtered by
 // provider_config.url_filter glob on the URL path. Derived fetches stamp
 // parent_document_id so their docs dispatch to the channel's pipeline.
 // Invalid child URLs (non-http, private literals) are skipped — manifests
 // are attacker-controlled content.
+//
+// The diff baseline depends on the manifest's position: top-level docs
+// compare against the channel's previous manifest; derived manifests
+// (sitemapindex members) compare against the previous capture of their own
+// URL. Children of a sitemapindex are themselves sitemaps — they enqueue
+// with sitemap_child so the fetch produces a nested manifest doc that
+// expands again instead of a static page body that can only extract junk.
+// provider_config is resolved channel-first (same as fetch time) so a
+// '{}' channel still honours the source's max_urls/url_filter.
 func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifestDoc gen.IntelRawDocument) {
 	var prevBody []byte
-	if prev, err := intelStores.GetPrevIntelRawDocByChannel(ctx, ch.ID, manifestDoc.ID); err == nil {
+	var prevErr error
+	var prev gen.IntelRawDocument
+
+	if manifestDoc.ParentDocumentID.Valid {
+		prev, prevErr = intelStores.GetPrevIntelRawDocForChannelURL(ctx, ch.ID, manifestDoc.Url, manifestDoc.ID)
+	} else {
+		prev, prevErr = intelStores.GetPrevIntelRawDocByChannel(ctx, ch.ID, manifestDoc.ID)
+	}
+	if prevErr == nil {
 		prevBody = prev.Body
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		slog.Warn("task:intel:detect_changes: prev manifest lookup failed, treating all URLs as changed", "channel_id", ch.ID.String(), "error", err)
+	} else if !errors.Is(prevErr, pgx.ErrNoRows) {
+		slog.Warn("task:intel:detect_changes: prev manifest lookup failed, treating all URLs as changed", "channel_id", ch.ID.String(), "error", prevErr)
 	}
 
 	changed := fetcher.DiffManifest(manifestDoc.Body, prevBody)
@@ -1141,8 +1188,15 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 		return
 	}
 
+	providerConfig := ch.ProviderConfig
+	if intelSourcesStore != nil {
+		if src, err := intelSourcesStore.Get(ctx, ch.SourceID); err == nil {
+			providerConfig = fetcher.ResolveChannelProviderConfig(ch, src)
+		}
+	}
+
 	var cfg map[string]any
-	_ = json.Unmarshal(ch.ProviderConfig, &cfg)
+	_ = json.Unmarshal(providerConfig, &cfg)
 
 	filter := intelCfgString(cfg, "url_filter")
 	maxChildren := intelCfgInt(cfg, "max_urls", 0)
@@ -1152,6 +1206,11 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 	if maxChildren <= 0 {
 		maxChildren = 25
 	}
+
+	// Sitemapindex children are member sitemaps — fetch them as nested
+	// manifests (sitemap adapter), not static pages. The shape rides the
+	// manifest doc's recorded headers (X-Intel-Manifest-Kind).
+	sitemapChild := intelManifestKind(manifestDoc) == fetcher.ManifestKindIndex
 
 	enqueued := 0
 	for _, u := range changed {
@@ -1169,11 +1228,12 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 		}
 
 		payload := marshalPayload(intelChannelPayload{
-			Version:     intelPayloadVersion,
-			ChannelID:   ch.ID.String(),
-			SourceID:    ch.SourceID.String(),
-			URLOverride: u,
-			ParentDocID: manifestDoc.ID.String(),
+			Version:      intelPayloadVersion,
+			ChannelID:    ch.ID.String(),
+			SourceID:     ch.SourceID.String(),
+			URLOverride:  u,
+			ParentDocID:  manifestDoc.ID.String(),
+			SitemapChild: sitemapChild,
 		})
 		if payload == nil {
 			continue
@@ -1182,7 +1242,20 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 		enqueued++
 	}
 
-	slog.Info("task:intel:detect_changes: manifest fan-out", "channel_id", ch.ID.String(), "raw_doc_id", manifestDoc.ID.String(), "changed", len(changed), "enqueued", enqueued)
+	slog.Info("task:intel:detect_changes: manifest fan-out", "channel_id", ch.ID.String(), "raw_doc_id", manifestDoc.ID.String(), "changed", len(changed), "enqueued", enqueued, "sitemap_children", sitemapChild)
+}
+
+// intelManifestKind reads the manifest shape marker the fetch adapter
+// stamped into the raw doc's http_headers (fetcher.ManifestKindHeader) —
+// "index" for sitemapindex documents, "urlset" for plain urlsets, "" when
+// absent (wayback manifests and pre-marker docs).
+func intelManifestKind(doc gen.IntelRawDocument) string {
+	var headers map[string]string
+	if err := json.Unmarshal(doc.HttpHeaders, &headers); err != nil {
+		return ""
+	}
+
+	return headers[fetcher.ManifestKindHeader]
 }
 
 // intelManifestURLMatch applies provider_config.url_filter — a single glob

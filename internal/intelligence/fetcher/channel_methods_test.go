@@ -79,7 +79,7 @@ func TestCompositeFetch_MethodDispatch(t *testing.T) {
 		{"render", "", "", true, ErrAdapterDisabled, ""},
 		{"social", "", `{"provider":"reddit","handle":"r/test"}`, true, ErrAdapterDisabled, ""},
 		{"git", "", `{"repo":"http://127.0.0.1:0/x"}`, true, nil, "private IP"},
-		{"search", "", "", true, ErrMethodNotImplemented, ""},
+		{"search", "", `{"query":"x"}`, true, ErrAdapterDisabled, ""},
 		{"bogus_method", "", "", true, ErrMethodNotImplemented, ""},
 		{"oneshot", "https://127.0.0.1:0/page", "", true, nil, ""},
 		{"wayback", "", `{"cdx_endpoint":"http://127.0.0.1:0/"}`, true, nil, "wayback"},
@@ -461,29 +461,25 @@ func TestResolveChannelProviderConfig(t *testing.T) {
 	}
 }
 
-// TestPendingFetchMethod pins the Phase-3 stub set the probe_verify worker
-// filters out of channel proposals — the same methods Composite.Fetch
-// answers ErrMethodNotImplemented for. Drift between the two would let
-// un-fetchable channels materialize (or over-filter implemented ones).
+// TestPendingFetchMethod pins the pending-adapter set the probe_verify
+// worker filters out of channel proposals — the same methods
+// Composite.Fetch answers ErrMethodNotImplemented for. Phase 3 emptied
+// the set (search landed); drift between the two would let un-fetchable
+// channels materialize (or over-filter implemented ones).
 func TestPendingFetchMethod(t *testing.T) {
 	t.Parallel()
 
-	pending := []string{"search"}
-	for _, m := range pending {
-		if !PendingFetchMethod(m) {
-			t.Errorf("PendingFetchMethod(%q) = false, want true", m)
-		}
-
+	for m := range pendingFetchMethods {
 		// The dispatch must agree — a pending method answers
 		// ErrMethodNotImplemented from Fetch.
-		ch := sources.Channel{CrawlMethod: m, EntryUrl: "https://example.com"}
+		ch := sources.Channel{CrawlMethod: string(m), EntryUrl: "https://example.com"}
 		_, err := testComposite(nil).Fetch(t.Context(), sources.Source{}, ch)
 		if !errors.Is(err, ErrMethodNotImplemented) {
 			t.Errorf("Fetch(%q) err = %v, want ErrMethodNotImplemented", m, err)
 		}
 	}
 
-	implemented := []string{"static", "rss", "api", "pdf", "ocr", "ical", "tabular", "jsonld", "sitemap", "render", "git", "social", "wayback", "oneshot", "manual", "email", "webhook", "xhr_sniff"}
+	implemented := []string{"static", "rss", "api", "pdf", "ocr", "ical", "tabular", "jsonld", "sitemap", "render", "git", "social", "wayback", "oneshot", "manual", "email", "webhook", "xhr_sniff", "search"}
 	for _, m := range implemented {
 		if PendingFetchMethod(m) {
 			t.Errorf("PendingFetchMethod(%q) = true, want false", m)

@@ -8,14 +8,18 @@ import (
 	"github.com/hibiken/asynq"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 )
 
 // oneshotRequest is the POST /api/v1/sources/oneshot body — a user-submitted
 // URL to fetch once (share-target/bookmarklet; intel-channels Phase 2,
-// spec §3). categories optionally hint entity types for the pipeline.
+// spec §3). categories optionally hint entity types for the pipeline;
+// entity_hint pins one registered entity type when the caller knows what
+// the page carries.
 type oneshotRequest struct {
 	URL        string   `json:"url"`
 	Categories []string `json:"categories"`
+	EntityHint string   `json:"entity_hint"`
 }
 
 // HandleOneshotSource records the URL as a oneshot channel on the shared
@@ -52,22 +56,26 @@ func (h *Handlers) HandleOneshotSource(w http.ResponseWriter, r *http.Request) {
 			limit = h.settings.GetIntOr(r.Context(), "intel.probe.rate_limit_per_hr", defaultProbeRateLimit)
 		}
 
-		key := "jc:intel:probe_quota:" + userID.String()
-		count, incrErr := h.rdb.Incr(r.Context(), key).Result()
+		count, incrErr := h.incrProbeQuota(r.Context(), userID)
 		if incrErr != nil {
 			slog.Warn("intel: oneshot quota increment failed; allowing request", "user_id", userID.String(), "error", incrErr)
-		} else {
-			if count == 1 {
-				h.rdb.Expire(r.Context(), key, probeQuotaWindow)
-			}
-			if count > int64(limit) {
-				errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Hourly limit reached; try again later")
-				return
-			}
+		} else if count > int64(limit) {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Hourly limit reached; try again later")
+			return
 		}
 	}
 
-	ch, created, err := h.intelSources.SubmitOneshot(r.Context(), req.URL, req.Categories)
+	// entity_hint optionally names the expected entity type — it must be a
+	// registered schema type or the channel would carry an unresolvable
+	// hint (spec §3).
+	if req.EntityHint != "" {
+		if _, ok := schemas.ForEntityType(req.EntityHint); !ok {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_hint", "entity_hint must be a registered entity type")
+			return
+		}
+	}
+
+	ch, created, err := h.intelSources.SubmitOneshot(r.Context(), req.URL, req.Categories, req.EntityHint)
 	if err != nil {
 		writeChannelServiceErr(w, err, "intel: oneshot submit failed", "submit_failed", "Could not submit the URL")
 		return

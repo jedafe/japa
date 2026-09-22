@@ -833,9 +833,13 @@ func (q *Queries) GetIntelSourceByURL(ctx context.Context, sourceUrl string) (In
 }
 
 const getLatestIntelRawDocHash = `-- name: GetLatestIntelRawDocHash :one
-SELECT content_hash FROM intel_raw_documents WHERE source_id = $1 ORDER BY retrieved_at DESC LIMIT 1
+SELECT content_hash FROM intel_raw_documents WHERE source_id = $1
+  AND parent_document_id IS NULL
+ORDER BY retrieved_at DESC LIMIT 1
 `
 
+// Derived (manifest child) docs are excluded — a source-level baseline
+// must compare against top-level captures, not fan-out pages (Phase 2).
 func (q *Queries) GetLatestIntelRawDocHash(ctx context.Context, sourceID pgtype.UUID) (string, error) {
 	row := q.db.QueryRow(ctx, getLatestIntelRawDocHash, sourceID)
 	var content_hash string
@@ -866,6 +870,7 @@ func (q *Queries) GetLatestIntelRawDocHashForChannelURL(ctx context.Context, arg
 const getPrevIntelRawDocByChannel = `-- name: GetPrevIntelRawDocByChannel :one
 SELECT id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, channel_id, parent_document_id FROM intel_raw_documents WHERE channel_id = $1 AND id != $2
   AND parent_document_id IS NULL
+  AND content_type = 'application/x-intel-manifest'
 ORDER BY retrieved_at DESC LIMIT 1
 `
 
@@ -878,9 +883,46 @@ type GetPrevIntelRawDocByChannelParams struct {
 // manifest-diff fan-out (sitemap/wayback Phase 2) compares the new
 // manifest body against this one to find new/changed URLs. Derived child
 // docs share channel_id but are page content, not manifests, so they are
-// excluded via parent_document_id IS NULL.
+// excluded via parent_document_id IS NULL; the content_type marker
+// additionally keeps non-manifest fallback-ladder docs (e.g. a static
+// fetch that covered a failed sitemap crawl) out of the diff baseline.
 func (q *Queries) GetPrevIntelRawDocByChannel(ctx context.Context, arg GetPrevIntelRawDocByChannelParams) (IntelRawDocument, error) {
 	row := q.db.QueryRow(ctx, getPrevIntelRawDocByChannel, arg.ChannelID, arg.ID)
+	var i IntelRawDocument
+	err := row.Scan(
+		&i.ID,
+		&i.SourceID,
+		&i.Url,
+		&i.HttpStatus,
+		&i.HttpHeaders,
+		&i.ContentType,
+		&i.Body,
+		&i.ContentHash,
+		&i.RetrievedAt,
+		&i.ChannelID,
+		&i.ParentDocumentID,
+	)
+	return i, err
+}
+
+const getPrevIntelRawDocForChannelURL = `-- name: GetPrevIntelRawDocForChannelURL :one
+SELECT id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, channel_id, parent_document_id FROM intel_raw_documents WHERE channel_id = $1 AND url = $2 AND id != $3
+  AND content_type = 'application/x-intel-manifest'
+ORDER BY retrieved_at DESC LIMIT 1
+`
+
+type GetPrevIntelRawDocForChannelURLParams struct {
+	ChannelID pgtype.UUID `json:"channel_id"`
+	Url       string      `json:"url"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// The previous MANIFEST document for one derived child URL (excluding the
+// given doc) — nested manifest expansion (sitemapindex member fetched as
+// a derived sitemap doc) diffs against the previous capture of THAT URL,
+// not the channel's top-level manifest.
+func (q *Queries) GetPrevIntelRawDocForChannelURL(ctx context.Context, arg GetPrevIntelRawDocForChannelURLParams) (IntelRawDocument, error) {
+	row := q.db.QueryRow(ctx, getPrevIntelRawDocForChannelURL, arg.ChannelID, arg.Url, arg.ID)
 	var i IntelRawDocument
 	err := row.Scan(
 		&i.ID,

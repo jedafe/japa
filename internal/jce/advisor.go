@@ -40,7 +40,7 @@ func advisorCacheKey(contentID, profileID pgtype.UUID, seed string) string {
 
 	h := sha256.Sum256([]byte(seed))
 
-	return fmt.Sprintf("jc:jce:advisor::%s:%s:%x", contentID.String(), pid, h)
+	return fmt.Sprintf("jc:jce:advisor:%s:%s:%x", contentID.String(), pid, h)
 }
 
 // advisorCacheSeed builds a deterministic seed for the cache key that depends

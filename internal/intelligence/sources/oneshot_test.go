@@ -38,7 +38,7 @@ func TestSubmitOneshot(t *testing.T) {
 
 	entryURL := "https://example.com/oneshot-dedupe-test"
 
-	ch1, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"})
+	ch1, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestSubmitOneshot(t *testing.T) {
 	}
 
 	// Identical resubmission dedupes — same row, created=false.
-	ch2, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"})
+	ch2, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot resubmit: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestSubmitOneshot(t *testing.T) {
 	}
 
 	// Scheme-less input normalizes to https and dedupes to the same row.
-	ch3, created, err := svc.SubmitOneshot(ctx, "example.com/oneshot-dedupe-test", []string{"news"})
+	ch3, created, err := svc.SubmitOneshot(ctx, "example.com/oneshot-dedupe-test", []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot scheme-less: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestSubmitOneshot(t *testing.T) {
 	if err := store.UpdateChannelEnabled(ctx, ch1.ID, false); err != nil {
 		t.Fatalf("disable channel: %v", err)
 	}
-	ch4, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"})
+	ch4, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot after disable: %v", err)
 	}
@@ -96,9 +96,23 @@ func TestSubmitOneshot(t *testing.T) {
 			created, ch4.Enabled, ch4.ID, ch1.ID)
 	}
 
+	// entity_hint prepends the caller-asserted entity type — and because
+	// entity_types participates in the dedupe constraint, a hinted
+	// submission is a distinct channel from the unhinted one.
+	ch5, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "article")
+	if err != nil {
+		t.Fatalf("SubmitOneshot entity_hint: %v", err)
+	}
+	if !created {
+		t.Fatal("hinted submission: created = false, want true (distinct entity_types → distinct channel)")
+	}
+	if len(ch5.EntityTypes) == 0 || ch5.EntityTypes[0] != "article" {
+		t.Errorf("entity_types = %v, want article first", ch5.EntityTypes)
+	}
+
 	// Invalid inputs are rejected before any row is created.
 	for _, bad := range []string{"", "ftp://x", "http://127.0.0.1/internal"} {
-		if _, _, err := svc.SubmitOneshot(ctx, bad, nil); err == nil {
+		if _, _, err := svc.SubmitOneshot(ctx, bad, nil, ""); err == nil {
 			t.Errorf("SubmitOneshot(%q): expected error", bad)
 		}
 	}

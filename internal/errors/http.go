@@ -107,6 +107,7 @@ func stripSentinelPrefix(err, sentinel error) string {
 //	ErrMaxDepth                        → 400 depth_exceeded
 //	ErrInvalidStatusTransition         → 409 invalid_status_transition
 //	ErrInsufficientBalance             → 422 insufficient_balance
+//	ErrRateLimited                     → 429 rate_limit_exceeded
 //	ErrNotImplemented                  → 501 not_implemented
 //	default                            → 500 internal_error
 func HandleServiceError(w http.ResponseWriter, err error) {
@@ -148,6 +149,10 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 		WriteError(w, http.StatusUnprocessableEntity, "insufficient_balance", stripSentinelPrefix(err, ErrInsufficientBalance))
 	case errors.Is(err, ErrScoringDisabled):
 		WriteError(w, http.StatusUnprocessableEntity, "scoring_disabled", stripSentinelPrefix(err, ErrScoringDisabled))
+
+	// --- 429 Too Many Requests ---
+	case errors.Is(err, ErrRateLimited):
+		WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded", stripSentinelPrefix(err, ErrRateLimited))
 
 	// --- 501 Not Implemented ---
 	case errors.Is(err, ErrNotImplemented):

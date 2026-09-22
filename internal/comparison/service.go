@@ -621,7 +621,7 @@ func (s *Service) UpdateComparison(ctx context.Context, id pgtype.UUID, input Up
 	}
 
 	if !bypassOwnership {
-		if existing.AuthorID.Valid && existing.AuthorID.Bytes != input.EditedBy.Bytes {
+		if !existing.AuthorID.Valid || existing.AuthorID.Bytes != input.EditedBy.Bytes {
 			return gen.UpdateContentRow{}, ErrNotOwner
 		}
 	}
@@ -657,7 +657,7 @@ func (s *Service) DeleteComparison(ctx context.Context, id, deletedBy pgtype.UUI
 	}
 
 	if !bypassOwnership {
-		if existing.AuthorID.Valid && existing.AuthorID.Bytes != deletedBy.Bytes {
+		if !existing.AuthorID.Valid || existing.AuthorID.Bytes != deletedBy.Bytes {
 			return ErrNotOwner
 		}
 	}
@@ -869,7 +869,7 @@ func (s *Service) VerifyComparisonOwnership(ctx context.Context, contentID, user
 		return fmt.Errorf("getting comparison for ownership check: %w", err)
 	}
 
-	if existing.AuthorID.Valid && existing.AuthorID.Bytes != userID.Bytes {
+	if !existing.AuthorID.Valid || existing.AuthorID.Bytes != userID.Bytes {
 		return ErrNotOwner
 	}
 

@@ -181,8 +181,26 @@ func (s *Service) GetIngestionJob(ctx context.Context, id pgtype.UUID) (Ingestio
 	return s.ingestion.get(ctx, id)
 }
 
-// ListIngestionJobs returns the refresh history for a comparison.
+// ListIngestionJobs returns the refresh history for a comparison. The caller
+// must be able to view the comparison — this mirrors the visibility checks on
+// the freshness and advisor endpoints so job metadata for private comparisons
+// does not leak to unrelated members holding jce.ingestion_job.view.
 func (s *Service) ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, limit, offset int) ([]IngestionJob, error) {
+	userID := s.userIDFromContext(ctx)
+
+	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String())
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
+		}
+
+		return nil, fmt.Errorf("loading comparison: %w", err)
+	}
+
+	if !s.canViewJCEComparison(ctx, cmp, userID) {
+		return nil, fmt.Errorf("%w: cannot access comparison", errpkg.ErrForbidden)
+	}
+
 	return s.ingestion.listByContent(ctx, contentID, safeInt32(limit), safeInt32(offset))
 }
 
@@ -191,8 +209,8 @@ func (s *Service) ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, 
 // worker task, and returns the pending job. If another refresh is already in
 // progress it returns the existing pending job instead.
 func (s *Service) RefreshComparison(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
-	if !contentID.Valid || !false {
-		return IngestionJob{}, fmt.Errorf("%w: content and platform ids are required", errpkg.ErrInvalid)
+	if !contentID.Valid {
+		return IngestionJob{}, fmt.Errorf("%w: content id is required", errpkg.ErrInvalid)
 	}
 
 	if !s.featureEnabled(ctx, refreshFeatureFlag) {

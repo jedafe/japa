@@ -250,6 +250,85 @@ func sliceContains(ss []string, s string) bool {
 	return false
 }
 
+// defaultDailyComparisonLimits are the per-tier fallbacks for
+// jce.comparisons.max_per_day.{tier} from the system-settings catalog.
+// A negative value means unlimited.
+var defaultDailyComparisonLimits = map[string]int{
+	"regular":  5,
+	"pro":      25,
+	"business": -1,
+}
+
+// dailyComparisonCountKey returns the Valkey counter key tracking how many JCE
+// comparisons a user has created today.
+// Ref: conventions/valkey-keys-catalog.md — jc:jce:comparisons:created:{user_id}:{date}
+func dailyComparisonCountKey(userID pgtype.UUID) string {
+	return fmt.Sprintf("jc:jce:comparisons:created:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
+}
+
+// checkDailyComparisonLimit rejects creation once the caller reaches the
+// per-tier daily quota (jce.comparisons.max_per_day.{tier}). A negative limit
+// means unlimited. Fail-open on tier-resolution or Valkey errors so an outage
+// cannot block creation — mirrors the ai agent daily-limit pattern.
+func (s *Service) checkDailyComparisonLimit(ctx context.Context, userID pgtype.UUID) error {
+	if s.vk == nil || s.tierResolver == nil || !userID.Valid {
+		return nil
+	}
+
+	tier, err := s.tierResolver.ResolveUserTier(ctx, userID)
+	if err != nil {
+		slog.Warn("comparison: failed to resolve user tier for daily limit", "error", err)
+		return nil
+	}
+
+	fallback := defaultDailyComparisonLimits["regular"]
+	if d, ok := defaultDailyComparisonLimits[tier]; ok {
+		fallback = d
+	}
+
+	limit := fallback
+	if s.settingsSvc != nil {
+		limit = s.settingsSvc.GetIntOr(ctx, "jce.comparisons.max_per_day."+tier, fallback)
+	}
+
+	if limit < 0 {
+		return nil
+	}
+
+	count, err := s.vk.Get(ctx, dailyComparisonCountKey(userID)).Int64()
+	if err != nil {
+		return nil // missing counter or Valkey outage → fail-open
+	}
+
+	if count >= int64(limit) {
+		return fmt.Errorf("%w: daily comparison limit reached (%d)", errpkg.ErrRateLimited, limit)
+	}
+
+	return nil
+}
+
+// recordDailyComparison increments the caller's daily comparison counter after
+// a successful create. Best-effort: Valkey failures are logged, never returned.
+func (s *Service) recordDailyComparison(ctx context.Context, userID pgtype.UUID) {
+	if s.vk == nil || !userID.Valid {
+		return
+	}
+
+	key := dailyComparisonCountKey(userID)
+
+	count, err := s.vk.Incr(ctx, key).Result()
+	if err != nil {
+		slog.Warn("comparison: failed to increment daily comparison counter", "error", err)
+		return
+	}
+
+	if count == 1 {
+		if err := s.vk.Expire(ctx, key, 24*time.Hour).Err(); err != nil {
+			slog.Warn("comparison: failed to set daily counter TTL", "error", err)
+		}
+	}
+}
+
 // CreateJCEComparison creates a quick or detailed JCE comparison.
 func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, input CreateJCEComparisonInput) (JCEComparisonResult, error) {
 	var typeDef *gen.GetComparisonTypeByIDRow
@@ -296,12 +375,18 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 		autoFields = fields
 	}
 
+	// Enforce the per-tier daily creation quota
+	// (jce.comparisons.max_per_day.{tier}) before persisting.
+	if err := s.checkDailyComparisonLimit(ctx, userID); err != nil {
+		return JCEComparisonResult{}, err
+	}
+
 	// Collapse duplicate inputs before persisting so the store never inserts
 	// multiple rows for the same logical item or dimension.
 	input.Items = dedupeJCEItemInputs(input.Items)
 	input.Dimensions = dedupeStringDimensions(input.Dimensions)
 
-	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (JCEComparisonResult, error) {
+	result, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (JCEComparisonResult, error) {
 		contentRow, metadata, err := s.createJCEContentAndMetadata(ctx, q, userID, input)
 		if err != nil {
 			return JCEComparisonResult{}, err
@@ -415,6 +500,13 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 			SpaceID:    contentRow.SpaceID,
 		}, nil
 	})
+	if err != nil {
+		return JCEComparisonResult{}, err
+	}
+
+	s.recordDailyComparison(ctx, userID)
+
+	return result, nil
 }
 
 // resolveItemRef attempts to resolve an item reference into a ResolvedItem.
@@ -617,7 +709,7 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, userID pgtype.UUI
 		return JCEComparison{}, fmt.Errorf("getting comparison for update: %w", err)
 	}
 
-	if !bypassOwnership && existing.AuthorID.Valid && existing.AuthorID.Bytes != userID.Bytes {
+	if !bypassOwnership && (!existing.AuthorID.Valid || existing.AuthorID.Bytes != userID.Bytes) {
 		return JCEComparison{}, errpkg.ErrForbidden
 	}
 
@@ -694,7 +786,7 @@ func (s *Service) DeleteJCEComparison(ctx context.Context, id, userID pgtype.UUI
 		return fmt.Errorf("getting comparison for delete: %w", err)
 	}
 
-	if !bypassOwnership && existing.AuthorID.Valid && existing.AuthorID.Bytes != userID.Bytes {
+	if !bypassOwnership && (!existing.AuthorID.Valid || existing.AuthorID.Bytes != userID.Bytes) {
 		return errpkg.ErrForbidden
 	}
 
@@ -716,7 +808,7 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, userID pgtype.UU
 		return JCEComparisonResult{}, errors.New("only quick comparisons can be promoted")
 	}
 
-	if !bypassOwnership && existing.Content.AuthorID.Valid && existing.Content.AuthorID.Bytes != userID.Bytes {
+	if !bypassOwnership && (!existing.Content.AuthorID.Valid || existing.Content.AuthorID.Bytes != userID.Bytes) {
 		return JCEComparisonResult{}, errpkg.ErrForbidden
 	}
 

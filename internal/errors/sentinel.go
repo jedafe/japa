@@ -54,6 +54,9 @@ var (
 
 	// ErrScoringDisabled indicates that scoring is disabled for the comparison type.
 	ErrScoringDisabled = errors.New("scoring_disabled")
+
+	// ErrRateLimited indicates the caller exceeded a rate or quota limit.
+	ErrRateLimited = errors.New("rate_limited")
 )
 
 // WrapDuplicate wraps an error with the duplicate sentinel if it appears to be

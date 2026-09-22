@@ -43,11 +43,7 @@ func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{})
 		return errors.New("worker: asynq client not configured — task " + taskType + " dropped")
 	}
 
-	queue := QueueForTask(taskType)
-	asynqOpts := []asynq.Option{asynq.Queue(queue)}
-
-	// Apply task-type–specific defaults before caller opts (caller can override).
-	asynqOpts = append(asynqOpts, taskDefaults(taskType)...)
+	asynqOpts := TaskOpts(taskType)
 
 	for _, o := range opts {
 		if opt, ok := o.(asynq.Option); ok {
@@ -58,6 +54,15 @@ func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{})
 	_, err := e.client.Enqueue(asynq.NewTask(taskType, payload), asynqOpts...)
 
 	return err
+}
+
+// TaskOpts returns the queue tier + per-type timeout/retry defaults for a
+// task — the same options enqueueIntel and Enqueue apply. Callers that
+// must EnqueueContext directly (HTTP handlers enqueuing intel tasks)
+// spread this so direct enqueues honor the documented tiers instead of
+// silently landing on the default queue.
+func TaskOpts(taskType string) []asynq.Option {
+	return append([]asynq.Option{asynq.Queue(QueueForTask(taskType))}, taskDefaults(taskType)...)
 }
 
 // taskDefaults returns default asynq options for a given task type. High-risk
@@ -130,6 +135,16 @@ func taskDefaults(taskType string) []asynq.Option {
 	// bounded like the verify probe but lighter.
 	case TypeIntelXHRSniff:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(2))
+	// Inbound email: MIME parse + raw doc + detect_changes enqueue — all
+	// local work, short timeout; retries cover transient DB failures.
+	case TypeIntelInboundEmail:
+		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(3))
+	// WebSub subscribe/renew: one hub POST + self re-enqueue.
+	case TypeIntelWebSubSubscribe, TypeIntelWebSubRenew:
+		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(3))
+	// Search poll: one SERP request + the shared fetch bookkeeping.
+	case TypeIntelSearchPoll:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(3))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -152,6 +167,7 @@ var taskTier = func() map[string]string {
 		TypeNotificationSendPush,      // §77 V2 — push delivery is user-facing-critical
 		TypeEmbassyDispatchAlerts,     // §91 — time-sensitive slot availability (ADR-099)
 		TypeIntelScheduleCrawls,       // §INTEL — cron entry point, must fire immediately (ADR-112)
+		TypeIntelInboundEmail,         // §INTEL Phase 3 — provider push deliveries are time-sensitive
 	} {
 		m[t] = QueueCritical
 	}
@@ -228,6 +244,8 @@ var taskTier = func() map[string]string {
 		TypeIntelSourceMetadata,
 		// §intel-channels — deep verify probe on approval, default tier.
 		TypeIntelProbeVerify,
+		// §intel-channels Phase 3 — SERP provider poll, default tier.
+		TypeIntelSearchPoll,
 	} {
 		m[t] = QueueDefault
 	}
@@ -297,6 +315,9 @@ var taskTier = func() map[string]string {
 		TypeVideoSyncChannels,
 		// §intel-channels Phase 2 — headless XHR sniff, low tier.
 		TypeIntelXHRSniff,
+		// §intel-channels Phase 3 — hub subscription lifecycle, low tier.
+		TypeIntelWebSubSubscribe,
+		TypeIntelWebSubRenew,
 	} {
 		m[t] = QueueLow
 	}

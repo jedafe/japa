@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/linkpreview"
@@ -27,6 +30,32 @@ const (
 // errPrivateProbeTarget marks a candidate URL whose host is (or resolves to)
 // a private/reserved IP — rejected before any outbound request is made.
 var errPrivateProbeTarget = errors.New("probe: url targets a private/reserved address")
+
+// probeQuotaScript atomically increments the per-user quota counter and
+// sets its TTL on the first increment — the INCR→EXPIRE sequence it
+// replaces could leave a counter without expiry if the process crashed
+// between commands (a permanently-stale counter blocks the user forever).
+const probeQuotaScript = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`
+
+// incrProbeQuota records one quota spend for the user and returns the
+// count within the current fixed window. Callers fail open on error — a
+// quota-store outage must not take the endpoint down (the prober's SSRF
+// guard is independent of the quota).
+func (h *Handlers) incrProbeQuota(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	key := "jc:intel:probe_quota:" + userID.String()
+	res, err := h.rdb.Eval(ctx, probeQuotaScript, []string{key}, int64(probeQuotaWindow/time.Second)).Result()
+	if err != nil {
+		return 0, err
+	}
+	count, _ := res.(int64)
+	return count, nil
+}
 
 // probeSourceRequest is the POST /api/v1/sources/probe body. `url` is the
 // canonical field; `source_url` is accepted as an alias so the propose form
@@ -84,28 +113,20 @@ func (h *Handlers) HandleProbeSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-user fixed-window quota (spec §2 preview stage): INCR the hourly
-	// counter and EXPIRE on the first increment so the window self-cleans.
-	// Valkey errors fail open — a quota-store outage should not take the
-	// endpoint down; the prober's SSRF guard is independent of the quota.
+	// Per-user fixed-window quota (spec §2 preview stage): atomic
+	// increment + first-hit TTL via probeQuotaScript.
 	if h.rdb != nil {
 		limit := defaultProbeRateLimit
 		if h.settings != nil {
 			limit = h.settings.GetIntOr(r.Context(), "intel.probe.rate_limit_per_hr", defaultProbeRateLimit)
 		}
 
-		key := "jc:intel:probe_quota:" + userID.String()
-		count, incrErr := h.rdb.Incr(r.Context(), key).Result()
+		count, incrErr := h.incrProbeQuota(r.Context(), userID)
 		if incrErr != nil {
 			slog.Warn("intel: probe quota increment failed; allowing request", "user_id", userID.String(), "error", incrErr)
-		} else {
-			if count == 1 {
-				h.rdb.Expire(r.Context(), key, probeQuotaWindow)
-			}
-			if count > int64(limit) {
-				errpkg.WriteError(w, http.StatusTooManyRequests, "probe_quota_exceeded", "Hourly probe limit reached; try again later")
-				return
-			}
+		} else if count > int64(limit) {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "probe_quota_exceeded", "Hourly probe limit reached; try again later")
+			return
 		}
 	}
 

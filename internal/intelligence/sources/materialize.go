@@ -68,6 +68,7 @@ var curateDefaultMethods = map[CrawlMethod]bool{
 	CrawlMethodSitemap: true,
 	CrawlMethodGit:     true,
 	CrawlMethodSocial:  true,
+	CrawlMethodEmail:   true,
 	CrawlMethodWebhook: true,
 	CrawlMethodSearch:  true,
 	CrawlMethodWayback: true,

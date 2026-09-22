@@ -53,6 +53,10 @@ func (s probeTestSettings) GetIntOr(_ context.Context, key string, fallback int)
 	return fallback
 }
 
+func (s probeTestSettings) GetStringOr(_ context.Context, _, fallback string) string {
+	return fallback
+}
+
 // startProbeTestValkey spins up an in-memory Valkey (miniredis) so the probe
 // quota counter can be exercised without a real server. Mirrors the
 // startTestValkey helper used by the fetcher package tests.

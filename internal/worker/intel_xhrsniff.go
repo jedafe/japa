@@ -62,8 +62,12 @@ func intelSniffHTTPClient() *http.Client {
 // harEntry is the slice of a HAR entry the sniffer consumes.
 type harEntry struct {
 	Request struct {
-		Method string `json:"method"`
-		URL    string `json:"url"`
+		Method   string `json:"method"`
+		URL      string `json:"url"`
+		PostData struct {
+			MimeType string `json:"mimeType"`
+			Text     string `json:"text"`
+		} `json:"postData"`
 	} `json:"request"`
 	Response struct {
 		Status  int `json:"status"`
@@ -177,19 +181,7 @@ func HandleIntelXHRSniff(ctx context.Context, t *asynq.Task) error {
 
 	var inputs []sources.ChannelProposalInput
 	for _, ep := range endpoints {
-		cfg, _ := json.Marshal(map[string]any{
-			"endpoint":       ep.URL,
-			"method":         ep.Method,
-			"discovered_via": "xhr_sniff",
-		})
-		inputs = append(inputs, sources.ChannelProposalInput{
-			Label:          "Discovered API " + ep.Method + " " + ep.URL,
-			EntryURL:       ep.URL,
-			CrawlMethod:    string(sources.CrawlMethodAPI),
-			Pipeline:       string(sources.PipelineExtract),
-			ProviderConfig: cfg,
-			Confidence:     0.7,
-		})
+		inputs = append(inputs, intelSniffProposalInput(ep))
 	}
 
 	created, skipped, err := sources.NewService(intelSourcesStore).
@@ -239,11 +231,40 @@ func intelSniffHAR(ctx context.Context, serviceURL, target string, waitMs int) (
 	return env, nil
 }
 
+// intelSniffProposalInput builds the channel proposal for one discovered
+// endpoint. A POST endpoint's JSON request body (HAR postData) seeds
+// provider_config.body so the materialized api channel replays the same
+// request — a bodyless POST would 4xx forever. Non-JSON post bodies can't
+// be expressed in the api provider_config and are dropped.
+func intelSniffProposalInput(ep sniffEndpoint) sources.ChannelProposalInput {
+	cfg := map[string]any{
+		"endpoint":       ep.URL,
+		"method":         ep.Method,
+		"discovered_via": "xhr_sniff",
+	}
+	if ep.Method == http.MethodPost && json.Valid(ep.Body) {
+		cfg["body"] = json.RawMessage(ep.Body)
+	}
+
+	cfgJSON, _ := json.Marshal(cfg)
+
+	return sources.ChannelProposalInput{
+		Label:          "Discovered API " + ep.Method + " " + ep.URL,
+		EntryURL:       ep.URL,
+		CrawlMethod:    string(sources.CrawlMethodAPI),
+		Pipeline:       string(sources.PipelineExtract),
+		ProviderConfig: cfgJSON,
+		Confidence:     0.7,
+	}
+}
+
 // sniffEndpoint is one discovered JSON XHR endpoint — method + clean URL
-// (query stripped; query variance dedupes to the same endpoint).
+// (query stripped; query variance dedupes to the same endpoint) plus the
+// request body for POSTs.
 type sniffEndpoint struct {
 	Method string
 	URL    string
+	Body   []byte
 }
 
 // intelSniffEndpoints extracts deduplicated JSON API endpoints from a HAR —
@@ -281,9 +302,14 @@ func intelSniffEndpoints(env harEnvelope) []sniffEndpoint {
 			continue
 		}
 		seen[key] = true
+		var body []byte
+		if method == http.MethodPost {
+			body = []byte(e.Request.PostData.Text)
+		}
 		out = append(out, sniffEndpoint{
 			Method: method,
 			URL:    u.Scheme + "://" + u.Host + u.EscapedPath(),
+			Body:   body,
 		})
 	}
 

@@ -77,6 +77,13 @@ type atomCat struct {
 // 2.0 (<rss><channel><item>) is tried first; a body with no items falls
 // through to the Atom (<feed><entry>) shape.
 func (RSSNews) Curate(_ context.Context, body []byte, _ string, ch sources.Channel) ([]Record, error) {
+	return curateFeedItems(body, ch)
+}
+
+// curateFeedItems is the shared feed→records pipeline: RSS items first,
+// Atom entries on fallback. WebSub deliveries are the same shapes, so the
+// webhook curator delegates here.
+func curateFeedItems(body []byte, ch sources.Channel) ([]Record, error) {
 	trimmed := strings.TrimSpace(string(body))
 	if trimmed == "" {
 		return nil, errors.New("curator: rss: empty feed body")
