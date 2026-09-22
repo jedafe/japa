@@ -63,6 +63,7 @@ import (
 	"github.com/jedafe/japa/internal/devices"
 	"github.com/jedafe/japa/internal/digest"
 	"github.com/jedafe/japa/internal/docs"
+	"github.com/jedafe/japa/internal/ecaguide"
 	"github.com/jedafe/japa/internal/email"
 	emailtemplates "github.com/jedafe/japa/internal/email/templates"
 	errtracking "github.com/jedafe/japa/internal/errors"
@@ -1459,6 +1460,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	pofCalculatorService := pofcalculator.NewService(pofCalculatorStore, settingsService)
 	pofCalculatorService.SetFXConverter(pofFXAdapter{svc: remittanceService})
 	pofCalculatorHandlers := pofcalculator.NewHandlers(pofCalculatorService, settingsService)
+
+	ecaGuideStore := ecaguide.NewStore(database)
+	ecaGuideService := ecaguide.NewService(ecaGuideStore, settingsService)
+	ecaGuideHandlers := ecaguide.NewHandlers(ecaGuideService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (ADR-079)
 	adsSelfServeStore := adsselfserve.NewStore(database)
@@ -6693,6 +6698,30 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/pof-requirements/{id}", pofCalculatorHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
 					Patch("/admin/pof-requirements/{id}/approve", pofCalculatorHandlers.HandleAdminApprove)
+			})
+
+			// §109 — ECA Guide (ADR-120)
+			r.With(features.Gate(featureChecker, "eca_guide.enabled")).Group(func(r chi.Router) {
+				r.Get("/eca/providers", ecaGuideHandlers.HandleListProviders)
+				r.Get("/eca/guides", ecaGuideHandlers.HandleListGuides)
+				r.Get("/eca/guides/{id}", ecaGuideHandlers.HandleGetGuide)
+				r.Get("/eca/compare", ecaGuideHandlers.HandleCompare)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.update")).
+					Post("/eca/guides/{id}/updates", ecaGuideHandlers.HandleCreateUpdate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Get("/admin/eca-guides", ecaGuideHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Post("/admin/eca-guides", ecaGuideHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Post("/admin/eca-guides/generate", ecaGuideHandlers.HandleAdminGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Patch("/admin/eca-guides/{id}", ecaGuideHandlers.HandleAdminUpdate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Patch("/admin/eca-guides/{id}/approve", ecaGuideHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Get("/admin/eca-guides/updates", ecaGuideHandlers.HandleAdminListUpdates)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
+					Patch("/admin/eca-guides/updates/{id}", ecaGuideHandlers.HandleAdminModerateUpdate)
 			})
 
 			// §95 — CV Formatter (ADR-103)
