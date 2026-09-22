@@ -60,6 +60,7 @@ type Handlers struct {
 	Orgs                OrgVerifier
 	Tasks               TaskEnqueuer
 	StudioHook          StudioReviewHook
+	ToolReviewHook      ToolReviewHook // Optional — §§107–110 tool entities in the unified queue
 	DefaultFolderSetter auth.DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 	TierManager         auth.TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 	Catalog             *literals.Catalog          // Optional — caches active platform literals and resolves maps.
@@ -83,6 +84,18 @@ func (h *Handlers) SetLiteralCatalog(c *literals.Catalog) { h.Catalog = c }
 type StudioReviewHook interface {
 	OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
 	OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
+}
+
+// ToolReviewHook is the dispatcher the unified moderation queue calls to
+// approve or reject §§107–110 tool entities (crs_rulesets,
+// pof_requirements, eca_guides, eca_community_updates, sop_samples,
+// sop_templates). It must return handled=false when the ID does not match
+// a tool row so ModerateItem falls through to the generic updates.
+// appliedStatus reports the entity-level status actually written
+// ('active' for CRS rulesets, 'published' for guides/samples, 'approved'
+// for community updates) so the response reflects the real outcome.
+type ToolReviewHook interface {
+	HandleToolReview(ctx context.Context, id, reviewerID pgtype.UUID, action, reason string) (handled bool, appliedStatus string, err error)
 }
 
 // TaskEnqueuer is the subset of the worker enqueuer that admin needs to
@@ -149,6 +162,13 @@ func (h *Handlers) SetOrgVerifier(o OrgVerifier) {
 // approved or rejected (§75, ADR-076 §3).
 func (h *Handlers) SetStudioReviewHook(s StudioReviewHook) {
 	h.StudioHook = s
+}
+
+// SetToolReviewHook injects the §§107–110 tool review dispatcher so the
+// unified moderation queue can approve/reject CRS rulesets, POF
+// requirements, ECA guides + community updates, and SOP samples/templates.
+func (h *Handlers) SetToolReviewHook(t ToolReviewHook) {
+	h.ToolReviewHook = t
 }
 
 // defaultSettings defines every available setting with its metadata.

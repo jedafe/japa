@@ -366,3 +366,19 @@ func (s *Store) UpdateDraw(ctx context.Context, id pgtype.UUID, d DrawRow) error
 func (s *Store) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return s.pool.Writer.Begin(ctx)
 }
+
+// RejectRuleset marks a draft ruleset rejected (HITL reject path).
+func (s *Store) RejectRuleset(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		UPDATE crs_rulesets
+		SET status = 'rejected', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
+		    hitl_review_notes = NULLIF($3,''), updated_at = now()
+		WHERE id = $1`, id, reviewerID, notes)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

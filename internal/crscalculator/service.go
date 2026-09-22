@@ -764,3 +764,9 @@ func uuidStr(u pgtype.UUID) string {
 	b := u.Bytes
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
+
+// RejectRuleset marks a draft ruleset rejected (HITL reject from the
+// unified moderation queue).
+func (s *Service) RejectRuleset(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
+	return s.store.RejectRuleset(ctx, id, reviewerID, notes)
+}

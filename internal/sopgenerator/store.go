@@ -378,3 +378,49 @@ func itoa(i int) string {
 	}
 	return string(buf[p:])
 }
+
+// ApproveTemplate publishes a template (HITL approve path for Content
+// Agent drafts).
+func (s *Store) ApproveTemplate(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		UPDATE sop_templates
+		SET status = 'published', updated_at = now()
+		WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// RejectTemplate marks a template draft rejected (HITL).
+func (s *Store) RejectTemplate(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		UPDATE sop_templates SET status = 'rejected', updated_at = now()
+		WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// RejectSample marks a pending/draft sample rejected (HITL).
+func (s *Store) RejectSample(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		UPDATE sop_samples
+		SET status = 'rejected', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
+		    hitl_review_notes = NULLIF($3,''), updated_at = now()
+		WHERE id = $1`, id, reviewerID, notes)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

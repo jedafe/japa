@@ -93,7 +93,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	// Filters are passed through for each sub-query; an empty filter string
 	// means "no filter" for that sub-query. Placeholders are shared across
 	// all three sub-queries so we can use a single arg list.
-	listArgs := []interface{}{pgtype.UUID{}, filterStatus, filterContentType, "%" + filterSearch + "%", limit, offset}
+	listArgs := []interface{}{filterStatus, filterContentType, "%" + filterSearch + "%", limit, offset}
 
 	query := `
 SELECT id, body, status, entity_type, created_at, reviewer_user_id, author_username, queue_source
@@ -141,6 +141,57 @@ FROM (
       AND ($1::text = '' OR ah.status = $1)
       AND ($2::text = '' OR ah.content_type = $2)
       AND ($3::text = '%' OR (ah.human_feedback::text ILIKE $3 OR ah.ai_output::text ILIKE $3))
+    UNION ALL
+    -- §§107–110 tool entities awaiting HITL review (queue_source='tool')
+    SELECT cr.id, cr.version_label, cr.status, 'crs_ruleset', cr.created_at,
+           NULL::uuid, 'admin', 'tool'
+    FROM crs_rulesets cr
+    WHERE cr.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR cr.status = $1)
+      AND ($2::text = '' OR 'crs_ruleset' = $2)
+      AND ($3::text = '%' OR cr.version_label ILIKE $3)
+    UNION ALL
+    SELECT p.id, p.program_label || ' (' || p.visa_type || ')', p.status, 'pof_requirement',
+           p.created_at, NULL::uuid, 'admin', 'tool'
+    FROM pof_requirements p
+    WHERE p.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR p.status = $1)
+      AND ($2::text = '' OR 'pof_requirement' = $2)
+      AND ($3::text = '%' OR (p.program_label ILIKE $3 OR p.visa_type ILIKE $3))
+    UNION ALL
+    SELECT g.id, g.purpose || ' guide — ' || COALESCE(ep.name,''), g.status, 'eca_guide',
+           g.created_at, NULL::uuid, 'admin', 'tool'
+    FROM eca_guides g
+    LEFT JOIN eca_providers ep ON ep.id = g.provider_id
+    WHERE g.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR g.status = $1)
+      AND ($2::text = '' OR 'eca_guide' = $2)
+      AND ($3::text = '%' OR g.purpose ILIKE $3)
+    UNION ALL
+    SELECT cu.id, COALESCE(cu.note, cu.fee_estimate, ''), cu.status, 'eca_update',
+           cu.created_at, cu.user_id, COALESCE(up.display_name, 'member'), 'tool'
+    FROM eca_community_updates cu
+    LEFT JOIN user_profiles up ON up.user_id = cu.user_id
+    WHERE cu.status = 'pending' AND cu.deleted_at IS NULL
+      AND ($1::text = '' OR cu.status = $1)
+      AND ($2::text = '' OR 'eca_update' = $2)
+      AND ($3::text = '%' OR COALESCE(cu.note,'') ILIKE $3)
+    UNION ALL
+    SELECT st.id, st.title, st.status, 'sop_template', st.created_at,
+           NULL::uuid, 'admin', 'tool'
+    FROM sop_templates st
+    WHERE st.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR st.status = $1)
+      AND ($2::text = '' OR 'sop_template' = $2)
+      AND ($3::text = '%' OR st.title ILIKE $3)
+    UNION ALL
+    SELECT ss.id, ss.title, ss.status, 'sop_sample', ss.created_at,
+           NULL::uuid, 'admin', 'tool'
+    FROM sop_samples ss
+    WHERE ss.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR ss.status = $1)
+      AND ($2::text = '' OR 'sop_sample' = $2)
+      AND ($3::text = '%' OR ss.title ILIKE $3)
 ) combined
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $5`
@@ -178,7 +229,7 @@ LIMIT $4 OFFSET $5`
 	}
 
 	// Count total with same filters (without LIMIT/OFFSET).
-	countArgs := []interface{}{pgtype.UUID{}, filterStatus, filterContentType, "%" + filterSearch + "%"}
+	countArgs := []interface{}{filterStatus, filterContentType, "%" + filterSearch + "%"}
 	countQuery := `
 SELECT COALESCE(SUM(cnt), 0)::int FROM (
     SELECT COUNT(*) AS cnt
@@ -200,6 +251,43 @@ SELECT COALESCE(SUM(cnt), 0)::int FROM (
       AND ($1::text = '' OR ah.status = $1)
       AND ($2::text = '' OR ah.content_type = $2)
       AND ($3::text = '%' OR (ah.human_feedback::text ILIKE $3 OR ah.ai_output::text ILIKE $3))
+    UNION ALL
+    -- §§107–110 tool entities (mirrors the list query)
+    SELECT COUNT(*) FROM crs_rulesets cr
+    WHERE cr.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR cr.status = $1)
+      AND ($2::text = '' OR 'crs_ruleset' = $2)
+      AND ($3::text = '%' OR cr.version_label ILIKE $3)
+    UNION ALL
+    SELECT COUNT(*) FROM pof_requirements p
+    WHERE p.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR p.status = $1)
+      AND ($2::text = '' OR 'pof_requirement' = $2)
+      AND ($3::text = '%' OR (p.program_label ILIKE $3 OR p.visa_type ILIKE $3))
+    UNION ALL
+    SELECT COUNT(*) FROM eca_guides g
+    WHERE g.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR g.status = $1)
+      AND ($2::text = '' OR 'eca_guide' = $2)
+      AND ($3::text = '%' OR g.purpose ILIKE $3)
+    UNION ALL
+    SELECT COUNT(*) FROM eca_community_updates cu
+    WHERE cu.status = 'pending' AND cu.deleted_at IS NULL
+      AND ($1::text = '' OR cu.status = $1)
+      AND ($2::text = '' OR 'eca_update' = $2)
+      AND ($3::text = '%' OR COALESCE(cu.note,'') ILIKE $3)
+    UNION ALL
+    SELECT COUNT(*) FROM sop_templates st
+    WHERE st.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR st.status = $1)
+      AND ($2::text = '' OR 'sop_template' = $2)
+      AND ($3::text = '%' OR st.title ILIKE $3)
+    UNION ALL
+    SELECT COUNT(*) FROM sop_samples ss
+    WHERE ss.status IN ('draft','ai_draft','pending')
+      AND ($1::text = '' OR ss.status = $1)
+      AND ($2::text = '' OR 'sop_sample' = $2)
+      AND ($3::text = '%' OR ss.title ILIKE $3)
 ) t`
 
 	var total int32
@@ -1390,6 +1478,27 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	// content_reviews persona-action row stayed 'pending' forever.
 	if h.handlePersonaActionReview(ctx, rid, user.UserID, input.Action, input.Reason) {
 		slog.Info("moderation: persona action review processed", "item_id", id, "action", input.Action, "reviewer", user.UserID.String())
+	}
+
+	// §§107–110 tool entities (crs_rulesets, pof_requirements, eca_guides,
+	// eca_community_updates, sop_samples, sop_templates) surface in the
+	// queue with queue_source='tool'. The hook applies the entity-level
+	// transition — e.g. CRS approve activates + supersedes the prior
+	// ruleset atomically — which the generic 'published'/'removed' status
+	// cannot express. Fail closed: a failed transition leaves the item
+	// pending rather than reporting a phantom success.
+	if h.ToolReviewHook != nil {
+		toolHandled, appliedStatus, toolErr := h.ToolReviewHook.HandleToolReview(ctx, rid, user.UserID, input.Action, input.Reason)
+		if toolErr != nil {
+			slog.Error("moderation: tool review failed", "item_id", id, "action", input.Action, "error", toolErr)
+			errpkg.WriteError(w, http.StatusBadGateway, "tool_review_failed",
+				fmt.Sprintf("The tool %s step failed: %v. The item status has not been changed", input.Action, toolErr))
+			return
+		}
+		if toolHandled {
+			newStatus = appliedStatus
+			slog.Info("moderation: tool review processed", "item_id", id, "action", input.Action, "reviewer", user.UserID.String())
+		}
 	}
 
 	slog.Info("moderation item processed", "user_id", user.UserID.String(), "item_id", id, "action", input.Action)
