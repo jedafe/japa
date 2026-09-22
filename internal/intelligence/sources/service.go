@@ -1023,13 +1023,27 @@ func (s *Service) UpdateChannel(ctx context.Context, arg gen.UpdateIntelSourceCh
 	if !arg.ID.Valid {
 		return Channel{}, fmt.Errorf("sources: update channel: %w: id", errpkg.ErrRequired)
 	}
-	if err := validateChannelUpdate(arg); err != nil {
-		return Channel{}, err
-	}
 
+	// Load the existing row first — field-level validation needs the
+	// channel's current crawl_method to apply the relaxed entry_url rule
+	// to inbound (email/webhook) channels.
 	existing, err := s.store.GetChannel(ctx, arg.ID)
 	if err != nil {
 		return Channel{}, err
+	}
+	if err := validateChannelUpdate(arg, CrawlMethod(existing.CrawlMethod)); err != nil {
+		return Channel{}, err
+	}
+
+	// Repurposing an inbound channel to a pull method must leave a fetchable
+	// entry point — a mailto:/opaque entry_url that was legal for email is
+	// not legal for rss/static. When the same patch also sets entry_url,
+	// validateChannelUpdate already enforced the pull rule on it.
+	if arg.CrawlMethod != nil && arg.EntryUrl == nil &&
+		InboundMethod(CrawlMethod(existing.CrawlMethod)) && !InboundMethod(CrawlMethod(*arg.CrawlMethod)) {
+		if err := validateChannelEntryURL(existing.EntryUrl, CrawlMethod(*arg.CrawlMethod), ""); err != nil {
+			return Channel{}, fmt.Errorf("sources: update channel: crawl_method change requires a fetchable entry_url: %w", err)
+		}
 	}
 
 	if arg.Pipeline != nil &&
@@ -1087,9 +1101,29 @@ func (s *Service) GetInboundEvent(ctx context.Context, id pgtype.UUID) (InboundE
 }
 
 // MarkInboundEvent stamps an event's terminal status
-// (received|processed|failed|ignored) and processed_at.
+// (received|processing → processed|failed|ignored) and processed_at.
 func (s *Service) MarkInboundEvent(ctx context.Context, arg gen.MarkIntelInboundEventParams) error {
 	return s.store.MarkInboundEvent(ctx, arg)
+}
+
+// ClaimInboundEvent atomically transitions an event received → processing;
+// true = this caller owns the work now.
+func (s *Service) ClaimInboundEvent(ctx context.Context, id pgtype.UUID) (bool, error) {
+	return s.store.ClaimInboundEvent(ctx, id)
+}
+
+// RedriveInboundEvent resets a failed/ignored/stuck-processing event back
+// to 'received' for re-processing; 'processing' events only reset once the
+// claim is older than stuckSecs. false = terminal, actively claimed, or
+// still waiting.
+func (s *Service) RedriveInboundEvent(ctx context.Context, id pgtype.UUID, stuckSecs float64) (bool, error) {
+	return s.store.RedriveInboundEvent(ctx, id, stuckSecs)
+}
+
+// NoteChannelError flags a non-crawl error on the channel row without
+// touching failure counters or crawl timestamps.
+func (s *Service) NoteChannelError(ctx context.Context, arg gen.NoteIntelChannelErrorParams) error {
+	return s.store.NoteChannelError(ctx, arg)
 }
 
 // GetEmailChannelByAddress resolves an inbound email delivery's recipient

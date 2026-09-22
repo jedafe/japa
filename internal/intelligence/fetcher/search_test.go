@@ -256,8 +256,9 @@ func TestSearchFetcher_SerpAPI(t *testing.T) {
 	}
 }
 
-// TestSearchFetcher_ResultCountCap bounds provider_config.result_count at
-// 50 — an oversized channel config must not buy an unbounded SERP page.
+// TestSearchFetcher_ResultCountCap bounds provider_config.result_count —
+// 50 platform-wide, 20 for Brave (provider cap). An oversized channel
+// config must not buy an unbounded SERP page or a provider 400.
 func TestSearchFetcher_ResultCountCap(t *testing.T) {
 	t.Parallel()
 
@@ -276,8 +277,45 @@ func TestSearchFetcher_ResultCountCap(t *testing.T) {
 	if _, err := f.Fetch(context.Background(), searchSource(ch)); err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	if gotCount != "50" {
-		t.Errorf("count = %q, want 50 (cap)", gotCount)
+	if gotCount != "20" {
+		t.Errorf("count = %q, want 20 (Brave provider cap)", gotCount)
+	}
+}
+
+// TestSearchFetcher_EndpointOverrideScheme gates plaintext overrides: the
+// request carries the decrypted API key, so non-local http endpoints are
+// rejected. Loopback/private-literal hosts (tests, local gateways) may
+// still use http.
+func TestSearchFetcher_EndpointOverrideScheme(t *testing.T) {
+	t.Parallel()
+
+	settings := searchTestSettings(t, "brave")
+	f := NewSearchFetcher(http.DefaultClient, settings)
+
+	for _, tc := range []struct {
+		name     string
+		endpoint string
+		wantErr  bool
+	}{
+		{"public http rejected", "http://serp.attacker.example/x", true},
+		{"non-url scheme rejected", "file:///etc/passwd", true},
+		{"public https allowed", "https://gateway.example/serp", false},
+		{"loopback http allowed", "http://127.0.0.1:9999/serp", false},
+		{"localhost http allowed", "http://localhost:9999/serp", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if err := validateSearchEndpointOverride(tc.endpoint); (err != nil) != tc.wantErr {
+				t.Errorf("validateSearchEndpointOverride(%q) err = %v, wantErr %v", tc.endpoint, err, tc.wantErr)
+			}
+		})
+	}
+
+	// And through Fetch: a rejected override fails before any request.
+	ch := searchChannel(t, `{"query":"x","endpoint_override":"http://serp.attacker.example/x"}`)
+	if _, err := f.Fetch(context.Background(), searchSource(ch)); err == nil ||
+		!strings.Contains(err.Error(), "endpoint_override") {
+		t.Fatalf("Fetch with http override = %v, want endpoint_override error", err)
 	}
 }
 

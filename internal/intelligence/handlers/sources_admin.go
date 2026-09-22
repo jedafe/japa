@@ -1308,8 +1308,8 @@ func (h *Handlers) enqueueWebSubSubscribe(ctx context.Context, channelID string)
 		"version":    "v1",
 		"channel_id": channelID,
 	})
-	if _, err := h.asynqClient.EnqueueContext(ctx, asynq.NewTask(TaskIntelWebSubSubscribe, payload),
-		worker.TaskOpts(TaskIntelWebSubSubscribe)...); err != nil {
+	if _, err := h.asynqClient.EnqueueContext(ctx, asynq.NewTask(worker.TypeIntelWebSubSubscribe, payload),
+		worker.TaskOpts(worker.TypeIntelWebSubSubscribe)...); err != nil {
 		slog.Warn("intel: websub_subscribe enqueue failed", "channel_id", channelID, "error", err)
 	}
 }

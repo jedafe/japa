@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -241,8 +243,10 @@ func rssItemKey(it rssItem) string {
 	return "hash:" + hashKey(it.Title, it.PubDate)
 }
 
-// parseFeedDate normalizes common RSS/Atom date formats to ISO 8601
-// (YYYY-MM-DD — the date coercer's accepted form).
+// parseFeedDate normalizes common RSS/Atom/SERP date formats to ISO 8601
+// (YYYY-MM-DD — the date coercer's accepted form). Covers SerpApi's
+// "Jan 2, 2006"/"Jan 2006" shapes and relative "N units ago" ages
+// (Brave's `age`, SerpApi snippets) by subtracting from now.
 func parseFeedDate(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -259,6 +263,9 @@ func parseFeedDate(s string) string {
 		"2006-01-02T15:04:05Z",
 		"2006-01-02 15:04:05",
 		"2006-01-02",
+		"January 2, 2006",
+		"Jan 2, 2006",
+		"Jan 2006",
 	}
 	for _, f := range formats {
 		if t, err := time.Parse(f, s); err == nil {
@@ -266,7 +273,56 @@ func parseFeedDate(s string) string {
 		}
 	}
 
+	if t, ok := parseRelativeFeedDate(s); ok {
+		return t.Format("2006-01-02")
+	}
+
 	return ""
+}
+
+// relFeedDateRe matches provider "age" strings — "3 days ago",
+// "2 hours ago", "a week ago".
+var relFeedDateRe = regexp.MustCompile(`(?i)^(\d+|a|an)\s+(second|minute|hour|day|week|month|year)s?\s+ago$`)
+
+// parseRelativeFeedDate converts a relative age string into an absolute
+// time. Months/years are approximated (30/365 days) — the output is
+// date-granular, so the drift is bounded.
+func parseRelativeFeedDate(s string) (time.Time, bool) {
+	m := relFeedDateRe.FindStringSubmatch(s)
+	if m == nil {
+		return time.Time{}, false
+	}
+
+	n := 1 // "a day ago" / "an hour ago"
+	if unit := strings.ToLower(m[1]); unit != "a" && unit != "an" {
+		v, err := strconv.Atoi(m[1])
+		if err != nil || v <= 0 {
+			return time.Time{}, false
+		}
+		n = v
+	}
+
+	var d time.Duration
+	switch strings.ToLower(m[2]) {
+	case "second":
+		d = time.Duration(n) * time.Second
+	case "minute":
+		d = time.Duration(n) * time.Minute
+	case "hour":
+		d = time.Duration(n) * time.Hour
+	case "day":
+		d = time.Duration(n) * 24 * time.Hour
+	case "week":
+		d = time.Duration(n) * 7 * 24 * time.Hour
+	case "month":
+		d = time.Duration(n) * 30 * 24 * time.Hour
+	case "year":
+		d = time.Duration(n) * 365 * 24 * time.Hour
+	default:
+		return time.Time{}, false
+	}
+
+	return time.Now().Add(-d), true
 }
 
 // stripHTMLTags removes HTML tags and collapses whitespace. Feed

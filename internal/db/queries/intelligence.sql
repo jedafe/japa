@@ -134,6 +134,16 @@ ORDER BY retrieved_at DESC LIMIT 1;
 SELECT content_hash FROM intel_raw_documents
 WHERE channel_id = $1 AND url = $2 ORDER BY retrieved_at DESC LIMIT 1;
 
+-- name: GetIntelRawDocIDByChannelURLHash :one
+-- Inbound re-drive idempotency (Phase 3 hardening): email/websub events
+-- materialize under a deterministic url (email:{ch}:{msg}, websub:{ch}:
+-- {hash}); a re-run that already persisted the doc (crash between insert
+-- and terminal mark, or an admin redrive) reuses it instead of stacking
+-- a duplicate row.
+SELECT id FROM intel_raw_documents
+WHERE channel_id = $1 AND url = $2 AND content_hash = $3
+ORDER BY retrieved_at DESC LIMIT 1;
+
 -- name: GetPrevIntelRawDocByChannel :one
 -- The previous MANIFEST document for a channel (excluding the given doc) —
 -- manifest-diff fan-out (sitemap/wayback Phase 2) compares the new

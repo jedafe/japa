@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/mail"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -26,21 +27,6 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
-// TaskIntelDetectChanges is the Asynq task name enqueued after an inbound
-// (WebSub push) delivery is materialized into a raw document — the same
-// hand-off the fetch path uses (intel-channels Phase 3).
-const TaskIntelDetectChanges = "intel:detect_changes"
-
-// TaskIntelInboundEmail is the Asynq task name the email inbound endpoint
-// enqueues; the worker task MIME-parses the stored event into a raw doc.
-const TaskIntelInboundEmail = "intel:inbound_email"
-
-// TaskIntelWebSubSubscribe is the Asynq task name admin channel-create
-// enqueues so a webhook channel's hub subscription starts immediately.
-// Mirrors worker.TypeIntelWebSubSubscribe without importing the worker
-// package (import cycle).
-const TaskIntelWebSubSubscribe = "intel:websub_subscribe"
-
 const (
 	// inboundSigSkew bounds the delivery timestamp for replay protection.
 	inboundSigSkew = 5 * time.Minute
@@ -48,6 +34,11 @@ const (
 	inboundMaxBody = 8 << 20 // 8 MiB
 	// inboundIdemTTL is the dedupe window for jc:intel:inbound:idem:{hash}.
 	inboundIdemTTL = 24 * time.Hour
+	// inboundStuckSecs is the claim age at which a 'processing' event is
+	// treated as crashed and becomes admin-redrivable — far beyond the
+	// intel:inbound_email task timeout (1m) + retry-scheduling slack, so a
+	// live claim can never be hijacked.
+	inboundStuckSecs = 15 * 60 // 15 minutes
 )
 
 // ---------------------------------------------------------------------------
@@ -275,8 +266,8 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 		"version":  "v1",
 		"event_id": event.ID.String(),
 	})
-	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelInboundEmail, taskPayload),
-		worker.TaskOpts(TaskIntelInboundEmail)...); err != nil {
+	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(worker.TypeIntelInboundEmail, taskPayload),
+		worker.TaskOpts(worker.TypeIntelInboundEmail)...); err != nil {
 		// Free the dedupe slot so the provider's redelivery is not a silent
 		// duplicate, and fail the orphan event row — a redelivery creates
 		// a fresh event rather than resurrecting this one.
@@ -357,6 +348,21 @@ func (h *Handlers) HandleWebSubVerify(w http.ResponseWriter, r *http.Request) {
 		if h.rdb != nil {
 			_ = h.rdb.Del(r.Context(), leaseKey).Err()
 		}
+		if mode == "denied" {
+			// Surface the refusal on the channel row (last_error_message)
+			// so an operator sees "hub denied subscription" instead of a
+			// silently dead subscription.
+			reason := r.URL.Query().Get("hub.reason")
+			msg := "websub: hub denied subscription"
+			if reason != "" {
+				msg += " — " + inboundHeaderCap(reason)
+			}
+			_ = h.intelSources.NoteChannelError(r.Context(), gen.NoteIntelChannelErrorParams{
+				ID:               ch.ID,
+				LastErrorMessage: &msg,
+			})
+			slog.Warn("intel: websub subscription denied by hub", "channel_id", ch.ID.String(), "reason", reason)
+		}
 	default:
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_mode", "hub.mode must be subscribe or unsubscribe")
 		return
@@ -400,6 +406,20 @@ func (h *Handlers) HandleWebSubPush(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// WebSub hubs SHOULD label the delivery with Link: <topic>; rel="self" —
+	// when present it must equal the channel's configured topic (catches a
+	// hub misrouting pushes between subscriptions, and narrows the unsigned-
+	// secret configuration's exposure to off-topic bodies).
+	if cfgTopic := inboundCfgString(cfg, "topic"); cfgTopic != "" {
+		if self := webSubSelfLink(r.Header.Values("Link")); self != "" && self != cfgTopic {
+			slog.Info("intel: websub push dropped: rel=self topic mismatch", "channel_id", ch.ID.String(), "link_self", self)
+			errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+				"data": map[string]interface{}{"received": false, "reason": "topic_mismatch"},
+			})
+			return
+		}
+	}
+
 	deliveryHash := sha256.Sum256(body)
 	idemKey, dup := h.claimInbound(r, "websub:"+ch.ID.String()+":"+hex.EncodeToString(deliveryHash[:]))
 	if dup {
@@ -430,62 +450,200 @@ func (h *Handlers) HandleWebSubPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mark := func(status string) {
-		_ = h.intelSources.MarkInboundEvent(r.Context(), gen.MarkIntelInboundEventParams{ID: event.ID, Status: status})
+	rawDocID, perr := h.processWebSubDelivery(r.Context(), ch, event)
+	if perr != nil {
+		h.releaseInbound(r, idemKey)
+		if errors.Is(perr, errInboundDropped) {
+			errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+				"data": map[string]interface{}{"received": false, "reason": "source_disabled"},
+			})
+			return
+		}
+		slog.Error("intel: websub delivery processing failed", "channel_id", ch.ID.String(), "event_id", event.ID.String(), "error", perr)
+		errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Could not persist the delivery")
+		return
 	}
 
-	src, err := h.intelSources.Get(r.Context(), ch.SourceID)
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+		"data": map[string]interface{}{"received": true, "raw_doc_id": rawDocID},
+	})
+}
+
+// errInboundDropped marks a delivery the pipeline intentionally did not
+// process (parent source disabled/inactive). The event is left 'ignored'
+// — auditable and admin-redrivable — and the HTTP caller answers a 202
+// drop rather than a 500.
+var errInboundDropped = errors.New("inbound: delivery dropped")
+
+// processWebSubDelivery materializes a stored inbound event into a raw
+// document and hands it to intel:detect_changes — the push handler's tail,
+// shared with the admin redrive so a failed delivery re-runs the identical
+// path. Returns the raw doc id on success; the event is marked
+// processed/failed/ignored accordingly.
+func (h *Handlers) processWebSubDelivery(ctx context.Context, ch gen.IntelSourceChannel, event gen.IntelInboundEvent) (string, error) {
+	mark := func(status string) {
+		_ = h.intelSources.MarkInboundEvent(ctx, gen.MarkIntelInboundEventParams{ID: event.ID, Status: status})
+	}
+
+	src, err := h.intelSources.Get(ctx, ch.SourceID)
 	if err != nil {
 		mark("failed")
-		h.releaseInbound(r, idemKey)
-		slog.Error("intel: websub source lookup failed", "channel_id", ch.ID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Could not load delivery source")
-		return
+		return "", fmt.Errorf("load source: %w", err)
+	}
+	if !src.Enabled || src.Status != "active" {
+		mark("ignored")
+		return "", fmt.Errorf("%w: source disabled or inactive", errInboundDropped)
 	}
 
 	// Prior hash BEFORE insert — detect_changes diffs against the previous
 	// delivery, not the doc we just persisted.
-	priorHash, _ := h.intelStores.GetLatestIntelRawDocHashForChannel(r.Context(), ch.ID)
+	priorHash, _ := h.intelStores.GetLatestIntelRawDocHashForChannel(ctx, ch.ID)
 
-	docURL := "websub:" + ch.ID.String() + ":" + hex.EncodeToString(contentHash[:8])
-	rawDoc, err := h.intelStores.CreateIntelRawDocument(r.Context(), gen.CreateIntelRawDocumentParams{
-		SourceID:    src.ID,
-		ChannelID:   ch.ID,
-		Url:         docURL,
-		HttpStatus:  200,
-		HttpHeaders: headersJSON,
-		ContentType: strPtrInbound(ct),
-		Body:        body,
-		ContentHash: hex.EncodeToString(contentHash[:]),
-	})
+	hashSuffix := event.ContentHash
+	if len(hashSuffix) > 16 {
+		hashSuffix = hashSuffix[:16]
+	}
+	docURL := "websub:" + ch.ID.String() + ":" + hashSuffix
+	// Idempotent re-materialization: the deterministic doc URL means a
+	// redrive after a crash-between-insert-and-mark (or any second run of
+	// this event) reuses the existing doc instead of stacking a duplicate.
+	rawDocID, found, err := h.intelStores.GetIntelRawDocIDByChannelURLHash(ctx, ch.ID, docURL, event.ContentHash)
 	if err != nil {
 		mark("failed")
-		h.releaseInbound(r, idemKey)
-		slog.Error("intel: websub raw doc persist failed", "channel_id", ch.ID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Could not persist the delivery")
-		return
+		return "", fmt.Errorf("lookup existing raw doc: %w", err)
+	}
+	if !found {
+		rawDoc, err := h.intelStores.CreateIntelRawDocument(ctx, gen.CreateIntelRawDocumentParams{
+			SourceID:    src.ID,
+			ChannelID:   ch.ID,
+			Url:         docURL,
+			HttpStatus:  200,
+			HttpHeaders: event.Headers,
+			ContentType: event.ContentType,
+			Body:        event.Payload,
+			ContentHash: event.ContentHash,
+		})
+		if err != nil {
+			mark("failed")
+			return "", fmt.Errorf("persist raw doc: %w", err)
+		}
+		rawDocID = rawDoc.ID
+	} else {
+		// Re-materialization: the existing doc is already this channel's
+		// latest, so priorHash self-references and detect_changes would
+		// decide 'unchanged' — starving the pipeline while the event is
+		// marked processed. An empty prior forces the pipeline to run;
+		// (source_id, external_key) dedup keeps re-curation idempotent.
+		priorHash = ""
 	}
 
 	taskPayload, _ := json.Marshal(map[string]string{
 		"version":    "v1",
 		"source_id":  ch.SourceID.String(),
 		"channel_id": ch.ID.String(),
-		"raw_doc_id": rawDoc.ID.String(),
+		"raw_doc_id": rawDocID.String(),
 		"prior_hash": priorHash,
 	})
-	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelDetectChanges, taskPayload),
-		worker.TaskOpts(TaskIntelDetectChanges)...); err != nil {
+	if _, err := h.asynqClient.EnqueueContext(ctx, asynq.NewTask(worker.TypeIntelDetectChanges, taskPayload),
+		worker.TaskOpts(worker.TypeIntelDetectChanges)...); err != nil {
 		mark("failed")
-		h.releaseInbound(r, idemKey)
-		slog.Error("intel: websub detect_changes enqueue failed", "raw_doc_id", rawDoc.ID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Could not queue delivery processing")
-		return
+		return "", fmt.Errorf("enqueue detect_changes: %w", err)
 	}
 
 	mark("processed")
-	errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
-		"data": map[string]interface{}{"received": true, "raw_doc_id": rawDoc.ID.String()},
-	})
+	return rawDocID.String(), nil
+}
+
+// ---------------------------------------------------------------------------
+// Admin re-drive (intel-channels Phase 3 hardening)
+// ---------------------------------------------------------------------------
+
+// HandleAdminRedriveInboundEvent re-processes a failed/stuck/ignored
+// inbound delivery (POST /api/v1/admin/intel/inbound-events/{id}/redrive,
+// RBAC intel.channels.update). The event resets to 'received' via CAS, then
+// re-runs its channel's pipeline: email events re-enqueue
+// intel:inbound_email; webhook events re-materialize inline (the same path
+// the push handler runs). Events still 'received' or already 'processed'
+// are not redrivable (409).
+func (h *Handlers) HandleAdminRedriveInboundEvent(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil || h.asynqClient == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "inbound_unavailable", "Inbound events are not configured")
+		return
+	}
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	eventID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	event, err := h.intelSources.GetInboundEvent(r.Context(), eventID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "event_not_found", "Inbound event not found")
+		return
+	}
+	ch, err := h.intelSources.GetChannel(r.Context(), event.ChannelID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "channel_not_found", "Channel not found")
+		return
+	}
+	if ch.CrawlMethod != "email" && ch.CrawlMethod != "webhook" {
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "event_not_redrivable", "Only email/webhook inbound events can be redriven")
+		return
+	}
+
+	// CAS back to 'received' — failed/ignored events always reset; a
+	// 'processing' event only resets once its claim is older than
+	// inboundStuckSecs, so a live worker mid-flight can never be hijacked
+	// into double-materializing the delivery.
+	ok, err = h.intelSources.RedriveInboundEvent(r.Context(), eventID, inboundStuckSecs)
+	if err != nil {
+		slog.Error("intel: inbound event redrive failed", "event_id", eventID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "redrive_failed", "Could not redrive the delivery")
+		return
+	}
+	if !ok {
+		errpkg.WriteError(w, http.StatusConflict, "event_not_redrivable", "Event is received or already processed")
+		return
+	}
+	event.Status = "received"
+
+	switch ch.CrawlMethod {
+	case "email":
+		taskPayload, _ := json.Marshal(map[string]string{
+			"version":  "v1",
+			"event_id": event.ID.String(),
+		})
+		if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(worker.TypeIntelInboundEmail, taskPayload),
+			worker.TaskOpts(worker.TypeIntelInboundEmail)...); err != nil {
+			_ = h.intelSources.MarkInboundEvent(r.Context(), gen.MarkIntelInboundEventParams{ID: event.ID, Status: "failed"})
+			slog.Error("intel: redrive enqueue failed", "event_id", event.ID.String(), "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Could not queue delivery processing")
+			return
+		}
+		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+			"data": map[string]interface{}{"redriven": true, "event_id": event.ID.String()},
+		})
+	case "webhook":
+		if h.intelStores == nil {
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "inbound_unavailable", "WebSub is not configured")
+			return
+		}
+		rawDocID, perr := h.processWebSubDelivery(r.Context(), ch, event)
+		if perr != nil {
+			if errors.Is(perr, errInboundDropped) {
+				errpkg.WriteError(w, http.StatusUnprocessableEntity, "source_disabled", "The parent source is disabled or inactive")
+				return
+			}
+			slog.Error("intel: redrive websub delivery failed", "event_id", event.ID.String(), "error", perr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Could not reprocess the delivery")
+			return
+		}
+		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+			"data": map[string]interface{}{"redriven": true, "event_id": event.ID.String(), "raw_doc_id": rawDocID},
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -573,6 +731,31 @@ func verifyInboundSignature(key, timestamp, token, signature string) bool {
 	want := hex.EncodeToString(mac.Sum(nil))
 
 	return hmac.Equal([]byte(strings.ToLower(signature)), []byte(want))
+}
+
+// webSubLinkTargetRe / webSubSelfRelRe extract the rel="self" link target
+// from a WebSub Link header — the hub's declaration of which topic this
+// delivery carries. rel may appear in any parameter position
+// ("<t>; rel=self; x=y" and "<t>; x=y; rel=self" are both legal).
+var (
+	webSubLinkTargetRe = regexp.MustCompile(`<([^>]+)>`)
+	webSubSelfRelRe    = regexp.MustCompile(`(?i)(?:^|;)\s*rel="?self"?(?:\s*;|$)`)
+)
+
+// webSubSelfLink returns the rel="self" target across the request's Link
+// header values, or "" when the hub didn't send one.
+func webSubSelfLink(vals []string) string {
+	for _, v := range vals {
+		for _, part := range strings.Split(v, ",") {
+			if !webSubSelfRelRe.MatchString(part) {
+				continue
+			}
+			if m := webSubLinkTargetRe.FindStringSubmatch(part); m != nil {
+				return strings.TrimSpace(m[1])
+			}
+		}
+	}
+	return ""
 }
 
 // verifyWebSubSignature checks X-Hub-Signature "sha256=<hex>" as

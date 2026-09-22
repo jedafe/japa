@@ -11,9 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimIntelInboundEvent = `-- name: ClaimIntelInboundEvent :execrows
+UPDATE intel_inbound_events SET status = 'processing', claimed_at = now()
+WHERE id = $1 AND status = 'received'
+`
+
+// Atomic mutex for the processing task: transitions received → processing
+// and reports whether the claim won. Only one concurrent worker can flip
+// the row, so duplicate task enqueues (or an overlapping retry while the
+// first run is mid-flight) cannot double-materialize a delivery.
+func (q *Queries) ClaimIntelInboundEvent(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, claimIntelInboundEvent, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createIntelInboundEvent = `-- name: CreateIntelInboundEvent :one
 INSERT INTO intel_inbound_events (channel_id, payload, headers, content_type, content_hash)
-VALUES ($1,$2,$3,$4,$5) RETURNING id, channel_id, payload, headers, content_type, content_hash, received_at, processed_at, status
+VALUES ($1,$2,$3,$4,$5) RETURNING id, channel_id, payload, headers, content_type, content_hash, received_at, processed_at, status, claimed_at
 `
 
 type CreateIntelInboundEventParams struct {
@@ -43,6 +60,7 @@ func (q *Queries) CreateIntelInboundEvent(ctx context.Context, arg CreateIntelIn
 		&i.ReceivedAt,
 		&i.ProcessedAt,
 		&i.Status,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
@@ -136,6 +154,7 @@ const getIntelEmailChannelByAddress = `-- name: GetIntelEmailChannelByAddress :o
 SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_source_channels
 WHERE crawl_method = 'email' AND enabled
   AND lower(provider_config->>'inbound_address') = lower($1)
+ORDER BY created_at ASC
 LIMIT 1
 `
 
@@ -172,7 +191,7 @@ func (q *Queries) GetIntelEmailChannelByAddress(ctx context.Context, lower strin
 }
 
 const getIntelInboundEvent = `-- name: GetIntelInboundEvent :one
-SELECT id, channel_id, payload, headers, content_type, content_hash, received_at, processed_at, status FROM intel_inbound_events WHERE id = $1
+SELECT id, channel_id, payload, headers, content_type, content_hash, received_at, processed_at, status, claimed_at FROM intel_inbound_events WHERE id = $1
 `
 
 func (q *Queries) GetIntelInboundEvent(ctx context.Context, id pgtype.UUID) (IntelInboundEvent, error) {
@@ -188,6 +207,7 @@ func (q *Queries) GetIntelInboundEvent(ctx context.Context, id pgtype.UUID) (Int
 		&i.ReceivedAt,
 		&i.ProcessedAt,
 		&i.Status,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
@@ -415,7 +435,7 @@ func (q *Queries) MarkIntelChannelChanged(ctx context.Context, id pgtype.UUID) e
 
 const markIntelInboundEvent = `-- name: MarkIntelInboundEvent :exec
 UPDATE intel_inbound_events SET status = $2, processed_at = now()
-WHERE id = $1 AND status = 'received'
+WHERE id = $1 AND status IN ('received','processing')
 `
 
 type MarkIntelInboundEventParams struct {
@@ -423,12 +443,59 @@ type MarkIntelInboundEventParams struct {
 	Status string      `json:"status"`
 }
 
-// Transitions are one-way out of 'received': a terminal event
-// (processed/failed/ignored) is immutable so a late duplicate task run
+// Terminal transition from 'received' (inbound handler paths that never
+// claimed) or 'processing' (the claiming worker). Terminal states
+// (processed/failed/ignored) are immutable so a late duplicate task run
 // can never flip a finished delivery back or forward.
 func (q *Queries) MarkIntelInboundEvent(ctx context.Context, arg MarkIntelInboundEventParams) error {
 	_, err := q.db.Exec(ctx, markIntelInboundEvent, arg.ID, arg.Status)
 	return err
+}
+
+const noteIntelChannelError = `-- name: NoteIntelChannelError :exec
+UPDATE intel_source_channels SET last_error_message = $2, last_error_at = now()
+WHERE id = $1
+`
+
+type NoteIntelChannelErrorParams struct {
+	ID               pgtype.UUID `json:"id"`
+	LastErrorMessage *string     `json:"last_error_message"`
+}
+
+// Surface a non-crawl channel error (e.g. a hub denying a WebSub
+// subscription) on the channel row WITHOUT touching consecutive_failures,
+// last_crawled_at, or last_success_at — it is a flag, not a crawl result.
+func (q *Queries) NoteIntelChannelError(ctx context.Context, arg NoteIntelChannelErrorParams) error {
+	_, err := q.db.Exec(ctx, noteIntelChannelError, arg.ID, arg.LastErrorMessage)
+	return err
+}
+
+const redriveIntelInboundEvent = `-- name: RedriveIntelInboundEvent :execrows
+UPDATE intel_inbound_events SET status = 'received', processed_at = NULL, claimed_at = NULL
+WHERE id = $1 AND (
+  status IN ('failed','ignored')
+  OR (status = 'processing'
+      AND (claimed_at IS NULL OR claimed_at < now() - make_interval(secs => $2)))
+)
+`
+
+type RedriveIntelInboundEventParams struct {
+	ID   pgtype.UUID `json:"id"`
+	Secs float64     `json:"secs"`
+}
+
+// Admin re-drive: reset a failed/rejected/stuck-processing event back to
+// 'received' so the follow-up task re-processes it. A 'processing' event
+// is only redrivable once its claim is older than $2 seconds — anything
+// fresher is a live worker mid-flight and must not be hijacked (that
+// would double-materialize the delivery). 0 rows = terminal-processed,
+// actively claimed, or still waiting.
+func (q *Queries) RedriveIntelInboundEvent(ctx context.Context, arg RedriveIntelInboundEventParams) (int64, error) {
+	result, err := q.db.Exec(ctx, redriveIntelInboundEvent, arg.ID, arg.Secs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateIntelChannelCrawlStatus = `-- name: UpdateIntelChannelCrawlStatus :exec

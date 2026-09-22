@@ -254,7 +254,7 @@ func TestValidateChannelUpdate(t *testing.T) {
 	t.Run("empty patch passes", func(t *testing.T) {
 		t.Parallel()
 		arg := gen.UpdateIntelSourceChannelParams{ID: mustUUID("11111111-1111-4111-8111-111111111111")}
-		if err := validateChannelUpdate(arg); err != nil {
+		if err := validateChannelUpdate(arg, CrawlMethodRSS); err != nil {
 			t.Fatalf("validateChannelUpdate(empty patch) = %v, want nil", err)
 		}
 	})
@@ -278,7 +278,7 @@ func TestValidateChannelUpdate(t *testing.T) {
 			arg := gen.UpdateIntelSourceChannelParams{ID: mustUUID("11111111-1111-4111-8111-111111111111")}
 			tt.mutate(&arg)
 
-			if err := validateChannelUpdate(arg); err == nil {
+			if err := validateChannelUpdate(arg, CrawlMethodRSS); err == nil {
 				t.Fatalf("validateChannelUpdate(%s) = nil, want error", tt.name)
 			}
 		})
@@ -293,11 +293,39 @@ func TestValidateChannelUpdate(t *testing.T) {
 			CrawlMethod: strPtr(string(CrawlMethodSitemap)),
 			Pipeline:    strPtr(string(PipelineCurate)),
 		}
-		if err := validateChannelUpdate(arg); err != nil {
+		if err := validateChannelUpdate(arg, CrawlMethodRSS); err != nil {
 			t.Fatalf("validateChannelUpdate(valid patch) = %v, want nil", err)
 		}
 		if *arg.Label != "New label" {
 			t.Errorf("label not trimmed: %q", *arg.Label)
+		}
+	})
+
+	t.Run("inbound channel accepts non-URL entry_url", func(t *testing.T) {
+		t.Parallel()
+		// Email/webhook channels are created with non-URL entry points
+		// (mailto:, provider address); a PATCH touching entry_url must not
+		// strand them behind the pull-method http(s) rule.
+		arg := gen.UpdateIntelSourceChannelParams{
+			ID:       mustUUID("11111111-1111-4111-8111-111111111111"),
+			EntryUrl: strPtr("mailto:intel@inbound.japa.example"),
+		}
+		if err := validateChannelUpdate(arg, CrawlMethodEmail); err != nil {
+			t.Fatalf("validateChannelUpdate(inbound entry_url) = %v, want nil", err)
+		}
+	})
+
+	t.Run("repurpose to pull re-checks entry_url strictly", func(t *testing.T) {
+		t.Parallel()
+		// Same patch switches email → rss: the relaxed inbound rule must
+		// not carry the non-URL entry point into a fetchable method.
+		arg := gen.UpdateIntelSourceChannelParams{
+			ID:          mustUUID("11111111-1111-4111-8111-111111111111"),
+			EntryUrl:    strPtr("mailto:intel@inbound.japa.example"),
+			CrawlMethod: strPtr(string(CrawlMethodRSS)),
+		}
+		if err := validateChannelUpdate(arg, CrawlMethodEmail); err == nil {
+			t.Fatal("validateChannelUpdate(repurposed entry_url) = nil, want error")
 		}
 	})
 }

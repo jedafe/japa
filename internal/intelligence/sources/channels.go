@@ -290,7 +290,12 @@ func validateChannelEntryURL(entryURL string, method CrawlMethod, allowedLiteral
 // written back so whitespace-only input cannot reach the database. The
 // service performs the cross-field checks that need the existing row
 // (e.g. pipeline → entity_types) separately.
-func validateChannelUpdate(arg gen.UpdateIntelSourceChannelParams) error {
+//
+// existingMethod is the channel's current crawl_method — needed to apply
+// the relaxed entry_url rule to inbound channels (email/webhook accept
+// non-URL entry points at create; a patch must not strand them). When the
+// same patch changes crawl_method the incoming value wins.
+func validateChannelUpdate(arg gen.UpdateIntelSourceChannelParams, existingMethod CrawlMethod) error {
 	if arg.Label != nil {
 		label := strings.TrimSpace(*arg.Label)
 		if label == "" {
@@ -301,15 +306,21 @@ func validateChannelUpdate(arg gen.UpdateIntelSourceChannelParams) error {
 
 	if arg.EntryUrl != nil {
 		entryURL := strings.TrimSpace(*arg.EntryUrl)
-		// Strict http(s) for every channel on PATCH — unlike create, the
-		// patch payload alone cannot prove the channel is inbound, so the
-		// relaxed inbound shape is only allowed through CreateChannel.
-		u, err := url.Parse(entryURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("sources: channel: %w: entry_url must be an http(s) URL", errpkg.ErrInvalid)
+		if entryURL == "" {
+			return fmt.Errorf("sources: channel: %w: entry_url", errpkg.ErrRequired)
 		}
-		if IsPrivateIPLiteral(u.Hostname()) {
-			return fmt.Errorf("sources: channel: %w: entry_url targets a private/reserved IP", errpkg.ErrInvalid)
+		method := existingMethod
+		if arg.CrawlMethod != nil {
+			method = CrawlMethod(*arg.CrawlMethod)
+		}
+		if !InboundMethod(method) {
+			u, err := url.Parse(entryURL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return fmt.Errorf("sources: channel: %w: entry_url must be an http(s) URL", errpkg.ErrInvalid)
+			}
+			if IsPrivateIPLiteral(u.Hostname()) {
+				return fmt.Errorf("sources: channel: %w: entry_url targets a private/reserved IP", errpkg.ErrInvalid)
+			}
 		}
 		*arg.EntryUrl = entryURL
 	}

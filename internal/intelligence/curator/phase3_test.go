@@ -85,13 +85,19 @@ func TestEmailCurate_NoMessageID(t *testing.T) {
 	}
 }
 
-// TestEmailCurate_Empty rejects an envelope with neither subject nor text.
+// TestEmailCurate_Empty returns no records for an envelope with neither
+// subject nor text — a blank delivery is noise, not a review-worthy parse
+// failure (the inbound event row already carries the audit trail).
 func TestEmailCurate_Empty(t *testing.T) {
 	t.Parallel()
 
 	ch := sources.Channel{CrawlMethod: "email"}
-	if _, err := (Email{}).Curate(context.Background(), []byte(`{"from":"a@b"}`), "", ch); err == nil {
-		t.Fatal("expected error for empty delivery")
+	recs, err := (Email{}).Curate(context.Background(), []byte(`{"from":"a@b"}`), "", ch)
+	if err != nil {
+		t.Fatalf("Curate: %v, want nil (empty delivery is a clean skip)", err)
+	}
+	if len(recs) != 0 {
+		t.Fatalf("records = %d, want 0", len(recs))
 	}
 }
 
