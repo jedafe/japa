@@ -39,26 +39,11 @@ func (a *cvFormatterAIDispatcher) Dispatch(ctx context.Context, category string,
 		return cvformatter.AIResponse{}, err
 	}
 
-	out := cvformatter.AIResponse{}
-	if text, ok := resp.Raw["text"].(string); ok {
-		out.Text = text
-	} else if text, ok := resp.Raw["content"].(string); ok {
-		out.Text = text
-	} else if text, ok := resp.Raw["output"].(string); ok {
-		out.Text = text
-	}
-
-	if model, ok := resp.Raw["model"].(string); ok {
-		out.Model = model
-	}
-
-	if tokens, ok := resp.Raw["total_tokens"].(float64); ok {
-		out.Tokens = int(tokens)
-	} else if tokens, ok := resp.Raw["tokens_used"].(float64); ok {
-		out.Tokens = int(tokens)
-	}
-
-	return out, nil
+	return cvformatter.AIResponse{
+		Text:   ai.ExtractText(resp),
+		Model:  ai.ExtractModel(resp),
+		Tokens: ai.ExtractTokens(resp),
+	}, nil
 }
 
 // cvFormatterCache adapts valkeycompat.Cmdable to cvformatter.Cache.

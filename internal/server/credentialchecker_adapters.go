@@ -41,18 +41,8 @@ func (a *credentialCheckerAIDispatcher) Dispatch(ctx context.Context, category s
 		return credentialchecker.AIResponse{}, err
 	}
 
-	out := credentialchecker.AIResponse{}
-	if text, ok := resp.Raw["text"].(string); ok {
-		out.Text = text
-	} else if text, ok := resp.Raw["content"].(string); ok {
-		out.Text = text
-	} else if text, ok := resp.Raw["output"].(string); ok {
-		out.Text = text
-	}
-
-	if model, ok := resp.Raw["model"].(string); ok {
-		out.Model = model
-	}
-
-	return out, nil
+	return credentialchecker.AIResponse{
+		Text:  ai.ExtractText(resp),
+		Model: ai.ExtractModel(resp),
+	}, nil
 }

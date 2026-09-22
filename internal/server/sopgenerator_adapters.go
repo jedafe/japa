@@ -29,22 +29,7 @@ func (a *sopAIDispatcher) Dispatch(ctx context.Context, category string, req sop
 	if err != nil {
 		return sopgenerator.AIResponse{}, err
 	}
-
-	out := sopgenerator.AIResponse{}
-	if text, ok := resp.Raw["text"].(string); ok {
-		out.Text = text
-	} else if text, ok := resp.Raw["content"].(string); ok {
-		out.Text = text
-	} else if text, ok := resp.Raw["output"].(string); ok {
-		out.Text = text
-	}
-	if model, ok := resp.Raw["model"].(string); ok {
-		out.Model = model
-	}
-	if tokens, ok := resp.Raw["total_tokens"].(float64); ok {
-		out.Tokens = int(tokens)
-	}
-	return out, nil
+	return sopgenerator.AIResponse{Text: ai.ExtractText(resp), Model: ai.ExtractModel(resp), Tokens: ai.ExtractTokens(resp)}, nil
 }
 
 // sopQuotaCache adapts the Valkey client to the sopgenerator.Cache
@@ -74,16 +59,7 @@ func dispatchToolAI(ctx context.Context, d *ai.Dispatcher, category, system, use
 	if err != nil {
 		return "", "", err
 	}
-	for _, k := range []string{"text", "content", "output"} {
-		if v, ok := resp.Raw[k].(string); ok && v != "" {
-			text = v
-			break
-		}
-	}
-	if v, ok := resp.Raw["model"].(string); ok {
-		model = v
-	}
-	return text, model, nil
+	return ai.ExtractText(resp), ai.ExtractModel(resp), nil
 }
 
 // crsAIDispatcher satisfies crscalculator.AIDispatcher (§107).
