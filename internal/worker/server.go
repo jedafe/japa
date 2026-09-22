@@ -304,6 +304,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md §4
 	schedule("*/15 * * * *", TypeIntelScheduleCrawls, 15*time.Minute)
 	schedule("30 4 * * *", TypeIntelRefreshFreshness, 24*time.Hour)
+	// Daily inbound-event retention sweep at 04:45 UTC (offset from the
+	// 04:00/04:30 tasks): deletes intel_inbound_events rows older than
+	// intel.inbound.retention_days — raw delivery payloads carry sender
+	// PII, so retention is bounded. Low queue.
+	schedule("45 4 * * *", TypeIntelPurgeInboundEvents, 24*time.Hour)
 
 	// §106 channel-sync amendment — hourly YouTube Atom-feed poll for
 	// video_channel directory sources. Runs at :20 to avoid the top-of-hour

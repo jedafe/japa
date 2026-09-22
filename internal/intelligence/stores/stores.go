@@ -350,6 +350,30 @@ func (s *Store) ListIntelRecordsByStatusAll(ctx context.Context, arg gen.ListInt
 	return rows, nil
 }
 
+// CountIntelRecordsByStatus returns the total number of intel records for
+// the given entity_type+status — the matching total for
+// ListIntelRecordsByStatus so moderation list pagination can be computed.
+func (s *Store) CountIntelRecordsByStatus(ctx context.Context, arg gen.CountIntelRecordsByStatusParams) (int64, error) {
+	n, err := s.queries.CountIntelRecordsByStatus(ctx, arg)
+	if err != nil {
+		return 0, fmt.Errorf("stores: count intel records by status: %w", err)
+	}
+
+	return n, nil
+}
+
+// CountIntelRecordsByStatusAll returns the total number of intel records
+// for the given status across all entity types — the matching total for
+// ListIntelRecordsByStatusAll.
+func (s *Store) CountIntelRecordsByStatusAll(ctx context.Context, status string) (int64, error) {
+	n, err := s.queries.CountIntelRecordsByStatusAll(ctx, status)
+	if err != nil {
+		return 0, fmt.Errorf("stores: count intel records by status (all types): %w", err)
+	}
+
+	return n, nil
+}
+
 // UpdateIntelRecordStatus sets the status of an intel record and stamps
 // last_verified_at to now(). The ID is stamped into the query params
 // regardless of any value the caller set on arg.
@@ -659,6 +683,28 @@ func (s *Store) CountScholarshipsByCountry(ctx context.Context) ([]gen.CountScho
 	return rows, nil
 }
 
+// CountIntelRadarByType returns per-domain promoted-item totals for the
+// radar counts endpoint (GET /intel/radar/counts).
+func (s *Store) CountIntelRadarByType(ctx context.Context) ([]gen.CountIntelRadarByTypeRow, error) {
+	rows, err := s.queries.CountIntelRadarByType(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("stores: count radar by type: %w", err)
+	}
+
+	return rows, nil
+}
+
+// CountIntelRadarByCountry returns per-country promoted-item totals across
+// the geo-scopable domains for the radar counts endpoint.
+func (s *Store) CountIntelRadarByCountry(ctx context.Context) ([]gen.CountIntelRadarByCountryRow, error) {
+	rows, err := s.queries.CountIntelRadarByCountry(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("stores: count radar by country: %w", err)
+	}
+
+	return rows, nil
+}
+
 // ---------------------------------------------------------------------------
 // Contents (guide projection)
 // ---------------------------------------------------------------------------
@@ -849,6 +895,28 @@ func (s *Store) ListVisaRoutesIntelKeyset(ctx context.Context, arg gen.ListVisaR
 	return rows, nil
 }
 
+// ListVisaRoutesBySpaces returns intel visa routes whose destination space
+// is in the given set, for the followed-countries radar feed.
+func (s *Store) ListVisaRoutesBySpaces(ctx context.Context, arg gen.ListVisaRoutesBySpacesParams) ([]gen.VisaRoute, error) {
+	rows, err := s.queries.ListVisaRoutesBySpaces(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list visa routes by spaces: %w", err)
+	}
+
+	return rows, nil
+}
+
+// GetIntelVisaRouteByID returns a single visa route row by its primary key
+// (used by the radar item detail endpoint for non-scholarship types).
+func (s *Store) GetIntelVisaRouteByID(ctx context.Context, id pgtype.UUID) (gen.VisaRoute, error) {
+	row, err := s.queries.GetIntelVisaRouteByID(ctx, id)
+	if err != nil {
+		return gen.VisaRoute{}, fmt.Errorf("stores: get visa route by id: %w", err)
+	}
+
+	return row, nil
+}
+
 // ---------------------------------------------------------------------------
 // HousingGuides (intelligence columns — domain projection for the housing domain)
 // ---------------------------------------------------------------------------
@@ -893,6 +961,28 @@ func (s *Store) ListHousingGuidesIntelKeyset(ctx context.Context, arg gen.ListHo
 	}
 
 	return rows, nil
+}
+
+// ListHousingGuidesBySpaces returns intel housing guides whose destination
+// or city space is in the given set, for the followed-countries radar feed.
+func (s *Store) ListHousingGuidesBySpaces(ctx context.Context, arg gen.ListHousingGuidesBySpacesParams) ([]gen.HousingGuide, error) {
+	rows, err := s.queries.ListHousingGuidesBySpaces(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list housing guides by spaces: %w", err)
+	}
+
+	return rows, nil
+}
+
+// GetIntelHousingGuideByID returns a single housing guide row by its primary
+// key (used by the radar item detail endpoint for non-scholarship types).
+func (s *Store) GetIntelHousingGuideByID(ctx context.Context, id pgtype.UUID) (gen.HousingGuide, error) {
+	row, err := s.queries.GetIntelHousingGuideByID(ctx, id)
+	if err != nil {
+		return gen.HousingGuide{}, fmt.Errorf("stores: get housing guide by id: %w", err)
+	}
+
+	return row, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -941,6 +1031,18 @@ func (s *Store) ListRemittanceRatesIntelKeyset(ctx context.Context, arg gen.List
 	return rows, nil
 }
 
+// GetIntelRemittanceRateByID returns a single remittance rate row by its
+// primary key (used by the radar item detail endpoint for non-scholarship
+// types).
+func (s *Store) GetIntelRemittanceRateByID(ctx context.Context, id pgtype.UUID) (gen.RemittanceRate, error) {
+	row, err := s.queries.GetIntelRemittanceRateByID(ctx, id)
+	if err != nil {
+		return gen.RemittanceRate{}, fmt.Errorf("stores: get remittance rate by id: %w", err)
+	}
+
+	return row, nil
+}
+
 // ---------------------------------------------------------------------------
 // ComparisonItems (intelligence columns — domain projection for the cost_of_living domain)
 // ---------------------------------------------------------------------------
@@ -985,6 +1087,29 @@ func (s *Store) ListComparisonItemsIntelKeyset(ctx context.Context, arg gen.List
 	}
 
 	return rows, nil
+}
+
+// ListComparisonItemsBySpaces returns intel comparison items whose geo
+// space is in the given set, for the followed-countries radar feed.
+func (s *Store) ListComparisonItemsBySpaces(ctx context.Context, arg gen.ListComparisonItemsBySpacesParams) ([]gen.ComparisonItem, error) {
+	rows, err := s.queries.ListComparisonItemsBySpaces(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list comparison items by spaces: %w", err)
+	}
+
+	return rows, nil
+}
+
+// GetIntelComparisonItemByID returns a single comparison item row by its
+// primary key (used by the radar item detail endpoint for non-scholarship
+// types).
+func (s *Store) GetIntelComparisonItemByID(ctx context.Context, id pgtype.UUID) (gen.ComparisonItem, error) {
+	row, err := s.queries.GetIntelComparisonItemByID(ctx, id)
+	if err != nil {
+		return gen.ComparisonItem{}, fmt.Errorf("stores: get comparison item by id: %w", err)
+	}
+
+	return row, nil
 }
 
 // ---------------------------------------------------------------------------

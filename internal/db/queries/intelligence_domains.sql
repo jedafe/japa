@@ -40,18 +40,26 @@ SET title = $2, description = $3, country = $4, country_space_id = $5, city = $6
 WHERE id = $1;
 
 -- name: ListIntelJobsKeyset :many
+-- Same geo-aware keyset shape as ListScholarshipsKeyset so the merged radar
+-- feed applies space/country filters uniformly across domains.
 SELECT * FROM intel_jobs
 WHERE ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
-ORDER BY created_at DESC, id DESC
-LIMIT $3;
+ OR intel_jobs.created_at < $1
+ OR (intel_jobs.created_at = $1 AND intel_jobs.id < $2))
+ AND ($3::uuid IS NULL OR intel_jobs.country_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL OR intel_jobs.country = $4
+      OR intel_jobs.country_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY intel_jobs.created_at DESC, intel_jobs.id DESC
+LIMIT $5;
 
 -- name: ListIntelJobsBySpaces :many
 SELECT * FROM intel_jobs
 WHERE country_space_id = ANY($1::uuid[])
-ORDER BY created_at DESC
-LIMIT $2;
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4;
 
 -- ===========================================================================
 -- visa_routes (intelligence columns added by migration 000444)
@@ -74,13 +82,33 @@ SET name = $2, visa_category = $3, eligibility_summary = $4, requirements_json =
 WHERE id = $1;
 
 -- name: ListVisaRoutesIntelKeyset :many
+-- Geo filter: visa_routes has no ISO country column — the $3 space filter
+-- matches destination_space_id directly and the $4 country filter resolves
+-- through spaces.geo_code.
+SELECT * FROM visa_routes
+WHERE visa_routes.intel_record_id IS NOT NULL
+ AND ($1::timestamptz IS NULL
+ OR visa_routes.created_at < $1
+ OR (visa_routes.created_at = $1 AND visa_routes.id < $2))
+ AND ($3::uuid IS NULL OR visa_routes.destination_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL
+      OR visa_routes.destination_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY visa_routes.created_at DESC, visa_routes.id DESC
+LIMIT $5;
+
+-- name: ListVisaRoutesBySpaces :many
+-- Followed-spaces feed variant with the same optional keyset cursor.
 SELECT * FROM visa_routes
 WHERE intel_record_id IS NOT NULL
- AND ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
+ AND destination_space_id = ANY($1::uuid[])
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
 ORDER BY created_at DESC, id DESC
-LIMIT $3;
+LIMIT $4;
+
+-- name: GetIntelVisaRouteByID :one
+SELECT * FROM visa_routes WHERE id = $1;
 
 -- ===========================================================================
 -- housing_guides (intelligence columns added by migration 000445)
@@ -102,13 +130,32 @@ SET accommodation_type = $2, search_platforms = $3, landlord_requirements = $4,
 WHERE id = $1;
 
 -- name: ListHousingGuidesIntelKeyset :many
+-- Geo filter: matches destination_space_id or city_space_id for $3, and
+-- resolves the $4 country filter through spaces.geo_code on both columns.
+SELECT * FROM housing_guides
+WHERE housing_guides.intel_record_id IS NOT NULL
+ AND ($1::timestamptz IS NULL
+ OR housing_guides.created_at < $1
+ OR (housing_guides.created_at = $1 AND housing_guides.id < $2))
+ AND ($3::uuid IS NULL OR housing_guides.destination_space_id = $3 OR housing_guides.city_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL
+      OR housing_guides.destination_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4)
+      OR housing_guides.city_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY housing_guides.created_at DESC, housing_guides.id DESC
+LIMIT $5;
+
+-- name: ListHousingGuidesBySpaces :many
 SELECT * FROM housing_guides
 WHERE intel_record_id IS NOT NULL
- AND ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
+ AND (destination_space_id = ANY($1::uuid[]) OR city_space_id = ANY($1::uuid[]))
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
 ORDER BY created_at DESC, id DESC
-LIMIT $3;
+LIMIT $4;
+
+-- name: GetIntelHousingGuideByID :one
+SELECT * FROM housing_guides WHERE id = $1;
 
 -- ===========================================================================
 -- remittance_rates (intelligence columns added by migration 000446)
@@ -129,6 +176,8 @@ SET rate = $2, fee_flat = $3, fee_pct = $4, transfer_time = $5,
 WHERE id = $1;
 
 -- name: ListRemittanceRatesIntelKeyset :many
+-- remittance_rates has no geo columns (corridors are currency pairs) — the
+-- radar handler excludes this domain when a geo filter is active.
 SELECT * FROM remittance_rates
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
@@ -136,6 +185,9 @@ WHERE intel_record_id IS NOT NULL
  OR (created_at = $1 AND id < $2))
 ORDER BY fetched_at DESC, id DESC
 LIMIT $3;
+
+-- name: GetIntelRemittanceRateByID :one
+SELECT * FROM remittance_rates WHERE id = $1;
 
 -- ===========================================================================
 -- comparison_items (intelligence columns added by migration 000447)
@@ -157,12 +209,28 @@ WHERE id = $1;
 
 -- name: ListComparisonItemsIntelKeyset :many
 SELECT * FROM comparison_items
-WHERE intel_record_id IS NOT NULL
+WHERE comparison_items.intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
+ OR comparison_items.created_at < $1
+ OR (comparison_items.created_at = $1 AND comparison_items.id < $2))
+ AND ($3::uuid IS NULL OR comparison_items.geo_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL
+      OR comparison_items.geo_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY comparison_items.created_at DESC, comparison_items.id DESC
+LIMIT $5;
+
+-- name: ListComparisonItemsBySpaces :many
+SELECT * FROM comparison_items
+WHERE intel_record_id IS NOT NULL
+ AND geo_space_id = ANY($1::uuid[])
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
 ORDER BY created_at DESC, id DESC
-LIMIT $3;
+LIMIT $4;
+
+-- name: GetIntelComparisonItemByID :one
+SELECT * FROM comparison_items WHERE id = $1;
 
 -- ===========================================================================
 -- wiki_pages (intelligence columns added by migration 000469)
@@ -326,3 +394,46 @@ SELECT * FROM credential_professions WHERE slug = $1 LIMIT 1;
 
 -- name: GetCredentialProfessionByName :one
 SELECT * FROM credential_professions WHERE name = $1 LIMIT 1;
+
+-- ===========================================================================
+-- Radar aggregate counts (GET /api/v1/intel/radar/counts)
+-- ===========================================================================
+
+-- name: CountIntelRadarByType :many
+-- Per-domain promoted-item totals for the radar counts endpoint. Only
+-- intel-linked rows are counted on the ALTERed domain tables so purely
+-- editorial rows (Studio-authored visa routes, etc.) do not inflate the
+-- intelligence counts. Replaces the scholarship-only counts that left the
+-- unioned feed unrepresented.
+SELECT 'scholarship' AS item_type, COUNT(*) AS count FROM scholarships
+UNION ALL SELECT 'job', COUNT(*) FROM intel_jobs
+UNION ALL SELECT 'visa', COUNT(*) FROM visa_routes WHERE intel_record_id IS NOT NULL
+UNION ALL SELECT 'housing', COUNT(*) FROM housing_guides WHERE intel_record_id IS NOT NULL
+UNION ALL SELECT 'remittance', COUNT(*) FROM remittance_rates WHERE intel_record_id IS NOT NULL
+UNION ALL SELECT 'cost_of_living', COUNT(*) FROM comparison_items WHERE intel_record_id IS NOT NULL;
+
+-- name: CountIntelRadarByCountry :many
+-- Per-country totals across the geo-scopable domains. The canonical key is
+-- the country space's geo_code; rows whose space link is unresolved fall
+-- back to their raw ISO country text so they still appear.
+SELECT country, SUM(count) AS count FROM (
+ SELECT COALESCE(sp.geo_code, s.country) AS country, COUNT(*) AS count
+  FROM scholarships s LEFT JOIN spaces sp ON sp.id = s.country_space_id
+  GROUP BY 1
+ UNION ALL
+ SELECT COALESCE(sp.geo_code, j.country) AS country, COUNT(*) AS count
+  FROM intel_jobs j LEFT JOIN spaces sp ON sp.id = j.country_space_id
+  GROUP BY 1
+ UNION ALL
+ SELECT sp.geo_code AS country, COUNT(*) AS count
+  FROM visa_routes v JOIN spaces sp ON sp.id = v.destination_space_id
+  WHERE v.intel_record_id IS NOT NULL GROUP BY 1
+ UNION ALL
+ SELECT sp.geo_code AS country, COUNT(*) AS count
+  FROM housing_guides h JOIN spaces sp ON sp.id = h.destination_space_id
+  WHERE h.intel_record_id IS NOT NULL GROUP BY 1
+ UNION ALL
+ SELECT sp.geo_code AS country, COUNT(*) AS count
+  FROM comparison_items c JOIN spaces sp ON sp.id = c.geo_space_id
+  WHERE c.intel_record_id IS NOT NULL GROUP BY 1
+) t GROUP BY country;

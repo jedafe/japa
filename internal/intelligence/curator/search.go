@@ -34,6 +34,7 @@ type searchHit struct {
 func (Search) Curate(_ context.Context, body []byte, _ string, ch sources.Channel) ([]Record, error) {
 	entityType := resolveEntityType("", ch)
 	var out []Record
+	sawLine := false
 
 	sc := bufio.NewScanner(bytes.NewReader(body))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
@@ -42,6 +43,7 @@ func (Search) Curate(_ context.Context, body []byte, _ string, ch sources.Channe
 		if len(line) == 0 {
 			continue
 		}
+		sawLine = true
 		var hit searchHit
 		if err := json.Unmarshal(line, &hit); err != nil || hit.URL == "" {
 			continue
@@ -65,7 +67,13 @@ func (Search) Curate(_ context.Context, body []byte, _ string, ch sources.Channe
 		return nil, errors.New("curator: search: scan body: " + err.Error())
 	}
 	if len(out) == 0 {
-		return nil, errors.New("curator: search: no results in body")
+		if !sawLine {
+			// A genuinely empty SERP page (provider returned zero hits) is
+			// a routine poll outcome, not a parse failure — no records and
+			// no review stub. Unparseable lines still count as a broken body.
+			return nil, nil
+		}
+		return nil, errors.New("curator: search: no usable results in body")
 	}
 
 	return out, nil

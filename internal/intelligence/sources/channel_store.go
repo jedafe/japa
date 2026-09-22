@@ -214,6 +214,31 @@ func (s *Store) ClaimInboundEvent(ctx context.Context, id pgtype.UUID) (bool, er
 	return n > 0, nil
 }
 
+// ReleaseInboundEvent returns a claimed event to 'received' when the
+// processing run fails on a transient error and the task is being retried
+// — the next attempt must be able to win the claim CAS again (the task
+// early-outs on any non-'received' status). No-op unless the event is
+// still 'processing', so a concurrently-marked terminal event is safe.
+func (s *Store) ReleaseInboundEvent(ctx context.Context, id pgtype.UUID) error {
+	if err := s.queries.ReleaseIntelInboundEvent(ctx, id); err != nil {
+		return fmt.Errorf("sources: release inbound event: %w", err)
+	}
+
+	return nil
+}
+
+// PurgeInboundEvents deletes every inbound event whose received_at is
+// older than retentionDays — the intel:purge_inbound_events sweep's write.
+// Returns the deleted row count.
+func (s *Store) PurgeInboundEvents(ctx context.Context, retentionDays int32) (int64, error) {
+	n, err := s.queries.PurgeIntelInboundEvents(ctx, retentionDays)
+	if err != nil {
+		return 0, fmt.Errorf("sources: purge inbound events: %w", err)
+	}
+
+	return n, nil
+}
+
 // RedriveInboundEvent resets a failed/processing/ignored event back to
 // 'received' for re-processing. A 'processing' event only resets once its
 // claim is older than stuckSecs — anything fresher is a live worker

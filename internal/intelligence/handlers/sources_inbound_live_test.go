@@ -191,6 +191,73 @@ func TestWebSubVerify_Denied(t *testing.T) {
 	}
 }
 
+// TestWebSubVerify_SubscribeArmsRenew covers the granted-lease renewal:
+// a subscribe verification stores the lease AND schedules
+// intel:websub_renew from the hub-granted hub.lease_seconds — a hub that
+// shortens the requested term must never outlive its renewal — and a
+// retried verification must not fork a second renewal chain.
+func TestWebSubVerify_SubscribeArmsRenew(t *testing.T) {
+	h, database, inspector := newLiveInboundHandlers(t)
+
+	ch := mkInboundChannel(t, h, database, "webhook",
+		`{"topic":"https://hub.example/feed","hub":"https://hub.example/"}`)
+
+	r := webSubVerifyRequest(t, ch.ID.String(),
+		"hub.mode=subscribe&hub.topic=https%3A%2F%2Fhub.example%2Ffeed&hub.challenge=CH999&hub.lease_seconds=3600")
+	rr := httptest.NewRecorder()
+	h.HandleWebSubVerify(rr, r)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	if rr.Body.String() != "CH999" {
+		t.Errorf("challenge echo = %q, want CH999", rr.Body.String())
+	}
+	leaseKey := "jc:intel:websub:lease:" + ch.ID.String()
+	if n, _ := h.rdb.Exists(context.Background(), leaseKey).Result(); n == 0 {
+		t.Error("lease key not written on subscribe verify")
+	}
+
+	// ProcessIn lands the renewal on the scheduled set; 3600s lease minus
+	// the 10% margin → 3240s out.
+	infos, err := inspector.ListScheduledTasks("low", asynq.PageSize(100))
+	if err != nil {
+		t.Fatalf("list scheduled: %v", err)
+	}
+	var armed *asynq.TaskInfo
+	for _, ti := range infos {
+		if ti.Type != worker.TypeIntelWebSubRenew {
+			continue
+		}
+		var p map[string]string
+		if err := json.Unmarshal(ti.Payload, &p); err == nil && p["channel_id"] == ch.ID.String() {
+			armed = ti
+		}
+	}
+	if armed == nil {
+		t.Fatal("no intel:websub_renew scheduled on subscribe verify")
+	}
+	want := time.Now().Add(3240 * time.Second)
+	if d := armed.NextProcessAt.Sub(want); d < -time.Minute || d > time.Minute {
+		t.Errorf("renew fires at %s, want ~%s (granted lease - margin)", armed.NextProcessAt, want)
+	}
+
+	// A retried verification folds into the same chain (asynq.Unique).
+	r2 := webSubVerifyRequest(t, ch.ID.String(),
+		"hub.mode=subscribe&hub.topic=https%3A%2F%2Fhub.example%2Ffeed&hub.challenge=CH999&hub.lease_seconds=3600")
+	h.HandleWebSubVerify(httptest.NewRecorder(), r2)
+	infos, _ = inspector.ListScheduledTasks("low", asynq.PageSize(100))
+	n := 0
+	for _, ti := range infos {
+		if ti.Type == worker.TypeIntelWebSubRenew {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("scheduled renews = %d, want 1 (Unique dedupes retried verifies)", n)
+	}
+}
+
 // TestAdminRedriveInboundEvent_Email re-drives a failed email delivery: CAS
 // back to received, then a fresh intel:inbound_email task on the critical
 // queue.

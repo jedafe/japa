@@ -579,21 +579,33 @@ func (q *Queries) ListScholarshipsBySpace(ctx context.Context, arg ListScholarsh
 const listScholarshipsBySpaces = `-- name: ListScholarshipsBySpaces :many
 SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships
 WHERE country_space_id = ANY($1::uuid[])
-ORDER BY created_at DESC
-LIMIT $2
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4
 `
 
 type ListScholarshipsBySpacesParams struct {
-	Column1 []pgtype.UUID `json:"column_1"`
-	Limit   int32         `json:"limit"`
+	Column1 []pgtype.UUID      `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	ID      pgtype.UUID        `json:"id"`
+	Limit   int32              `json:"limit"`
 }
 
 // Union query for the followed-countries radar feed (spec §739). Replaces
 // the per-space N+1 loop in HandleRadarFollowed (BUG-008b fix). Returns
 // scholarships whose country_space_id is in the followed set, ordered by
-// created_at desc, capped at limit.
+// created_at desc, capped at limit. The optional keyset cursor ($2,$3)
+// lets the merged multi-domain feed paginate — for offset pages the
+// handler passes LIMIT = offset+limit and slices in memory.
 func (q *Queries) ListScholarshipsBySpaces(ctx context.Context, arg ListScholarshipsBySpacesParams) ([]Scholarship, error) {
-	rows, err := q.db.Query(ctx, listScholarshipsBySpaces, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listScholarshipsBySpaces,
+		arg.Column1,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -644,15 +656,20 @@ func (q *Queries) ListScholarshipsBySpaces(ctx context.Context, arg ListScholars
 const listScholarshipsKeyset = `-- name: ListScholarshipsKeyset :many
 SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships
 WHERE ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
-ORDER BY created_at DESC, id DESC
-LIMIT $3
+ OR scholarships.created_at < $1
+ OR (scholarships.created_at = $1 AND scholarships.id < $2))
+ AND ($3::uuid IS NULL OR scholarships.country_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL OR scholarships.country = $4
+      OR scholarships.country_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY scholarships.created_at DESC, scholarships.id DESC
+LIMIT $5
 `
 
 type ListScholarshipsKeysetParams struct {
 	Column1 pgtype.Timestamptz `json:"column_1"`
 	ID      pgtype.UUID        `json:"id"`
+	Column3 pgtype.UUID        `json:"column_3"`
+	Column4 string             `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -661,8 +678,19 @@ type ListScholarshipsKeysetParams struct {
 // (sqlc infers param types reliably from these, unlike row-value
 // comparisons). BUG-006 fix: the prior handler encoded a cursor but never
 // read it, so pagination was offset-only and clients could not resume.
+// The optional geo predicates ($3 space, $4 ISO country) are part of the
+// keyset query so a cursor resumes a geo-filtered feed without dropping
+// the filter — previously ?cursor= bypassed the space/country branches.
+// $4 also matches via spaces.geo_code so callers can pass either the
+// scholarship country vocabulary or a country space's geo_code.
 func (q *Queries) ListScholarshipsKeyset(ctx context.Context, arg ListScholarshipsKeysetParams) ([]Scholarship, error) {
-	rows, err := q.db.Query(ctx, listScholarshipsKeyset, arg.Column1, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listScholarshipsKeyset,
+		arg.Column1,
+		arg.ID,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -717,24 +745,39 @@ WHERE (NULLIF($1::text, '') IS NULL OR country = $1)
  AND (NULLIF($3::text, '') IS NULL OR degree_level = $3)
  AND ($4::date IS NULL OR deadline >= $4)
  AND ($5::date IS NULL OR deadline <= $5)
- AND (NULLIF($6::text, '') IS NULL OR $6 = ANY(fields_of_study))
+ AND ($6::text[] IS NULL OR fields_of_study && $6)
+ AND confidence_overall >= $7
+ AND (NULLIF($8::text, '') IS NULL
+  OR title ILIKE '%' || $8 || '%'
+  OR description ILIKE '%' || $8 || '%'
+  OR university ILIKE '%' || $8 || '%')
+ AND (NULLIF($9::text, '') IS NULL
+  OR COALESCE(funding->>'tuition', 'false') = NULLIF($9::text, ''))
 ORDER BY deadline ASC NULLS LAST, confidence_overall DESC
-LIMIT $7 OFFSET $8
+LIMIT $10 OFFSET $11
 `
 
 type SearchScholarshipsParams struct {
-	Column1 string      `json:"column_1"`
-	Column2 string      `json:"column_2"`
-	Column3 string      `json:"column_3"`
-	Column4 pgtype.Date `json:"column_4"`
-	Column5 pgtype.Date `json:"column_5"`
-	Column6 string      `json:"column_6"`
-	Limit   int32       `json:"limit"`
-	Offset  int32       `json:"offset"`
+	Column1           string      `json:"column_1"`
+	Column2           string      `json:"column_2"`
+	Column3           string      `json:"column_3"`
+	Column4           pgtype.Date `json:"column_4"`
+	Column5           pgtype.Date `json:"column_5"`
+	Column6           []string    `json:"column_6"`
+	ConfidenceOverall float32     `json:"confidence_overall"`
+	Column8           string      `json:"column_8"`
+	Column9           string      `json:"column_9"`
+	Limit             int32       `json:"limit"`
+	Offset            int32       `json:"offset"`
 }
 
 // Optional text filters use NULLIF($n,”) because sqlc types $n::text as a
 // non-nullable string — an unset filter arrives as ”, not NULL.
+// $6 fields_of_study matches ANY of the CSV elements (overlap), $7 is
+// min_confidence, $8 is the q text search, $9 is funding_tuition against
+// the funding JSONB's tuition flag. All filters run in SQL so LIMIT/OFFSET
+// pages are filled correctly — the previous implementation post-filtered
+// in memory after LIMIT, which under-filled pages and dropped matches.
 func (q *Queries) SearchScholarships(ctx context.Context, arg SearchScholarshipsParams) ([]Scholarship, error) {
 	rows, err := q.db.Query(ctx, searchScholarships,
 		arg.Column1,
@@ -743,6 +786,9 @@ func (q *Queries) SearchScholarships(ctx context.Context, arg SearchScholarships
 		arg.Column4,
 		arg.Column5,
 		arg.Column6,
+		arg.ConfidenceOverall,
+		arg.Column8,
+		arg.Column9,
 		arg.Limit,
 		arg.Offset,
 	)

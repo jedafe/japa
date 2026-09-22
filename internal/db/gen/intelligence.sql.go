@@ -105,6 +105,36 @@ func (q *Queries) CountIntelRecordsBySource(ctx context.Context, arg CountIntelR
 	return count, err
 }
 
+const countIntelRecordsByStatus = `-- name: CountIntelRecordsByStatus :one
+SELECT COUNT(*) FROM intel_records WHERE entity_type = $1 AND status = $2
+`
+
+type CountIntelRecordsByStatusParams struct {
+	EntityType string `json:"entity_type"`
+	Status     string `json:"status"`
+}
+
+// Total count for the status+entity_type filtered review/records lists so
+// the moderation UIs can compute real pagination (meta.count was the page
+// size, which pinned the admin review queue to one page).
+func (q *Queries) CountIntelRecordsByStatus(ctx context.Context, arg CountIntelRecordsByStatusParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countIntelRecordsByStatus, arg.EntityType, arg.Status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countIntelRecordsByStatusAll = `-- name: CountIntelRecordsByStatusAll :one
+SELECT COUNT(*) FROM intel_records WHERE status = $1
+`
+
+func (q *Queries) CountIntelRecordsByStatusAll(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, countIntelRecordsByStatusAll, status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPromotedIntelRecordsBySource = `-- name: CountPromotedIntelRecordsBySource :one
 SELECT count(*) FROM intel_records
 WHERE source_id = $1 AND promoted_record_id IS NOT NULL

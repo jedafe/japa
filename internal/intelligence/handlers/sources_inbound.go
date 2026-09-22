@@ -341,6 +341,13 @@ func (h *Handlers) HandleWebSubVerify(w http.ResponseWriter, r *http.Request) {
 				_ = h.rdb.Set(r.Context(), leaseKey, leaseJSON, time.Duration(leaseSecs)*time.Second).Err()
 			}
 		}
+		// Arm the renewal from the hub-GRANTED lease — the hub may shorten
+		// the term the subscribe task requested, and a renewal scheduled
+		// off the request would fire after the real expiry and lapse the
+		// subscription silently. Arming here also means only verified
+		// subscriptions renew: a hub that accepts the POST but never
+		// verifies has nothing to renew.
+		h.armWebSubRenew(r, ch.ID.String(), leaseSecs)
 	case "unsubscribe", "denied":
 		// denied = the hub refused our subscription request; either way
 		// any recorded lease is stale. The challenge still echoes so the
@@ -371,6 +378,43 @@ func (h *Handlers) HandleWebSubVerify(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, challenge)
+}
+
+// armWebSubRenew schedules intel:websub_renew for just before the granted
+// lease lapses — margin of the smaller of one day or a tenth of the term
+// keeps short leases honest, with a one-minute floor so a pathological
+// tiny lease cannot re-run immediately and POST the hub in a tight loop.
+// asynq.Unique(delay) folds a hub's retried verification callbacks into a
+// single renewal chain. Best-effort: a failed enqueue only loses the
+// renewal; the lease is still recorded.
+func (h *Handlers) armWebSubRenew(r *http.Request, channelID string, leaseSecs int64) {
+	if h.asynqClient == nil {
+		return
+	}
+	margin := leaseSecs / 10
+	if max := int64(24 * 3600); margin > max {
+		margin = max
+	}
+	if margin < 60 {
+		margin = 60
+	}
+	delay := time.Duration(leaseSecs-margin) * time.Second
+	if delay < time.Minute {
+		delay = time.Minute
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"version":    "v1",
+		"channel_id": channelID,
+	})
+	if _, err := h.asynqClient.EnqueueContext(r.Context(),
+		asynq.NewTask(worker.TypeIntelWebSubRenew, payload),
+		append(worker.TaskOpts(worker.TypeIntelWebSubRenew),
+			asynq.ProcessIn(delay), asynq.Unique(delay))...); err != nil {
+		if errors.Is(err, asynq.ErrDuplicateTask) {
+			return // a sibling verification callback already armed this renewal
+		}
+		slog.Warn("intel: websub renew arm failed", "channel_id", channelID, "error", err)
+	}
 }
 
 // HandleWebSubPush accepts a hub content delivery
@@ -560,11 +604,13 @@ func (h *Handlers) processWebSubDelivery(ctx context.Context, ch gen.IntelSource
 
 // HandleAdminRedriveInboundEvent re-processes a failed/stuck/ignored
 // inbound delivery (POST /api/v1/admin/intel/inbound-events/{id}/redrive,
-// RBAC intel.channels.update). The event resets to 'received' via CAS, then
+// RBAC intel.inbound.manage). The event resets to 'received' via CAS, then
 // re-runs its channel's pipeline: email events re-enqueue
 // intel:inbound_email; webhook events re-materialize inline (the same path
-// the push handler runs). Events still 'received' or already 'processed'
-// are not redrivable (409).
+// the push handler runs). A fresh 'received' event is
+// queued-but-not-yet-run and not redrivable (409); one stale past the
+// stuck window means its task was lost and IS redrivable. 'processed'
+// events are never redrivable (409).
 func (h *Handlers) HandleAdminRedriveInboundEvent(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.asynqClient == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "inbound_unavailable", "Inbound events are not configured")
@@ -604,7 +650,7 @@ func (h *Handlers) HandleAdminRedriveInboundEvent(w http.ResponseWriter, r *http
 		return
 	}
 	if !ok {
-		errpkg.WriteError(w, http.StatusConflict, "event_not_redrivable", "Event is received or already processed")
+		errpkg.WriteError(w, http.StatusConflict, "event_not_redrivable", "Event is processed or still in flight")
 		return
 	}
 	event.Status = "received"

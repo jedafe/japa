@@ -73,35 +73,60 @@ WHERE ($1::text IS NULL OR $1 = '' OR title ILIKE '%' || $1 || '%' OR university
 -- (sqlc infers param types reliably from these, unlike row-value
 -- comparisons). BUG-006 fix: the prior handler encoded a cursor but never
 -- read it, so pagination was offset-only and clients could not resume.
+-- The optional geo predicates ($3 space, $4 ISO country) are part of the
+-- keyset query so a cursor resumes a geo-filtered feed without dropping
+-- the filter — previously ?cursor= bypassed the space/country branches.
+-- $4 also matches via spaces.geo_code so callers can pass either the
+-- scholarship country vocabulary or a country space's geo_code.
 SELECT * FROM scholarships
 WHERE ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
-ORDER BY created_at DESC, id DESC
-LIMIT $3;
+ OR scholarships.created_at < $1
+ OR (scholarships.created_at = $1 AND scholarships.id < $2))
+ AND ($3::uuid IS NULL OR scholarships.country_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL OR scholarships.country = $4
+      OR scholarships.country_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY scholarships.created_at DESC, scholarships.id DESC
+LIMIT $5;
 
 -- name: ListScholarshipsBySpaces :many
 -- Union query for the followed-countries radar feed (spec §739). Replaces
 -- the per-space N+1 loop in HandleRadarFollowed (BUG-008b fix). Returns
 -- scholarships whose country_space_id is in the followed set, ordered by
--- created_at desc, capped at limit.
+-- created_at desc, capped at limit. The optional keyset cursor ($2,$3)
+-- lets the merged multi-domain feed paginate — for offset pages the
+-- handler passes LIMIT = offset+limit and slices in memory.
 SELECT * FROM scholarships
 WHERE country_space_id = ANY($1::uuid[])
-ORDER BY created_at DESC
-LIMIT $2;
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4;
 
 -- name: SearchScholarships :many
 -- Optional text filters use NULLIF($n,'') because sqlc types $n::text as a
 -- non-nullable string — an unset filter arrives as '', not NULL.
+-- $6 fields_of_study matches ANY of the CSV elements (overlap), $7 is
+-- min_confidence, $8 is the q text search, $9 is funding_tuition against
+-- the funding JSONB's tuition flag. All filters run in SQL so LIMIT/OFFSET
+-- pages are filled correctly — the previous implementation post-filtered
+-- in memory after LIMIT, which under-filled pages and dropped matches.
 SELECT * FROM scholarships
 WHERE (NULLIF($1::text, '') IS NULL OR country = $1)
  AND (NULLIF($2::text, '') IS NULL OR $2 = ANY(eligible_countries))
  AND (NULLIF($3::text, '') IS NULL OR degree_level = $3)
  AND ($4::date IS NULL OR deadline >= $4)
  AND ($5::date IS NULL OR deadline <= $5)
- AND (NULLIF($6::text, '') IS NULL OR $6 = ANY(fields_of_study))
+ AND ($6::text[] IS NULL OR fields_of_study && $6)
+ AND confidence_overall >= $7
+ AND (NULLIF($8::text, '') IS NULL
+  OR title ILIKE '%' || $8 || '%'
+  OR description ILIKE '%' || $8 || '%'
+  OR university ILIKE '%' || $8 || '%')
+ AND (NULLIF($9::text, '') IS NULL
+  OR COALESCE(funding->>'tuition', 'false') = NULLIF($9::text, ''))
 ORDER BY deadline ASC NULLS LAST, confidence_overall DESC
-LIMIT $7 OFFSET $8;
+LIMIT $10 OFFSET $11;
 
 -- name: ListScholarshipsBySpace :many
 SELECT * FROM scholarships WHERE country_space_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3;

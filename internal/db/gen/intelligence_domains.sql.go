@@ -11,6 +11,101 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countIntelRadarByCountry = `-- name: CountIntelRadarByCountry :many
+SELECT country, SUM(count) AS count FROM (
+ SELECT COALESCE(sp.geo_code, s.country) AS country, COUNT(*) AS count
+  FROM scholarships s LEFT JOIN spaces sp ON sp.id = s.country_space_id
+  GROUP BY 1
+ UNION ALL
+ SELECT COALESCE(sp.geo_code, j.country) AS country, COUNT(*) AS count
+  FROM intel_jobs j LEFT JOIN spaces sp ON sp.id = j.country_space_id
+  GROUP BY 1
+ UNION ALL
+ SELECT sp.geo_code AS country, COUNT(*) AS count
+  FROM visa_routes v JOIN spaces sp ON sp.id = v.destination_space_id
+  WHERE v.intel_record_id IS NOT NULL GROUP BY 1
+ UNION ALL
+ SELECT sp.geo_code AS country, COUNT(*) AS count
+  FROM housing_guides h JOIN spaces sp ON sp.id = h.destination_space_id
+  WHERE h.intel_record_id IS NOT NULL GROUP BY 1
+ UNION ALL
+ SELECT sp.geo_code AS country, COUNT(*) AS count
+  FROM comparison_items c JOIN spaces sp ON sp.id = c.geo_space_id
+  WHERE c.intel_record_id IS NOT NULL GROUP BY 1
+) t GROUP BY country
+`
+
+type CountIntelRadarByCountryRow struct {
+	Country string `json:"country"`
+	Count   int64  `json:"count"`
+}
+
+// Per-country totals across the geo-scopable domains. The canonical key is
+// the country space's geo_code; rows whose space link is unresolved fall
+// back to their raw ISO country text so they still appear.
+func (q *Queries) CountIntelRadarByCountry(ctx context.Context) ([]CountIntelRadarByCountryRow, error) {
+	rows, err := q.db.Query(ctx, countIntelRadarByCountry)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountIntelRadarByCountryRow
+	for rows.Next() {
+		var i CountIntelRadarByCountryRow
+		if err := rows.Scan(&i.Country, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countIntelRadarByType = `-- name: CountIntelRadarByType :many
+
+SELECT 'scholarship' AS item_type, COUNT(*) AS count FROM scholarships
+UNION ALL SELECT 'job', COUNT(*) FROM intel_jobs
+UNION ALL SELECT 'visa', COUNT(*) FROM visa_routes WHERE intel_record_id IS NOT NULL
+UNION ALL SELECT 'housing', COUNT(*) FROM housing_guides WHERE intel_record_id IS NOT NULL
+UNION ALL SELECT 'remittance', COUNT(*) FROM remittance_rates WHERE intel_record_id IS NOT NULL
+UNION ALL SELECT 'cost_of_living', COUNT(*) FROM comparison_items WHERE intel_record_id IS NOT NULL
+`
+
+type CountIntelRadarByTypeRow struct {
+	ItemType string `json:"item_type"`
+	Count    int64  `json:"count"`
+}
+
+// ===========================================================================
+// Radar aggregate counts (GET /api/v1/intel/radar/counts)
+// ===========================================================================
+// Per-domain promoted-item totals for the radar counts endpoint. Only
+// intel-linked rows are counted on the ALTERed domain tables so purely
+// editorial rows (Studio-authored visa routes, etc.) do not inflate the
+// intelligence counts. Replaces the scholarship-only counts that left the
+// unioned feed unrepresented.
+func (q *Queries) CountIntelRadarByType(ctx context.Context) ([]CountIntelRadarByTypeRow, error) {
+	rows, err := q.db.Query(ctx, countIntelRadarByType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountIntelRadarByTypeRow
+	for rows.Next() {
+		var i CountIntelRadarByTypeRow
+		if err := rows.Scan(&i.ItemType, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createCommunityOrganisationIntel = `-- name: CreateCommunityOrganisationIntel :one
 
 INSERT INTO community_organisations (name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
@@ -1055,6 +1150,78 @@ func (q *Queries) GetHousingGuideByIntelRecord(ctx context.Context, intelRecordI
 	return i, err
 }
 
+const getIntelComparisonItemByID = `-- name: GetIntelComparisonItemByID :one
+SELECT id, content_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items WHERE id = $1
+`
+
+func (q *Queries) GetIntelComparisonItemByID(ctx context.Context, id pgtype.UUID) (ComparisonItem, error) {
+	row := q.db.QueryRow(ctx, getIntelComparisonItemByID, id)
+	var i ComparisonItem
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.Title,
+		&i.Description,
+		&i.ImageID,
+		&i.GeoSpaceID,
+		&i.Position,
+		&i.CreatedAt,
+		&i.TypeID,
+		&i.DeletedAt,
+		&i.IsBaseline,
+		&i.LastUpdatedAt,
+		&i.IntelRecordID,
+		&i.IntelCostData,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+		&i.ItemRef,
+	)
+	return i, err
+}
+
+const getIntelHousingGuideByID = `-- name: GetIntelHousingGuideByID :one
+SELECT id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides WHERE id = $1
+`
+
+func (q *Queries) GetIntelHousingGuideByID(ctx context.Context, id pgtype.UUID) (HousingGuide, error) {
+	row := q.db.QueryRow(ctx, getIntelHousingGuideByID, id)
+	var i HousingGuide
+	err := row.Scan(
+		&i.ID,
+		&i.DestinationSpaceID,
+		&i.CitySpaceID,
+		&i.AccommodationType,
+		&i.SearchPlatforms,
+		&i.LandlordRequirements,
+		&i.RentRanges,
+		&i.ScamCategories,
+		&i.Tips,
+		&i.Status,
+		&i.IsActive,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.LastVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+		&i.GuideID,
+	)
+	return i, err
+}
+
 const getIntelJob = `-- name: GetIntelJob :one
 SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE id = $1
 `
@@ -1174,6 +1341,78 @@ func (q *Queries) GetIntelJobBySourceURL(ctx context.Context, sourceUrl string) 
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getIntelRemittanceRateByID = `-- name: GetIntelRemittanceRateByID :one
+SELECT id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM remittance_rates WHERE id = $1
+`
+
+func (q *Queries) GetIntelRemittanceRateByID(ctx context.Context, id pgtype.UUID) (RemittanceRate, error) {
+	row := q.db.QueryRow(ctx, getIntelRemittanceRateByID, id)
+	var i RemittanceRate
+	err := row.Scan(
+		&i.ID,
+		&i.ProviderID,
+		&i.SendCurrency,
+		&i.ReceiveCurrency,
+		&i.Rate,
+		&i.FeeFlat,
+		&i.FeePct,
+		&i.TransferTime,
+		&i.FetchedAt,
+		&i.IsManual,
+		&i.SourceUrl,
+		&i.IntelRecordID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
+const getIntelVisaRouteByID = `-- name: GetIntelVisaRouteByID :one
+SELECT id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes WHERE id = $1
+`
+
+func (q *Queries) GetIntelVisaRouteByID(ctx context.Context, id pgtype.UUID) (VisaRoute, error) {
+	row := q.db.QueryRow(ctx, getIntelVisaRouteByID, id)
+	var i VisaRoute
+	err := row.Scan(
+		&i.ID,
+		&i.DestinationSpaceID,
+		&i.VisaCategory,
+		&i.Name,
+		&i.Slug,
+		&i.EligibilitySummary,
+		&i.RequirementsJson,
+		&i.TypicalFeeUsd,
+		&i.PathToPr,
+		&i.RenewalTerms,
+		&i.Restrictions,
+		&i.GovSourceUrl,
+		&i.SourceUrlLastChecked,
+		&i.Status,
+		&i.IsActive,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+		&i.GuideID,
 	)
 	return i, err
 }
@@ -1514,24 +1753,99 @@ func (q *Queries) ListCommunityOrganisationsIntelKeyset(ctx context.Context, arg
 	return items, nil
 }
 
-const listComparisonItemsIntelKeyset = `-- name: ListComparisonItemsIntelKeyset :many
+const listComparisonItemsBySpaces = `-- name: ListComparisonItemsBySpaces :many
 SELECT id, content_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items
 WHERE intel_record_id IS NOT NULL
- AND ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
+ AND geo_space_id = ANY($1::uuid[])
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
 ORDER BY created_at DESC, id DESC
-LIMIT $3
+LIMIT $4
+`
+
+type ListComparisonItemsBySpacesParams struct {
+	Column1 []pgtype.UUID      `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	ID      pgtype.UUID        `json:"id"`
+	Limit   int32              `json:"limit"`
+}
+
+func (q *Queries) ListComparisonItemsBySpaces(ctx context.Context, arg ListComparisonItemsBySpacesParams) ([]ComparisonItem, error) {
+	rows, err := q.db.Query(ctx, listComparisonItemsBySpaces,
+		arg.Column1,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComparisonItem
+	for rows.Next() {
+		var i ComparisonItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentID,
+			&i.Title,
+			&i.Description,
+			&i.ImageID,
+			&i.GeoSpaceID,
+			&i.Position,
+			&i.CreatedAt,
+			&i.TypeID,
+			&i.DeletedAt,
+			&i.IsBaseline,
+			&i.LastUpdatedAt,
+			&i.IntelRecordID,
+			&i.IntelCostData,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+			&i.ItemRef,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listComparisonItemsIntelKeyset = `-- name: ListComparisonItemsIntelKeyset :many
+SELECT id, content_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items
+WHERE comparison_items.intel_record_id IS NOT NULL
+ AND ($1::timestamptz IS NULL
+ OR comparison_items.created_at < $1
+ OR (comparison_items.created_at = $1 AND comparison_items.id < $2))
+ AND ($3::uuid IS NULL OR comparison_items.geo_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL
+      OR comparison_items.geo_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY comparison_items.created_at DESC, comparison_items.id DESC
+LIMIT $5
 `
 
 type ListComparisonItemsIntelKeysetParams struct {
 	Column1 pgtype.Timestamptz `json:"column_1"`
 	ID      pgtype.UUID        `json:"id"`
+	Column3 pgtype.UUID        `json:"column_3"`
+	Column4 string             `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
 func (q *Queries) ListComparisonItemsIntelKeyset(ctx context.Context, arg ListComparisonItemsIntelKeysetParams) ([]ComparisonItem, error) {
-	rows, err := q.db.Query(ctx, listComparisonItemsIntelKeyset, arg.Column1, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listComparisonItemsIntelKeyset,
+		arg.Column1,
+		arg.ID,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1638,24 +1952,110 @@ func (q *Queries) ListCredentialPathwaysIntelKeyset(ctx context.Context, arg Lis
 	return items, nil
 }
 
-const listHousingGuidesIntelKeyset = `-- name: ListHousingGuidesIntelKeyset :many
+const listHousingGuidesBySpaces = `-- name: ListHousingGuidesBySpaces :many
 SELECT id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides
 WHERE intel_record_id IS NOT NULL
- AND ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
+ AND (destination_space_id = ANY($1::uuid[]) OR city_space_id = ANY($1::uuid[]))
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
 ORDER BY created_at DESC, id DESC
-LIMIT $3
+LIMIT $4
+`
+
+type ListHousingGuidesBySpacesParams struct {
+	Column1 []pgtype.UUID      `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	ID      pgtype.UUID        `json:"id"`
+	Limit   int32              `json:"limit"`
+}
+
+func (q *Queries) ListHousingGuidesBySpaces(ctx context.Context, arg ListHousingGuidesBySpacesParams) ([]HousingGuide, error) {
+	rows, err := q.db.Query(ctx, listHousingGuidesBySpaces,
+		arg.Column1,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []HousingGuide
+	for rows.Next() {
+		var i HousingGuide
+		if err := rows.Scan(
+			&i.ID,
+			&i.DestinationSpaceID,
+			&i.CitySpaceID,
+			&i.AccommodationType,
+			&i.SearchPlatforms,
+			&i.LandlordRequirements,
+			&i.RentRanges,
+			&i.ScamCategories,
+			&i.Tips,
+			&i.Status,
+			&i.IsActive,
+			&i.AiGenerated,
+			&i.AiModel,
+			&i.AiPromptHash,
+			&i.HitlReviewedBy,
+			&i.HitlReviewedAt,
+			&i.HitlReviewNotes,
+			&i.LastVerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsJapabotIndexed,
+			&i.IntelRecordID,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+			&i.GuideID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listHousingGuidesIntelKeyset = `-- name: ListHousingGuidesIntelKeyset :many
+SELECT id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides
+WHERE housing_guides.intel_record_id IS NOT NULL
+ AND ($1::timestamptz IS NULL
+ OR housing_guides.created_at < $1
+ OR (housing_guides.created_at = $1 AND housing_guides.id < $2))
+ AND ($3::uuid IS NULL OR housing_guides.destination_space_id = $3 OR housing_guides.city_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL
+      OR housing_guides.destination_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4)
+      OR housing_guides.city_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY housing_guides.created_at DESC, housing_guides.id DESC
+LIMIT $5
 `
 
 type ListHousingGuidesIntelKeysetParams struct {
 	Column1 pgtype.Timestamptz `json:"column_1"`
 	ID      pgtype.UUID        `json:"id"`
+	Column3 pgtype.UUID        `json:"column_3"`
+	Column4 string             `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
+// Geo filter: matches destination_space_id or city_space_id for $3, and
+// resolves the $4 country filter through spaces.geo_code on both columns.
 func (q *Queries) ListHousingGuidesIntelKeyset(ctx context.Context, arg ListHousingGuidesIntelKeysetParams) ([]HousingGuide, error) {
-	rows, err := q.db.Query(ctx, listHousingGuidesIntelKeyset, arg.Column1, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listHousingGuidesIntelKeyset,
+		arg.Column1,
+		arg.ID,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1706,17 +2106,27 @@ func (q *Queries) ListHousingGuidesIntelKeyset(ctx context.Context, arg ListHous
 const listIntelJobsBySpaces = `-- name: ListIntelJobsBySpaces :many
 SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs
 WHERE country_space_id = ANY($1::uuid[])
-ORDER BY created_at DESC
-LIMIT $2
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4
 `
 
 type ListIntelJobsBySpacesParams struct {
-	Column1 []pgtype.UUID `json:"column_1"`
-	Limit   int32         `json:"limit"`
+	Column1 []pgtype.UUID      `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	ID      pgtype.UUID        `json:"id"`
+	Limit   int32              `json:"limit"`
 }
 
 func (q *Queries) ListIntelJobsBySpaces(ctx context.Context, arg ListIntelJobsBySpacesParams) ([]IntelJob, error) {
-	rows, err := q.db.Query(ctx, listIntelJobsBySpaces, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listIntelJobsBySpaces,
+		arg.Column1,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1768,20 +2178,33 @@ func (q *Queries) ListIntelJobsBySpaces(ctx context.Context, arg ListIntelJobsBy
 const listIntelJobsKeyset = `-- name: ListIntelJobsKeyset :many
 SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs
 WHERE ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
-ORDER BY created_at DESC, id DESC
-LIMIT $3
+ OR intel_jobs.created_at < $1
+ OR (intel_jobs.created_at = $1 AND intel_jobs.id < $2))
+ AND ($3::uuid IS NULL OR intel_jobs.country_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL OR intel_jobs.country = $4
+      OR intel_jobs.country_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY intel_jobs.created_at DESC, intel_jobs.id DESC
+LIMIT $5
 `
 
 type ListIntelJobsKeysetParams struct {
 	Column1 pgtype.Timestamptz `json:"column_1"`
 	ID      pgtype.UUID        `json:"id"`
+	Column3 pgtype.UUID        `json:"column_3"`
+	Column4 string             `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
+// Same geo-aware keyset shape as ListScholarshipsKeyset so the merged radar
+// feed applies space/country filters uniformly across domains.
 func (q *Queries) ListIntelJobsKeyset(ctx context.Context, arg ListIntelJobsKeysetParams) ([]IntelJob, error) {
-	rows, err := q.db.Query(ctx, listIntelJobsKeyset, arg.Column1, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listIntelJobsKeyset,
+		arg.Column1,
+		arg.ID,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1909,6 +2332,8 @@ type ListRemittanceRatesIntelKeysetParams struct {
 	Limit   int32              `json:"limit"`
 }
 
+// remittance_rates has no geo columns (corridors are currency pairs) — the
+// radar handler excludes this domain when a geo filter is active.
 func (q *Queries) ListRemittanceRatesIntelKeyset(ctx context.Context, arg ListRemittanceRatesIntelKeysetParams) ([]RemittanceRate, error) {
 	rows, err := q.db.Query(ctx, listRemittanceRatesIntelKeyset, arg.Column1, arg.ID, arg.Limit)
 	if err != nil {
@@ -2009,24 +2434,114 @@ func (q *Queries) ListTaxObligationGuidesIntelKeyset(ctx context.Context, arg Li
 	return items, nil
 }
 
-const listVisaRoutesIntelKeyset = `-- name: ListVisaRoutesIntelKeyset :many
+const listVisaRoutesBySpaces = `-- name: ListVisaRoutesBySpaces :many
 SELECT id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes
 WHERE intel_record_id IS NOT NULL
- AND ($1::timestamptz IS NULL
- OR created_at < $1
- OR (created_at = $1 AND id < $2))
+ AND destination_space_id = ANY($1::uuid[])
+ AND ($2::timestamptz IS NULL
+ OR created_at < $2
+ OR (created_at = $2 AND id < $3))
 ORDER BY created_at DESC, id DESC
-LIMIT $3
+LIMIT $4
+`
+
+type ListVisaRoutesBySpacesParams struct {
+	Column1 []pgtype.UUID      `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	ID      pgtype.UUID        `json:"id"`
+	Limit   int32              `json:"limit"`
+}
+
+// Followed-spaces feed variant with the same optional keyset cursor.
+func (q *Queries) ListVisaRoutesBySpaces(ctx context.Context, arg ListVisaRoutesBySpacesParams) ([]VisaRoute, error) {
+	rows, err := q.db.Query(ctx, listVisaRoutesBySpaces,
+		arg.Column1,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VisaRoute
+	for rows.Next() {
+		var i VisaRoute
+		if err := rows.Scan(
+			&i.ID,
+			&i.DestinationSpaceID,
+			&i.VisaCategory,
+			&i.Name,
+			&i.Slug,
+			&i.EligibilitySummary,
+			&i.RequirementsJson,
+			&i.TypicalFeeUsd,
+			&i.PathToPr,
+			&i.RenewalTerms,
+			&i.Restrictions,
+			&i.GovSourceUrl,
+			&i.SourceUrlLastChecked,
+			&i.Status,
+			&i.IsActive,
+			&i.AiGenerated,
+			&i.AiModel,
+			&i.AiPromptHash,
+			&i.HitlReviewedBy,
+			&i.HitlReviewedAt,
+			&i.HitlReviewNotes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsJapabotIndexed,
+			&i.IntelRecordID,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+			&i.GuideID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVisaRoutesIntelKeyset = `-- name: ListVisaRoutesIntelKeyset :many
+SELECT id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes
+WHERE visa_routes.intel_record_id IS NOT NULL
+ AND ($1::timestamptz IS NULL
+ OR visa_routes.created_at < $1
+ OR (visa_routes.created_at = $1 AND visa_routes.id < $2))
+ AND ($3::uuid IS NULL OR visa_routes.destination_space_id = $3)
+ AND (NULLIF($4::text, '') IS NULL
+      OR visa_routes.destination_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ORDER BY visa_routes.created_at DESC, visa_routes.id DESC
+LIMIT $5
 `
 
 type ListVisaRoutesIntelKeysetParams struct {
 	Column1 pgtype.Timestamptz `json:"column_1"`
 	ID      pgtype.UUID        `json:"id"`
+	Column3 pgtype.UUID        `json:"column_3"`
+	Column4 string             `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
+// Geo filter: visa_routes has no ISO country column — the $3 space filter
+// matches destination_space_id directly and the $4 country filter resolves
+// through spaces.geo_code.
 func (q *Queries) ListVisaRoutesIntelKeyset(ctx context.Context, arg ListVisaRoutesIntelKeysetParams) ([]VisaRoute, error) {
-	rows, err := q.db.Query(ctx, listVisaRoutesIntelKeyset, arg.Column1, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listVisaRoutesIntelKeyset,
+		arg.Column1,
+		arg.ID,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

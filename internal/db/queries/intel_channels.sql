@@ -98,22 +98,49 @@ WHERE id = $1 AND status = 'received';
 UPDATE intel_inbound_events SET status = $2, processed_at = now()
 WHERE id = $1 AND status IN ('received','processing');
 
+-- name: ReleaseIntelInboundEvent :exec
+-- Returns a claimed event to 'received' when the processing run fails on
+-- a transient error and the task is being retried — the next attempt must
+-- be able to win the claim CAS again (the task's early-out skips any
+-- non-'received' status). Clears claimed_at so the stale-claim window in
+-- RedriveIntelInboundEvent starts fresh on the next claim. Only
+-- 'processing' rows transition — a concurrently-marked terminal event is
+-- left alone.
+UPDATE intel_inbound_events SET status = 'received', claimed_at = NULL
+WHERE id = $1 AND status = 'processing';
+
 -- name: RedriveIntelInboundEvent :execrows
 -- Admin re-drive: reset a failed/rejected/stuck-processing event back to
 -- 'received' so the follow-up task re-processes it. A 'processing' event
 -- is only redrivable once its claim is older than $2 seconds — anything
 -- fresher is a live worker mid-flight and must not be hijacked (that
--- would double-materialize the delivery). 0 rows = terminal-processed,
--- actively claimed, or still waiting.
+-- would double-materialize the delivery). A 'received' event is only
+-- redrivable past the same window: a fresh one is queued-but-not-yet-run,
+-- while a stale one means the enqueued task was lost (queue flush) — the
+-- claim CAS makes a late-running duplicate a no-op anyway. 0 rows =
+-- terminal-processed, actively claimed, or still waiting.
 UPDATE intel_inbound_events SET status = 'received', processed_at = NULL, claimed_at = NULL
 WHERE id = $1 AND (
   status IN ('failed','ignored')
   OR (status = 'processing'
       AND (claimed_at IS NULL OR claimed_at < now() - make_interval(secs => $2)))
+  OR (status = 'received' AND received_at < now() - make_interval(secs => $2))
 );
 
 -- name: GetIntelInboundEvent :one
 SELECT * FROM intel_inbound_events WHERE id = $1;
+
+-- name: PurgeIntelInboundEvents :execrows
+-- Retention sweep (intel:purge_inbound_events): deletes every event whose
+-- received_at is older than $1 days — raw payloads carry sender PII, so
+-- retention is bounded by intel.inbound.retention_days. Any status is
+-- covered: terminal rows are history, and a received/processing row that
+-- old is a lost delivery whose redrive value has expired. $1 <= 0 deletes
+-- nothing (the cataloged "keep forever" sentinel can't be bypassed by a
+-- stray call). Returns the deleted row count.
+DELETE FROM intel_inbound_events
+WHERE sqlc.arg(retention_days)::int > 0
+  AND received_at < now() - make_interval(days => sqlc.arg(retention_days)::int);
 
 -- name: NoteIntelChannelError :exec
 -- Surface a non-crawl channel error (e.g. a hub denying a WebSub

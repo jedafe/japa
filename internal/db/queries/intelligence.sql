@@ -389,3 +389,12 @@ SET description = COALESCE(sqlc.narg(description), description),
  keywords = COALESCE(sqlc.narg(keywords), keywords),
  updated_at = now()
 WHERE id = $1;
+
+-- name: CountIntelRecordsByStatus :one
+-- Total count for the status+entity_type filtered review/records lists so
+-- the moderation UIs can compute real pagination (meta.count was the page
+-- size, which pinned the admin review queue to one page).
+SELECT COUNT(*) FROM intel_records WHERE entity_type = $1 AND status = $2;
+
+-- name: CountIntelRecordsByStatusAll :one
+SELECT COUNT(*) FROM intel_records WHERE status = $1;

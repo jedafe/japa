@@ -73,6 +73,73 @@ plain version
 	}
 }
 
+// TestParseMIMEMessage_NestedMultipart covers the real-world shape:
+// multipart/mixed wrapping multipart/alternative (any mail with an
+// attachment). NextPart does not recurse — without the descent the leaf
+// is the raw nested-MIME blob and the body comes back as boundary soup.
+func TestParseMIMEMessage_NestedMultipart(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`From: a@b.example
+Content-Type: multipart/mixed; boundary="OUTER"
+Subject: Nested
+
+--OUTER
+Content-Type: multipart/alternative; boundary="INNER"
+
+--INNER
+Content-Type: text/plain
+
+nested plain body
+--INNER
+Content-Type: text/html
+
+<p>nested html</p>
+--INNER--
+--OUTER
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="doc.pdf"
+
+%PDF-fake
+--OUTER--
+`)
+
+	env, err := parseMIMEMessage(raw)
+	if err != nil {
+		t.Fatalf("parseMIMEMessage: %v", err)
+	}
+	if !strings.Contains(env.Text, "nested plain body") {
+		t.Errorf("text = %q, want the nested text/plain part", env.Text)
+	}
+	if strings.Contains(env.Text, "--INNER") || strings.Contains(env.Text, "%PDF") {
+		t.Errorf("text leaked raw MIME structure: %q", env.Text)
+	}
+}
+
+// TestParseMIMEMessage_Base64Part decodes a base64 text/plain part —
+// multipart.Reader only transparently decodes quoted-printable, so CTE
+// base64 bodies arrive as encoded noise without decodeMIMETransfer.
+func TestParseMIMEMessage_Base64Part(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte("From: a@b.example\r\n" +
+		"Content-Type: multipart/mixed; boundary=\"B64\"\r\n" +
+		"Subject: B64\r\n\r\n" +
+		"--B64\r\n" +
+		"Content-Type: text/plain\r\n" +
+		"Content-Transfer-Encoding: base64\r\n\r\n" +
+		"U2xvdHMgb3BlbiBGcmlkYXkgYXQgOS4=\r\n" + // "Slots open Friday at 9."
+		"--B64--\r\n")
+
+	env, err := parseMIMEMessage(raw)
+	if err != nil {
+		t.Fatalf("parseMIMEMessage: %v", err)
+	}
+	if !strings.Contains(env.Text, "Slots open Friday at 9.") {
+		t.Errorf("text = %q, want base64-decoded body", env.Text)
+	}
+}
+
 // TestParseMIMEMessage_OnlyHTMLOnly strips tags when no text/plain part
 // exists — the fallback the curator/LLM consumes.
 func TestParseMIMEMessage_OnlyHTMLOnly(t *testing.T) {
@@ -217,6 +284,16 @@ func TestHandleIntelInboundEmail_ClaimLoss(t *testing.T) {
 		t.Fatal("second claim won — CAS is not atomic")
 	}
 
+	// A transient mid-run failure releases the claim back to 'received' so
+	// the task's configured retry can win the CAS again — without the
+	// release, retries no-op on 'processing' and strand the delivery.
+	if err := srcStore.ReleaseInboundEvent(t.Context(), event.ID); err != nil {
+		t.Fatalf("release claim: %v", err)
+	}
+	if reclaimed, _ := srcStore.ClaimInboundEvent(t.Context(), event.ID); !reclaimed {
+		t.Fatal("released claim not re-claimable — asynq retries could never recover")
+	}
+
 	// A live claim is NOT redrivable — the stuck-age guard protects the
 	// in-flight worker from being hijacked into a duplicate materialize.
 	if redriven, _ := srcStore.RedriveInboundEvent(t.Context(), event.ID, 900); redriven {
@@ -341,8 +418,10 @@ func TestHandleIntelInboundEmail_Rematerialization(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestIntelWebSubSubscribe runs the subscribe task against an httptest
-// hub: the form carries callback/mode/topic/secret/lease, and the
-// self-renewal intel:websub_renew is armed.
+// hub: the form carries callback/mode/topic/secret/lease. The renewal is
+// armed by the hub's verification callback (HandleWebSubVerify) from the
+// granted lease, not by this task — the subscribe POST alone proves
+// nothing about the subscription yet.
 func TestIntelWebSubSubscribe(t *testing.T) {
 	_, srcStore, _, inspector := wireIntelChannelDeps(t)
 
@@ -398,23 +477,12 @@ func TestIntelWebSubSubscribe(t *testing.T) {
 		t.Errorf("hub.lease_seconds = %q", gotForm.Get("hub.lease_seconds"))
 	}
 
-	// Renewal armed inside the lease window — ProcessIn lands it on the
-	// scheduled set, not the pending queue.
-	var renewFound bool
-	for _, q := range []string{QueueCritical, QueueDefault, QueueLow} {
-		infos, err := inspector.ListScheduledTasks(q, asynq.PageSize(100))
-		if err != nil {
-			continue
-		}
-		for _, ti := range infos {
-			var p intelWebSubPayload
-			if err := json.Unmarshal(ti.Payload, &p); err == nil && p.ChannelID == ch.ID.String() {
-				renewFound = true
-			}
-		}
-	}
-	if !renewFound {
-		t.Error("no intel:websub_renew armed")
+	// The subscribe task must NOT arm the renewal — the granted lease is
+	// only known once the hub calls back, so the verify handler owns the
+	// chain. A ProcessIn enqueue lands on the scheduled set, not pending.
+	if n := pendingTasks(t, inspector, TypeIntelWebSubRenew); len(n) != 0 ||
+		len(scheduledTasks(t, inspector, TypeIntelWebSubRenew)) != 0 {
+		t.Error("subscribe task armed a renewal — the verify callback owns that")
 	}
 }
 
@@ -444,7 +512,8 @@ func TestIntelWebSubSubscribe_DisabledChannel(t *testing.T) {
 	if hubCalled {
 		t.Error("hub called for a disabled channel")
 	}
-	if tasks := pendingTasks(t, inspector, TypeIntelWebSubRenew); len(tasks) != 0 {
+	if len(pendingTasks(t, inspector, TypeIntelWebSubRenew)) != 0 ||
+		len(scheduledTasks(t, inspector, TypeIntelWebSubRenew)) != 0 {
 		t.Error("renewal armed for a disabled channel")
 	}
 }

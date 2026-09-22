@@ -5,10 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -167,6 +167,7 @@ func comparisonItemToRadarItem(c gen.ComparisonItem) radarItem {
 		IntelRecordID:     c.IntelRecordID,
 		Type:              "cost_of_living",
 		Title:             c.Title,
+		Description:       c.Description,
 		ConfidenceOverall: c.ConfidenceOverall,
 		TrustLevel:        0,
 		FreshnessScore:    c.FreshnessScore,
@@ -175,64 +176,147 @@ func comparisonItemToRadarItem(c gen.ComparisonItem) radarItem {
 	}
 }
 
-// encodeCursor encodes a keyset cursor (created_at + id) as a base64 string
-// for the next_cursor field in the spec envelope. The cursor is opaque to
-// the client; the handler decodes it to resume pagination.
-func encodeCursor(createdAt pgtype.Timestamptz, id pgtype.UUID) string {
-	if !createdAt.Valid || !id.Valid {
+// ---------------------------------------------------------------------------
+// Radar pagination
+// ---------------------------------------------------------------------------
+
+// radarDomainOrder defines the deterministic merge order for
+// same-timestamp items across domains. Domains not in the map sort last.
+var radarDomainOrder = map[string]int{
+	"scholarship":    0,
+	"job":            1,
+	"visa":           2,
+	"housing":        3,
+	"remittance":     4,
+	"cost_of_living": 5,
+}
+
+func radarTypeRank(t string) int {
+	if r, ok := radarDomainOrder[t]; ok {
+		return r
+	}
+
+	return len(radarDomainOrder)
+}
+
+// radarCursorCheckpoint is one domain's resume position in the merged
+// keyset stream: the (created_at, id) of the last item of that domain
+// that was emitted.
+type radarCursorCheckpoint struct {
+	TS int64  `json:"t"` // created_at, UnixNano
+	ID string `json:"i"` // row id
+}
+
+// encodeRadarCursor encodes the per-domain checkpoints as a base64 JSON
+// object for the next_cursor field. A single (created_at,id) cursor cannot
+// resume a merged multi-domain stream correctly — applying one domain's id
+// to another table's keyset clause randomly duplicates or drops
+// same-timestamp rows. Keeping a checkpoint per domain makes each domain
+// resume from its own last emitted item, so nothing is re-emitted or lost.
+func encodeRadarCursor(checkpoints map[string]radarCursorCheckpoint) string {
+	if len(checkpoints) == 0 {
 		return ""
 	}
 
-	raw := fmt.Sprintf("%d|%s", createdAt.Time.UnixNano(), id.String())
+	raw, err := json.Marshal(checkpoints)
+	if err != nil {
+		return ""
+	}
 
-	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-// parseCursor decodes a base64 keyset cursor. Returns the created_at
-// timestamp and id; ok=false if the cursor is empty or malformed.
-func parseCursor(cursor string) (ts pgtype.Timestamptz, id pgtype.UUID, ok bool) {
-	if cursor == "" {
-		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+// parseRadarCursor decodes the keyset cursor. Returns nil when absent or
+// malformed (→ offset pagination). Two wire formats are supported: the v2
+// per-domain checkpoint map (base64 JSON), and the legacy v1
+// "nano|uuid" single cursor, which is applied to every domain — matching
+// the pre-fix resume semantics for in-flight cursors.
+func parseRadarCursor(raw string) map[string]radarCursorCheckpoint {
+	if raw == "" {
+		return nil
 	}
 
-	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
-		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+		return nil
 	}
 
-	parts := splitOnce(raw, '|')
+	if len(decoded) > 0 && decoded[0] == '{' {
+		var m map[string]radarCursorCheckpoint
+		if err := json.Unmarshal(decoded, &m); err == nil && len(m) > 0 {
+			return m
+		}
+
+		return nil
+	}
+
+	parts := splitOnce(string(decoded), '|')
 	if len(parts) != 2 {
-		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+		return nil
 	}
 
 	nano, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+		return nil
 	}
 
-	if err := id.Scan(parts[1]); err != nil {
-		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	var id pgtype.UUID
+	if err := id.Scan(parts[1]); err != nil || !id.Valid {
+		return nil
 	}
 
-	ts = pgtype.Timestamptz{Time: timeFromNano(nano), Valid: true}
+	cp := radarCursorCheckpoint{TS: nano, ID: id.String()}
 
-	return ts, id, true
+	return map[string]radarCursorCheckpoint{
+		"scholarship": cp, "job": cp, "visa": cp,
+		"housing": cp, "remittance": cp, "cost_of_living": cp,
+	}
 }
 
 // splitOnce splits s at the first occurrence of sep.
-func splitOnce(s []byte, sep byte) []string {
+func splitOnce(s string, sep byte) []string {
 	for i, b := range s {
 		if b == sep {
-			return []string{string(s[:i]), string(s[i+1:])}
+			return []string{s[:i], s[i+1:]}
 		}
 	}
 
-	return []string{string(s)}
+	return []string{s}
 }
 
 // timeFromNano converts a UnixNano value to a time.Time.
 func timeFromNano(nano int64) time.Time {
 	return time.Unix(0, nano).UTC()
+}
+
+// normalizeRadarItemType maps the spec item_type vocabulary
+// (api-routes-catalog: scholarship|job|visa_alert|fx_update|announcement)
+// and the internal domain names onto the emitted item.type values. An
+// unmapped value is returned lower-cased so unrecognized types yield an
+// empty (not erroring) filtered feed.
+func normalizeRadarItemType(v string) string {
+	switch v {
+	case "", "all":
+		return ""
+	case "scholarship":
+		return "scholarship"
+	case "job", "jobs":
+		return "job"
+	case "visa", "visa_alert":
+		return "visa"
+	case "remittance", "fx_update", "fx":
+		return "remittance"
+	case "housing":
+		return "housing"
+	case "cost_of_living", "col":
+		return "cost_of_living"
+	case "announcement":
+		// Spec'd item_type with no backing domain yet — filters to an
+		// empty feed rather than returning an error for a catalog value.
+		return "announcement"
+	default:
+		return v
+	}
 }
 
 // countByType aggregates radar items by their Type field.
@@ -304,10 +388,257 @@ func (h *Handlers) filterBlockedRadarItems(ctx context.Context, userID pgtype.UU
 	return filtered, nil
 }
 
+// radarFetch is one domain's contribution to a merged radar page: the
+// emitted item type and a list function that returns the domain's next
+// rows after its (ts,id) keyset position, capped at limit. An invalid ts
+// means "from the top".
+type radarFetch struct {
+	domain string
+	list   func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, limit int32) ([]radarItem, error)
+}
+
+func convertRadarRows[T any](rows []T, convert func(T) radarItem) []radarItem {
+	out := make([]radarItem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, convert(row))
+	}
+
+	return out
+}
+
+// radarFeedDomains builds the per-domain fetch list for GET /intel/radar.
+// The geo filters ($3 space / $4 country) are pushed into every domain's
+// keyset query so filtered feeds stay filtered across pages — previously
+// only scholarships were geo-filtered, and the filter was dropped entirely
+// whenever a cursor was present. remittance_rates has no geo columns, so
+// it is excluded when a geo filter is active rather than leaking
+// unrelated corridors into a country-scoped feed.
+func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, country string) []radarFetch {
+	geoActive := spaceID.Valid || country != ""
+
+	out := make([]radarFetch, 0, 6)
+	add := func(domain string, list func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, limit int32) ([]radarItem, error)) {
+		if domainFilter == "" || domainFilter == domain {
+			out = append(out, radarFetch{domain: domain, list: list})
+		}
+	}
+
+	add("scholarship", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListScholarshipsKeyset(ctx, gen.ListScholarshipsKeysetParams{
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return convertRadarRows(rows, scholarshipToRadarItem), nil
+	})
+
+	add("job", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListIntelJobsKeyset(ctx, gen.ListIntelJobsKeysetParams{
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return convertRadarRows(rows, jobToRadarItem), nil
+	})
+
+	add("visa", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListVisaRoutesIntelKeyset(ctx, gen.ListVisaRoutesIntelKeysetParams{
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return convertRadarRows(rows, visaRouteToRadarItem), nil
+	})
+
+	add("housing", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListHousingGuidesIntelKeyset(ctx, gen.ListHousingGuidesIntelKeysetParams{
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return convertRadarRows(rows, housingGuideToRadarItem), nil
+	})
+
+	if !geoActive {
+		add("remittance", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+			rows, err := h.intelStores.ListRemittanceRatesIntelKeyset(ctx, gen.ListRemittanceRatesIntelKeysetParams{
+				Column1: ts, ID: id, Limit: lim,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return convertRadarRows(rows, remittanceRateToRadarItem), nil
+		})
+	}
+
+	add("cost_of_living", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListComparisonItemsIntelKeyset(ctx, gen.ListComparisonItemsIntelKeysetParams{
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return convertRadarRows(rows, comparisonItemToRadarItem), nil
+	})
+
+	return out
+}
+
+// radarFollowedDomains builds the per-domain fetch list for
+// GET /intel/radar/followed — the space-keyed domains filtered to the
+// caller's followed country spaces. remittance is excluded (no geo
+// columns, and the followed feed is itself a geo filter).
+func (h *Handlers) radarFollowedDomains(spaceIDs []pgtype.UUID) []radarFetch {
+	return []radarFetch{
+		{domain: "scholarship", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+			rows, err := h.intelStores.ListScholarshipsBySpaces(ctx, gen.ListScholarshipsBySpacesParams{
+				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return convertRadarRows(rows, scholarshipToRadarItem), nil
+		}},
+		{domain: "job", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+			rows, err := h.intelStores.ListIntelJobsBySpaces(ctx, gen.ListIntelJobsBySpacesParams{
+				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return convertRadarRows(rows, jobToRadarItem), nil
+		}},
+		{domain: "visa", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+			rows, err := h.intelStores.ListVisaRoutesBySpaces(ctx, gen.ListVisaRoutesBySpacesParams{
+				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return convertRadarRows(rows, visaRouteToRadarItem), nil
+		}},
+		{domain: "housing", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+			rows, err := h.intelStores.ListHousingGuidesBySpaces(ctx, gen.ListHousingGuidesBySpacesParams{
+				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return convertRadarRows(rows, housingGuideToRadarItem), nil
+		}},
+		{domain: "cost_of_living", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+			rows, err := h.intelStores.ListComparisonItemsBySpaces(ctx, gen.ListComparisonItemsBySpacesParams{
+				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return convertRadarRows(rows, comparisonItemToRadarItem), nil
+		}},
+	}
+}
+
+// radarMergePage fetches every domain's next batch, merges, sorts,
+// blocked-filters, and slices out the requested page. In keyset mode
+// (checkpoints != nil) each domain resumes from its own checkpoint and
+// fetches `limit` rows; in offset mode (checkpoints == nil) each domain
+// fetches offset+limit rows from the top and the merged result is sliced
+// [offset:offset+limit]. Individual domain query errors are logged and
+// swallowed so one failing domain does not blank the whole feed.
+//
+// Returns the page items, the per-domain emitted checkpoints for the
+// next_cursor (incoming checkpoints are preserved for domains that
+// emitted nothing), and hasMore.
+func (h *Handlers) radarMergePage(ctx context.Context, userID pgtype.UUID, domains []radarFetch, checkpoints map[string]radarCursorCheckpoint, offset, limit int) ([]radarItem, map[string]radarCursorCheckpoint, bool, error) {
+	fetchLimit := limit
+	if checkpoints == nil {
+		fetchLimit = offset + limit
+	}
+
+	var merged []radarItem
+
+	for _, d := range domains {
+		var ts pgtype.Timestamptz
+
+		var id pgtype.UUID
+		if cp, ok := checkpoints[d.domain]; ok {
+			ts = pgtype.Timestamptz{Time: timeFromNano(cp.TS), Valid: true}
+			_ = id.Scan(cp.ID)
+		}
+
+		rows, err := d.list(ctx, ts, id, clampInt32(fetchLimit))
+		if err != nil {
+			slog.Warn("intel: radar "+d.domain+" query failed", "error", err)
+			continue
+		}
+
+		merged = append(merged, rows...)
+	}
+
+	sortRadarItems(merged)
+
+	filtered, err := h.filterBlockedRadarItems(ctx, userID, merged)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	start := 0
+	if checkpoints == nil {
+		start = offset
+	}
+
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+
+	end := start + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	page := filtered[start:end]
+	hasMore := len(filtered) > end
+
+	next := make(map[string]radarCursorCheckpoint, len(domains))
+	for k, v := range checkpoints {
+		next[k] = v
+	}
+
+	for _, it := range page {
+		if it.CreatedAt.Valid && it.ID.Valid {
+			next[it.Type] = radarCursorCheckpoint{TS: it.CreatedAt.Time.UnixNano(), ID: it.ID.String()}
+		}
+	}
+
+	if page == nil {
+		page = []radarItem{}
+	}
+
+	return page, next, hasMore, nil
+}
+
 // HandleRadarFeed returns the geo-scoped radar feed. The feed unions
 // promoted entities from all intelligence domains: scholarships, jobs,
 // visa routes, housing guides, remittance rates, and cost-of-living
 // items. Items are merged and sorted by created_at desc.
+// // Pagination: ?cursor= (spec §731-733 keyset, per-domain checkpoints)
+// // or ?page_offset=/​?page= (offset) — the main frontend paginates by
+// // offset; both modes honor the geo + item_type filters.
 // // GET /api/v1/intel/radar.
 func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
@@ -319,101 +650,42 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	page, limit := h.parsePagination(r)
-	offset := clampInt32((page - 1) * limit)
+	offset := (page - 1) * limit
 
-	// BUG-006 fix: the spec §731-733 requires keyset pagination via ?cursor=.
-	cursorStr := q.Get("cursor")
-	cursorTS, cursorID, hasCursor := parseCursor(cursorStr)
-
-	spaceIDStr := q.Get("space_id")
-	country := q.Get("country")
-	domainFilter := q.Get("type") // optional domain filter (e.g. "job", "visa")
+	checkpoints := parseRadarCursor(q.Get("cursor"))
 
 	var spaceID pgtype.UUID
-	if spaceIDStr != "" {
+	if spaceIDStr := q.Get("space_id"); spaceIDStr != "" {
 		if e := spaceID.Scan(spaceIDStr); e != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
 			return
 		}
 	}
 
-	schRows, err := h.listRadarScholarships(r.Context(), hasCursor, cursorTS, cursorID, spaceID, country, limit, offset)
+	country := q.Get("country")
+
+	// Spec §740 defines ?item_type=; ?type= is accepted as an alias for
+	// clients built against the earlier implementation.
+	domainFilter := normalizeRadarItemType(q.Get("item_type"))
+	if domainFilter == "" {
+		domainFilter = normalizeRadarItemType(q.Get("type"))
+	}
+
+	domains := h.radarFeedDomains(domainFilter, spaceID, country)
+
+	items, next, hasMore, err := h.radarMergePage(r.Context(), userID, domains, checkpoints, offset, limit)
 	if err != nil {
-		slog.Error("intel: radar feed scholarships query failed", "error", err)
+		slog.Error("intel: radar feed merge failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
 
 		return
-	}
-
-	items := make([]radarItem, 0, len(schRows))
-
-	if domainFilter == "" || domainFilter == "scholarship" {
-		for _, s := range schRows {
-			items = append(items, scholarshipToRadarItem(s))
-		}
-	}
-
-	// Union in the other domain tables. Each domain is fetched with its
-	// own keyset query and converted to radarItems. When a domain filter
-	// is active, only that domain is fetched. Errors from individual
-	// domains are logged but do not fail the whole feed (graceful
-	// degradation — a domain with no data or a transient error should
-	// not blank the entire radar).
-	items = appendRadarRows(items, domainFilter, "job",
-		func() ([]gen.IntelJob, error) {
-			return h.intelStores.ListIntelJobsKeyset(r.Context(), gen.ListIntelJobsKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
-		}, jobToRadarItem, "jobs")
-
-	items = appendRadarRows(items, domainFilter, "visa",
-		func() ([]gen.VisaRoute, error) {
-			return h.intelStores.ListVisaRoutesIntelKeyset(r.Context(), gen.ListVisaRoutesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
-		}, visaRouteToRadarItem, "visa routes")
-
-	items = appendRadarRows(items, domainFilter, "housing",
-		func() ([]gen.HousingGuide, error) {
-			return h.intelStores.ListHousingGuidesIntelKeyset(r.Context(), gen.ListHousingGuidesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
-		}, housingGuideToRadarItem, "housing guides")
-
-	items = appendRadarRows(items, domainFilter, "remittance",
-		func() ([]gen.RemittanceRate, error) {
-			return h.intelStores.ListRemittanceRatesIntelKeyset(r.Context(), gen.ListRemittanceRatesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
-		}, remittanceRateToRadarItem, "remittance rates")
-
-	items = appendRadarRows(items, domainFilter, "cost_of_living",
-		func() ([]gen.ComparisonItem, error) {
-			return h.intelStores.ListComparisonItemsIntelKeyset(r.Context(), gen.ListComparisonItemsIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
-		}, comparisonItemToRadarItem, "cost-of-living")
-
-	// Sort the merged items by created_at desc (stable sort to preserve
-	// domain insertion order for same-timestamp items).
-	sortRadarItems(items)
-
-	// Filter out items from sources the caller has blocked (v2 Task 2).
-	items, err = h.filterBlockedRadarItems(r.Context(), userID, items)
-	if err != nil {
-		slog.Error("intel: radar feed block filter failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
-		return
-	}
-
-	// Trim to the page limit.
-	if len(items) > limit {
-		items = items[:limit]
-	}
-
-	hasMore := len(items) >= limit
-	nextCursor := ""
-
-	if hasMore && len(items) > 0 {
-		last := items[len(items)-1]
-		nextCursor = encodeCursor(last.CreatedAt, last.ID)
 	}
 
 	followedSpaces := h.resolveFollowedSpaceIDs(r.Context(), userID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"items":              items,
-		"next_cursor":        nextCursor,
+		"next_cursor":        encodeRadarCursor(next),
 		"has_more":           hasMore,
 		"counts_by_type":     countByType(items),
 		"counts_by_country":  countByCountry(items),
@@ -421,80 +693,30 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// appendRadarRows fetches one domain's keyset rows and converts them into
-// radar items, honoring the domain filter. Query errors are logged and
-// swallowed so a single failing domain does not blank the whole feed.
-func appendRadarRows[T any](items []radarItem, domainFilter, domain string, list func() ([]T, error), convert func(T) radarItem, label string) []radarItem {
-	if domainFilter != "" && domainFilter != domain {
-		return items
-	}
-
-	rows, err := list()
-	if err != nil {
-		slog.Warn("intel: radar feed "+label+" query failed", "error", err)
-
-		return items
-	}
-
-	for _, row := range rows {
-		items = append(items, convert(row))
-	}
-
-	return items
-}
-
-// listRadarScholarships runs the appropriate scholarship listing query for the
-// radar feed: keyset when a cursor is present, space/country filter when
-// supplied, otherwise the plain paginated list.
-func (h *Handlers) listRadarScholarships(ctx context.Context, hasCursor bool, cursorTS pgtype.Timestamptz, cursorID, spaceID pgtype.UUID, country string, limit int, offset int32) ([]gen.Scholarship, error) {
-	limit32 := clampInt32(limit)
-
-	switch {
-	case hasCursor:
-		return h.intelStores.ListScholarshipsKeyset(ctx, gen.ListScholarshipsKeysetParams{Column1: cursorTS, ID: cursorID,
-			Limit: limit32,
-		})
-	case spaceID.Valid:
-		return h.intelStores.ListScholarshipsBySpace(ctx, gen.ListScholarshipsBySpaceParams{
-			CountrySpaceID: spaceID,
-			Limit:          limit32,
-			Offset:         offset,
-		})
-	case country != "":
-		return h.intelStores.ListScholarshipsByCountry(ctx, gen.ListScholarshipsByCountryParams{
-			Country: country,
-			Limit:   limit32,
-			Offset:  offset,
-		})
-	default:
-		return h.intelStores.ListScholarships(ctx, gen.ListScholarshipsParams{
-			Limit:  limit32,
-			Offset: offset,
-		})
-	}
-}
-
-// sortRadarItems sorts radar items by created_at descending (newest first).
-// Items with invalid created_at are placed last.
+// sortRadarItems sorts radar items by (created_at DESC, domain rank ASC,
+// id DESC) — deterministic across the merged domains so keyset pages are
+// reproducible. Items with invalid created_at are placed last.
 func sortRadarItems(items []radarItem) {
-	for i := 1; i < len(items); i++ {
-		for j := i; j > 0; j-- {
-			if !items[j].CreatedAt.Valid {
-				break
-			}
-
-			if !items[j-1].CreatedAt.Valid || items[j].CreatedAt.Time.After(items[j-1].CreatedAt.Time) {
-				items[j], items[j-1] = items[j-1], items[j]
-			} else {
-				break
-			}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if a.CreatedAt.Valid != b.CreatedAt.Valid {
+			return a.CreatedAt.Valid
 		}
-	}
+		if !a.CreatedAt.Time.Equal(b.CreatedAt.Time) {
+			return a.CreatedAt.Time.After(b.CreatedAt.Time)
+		}
+		if ra, rb := radarTypeRank(a.Type), radarTypeRank(b.Type); ra != rb {
+			return ra < rb
+		}
+
+		return a.ID.String() > b.ID.String()
+	})
 }
 
-// HandleRadarCounts returns per-country scholarship counts for the dashboard
-// widget. The widget renders a world map heat-map; this endpoint supplies the
-// counts that drive the colour intensity per country.
+// HandleRadarCounts returns per-domain and per-country promoted-item
+// counts for the dashboard widget. The widget renders a world map
+// heat-map; this endpoint supplies the counts that drive the colour
+// intensity per country.
 // // GET /api/v1/intel/radar/counts.
 func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
@@ -502,33 +724,45 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.intelStores.CountScholarshipsByCountry(r.Context())
+	typeRows, err := h.intelStores.CountIntelRadarByType(r.Context())
 	if err != nil {
-		slog.Error("intel: radar counts query failed", "error", err)
+		slog.Error("intel: radar counts by type failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "counts_failed", "Failed to load radar counts")
 
 		return
 	}
 
-	if rows == nil {
-		rows = []gen.CountScholarshipsByCountryRow{}
+	countryRows, err := h.intelStores.CountIntelRadarByCountry(r.Context())
+	if err != nil {
+		slog.Error("intel: radar counts by country failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "counts_failed", "Failed to load radar counts")
+
+		return
 	}
 
 	total := int64(0)
-	byCountry := make(map[string]int64, len(rows))
+	byType := make(map[string]int64, len(typeRows))
 
-	for _, r := range rows {
-		total += r.Count
-		byCountry[r.Country] = r.Count
+	for _, row := range typeRows {
+		total += row.Count
+		byType[row.ItemType] = row.Count
+	}
+
+	byCountry := make(map[string]int64, len(countryRows))
+	for _, row := range countryRows {
+		if row.Country == "" {
+			continue
+		}
+		byCountry[row.Country] = row.Count
 	}
 
 	// Spec envelope: {data: {total_new, by_type, by_country}} (INTEL-019 fix,
-	// §3.3 / api-response-format.md). In v1 all radar items are scholarships,
-	// so by_type has a single key.
+	// §3.3 / api-response-format.md). by_type/by_country now cover every
+	// radar domain, not just scholarships.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"total_new":  total,
-			"by_type":    map[string]int64{"scholarship": total},
+			"by_type":    byType,
 			"by_country": byCountry,
 		},
 	})
@@ -536,13 +770,14 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 
 // HandleRadarFollowed returns the radar feed scoped to the caller's followed
 // country spaces. It resolves the user's followed "space" entities via the
-// follows service, then fetches scholarships for ALL followed spaces in a
-// single query (BUG-008b fix: the prior per-space loop was an N+1 — one
-// query per followed country).
-// // BUG-008a fix: the response now uses the radar envelope
-// {items, next_cursor, has_more, counts_by_type, counts_by_country,
-// followed_space_ids} per spec §739 (same envelope as /radar), not the
-// generic {data, meta} envelope.
+// follows service, then unions the space-keyed domains (scholarships, jobs,
+// visa routes, housing guides, comparison items) for ALL followed spaces in
+// a single merged fetch (BUG-008b fix: the prior per-space loop was an N+1).
+// // The radar envelope {items, next_cursor, has_more, counts_by_type,
+// // counts_by_country, followed_space_ids} per spec §739 matches /radar.
+// // Pagination honors both ?page_offset= (frontend contract) and ?cursor=
+// // (spec keyset) — previously the page/cursor was ignored entirely, so
+// // "Load more" re-fetched page 1.
 // // GET /api/v1/intel/radar/followed.
 func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil || h.followsSvc == nil {
@@ -555,30 +790,40 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, limit := h.parsePagination(r)
+	q := r.URL.Query()
+	page, limit := h.parsePagination(r)
+	offset := (page - 1) * limit
+	checkpoints := parseRadarCursor(q.Get("cursor"))
 
 	spaceIDs, followedSpaceStrs, ok := h.resolveRadarFollowedSpaces(w, r, userID)
 	if !ok {
 		return
 	}
 
-	items, ok := h.listFollowedRadarItems(w, r, spaceIDs, limit)
-	if !ok {
-		return
+	var items []radarItem
+
+	next := map[string]radarCursorCheckpoint{}
+	hasMore := false
+
+	if len(spaceIDs) > 0 {
+		var err error
+		items, next, hasMore, err = h.radarMergePage(r.Context(), userID, h.radarFollowedDomains(spaceIDs), checkpoints, offset, limit)
+		if err != nil {
+			slog.Error("intel: radar followed merge failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
+
+			return
+		}
 	}
 
-	hasMore := len(items) >= limit
-	nextCursor := ""
-
-	if hasMore && len(items) > 0 {
-		last := items[len(items)-1]
-		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+	if items == nil {
+		items = []radarItem{}
 	}
 
 	// Radar envelope (spec §739), NOT the generic {data, meta} envelope.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"items":              items,
-		"next_cursor":        nextCursor,
+		"next_cursor":        encodeRadarCursor(next),
 		"has_more":           hasMore,
 		"counts_by_type":     countByType(items),
 		"counts_by_country":  countByCountry(items),
@@ -619,47 +864,6 @@ func (h *Handlers) resolveRadarFollowedSpaces(w http.ResponseWriter, r *http.Req
 	}
 
 	return spaceIDs, spaceStrs, true
-}
-
-// listFollowedRadarItems unions scholarship and job radar items from the
-// followed spaces, sorted by created_at desc and truncated to limit. Job
-// unioning degrades gracefully on error. Returns ok=false (with an error
-// response written) when the scholarship query fails.
-func (h *Handlers) listFollowedRadarItems(w http.ResponseWriter, r *http.Request, spaceIDs []pgtype.UUID, limit int) ([]radarItem, bool) {
-	var items []radarItem
-
-	if len(spaceIDs) > 0 {
-		rows, err := h.intelStores.ListScholarshipsBySpaces(r.Context(), gen.ListScholarshipsBySpacesParams{Column1: spaceIDs, Limit: clampInt32(limit)})
-		if err != nil {
-			slog.Error("intel: radar followed union query failed", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
-
-			return nil, false
-		}
-
-		items = make([]radarItem, 0, len(rows))
-		for _, s := range rows {
-			items = append(items, scholarshipToRadarItem(s))
-		}
-
-		// Union in jobs from followed spaces (graceful degradation on error).
-		if jobRows, jerr := h.intelStores.ListIntelJobsBySpaces(r.Context(), gen.ListIntelJobsBySpacesParams{Column1: spaceIDs, Limit: clampInt32(limit)}); jerr != nil {
-			slog.Warn("intel: radar followed jobs query failed", "error", jerr)
-		} else {
-			for _, j := range jobRows {
-				items = append(items, jobToRadarItem(j))
-			}
-		}
-	}
-
-	// Sort the merged items by created_at desc.
-	sortRadarItems(items)
-
-	if len(items) > limit {
-		items = items[:limit]
-	}
-
-	return items, true
 }
 
 // HandleRadarFollow follows a country space. The body carries the space_id;
@@ -768,9 +972,83 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleRadarItemDetail returns a single radar item (scholarship) by its
-// id. The route parameter is the scholarship projection row id.
-// // GET /api/v1/intel/radar/feed/{item_id}.
+// resolveRadarItem loads a radar item by its projection row id across all
+// radar domains. itemType (already normalized) short-circuits the probe to
+// one table when supplied; otherwise each domain table is tried in order
+// until the row is found. Returns the item, the domain's guide_id when the
+// row has one (scholarships/jobs link to contents for the saved tracker),
+// and found=false when no domain table has the id.
+var errRadarItemNotFound = errors.New("radar item not found")
+
+func (h *Handlers) resolveRadarItem(ctx context.Context, itemID pgtype.UUID, itemType string) (radarItem, pgtype.UUID, error) {
+	if itemType == "" || itemType == "scholarship" {
+		s, err := h.intelStores.GetScholarship(ctx, itemID)
+		if err == nil {
+			return scholarshipToRadarItem(s), s.GuideID, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return radarItem{}, pgtype.UUID{}, err
+		}
+	}
+
+	if itemType == "" || itemType == "job" {
+		j, err := h.intelStores.GetIntelJob(ctx, itemID)
+		if err == nil {
+			return jobToRadarItem(j), j.GuideID, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return radarItem{}, pgtype.UUID{}, err
+		}
+	}
+
+	if itemType == "" || itemType == "visa" {
+		v, err := h.intelStores.GetIntelVisaRouteByID(ctx, itemID)
+		if err == nil {
+			return visaRouteToRadarItem(v), v.GuideID, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return radarItem{}, pgtype.UUID{}, err
+		}
+	}
+
+	if itemType == "" || itemType == "housing" {
+		g, err := h.intelStores.GetIntelHousingGuideByID(ctx, itemID)
+		if err == nil {
+			return housingGuideToRadarItem(g), g.GuideID, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return radarItem{}, pgtype.UUID{}, err
+		}
+	}
+
+	if itemType == "" || itemType == "remittance" {
+		rt, err := h.intelStores.GetIntelRemittanceRateByID(ctx, itemID)
+		if err == nil {
+			return remittanceRateToRadarItem(rt), pgtype.UUID{}, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return radarItem{}, pgtype.UUID{}, err
+		}
+	}
+
+	if itemType == "" || itemType == "cost_of_living" {
+		c, err := h.intelStores.GetIntelComparisonItemByID(ctx, itemID)
+		if err == nil {
+			return comparisonItemToRadarItem(c), pgtype.UUID{}, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return radarItem{}, pgtype.UUID{}, err
+		}
+	}
+
+	return radarItem{}, pgtype.UUID{}, errRadarItemNotFound
+}
+
+// HandleRadarItemDetail returns a single radar item by its projection row
+// id, resolved across all radar domains — the feed unions six domain
+// types, so the detail endpoint must accept all of them, not just
+// scholarships.
+// // GET /api/v1/intel/radar/feed/{item_id}?item_type={type}.
 func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -782,9 +1060,15 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s, err := h.intelStores.GetScholarship(r.Context(), itemID)
+	q := r.URL.Query()
+	itemType := normalizeRadarItemType(q.Get("item_type"))
+	if itemType == "" {
+		itemType = normalizeRadarItemType(q.Get("type"))
+	}
+
+	item, guideID, err := h.resolveRadarItem(r.Context(), itemID, itemType)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, errRadarItemNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Radar item not found")
 			return
 		}
@@ -795,14 +1079,13 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	item := scholarshipToRadarItem(s)
-
 	// Populate the Saved flag so the detail page's save button can seed
-	// its initial state. Only checked for authenticated users; guests get
-	// nil (omitted) and the button defaults to unsaved.
-	if h.scholarSvc != nil {
+	// its initial state. Only scholarships are savable (the tracker keys on
+	// the guide's contents id); other types omit the flag. Only checked
+	// for authenticated users; guests get nil (omitted).
+	if item.Type == "scholarship" && h.scholarSvc != nil {
 		if uid, ok := optionalUser(w, r); ok {
-			saved, serr := h.scholarSvc.IsSavedScholarship(r.Context(), uid, s.GuideID)
+			saved, serr := h.scholarSvc.IsSavedScholarship(r.Context(), uid, guideID)
 			if serr != nil {
 				slog.Warn("intel: radar item saved-status check failed", "item_id", itemID.String(), "error", serr)
 			} else {
@@ -858,7 +1141,10 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 
 // HandleRadarSave saves a radar opportunity to the caller's tracker. The body
 // carries the item_id (scholarship projection row id); the handler resolves
-// the backing guide_id and delegates to the scholarships service.
+// the backing guide_id and delegates to the scholarships service. The spec
+// body also carries item_type — in v1 only scholarships are savable (spec
+// §763 reserves saved_jobs for later), so a non-scholarship item_type gets a
+// clear 422 rather than a misleading not_found.
 // // POST /api/v1/intel/radar/save.
 func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 	if h.scholarSvc == nil || h.intelStores == nil {
@@ -872,7 +1158,8 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		ItemID string `json:"item_id"`
+		ItemID   string `json:"item_id"`
+		ItemType string `json:"item_type"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -882,6 +1169,11 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 
 	if body.ItemID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "item_id is required")
+		return
+	}
+
+	if t := normalizeRadarItemType(body.ItemType); t != "" && t != "scholarship" {
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "unsupported_item_type", "Only scholarship opportunities can be saved in v1")
 		return
 	}
 

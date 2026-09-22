@@ -1289,9 +1289,9 @@ type CrsDraw struct {
 	Status            string             `json:"status"`
 	HitlReviewedBy    pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt    pgtype.Timestamptz `json:"hitl_reviewed_at"`
-	IsJapabotIndexed  bool               `json:"is_japabot_indexed"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed  *bool              `json:"is_japabot_indexed"`
 }
 
 type CrsFactorPoint struct {
@@ -1319,9 +1319,9 @@ type CrsRuleset struct {
 	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes      *string            `json:"hitl_review_notes"`
-	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 }
 
 type CrsScoreHistory struct {
@@ -1617,9 +1617,9 @@ type EcaGuide struct {
 	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes      *string            `json:"hitl_review_notes"`
-	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 }
 
 type EcaProvider struct {
@@ -3015,9 +3015,9 @@ type PofRequirement struct {
 	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes      *string            `json:"hitl_review_notes"`
-	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 }
 
 type ProfessionalDocument struct {
@@ -3451,9 +3451,9 @@ type SopSample struct {
 	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes    *string            `json:"hitl_review_notes"`
-	IsJapabotIndexed   bool               `json:"is_japabot_indexed"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed   *bool              `json:"is_japabot_indexed"`
 }
 
 type SopTemplate struct {

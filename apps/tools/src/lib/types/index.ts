@@ -1158,12 +1158,8 @@ export interface EcaProvider {
 	id: string;
 	slug: string;
 	name: string;
-	description?: string;
-	website_url?: string;
-	fee_estimate?: string;
-	currency?: string;
-	processing_time?: string;
-	is_active: boolean;
+	website?: string;
+	is_active?: boolean;
 }
 
 /** GET /eca/guides + /eca/guides/:id — an ECA guide. */

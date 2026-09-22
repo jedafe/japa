@@ -292,6 +292,31 @@ func pendingTasks(t *testing.T, inspector *asynq.Inspector, taskType string) []*
 	return out
 }
 
+// scheduledTasks is pendingTasks' counterpart for the scheduled set —
+// ProcessIn enqueues (e.g. WebSub renewals armed for a future lease
+// window) land here, not on the pending list.
+func scheduledTasks(t *testing.T, inspector *asynq.Inspector, taskType string) []*asynq.TaskInfo {
+	t.Helper()
+
+	var out []*asynq.TaskInfo
+	for _, q := range []string{QueueCritical, QueueDefault, QueueLow} {
+		infos, err := inspector.ListScheduledTasks(q, asynq.PageSize(100))
+		if err != nil {
+			if errors.Is(err, asynq.ErrQueueNotFound) {
+				continue
+			}
+			t.Fatalf("inspect queue %s scheduled: %v", q, err)
+		}
+		for _, info := range infos {
+			if info.Type == taskType {
+				out = append(out, info)
+			}
+		}
+	}
+
+	return out
+}
+
 // staticFixture serves a small HTML page for fetch tests.
 func staticFixture(t *testing.T) *httptest.Server {
 	t.Helper()
