@@ -1308,6 +1308,9 @@ var entityTypeIndexNames = map[string]string{
 	"doc_page":                  "doc_pages",
 	"organization":              "organizations",
 	"language_test_requirement": "language_test_requirements",
+	"pof_requirement":           "pof_requirements",
+	"eca_guide":                 "eca_guides",
+	"sop_sample":                "sop_samples",
 }
 
 // entityIndexers maps an entity_type to the matching index method on the
@@ -1325,6 +1328,9 @@ func entityIndexers(ix SearchIndexer) map[string]func(context.Context, [16]byte)
 		"doc_page":                  ix.IndexDocPage,
 		"organization":              ix.IndexOrganization,
 		"language_test_requirement": ix.IndexLanguageTestRequirement,
+		"pof_requirement":           ix.IndexPofRequirement,
+		"eca_guide":                 ix.IndexEcaGuide,
+		"sop_sample":                ix.IndexSopSample,
 	}
 }
 

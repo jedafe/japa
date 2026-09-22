@@ -1340,3 +1340,253 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 
 	return summary, nil
 }
+
+// ---------------------------------------------------------------------------
+// §§107–110 SEO growth tools (ADR-118..121) — JapaBot RAG documents
+// ---------------------------------------------------------------------------
+
+// pofRequirementDocument is the document shape stored in the
+// pof_requirements index.
+type pofRequirementDocument struct {
+	ID                 string `json:"id"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	DestinationName    string `json:"destination_name"`
+	VisaType           string `json:"visa_type"`
+	ProgramLabel       string `json:"program_label"`
+	Currency           string `json:"currency"`
+	Notes              string `json:"notes,omitempty"`
+	Status             string `json:"status"`
+	IsJapabotIndexed   bool   `json:"is_japabot_indexed"`
+	URL                string `json:"url"`
+}
+
+// IndexPofRequirement fetches a pof_requirements row and upserts it into
+// the pof_requirements index. Only published + is_japabot_indexed rows
+// are indexed; anything else removes the document.
+func (ix *Indexer) IndexPofRequirement(ctx context.Context, reqID [16]byte) error {
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
+		return nil
+	}
+	if ix.pool == nil {
+		return errors.New("search:index: no database pool for pof_requirements fetch")
+	}
+
+	var (
+		id        string
+		destID    string
+		destName  *string
+		visaType  string
+		label     string
+		currency  string
+		notes     *string
+		status    string
+		indexable bool
+	)
+
+	err := ix.pool.Reader.QueryRow(ctx, `
+		SELECT p.id, p.destination_space_id, s.name, p.visa_type,
+		       p.program_label, p.currency, p.notes, p.status,
+		       (p.is_japabot_indexed AND p.status = 'published' AND p.is_active)
+		FROM pof_requirements p
+		LEFT JOIN spaces s ON s.id = p.destination_space_id
+		WHERE p.id = $1`, reqID).Scan(
+		&id, &destID, &destName, &visaType, &label, &currency, &notes, &status, &indexable)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexPofRequirements, reqID)
+		}
+		return fmt.Errorf("fetching pof_requirement for index: %w", err)
+	}
+
+	if !indexable {
+		return ix.DeleteDocument(ctx, IndexPofRequirements, reqID)
+	}
+
+	doc := pofRequirementDocument{
+		ID:                 id,
+		DestinationSpaceID: destID,
+		VisaType:           visaType,
+		ProgramLabel:       label,
+		Currency:           currency,
+		Status:             status,
+		IsJapabotIndexed:   true,
+		URL:                "/pof-calculator",
+	}
+	if destName != nil {
+		doc.DestinationName = *destName
+	}
+	if notes != nil {
+		doc.Notes = *notes
+	}
+
+	if err := ix.engine.UpsertDocuments(ctx, IndexPofRequirements, []pofRequirementDocument{doc}); err != nil {
+		return fmt.Errorf("indexing pof_requirement %s: %w", doc.ID, err)
+	}
+	slog.Info("search:index: pof_requirement indexed", "id", doc.ID)
+	return nil
+}
+
+// ecaGuideDocument is the document shape stored in the eca_guides index.
+type ecaGuideDocument struct {
+	ID                 string `json:"id"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	DestinationName    string `json:"destination_name"`
+	ProviderSlug       string `json:"provider_slug"`
+	ProviderName       string `json:"provider_name"`
+	Purpose            string `json:"purpose"`
+	TimelineEstimate   string `json:"timeline_estimate,omitempty"`
+	FeeEstimate        string `json:"fee_estimate,omitempty"`
+	Status             string `json:"status"`
+	IsJapabotIndexed   bool   `json:"is_japabot_indexed"`
+	URL                string `json:"url"`
+}
+
+// IndexEcaGuide fetches an eca_guides row and upserts it into the
+// eca_guides index. Only published + is_japabot_indexed rows are indexed.
+func (ix *Indexer) IndexEcaGuide(ctx context.Context, guideID [16]byte) error {
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
+		return nil
+	}
+	if ix.pool == nil {
+		return errors.New("search:index: no database pool for eca_guides fetch")
+	}
+
+	var (
+		id, destID         string
+		destName, provSlug *string
+		provName           *string
+		purpose            string
+		timeline, fee      *string
+		status             string
+		indexable          bool
+	)
+
+	err := ix.pool.Reader.QueryRow(ctx, `
+		SELECT g.id, g.destination_space_id, s.name, p.slug, p.name,
+		       g.purpose, g.timeline_estimate, g.fee_estimate, g.status,
+		       (g.is_japabot_indexed AND g.status = 'published' AND g.is_active)
+		FROM eca_guides g
+		LEFT JOIN spaces s ON s.id = g.destination_space_id
+		LEFT JOIN eca_providers p ON p.id = g.provider_id
+		WHERE g.id = $1`, guideID).Scan(
+		&id, &destID, &destName, &provSlug, &provName, &purpose, &timeline, &fee, &status, &indexable)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexEcaGuides, guideID)
+		}
+		return fmt.Errorf("fetching eca_guide for index: %w", err)
+	}
+
+	if !indexable {
+		return ix.DeleteDocument(ctx, IndexEcaGuides, guideID)
+	}
+
+	doc := ecaGuideDocument{
+		ID:                 id,
+		DestinationSpaceID: destID,
+		Purpose:            purpose,
+		Status:             status,
+		IsJapabotIndexed:   true,
+		URL:                "/eca-guide",
+	}
+	if destName != nil {
+		doc.DestinationName = *destName
+	}
+	if provSlug != nil {
+		doc.ProviderSlug = *provSlug
+	}
+	if provName != nil {
+		doc.ProviderName = *provName
+	}
+	if timeline != nil {
+		doc.TimelineEstimate = *timeline
+	}
+	if fee != nil {
+		doc.FeeEstimate = *fee
+	}
+
+	if err := ix.engine.UpsertDocuments(ctx, IndexEcaGuides, []ecaGuideDocument{doc}); err != nil {
+		return fmt.Errorf("indexing eca_guide %s: %w", doc.ID, err)
+	}
+	slog.Info("search:index: eca_guide indexed", "id", doc.ID)
+	return nil
+}
+
+// sopSampleDocument is the document shape stored in the sop_samples index.
+type sopSampleDocument struct {
+	ID                 string `json:"id"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	DestinationName    string `json:"destination_name"`
+	ProgramLevel       string `json:"program_level"`
+	FieldOfStudy       string `json:"field_of_study"`
+	Title              string `json:"title"`
+	Body               string `json:"body"`
+	Status             string `json:"status"`
+	IsJapabotIndexed   bool   `json:"is_japabot_indexed"`
+	URL                string `json:"url"`
+}
+
+// IndexSopSample fetches a sop_samples row and upserts it into the
+// sop_samples index. Only published + is_japabot_indexed rows are
+// indexed — user drafts are never indexed (private).
+func (ix *Indexer) IndexSopSample(ctx context.Context, sampleID [16]byte) error {
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
+		return nil
+	}
+	if ix.pool == nil {
+		return errors.New("search:index: no database pool for sop_samples fetch")
+	}
+
+	var (
+		id, destID      string
+		destName, field *string
+		level, title    string
+		body, status    string
+		indexable       bool
+	)
+
+	err := ix.pool.Reader.QueryRow(ctx, `
+		SELECT p.id, p.destination_space_id, s.name, p.program_level,
+		       p.field_of_study, p.title, p.body, p.status,
+		       (p.is_japabot_indexed AND p.status = 'published')
+		FROM sop_samples p
+		LEFT JOIN spaces s ON s.id = p.destination_space_id
+		WHERE p.id = $1`, sampleID).Scan(
+		&id, &destID, &destName, &level, &field, &title, &body, &status, &indexable)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexSopSamples, sampleID)
+		}
+		return fmt.Errorf("fetching sop_sample for index: %w", err)
+	}
+
+	if !indexable {
+		return ix.DeleteDocument(ctx, IndexSopSamples, sampleID)
+	}
+
+	doc := sopSampleDocument{
+		ID:                 id,
+		DestinationSpaceID: destID,
+		ProgramLevel:       level,
+		Title:              title,
+		Body:               body,
+		Status:             status,
+		IsJapabotIndexed:   true,
+		URL:                "/sop-generator",
+	}
+	if destName != nil {
+		doc.DestinationName = *destName
+	}
+	if field != nil {
+		doc.FieldOfStudy = *field
+	}
+
+	if err := ix.engine.UpsertDocuments(ctx, IndexSopSamples, []sopSampleDocument{doc}); err != nil {
+		return fmt.Errorf("indexing sop_sample %s: %w", doc.ID, err)
+	}
+	slog.Info("search:index: sop_sample indexed", "id", doc.ID)
+	return nil
+}

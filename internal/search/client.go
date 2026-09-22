@@ -25,6 +25,9 @@ const (
 	IndexDocPages          = "doc_pages"                  // documentation pages (SEARCH-001)
 	IndexOrganizations     = "organizations"              // verified orgs/businesses (Section 54)
 	IndexLanguageTestReqs  = "language_test_requirements" // §99 language test score requirements (JapaBot RAG)
+	IndexPofRequirements   = "pof_requirements"           // §108 POF requirement rows (JapaBot RAG)
+	IndexEcaGuides         = "eca_guides"                 // §109 ECA guides (JapaBot RAG)
+	IndexSopSamples        = "sop_samples"                // §110 published SOP samples (JapaBot RAG)
 )
 
 // PrimaryKey is the primary key used by every Meilisearch index. All
@@ -43,6 +46,9 @@ var allIndexes = []string{
 	IndexDocPages,
 	IndexOrganizations,
 	IndexLanguageTestReqs,
+	IndexPofRequirements,
+	IndexEcaGuides,
+	IndexSopSamples,
 }
 
 // filterableAttributesByIndex declares which attributes each index exposes
@@ -58,6 +64,9 @@ var filterableAttributesByIndex = map[string][]string{
 	IndexDocPages:          {"audience", "review_status"},
 	IndexOrganizations:     {"org_type", "verified", "status", "country_code"},
 	IndexLanguageTestReqs:  {"test_slug", "destination_space_id", "visa_category", "is_japabot_indexed"},
+	IndexPofRequirements:   {"destination_space_id", "visa_type", "is_japabot_indexed"},
+	IndexEcaGuides:         {"destination_space_id", "provider_slug", "purpose", "is_japabot_indexed"},
+	IndexSopSamples:        {"destination_space_id", "program_level", "field_of_study", "is_japabot_indexed"},
 }
 
 // sortableAttributesByIndex declares which attributes each index exposes for
@@ -75,6 +84,9 @@ var sortableAttributesByIndex = map[string][]string{
 	IndexDocPages:          {"created_at"},
 	IndexOrganizations:     {"created_at"},
 	IndexLanguageTestReqs:  {"created_at"},
+	IndexPofRequirements:   {"created_at"},
+	IndexEcaGuides:         {"created_at"},
+	IndexSopSamples:        {"created_at"},
 }
 
 // NewEngine creates the configured search engine and ensures every search

@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -255,6 +257,82 @@ func TestHandleIntelInboundEmail_ClaimLoss(t *testing.T) {
 	// Terminal events are not redrivable — the CAS rejects them.
 	if redriven, _ := srcStore.RedriveInboundEvent(t.Context(), event.ID, 900); redriven {
 		t.Error("processed event was redrivable")
+	}
+}
+
+// TestHandleIntelInboundEmail_Rematerialization covers the crash-recovery
+// path: the doc a previous run persisted is still the channel's latest, so
+// a naive prior-hash lookup self-references it and detect_changes would
+// decide 'unchanged' — starving the pipeline. The redrive must force a
+// pipeline run (prior_hash="") while reusing the existing doc.
+func TestHandleIntelInboundEmail_Rematerialization(t *testing.T) {
+	database, srcStore, intelStore, inspector := wireIntelChannelDeps(t)
+
+	src := mkIntelTestSource(t, srcStore, "rematerialize-src", nil)
+	ch := mkIntelTestChannel(t, srcStore, src, func(p *gen.CreateIntelSourceChannelParams) {
+		p.CrawlMethod = "email"
+		p.Pipeline = "curate"
+		p.ProviderConfig = []byte(`{"inbound_address":"intel@inbound.japa.example"}`)
+	})
+
+	// Seed the doc the crashed run materialized — identical to what this
+	// run would produce (same envelope → same hash → same docURL).
+	envBody, _ := json.Marshal(intelEmailEnvelope{
+		From: "a@b.example", To: "intel@inbound.japa.example",
+		Subject: "s", MessageID: "<dup@b>", Text: "body",
+	})
+	sum := sha256.Sum256(envBody)
+	envHash := hex.EncodeToString(sum[:])
+	docURL := "email:" + ch.ID.String() + ":<dup@b>"
+	if _, err := intelStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
+		SourceID: src.ID, ChannelID: ch.ID, Url: docURL, HttpStatus: 200,
+		HttpHeaders: []byte(`{}`),
+		ContentType: strPtr("application/x-intel-email"), Body: envBody, ContentHash: envHash,
+	}); err != nil {
+		t.Fatalf("seed raw doc: %v", err)
+	}
+
+	event, err := srcStore.CreateInboundEvent(t.Context(), gen.CreateIntelInboundEventParams{
+		ChannelID:   ch.ID,
+		Payload:     []byte(`{"from":"a@b.example","to":"intel@inbound.japa.example","subject":"s","message_id":"<dup@b>","text":"body"}`),
+		Headers:     []byte(`{}`),
+		ContentType: strPtr("application/x-intel-email"),
+		ContentHash: "hash-remat-1",
+	})
+	if err != nil {
+		t.Fatalf("create inbound event: %v", err)
+	}
+
+	payload := marshalPayload(map[string]string{"version": "v1", "event_id": event.ID.String()})
+	if err := HandleIntelInboundEmail(t.Context(), asynq.NewTask(TypeIntelInboundEmail, payload)); err != nil {
+		t.Fatalf("HandleIntelInboundEmail: %v", err)
+	}
+
+	// Doc reused — no duplicate row.
+	if n := countChannelRawDocs(t, database, ch.ID); n != 1 {
+		t.Fatalf("raw docs = %d, want 1 (reuse)", n)
+	}
+	got, err := srcStore.GetInboundEvent(t.Context(), event.ID)
+	if err != nil {
+		t.Fatalf("reload event: %v", err)
+	}
+	if got.Status != "processed" {
+		t.Errorf("event status = %q, want processed", got.Status)
+	}
+
+	// The hand-off must carry prior_hash="" so detect_changes runs the
+	// pipeline — a self-referential prior would decide 'unchanged' and the
+	// delivery would be processed into nothing.
+	tasks := pendingTasks(t, inspector, TypeIntelDetectChanges)
+	if len(tasks) != 1 {
+		t.Fatalf("detect_changes tasks = %d, want 1", len(tasks))
+	}
+	var dp intelDetectChangesPayload
+	if err := json.Unmarshal(tasks[0].Payload, &dp); err != nil {
+		t.Fatalf("decode detect_changes payload: %v", err)
+	}
+	if dp.PriorHash != "" {
+		t.Errorf("prior_hash = %q, want empty (re-materialization must force the pipeline)", dp.PriorHash)
 	}
 }
 
