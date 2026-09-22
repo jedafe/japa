@@ -519,16 +519,8 @@ func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, con
 		return "", err
 	}
 
-	if text, ok := resp.Raw["text"].(string); ok {
+	if text := ai.ExtractText(resp); text != "" {
 		return text, nil
-	}
-
-	if text, ok := resp.Raw["content"].(string); ok {
-		return text, nil
-	}
-
-	if output, ok := resp.Raw["output"].(string); ok {
-		return output, nil
 	}
 	// Fallback: no recognized text field; return the topic prompt as the
 	// body so the draft is still created with meaningful content.
@@ -1958,17 +1950,9 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, jo
 		return "", "", err
 	}
 
-	model, _ := resp.Raw["model"].(string)
-	if text, ok := resp.Raw["text"].(string); ok {
+	model := ai.ExtractModel(resp)
+	if text := ai.ExtractText(resp); text != "" {
 		return text, model, nil
-	}
-
-	if text, ok := resp.Raw["content"].(string); ok {
-		return text, model, nil
-	}
-
-	if output, ok := resp.Raw["output"].(string); ok {
-		return output, model, nil
 	}
 	// Fallback: no recognized text field; return the topic prompt so the
 	// draft is still created with meaningful content.
