@@ -27,8 +27,8 @@ type FXConverter interface {
 // CalculateResult mirrors remittance.CalculateResult (kept minimal to
 // avoid importing the remittance package internals).
 type CalculateResult struct {
-	Results            []ProviderCalculation
-	BestReceiveAmount  float64
+	Results           []ProviderCalculation
+	BestReceiveAmount float64
 }
 
 // ProviderCalculation is one provider's conversion output.
@@ -267,12 +267,12 @@ func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) 
 // UpdateRequirement applies a partial update (admin).
 func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, in RequirementRequest) error {
 	row := RequirementRow{
-		VisaType:    in.VisaType,
+		VisaType:     in.VisaType,
 		ProgramLabel: in.ProgramLabel,
-		Currency:    in.Currency,
-		Notes:       in.Notes,
-		SourceURL:   in.SourceURL,
-		Status:      in.Status,
+		Currency:     in.Currency,
+		Notes:        in.Notes,
+		SourceURL:    in.SourceURL,
+		Status:       in.Status,
 	}
 	if in.AmountSchedule != nil {
 		if _, err := resolveSchedule(*in.AmountSchedule, 1); err != nil {
@@ -415,5 +415,3 @@ func uuidStr(u pgtype.UUID) string {
 	b := u.Bytes
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
-
-

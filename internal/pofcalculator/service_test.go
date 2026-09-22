@@ -20,7 +20,7 @@ func TestResolveSchedule_ArrayForm(t *testing.T) {
 		{2, 19001, false},
 		{3, 23360, false},
 		{7, 36734, false},
-		{8, 36734 + 3941, false},  // overage via per_additional on highest band
+		{8, 36734 + 3941, false}, // overage via per_additional on highest band
 		{10, 36734 + 3*3941, false},
 	}
 	for _, tc := range cases {
