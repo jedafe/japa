@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -187,16 +188,39 @@ type DrawRequest struct {
 	SourceURL         *string `json:"source_url"`
 }
 
+// AIDispatcher is the §20 AI Gateway seam for Content Agent drafts.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req AIRequest) (AIResponse, error)
+}
+
+// AIRequest / AIResponse are the provider-agnostic envelopes.
+type AIRequest struct {
+	SystemPrompt string
+	UserPrompt   string
+}
+
+// AIResponse carries the generated text and model provenance.
+type AIResponse struct {
+	Text  string
+	Model string
+}
+
 // Service orchestrates the CRS calculator.
 type Service struct {
-	store    *Store
-	settings *config.Settings
+	store        *Store
+	settings     *config.Settings
+	aiDispatcher AIDispatcher
+	enqueuer     TaskEnqueuer
 }
 
 // NewService creates the service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
+
+// SetAIDispatcher injects the §20 AI Gateway dispatcher for
+// POST /admin/crs/rulesets/generate (tool:generate_draft task).
+func (s *Service) SetAIDispatcher(d AIDispatcher) { s.aiDispatcher = d }
 
 // GetFactors returns the factor table for the requested version (or the
 // active ruleset when version is empty).
@@ -276,6 +300,15 @@ func (s *Service) ListDraws(ctx context.Context, category string, limit int32) (
 	return drawDTOs(rows), nil
 }
 
+// AdminListDraws returns draws in any status (admin surface).
+func (s *Service) AdminListDraws(ctx context.Context, limit int32) ([]DrawDTO, error) {
+	rows, err := s.store.AdminListDraws(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return drawDTOs(rows), nil
+}
+
 // LatestDraws returns the most recent draw per category.
 func (s *Service) LatestDraws(ctx context.Context) ([]DrawDTO, error) {
 	rows, err := s.store.LatestDraws(ctx)
@@ -334,7 +367,7 @@ func (s *Service) CreateRuleset(ctx context.Context, in CreateRulesetRequest) (*
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	id, err := s.store.CreateRuleset(ctx, tx, in.VersionLabel, d, in.SourceURL)
+	id, err := s.store.CreateRuleset(ctx, tx, in.VersionLabel, d, in.SourceURL, false)
 	if err != nil {
 		return nil, err
 	}
@@ -769,4 +802,145 @@ func uuidStr(u pgtype.UUID) string {
 // unified moderation queue).
 func (s *Service) RejectRuleset(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	return s.store.RejectRuleset(ctx, id, reviewerID, notes)
+}
+
+// ---------------------------------------------------------------------
+// Content Agent draft generation (tool:generate_draft task)
+// ---------------------------------------------------------------------
+
+// TaskEnqueuer is the minimal Asynq enqueue interface — used to fire
+// tool:generate_draft on POST /admin/crs/rulesets/generate (Rule 8).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// SetEnqueuer injects the Asynq task enqueuer.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// EnqueueGenerate fires tool:generate_draft for a CRS ruleset draft
+// (fire-and-forget — the admin polls the moderation queue for the
+// ai_draft row).
+func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string) error {
+	if s.enqueuer == nil {
+		return errors.New("crscalculator: task enqueuer not configured")
+	}
+	payload := map[string]string{"entity_type": "crs_ruleset"}
+	for k, v := range params {
+		payload[k] = v
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return s.enqueuer.Enqueue("tool:generate_draft", raw)
+}
+
+// GenerateRulesetDraft implements the CRS branch of the tool:generate_draft
+// worker task. The AI Gateway returns a ruleset JSON document which is
+// validated and inserted as an ai_draft for HITL review (ADR-088). Params
+// are free-form hints from the admin form (version_label, effective_date,
+// notes).
+func (s *Service) GenerateRulesetDraft(ctx context.Context, params map[string]string) error {
+	if s.aiDispatcher == nil {
+		return errors.New("crscalculator: no AI dispatcher configured")
+	}
+
+	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
+		SystemPrompt: "You are the JapaConnect Content Agent. Produce an Express Entry CRS " +
+			"ruleset as STRICT JSON (no markdown fences): " +
+			`{"version_label":"YYYY-MM","effective_date":"YYYY-MM-DD","source_url":"",` +
+			`"factors":[{"factor_group":"core|spouse|transferability|additional","factor_key":"...",` +
+			`"input_descriptor":{...},"label":"...","points_single":0,"points_with_spouse":0,"sort_order":0}]}. ` +
+			"Factor keys must be one of: age, education, language_first, language_second, " +
+			"canadian_experience, spouse_education, spouse_language, spouse_canadian_experience, " +
+			"provincial_nomination, job_offer, sibling, french, canadian_education, or a " +
+			"transferability key with a descriptor containing combo plus edu_min/clb_min/" +
+			"foreign_min/canadian_min/cert conditions.",
+		UserPrompt: formatParams(params),
+	})
+	if err != nil {
+		return fmt.Errorf("crscalculator: generate draft: AI dispatch: %w", err)
+	}
+
+	var out struct {
+		VersionLabel  string           `json:"version_label"`
+		EffectiveDate string           `json:"effective_date"`
+		SourceURL     string           `json:"source_url"`
+		Factors       []FactorRowInput `json:"factors"`
+	}
+	if err := json.Unmarshal(extractJSON(resp.Text), &out); err != nil {
+		return fmt.Errorf("crscalculator: generate draft: unparseable AI output: %w", err)
+	}
+	if out.VersionLabel == "" || out.EffectiveDate == "" || len(out.Factors) == 0 {
+		return errors.New("crscalculator: generate draft: AI output missing required fields")
+	}
+
+	var d pgtype.Date
+	if err := d.Scan(out.EffectiveDate); err != nil {
+		return fmt.Errorf("crscalculator: generate draft: invalid effective_date")
+	}
+
+	tx, err := s.store.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	id, err := s.store.CreateRuleset(ctx, tx, out.VersionLabel, d, out.SourceURL, true)
+	if err != nil {
+		return err
+	}
+	for i, f := range out.Factors {
+		row := FactorRow{
+			RulesetID:       id,
+			FactorGroup:     f.FactorGroup,
+			FactorKey:       f.FactorKey,
+			InputDescriptor: f.InputDescriptor,
+			Label:           f.Label,
+			PointsSingle:    f.PointsSingle,
+			SortOrder:       int32(i),
+		}
+		if f.SortOrder != 0 {
+			row.SortOrder = f.SortOrder
+		}
+		if f.PointsWithSpouse != nil {
+			row.PointsWithSpouse = pgtype.Int4{Int32: *f.PointsWithSpouse, Valid: true}
+		}
+		if err := s.store.CreateFactorPoint(ctx, tx, row); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// extractJSON strips markdown fences around a model's JSON response.
+func extractJSON(s string) []byte {
+	s = strings.TrimSpace(s)
+	if i := strings.Index(s, "```"); i >= 0 {
+		s = s[i:]
+		if j := strings.Index(s, "\n"); j >= 0 {
+			s = s[j+1:]
+		}
+		if k := strings.LastIndex(s, "```"); k >= 0 {
+			s = s[:k]
+		}
+	}
+	start := strings.IndexAny(s, "{[")
+	if start < 0 {
+		return []byte(s)
+	}
+	return []byte(s[start:])
+}
+
+// formatParams renders admin form hints for the prompt.
+func formatParams(params map[string]string) string {
+	if len(params) == 0 {
+		return "Generate the current IRCC Express Entry CRS ruleset."
+	}
+	var b strings.Builder
+	b.WriteString("Generate a CRS ruleset with these hints:\n")
+	for k, v := range params {
+		fmt.Fprintf(&b, "- %s: %s\n", k, v)
+	}
+	return b.String()
 }

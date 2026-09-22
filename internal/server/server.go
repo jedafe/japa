@@ -1417,6 +1417,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	crsCalculatorStore := crscalculator.NewStore(database)
 	crsCalculatorService := crscalculator.NewService(crsCalculatorStore, settingsService)
+	crsCalculatorService.SetEnqueuer(taskEnqueuer)
 	crsCalculatorHandlers := crscalculator.NewHandlers(crsCalculatorService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/71-readiness-assessment.md (ADR-071)
@@ -2014,6 +2015,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// the service as the sop:generate Asynq task processor (ADR-121).
 	sopGeneratorService.SetAIDispatcher(&sopAIDispatcher{dispatcher: aiDispatcher})
 	worker.RegisterSopProcessor(sopGeneratorService)
+
+	// §§107–110 — wire the AI Gateway dispatcher into all four tool
+	// services and register the tool:generate_draft task processor
+	// (Content Agent drafts, ADR-088 HITL).
+	crsCalculatorService.SetAIDispatcher(&crsAIDispatcher{dispatcher: aiDispatcher})
+	pofCalculatorService.SetAIDispatcher(&pofAIDispatcher{dispatcher: aiDispatcher})
+	ecaGuideService.SetAIDispatcher(&ecaAIDispatcher{dispatcher: aiDispatcher})
+	worker.RegisterToolDraftProcessor(&toolDraftAdapter{
+		crs: crsCalculatorService,
+		pof: pofCalculatorService,
+		eca: ecaGuideService,
+		sop: sopGeneratorService,
+	})
 
 	// §§107–110 — plug the tool entities into the unified moderation
 	// queue (Phase 49.22): queue_source='tool' rows dispatch through the

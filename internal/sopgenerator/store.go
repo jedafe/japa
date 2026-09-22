@@ -53,6 +53,7 @@ type TemplateRow struct {
 	Structure          []byte // jsonb
 	Status             string
 	IsActive           pgtype.Bool
+	AIGenerated        bool
 	CreatedAt          pgtype.Timestamptz
 }
 
@@ -211,11 +212,11 @@ func (s *Store) GetDraft(ctx context.Context, id pgtype.UUID) (DraftRow, error) 
 	var d DraftRow
 	err := s.pool.Reader.QueryRow(ctx, `
 		SELECT id, user_id, destination_space_id, purpose, program, institution,
-		       title, inputs, generated_text, status, ai_model, version, created_at, updated_at
+		       title, inputs, generated_text, status, ai_model, ai_prompt_hash, version, created_at, updated_at
 		FROM sop_drafts
 		WHERE id = $1 AND deleted_at IS NULL`, id).
 		Scan(&d.ID, &d.UserID, &d.DestinationSpaceID, &d.Purpose, &d.Program, &d.Institution,
-			&d.Title, &d.Inputs, &d.GeneratedText, &d.Status, &d.AIModel, &d.Version, &d.CreatedAt, &d.UpdatedAt)
+			&d.Title, &d.Inputs, &d.GeneratedText, &d.Status, &d.AIModel, &d.AIPromptHash, &d.Version, &d.CreatedAt, &d.UpdatedAt)
 	return d, err
 }
 
@@ -349,6 +350,19 @@ func (s *Store) AdminListTemplates(ctx context.Context, page, limit int32) ([]Te
 	return out, total, rows.Err()
 }
 
+// CreateTemplate inserts a template (admin form or tool:generate_draft
+// Content Agent output).
+func (s *Store) CreateTemplate(ctx context.Context, t TemplateRow) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	err := s.pool.Writer.QueryRow(ctx, `
+		INSERT INTO sop_templates
+		  (destination_space_id, purpose, title, structure, status, ai_generated)
+		VALUES ($1,$2,$3,$4,$5,$6)
+		RETURNING id`,
+		t.DestinationSpaceID, t.Purpose, t.Title, t.Structure, t.Status, t.AIGenerated).Scan(&id)
+	return id, err
+}
+
 // ApproveSample publishes a sample (HITL).
 func (s *Store) ApproveSample(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	res, err := s.pool.Writer.Exec(ctx, `
@@ -384,8 +398,9 @@ func itoa(i int) string {
 func (s *Store) ApproveTemplate(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	res, err := s.pool.Writer.Exec(ctx, `
 		UPDATE sop_templates
-		SET status = 'published', updated_at = now()
-		WHERE id = $1`, id)
+		SET status = 'published', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
+		    hitl_review_notes = NULLIF($3,''), updated_at = now()
+		WHERE id = $1`, id, reviewerID, notes)
 	if err != nil {
 		return err
 	}

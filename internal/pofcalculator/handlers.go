@@ -241,9 +241,25 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleAdminGenerate handles POST /admin/pof-requirements/generate —
-// Content Agent draft placeholder. Returns 202.
+// enqueues tool:generate_draft; the Content Agent writes an ai_draft
+// requirement for HITL review (ADR-088). Body carries generation hints;
+// destination_space_id is required.
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	var body map[string]string
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	if err := h.service.EnqueueGenerate(r.Context(), body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "queued"}})

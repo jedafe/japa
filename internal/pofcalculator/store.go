@@ -180,12 +180,12 @@ func (s *Store) CreateRequirement(ctx context.Context, r RequirementRow) (pgtype
 		INSERT INTO pof_requirements
 		  (destination_space_id, visa_type, program_label, amount_schedule,
 		   currency, funds_must_be_liquid, accepted_proof, notes,
-		   effective_date, source_url, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11)
+		   effective_date, source_url, status, ai_generated)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11,$12)
 		RETURNING id`,
 		r.DestinationSpaceID, r.VisaType, r.ProgramLabel, r.AmountSchedule,
 		r.Currency, r.FundsMustBeLiquid, r.AcceptedProof, r.Notes,
-		r.EffectiveDate, strOrEmpty(r.SourceURL), r.Status).Scan(&id)
+		r.EffectiveDate, strOrEmpty(r.SourceURL), r.Status, r.AIGenerated).Scan(&id)
 	return id, err
 }
 

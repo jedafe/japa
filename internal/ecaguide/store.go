@@ -175,9 +175,10 @@ func (s *Store) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpose
 	return scanGuides(rows)
 }
 
-// GetGuide returns one published guide by id.
+// GetGuide returns one published guide by id. Draft/rejected guides are
+// admin-surface only — the public detail route must not expose them.
 func (s *Store) GetGuide(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
-	rows, err := s.pool.Reader.Query(ctx, guideSelect+` WHERE g.id = $1`, id)
+	rows, err := s.pool.Reader.Query(ctx, guideSelect+` WHERE g.id = $1 AND g.status = 'published' AND g.is_active`, id)
 	if err != nil {
 		return GuideRow{}, err
 	}
@@ -236,12 +237,16 @@ func scanUpdates(rows pgx.Rows) ([]UpdateRow, error) {
 }
 
 // CreateCommunityUpdate inserts a pending community update (auth member).
+// The guide must be published — otherwise pgx.ErrNoRows.
 func (s *Store) CreateCommunityUpdate(ctx context.Context, guideID, userID pgtype.UUID, stepIndex *int32, feeEstimate string, turnaroundDays *int32, note string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	err := s.pool.Writer.QueryRow(ctx, `
 		INSERT INTO eca_community_updates
 		  (guide_id, user_id, step_index, fee_estimate, turnaround_days, note)
-		VALUES ($1, $2, $3, NULLIF($4,''), $5, NULLIF($6,''))
+		SELECT $1, $2, $3, NULLIF($4,''), $5, NULLIF($6,'')
+		WHERE EXISTS (
+			SELECT 1 FROM eca_guides g
+			WHERE g.id = $1 AND g.status = 'published' AND g.is_active)
 		RETURNING id`, guideID, userID, stepIndex, feeEstimate, turnaroundDays, note).Scan(&id)
 	return id, err
 }
@@ -283,12 +288,12 @@ func (s *Store) CreateGuide(ctx context.Context, g GuideRow) (pgtype.UUID, error
 		INSERT INTO eca_guides
 		  (destination_space_id, provider_id, purpose, pathway_steps,
 		   fee_estimate, currency, timeline_estimate, documents_required,
-		   accepted_for, official_url, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11)
+		   accepted_for, official_url, status, ai_generated)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11,$12)
 		RETURNING id`,
 		g.DestinationSpaceID, g.ProviderID, g.Purpose, g.PathwaySteps,
 		g.FeeEstimate, g.Currency, g.TimelineEstimate, g.DocumentsRequired,
-		g.AcceptedFor, strOrEmpty(g.OfficialURL), g.Status).Scan(&id)
+		g.AcceptedFor, strOrEmpty(g.OfficialURL), g.Status, g.AIGenerated).Scan(&id)
 	return id, err
 }
 
@@ -342,7 +347,7 @@ func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit
 	args := []any{}
 	if status != "" {
 		args = append(args, status)
-		where += ` AND u.status = $1`
+		where += ` AND u.status = $` + itoa(len(args))
 	}
 
 	var total int64

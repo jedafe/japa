@@ -202,6 +202,14 @@ type SopProcessor interface {
 	ProcessDraft(ctx context.Context, draftID pgtype.UUID) error
 }
 
+// ToolDraftProcessor fans the tool:generate_draft task out to the
+// §§107–110 tool services. entity_type selects the branch
+// (crs_ruleset|pof_requirement|eca_guide|sop_template); params carry the
+// admin form hints (destination_space_id, provider_id, purpose, notes).
+type ToolDraftProcessor interface {
+	GenerateDraft(ctx context.Context, entityType string, params map[string]string) error
+}
+
 // DigestProcessor handles Community Digest Widget background tasks (§84,
 // ADR-092). GenerateEdition assembles a new digest edition from platform
 // analytics (top threads, new members, events, featured story, poll) and
@@ -280,6 +288,7 @@ var (
 	mutualAidProcessor      MutualAidProcessor
 	cvFormatterProcessor    CvFormatterProcessor
 	sopProcessor            SopProcessor
+	toolDraftProcessor      ToolDraftProcessor
 	digestProcessor         DigestProcessor
 	agentDraftProcessor     AgentDraftProcessor
 	japaStageProcessor      JapaStageProcessor
@@ -340,6 +349,9 @@ func RegisterCvFormatterProcessor(p CvFormatterProcessor) { cvFormatterProcessor
 
 // RegisterSopProcessor is an exported function.
 func RegisterSopProcessor(p SopProcessor) { sopProcessor = p }
+
+// RegisterToolDraftProcessor is an exported function.
+func RegisterToolDraftProcessor(p ToolDraftProcessor) { toolDraftProcessor = p }
 
 // RegisterDigestProcessor is an exported function.
 func RegisterDigestProcessor(p DigestProcessor) { digestProcessor = p }
@@ -441,6 +453,13 @@ const (
 	// sop:generate runs on the default queue, generating a single queued
 	// draft via the AI Gateway.
 	TypeSopGenerate = "sop:generate"
+
+	// TypeToolGenerateDraft — §§107–110 SEO growth tools (ADR-118..121).
+	// tool:generate_draft runs on the default queue on
+	// POST /admin/{crs-rulesets,pof-requirements,eca-guides,sop-templates}/generate
+	// — Content Agent draft via the AI Gateway, written as an ai_draft row
+	// for HITL review (ADR-088). Payload: {entity_type, ...params}.
+	TypeToolGenerateDraft = "tool:generate_draft"
 
 	// TypeDigestGenerate — §84 Community Digest Widget (ADR-092).
 	// digest:generate runs weekly on Sunday 22:00 UTC on the low queue,
@@ -1074,6 +1093,33 @@ func HandleSopGenerate(ctx context.Context, t *asynq.Task) error {
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return sopProcessor.ProcessDraft(ctx, ids[0])
 		})
+}
+
+// HandleToolGenerateDraft produces a Content Agent draft row for one of
+// the §§107–110 tool entities (ADR-118..121). The payload carries
+// entity_type plus the admin form hints; the processor fans out to the
+// matching service, which writes an ai_draft row for the unified HITL
+// queue (ADR-088). Default queue. Not idempotent — each run creates one
+// draft row; retries may create duplicates, acceptable for an
+// admin-triggered generation.
+func HandleToolGenerateDraft(ctx context.Context, t *asynq.Task) error {
+	if toolDraftProcessor == nil {
+		slog.Warn("task:tool:generate_draft: no processor registered, skipping")
+		return nil
+	}
+	var p map[string]string
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:tool:generate_draft: invalid payload: %w", err)
+	}
+	entityType := p["entity_type"]
+	if entityType == "" {
+		return fmt.Errorf("task:tool:generate_draft: missing entity_type")
+	}
+	delete(p, "entity_type")
+	if err := toolDraftProcessor.GenerateDraft(ctx, entityType, p); err != nil {
+		return fmt.Errorf("task:tool:generate_draft: %w", err)
+	}
+	return nil
 }
 
 // HandleDigestGenerate assembles a new community digest edition from platform

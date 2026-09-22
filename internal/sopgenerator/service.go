@@ -15,8 +15,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
@@ -259,6 +261,11 @@ func (s *Service) Generate(ctx context.Context, userID pgtype.UUID, in GenerateR
 func (s *Service) ProcessDraft(ctx context.Context, draftID pgtype.UUID) error {
 	draft, err := s.store.GetDraft(ctx, draftID)
 	if err != nil {
+		// Deleted or unknown draft — nothing to process. Returning nil
+		// stops Asynq from retrying a permanently-gone row.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
 		return fmt.Errorf("sopgenerator: process: load draft: %w", err)
 	}
 	if draft.Status != DraftQueued {
@@ -539,4 +546,108 @@ func (s *Service) RejectTemplate(ctx context.Context, id pgtype.UUID) error {
 // RejectSample marks a pending/draft sample rejected (HITL reject).
 func (s *Service) RejectSample(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	return s.store.RejectSample(ctx, id, reviewerID, notes)
+}
+
+// ---------------------------------------------------------------------
+// Content Agent draft generation (tool:generate_draft task)
+// ---------------------------------------------------------------------
+
+// EnqueueGenerate fires tool:generate_draft for a SOP template draft
+// (fire-and-forget — the admin polls the moderation queue for the
+// ai_draft row).
+func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string) error {
+	if s.enqueuer == nil {
+		return errors.New("sopgenerator: task enqueuer not configured")
+	}
+	payload := map[string]string{"entity_type": "sop_template"}
+	for k, v := range params {
+		payload[k] = v
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return s.enqueuer.Enqueue("tool:generate_draft", raw)
+}
+
+// GenerateTemplateDraft implements the SOP branch of the
+// tool:generate_draft worker task — the AI Gateway returns a template
+// JSON document which is validated and inserted as an ai_draft row for
+// HITL review (ADR-088).
+func (s *Service) GenerateTemplateDraft(ctx context.Context, params map[string]string) error {
+	if s.aiDispatcher == nil {
+		return errors.New("sopgenerator: no AI dispatcher configured")
+	}
+
+	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
+		SystemPrompt: "You are the JapaConnect Content Agent. Produce an SOP template " +
+			"as STRICT JSON (no markdown fences): " +
+			`{"purpose":"study_permit|student_visa|work_visa|visitor_visa",` +
+			`"title":"...","structure":[{"section":"...","guidance":"...","min_words":0}]}. ` +
+			"structure must order sections intro → academic fit → career plan → " +
+			"country/institution rationale → ties to home country → conclusion.",
+		UserPrompt: formatParams(params),
+	})
+	if err != nil {
+		return fmt.Errorf("sopgenerator: generate draft: AI dispatch: %w", err)
+	}
+
+	var out struct {
+		Purpose   string           `json:"purpose"`
+		Title     string           `json:"title"`
+		Structure *json.RawMessage `json:"structure"`
+	}
+	if err := json.Unmarshal(extractJSON(resp.Text), &out); err != nil {
+		return fmt.Errorf("sopgenerator: generate draft: unparseable AI output: %w", err)
+	}
+	if out.Purpose == "" || out.Title == "" || out.Structure == nil {
+		return errors.New("sopgenerator: generate draft: AI output missing required fields")
+	}
+
+	row := TemplateRow{
+		Purpose:     out.Purpose,
+		Title:       out.Title,
+		Structure:   *out.Structure,
+		Status:      StatusAIDraft,
+		AIGenerated: true,
+	}
+	if v := params["destination_space_id"]; v != "" {
+		if err := row.DestinationSpaceID.Scan(v); err != nil {
+			return fmt.Errorf("sopgenerator: generate draft: invalid destination_space_id")
+		}
+	}
+	_, err = s.store.CreateTemplate(ctx, row)
+	return err
+}
+
+// extractJSON strips markdown fences around a model's JSON response.
+func extractJSON(s string) []byte {
+	s = strings.TrimSpace(s)
+	if i := strings.Index(s, "```"); i >= 0 {
+		s = s[i:]
+		if j := strings.Index(s, "\n"); j >= 0 {
+			s = s[j+1:]
+		}
+		if k := strings.LastIndex(s, "```"); k >= 0 {
+			s = s[:k]
+		}
+	}
+	start := strings.IndexAny(s, "{[")
+	if start < 0 {
+		return []byte(s)
+	}
+	return []byte(s[start:])
+}
+
+// formatParams renders admin form hints for the prompt.
+func formatParams(params map[string]string) string {
+	if len(params) == 0 {
+		return "Generate the template."
+	}
+	var b strings.Builder
+	b.WriteString("Generate an SOP template with these hints:\n")
+	for k, v := range params {
+		fmt.Fprintf(&b, "- %s: %s\n", k, v)
+	}
+	return b.String()
 }

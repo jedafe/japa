@@ -1720,6 +1720,57 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			slog.Warn("failed to scrub cv_format_sessions PII during deletion", "user_id", userID.String(), "error", err)
 		}
 
+		// §§107–110 SEO growth tools GDPR erasure (ADR-118..121, §19).
+		// sop_drafts and crs_score_history are user-owned PII (profile
+		// inputs + generated SOP text) with ON DELETE CASCADE — they are
+		// removed at hard-delete, but inputs/generated_text are scrubbed
+		// now so they are not recoverable during the retention window
+		// (BUG-017 pattern). eca_community_updates are community content:
+		// user_id is reassigned to the placeholder so approved updates
+		// survive anonymised, matching mutual_aid_posts. The
+		// hitl_reviewed_by audit columns reassign to the placeholder.
+		// Ref: japaconnect-engineering/sections/107-crs-calculator.md
+		// japaconnect-engineering/sections/108-pof-calculator.md
+		// japaconnect-engineering/sections/109-eca-guide.md
+		// japaconnect-engineering/sections/110-sop-generator.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE sop_drafts
+			SET inputs = '{}'::jsonb, generated_text = NULL, updated_at = now()
+			WHERE user_id = $1
+		`, userID); err != nil {
+			slog.Warn("failed to scrub sop_drafts PII during deletion", "user_id", userID.String(), "error", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE crs_score_history
+			SET inputs = '{}'::jsonb, breakdown = '[]'::jsonb
+			WHERE user_id = $1
+		`, userID); err != nil {
+			slog.Warn("failed to scrub crs_score_history PII during deletion", "user_id", userID.String(), "error", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE eca_community_updates
+			SET user_id = $2, updated_at = now()
+			WHERE user_id = $1 AND deleted_at IS NULL
+		`, userID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning eca_community_updates user_id: %w", err)
+		}
+		for _, tbl := range []string{
+			"crs_rulesets", "pof_requirements", "eca_guides", "sop_samples",
+		} {
+			if _, err := s.db.Writer.Exec(ctx, fmt.Sprintf(
+				`UPDATE %s SET hitl_reviewed_by = $2 WHERE hitl_reviewed_by = $1`, tbl),
+				userID, deletedUserPlaceholder); err != nil {
+				return fmt.Errorf("reassigning %s hitl_reviewed_by: %w", tbl, err)
+			}
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE eca_community_updates
+			SET reviewed_by = $2
+			WHERE reviewed_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning eca_community_updates reviewed_by: %w", err)
+		}
+
 		// BUG-010: Platform data exports/imports (Section 67) created_by
 		// references users(id). The migration 000403 made the column
 		// nullable and switched the FK to ON DELETE SET NULL, so the
@@ -2131,6 +2182,8 @@ type UserDataExport struct {
 	ReplyViews                  []map[string]interface{} `json:"reply_views"`
 	Media                       []map[string]interface{} `json:"media"`
 	Reviews                     []map[string]interface{} `json:"reviews"`
+	SopDrafts                   []map[string]interface{} `json:"sop_drafts"`        // §110
+	CrsScoreHistory             []map[string]interface{} `json:"crs_score_history"` // §107
 	SpaceMembers                []map[string]interface{} `json:"space_members"`
 	SpaceModerators             []map[string]interface{} `json:"space_moderators"`
 	SpaceParentSpaces           []map[string]interface{} `json:"space_parent_spaces"` // BUG-004
@@ -2988,6 +3041,98 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.CvFormatSessions = collected
 	} else {
 		slog.Warn("failed to collect cv_format_sessions for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §§107–110: export sop_drafts (generated text + inputs are user data)
+	// and crs_score_history so the GDPR export covers the new tool tables.
+	// Ref: §110 (ADR-121), §107 (ADR-118), §19.
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, purpose, program, institution, title, inputs,
+		       generated_text, status, ai_model, version, created_at
+		FROM sop_drafts
+		WHERE user_id = $1
+	`, userID); err == nil {
+		collected := []map[string]interface{}{}
+		for rows.Next() {
+			var (
+				id            pgtype.UUID
+				purpose       string
+				program       *string
+				institution   *string
+				title         *string
+				inputs        []byte
+				generatedText *string
+				status        string
+				aiModel       *string
+				version       int32
+				createdAt     pgtype.Timestamptz
+			)
+			if err := rows.Scan(&id, &purpose, &program, &institution, &title,
+				&inputs, &generatedText, &status, &aiModel, &version, &createdAt); err != nil {
+				slog.Warn("failed to scan sop_drafts row for export", "user_id", userID.String(), "error", err)
+				continue
+			}
+			m := map[string]interface{}{
+				"id":         id.String(),
+				"purpose":    purpose,
+				"status":     status,
+				"version":    version,
+				"inputs":     json.RawMessage(inputs),
+				"created_at": createdAt.Time,
+			}
+			if program != nil {
+				m["program"] = *program
+			}
+			if institution != nil {
+				m["institution"] = *institution
+			}
+			if title != nil {
+				m["title"] = *title
+			}
+			if generatedText != nil {
+				m["generated_text"] = *generatedText
+			}
+			if aiModel != nil {
+				m["ai_model"] = *aiModel
+			}
+			collected = append(collected, m)
+		}
+		rows.Close()
+		export.SopDrafts = collected
+	} else {
+		slog.Warn("failed to collect sop_drafts for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, score, inputs, breakdown, created_at
+		FROM crs_score_history
+		WHERE user_id = $1
+	`, userID); err == nil {
+		collected := []map[string]interface{}{}
+		for rows.Next() {
+			var (
+				id        pgtype.UUID
+				score     int32
+				inputs    []byte
+				breakdown []byte
+				createdAt pgtype.Timestamptz
+			)
+			if err := rows.Scan(&id, &score, &inputs, &breakdown, &createdAt); err != nil {
+				slog.Warn("failed to scan crs_score_history row for export", "user_id", userID.String(), "error", err)
+				continue
+			}
+			collected = append(collected, map[string]interface{}{
+				"id":         id.String(),
+				"score":      score,
+				"inputs":     json.RawMessage(inputs),
+				"breakdown":  json.RawMessage(breakdown),
+				"created_at": createdAt.Time,
+			})
+		}
+		rows.Close()
+		export.CrsScoreHistory = collected
+	} else {
+		slog.Warn("failed to collect crs_score_history for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Collect remittance_rate_alerts (§74, ADR-075 — user's rate alert
