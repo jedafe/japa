@@ -26,7 +26,6 @@
 	import type { IconComponent, UrlTab } from '$lib/components/ui';
 	import { ListPageBar, UrlTabs } from '$lib/components/ui';
 	import { getEnabledToolsBySection, TOOL_SECTIONS, type MainToolMeta, type ToolSection } from '$lib/tools/registry';
-	import { toolsUrl } from '$lib/appOrigins';
 	import { FileCheck2, Wallet2, PenLine } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -59,11 +58,10 @@
 		'/tools/language-test': Languages,
 		'/tools/tax-calculator': Receipt,
 		'/tools/community-locator': MapPin,
-		// §§107–110 tools live on the Tools surface — icon keyed by absolute URL.
-		[toolsUrl('/crs-calculator')]: Calculator,
-		[toolsUrl('/pof-calculator')]: Wallet2,
-		[toolsUrl('/eca-guide')]: FileCheck2,
-		[toolsUrl('/sop-generator')]: PenLine
+		'/tools/crs-calculator': Calculator,
+		'/tools/pof-calculator': Wallet2,
+		'/tools/eca-guide': FileCheck2,
+		'/tools/sop-generator': PenLine
 	};
 
 	// Data-driven: the tool list is filtered by each tool's feature flag
