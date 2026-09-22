@@ -60,7 +60,7 @@ type Handlers struct {
 	Orgs                OrgVerifier
 	Tasks               TaskEnqueuer
 	StudioHook          StudioReviewHook
-	ToolReviewHook      ToolReviewHook // Optional — §§107–110 tool entities in the unified queue
+	ToolReviewHook      ToolReviewHook             // Optional — §§107–110 tool entities in the unified queue
 	DefaultFolderSetter auth.DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 	TierManager         auth.TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 	Catalog             *literals.Catalog          // Optional — caches active platform literals and resolves maps.

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -100,6 +101,7 @@ type Service struct {
 	store    *Store
 	settings *config.Settings
 	fx       FXConverter
+	enqueuer TaskEnqueuer
 }
 
 // NewService creates the service.
@@ -299,9 +301,14 @@ func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, in Requ
 	return s.store.UpdateRequirement(ctx, id, row)
 }
 
-// ApproveRequirement publishes a requirement after HITL review.
+// ApproveRequirement publishes a requirement after HITL review and
+// enqueues it for Meilisearch indexing.
 func (s *Service) ApproveRequirement(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
-	return s.store.ApproveRequirement(ctx, id, reviewerID, notes)
+	if err := s.store.ApproveRequirement(ctx, id, reviewerID, notes); err != nil {
+		return err
+	}
+	s.enqueueIndex(id)
+	return nil
 }
 
 // ---------------------------------------------------------------------
@@ -420,4 +427,35 @@ func uuidStr(u pgtype.UUID) string {
 // reject from the unified moderation queue).
 func (s *Service) RejectRequirement(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	return s.store.RejectRequirement(ctx, id, reviewerID, notes)
+}
+
+// TaskEnqueuer is the minimal interface for enqueueing Asynq tasks —
+// used to fire search:index_entity on publish so the row reaches the
+// pof_requirements Meilisearch index (ADR-088 is_japabot_indexed gate
+// is applied inside the indexer).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// SetEnqueuer injects the Asynq task enqueuer for search indexing.
+// Nil-safe: indexing becomes a graceful no-op.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// enqueueIndex fires search:index_entity for a requirement (Rule 8 —
+// fire-and-forget; enqueue failure is logged, not returned).
+func (s *Service) enqueueIndex(id pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"entity_type": "pof_requirement",
+		"entity_id":   id.String(),
+	})
+	if err != nil {
+		slog.Error("pofcalculator: marshal index payload", "error", err)
+		return
+	}
+	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
+		slog.Error("pofcalculator: enqueue index task", "id", id.String(), "error", err)
+	}
 }

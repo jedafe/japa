@@ -23,6 +23,10 @@ type SearchIndexer interface {
 	IndexDocPage(ctx context.Context, pageID [16]byte) error
 	IndexOrganization(ctx context.Context, orgID [16]byte) error
 	IndexLanguageTestRequirement(ctx context.Context, reqID [16]byte) error
+	// §§107–110 SEO growth tools (ADR-118..121) — JapaBot RAG documents.
+	IndexPofRequirement(ctx context.Context, reqID [16]byte) error
+	IndexEcaGuide(ctx context.Context, guideID [16]byte) error
+	IndexSopSample(ctx context.Context, sampleID [16]byte) error
 	DeleteDocument(ctx context.Context, indexName string, id [16]byte) error
 }
 

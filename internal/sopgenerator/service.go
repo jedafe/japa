@@ -346,9 +346,24 @@ func (s *Service) AdminListTemplates(ctx context.Context, page, limit int32) ([]
 	return out, total, nil
 }
 
-// ApproveSample publishes a sample after HITL review.
+// ApproveSample publishes a sample after HITL review and enqueues it
+// for Meilisearch indexing (fire-and-forget, Rule 8).
 func (s *Service) ApproveSample(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
-	return s.store.ApproveSample(ctx, id, reviewerID, notes)
+	if err := s.store.ApproveSample(ctx, id, reviewerID, notes); err != nil {
+		return err
+	}
+	if s.enqueuer != nil {
+		payload, err := json.Marshal(map[string]string{
+			"entity_type": "sop_sample",
+			"entity_id":   id.String(),
+		})
+		if err != nil {
+			slog.Error("sopgenerator: marshal index payload", "error", err)
+		} else if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
+			slog.Error("sopgenerator: enqueue index task", "id", id.String(), "error", err)
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------

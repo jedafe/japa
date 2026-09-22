@@ -1460,10 +1460,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	pofCalculatorStore := pofcalculator.NewStore(database)
 	pofCalculatorService := pofcalculator.NewService(pofCalculatorStore, settingsService)
 	pofCalculatorService.SetFXConverter(pofFXAdapter{svc: remittanceService})
+	pofCalculatorService.SetEnqueuer(taskEnqueuer)
 	pofCalculatorHandlers := pofcalculator.NewHandlers(pofCalculatorService, settingsService)
 
 	ecaGuideStore := ecaguide.NewStore(database)
 	ecaGuideService := ecaguide.NewService(ecaGuideStore, settingsService)
+	ecaGuideService.SetEnqueuer(taskEnqueuer)
 	ecaGuideHandlers := ecaguide.NewHandlers(ecaGuideService, settingsService)
 
 	sopGeneratorStore := sopgenerator.NewStore(database)

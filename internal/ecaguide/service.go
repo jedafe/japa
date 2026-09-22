@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -99,6 +100,7 @@ type ModerateRequest struct {
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	enqueuer TaskEnqueuer
 }
 
 // NewService creates the service.
@@ -242,9 +244,14 @@ func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideReque
 	return s.store.UpdateGuide(ctx, id, row)
 }
 
-// ApproveGuide publishes a guide after HITL review.
+// ApproveGuide publishes a guide after HITL review and enqueues it for
+// Meilisearch indexing.
 func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
-	return s.store.ApproveGuide(ctx, id, reviewerID, notes)
+	if err := s.store.ApproveGuide(ctx, id, reviewerID, notes); err != nil {
+		return err
+	}
+	s.enqueueIndex(id)
+	return nil
 }
 
 // AdminListUpdates returns community updates for moderation.
@@ -373,4 +380,33 @@ func uuidStr(u pgtype.UUID) string {
 // unified moderation queue).
 func (s *Service) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	return s.store.RejectGuide(ctx, id, reviewerID, notes)
+}
+
+// TaskEnqueuer is the minimal interface for enqueueing Asynq tasks —
+// used to fire search:index_entity on guide publish (ADR-088).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// SetEnqueuer injects the Asynq task enqueuer for search indexing.
+// Nil-safe: indexing becomes a graceful no-op.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// enqueueIndex fires search:index_entity for a guide (fire-and-forget,
+// Rule 8).
+func (s *Service) enqueueIndex(id pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"entity_type": "eca_guide",
+		"entity_id":   id.String(),
+	})
+	if err != nil {
+		slog.Error("ecaguide: marshal index payload", "error", err)
+		return
+	}
+	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
+		slog.Error("ecaguide: enqueue index task", "id", id.String(), "error", err)
+	}
 }
