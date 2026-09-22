@@ -336,6 +336,75 @@ export const TOOLS: ToolMeta[] = [
 		settingsKey: 'community_locator',
 		enabledSetting: 'community_locator.enabled',
 		keywords: ['community', 'diaspora', 'organisations', 'cultural', 'social', 'locator']
+	},
+	// --- SEO growth tools (§§107–110, ADR-118..121) ---
+	{
+		slug: 'crs-calculator',
+		route: '/crs-calculator',
+		icon: 'gauge',
+		name: 'CRS Calculator',
+		nameKey: 'tool.crs_calculator.name',
+		tagline: 'Your Express Entry score in seconds',
+		taglineKey: 'tool.crs_calculator.tagline',
+		description:
+			'Calculate your Comprehensive Ranking System score against the live IRCC ruleset, see the full factor breakdown, and track recent draw cut-offs.',
+		descriptionKey: 'tool.crs_calculator.description',
+		accent: '#ef4444',
+		accentHover: '#dc2626',
+		settingsKey: 'crs_calculator',
+		enabledSetting: 'crs_calculator.enabled',
+		keywords: ['CRS calculator', 'Express Entry', 'Canada immigration', 'CRS score', 'ITA']
+	},
+	{
+		slug: 'pof-calculator',
+		route: '/pof-calculator',
+		icon: 'wallet',
+		name: 'Proof of Funds Calculator',
+		nameKey: 'tool.pof_calculator.name',
+		tagline: 'Exactly how much you need to show',
+		taglineKey: 'tool.pof_calculator.tagline',
+		description:
+			'Work out the proof-of-funds requirement for your destination and family size — with live NGN and USD equivalents.',
+		descriptionKey: 'tool.pof_calculator.description',
+		accent: '#0ea5e9',
+		accentHover: '#0284c7',
+		settingsKey: 'pof_calculator',
+		enabledSetting: 'pof_calculator.enabled',
+		keywords: ['proof of funds', 'POF', 'settlement funds', 'visa funds', 'Canada POF']
+	},
+	{
+		slug: 'eca-guide',
+		route: '/eca-guide',
+		icon: 'file-badge',
+		name: 'ECA Evaluation Guide',
+		nameKey: 'tool.eca_guide.name',
+		tagline: 'WES, IQAS and more — step by step',
+		taglineKey: 'tool.eca_guide.tagline',
+		description:
+			'Compare credential evaluation providers, follow the step-by-step guide for your destination, and read real fee and timeline reports from members.',
+		descriptionKey: 'tool.eca_guide.description',
+		accent: '#8b5cf6',
+		accentHover: '#7c3aed',
+		settingsKey: 'eca_guide',
+		enabledSetting: 'eca_guide.enabled',
+		keywords: ['ECA', 'WES evaluation', 'credential assessment', 'IQAS', 'educational credential']
+	},
+	{
+		slug: 'sop-generator',
+		route: '/sop-generator',
+		icon: 'pen-line',
+		name: 'AI SOP Generator',
+		nameKey: 'tool.sop_generator.name',
+		tagline: 'Statement of purpose drafts that land',
+		taglineKey: 'tool.sop_generator.tagline',
+		description:
+			'Generate a tailored statement of purpose draft from proven templates, browse real samples, and refine until it is ready.',
+		descriptionKey: 'tool.sop_generator.description',
+		accent: '#f97316',
+		accentHover: '#ea580c',
+		settingsKey: 'sop_generator',
+		enabledSetting: 'sop_generator.enabled',
+		keywords: ['SOP generator', 'statement of purpose', 'SOP sample', 'study permit SOP']
 	}
 ];
 
