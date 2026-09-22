@@ -664,13 +664,22 @@ func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories [
 		return Channel{}, false, fmt.Errorf("sources: oneshot: create channel: %w", err)
 	}
 
-	// Dedupe hit — find the existing row for re-fire.
+	// Dedupe hit — find the existing row for re-fire. An explicit
+	// resubmission re-arms a channel the consecutive-failures breaker
+	// auto-disabled — otherwise the queued fetch_channel would skip
+	// silently on !ch.Enabled while the API caller sees 202 "queued".
 	channels, lerr := s.store.ListChannels(ctx, src.ID)
 	if lerr != nil {
 		return Channel{}, false, fmt.Errorf("sources: oneshot: list channels: %w", lerr)
 	}
 	for _, c := range channels {
 		if c.EntryUrl == rawURL && c.CrawlMethod == string(CrawlMethodOneshot) {
+			if !c.Enabled {
+				if uerr := s.store.UpdateChannelEnabled(ctx, c.ID, true); uerr != nil {
+					return Channel{}, false, fmt.Errorf("sources: oneshot: re-enable channel: %w", uerr)
+				}
+				c.Enabled = true
+			}
 			return c, false, nil
 		}
 	}
@@ -690,12 +699,12 @@ func (s *Service) oneshotSource(ctx context.Context) (Source, error) {
 
 	slug := oneshotSourceSlug
 	src, err := s.store.Create(ctx, gen.CreateIntelSourceParams{
-		Name:               oneshotSourceName,
-		Slug:               &slug,
-		Domain:             oneshotDomain,
-		SourceUrl:          oneshotSourceURL,
-		Category:           "announcement",
-		Categories:         []string{"announcement"},
+		Name:       oneshotSourceName,
+		Slug:       &slug,
+		Domain:     oneshotDomain,
+		SourceUrl:  oneshotSourceURL,
+		Category:   "announcement",
+		Categories: []string{"announcement"},
 		// "system" + crawl_method manual → verifySkipSource skips a reprobe
 		// (an admin reprobe must not probe japaconnect.com and materialize
 		// channels onto the shared submissions source).

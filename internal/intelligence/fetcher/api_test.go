@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -285,5 +286,31 @@ func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
 
 	if res.HTTPStatus != http.StatusOK {
 		t.Errorf("status = %d, want 200 (auth header not sent)", res.HTTPStatus)
+	}
+}
+
+// TestAPIFetcher_ErrorStatus: non-2xx responses are fetch failures — an
+// endpoint that 500s must not have its error body stored as content, and
+// the failure must surface so consecutive_failures and the fallback ladder
+// engage.
+func TestAPIFetcher_ErrorStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg, _ := json.Marshal(APIProviderConfig{Endpoint: srv.URL})
+	f := &APIFetcher{client: srv.Client()}
+
+	_, err := f.Fetch(t.Context(), sources.Source{
+		SourceUrl:      srv.URL,
+		CrawlMethod:    "api",
+		ProviderConfig: cfg,
+	})
+	if err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("err = %v, want status-500 fetch error", err)
 	}
 }

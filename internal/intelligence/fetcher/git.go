@@ -7,16 +7,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"sort"
 	"strings"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
 	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/go-git/go-billy/v5/memfs"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
@@ -69,7 +70,9 @@ func (f *GitFetcher) Fetch(ctx context.Context, src sources.Source) (FetchResult
 	via := strings.ToLower(strings.TrimSpace(stringFromCfg(cfg, "via")))
 	if via == "releases" {
 		// GitHub-style releases ride on tags for our purposes — a release
-		// without a tag has no git identity anyway.
+		// without a tag has no git identity anyway. The releases API is
+		// out of Phase-2 scope.
+		slog.Warn("fetcher: git: via=releases not supported, falling back to tags", "repo", repoURL)
 		via = "tags"
 	}
 	if via == "" {
@@ -113,10 +116,10 @@ func validateGitRemote(repoURL string) error {
 }
 
 // fetchTags lists remote tags without cloning — ls-remote equivalent.
-func (f *GitFetcher) fetchTags(_ context.Context, repoURL string) ([]byte, error) {
+func (f *GitFetcher) fetchTags(ctx context.Context, repoURL string) ([]byte, error) {
 	rem := git.NewRemote(memory.NewStorage(), &gitconfig.RemoteConfig{Name: "origin", URLs: []string{repoURL}})
 
-	refs, err := rem.List(&git.ListOptions{})
+	refs, err := rem.ListContext(ctx, &git.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("fetcher: git ls-remote: %w", err)
 	}

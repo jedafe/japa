@@ -124,6 +124,15 @@ func (c *Composite) Fetch(ctx context.Context, src sources.Source, ch sources.Ch
 	eff.CrawlMethod = ch.CrawlMethod
 	eff.ProviderConfig = ResolveChannelProviderConfig(ch, src)
 
+	// Wayback incremental window (spec §3): when neither the channel's nor
+	// the source's provider_config sets `since`, inject the channel's
+	// last_success_at so the CDX manifest lists only captures newer than
+	// the last successful crawl. Applies when wayback is the primary
+	// method or any hop of the fallback ladder.
+	if ch.LastSuccessAt.Valid && waybackInPlay(ch.CrawlMethod, eff.ProviderConfig) {
+		eff.ProviderConfig = injectWaybackSince(eff.ProviderConfig, ch.LastSuccessAt.Time)
+	}
+
 	result, err := c.fetchMethod(ctx, eff, sources.CrawlMethod(ch.CrawlMethod))
 	if err == nil {
 		return result, nil
@@ -195,7 +204,10 @@ func (c *Composite) fetchMethod(ctx context.Context, eff sources.Source, method 
 }
 
 // fallbackMethods reads provider_config.fallback_methods — a []string of
-// crawl methods to try when the primary fetch fails.
+// crawl methods to try when the primary fetch fails. Non-fetchable methods
+// are validated out: manual/inbound (email, webhook), task-owned
+// (xhr_sniff), and trigger-only (oneshot) methods can never produce a fetch
+// result, so a ladder entry naming one would only waste a hop.
 func fallbackMethods(providerConfig []byte) []string {
 	var cfg struct {
 		FallbackMethods []string `json:"fallback_methods"`
@@ -203,5 +215,66 @@ func fallbackMethods(providerConfig []byte) []string {
 	if err := json.Unmarshal(providerConfig, &cfg); err != nil {
 		return nil
 	}
-	return cfg.FallbackMethods
+
+	out := cfg.FallbackMethods[:0]
+	for _, m := range cfg.FallbackMethods {
+		method := sources.CrawlMethod(m)
+		if !method.IsValid() || !fetchableMethod(method) {
+			continue
+		}
+		out = append(out, m)
+	}
+
+	return out
+}
+
+// fetchableMethod reports whether a crawl method can produce a fetch
+// result — excludes the non-fetchable set (manual, inbound email/webhook,
+// task-owned xhr_sniff, trigger-only oneshot) that fetchMethod hard-errors
+// on or that are semantically meaningless as fallbacks. Pending methods
+// (search) are allowed through: they resolve to ErrMethodNotImplemented in
+// the ladder and self-heal when the Phase-3 adapter lands.
+func fetchableMethod(m sources.CrawlMethod) bool {
+	switch m {
+	case sources.CrawlMethodManual, sources.CrawlMethodEmail, sources.CrawlMethodWebhook,
+		sources.CrawlMethodXHRSniff, sources.CrawlMethodOneshot:
+		return false
+	}
+
+	return true
+}
+
+// waybackInPlay reports whether the wayback adapter can be reached on this
+// fetch — as the primary method or via the validated fallback ladder.
+func waybackInPlay(primary string, providerConfig []byte) bool {
+	if sources.CrawlMethod(primary) == sources.CrawlMethodWayback {
+		return true
+	}
+	for _, m := range fallbackMethods(providerConfig) {
+		if m == string(sources.CrawlMethodWayback) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// injectWaybackSince merges "since" (CDX timestamp) into a provider_config
+// when the key is absent — an explicit provider_config.since always wins.
+func injectWaybackSince(providerConfig []byte, t time.Time) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(providerConfig, &m); err != nil || m == nil {
+		m = map[string]any{}
+	}
+	if _, ok := m["since"]; ok {
+		return providerConfig
+	}
+	m["since"] = t.UTC().Format("20060102150405")
+
+	b, err := json.Marshal(m)
+	if err != nil {
+		return providerConfig
+	}
+
+	return b
 }

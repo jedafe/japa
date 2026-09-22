@@ -23,9 +23,11 @@ import (
 //
 // provider_config keys:
 //
-//	{"since": "20250101",              // earliest capture (CDX timestamp)
+//	{"since": "20250101",              // earliest capture (CDX timestamp);
+//	                                  // Composite injects the channel's
+//	                                  // last_success_at when unset
 //	 "match_type": "exact|prefix",     // CDX matchType (default exact)
-//	 "max_snapshots": 25,              // cap on manifest size
+//	 "max_snapshots": 25,              // cap on manifest size (most recent N)
 //	 "cdx_endpoint": "..."}            // CDX endpoint override (tests)
 //
 // The CDX API is a public upstream — requests go through the safetransport
@@ -59,7 +61,12 @@ func (f *WaybackFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRe
 		q.Set("matchType", mt)
 	}
 	if n := intFromCfg(cfg, "max_snapshots", 25); n > 0 {
-		q.Set("limit", fmt.Sprintf("%d", n))
+		// CDX limit=N returns the FIRST N (oldest) captures — a positive
+		// limit would pin the manifest to a page's earliest snapshots and
+		// new captures would never appear once the page exceeds the cap.
+		// Negative limit returns the LAST N (most recent), which is what
+		// change detection needs.
+		q.Set("limit", fmt.Sprintf("-%d", n))
 	}
 
 	endpoint := strings.TrimRight(stringFromCfg(cfg, "cdx_endpoint"), "/")

@@ -280,9 +280,13 @@ func enqueueIntel(taskType string, payload []byte) {
 	}
 
 	queue := QueueForTask(taskType)
+	// taskDefaults applies the per-task Timeout/MaxRetry declared in
+	// enqueuer.go (e.g. intel:xhr_sniff's 2m/2) — without it, follow-up
+	// enqueues silently fell back to asynq's global defaults.
+	opts := append([]asynq.Option{asynq.Queue(queue)}, taskDefaults(taskType)...)
 	if _, err := intelAsynqClient.Enqueue(
 		asynq.NewTask(taskType, payload),
-		asynq.Queue(queue),
+		opts...,
 	); err != nil {
 		slog.Error("intel: failed to enqueue follow-up task", "task", taskType, "error", err)
 	}

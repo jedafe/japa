@@ -26,15 +26,19 @@ import (
 //	POST {service_url}/render
 //	{"url": "...", "wait_selector": "...", "timeout_ms": 30000, "a11y": false}
 //	→ 200 {"html": "...", "final_url": "..."}        (a11y → {"a11y_text": "..."})
-//	→ 4xx = bad request (fetch failure, no circuit trip)
-//	→ 5xx/timeout = service failure (fetch failure + circuit trip)
+//	→ 4xx = bad request (fetch failure, does not count toward the circuit)
+//	→ 5xx/timeout = service failure (fetch failure; renderCircuitThreshold
+//	  consecutive failures open the breaker)
 //
 // provider_config keys: wait_selector, timeout_ms (overrides
 // intel.render.timeout_ms), a11y, auth_token (Bearer auth to the service).
 //
-// jc:intel:render:circuit (5m) is set on any transport/5xx failure — while
-// present the adapter reports ErrAdapterDisabled so a flapping render
-// service does not churn every render channel's failure counter.
+// jc:intel:render:circuit (5m) is set after renderCircuitThreshold
+// consecutive transport/5xx failures — while present the adapter reports
+// ErrAdapterDisabled so a flapping render service does not churn every
+// render channel's failure counter. The consecutive count lives in
+// jc:intel:render:circuit_failures (reset on the first success or when the
+// breaker trips).
 type RenderFetcher struct {
 	client   *http.Client
 	settings AdapterSettings
@@ -48,9 +52,14 @@ func NewRenderFetcher(client *http.Client, settings AdapterSettings, rdb valkeyc
 }
 
 const (
-	renderCircuitKey = "jc:intel:render:circuit"
-	renderCircuitTTL = 5 * time.Minute
-	renderPath       = "/render"
+	renderCircuitKey      = "jc:intel:render:circuit"
+	renderCircuitFailures = "jc:intel:render:circuit_failures"
+	renderCircuitTTL      = 5 * time.Minute
+	// renderCircuitThreshold is the number of consecutive service failures
+	// that opens the breaker (channel design §3: N=3 — a single transient
+	// timeout must not blackout every render channel for 5 minutes).
+	renderCircuitThreshold = 3
+	renderPath             = "/render"
 )
 
 type renderRequest struct {
@@ -115,19 +124,19 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 
 	resp, err := f.client.Do(req)
 	if err != nil {
-		f.tripCircuit(ctx)
+		f.recordServiceFailure(ctx)
 		return FetchResult{}, fmt.Errorf("fetcher: render: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {
-		f.tripCircuit(ctx)
+		f.recordServiceFailure(ctx)
 		return FetchResult{}, fmt.Errorf("fetcher: render read: %w", err)
 	}
 
 	if resp.StatusCode >= 500 {
-		f.tripCircuit(ctx)
+		f.recordServiceFailure(ctx)
 		return FetchResult{}, fmt.Errorf("fetcher: render service: status %d", resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -149,6 +158,8 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 		return FetchResult{}, errors.New("fetcher: render service returned empty body")
 	}
 
+	f.resetServiceFailures(ctx)
+
 	return FetchResult{
 		HTTPStatus:  http.StatusOK,
 		Headers:     map[string]string{"X-Render-Final-URL": out.FinalURL},
@@ -169,14 +180,44 @@ func (f *RenderFetcher) circuitOpen(ctx context.Context) bool {
 	return err == nil && ok > 0
 }
 
-// tripCircuit opens the breaker for renderCircuitTTL on transport/5xx
-// failures. A set failure is logged at call sites via the fetch error — the
-// breaker is best-effort and must not fail the fetch.
-func (f *RenderFetcher) tripCircuit(ctx context.Context) {
+// renderFailureScript atomically increments the consecutive-failure counter
+// and sets its TTL only on the first increment — a counter without expiry
+// would count failures spread arbitrarily far apart as "consecutive" (and a
+// process crash between INCR and EXPIRE would leave it permanently stale).
+const renderFailureScript = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`
+
+// recordServiceFailure counts one consecutive transport/5xx failure; at
+// renderCircuitThreshold it opens the breaker for renderCircuitTTL and
+// clears the counter. Valkey errors are swallowed — the breaker is
+// best-effort and must not fail the fetch.
+func (f *RenderFetcher) recordServiceFailure(ctx context.Context) {
 	if f.rdb == nil {
 		return
 	}
-	_ = f.rdb.Set(ctx, renderCircuitKey, "1", renderCircuitTTL).Err()
+
+	count, err := f.rdb.Eval(ctx, renderFailureScript, []string{renderCircuitFailures}, int64(renderCircuitTTL/time.Second)).Result()
+	if err != nil {
+		return
+	}
+	if n, ok := count.(int64); ok && n >= renderCircuitThreshold {
+		_ = f.rdb.Set(ctx, renderCircuitKey, "1", renderCircuitTTL).Err()
+		_ = f.rdb.Del(ctx, renderCircuitFailures).Err()
+	}
+}
+
+// resetServiceFailures clears the consecutive-failure counter on a
+// successful render — only consecutive failures count toward the breaker.
+func (f *RenderFetcher) resetServiceFailures(ctx context.Context) {
+	if f.rdb == nil {
+		return
+	}
+	_ = f.rdb.Del(ctx, renderCircuitFailures).Err()
 }
 
 // intFromCfg / stringFromCfg read loosely-typed provider_config values.
