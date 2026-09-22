@@ -183,7 +183,11 @@
 			{ path: "/tools/attestation-guide", label: t("nav.tools_attestation_guide", "Attestation Guide"), icon: FileCheck, permission: "attestation_guide.manage" },
 			{ path: "/tools/language-test-hub", label: t("nav.tools_language_test_hub", "Language Test Hub"), icon: Globe2, permission: "language_test_hub.manage" },
 			{ path: "/tools/tax-calculator", label: t("nav.tools_tax_calculator", "Tax Calculator"), icon: Calculator, permission: "tax_calculator.manage" },
-			{ path: "/tools/community-locator", label: t("nav.tools_community_locator", "Community Locator"), icon: MapPin, permission: "community_locator.manage" }
+			{ path: "/tools/community-locator", label: t("nav.tools_community_locator", "Community Locator"), icon: MapPin, permission: "community_locator.manage" },
+			{ path: "/crs-calculator", label: t("nav.tools_crs_calculator", "CRS Calculator"), icon: Calculator, permission: "crs_calculator.manage" },
+			{ path: "/pof-calculator", label: t("nav.tools_pof_calculator", "POF Calculator"), icon: Banknote, permission: "pof_calculator.manage" },
+			{ path: "/eca-guide", label: t("nav.tools_eca_guide", "ECA Guide"), icon: BadgeCheck, permission: "eca_guide.manage" },
+			{ path: "/sop-generator", label: t("nav.tools_sop_generator", "SOP Generator"), icon: FileText, permission: "sop_generator.manage" }
 		]
 	},
 	{
