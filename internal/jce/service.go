@@ -204,7 +204,7 @@ func (s *Service) deleteAdvisorCacheForNoProfile(ctx context.Context) {
 		return
 	}
 
-	pattern := fmt.Sprintf("jc:jce:advisor::*:none:*")
+	pattern := fmt.Sprintf("jc:jce:advisor:*:none:*")
 
 	var cursor uint64
 
@@ -232,7 +232,7 @@ func (s *Service) deleteAdvisorCache(ctx context.Context, contentID pgtype.UUID)
 		return
 	}
 
-	pattern := fmt.Sprintf("jc:jce:advisor::%s:*", contentID.String())
+	pattern := fmt.Sprintf("jc:jce:advisor:%s:*", contentID.String())
 
 	var cursor uint64
 
@@ -261,7 +261,7 @@ func (s *Service) deleteAdvisorCacheForProfile(ctx context.Context, profileID pg
 		return
 	}
 
-	pattern := fmt.Sprintf("jc:jce:advisor::*:%s:*", profileID.String())
+	pattern := fmt.Sprintf("jc:jce:advisor:*:%s:*", profileID.String())
 
 	var cursor uint64
 

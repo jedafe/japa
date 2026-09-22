@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -19,35 +20,36 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/sources"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // handleSourceCreateBody is the JSON body for POST /api/v1/intel/sources.
 // It mirrors the editable fields of intel_sources. Optional fields use
 // pointer types so omitted fields are NULL rather than zero-values.
 type handleSourceCreateBody struct {
-	Name                string  `json:"name"`
-	Slug                *string `json:"slug"`
-	Domain              string  `json:"domain"`
-	SourceURL           string  `json:"source_url"`
-	Description         *string `json:"description"`
-	Category            string  `json:"category"`
+	Name        string  `json:"name"`
+	Slug        *string `json:"slug"`
+	Domain      string  `json:"domain"`
+	SourceURL   string  `json:"source_url"`
+	Description *string `json:"description"`
+	Category    string  `json:"category"`
 	// Categories is the multi-category array (intel-channels §6). On create
 	// it is normalized like Propose and dual-writes the legacy scalar
 	// category when category is empty; on PATCH the key's presence decides
 	// whether the column is replaced (empty array clears to '{}').
 	Categories          []string `json:"categories"`
-	SourceType          string  `json:"source_type"`
-	SourceKind          *string `json:"source_kind"`
-	TrustLevel          int16   `json:"trust_level"`
-	CrawlMethod         string  `json:"crawl_method"`
-	CrawlFrequency      string  `json:"crawl_frequency"`
-	CrawlFrequencyMins  int32   `json:"crawl_frequency_mins"`
-	SourceLicense       *string `json:"source_license"`
-	AttributionRequired bool    `json:"attribution_required"`
-	UsageRestriction    *string `json:"usage_restriction"`
-	LogoURL             *string `json:"logo_url"`
-	Enabled             *bool   `json:"enabled"`
-	PersonaID           *string `json:"persona_id"` // optional: AI persona to attribute promoted content to
+	SourceType          string   `json:"source_type"`
+	SourceKind          *string  `json:"source_kind"`
+	TrustLevel          int16    `json:"trust_level"`
+	CrawlMethod         string   `json:"crawl_method"`
+	CrawlFrequency      string   `json:"crawl_frequency"`
+	CrawlFrequencyMins  int32    `json:"crawl_frequency_mins"`
+	SourceLicense       *string  `json:"source_license"`
+	AttributionRequired bool     `json:"attribution_required"`
+	UsageRestriction    *string  `json:"usage_restriction"`
+	LogoURL             *string  `json:"logo_url"`
+	Enabled             *bool    `json:"enabled"`
+	PersonaID           *string  `json:"persona_id"` // optional: AI persona to attribute promoted content to
 	// EntityTypes declares the extraction domains a mixed source publishes
 	// (e.g. ["scholarship","job"]). Stored inside provider_config; when
 	// omitted or empty the source extracts under its single category-derived
@@ -1283,9 +1285,33 @@ func (h *Handlers) HandleAdminCreateChannel(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// WebSub channels self-manage their hub subscription — kick off the
+	// subscribe task (fire-and-forget; the hub POST + renewal chain live
+	// in the worker, intel-channels Phase 3).
+	if ch.CrawlMethod == "webhook" && ch.Enabled && inboundCfgString(channelProviderConfig(ch.ProviderConfig), "hub") != "" {
+		h.enqueueWebSubSubscribe(r.Context(), ch.ID.String())
+	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": channelToAdminEntry(ch),
 	})
+}
+
+// enqueueWebSubSubscribe fires intel:websub_subscribe for a channel —
+// best-effort: a failed enqueue only delays the subscription until the
+// next channel edit or manual crawl.
+func (h *Handlers) enqueueWebSubSubscribe(ctx context.Context, channelID string) {
+	if h.asynqClient == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"version":    "v1",
+		"channel_id": channelID,
+	})
+	if _, err := h.asynqClient.EnqueueContext(ctx, asynq.NewTask(TaskIntelWebSubSubscribe, payload),
+		worker.TaskOpts(TaskIntelWebSubSubscribe)...); err != nil {
+		slog.Warn("intel: websub_subscribe enqueue failed", "channel_id", channelID, "error", err)
+	}
 }
 
 // HandleAdminGetChannel returns a single channel with its full config and
@@ -1511,6 +1537,17 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 			writeChannelServiceErr(w, err, "intel: update channel failed", "update_failed", "Failed to update channel")
 			return
 		}
+	}
+
+	// Mirror the create hook: an edit that leaves the channel as an enabled
+	// webhook with a hub and touched provider_config/crawl_method/enabled
+	// needs a (re)subscription kick — e.g. adding a hub to a previously
+	// hubless webhook channel.
+	_, pcTouched := presence["provider_config"]
+	if (pcTouched || body.CrawlMethod != nil || body.Enabled != nil) &&
+		updated.CrawlMethod == "webhook" && updated.Enabled &&
+		inboundCfgString(channelProviderConfig(updated.ProviderConfig), "hub") != "" {
+		h.enqueueWebSubSubscribe(r.Context(), updated.ID.String())
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{

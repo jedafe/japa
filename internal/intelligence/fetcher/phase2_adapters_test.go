@@ -297,6 +297,32 @@ func TestSocialFetcher_ProviderGate(t *testing.T) {
 	}
 }
 
+func TestSocialEndpoint_RedditHandles(t *testing.T) {
+	t.Parallel()
+
+	// user/<name> must hit /submitted.json — /user/{name}/new.json is not a
+	// valid reddit listing and 404s every crawl.
+	for _, tc := range []struct {
+		handle string
+		want   string
+	}{
+		{"r/nigeria", "https://www.reddit.com/r/nigeria/new.json?limit=50"},
+		{"user/someone", "https://www.reddit.com/user/someone/submitted.json?sort=new&limit=50"},
+	} {
+		got, err := socialEndpoint("reddit", tc.handle)
+		if err != nil {
+			t.Fatalf("handle %q: %v", tc.handle, err)
+		}
+		if got != tc.want {
+			t.Errorf("handle %q: endpoint = %q, want %q", tc.handle, got, tc.want)
+		}
+	}
+
+	if _, err := socialEndpoint("reddit", "bare-handle"); err == nil {
+		t.Error("bare reddit handle must be rejected (r/ or user/ prefix required)")
+	}
+}
+
 func TestSocialFetcher_RedditNormalize(t *testing.T) {
 	t.Parallel()
 

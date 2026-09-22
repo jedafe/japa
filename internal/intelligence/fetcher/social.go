@@ -145,8 +145,14 @@ func socialEndpoint(provider, handle string) (string, error) {
 	switch provider {
 	case "reddit":
 		// r/<sub>, user/<name>, or bare name → subreddit guess is unsafe;
-		// require an explicit r/ or user/ prefix.
-		if strings.HasPrefix(handle, "r/") || strings.HasPrefix(handle, "user/") {
+		// require an explicit r/ or user/ prefix. The listing path differs
+		// per handle kind: subreddits expose /new.json while user profiles
+		// only expose submitted/comments/overview — /user/{name}/new.json
+		// is not a valid listing and would 404 every crawl.
+		if strings.HasPrefix(handle, "user/") {
+			return "https://www.reddit.com/" + handle + "/submitted.json?sort=new&limit=50", nil
+		}
+		if strings.HasPrefix(handle, "r/") {
 			return "https://www.reddit.com/" + handle + "/new.json?limit=50", nil
 		}
 		return "", fmt.Errorf("fetcher: social: reddit handle %q must be r/<sub> or user/<name>", handle)

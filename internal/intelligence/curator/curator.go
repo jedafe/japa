@@ -78,15 +78,19 @@ func NewRegistry(curators ...Curator) *Registry {
 	return r
 }
 
-// Default returns the Phase 1 curator set: rss, jsonld, ical, tabular.
-// Crawl methods with no curator (sitemap, git, social, api, static, …)
-// resolve to ErrNoCurator and the worker falls back to intel:extract.
+// Default returns the curator set: rss, jsonld, ical, tabular (Phase 1)
+// plus email, websub, and search (Phase 3). Crawl methods with no curator
+// (sitemap, git, social, api, static, …) resolve to ErrNoCurator and the
+// worker falls back to intel:extract.
 func Default() *Registry {
 	return NewRegistry(
 		RSSNews{},
 		JSONLD{},
 		ICal{},
 		Tabular{},
+		Email{},
+		WebSub{},
+		Search{},
 	)
 }
 

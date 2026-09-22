@@ -140,6 +140,10 @@ const (
 	TypeIntelSourceMetadata    = "intel:source_metadata"     // default
 	TypeIntelProbeVerify       = "intel:probe_verify"        // default
 	TypeIntelXHRSniff          = "intel:xhr_sniff"           // low (intel-channels Phase 2)
+	TypeIntelInboundEmail      = "intel:inbound_email"       // critical (intel-channels Phase 3)
+	TypeIntelWebSubSubscribe   = "intel:websub_subscribe"    // low (intel-channels Phase 3)
+	TypeIntelWebSubRenew       = "intel:websub_renew"        // low (intel-channels Phase 3)
+	TypeIntelSearchPoll        = "intel:search_poll"         // default (intel-channels Phase 3)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -314,6 +318,10 @@ var handlerRegistry = []struct {
 	{TypeIntelSourceMetadata, HandleSourceMetadata},
 	{TypeIntelProbeVerify, HandleIntelProbeVerify},
 	{TypeIntelXHRSniff, HandleIntelXHRSniff},
+	{TypeIntelInboundEmail, HandleIntelInboundEmail},
+	{TypeIntelWebSubSubscribe, HandleIntelWebSubSubscribe},
+	{TypeIntelWebSubRenew, HandleIntelWebSubRenew},
+	{TypeIntelSearchPoll, HandleIntelSearchPoll},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

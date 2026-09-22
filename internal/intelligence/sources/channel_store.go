@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -199,6 +200,29 @@ func (s *Store) MarkInboundEvent(ctx context.Context, arg gen.MarkIntelInboundEv
 	}
 
 	return nil
+}
+
+// GetInboundEvent loads one inbound event row — the intel:inbound_email
+// task's hand-off read after the HTTP layer persists the delivery.
+func (s *Store) GetInboundEvent(ctx context.Context, id pgtype.UUID) (InboundEvent, error) {
+	row, err := s.queries.GetIntelInboundEvent(ctx, id)
+	if err != nil {
+		return InboundEvent{}, fmt.Errorf("sources: get inbound event: %w", err)
+	}
+
+	return row, nil
+}
+
+// GetEmailChannelByAddress resolves an inbound delivery's recipient to the
+// enabled email channel carrying it in provider_config.inbound_address
+// (Phase 3 inbound routing). pgx.ErrNoRows = no such channel.
+func (s *Store) GetEmailChannelByAddress(ctx context.Context, address string) (Channel, error) {
+	row, err := s.queries.GetIntelEmailChannelByAddress(ctx, address)
+	if err != nil {
+		return Channel{}, fmt.Errorf("sources: get email channel by address: %w", err)
+	}
+
+	return row, nil
 }
 
 // UpdateSourceProbe stores a probe run's results on the parent source row

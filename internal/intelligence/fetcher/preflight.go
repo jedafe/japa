@@ -104,7 +104,17 @@ func (p *PreflightChecker) CheckChannel(ctx context.Context, src sources.Source,
 		domain = u.Host
 	}
 
-	return p.check(ctx, lockKey, domain, ch.EntryUrl, src)
+	// Search channels never fetch entry_url — the adapter calls the SERP
+	// provider API — so robots against the informational entry URL is
+	// meaningless and can strand the channel (a provider whose robots.txt
+	// disallows everything would fail every poll). Lock/rate/license still
+	// apply; robots is skipped.
+	checkURL := ch.EntryUrl
+	if sources.CrawlMethod(ch.CrawlMethod) == sources.CrawlMethodSearch {
+		checkURL = ""
+	}
+
+	return p.check(ctx, lockKey, domain, checkURL, src)
 }
 
 // CheckChannelDerived is CheckChannel for a manifest-derived child fetch

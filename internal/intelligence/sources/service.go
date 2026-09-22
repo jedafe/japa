@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -621,10 +622,12 @@ const (
 // caller can re-fire a fetch without growing channel rows.
 //
 // The channel's entity_types come from the caller-supplied categories via
-// the category map (empty is allowed — pipeline 'hybrid' tolerates it and
-// extract falls back to the source category, landing unresolvable docs in
-// the review queue).
-func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories []string) (Channel, bool, error) {
+// the category map plus an optional registered entity_hint (prepended —
+// a caller-asserted type outranks category inference). Empty entity types
+// are allowed — pipeline 'hybrid' tolerates it and extract falls back to
+// the source category, landing unresolvable docs in the review queue.
+// Callers must pre-validate entityHint against schemas.ForEntityType.
+func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories []string, entityHint string) (Channel, bool, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return Channel{}, false, fmt.Errorf("sources: oneshot: %w: url", errpkg.ErrRequired)
@@ -645,6 +648,9 @@ func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories [
 	var entityTypes []string
 	if len(cats) > 0 {
 		entityTypes = ResolveCategoryMap(nil, cats).EntityTypes
+	}
+	if entityHint != "" && !slices.Contains(entityTypes, entityHint) {
+		entityTypes = append([]string{entityHint}, entityTypes...)
 	}
 
 	ch, err := s.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
@@ -1065,4 +1071,30 @@ func (s *Service) UpdateChannelCrawlStatus(ctx context.Context, id ChannelID, su
 // DeleteChannel removes a channel from a source.
 func (s *Service) DeleteChannel(ctx context.Context, id ChannelID) error {
 	return s.store.DeleteChannel(ctx, id)
+}
+
+// CreateInboundEvent stores a push delivery (email/WebSub) destined for an
+// inbound channel (Phase 3). The content_hash is the caller-computed
+// idempotency/dedup key.
+func (s *Service) CreateInboundEvent(ctx context.Context, arg gen.CreateIntelInboundEventParams) (InboundEvent, error) {
+	return s.store.CreateInboundEvent(ctx, arg)
+}
+
+// GetInboundEvent loads one inbound event — the intel:inbound_email task's
+// hand-off read after the HTTP layer persists the delivery.
+func (s *Service) GetInboundEvent(ctx context.Context, id pgtype.UUID) (InboundEvent, error) {
+	return s.store.GetInboundEvent(ctx, id)
+}
+
+// MarkInboundEvent stamps an event's terminal status
+// (received|processed|failed|ignored) and processed_at.
+func (s *Service) MarkInboundEvent(ctx context.Context, arg gen.MarkIntelInboundEventParams) error {
+	return s.store.MarkInboundEvent(ctx, arg)
+}
+
+// GetEmailChannelByAddress resolves an inbound email delivery's recipient
+// to the enabled email channel carrying it in provider_config.inbound_address
+// (Phase 3 inbound routing). pgx.ErrNoRows = no such channel.
+func (s *Service) GetEmailChannelByAddress(ctx context.Context, address string) (Channel, error) {
+	return s.store.GetEmailChannelByAddress(ctx, address)
 }

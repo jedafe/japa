@@ -83,8 +83,22 @@ INSERT INTO intel_inbound_events (channel_id, payload, headers, content_type, co
 VALUES ($1,$2,$3,$4,$5) RETURNING *;
 
 -- name: MarkIntelInboundEvent :exec
+-- Transitions are one-way out of 'received': a terminal event
+-- (processed/failed/ignored) is immutable so a late duplicate task run
+-- can never flip a finished delivery back or forward.
 UPDATE intel_inbound_events SET status = $2, processed_at = now()
-WHERE id = $1;
+WHERE id = $1 AND status = 'received';
+
+-- name: GetIntelInboundEvent :one
+SELECT * FROM intel_inbound_events WHERE id = $1;
+
+-- name: GetIntelEmailChannelByAddress :one
+-- Inbound-email routing (Phase 3): resolve the delivery's recipient to the
+-- enabled email channel carrying it in provider_config.inbound_address.
+SELECT * FROM intel_source_channels
+WHERE crawl_method = 'email' AND enabled
+  AND lower(provider_config->>'inbound_address') = lower($1)
+LIMIT 1;
 
 -- name: UpdateIntelSourceProbe :exec
 UPDATE intel_sources SET probe_report = $2, detected_methods = $3, last_probed_at = now()
@@ -105,6 +119,16 @@ WHERE id = $1 RETURNING *;
 -- crawl after fan-out would read as "changed" (Phase 2).
 SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
   AND parent_document_id IS NULL
+ORDER BY retrieved_at DESC LIMIT 1;
+
+-- name: GetLatestIntelManifestDocHashByChannel :one
+-- Manifest-channel prior hash (Phase 2): the newest MANIFEST doc only —
+-- the content_type marker keeps a fallback-ladder document (e.g. a static
+-- fetch that covered a failed sitemap crawl) from becoming the manifest's
+-- diff baseline and reading "changed" on every subsequent crawl.
+SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
+  AND parent_document_id IS NULL
+  AND content_type = 'application/x-intel-manifest'
 ORDER BY retrieved_at DESC LIMIT 1;
 
 -- name: MarkIntelChannelChanged :exec

@@ -426,16 +426,18 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminGenerate handles POST /admin/visa-routes/generate — Content
 // Agent draft placeholder. Admin-only (visa_routes.manage permission checked
-// at route registration). Returns 202 Accepted with a placeholder response
-// indicating the generation has been queued (§90, ADR-088).
+// at route registration). Like the other admin handlers it is NOT gated by the
+// public feature flag so admins can populate route data before go-live.
+// Returns 202 Accepted with a placeholder response indicating the generation
+// has been queued (§90, ADR-088).
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context()) {
-		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
 		return
 	}
 

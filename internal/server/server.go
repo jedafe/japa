@@ -728,6 +728,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	comparisonService := comparison.NewService(database)
 	comparisonService.SetSettings(settingsService)
 	comparisonService.SetContentService(contentService)
+	comparisonService.SetTierResolver(tierService) // jce.comparisons.max_per_day.{tier} quota
 
 	comparisonService.SetValkey(vkClient.Redis())
 
@@ -2197,7 +2198,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// settings + valkey feed the Phase-2 config-gated adapters
 		// (render service URL, social allowlist, render circuit).
 		intel_fetcher.NewComposite(settingsService, vkClient.Redis()),
-		intelPreflightChecker,        // pre-flight: crawl lock, rate limit, robots.txt (INTEL-001/006 fix)
+		intelPreflightChecker, // pre-flight: crawl lock, rate limit, robots.txt (INTEL-001/006 fix)
 		asynqClient,
 		// intel-channels §2 verify prober for intel:probe_verify — same
 		// safetransport client as the preview prober, larger request
@@ -2234,6 +2235,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		settings: settingsService,
 		authorID: intelDefaultAuthorID,
 	})
+
+	// intel-channels Phase 3: the public base URL for WebSub hub.callback
+	// — the hub must reach back into this deployment.
+	worker.RegisterIntelSiteURL(cfg.SiteURL)
 
 	// HTTP handlers for the /api/v1/intel/* routes. The radar reuses the
 	// existing follows service (entity_type "space") and scholarships
@@ -3730,7 +3735,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Post("/jce/selections", comparisonHandlers.CreateSelectionToken)
 
 				// Guest token quick comparison creation
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/jce/comparisons/from-token", comparisonHandlers.CreateJCEComparisonFromToken)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.create")).
+					Post("/jce/comparisons/from-token", comparisonHandlers.CreateJCEComparisonFromToken)
 
 				// JCE item, dimension, and value routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
@@ -6423,6 +6429,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// intel-channels Phase 2 §3 oneshot). Shares the probe quota.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/oneshot", intelHandlers.HandleOneshotSource)
+
+			// Inbound push endpoints (intel-channels Phase 3) —
+			// provider-facing and unauthenticated by design: the email
+			// endpoint verifies the Mailgun-compatible HMAC triple against
+			// intel.email.signing_key; the WebSub endpoints verify
+			// hub.topic + X-Hub-Signature per channel. Always-202 so a
+			// rejected delivery never retry-loops the provider.
+			r.Post("/intel/inbound/email", intelHandlers.HandleInboundEmail)
+			r.Get("/intel/inbound/websub/{channel_id}", intelHandlers.HandleWebSubVerify)
+			r.Post("/intel/inbound/websub/{channel_id}", intelHandlers.HandleWebSubPush)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).

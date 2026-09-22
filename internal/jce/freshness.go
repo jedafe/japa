@@ -54,7 +54,7 @@ func defaultFreshnessSettings() freshnessSettings {
 
 // freshnessCacheKey returns the Valkey cache key for a comparison freshness summary.
 func freshnessCacheKey(contentID pgtype.UUID) string {
-	return fmt.Sprintf("jc:jce:freshness::%s", contentID.String())
+	return fmt.Sprintf("jc:jce:freshness:%s", contentID.String())
 }
 
 // cellFreshness computes a 0–100 freshness score and stale flag for a single comparison value.
@@ -158,7 +158,7 @@ func (s *Service) cellFreshness(
 // FreshnessForComparison computes the freshness summary for a comparison.
 // // It loads the comparison matrix, the raw comparison_values rows, and the platform's
 // data sources, resolves a source for each cell, and aggregates per-item and overall
-// scores. The result is cached in Valkey under jc:jce:freshness:{}:{content_id}.
+// scores. The result is cached in Valkey under jc:jce:freshness:{content_id}.
 func (s *Service) FreshnessForComparison(ctx context.Context, contentID, userID pgtype.UUID) (FreshnessSummary, error) {
 	// Load the comparison and enforce visibility before reading cache or matrix.
 	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String())

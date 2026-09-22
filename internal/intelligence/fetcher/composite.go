@@ -28,6 +28,7 @@ type Composite struct {
 	git     *GitFetcher
 	social  *SocialFetcher
 	wayback *WaybackFetcher
+	search  *SearchFetcher
 }
 
 // NewComposite returns a Composite fetcher with all adapters wired, each
@@ -50,6 +51,7 @@ func NewComposite(settings AdapterSettings, rdb valkeycompat.Cmdable) *Composite
 		git:     NewGitFetcher(),
 		social:  NewSocialFetcher(nil, settings),
 		wayback: NewWaybackFetcher(),
+		search:  NewSearchFetcher(nil, settings),
 	}
 }
 
@@ -67,17 +69,18 @@ func NewCompositeWithClient(client *http.Client, settings AdapterSettings, rdb v
 		git:     NewGitFetcher(),
 		social:  NewSocialFetcher(client, settings),
 		wayback: &WaybackFetcher{client: client},
+		search:  NewSearchFetcher(client, settings),
 	}
 }
 
 // pendingFetchMethods are the valid channel crawl methods whose fetch
-// adapters land in Phase 3 — Composite.Fetch answers
+// adapter has not landed — Composite.Fetch answers
 // ErrMethodNotImplemented for them (the switch's default arm covers the
 // same set; both must stay in sync). Inbound methods (email/webhook) are
 // deliberately absent: they are never fetched but are valid channel rows.
-var pendingFetchMethods = map[sources.CrawlMethod]bool{
-	sources.CrawlMethodSearch: true,
-}
+// Phase 3 emptied the set; the probe filter below keeps working against
+// any future pending method.
+var pendingFetchMethods = map[sources.CrawlMethod]bool{}
 
 // PendingFetchMethod reports whether m is a known channel crawl method whose
 // fetch adapter is a Phase-3 stub (Composite.Fetch → ErrMethodNotImplemented).
@@ -109,9 +112,9 @@ func PendingFetchMethod(m string) bool {
 //   - social → SocialFetcher (provider allowlist via
 //     intel.social.enabled_providers)
 //   - wayback → WaybackFetcher (CDX snapshot manifest)
+//   - search → SearchFetcher (SERP poll → NDJSON result page)
 //   - manual/email/webhook/xhr_sniff → hard error (never fetched — inbound
 //     or task-owned; ListDueChannels excludes them)
-//   - search → ErrMethodNotImplemented until its Phase-3 adapter lands
 //
 // On a fetch error, provider_config.fallback_methods is tried in order
 // (spec §3 degradation ladder — e.g. rss → jsonld → render → static):
@@ -195,6 +198,8 @@ func (c *Composite) fetchMethod(ctx context.Context, eff sources.Source, method 
 		return c.social.Fetch(ctx, eff)
 	case sources.CrawlMethodWayback:
 		return c.wayback.Fetch(ctx, eff)
+	case sources.CrawlMethodSearch:
+		return c.search.Fetch(ctx, eff)
 	case sources.CrawlMethodManual, sources.CrawlMethodEmail, sources.CrawlMethodWebhook,
 		sources.CrawlMethodXHRSniff:
 		return FetchResult{}, fmt.Errorf("fetcher: crawl_method %q is not fetchable (manual/inbound/task)", method)

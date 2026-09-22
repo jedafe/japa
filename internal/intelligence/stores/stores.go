@@ -122,9 +122,22 @@ func (s *Store) GetLatestIntelRawDocHashForChannelURL(ctx context.Context, chann
 	return hash, nil
 }
 
-// GetPrevIntelRawDocByChannel returns the newest raw document for a channel
-// excluding the given one — the previous manifest a sitemap/wayback diff
-// compares against during Phase-2 fan-out.
+// GetLatestIntelManifestDocHashByChannel returns the content_hash of the
+// newest manifest document for a channel — the prior hash for sitemap/
+// wayback crawls (Phase 2). The content_type marker keeps a non-manifest
+// fallback-ladder doc from becoming the manifest's diff baseline.
+func (s *Store) GetLatestIntelManifestDocHashByChannel(ctx context.Context, channelID pgtype.UUID) (string, error) {
+	hash, err := s.queries.GetLatestIntelManifestDocHashByChannel(ctx, channelID)
+	if err != nil {
+		return "", fmt.Errorf("stores: get latest intel manifest doc hash by channel: %w", err)
+	}
+
+	return hash, nil
+}
+
+// GetPrevIntelRawDocByChannel returns the newest manifest document for a
+// channel excluding the given one — the previous manifest a sitemap/wayback
+// diff compares against during Phase-2 fan-out.
 func (s *Store) GetPrevIntelRawDocByChannel(ctx context.Context, channelID, excludeID pgtype.UUID) (gen.IntelRawDocument, error) {
 	row, err := s.queries.GetPrevIntelRawDocByChannel(ctx, gen.GetPrevIntelRawDocByChannelParams{
 		ChannelID: channelID,
@@ -132,6 +145,24 @@ func (s *Store) GetPrevIntelRawDocByChannel(ctx context.Context, channelID, excl
 	})
 	if err != nil {
 		return gen.IntelRawDocument{}, fmt.Errorf("stores: get prev intel raw doc by channel: %w", err)
+	}
+
+	return row, nil
+}
+
+// GetPrevIntelRawDocForChannelURL returns the newest manifest document a
+// channel captured from a specific URL excluding the given one — the diff
+// baseline for nested manifest expansion (a sitemapindex member fetched as
+// a derived sitemap doc compares against the previous capture of that URL,
+// not the channel's top-level manifest).
+func (s *Store) GetPrevIntelRawDocForChannelURL(ctx context.Context, channelID pgtype.UUID, url string, excludeID pgtype.UUID) (gen.IntelRawDocument, error) {
+	row, err := s.queries.GetPrevIntelRawDocForChannelURL(ctx, gen.GetPrevIntelRawDocForChannelURLParams{
+		ChannelID: channelID,
+		Url:       url,
+		ID:        excludeID,
+	})
+	if err != nil {
+		return gen.IntelRawDocument{}, fmt.Errorf("stores: get prev intel raw doc by channel+url: %w", err)
 	}
 
 	return row, nil
