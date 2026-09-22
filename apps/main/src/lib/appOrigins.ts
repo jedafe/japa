@@ -25,10 +25,12 @@ const UNIVERSITY_BASE = isDev
 	? 'http://localhost:3003'
 	: (publicEnv.PUBLIC_JC_UNIVERSITY_ORIGIN ?? '');
 const DOCS_BASE = isDev ? 'http://localhost:3004' : (publicEnv.PUBLIC_DOCS_ORIGIN ?? '');
+const TOOLS_BASE = isDev ? 'http://localhost:3005' : (publicEnv.PUBLIC_JC_TOOLS_ORIGIN ?? '');
 
 export const LEARN_ORIGIN = LEARN_BASE.replace(/\/$/, '');
 export const UNIVERSITY_ORIGIN = UNIVERSITY_BASE.replace(/\/$/, '');
 export const DOCS_ORIGIN = DOCS_BASE.replace(/\/$/, '');
+export const TOOLS_ORIGIN = TOOLS_BASE.replace(/\/$/, '');
 
 function buildUrl(origin: string, path: string): string {
 	if (!origin) {
@@ -53,4 +55,9 @@ export function universityUrl(path: string): string {
 /** Build an absolute Docs app URL for a given path. */
 export function docsUrl(path: string): string {
 	return buildUrl(DOCS_ORIGIN, path);
+}
+
+/** Build an absolute Tools app URL for a given path. */
+export function toolsUrl(path: string): string {
+	return buildUrl(TOOLS_ORIGIN, path);
 }
