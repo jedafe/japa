@@ -288,6 +288,8 @@ var handlerRegistry = []struct {
 	// §95 CV Formatter handlers (ADR-103).
 	{TypeCvFormatProcess, HandleCvFormatProcess},
 	{TypeCvFormatSessionsPurge, HandleCvFormatSessionsPurge},
+	// §110 AI SOP Generator handlers (ADR-121).
+	{TypeSopGenerate, HandleSopGenerate},
 	// §84 Community Digest Widget handlers (ADR-092).
 	{TypeDigestGenerate, HandleDigestGenerate},
 	{TypeDigestAutoPublish, HandleDigestAutoPublish},

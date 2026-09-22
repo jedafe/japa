@@ -232,18 +232,27 @@ func intelSniffHAR(ctx context.Context, serviceURL, target string, waitMs int) (
 }
 
 // intelSniffProposalInput builds the channel proposal for one discovered
-// endpoint. A POST endpoint's JSON request body (HAR postData) seeds
+// endpoint. A POST endpoint's request body (HAR postData) seeds
 // provider_config.body so the materialized api channel replays the same
-// request — a bodyless POST would 4xx forever. Non-JSON post bodies can't
-// be expressed in the api provider_config and are dropped.
+// request — a bodyless POST would 4xx forever. JSON bodies pass through
+// verbatim; non-JSON bodies are stored as a JSON string (the api fetcher
+// sends string bodies unquoted) with the captured mimeType replayed via
+// provider_config.headers.
 func intelSniffProposalInput(ep sniffEndpoint) sources.ChannelProposalInput {
 	cfg := map[string]any{
 		"endpoint":       ep.URL,
 		"method":         ep.Method,
 		"discovered_via": "xhr_sniff",
 	}
-	if ep.Method == http.MethodPost && json.Valid(ep.Body) {
-		cfg["body"] = json.RawMessage(ep.Body)
+	if ep.Method == http.MethodPost && len(ep.Body) > 0 {
+		if json.Valid(ep.Body) {
+			cfg["body"] = json.RawMessage(ep.Body)
+		} else {
+			cfg["body"] = string(ep.Body)
+			if ep.BodyMime != "" {
+				cfg["headers"] = map[string]string{"Content-Type": ep.BodyMime}
+			}
+		}
 	}
 
 	cfgJSON, _ := json.Marshal(cfg)
@@ -260,11 +269,12 @@ func intelSniffProposalInput(ep sniffEndpoint) sources.ChannelProposalInput {
 
 // sniffEndpoint is one discovered JSON XHR endpoint — method + clean URL
 // (query stripped; query variance dedupes to the same endpoint) plus the
-// request body for POSTs.
+// request body and its MIME type for POSTs.
 type sniffEndpoint struct {
-	Method string
-	URL    string
-	Body   []byte
+	Method   string
+	URL      string
+	Body     []byte
+	BodyMime string
 }
 
 // intelSniffEndpoints extracts deduplicated JSON API endpoints from a HAR —
@@ -303,13 +313,16 @@ func intelSniffEndpoints(env harEnvelope) []sniffEndpoint {
 		}
 		seen[key] = true
 		var body []byte
+		var bodyMime string
 		if method == http.MethodPost {
 			body = []byte(e.Request.PostData.Text)
+			bodyMime = e.Request.PostData.MimeType
 		}
 		out = append(out, sniffEndpoint{
-			Method: method,
-			URL:    u.Scheme + "://" + u.Host + u.EscapedPath(),
-			Body:   body,
+			Method:   method,
+			URL:      u.Scheme + "://" + u.Host + u.EscapedPath(),
+			Body:     body,
+			BodyMime: bodyMime,
 		})
 	}
 

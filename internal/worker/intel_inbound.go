@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
 // intelInboundEmailContentType marks a raw doc built from an inbound email
@@ -76,9 +77,22 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:inbound_email: load event: %w", err)
 	}
 	if event.Status != "received" {
-		// A retry of an already-terminal event is a no-op — the raw doc
-		// (if any) was already produced by the first run.
-		slog.Info("task:intel:inbound_email: event already terminal, skipping", "event_id", p.EventID, "status", event.Status)
+		// Terminal or claimed: processed/failed/ignored retries are no-ops,
+		// and 'processing' means another worker holds the claim (a crashed
+		// claimant leaves a stuck event the admin redrive rescues).
+		slog.Info("task:intel:inbound_email: event already claimed/terminal, skipping", "event_id", p.EventID, "status", event.Status)
+		return nil
+	}
+
+	// Atomic claim: received → processing. Two concurrent runs of the same
+	// event (duplicate enqueue, overlapping retry) cannot both win — only
+	// the claim holder materializes the delivery.
+	claimed, err := intelSourcesStore.ClaimInboundEvent(ctx, eventID)
+	if err != nil {
+		return fmt.Errorf("task:intel:inbound_email: claim event: %w", err)
+	}
+	if !claimed {
+		slog.Info("task:intel:inbound_email: claim lost, another run owns the event", "event_id", p.EventID)
 		return nil
 	}
 
@@ -91,10 +105,24 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 		mark("failed")
 		return fmt.Errorf("task:intel:inbound_email: load channel: %w", err)
 	}
+	// The channel may have been disabled or repurposed between ingest and
+	// task execution — materializing an email envelope under a non-email
+	// method would feed it to the wrong curator. 'ignored' keeps the
+	// delivery auditable and admin-redrivable if the channel comes back.
+	if !ch.Enabled || ch.CrawlMethod != string(sources.CrawlMethodEmail) {
+		mark("ignored")
+		slog.Info("task:intel:inbound_email: channel disabled or repurposed, ignoring", "event_id", p.EventID, "channel_id", ch.ID.String())
+		return nil
+	}
 	src, err := intelSourcesStore.Get(ctx, ch.SourceID)
 	if err != nil {
 		mark("failed")
 		return fmt.Errorf("task:intel:inbound_email: load source: %w", err)
+	}
+	if !src.Enabled || src.Status != "active" {
+		mark("ignored")
+		slog.Info("task:intel:inbound_email: parent source not active, ignoring", "event_id", p.EventID, "source_id", src.ID.String())
+		return nil
 	}
 
 	env, err := intelInboundEmailEnvelope(event)
@@ -119,34 +147,63 @@ func HandleIntelInboundEmail(ctx context.Context, t *asynq.Task) error {
 	// previous delivery, not the doc being persisted.
 	priorHash, _ := intelStores.GetLatestIntelRawDocHashForChannel(ctx, ch.ID)
 
-	rawDoc, err := intelStores.CreateIntelRawDocument(ctx, gen.CreateIntelRawDocumentParams{
-		SourceID:    src.ID,
-		ChannelID:   ch.ID,
-		Url:         docURL,
-		HttpStatus:  200,
-		HttpHeaders: headersJSON,
-		ContentType: strPtr(intelInboundEmailContentType),
-		Body:        body,
-		ContentHash: hex.EncodeToString(contentHash[:]),
-	})
+	// Idempotent materialization: the deterministic docURL + content hash
+	// mean a redrive after a crash-between-insert-and-mark (or any second
+	// run of this event) reuses the existing doc instead of duplicating.
+	contentHashHex := hex.EncodeToString(contentHash[:])
+	rawDocID, found, err := intelStores.GetIntelRawDocIDByChannelURLHash(ctx, ch.ID, docURL, contentHashHex)
 	if err != nil {
 		mark("failed")
-		return fmt.Errorf("task:intel:inbound_email: persist raw doc: %w", err)
+		return fmt.Errorf("task:intel:inbound_email: lookup existing raw doc: %w", err)
+	}
+	if !found {
+		rawDoc, err := intelStores.CreateIntelRawDocument(ctx, gen.CreateIntelRawDocumentParams{
+			SourceID:    src.ID,
+			ChannelID:   ch.ID,
+			Url:         docURL,
+			HttpStatus:  200,
+			HttpHeaders: headersJSON,
+			ContentType: strPtr(intelInboundEmailContentType),
+			Body:        body,
+			ContentHash: contentHashHex,
+		})
+		if err != nil {
+			mark("failed")
+			return fmt.Errorf("task:intel:inbound_email: persist raw doc: %w", err)
+		}
+		rawDocID = rawDoc.ID
+	} else {
+		// Re-materialization (redrive / crash between insert and mark): the
+		// existing doc is already this channel's latest, so priorHash
+		// self-references and detect_changes would decide 'unchanged' —
+		// starving the pipeline and marking the event processed without
+		// producing records. An empty prior forces the pipeline to run;
+		// (source_id, external_key) dedup keeps re-curation idempotent.
+		priorHash = ""
 	}
 
 	payload := marshalPayload(intelDetectChangesPayload{
 		Version:   intelPayloadVersion,
 		SourceID:  ch.SourceID.String(),
 		ChannelID: ch.ID.String(),
-		RawDocID:  rawDoc.ID.String(),
+		RawDocID:  rawDocID.String(),
 		PriorHash: priorHash,
 	})
-	if payload != nil {
-		enqueueIntel(TypeIntelDetectChanges, payload)
+	if payload == nil {
+		mark("failed")
+		return fmt.Errorf("task:intel:inbound_email: marshal detect_changes payload")
+	}
+	// The hand-off must not be fire-and-forget: unlike the crawl path there
+	// is no next cycle to resume a dropped chain, and 'processed' is
+	// terminal — an enqueue failure here would lose the delivery forever.
+	if _, err := intelAsynqClient.EnqueueContext(ctx, asynq.NewTask(TypeIntelDetectChanges, payload),
+		TaskOpts(TypeIntelDetectChanges)...); err != nil {
+		mark("failed")
+		return fmt.Errorf("task:intel:inbound_email: enqueue detect_changes: %w", err)
 	}
 
 	mark("processed")
-	slog.Info("task:intel:inbound_email: processed", "event_id", p.EventID, "raw_doc_id", rawDoc.ID.String(), "channel_id", ch.ID.String())
+	slog.Info("task:intel:inbound_email: processed", "event_id", p.EventID, "raw_doc_id", rawDocID.String(), "channel_id", ch.ID.String())
 
 	return nil
 }

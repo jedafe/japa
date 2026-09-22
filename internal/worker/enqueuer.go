@@ -216,6 +216,8 @@ var taskTier = func() map[string]string {
 		TypeCalendarSendReminders,
 		// §95 CV Formatter (ADR-103) — AI formatting on default tier.
 		TypeCvFormatProcess,
+		// §110 AI SOP Generator (ADR-121) — draft generation on default tier.
+		TypeSopGenerate,
 		// §84 Community Digest Widget (ADR-092) — email send on publish, default tier.
 		TypeDigestSendEmail,
 		// §87 Japa Stage Profiles (ADR-095) — stage-change recommendation fan-out, default tier.
@@ -480,6 +482,8 @@ var taskTypeCatalog = []struct {
 	// §95 CV Formatter (ADR-103)
 	{TypeCvFormatProcess, "default", "Process a pending CV format session via the AI Gateway"},
 	{TypeCvFormatSessionsPurge, "low", "Purge expired CV format sessions past their expires_at"},
+	// §110 AI SOP Generator (ADR-121)
+	{TypeSopGenerate, "default", "Generate a queued SOP draft via the AI Gateway"},
 	// §84 Community Digest Widget (ADR-092)
 	{TypeDigestGenerate, "low", "Assemble a new community digest edition from platform analytics"},
 	{TypeDigestAutoPublish, "low", "Publish draft/review digest editions past their 1-hour review window and enqueue email send (§84)"},
