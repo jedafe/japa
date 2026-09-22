@@ -40,7 +40,12 @@ const TOOL_SETTINGS_KEYS: Array<{ key: string; surface: ToolSurface }> = [
 	{ key: 'attestation_guide', surface: 'attestation-guide' },
 	{ key: 'language_test_hub', surface: 'language-test' },
 	{ key: 'tax_calculator', surface: 'tax-calculator' },
-	{ key: 'community_locator', surface: 'community-locator' }
+	{ key: 'community_locator', surface: 'community-locator' },
+	// SEO growth tools (§§107–110).
+	{ key: 'crs_calculator', surface: 'crs-calculator' },
+	{ key: 'pof_calculator', surface: 'pof-calculator' },
+	{ key: 'eca_guide', surface: 'eca-guide' },
+	{ key: 'sop_generator', surface: 'sop-generator' }
 ];
 
 /** Default subdomains per tool (from system-settings-catalog.md). */
@@ -62,7 +67,12 @@ const DEFAULT_SUBDOMAINS: Record<string, string> = {
 	attestation_guide: 'attestation-guide',
 	language_test_hub: 'language-test',
 	tax_calculator: 'tax-calculator',
-	community_locator: 'community-locator'
+	community_locator: 'community-locator',
+	// SEO growth tools — default subdomains match the route slugs.
+	crs_calculator: 'crs-calculator',
+	pof_calculator: 'pof-calculator',
+	eca_guide: 'eca-guide',
+	sop_generator: 'sop-generator'
 };
 
 /**
