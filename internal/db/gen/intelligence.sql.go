@@ -473,6 +473,30 @@ func (q *Queries) GetIntelPersonaUserID(ctx context.Context, id pgtype.UUID) (pg
 	return user_id, err
 }
 
+const getIntelRawDocIDByChannelURLHash = `-- name: GetIntelRawDocIDByChannelURLHash :one
+SELECT id FROM intel_raw_documents
+WHERE channel_id = $1 AND url = $2 AND content_hash = $3
+ORDER BY retrieved_at DESC LIMIT 1
+`
+
+type GetIntelRawDocIDByChannelURLHashParams struct {
+	ChannelID   pgtype.UUID `json:"channel_id"`
+	Url         string      `json:"url"`
+	ContentHash string      `json:"content_hash"`
+}
+
+// Inbound re-drive idempotency (Phase 3 hardening): email/websub events
+// materialize under a deterministic url (email:{ch}:{msg}, websub:{ch}:
+// {hash}); a re-run that already persisted the doc (crash between insert
+// and terminal mark, or an admin redrive) reuses it instead of stacking
+// a duplicate row.
+func (q *Queries) GetIntelRawDocIDByChannelURLHash(ctx context.Context, arg GetIntelRawDocIDByChannelURLHashParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getIntelRawDocIDByChannelURLHash, arg.ChannelID, arg.Url, arg.ContentHash)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getIntelRawDocument = `-- name: GetIntelRawDocument :one
 SELECT id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, channel_id, parent_document_id FROM intel_raw_documents WHERE id = $1
 `

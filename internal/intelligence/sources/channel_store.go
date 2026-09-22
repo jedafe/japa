@@ -193,10 +193,48 @@ func (s *Store) CreateInboundEvent(ctx context.Context, arg gen.CreateIntelInbou
 }
 
 // MarkInboundEvent stamps an inbound event's terminal status
-// (received|processed|failed|ignored) and sets processed_at.
+// (received|processing → processed|failed|ignored) and sets processed_at.
 func (s *Store) MarkInboundEvent(ctx context.Context, arg gen.MarkIntelInboundEventParams) error {
 	if err := s.queries.MarkIntelInboundEvent(ctx, arg); err != nil {
 		return fmt.Errorf("sources: mark inbound event: %w", err)
+	}
+
+	return nil
+}
+
+// ClaimInboundEvent is the atomic received → processing mutex the
+// intel:inbound_email task takes before materializing a delivery. true =
+// this caller won the claim.
+func (s *Store) ClaimInboundEvent(ctx context.Context, id pgtype.UUID) (bool, error) {
+	n, err := s.queries.ClaimIntelInboundEvent(ctx, id)
+	if err != nil {
+		return false, fmt.Errorf("sources: claim inbound event: %w", err)
+	}
+
+	return n > 0, nil
+}
+
+// RedriveInboundEvent resets a failed/processing/ignored event back to
+// 'received' for re-processing. A 'processing' event only resets once its
+// claim is older than stuckSecs — anything fresher is a live worker
+// mid-flight. false = terminal-processed, actively claimed, or waiting.
+func (s *Store) RedriveInboundEvent(ctx context.Context, id pgtype.UUID, stuckSecs float64) (bool, error) {
+	n, err := s.queries.RedriveIntelInboundEvent(ctx, gen.RedriveIntelInboundEventParams{
+		ID:   id,
+		Secs: stuckSecs,
+	})
+	if err != nil {
+		return false, fmt.Errorf("sources: redrive inbound event: %w", err)
+	}
+
+	return n > 0, nil
+}
+
+// NoteChannelError flags a non-crawl error on the channel row (e.g. a hub
+// denying a WebSub subscription) without touching failure counters.
+func (s *Store) NoteChannelError(ctx context.Context, arg gen.NoteIntelChannelErrorParams) error {
+	if err := s.queries.NoteIntelChannelError(ctx, arg); err != nil {
+		return fmt.Errorf("sources: note channel error: %w", err)
 	}
 
 	return nil

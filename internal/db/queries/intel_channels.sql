@@ -82,15 +82,45 @@ WHERE id = $1;
 INSERT INTO intel_inbound_events (channel_id, payload, headers, content_type, content_hash)
 VALUES ($1,$2,$3,$4,$5) RETURNING *;
 
+-- name: ClaimIntelInboundEvent :execrows
+-- Atomic mutex for the processing task: transitions received → processing
+-- and reports whether the claim won. Only one concurrent worker can flip
+-- the row, so duplicate task enqueues (or an overlapping retry while the
+-- first run is mid-flight) cannot double-materialize a delivery.
+UPDATE intel_inbound_events SET status = 'processing', claimed_at = now()
+WHERE id = $1 AND status = 'received';
+
 -- name: MarkIntelInboundEvent :exec
--- Transitions are one-way out of 'received': a terminal event
--- (processed/failed/ignored) is immutable so a late duplicate task run
+-- Terminal transition from 'received' (inbound handler paths that never
+-- claimed) or 'processing' (the claiming worker). Terminal states
+-- (processed/failed/ignored) are immutable so a late duplicate task run
 -- can never flip a finished delivery back or forward.
 UPDATE intel_inbound_events SET status = $2, processed_at = now()
-WHERE id = $1 AND status = 'received';
+WHERE id = $1 AND status IN ('received','processing');
+
+-- name: RedriveIntelInboundEvent :execrows
+-- Admin re-drive: reset a failed/rejected/stuck-processing event back to
+-- 'received' so the follow-up task re-processes it. A 'processing' event
+-- is only redrivable once its claim is older than $2 seconds — anything
+-- fresher is a live worker mid-flight and must not be hijacked (that
+-- would double-materialize the delivery). 0 rows = terminal-processed,
+-- actively claimed, or still waiting.
+UPDATE intel_inbound_events SET status = 'received', processed_at = NULL, claimed_at = NULL
+WHERE id = $1 AND (
+  status IN ('failed','ignored')
+  OR (status = 'processing'
+      AND (claimed_at IS NULL OR claimed_at < now() - make_interval(secs => $2)))
+);
 
 -- name: GetIntelInboundEvent :one
 SELECT * FROM intel_inbound_events WHERE id = $1;
+
+-- name: NoteIntelChannelError :exec
+-- Surface a non-crawl channel error (e.g. a hub denying a WebSub
+-- subscription) on the channel row WITHOUT touching consecutive_failures,
+-- last_crawled_at, or last_success_at — it is a flag, not a crawl result.
+UPDATE intel_source_channels SET last_error_message = $2, last_error_at = now()
+WHERE id = $1;
 
 -- name: GetIntelEmailChannelByAddress :one
 -- Inbound-email routing (Phase 3): resolve the delivery's recipient to the
@@ -98,6 +128,7 @@ SELECT * FROM intel_inbound_events WHERE id = $1;
 SELECT * FROM intel_source_channels
 WHERE crawl_method = 'email' AND enabled
   AND lower(provider_config->>'inbound_address') = lower($1)
+ORDER BY created_at ASC
 LIMIT 1;
 
 -- name: UpdateIntelSourceProbe :exec

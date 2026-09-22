@@ -113,6 +113,8 @@ func (f *SearchFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	endpoint := strings.TrimRight(cfg.EndpointOverride, "/")
 	if endpoint == "" {
 		endpoint = searchEndpoints[provider]
+	} else if err := validateSearchEndpointOverride(endpoint); err != nil {
+		return FetchResult{}, err
 	}
 
 	req, err := f.buildRequest(ctx, provider, endpoint, key, cfg.Query, count, cfg.Recency, cfg.EngineID)
@@ -196,7 +198,7 @@ func (f *SearchFetcher) buildRequest(ctx context.Context, provider, endpoint, ke
 	switch provider {
 	case "brave":
 		q.Set("q", query)
-		q.Set("count", strconv.Itoa(count))
+		q.Set("count", strconv.Itoa(min(count, 20))) // Brave caps count at 20
 		if fr := braveFreshness(recency); fr != "" {
 			q.Set("freshness", fr)
 		}
@@ -229,6 +231,26 @@ func (f *SearchFetcher) buildRequest(ctx context.Context, provider, endpoint, ke
 	}
 
 	return req, nil
+}
+
+// validateSearchEndpointOverride constrains provider_config.endpoint_override:
+// the request carries the decrypted intel.search.api_key (query param or
+// header), so overrides must be https — plaintext http would leak the key in
+// transit. Loopback/private-literal hosts (tests, local gateways) may use
+// http; the SSRF dial guard still applies on top.
+func validateSearchEndpointOverride(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("fetcher: invalid search endpoint_override %q", endpoint)
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") || sources.IsPrivateIPLiteral(host) {
+		return nil
+	}
+	return fmt.Errorf("fetcher: search endpoint_override must be https for non-local hosts: %q", endpoint)
 }
 
 // braveFreshness maps the recency enum onto Brave's freshness param.

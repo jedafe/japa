@@ -47,7 +47,9 @@ func (Email) Curate(_ context.Context, body []byte, _ string, ch sources.Channel
 		return nil, errors.New("curator: email: decode envelope: " + err.Error())
 	}
 	if env.Subject == "" && env.Text == "" {
-		return nil, errors.New("curator: email: empty delivery")
+		// A blank delivery is noise, not a parse failure — no records, no
+		// review stub. The inbound event row already carries the audit trail.
+		return nil, nil
 	}
 
 	entityType := resolveEntityType("", ch)

@@ -14,8 +14,10 @@ package stores
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
@@ -120,6 +122,27 @@ func (s *Store) GetLatestIntelRawDocHashForChannelURL(ctx context.Context, chann
 	}
 
 	return hash, nil
+}
+
+// GetIntelRawDocIDByChannelURLHash finds an already-materialized inbound doc
+// for (channel, url, content_hash) — the deterministic address an email or
+// websub event writes under. A re-run that already persisted the doc reuses
+// it instead of stacking a duplicate row (Phase-3 redrive idempotency).
+// false = no matching doc.
+func (s *Store) GetIntelRawDocIDByChannelURLHash(ctx context.Context, channelID pgtype.UUID, url, hash string) (pgtype.UUID, bool, error) {
+	id, err := s.queries.GetIntelRawDocIDByChannelURLHash(ctx, gen.GetIntelRawDocIDByChannelURLHashParams{
+		ChannelID:   channelID,
+		Url:         url,
+		ContentHash: hash,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, false, nil
+		}
+		return pgtype.UUID{}, false, fmt.Errorf("stores: get raw doc id by channel+url+hash: %w", err)
+	}
+
+	return id, true, nil
 }
 
 // GetLatestIntelManifestDocHashByChannel returns the content_hash of the

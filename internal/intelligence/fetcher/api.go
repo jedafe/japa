@@ -102,9 +102,20 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		method = http.MethodGet
 	}
 
-	var bodyReader io.Reader
+	// provider_config.body is a JSON-encoded payload: a JSON string body is
+	// sent as its raw content (unquoted — lets a form-encoded or text POST
+	// be expressed), while objects/arrays/numbers are sent verbatim.
+	var bodyBytes []byte
 	if len(cfg.Body) > 0 {
-		bodyReader = bytes.NewReader(cfg.Body)
+		bodyBytes = cfg.Body
+		var asString string
+		if err := json.Unmarshal(cfg.Body, &asString); err == nil {
+			bodyBytes = []byte(asString)
+		}
+	}
+	var bodyReader io.Reader
+	if len(bodyBytes) > 0 {
+		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, cfg.Endpoint, bodyReader)
@@ -115,7 +126,7 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
 	req.Header.Set("Accept", "application/json")
 
-	if len(cfg.Body) > 0 {
+	if len(bodyBytes) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
 

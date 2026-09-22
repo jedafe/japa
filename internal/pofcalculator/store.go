@@ -65,7 +65,7 @@ type RequirementRow struct {
 }
 
 const reqSelect = `
-	SELECT p.id, p.destination_space_id, s.name, s.code,
+	SELECT p.id, p.destination_space_id, s.name, s.geo_code,
 	       p.visa_type, p.program_label, p.amount_schedule, p.currency,
 	       p.funds_must_be_liquid, p.accepted_proof, p.notes,
 	       p.effective_date, p.source_url, p.source_url_last_checked,

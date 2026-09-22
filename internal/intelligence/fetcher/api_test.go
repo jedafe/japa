@@ -253,6 +253,90 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 	}
 }
 
+// TestAPIFetcher_FetchPOST_StringBody covers the xhr_sniff replay contract:
+// provider_config.body stored as a JSON string is sent UNQUOTED (the raw
+// bytes), a configured Content-Type header overrides the JSON default, and
+// a non-JSON response body is preserved verbatim with its content type.
+func TestAPIFetcher_FetchPOST_StringBody(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+			return
+		}
+		if string(got) != "q=visa&page=2" {
+			t.Errorf("request body = %q, want unquoted q=visa&page=2", got)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/x-www-form-urlencoded" {
+			t.Errorf("Content-Type = %q, want application/x-www-form-urlencoded", ct)
+		}
+
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("plain result, not json"))
+	}))
+	defer srv.Close()
+
+	cfg, _ := json.Marshal(APIProviderConfig{
+		Endpoint: srv.URL,
+		Method:   "POST",
+		Body:     json.RawMessage(`"q=visa&page=2"`),
+		Headers:  map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+	})
+	f := &APIFetcher{client: srv.Client()}
+
+	res, err := f.Fetch(t.Context(), sources.Source{
+		SourceUrl:      srv.URL,
+		CrawlMethod:    "api",
+		ProviderConfig: cfg,
+	})
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if string(res.Body) != "plain result, not json" {
+		t.Errorf("body = %q, want verbatim non-JSON response", res.Body)
+	}
+	if res.ContentType != "text/plain" {
+		t.Errorf("ContentType = %q, want text/plain", res.ContentType)
+	}
+}
+
+// TestAPIFetcher_FetchPOST_JSONBodyUnchanged pins the object-body path — a
+// JSON object body is sent verbatim with the application/json default.
+func TestAPIFetcher_FetchPOST_JSONBodyUnchanged(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ := io.ReadAll(r.Body)
+		if string(got) != `{"status":"posted"}` {
+			t.Errorf("request body = %q, want verbatim JSON", got)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json default", ct)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	cfg, _ := json.Marshal(APIProviderConfig{
+		Endpoint: srv.URL,
+		Method:   "POST",
+		Body:     json.RawMessage(`{"status":"posted"}`),
+	})
+	f := &APIFetcher{client: srv.Client()}
+
+	if _, err := f.Fetch(t.Context(), sources.Source{
+		SourceUrl:      srv.URL,
+		CrawlMethod:    "api",
+		ProviderConfig: cfg,
+	}); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+}
+
 // TestAPIFetcher_FetchAuthHeaders verifies that auth headers from the
 // provider_config are attached to the outgoing request.
 func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
