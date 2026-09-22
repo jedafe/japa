@@ -114,6 +114,7 @@ import (
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/planninggroups"
+	"github.com/jedafe/japa/internal/pofcalculator"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/rbac"
@@ -1453,6 +1454,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	remittanceService.SetEnqueuer(taskEnqueuer)        // admin fetch trigger + alert check tasks
 	remittanceService.SetNotifier(notificationService) // rate-alert notification dispatch (ADR-075 §4)
 	remittanceHandlers := remittance.NewHandlers(remittanceService, settingsService)
+
+	pofCalculatorStore := pofcalculator.NewStore(database)
+	pofCalculatorService := pofcalculator.NewService(pofCalculatorStore, settingsService)
+	pofCalculatorService.SetFXConverter(pofFXAdapter{svc: remittanceService})
+	pofCalculatorHandlers := pofcalculator.NewHandlers(pofCalculatorService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (ADR-079)
 	adsSelfServeStore := adsselfserve.NewStore(database)
@@ -6672,6 +6678,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/crs/draws/{id}", crsCalculatorHandlers.HandleAdminUpdateDraw)
 			})
 
+			// §108 — POF Calculator (ADR-119)
+			r.With(features.Gate(featureChecker, "pof_calculator.enabled")).Group(func(r chi.Router) {
+				r.Get("/pof/requirements", pofCalculatorHandlers.HandleListRequirements)
+				r.Get("/pof/visa-types", pofCalculatorHandlers.HandleVisaTypes)
+				r.Get("/pof/calculate", pofCalculatorHandlers.HandleCalculate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
+					Get("/admin/pof-requirements", pofCalculatorHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
+					Post("/admin/pof-requirements", pofCalculatorHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
+					Post("/admin/pof-requirements/generate", pofCalculatorHandlers.HandleAdminGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
+					Patch("/admin/pof-requirements/{id}", pofCalculatorHandlers.HandleAdminUpdate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pof_calculator.manage")).
+					Patch("/admin/pof-requirements/{id}/approve", pofCalculatorHandlers.HandleAdminApprove)
+			})
+
 			// §95 — CV Formatter (ADR-103)
 			r.With(features.Gate(featureChecker, "cv_formatter.enabled")).Group(func(r chi.Router) {
 				r.Get("/cv-formatter/standards", cvFormatterHandlers.HandleListStandards)
@@ -7831,4 +7854,22 @@ type studioContentPublisherAdapter struct {
 
 func (a *studioContentPublisherAdapter) UpdateContentStatus(ctx context.Context, contentID pgtype.UUID, status string) (any, error) {
 	return a.svc.UpdateContentStatus(ctx, contentID, status)
+}
+
+// pofFXAdapter adapts remittance.Service.Calculate to the pofcalculator
+// FXConverter seam (§108 → §74 shared FX source; no duplicate FX logic).
+// Only BestReceiveAmount is mapped — provider ranking is irrelevant here.
+type pofFXAdapter struct {
+	svc *remittance.Service
+}
+
+func (a pofFXAdapter) Calculate(ctx context.Context, sendAmount float64, sendCurrency, receiveCurrency string) (*pofcalculator.CalculateResult, error) {
+	res, err := a.svc.Calculate(ctx, sendAmount, sendCurrency, receiveCurrency)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, nil
+	}
+	return &pofcalculator.CalculateResult{BestReceiveAmount: res.BestReceiveAmount}, nil
 }
