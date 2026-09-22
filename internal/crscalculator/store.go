@@ -62,11 +62,11 @@ func NewStore(database *db.DB) *Store {
 
 // RulesetRow is a single crs_rulesets row.
 type RulesetRow struct {
-	ID          pgtype.UUID
-	VersionLabel string
+	ID            pgtype.UUID
+	VersionLabel  string
 	EffectiveDate pgtype.Date
-	Status      string
-	SourceURL   *string
+	Status        string
+	SourceURL     *string
 }
 
 // FactorRow is a single crs_factor_points row.

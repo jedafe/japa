@@ -140,13 +140,13 @@ func TestScoreProfile_MarriedUsesSpousePoints(t *testing.T) {
 
 func TestScoreProfile_PNPAndAdditional(t *testing.T) {
 	in := CalculateRequest{
-		MaritalStatus:         "single",
-		Age:                   22,
-		Education:             "bachelors",
-		CLBFirst:              CLBScores{Listening: 9, Reading: 9, Writing: 9, Speaking: 9},
-		ProvincialNomination:  true,
-		FrenchCLB:             &CLBScores{Listening: 7, Reading: 8, Writing: 7, Speaking: 9},
-		CanadianEducation:     "three_plus_years",
+		MaritalStatus:        "single",
+		Age:                  22,
+		Education:            "bachelors",
+		CLBFirst:             CLBScores{Listening: 9, Reading: 9, Writing: 9, Speaking: 9},
+		ProvincialNomination: true,
+		FrenchCLB:            &CLBScores{Listening: 7, Reading: 8, Writing: 7, Speaking: 9},
+		CanadianEducation:    "three_plus_years",
 	}
 
 	_, breakdown := scoreProfile(testFactors(), in)
@@ -165,7 +165,7 @@ func TestScoreProfile_PNPAndAdditional(t *testing.T) {
 func TestScoreProfile_NoMatchNoPoints(t *testing.T) {
 	in := CalculateRequest{
 		MaritalStatus: "single",
-		Age:           50, // outside all bands
+		Age:           50,    // outside all bands
 		Education:     "phd", // no phd row in fixture
 		CLBFirst:      CLBScores{Listening: 4, Reading: 4, Writing: 4, Speaking: 4},
 	}
