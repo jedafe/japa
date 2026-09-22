@@ -2013,6 +2013,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	sopGeneratorService.SetAIDispatcher(&sopAIDispatcher{dispatcher: aiDispatcher})
 	worker.RegisterSopProcessor(sopGeneratorService)
 
+	// §§107–110 — plug the tool entities into the unified moderation
+	// queue (Phase 49.22): queue_source='tool' rows dispatch through the
+	// adapter so approve/reject applies entity-level transitions.
+	adminHandlers.SetToolReviewHook(&toolReviewAdapter{
+		crs: crsCalculatorService,
+		pof: pofCalculatorService,
+		eca: ecaGuideService,
+		sop: sopGeneratorService,
+	})
+
 	// Wire the AI Gateway dispatcher into the credential checker service
 	// so GeneratePathwayDraft can call the Content Agent (§20, ADR-088).
 	credentialCheckerService.SetAIDispatcher(&credentialCheckerAIDispatcher{dispatcher: aiDispatcher})

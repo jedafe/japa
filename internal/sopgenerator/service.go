@@ -509,3 +509,19 @@ func uuidStr(u pgtype.UUID) string {
 	b := u.Bytes
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
+
+// ApproveTemplate publishes a template draft (HITL approve from the
+// unified moderation queue).
+func (s *Service) ApproveTemplate(ctx context.Context, id, reviewerID pgtype.UUID) error {
+	return s.store.ApproveTemplate(ctx, id, reviewerID, "")
+}
+
+// RejectTemplate marks a template draft rejected (HITL reject).
+func (s *Service) RejectTemplate(ctx context.Context, id pgtype.UUID) error {
+	return s.store.RejectTemplate(ctx, id)
+}
+
+// RejectSample marks a pending/draft sample rejected (HITL reject).
+func (s *Service) RejectSample(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
+	return s.store.RejectSample(ctx, id, reviewerID, notes)
+}

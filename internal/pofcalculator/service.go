@@ -415,3 +415,9 @@ func uuidStr(u pgtype.UUID) string {
 	b := u.Bytes
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
+
+// RejectRequirement marks a pending/draft requirement rejected (HITL
+// reject from the unified moderation queue).
+func (s *Service) RejectRequirement(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
+	return s.store.RejectRequirement(ctx, id, reviewerID, notes)
+}
