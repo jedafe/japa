@@ -1277,6 +1277,64 @@ type CreditPack struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type CrsDraw struct {
+	ID                pgtype.UUID        `json:"id"`
+	DrawNumber        *int32             `json:"draw_number"`
+	DrawDate          pgtype.Date        `json:"draw_date"`
+	Category          string             `json:"category"`
+	CrsCutoff         int32              `json:"crs_cutoff"`
+	InvitationsIssued int32              `json:"invitations_issued"`
+	TieBreakRule      *string            `json:"tie_break_rule"`
+	SourceUrl         *string            `json:"source_url"`
+	Status            string             `json:"status"`
+	HitlReviewedBy    pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt    pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	IsJapabotIndexed  bool               `json:"is_japabot_indexed"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type CrsFactorPoint struct {
+	ID               pgtype.UUID `json:"id"`
+	RulesetID        pgtype.UUID `json:"ruleset_id"`
+	FactorGroup      string      `json:"factor_group"`
+	FactorKey        string      `json:"factor_key"`
+	InputDescriptor  []byte      `json:"input_descriptor"`
+	Label            string      `json:"label"`
+	PointsSingle     int32       `json:"points_single"`
+	PointsWithSpouse *int32      `json:"points_with_spouse"`
+	SortOrder        *int32      `json:"sort_order"`
+}
+
+type CrsRuleset struct {
+	ID                   pgtype.UUID        `json:"id"`
+	VersionLabel         string             `json:"version_label"`
+	EffectiveDate        pgtype.Date        `json:"effective_date"`
+	Status               string             `json:"status"`
+	SourceUrl            *string            `json:"source_url"`
+	SourceUrlLastChecked pgtype.Date        `json:"source_url_last_checked"`
+	AiGenerated          bool               `json:"ai_generated"`
+	AiModel              *string            `json:"ai_model"`
+	AiPromptHash         *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes      *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type CrsScoreHistory struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	RulesetID pgtype.UUID        `json:"ruleset_id"`
+	Inputs    []byte             `json:"inputs"`
+	Score     int32              `json:"score"`
+	Breakdown []byte             `json:"breakdown"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type Currency struct {
 	Code           string             `json:"code"`
 	Name           string             `json:"name"`
@@ -1522,6 +1580,56 @@ type DocPage struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	HelpfulYes     int32              `json:"helpful_yes"`
 	HelpfulNo      int32              `json:"helpful_no"`
+}
+
+type EcaCommunityUpdate struct {
+	ID             pgtype.UUID        `json:"id"`
+	GuideID        pgtype.UUID        `json:"guide_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	StepIndex      *int32             `json:"step_index"`
+	FeeEstimate    *string            `json:"fee_estimate"`
+	TurnaroundDays *int32             `json:"turnaround_days"`
+	Note           *string            `json:"note"`
+	Status         string             `json:"status"`
+	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type EcaGuide struct {
+	ID                   pgtype.UUID        `json:"id"`
+	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
+	ProviderID           pgtype.UUID        `json:"provider_id"`
+	Purpose              string             `json:"purpose"`
+	PathwaySteps         []byte             `json:"pathway_steps"`
+	FeeEstimate          *string            `json:"fee_estimate"`
+	Currency             *string            `json:"currency"`
+	TimelineEstimate     *string            `json:"timeline_estimate"`
+	DocumentsRequired    []byte             `json:"documents_required"`
+	AcceptedFor          []byte             `json:"accepted_for"`
+	OfficialUrl          *string            `json:"official_url"`
+	SourceUrlLastChecked pgtype.Date        `json:"source_url_last_checked"`
+	Status               string             `json:"status"`
+	IsActive             bool               `json:"is_active"`
+	AiGenerated          bool               `json:"ai_generated"`
+	AiModel              *string            `json:"ai_model"`
+	AiPromptHash         *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes      *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type EcaProvider struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Website   *string            `json:"website"`
+	IsActive  bool               `json:"is_active"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type EditorBlockPermission struct {
@@ -1837,6 +1945,7 @@ type IntelInboundEvent struct {
 	ReceivedAt  pgtype.Timestamptz `json:"received_at"`
 	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
 	Status      string             `json:"status"`
+	ClaimedAt   pgtype.Timestamptz `json:"claimed_at"`
 }
 
 type IntelJob struct {
@@ -2885,6 +2994,32 @@ type PlatformEvent struct {
 	IsSynthetic bool               `json:"is_synthetic"`
 }
 
+type PofRequirement struct {
+	ID                   pgtype.UUID        `json:"id"`
+	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
+	VisaType             string             `json:"visa_type"`
+	ProgramLabel         string             `json:"program_label"`
+	AmountSchedule       []byte             `json:"amount_schedule"`
+	Currency             string             `json:"currency"`
+	FundsMustBeLiquid    bool               `json:"funds_must_be_liquid"`
+	AcceptedProof        []byte             `json:"accepted_proof"`
+	Notes                *string            `json:"notes"`
+	EffectiveDate        pgtype.Date        `json:"effective_date"`
+	SourceUrl            *string            `json:"source_url"`
+	SourceUrlLastChecked pgtype.Date        `json:"source_url_last_checked"`
+	Status               string             `json:"status"`
+	IsActive             bool               `json:"is_active"`
+	AiGenerated          bool               `json:"ai_generated"`
+	AiModel              *string            `json:"ai_model"`
+	AiPromptHash         *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes      *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ProfessionalDocument struct {
 	ID           pgtype.UUID        `json:"id"`
 	Title        string             `json:"title"`
@@ -3279,6 +3414,64 @@ type SlugHistory struct {
 	OldSlug    string             `json:"old_slug"`
 	NewSlug    string             `json:"new_slug"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type SopDraft struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	Purpose            string             `json:"purpose"`
+	Program            *string            `json:"program"`
+	Institution        *string            `json:"institution"`
+	Title              *string            `json:"title"`
+	Inputs             []byte             `json:"inputs"`
+	GeneratedText      *string            `json:"generated_text"`
+	Status             string             `json:"status"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	Version            int32              `json:"version"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type SopSample struct {
+	ID                 pgtype.UUID        `json:"id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	ProgramLevel       string             `json:"program_level"`
+	FieldOfStudy       *string            `json:"field_of_study"`
+	Title              string             `json:"title"`
+	Body               string             `json:"body"`
+	WordCount          *int32             `json:"word_count"`
+	Status             string             `json:"status"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed   bool               `json:"is_japabot_indexed"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type SopTemplate struct {
+	ID                 pgtype.UUID        `json:"id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	Purpose            string             `json:"purpose"`
+	Title              string             `json:"title"`
+	Structure          []byte             `json:"structure"`
+	Status             string             `json:"status"`
+	IsActive           bool               `json:"is_active"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SourceCollection struct {
