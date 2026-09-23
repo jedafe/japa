@@ -79,10 +79,14 @@
 	const emptyMsg = t('common.no_results', 'No results found');
 
 	// Static option lists → AutocompleteItem[] for the select-style fields.
-	const modeItems = MODE_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
-	const toneItems = TONE_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
-	const frameworkItems = FRAMEWORK_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
-	const humanizeItems = HUMANIZE_OPTIONS.map((o) => ({ id: o.value, label: o.label }));
+	// Labels are prompt-DSL vocabulary, but they're still user-facing UI —
+	// routed through t() so non-English locales don't leak English (§7).
+	const optLabel = (group: string, value: string, fallback: string) =>
+		t(`studio.prompts.opt.${group}.${value || 'none'}`, fallback);
+	const modeItems = $derived(MODE_OPTIONS.map((o) => ({ id: o.value, label: optLabel('mode', o.value, o.label) })));
+	const toneItems = $derived(TONE_OPTIONS.map((o) => ({ id: o.value, label: optLabel('tone', o.value, o.label) })));
+	const frameworkItems = $derived(FRAMEWORK_OPTIONS.map((o) => ({ id: o.value, label: optLabel('framework', o.value, o.label) })));
+	const humanizeItems = $derived(HUMANIZE_OPTIONS.map((o) => ({ id: o.value, label: optLabel('humanize', o.value, o.label) })));
 	const personaItems = $derived(personas.map((p) => ({ id: p.id, label: p.profile_name })));
 
 	// Ref: apps/studio-desktop prompt page — voices are named for the tone

@@ -555,18 +555,21 @@ type tagDocument struct {
 	CreatedAt    int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
-// IndexTag fetches a forum tag and upserts it into the tags index.
+// IndexTag fetches a tag and upserts it into the tags index.
+// Forum tags are universal (Sections 08, 14) — they live in the shared
+// `tags` table, so this indexes the same rows as IndexDirectoryTag with
+// the canonical /tags/{slug} URL.
 func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
-	row, err := ix.read.GetForumTagByID(ctx,
+	row, err := ix.read.GetTagByID(ctx,
 		pgtype.UUID{Bytes: tagID, Valid: true},
 	)
 	if err != nil {
-		return fmt.Errorf("fetching forum tag for index: %w", err)
+		return fmt.Errorf("fetching tag for index: %w", err)
 	}
 
 	desc := ""
@@ -580,8 +583,8 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 		Name:         row.Name,
 		Slug:         row.Slug,
 		Description:  desc,
-		ContentCount: row.FollowerCount,
-		URL:          "/forum/tags/" + row.Slug,
+		ContentCount: row.ContentCount,
+		URL:          "/tags/" + row.Slug,
 		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
 
@@ -594,10 +597,10 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 	return nil
 }
 
-// IndexDirectoryTag fetches a directory tag (the /tags surface, backed by the
+// IndexDirectoryTag fetches a tag (the /tags surface, backed by the shared
 // tags table) and upserts it into the tags index with a /tags/{slug} URL.
-// Distinct from IndexTag, which indexes forum tags (/forum/tags/{slug}) —
-// both live in the shared tags index so ?type=tag returns every tag entity.
+// Forum tags use the same table — IndexTag is its alias for the "tag"
+// entity_type enqueued by forum handlers.
 // Ref: Section 54 (?type=tag), api-routes-catalog.md (GET /tags).
 func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID [16]byte) error {
 	if ix.engine == nil {
@@ -1124,38 +1127,8 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 		threadCursor = last.CreatedAt
 	}
 
-	// Forum tags — offset-paginated.
-	for offset := int32(0); ; offset += reindexBatchSize {
-		rows, err := ix.read.ListForumTags(ctx, gen.ListForumTagsParams{
-
-			PageOffset: offset,
-			PageLimit:  reindexBatchSize,
-		})
-		if err != nil {
-			slog.Warn("search:reindex: listing forum tags failed", "error", err)
-
-			summary.Errors++
-
-			break
-		}
-
-		for _, row := range rows {
-			if err := ix.IndexTag(ctx, row.ID.Bytes); err != nil {
-				slog.Warn("search:reindex: tag failed", "id", row.ID, "error", err)
-
-				summary.Errors++
-			} else {
-				summary.Tag++
-			}
-		}
-
-		if len(rows) < reindexBatchSize {
-			break
-		}
-	}
-
-	// Directory tags (/tags surface) — offset-paginated. Shares the tags
-	// index with forum tags; directory docs link to /tags/{slug}.
+	// Tags (/tags surface) — offset-paginated. Forum tags share the same
+	// universal `tags` table, so this single pass covers both entity types.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListTagsPaginated(ctx, gen.ListTagsPaginatedParams{
 

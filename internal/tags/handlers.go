@@ -372,6 +372,18 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	result := make([]map[string]any, 0, len(items))
 
 	for _, c := range items {
+		// Forum-style bodies are TipTap JSON — LEFT(body, 200) would leak raw
+		// JSON into the card excerpt, so derive plain text instead.
+		excerpt := c.Excerpt
+		if excerpt != "" && (excerpt[0] == '[' || excerpt[0] == '{') {
+			if text, ok := content.ExtractTipTapText([]byte(c.Body)); ok && text != "" {
+				excerpt = text
+				if len([]rune(excerpt)) > 200 {
+					excerpt = string([]rune(excerpt)[:200]) + "…"
+				}
+			}
+		}
+
 		row := map[string]any{
 			"id":                 c.ID,
 			"author_id":          c.AuthorID,
@@ -386,7 +398,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 			"author_avatar_url":  c.AuthorAvatarUrl,
 			"space_name":         c.SpaceName,
 			"space_slug":         c.SpaceSlug,
-			"excerpt":            c.Excerpt,
+			"excerpt":            excerpt,
 			"tags":               splitTagNames(c.Tags),
 			"content_hash":       c.ContentHash,
 			"geo_space_id":       c.GeoSpaceID,

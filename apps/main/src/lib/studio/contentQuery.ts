@@ -25,9 +25,12 @@ export function contentQueryString(opts: {
 /**
  * Resolve the base endpoint for a content-manager tab.
  */
-export function contentBase(status?: string): '/me/drafts' | '/me/scheduled' | '/me/content' {
+export function contentBase(
+	status?: string
+): '/me/drafts' | '/me/scheduled' | '/me/in-review' | '/me/content' {
 	if (status === 'draft') return '/me/drafts';
 	if (status === 'scheduled') return '/me/scheduled';
+	if (status === 'in_review') return '/me/in-review';
 	return '/me/content';
 }
 

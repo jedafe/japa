@@ -260,6 +260,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTooManyTags):
 		errpkg.WriteError(w, http.StatusConflict, "too_many_tags", err.Error())
+	case errors.Is(err, ErrTagInUse):
+		errpkg.WriteError(w, http.StatusConflict, "tag_in_use", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -565,13 +567,18 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		solved = &b
 	}
 
-	// Parse sort; only "top" and "latest" are supported here.
+	// Parse sort; "top" and "latest" are supported here. "new" is accepted
+	// as an alias for "latest" (spec Section 08 uses new|top).
 	sortBy := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
+	if sortBy == "new" {
+		sortBy = "latest"
+	}
+
 	switch sortBy {
 	case "", "latest", "top":
 		// OK
 	default:
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_sort", "sort must be one of: latest, top")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_sort", "sort must be one of: latest, new, top")
 		return
 	}
 

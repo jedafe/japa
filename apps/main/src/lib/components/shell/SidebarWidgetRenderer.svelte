@@ -368,7 +368,7 @@
 			const path = page.url.pathname;
 			const isForum = path === '/forum' || path.startsWith('/forum/');
 			const endpoint = isForum
-				? `/content?type=discussion&featured=1&page_size=${limit}`
+				? `/content?type=forum_thread&featured=1&page_size=${limit}`
 				: '/blog/featured';
 			const res = await api.get<FeaturedPost[]>(endpoint);
 			featuredPosts = res.data ?? [];

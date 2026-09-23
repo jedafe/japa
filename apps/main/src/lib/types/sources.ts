@@ -71,12 +71,20 @@ export interface SourceOption {
 }
 
 export interface SourceMeta {
+	/** Curated proposal-catalog categories. */
 	categories: string[];
+	/** Full extraction-domain taxonomy (schemas.RegisteredCategories) —
+	 *  the propose form's category picker uses this superset. */
+	admin_categories?: string[];
 	source_types: string[];
 	/** Publisher-kind options ({value,label}) for the propose form's
 	 *  source_kind select and the directory ?source_kind= filter — distinct
 	 *  from source_types (crawl mechanism, no longer user-facing). */
 	source_kinds?: SourceOption[];
+	/** Propose-form subset of source_kinds — entity-stub kinds
+	 *  (institution, individual) are excluded; the propose endpoint rejects
+	 *  them server-side too. */
+	submittable_source_kinds?: SourceOption[];
 	/** intel_source_channels.pipeline CHECK set (extract|curate|hybrid). */
 	channel_pipelines?: string[];
 	entity_types?: SourceEntityType[];

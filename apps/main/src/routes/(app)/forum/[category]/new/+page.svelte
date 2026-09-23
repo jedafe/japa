@@ -7,6 +7,7 @@
 	import type { PageData, ActionData } from './$types';
 	import CommentEditor from '$lib/components/comments/CommentEditor.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import TagInput from '$lib/components/create/TagInput.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -15,6 +16,7 @@
 	let body = $state<string>(''); // base64 TipTap JSON from CommentEditor
 	let spaceId = $state<string>(untrack(() => data.preselected?.id ?? ''));
 	let isAnonymous = $state(false);
+	let tags = $state<string[]>([]);
 	let submitting = $state(false);
 
 	// Poll builder state (Phase 07.13).
@@ -61,6 +63,7 @@
 		if (form?.body !== undefined) body = form.body;
 		if (form?.spaceId !== undefined) spaceId = form.spaceId;
 		if (form?.isAnonymous !== undefined) isAnonymous = form.isAnonymous;
+		if (Array.isArray(form?.tags)) tags = form.tags;
 	});
 
 	// Autocomplete fetchers — filter the already-loaded spaces client-side.
@@ -133,6 +136,13 @@
 				onClear={() => (spaceId = '')}
 			/>
 			<input type="hidden" name="space_id" value={spaceId} />
+		</div>
+
+		<!-- Tags (Section 08 — tags are first-class on discussions) -->
+		<div>
+			<label for="tags" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('create.label.tags', 'Tags')}</label>
+			<input type="hidden" name="tags" value={tags.join(',')} />
+			<TagInput {tags} onTags={(next) => (tags = next)} />
 		</div>
 
 		<!-- Title -->

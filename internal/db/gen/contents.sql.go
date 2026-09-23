@@ -2442,6 +2442,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  u.username AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM contents c
@@ -2516,6 +2518,7 @@ type ListContentsRow struct {
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
+	IsFeatured        bool               `json:"is_featured"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -2576,6 +2579,7 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.Purpose,
+			&i.IsFeatured,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -2947,6 +2951,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  u.username AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name,
@@ -3023,6 +3029,7 @@ type ListContentsBySpaceRow struct {
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
+	IsFeatured        bool               `json:"is_featured"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	AuthorAvatarUrl   string             `json:"author_avatar_url"`
@@ -3087,6 +3094,7 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.Purpose,
+			&i.IsFeatured,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
@@ -3111,6 +3119,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  u.username AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM contents c
@@ -3214,6 +3224,7 @@ type ListContentsByTypeRow struct {
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
+	IsFeatured        bool               `json:"is_featured"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -3291,6 +3302,7 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.Purpose,
+			&i.IsFeatured,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -3314,10 +3326,13 @@ SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
+ COALESCE(ft.vote_score, cs.vote_score, 0) AS vote_score,
  u.username AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN forum_threads ft ON ft.content_id = c.id AND ft.deleted_at IS NULL
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
@@ -3392,6 +3407,7 @@ type ListFeaturedContentsByTypeRow struct {
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
+	VoteScore         int32              `json:"vote_score"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -3459,6 +3475,7 @@ func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeatur
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.Purpose,
+			&i.VoteScore,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,

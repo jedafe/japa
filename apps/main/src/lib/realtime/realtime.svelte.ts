@@ -63,16 +63,22 @@ class RealtimeStore {
 
 	/** Connect the WebSocket and register event handlers. Idempotent. */
 	connect(): void {
-		if (this.wired) return;
-		this.wired = true;
+		if (!this.wired) {
+			this.wired = true;
 
-		wsClient.on('notification', this.onNotificationBound);
-		wsClient.on('presence', this.onPresenceBound);
-		wsClient.on('feed_update', this.onFeedUpdateBound);
-		wsClient.on('dm_message', this.onDMMessageBound);
-		wsClient.on('poll_updated', this.onPollUpdatedBound);
-		wsClient.on('moderation_alert', this.onModerationAlertBound);
+			wsClient.on('notification', this.onNotificationBound);
+			wsClient.on('presence', this.onPresenceBound);
+			wsClient.on('feed_update', this.onFeedUpdateBound);
+			wsClient.on('dm_message', this.onDMMessageBound);
+			wsClient.on('poll_updated', this.onPollUpdatedBound);
+			wsClient.on('moderation_alert', this.onModerationAlertBound);
+		}
 
+		// Always re-arm the client, not just on first wiring: wsClient.connect()
+		// is idempotent while a socket is open or a mint is in flight, so this
+		// is cheap — and it lets a session that recovered from an auth lapse
+		// (e.g. token refreshed by another request after a failed mint)
+		// re-establish the socket on the next connect() call.
 		void wsClient.connect();
 	}
 

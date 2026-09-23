@@ -312,26 +312,8 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 	// target the reported user (the offender), resolved via ResolveTargetUser
 	// — never the reporter. Space reports and unknown types resolve to no
 	// target, in which case the side effect is skipped.
-	switch input.Action {
-	case "warn":
-		target, found, e := h.service.ResolveTargetUser(r.Context(), report.EntityType, report.EntityID)
-		if e != nil {
-			slog.Warn("reports: resolve warn target failed", "id", id.String(), "error", e)
-		} else if found {
-			if e2 := h.service.WarnUser(r.Context(), target, input.Reason); e2 != nil {
-				slog.Warn("reports: warn side-effect failed", "id", id.String(), "error", e2)
-			}
-		}
-	case "ban":
-		// "Ban Target": ban the reported user (content author / reported account).
-		target, found, e := h.service.ResolveTargetUser(r.Context(), report.EntityType, report.EntityID)
-		if e != nil {
-			slog.Warn("reports: resolve ban target failed", "id", id.String(), "error", e)
-		} else if found {
-			if e2 := h.service.BanUser(r.Context(), target, input.Reason); e2 != nil {
-				slog.Warn("reports: ban side-effect failed", "id", id.String(), "error", e2)
-			}
-		}
+	if e := h.service.applyActionSideEffects(r.Context(), input.Action, report.EntityType, report.EntityID, input.Reason); e != nil {
+		slog.Warn("reports: side-effect failed", "id", id.String(), "action", input.Action, "error", e)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})

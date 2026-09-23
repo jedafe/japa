@@ -564,6 +564,32 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
+// ListMyInReview handles GET /api/v1/me/in-review. Content held for HITL
+// review (e.g. high-stakes categories forced to in_review on save) is not
+// a draft and not scheduled, so it needs its own listing — otherwise the
+// author cannot see it anywhere in the content manager.
+func (h *Handlers) ListMyInReview(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	contentType := r.URL.Query().Get("type")
+	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+
+	content, err := h.Service.ListUserContentByStatus(r.Context(), user.UserID, "in_review", contentType, q, sort, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
+}
+
 // BookmarkListItem represents a bookmark in list responses.
 type BookmarkListItem struct {
 	ID         string  `json:"id"`

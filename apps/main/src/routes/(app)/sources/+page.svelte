@@ -15,6 +15,7 @@
 	} from '$lib/components/ui';
 	import SourceCard from '$lib/components/source/SourceCard.svelte';
 	import ProposeSourceModal from '$lib/components/source/ProposeSourceModal.svelte';
+	import { sourceCategoryOptions, sourceCategoryLabel } from '$lib/sources';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 	import type { Source } from '$lib/types/sources';
@@ -48,7 +49,9 @@
 		(data.sourceMeta?.sorts ?? []).map((s) => ({ value: s.value, label: s.label }))
 	);
 
-	const categoryOptions = $derived(data.sourceMeta?.categories ?? []);
+	// Same canonical category set as the propose form (curated catalog ∪
+	// full extraction taxonomy) — see $lib/sources.
+	const categoryOptions = $derived(sourceCategoryOptions(data.sourceMeta));
 	// ?source_kind= filters the publisher kind (publisher/institution/
 	// individual/aggregator) — NOT the crawl mechanism values in
 	// source_types (rss/video/api/static), which belong to the proposal
@@ -57,7 +60,10 @@
 
 	const categorySelectOptions = $derived([
 		{ value: '', label: t('sources.category.all', 'All categories') },
-		...categoryOptions.map((c) => ({ value: c, label: c }))
+		...categoryOptions.map((c) => ({
+			value: c,
+			label: sourceCategoryLabel(c)
+		}))
 	]);
 
 	const sourceKindSelectOptions = $derived([
@@ -120,8 +126,8 @@
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
-		<div class="flex items-start justify-between gap-4">
-			<div>
+		<div class="flex flex-wrap items-start justify-between gap-4">
+			<div class="min-w-0 flex-1 basis-56">
 				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 					<Rss size={20} /> {t('sources.heading', 'Sources')}
 				</h1>

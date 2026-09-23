@@ -10,7 +10,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import TagInput from '$lib/components/create/TagInput.svelte';
-	import type { ForumTag, ForumThread, MeSpace } from '$lib/types';
+	import type { ForumThread, MeSpace } from '$lib/types';
 
 	/**
 	 * Inline discussion composer — rendered inside the Compose bottom sheet.
@@ -95,24 +95,6 @@
 
 	const selectedSpace = $derived(spaces.find((s) => s.id === spaceId) ?? null);
 
-	// Resolve tag slugs to forum tag IDs, creating any that don't exist yet.
-	// GET /forum/tags/{slug} → existing ID; POST /forum/tags → new tag.
-	async function resolveTagIds(slugs: string[]): Promise<string[]> {
-		const ids: string[] = [];
-		for (const slug of slugs) {
-			const getRes = await api.get<ForumTag>(`/forum/tags/${encodeURIComponent(slug)}`);
-			if (!getRes.error && getRes.data) {
-				ids.push(getRes.data.id);
-				continue;
-			}
-			// Tag doesn't exist — create it (name derived from slug).
-			const name = slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-			const createRes = await api.post<ForumTag>('/forum/tags', { name, slug });
-			if (!createRes.error && createRes.data) ids.push(createRes.data.id);
-		}
-		return ids;
-	}
-
 	// Fetch the user's joined spaces on mount so the space selector is
 	// populated. The sheet is client-side, so this uses the client API.
 	onMount(async () => {
@@ -165,16 +147,15 @@
 				return;
 			}
 
-			// Attach tags (non-fatal — the thread is already created).
+			// Attach tags (non-fatal — the thread is already created). Tags are
+			// universal (Sections 08/14): POST /content/{id}/tags accepts
+			// tag_slugs and get-or-creates missing slugs server-side (BUG-006).
 			// Questions get a "question" tag so they're filterable.
 			const effectiveTags = isQuestion && !tags.includes('question')
 				? [...tags, 'question']
 				: tags;
-			if (effectiveTags.length > 0) {
-				const tagIds = await resolveTagIds(effectiveTags);
-				if (tagIds.length > 0) {
-					await api.post(`/forum/${thread.id}/tags`, { tag_ids: tagIds });
-				}
+			if (effectiveTags.length > 0 && thread.content_id) {
+				await api.post(`/content/${thread.content_id}/tags`, { tag_slugs: effectiveTags });
 			}
 
 			onClose();

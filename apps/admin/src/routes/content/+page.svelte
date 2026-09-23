@@ -170,7 +170,9 @@
 
 	// ── Row actions ─────────────────────────────────────────────────────────
 	// Custom actions replace defaults, so View is included explicitly. Remove/Restore
-	// are gated by content.moderate; Feature/Unfeature by content.edit (blog content only).
+	// are gated by content.moderate; Feature/Unfeature by content.edit. Featuring is
+	// generic (Section 14 — content_featured junction powers the Featured tabs on
+	// /guides, /stories, /forum), so it applies to every content_type.
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
 			{ label: t("common.view", "View"), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
@@ -180,13 +182,13 @@
 				label: t("content.feature", "Feature"),
 				icon: Star,
 				onclick: (row: ContentItem) => toggleFeature(row),
-				show: (row: ContentItem) => row.content_type === "blog_post" && row.is_featured !== true
+				show: (row: ContentItem) => row.is_featured !== true
 			});
 			acts.push({
 				label: t("content.unfeature", "Unfeature"),
 				icon: Star,
 				onclick: (row: ContentItem) => toggleFeature(row),
-				show: (row: ContentItem) => row.content_type === "blog_post" && row.is_featured === true
+				show: (row: ContentItem) => row.is_featured === true
 			});
 		}
 		if (canModerate) {

@@ -362,7 +362,7 @@
 								<span class="mt-1 block text-xs text-[var(--color-muted)]">
 									<RelativeTime iso={job.created_at} />
 									{#if job.completed_at}
-										· {t('studio.completed', 'Completed')} <RelativeTime iso={job.completed_at} />
+										· {job.status === 'completed' ? t('studio.completed', 'Completed') : t('studio.finished', 'Finished')} <RelativeTime iso={job.completed_at} />
 									{/if}
 								</span>
 								{#if job.total_items > 0}

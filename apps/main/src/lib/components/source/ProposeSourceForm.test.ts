@@ -12,11 +12,16 @@ vi.mock('$app/state', () => ({
 
 const meta: SourceMeta = {
 	categories: ['news', 'job', 'blog'],
+	// The form's category picker prefers the full taxonomy list.
+	admin_categories: ['news', 'job', 'blog', 'grants', 'housing'],
 	source_types: ['rss', 'video', 'api', 'static'],
 	source_kinds: [
-		{ value: 'publisher', label: 'Publisher' },
+		{ value: 'publisher', label: 'Publication' },
 		{ value: 'institution', label: 'Institution' }
-	]
+	],
+	// Propose form renders the submittable subset — entity-stub kinds are
+	// excluded server-side.
+	submittable_source_kinds: [{ value: 'publisher', label: 'Publication' }]
 };
 
 const probeReport: ProbeReport = {
@@ -73,20 +78,33 @@ function postedBody(urlPart: string): Record<string, unknown> {
 	return JSON.parse(String(call![1]?.body));
 }
 
+// pickCategory drives the multiselect autocomplete: focus the input, wait
+// for the option list, mousedown the named option (options pick on
+// mousedown so the input keeps focus).
+async function pickCategory(container: HTMLElement, name: string | RegExp) {
+	await fireEvent.focus(container.querySelector('#psf-categories')!);
+	await fireEvent.mouseDown(await screen.findByRole('option', { name }));
+}
+
 describe('ProposeSourceForm', () => {
 	beforeEach(() => {
 		vi.restoreAllMocks();
 		mockApi();
 	});
 
-	it('renders name, url, category chips, source_kind select and submit — no source_type', () => {
+	it('renders name, url, category picker, source_kind select and submit — no source_type', async () => {
 		const { container, getByRole, queryByLabelText } = render(ProposeSourceForm, { props: { meta } });
 		expect(container.querySelector('#psf-name')).toBeTruthy();
 		expect(container.querySelector('#psf-source-url')).toBeTruthy();
 		expect(container.querySelector('#psf-source-kind')).toBeTruthy();
 		expect(container.querySelector('#psf-source-type')).toBeNull();
 		expect(queryByLabelText(/source type/i)).toBeNull();
-		expect(getByRole('button', { name: 'News' })).toBeTruthy();
+		expect(container.querySelector('#psf-categories')).toBeTruthy();
+		// The picker lists admin_categories (full taxonomy), not just the
+		// curated categories list — 'grants'/'housing' are admin-only values.
+		await fireEvent.focus(container.querySelector('#psf-categories')!);
+		expect(await screen.findByRole('option', { name: 'News' })).toBeTruthy();
+		expect(await screen.findByRole('option', { name: /grants/i })).toBeTruthy();
 		expect(getByRole('button', { name: /propose source/i })).toBeTruthy();
 	});
 
@@ -110,8 +128,8 @@ describe('ProposeSourceForm', () => {
 		await fireEvent.input(container.querySelector('#psf-source-url')!, {
 			target: { value: 'https://example.com' }
 		});
-		await fireEvent.click(getByRole('button', { name: 'News' }));
-		await fireEvent.click(getByRole('button', { name: 'Jobs' }));
+		await pickCategory(container, 'News');
+		await pickCategory(container, 'Jobs');
 		await fireEvent.click(getByRole('button', { name: /propose source/i }));
 
 		await waitFor(() => {
@@ -138,7 +156,7 @@ describe('ProposeSourceForm', () => {
 		expect(postedBody('/sources/probe')).toMatchObject({ url: 'https://example.com/blog' });
 
 		await fireEvent.input(container.querySelector('#psf-name')!, { target: { value: 'Example' } });
-		await fireEvent.click(getByRole('button', { name: 'News' }));
+		await pickCategory(container, 'News');
 		await fireEvent.click(getByRole('button', { name: /propose source/i }));
 
 		await waitFor(() => {
@@ -162,7 +180,7 @@ describe('ProposeSourceForm', () => {
 		expect(await findByText(/limit reached/i)).toBeTruthy();
 
 		await fireEvent.input(container.querySelector('#psf-name')!, { target: { value: 'Example' } });
-		await fireEvent.click(getByRole('button', { name: 'News' }));
+		await pickCategory(container, 'News');
 		await fireEvent.click(getByRole('button', { name: /propose source/i }));
 
 		await waitFor(() => {
@@ -187,7 +205,7 @@ describe('ProposeSourceForm', () => {
 		await fireEvent.input(container.querySelector('#psf-source-url')!, {
 			target: { value: 'https://example.com' }
 		});
-		await fireEvent.click(getByRole('button', { name: 'News' }));
+		await pickCategory(container, 'News');
 		await fireEvent.click(getByRole('button', { name: /propose source/i }));
 
 		const alert = await findByRole('alert');

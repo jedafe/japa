@@ -20,6 +20,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/timeparse"
 )
 
 // RouteDTO is the API response shape for a single visa route.
@@ -462,8 +463,8 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	}
 
 	if input.SourceURLLastChecked != nil && *input.SourceURLLastChecked != "" {
-		var d pgtype.Date
-		if err := d.Scan(*input.SourceURLLastChecked); err != nil {
+		d, err := timeparse.ParseDate(*input.SourceURLLastChecked)
+		if err != nil {
 			return RouteDTO{}, fmt.Errorf("invalid source_url_last_checked: %w", err)
 		}
 

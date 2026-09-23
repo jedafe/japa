@@ -69,13 +69,15 @@ export const load: PageServerLoad = async (event) => {
 		replies = [];
 	}
 
-	// Fetch the tags attached to the thread (GET /forum/{id}/tags).
-	// Best-effort — degrades to empty if the endpoint is unavailable.
-	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Tags)
+	// Fetch the universal tags attached to the thread's backing content
+	// (GET /content/{id}/tags — tags are universal, Section 14). Best-effort —
+	// degrades to empty if the endpoint is unavailable.
 	let tags: ForumTag[] = [];
 	try {
-		const { items } = await apiList<ForumTag>(ctx, `/forum/${thread.id}/tags`);
-		tags = items;
+		if (thread.content_id) {
+			const { items } = await apiList<ForumTag>(ctx, `/content/${thread.content_id}/tags`);
+			tags = items;
+		}
 	} catch {
 		tags = [];
 	}

@@ -1862,7 +1862,8 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if input.PublishAt != nil && *input.PublishAt != "" {
-		if err := createInput.PublishAt.Scan(*input.PublishAt); err != nil {
+		var err error
+		if createInput.PublishAt, err = content.ParsePublishAtParam(*input.PublishAt); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}
@@ -2169,7 +2170,8 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if raw.PublishAt != nil && *raw.PublishAt != "" {
-		if err := input.PublishAt.Scan(*raw.PublishAt); err != nil {
+		var err error
+		if input.PublishAt, err = content.ParsePublishAtParam(*raw.PublishAt); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}

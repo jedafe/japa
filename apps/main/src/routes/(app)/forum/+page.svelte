@@ -52,7 +52,7 @@
 			id: g.id,
 			title: g.title,
 			slug: g.slug,
-			content_type: 'discussion',
+			content_type: 'forum_thread',
 			author_id: g.author_id ?? '',
 			author_name: g.author_display_name ?? g.author_username ?? '',
 			space_id: g.space_id ?? undefined,
@@ -61,7 +61,7 @@
 			created_at: g.published_at ?? g.created_at,
 			view_count: g.view_count,
 			comment_count: g.comment_count,
-			vote_score: g.reshare_count ?? g.share_count ?? 0,
+			vote_score: g.vote_score ?? 0,
 			reading_time_minutes: g.read_time_minutes
 		};
 	}

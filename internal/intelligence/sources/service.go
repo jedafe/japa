@@ -504,6 +504,9 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	if !kind.IsValid() {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: unknown source_kind %q", errpkg.ErrInvalid, input.SourceKind)
 	}
+	if !kind.IsSubmittable() {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: source_kind %q is reserved for entity-backed sources", errpkg.ErrInvalid, input.SourceKind)
+	}
 
 	if len(input.ProbeSnapshot) > 0 {
 		var snapshot map[string]json.RawMessage

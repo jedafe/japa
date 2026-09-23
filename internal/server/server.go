@@ -497,6 +497,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Content Reports & Flagging subsystem (Section 51).
 	reportsService := reports.NewService(database, settingsService, vkClient.Redis())
+	reportsService.SetRBACResolver(rbacResolver)
 	reportsHandlers := reports.NewHandlers(reportsService)
 	reportsHandlers.SetEnqueuer(taskEnqueuer)
 
@@ -3158,7 +3159,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Content Tags (Section 14 — Content System API)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/tags", contentHandlers.ListContentTags)
+			// Listing is public (tags render on public content pages); attach
+			// and detach stay auth+permission gated.
+			r.Get("/content/{id}/tags", contentHandlers.ListContentTags)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Post("/content/{id}/tags", contentHandlers.AddContentTag)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
@@ -4482,6 +4485,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts", usersHandlers.ListMyDrafts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{id}", usersHandlers.GetMyDraft)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/scheduled", usersHandlers.ListMyScheduled)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/in-review", usersHandlers.ListMyInReview)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmarks", usersHandlers.ListMyBookmarks)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.bookmarks"), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/me/bookmarks", usersHandlers.CreateMyBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/bookmarks/{id}", usersHandlers.DeleteMyBookmark)
@@ -4514,6 +4518,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/download", gdprHandlers.GetMyDataExportDownload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.view_own")).Get("/me/reports", reportsHandlers.ListMyReports)
+			// Moderator workbench (spec .jeos/specs/2026-09-23-studio-moderation-tab.md).
+			// RequireAuth only — scope is resolved per caller in the service
+			// (platform node OR space_moderators/owner OR tag_moderators —
+			// forum tags are universal since 000719 — OR assigned reports).
+			// No static node gate: a space/tag moderator holds no admin.* permission.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/moderation/scope", reportsHandlers.ModerationScope)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/moderation/queue", reportsHandlers.ListModerationQueue)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/moderation/queue/{id}", reportsHandlers.GetModerationItem)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Patch("/me/moderation/queue/{id}", reportsHandlers.ActionModerationItem)
 			// Public user directory — PII-safe (no email/status/groups). OptionalAuth
 			// so authed users get their session without a 401. OptionalPermission
 			// lets admins revoke directory.users.view from a group to hide /users

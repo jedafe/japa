@@ -81,6 +81,7 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 	const tabs: { key: string; labelKey: string }[] = [
 		{ key: 'published', labelKey: 'dashboard.content.tab_published' },
 		{ key: 'draft', labelKey: 'dashboard.content.tab_drafts' },
+		{ key: 'in_review', labelKey: 'dashboard.content.tab_in_review' },
 		{ key: 'scheduled', labelKey: 'dashboard.content.tab_scheduled' }
 	];
 
@@ -250,7 +251,7 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 <section class="space-y-4">
 	{#if actionError}
 		<div
-			class="flex items-center justify-between gap-3 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500"
+			class="flex items-center justify-between gap-3 rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]"
 			role="alert"
 		>
 			<span>{actionError}</span>

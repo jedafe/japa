@@ -28,6 +28,7 @@ import (
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
+	"github.com/jedafe/japa/internal/timeparse"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/worker"
@@ -1617,8 +1618,8 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if input.ExpiresAt != nil && *input.ExpiresAt != "" {
-		var ts pgtype.Timestamptz
-		if err := ts.Scan(*input.ExpiresAt); err != nil {
+		ts, err := timeparse.ParseTimestamptz(*input.ExpiresAt)
+		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expires_at",
 				"expires_at must be an RFC3339 timestamp")
 			return

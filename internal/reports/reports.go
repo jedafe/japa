@@ -82,6 +82,7 @@ type Service struct {
 	settings *config.Settings
 	db       *db.DB
 	valkey   valkeycompat.Cmdable
+	rbac     *rbac.RBAC
 }
 
 // NewService creates a Service backed by the given database.
@@ -264,7 +265,7 @@ func (s *Service) ResolveTargetUser(ctx context.Context, entityType string, enti
 	case EntityTypeContent:
 		query = `SELECT author_id FROM contents WHERE id = $1`
 	case EntityTypeComment:
-		query = `SELECT author_id FROM comments WHERE id = $1`
+		query = `SELECT author_user_id FROM comments WHERE id = $1`
 	case EntityTypeMessage:
 		query = `SELECT sender_id FROM dm_messages WHERE id = $1`
 	default:

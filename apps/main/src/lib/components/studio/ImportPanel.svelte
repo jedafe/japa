@@ -7,6 +7,7 @@
 	import { invalidate } from '$app/navigation';
 	import type { ContentTypeMeta, MeSpace, ContentRecord } from '$lib/types';
 	import { parseFrontmatter, buildMarkdown } from '$lib/studio/frontmatter';
+	import { localDateTimeToIso } from '$lib/utils/datetime';
 	import { validateFrontmatter, validateBody, isHighStakesCategory } from '$lib/studio/validation';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -83,7 +84,16 @@
 	}
 
 	function revalidate() {
-		const status = str('status') || 'draft';
+		// Mirror the save action's contract: a high-stakes category can never
+		// be stored as published/scheduled — the server downgrades it to
+		// in_review. Validate (and display) the effective status, not the raw
+		// frontmatter value, or the Save button stays disabled for a payload
+		// the server would accept.
+		let status = str('status') || 'draft';
+		if (highStakes && (status === 'published' || status === 'scheduled')) {
+			status = 'in_review';
+			fm = { ...fm, status };
+		}
 		errors = validateFrontmatter(fm, status, 'member');
 		bodyError = validateBody(body, status) ?? '';
 	}
@@ -107,11 +117,8 @@
 		}
 		// A bare datetime-local value is browser-local time — normalise to
 		// a UTC instant here, where the user's timezone is known.
-		const pa = str('publish_at');
-		if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(pa)) {
-			const d = new Date(pa);
-			if (!isNaN(d.getTime())) payload.publish_at = d.toISOString();
-		}
+		const pa = localDateTimeToIso(str('publish_at'));
+		if (pa) payload.publish_at = pa;
 		return JSON.stringify(payload);
 	}
 
@@ -246,6 +253,13 @@
 					{t('studio.prompts.tags', 'Tags (comma-separated)')}
 					<input type="text" value={tagsText()} oninput={(e) => { fm = { ...fm, tags: e.currentTarget.value.split(',').map((x) => x.trim()).filter(Boolean) }; }} class={inputCls} />
 				</label>
+				{#if str('status') === 'scheduled'}
+					<label class={labelCls}>
+						{t('studio.prompts.publish_at', 'Publish at')}
+						<input type="datetime-local" value={str('publish_at')} oninput={(e) => { setStr('publish_at', e.currentTarget.value); revalidate(); }} class={inputCls} />
+						{#if errors.publish_at}<p class={errCls}>{errors.publish_at}</p>{/if}
+					</label>
+				{/if}
 			</div>
 
 			{#if highStakes}
@@ -256,6 +270,12 @@
 			{#if bodyError}
 				<p class="mt-3 text-xs text-[var(--color-danger)]">{bodyError}</p>
 			{/if}
+			<!-- Errors for fields with no input above (e.g. publish_at on a
+				scheduled import) must still surface — otherwise the Save button
+				is disabled with no visible reason. -->
+			{#each Object.entries(errors).filter(([k]) => !['title', 'slug', 'content_type', 'guide_category', 'space_id', 'status', 'visibility', 'publish_at'].includes(k)) as [key, msg] (key)}
+				<p class="mt-3 text-xs text-[var(--color-danger)]">{msg}</p>
+			{/each}
 
 			<details class="mt-3">
 				<summary class="cursor-pointer text-xs font-medium text-[var(--color-muted)]">

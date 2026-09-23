@@ -53,6 +53,12 @@ export const actions: Actions = {
 		const spaceId = String(form.get('space_id') ?? '').trim();
 		const body = String(form.get('body') ?? '');
 		const isAnonymous = form.get('is_anonymous') === 'on';
+		// Comma-separated tag slugs from the TagInput field (Section 08).
+		const tagSlugs = String(form.get('tags') ?? '')
+			.split(',')
+			.map((s) => s.trim().toLowerCase().replace(/\s+/g, '-'))
+			.filter(Boolean)
+			.slice(0, 5);
 
 		// Poll builder fields (Phase 07.13) — optional.
 		const pollQuestion = String(form.get('poll_question') ?? '').trim();
@@ -61,10 +67,10 @@ export const actions: Actions = {
 		const pollExpiresAt = String(form.get('poll_expires_at') ?? '').trim() || null;
 
 		if (!title) {
-			return { error: 'missing_title', title, body, spaceId, isAnonymous };
+			return { error: 'missing_title', title, body, spaceId, isAnonymous, tags: tagSlugs };
 		}
 		if (!spaceId) {
-			return { error: 'missing_space', title, body, spaceId, isAnonymous };
+			return { error: 'missing_space', title, body, spaceId, isAnonymous, tags: tagSlugs };
 		}
 
 		const slug = suggestSlug(title);
@@ -88,10 +94,21 @@ export const actions: Actions = {
 				poll
 			});
 
+			// Attach tags (non-fatal — the thread is already created). Tags are
+			// universal (Sections 08/14): POST /content/{id}/tags accepts
+			// tag_slugs and get-or-creates missing slugs server-side (BUG-006).
+			if (tagSlugs.length > 0 && thread.content_id) {
+				try {
+					await apiPost(ctx, `/content/${thread.content_id}/tags`, { tag_slugs: tagSlugs });
+				} catch {
+					// non-fatal — thread exists without tags
+				}
+			}
+
 			throw redirect(303, `/forum/${thread.slug}`);
 		} catch (e) {
 			if (e instanceof ApiError) {
-				return { error: e.code, title, body, spaceId, isAnonymous };
+				return { error: e.code, title, body, spaceId, isAnonymous, tags: tagSlugs };
 			}
 			throw e;
 		}

@@ -76,6 +76,11 @@
 
 		try {
 			const res = await api[method]<{ is_blocked: boolean }>(`/sources/${source.slug}/block`);
+			if (res.error) {
+				blockError = res.error.message || t('sources.block.error', 'Block failed');
+				open = false;
+				return;
+			}
 			const next = res.data?.is_blocked ?? !isBlocked;
 			onBlockChange?.(next);
 			open = false;
@@ -113,7 +118,11 @@
 		deleteLoading = true;
 		deleteError = '';
 		try {
-			await api.delete<unknown>(`/intel/sources/${source.id}`);
+			const res = await api.delete<unknown>(`/intel/sources/${source.id}`);
+			if (res.error) {
+				deleteError = res.error.message || t('sources.delete.error', 'Delete failed');
+				return;
+			}
 			onDelete?.();
 			open = false;
 			await goto('/sources');

@@ -1054,8 +1054,11 @@ export const contentAdminApi = {
 	restore: (id: string) => api<unknown>(`/admin/content/${id}/restore`, { method: 'POST', body: {} }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/content/${id}`, { method: 'PATCH', body }),
-	feature: (id: string) => api<unknown>(`/blog/${id}/feature`, { method: 'POST', body: {} }),
-	unfeature: (id: string) => api<unknown>(`/blog/featured/${id}`, { method: 'DELETE' }),
+	// Generic featuring (Section 14 — content_featured junction). Works for any
+	// content_type (blog_post, forum_thread, discussion, guide, …); the
+	// /blog/featured endpoints are blog-only by design (BUG-004).
+	feature: (id: string) => api<unknown>(`/content/${id}/feature`, { method: 'POST', body: {} }),
+	unfeature: (id: string) => api<unknown>(`/content/${id}/feature`, { method: 'DELETE' }),
 	archive: (id: string) => api<unknown>(`/content/${id}/archive`, { method: 'POST', body: {} }),
 	listContentTypes: () => api<{ value: string; label: string }[]>('/content-types'),
 	// BUG-007/BUG-008: status & visibility options from the backend (Rule 16).
