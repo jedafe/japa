@@ -250,7 +250,11 @@ func (h *Handlers) GetDestinationBrief(w http.ResponseWriter, r *http.Request) {
 	}
 	var include []string
 	if v := r.URL.Query().Get("include"); v != "" {
-		include = strings.Split(v, ",")
+		for _, part := range strings.Split(v, ",") {
+			if s := strings.TrimSpace(part); s != "" {
+				include = append(include, s)
+			}
+		}
 	}
 	brief, err := h.Service.GetDestinationBrief(r.Context(), slug, include)
 	if err != nil {
