@@ -43,6 +43,7 @@ import (
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/personas"
+	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/story"
@@ -2311,4 +2312,35 @@ func (a *agentGuideCategoriesAdapter) ListGuideCategories(ctx context.Context) (
 	}
 
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Agent data tools (spec 2026-09-23-agent-data-api)
+// ---------------------------------------------------------------------------
+
+// agentDataAdapter adapts *publicapi.Service to ai.AgentDataReader. The ai
+// package cannot import publicapi (publicapi imports visaroutes, which
+// imports ai — an ai → publicapi edge would be a cycle), so the adapter
+// delegates in the wiring layer and returns the domain DTOs as opaque
+// payloads that serialize verbatim into tool output.
+type agentDataAdapter struct{ svc *publicapi.Service }
+
+func (a *agentDataAdapter) ListVisaRoutes(ctx context.Context, dest pgtype.UUID, profession, education string, experienceYears, page, limit int32) (any, int64, error) {
+	return a.svc.ListVisaRoutes(ctx, dest, profession, education, experienceYears, page, limit)
+}
+
+func (a *agentDataAdapter) GetVisaRoute(ctx context.Context, id pgtype.UUID) (any, error) {
+	return a.svc.GetVisaRoute(ctx, id)
+}
+
+func (a *agentDataAdapter) CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) (any, error) {
+	return a.svc.CompareVisaRoutes(ctx, ids)
+}
+
+func (a *agentDataAdapter) GetUniversity(ctx context.Context, slug string) (any, error) {
+	return a.svc.GetUniversity(ctx, slug)
+}
+
+func (a *agentDataAdapter) GetDestinationBrief(ctx context.Context, slug string, include []string) (any, error) {
+	return a.svc.GetDestinationBrief(ctx, slug, include)
 }

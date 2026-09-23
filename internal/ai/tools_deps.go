@@ -634,6 +634,11 @@ type ToolDeps struct {
 	// ScholarshipSearcher queries the scholarships projection table.
 	ScholarshipSearcher ScholarshipSearcher // nil → scholarship.search returns "not configured"
 
+	// AgentData backs the agent data tools (visa.*, university.get,
+	// destination.brief). nil → tools return "not configured".
+	// Ref: docs/superpowers/specs/2026-09-23-agent-data-api-design.md
+	AgentData AgentDataReader
+
 	// Section 104 — AI Content Campaigns.
 	PersonaProvisioner PersonaProvisioner // nil → personas.create returns "not configured"
 	Campaign           CampaignService    // nil → content.campaign.create returns "not configured"
@@ -808,6 +813,21 @@ type ScholarshipSearchResult struct {
 // // Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
 type ScholarshipSearcher interface {
 	FindScholarships(ctx context.Context, filters ScholarshipSearchFilters) ([]ScholarshipSearchResult, int64, error)
+}
+
+// AgentDataReader is the subset of the public API moat facade the agent
+// data tools need. Results are opaque any payloads — the domain DTOs
+// carry json tags and serialize verbatim into tool output. The ai package
+// must not import publicapi or the moat domain packages: visaroutes and
+// languagetesthub import internal/ai, so an ai → publicapi → visaroutes
+// edge would be a compile-breaking import cycle. Implemented by
+// agentDataAdapter in package server.
+type AgentDataReader interface {
+	ListVisaRoutes(ctx context.Context, dest pgtype.UUID, profession, education string, experienceYears, page, limit int32) (any, int64, error)
+	GetVisaRoute(ctx context.Context, id pgtype.UUID) (any, error)
+	CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) (any, error)
+	GetUniversity(ctx context.Context, slug string) (any, error)
+	GetDestinationBrief(ctx context.Context, slug string, include []string) (any, error)
 }
 
 // NewToolDeps creates an empty ToolDeps. Fields are set directly or via the
