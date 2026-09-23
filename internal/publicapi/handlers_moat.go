@@ -1,6 +1,7 @@
 package publicapi
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/scholarships"
 )
 
 // requireAPIKey writes a 401 and returns false when no key context exists.
@@ -277,4 +279,139 @@ func (h *Handlers) ListLanguageTestRequirements(w http.ResponseWriter, r *http.R
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reqs})
+}
+
+// FindScholarships handles GET /public/scholarships.
+// Filter params mirror the web handler (HandleFindScholarships) exactly.
+func (h *Handlers) FindScholarships(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKey(w, r) {
+		return
+	}
+	q := r.URL.Query()
+	filters := scholarships.ScholarshipFilters{
+		Country:      q.Get("country"),
+		Level:        q.Get("level"),
+		Q:            q.Get("q"),
+		Sort:         q.Get("sort"),
+		DeadlineFrom: q.Get("deadline_from"),
+		DeadlineTo:   q.Get("deadline_to"),
+	}
+	if v := q.Get("include_expired"); v != "" {
+		filters.IncludeExpired, _ = strconv.ParseBool(v)
+	}
+	if v := q.Get("min_amount"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			filters.MinAmount = f
+		}
+	}
+	if v := q.Get("max_amount"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			filters.MaxAmount = f
+		}
+	}
+	if v := q.Get("renewable"); v != "" {
+		b, _ := strconv.ParseBool(v)
+		filters.Renewable = &b
+	}
+	limit := parsePageSize(r, defaultPageSize, 100)
+	offset := parseOffset(r)
+	filters.Page = int(offset/limit + 1)
+	filters.Limit = int(limit)
+
+	results, total, err := h.Service.FindScholarships(r.Context(), filters)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": results, "total": total, "limit": limit, "offset": offset,
+	})
+}
+
+// GetScholarship handles GET /public/scholarships/{id} — id is the guide UUID.
+func (h *Handlers) GetScholarship(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKey(w, r) {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid scholarship ID")
+		return
+	}
+	s, err := h.Service.GetScholarship(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": s})
+}
+
+// ListScholarshipStatuses handles GET /public/scholarships/statuses.
+func (h *Handlers) ListScholarshipStatuses(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKey(w, r) {
+		return
+	}
+	statuses, err := h.Service.ScholarshipStatuses()
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": statuses})
+}
+
+// ListScholarshipLevels handles GET /public/scholarships/levels.
+func (h *Handlers) ListScholarshipLevels(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKey(w, r) {
+		return
+	}
+	levels, err := h.Service.ScholarshipLevels(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": levels})
+}
+
+// ListUniversities handles GET /public/universities.
+// Params: q, country, sort, page_size, offset.
+func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKey(w, r) {
+		return
+	}
+	limit := parsePageSize(r, defaultPageSize, 100)
+	offset := parseOffset(r)
+	items, total, err := h.Service.ListUniversities(r.Context(),
+		strings.TrimSpace(r.URL.Query().Get("q")),
+		strings.TrimSpace(r.URL.Query().Get("country")),
+		strings.TrimSpace(r.URL.Query().Get("sort")),
+		limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": items, "total": total, "limit": limit, "offset": offset,
+	})
+}
+
+// GetUniversity handles GET /public/universities/{slug}.
+func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKey(w, r) {
+		return
+	}
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		return
+	}
+	uni, err := h.Service.GetUniversity(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, ErrDestinationNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+			return
+		}
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": uni})
 }

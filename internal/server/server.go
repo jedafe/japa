@@ -4489,6 +4489,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/public/language-tests", publicAPIHandlers.ListLanguageTests)
 				r.With(features.Gate(featureChecker, "language_test_hub.enabled"), publicapi.RequireScope("api.read.visa")).
 					Get("/public/language-tests/{slug}", publicAPIHandlers.GetLanguageTest)
+
+				// Agent Data API — education (spec 2026-09-23-agent-data-api)
+				r.With(features.Gate(featureChecker, "scholarship_finder.enabled"), publicapi.RequireScope("api.read.education")).
+					Get("/public/scholarships/statuses", publicAPIHandlers.ListScholarshipStatuses)
+				r.With(features.Gate(featureChecker, "scholarship_finder.enabled"), publicapi.RequireScope("api.read.education")).
+					Get("/public/scholarships/levels", publicAPIHandlers.ListScholarshipLevels)
+				r.With(features.Gate(featureChecker, "scholarship_finder.enabled"), publicapi.RequireScope("api.read.education")).
+					Get("/public/scholarships", publicAPIHandlers.FindScholarships)
+				r.With(features.Gate(featureChecker, "scholarship_finder.enabled"), publicapi.RequireScope("api.read.education")).
+					Get("/public/scholarships/{id}", publicAPIHandlers.GetScholarship)
+
+				// Universities have no feature flag — they are plain spaces.
+				r.With(publicapi.RequireScope("api.read.education")).
+					Get("/public/universities", publicAPIHandlers.ListUniversities)
+				r.With(publicapi.RequireScope("api.read.education")).
+					Get("/public/universities/{slug}", publicAPIHandlers.GetUniversity)
 			})
 
 			// User Profile & Preferences routes (catalog: /me, /me/profile)
