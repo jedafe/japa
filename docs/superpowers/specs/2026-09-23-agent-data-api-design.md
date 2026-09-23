@@ -182,9 +182,20 @@ All in `internal/mcp` + `internal/server` wiring:
    allowlist:
    `content.read, content.search, rag.search, visa.search, visa.get,
    visa.compare, scholarship.search, university.get, destination.brief`.
-   JWT-authenticated calls keep existing RBAC behavior.
+   Each entry also carries the API-key scope it requires (e.g.
+   `api.read.visa`, `api.read.brief`) and premium tools carry a minimum
+   user tier — mirroring the REST `RequireScope`/`RequireTier` policy so
+   MCP cannot bypass it. The tier check applies to JWT callers too (it
+   gates the caller's subscription); JWT calls otherwise keep existing
+   RBAC behavior.
 4. **New read tools** — registered in the ai tool registry and backed by the
-   same `publicapi.Service` methods as the REST endpoints:
+   same `publicapi.Service` methods as the REST endpoints **through a
+   server-layer adapter**: the `ai` package must not import `publicapi`
+   (`visaroutes`/`languagetesthub` already import `ai` — an `ai → publicapi`
+   edge creates a compile-breaking cycle), so `ai` declares an
+   `AgentDataReader` interface with opaque `any` results and
+   `internal/server/agent_adapters.go` adapts `*publicapi.Service` to it
+   (same pattern as `ScholarshipSearcher`/`newAgentScholarshipAdapter`):
    `visa.search`, `visa.get`, `visa.compare`, `scholarship.search`,
    `university.get`, `destination.brief`. Same audit trail
    (`ai_agent_sessions` / `ai_agent_tool_calls`) as existing tools.
@@ -223,9 +234,13 @@ Agent ──X-API-Key──▶ APIKeyMiddleware ──▶ SlidingWindowRateLimit
 Agent ──X-API-Key──▶ mcp.AuthMiddleware ──▶ WithAPIKeyContext ──▶ rate limit
                       │  agent.use scope check
                       ▼
-              mcp.Server tools/call ──▶ read-only allowlist (API-key path)
+              mcp.Server tools/call ──▶ toolGates: read-only allowlist +
+                      │              per-tool scope (API-key) + tier (all)
                       ▼
-              ai.Executor ──▶ publicapi.Service methods (same impl)
+              ai.Executor ──▶ ai.AgentDataReader iface
+                      ▼
+              agentDataAdapter (internal/server) ──▶ publicapi.Service
+                                                   methods (same impl)
 ```
 
 ## Testing
