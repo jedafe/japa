@@ -67,6 +67,9 @@ func buildTags() []any {
 		map[string]any{"name": "Tags", "description": "Content tags and tag detail"},
 		map[string]any{"name": "Search", "description": "Search published content"},
 		map[string]any{"name": "Trending", "description": "Trending snapshots across entities"},
+		map[string]any{"name": "Visa & Immigration", "description": "Visa routes, processing timelines, credential pathways, and language tests"},
+		map[string]any{"name": "Education", "description": "Scholarships and universities"},
+		map[string]any{"name": "Destinations", "description": "Aggregate destination briefs"},
 		map[string]any{"name": "Public", "description": "Public catalog routes that do not require an API key"},
 	}
 }
@@ -111,6 +114,30 @@ func buildPublicPaths() map[string]any {
 		"/public/trending/tags":         trendingEndpoint("listTrendingTags", "Trending tags", "Retrieve trending tag snapshots scored by recent follower growth.", "api.read.tags"),
 		"/public/trending/spaces":       trendingEndpoint("listTrendingSpaces", "Trending spaces", "Retrieve trending space snapshots scored by recent member activity.", "api.read.spaces"),
 		"/public/trending/users":        trendingEndpoint("listTrendingUsers", "Trending users", "Retrieve trending user snapshots scored by recent engagement.", "api.read.users.public"),
+
+		// Agent Data API — visa & immigration (spec 2026-09-23-agent-data-api).
+		// Chi registers /public/visa-routes/compare before {id}; order in this
+		// map is documentation-only but mirrors the router for readability.
+		"/public/visa-routes":                 visaRoutesPath(),
+		"/public/visa-routes/{id}":            visaRouteByIDPath(),
+		"/public/visa-routes/compare":         compareVisaRoutesPath(),
+		"/public/visa-timelines/stats":        visaTimelineStatsPath(),
+		"/public/visa-timelines/stats/trend":  visaTimelineTrendPath(),
+		"/public/credentials":                 credentialPathwaysPath(),
+		"/public/credentials/{id}":            credentialPathwayByIDPath(),
+		"/public/credentials/professions":     credentialProfessionsPath(),
+		"/public/language-tests":              languageTestsPath(),
+		"/public/language-tests/{slug}":       languageTestBySlugPath(),
+		"/public/language-tests/requirements": languageTestRequirementsPath(),
+
+		// Agent Data API — education + destination brief.
+		"/public/scholarships":              scholarshipsPath(),
+		"/public/scholarships/{id}":         scholarshipByIDPath(),
+		"/public/scholarships/statuses":     scholarshipStatusesPath(),
+		"/public/scholarships/levels":       scholarshipLevelsPath(),
+		"/public/universities":              universitiesPath(),
+		"/public/universities/{slug}":       universityBySlugPath(),
+		"/public/destinations/{slug}/brief": destinationBriefPath(),
 	}
 }
 
@@ -286,6 +313,276 @@ func mePath() map[string]any {
 }
 
 // ---------------------------------------------------------------------------
+// Agent Data API path builders (spec 2026-09-23-agent-data-api)
+// Query parameters mirror internal/publicapi/handlers_moat.go and brief.go —
+// pagination is page_size/offset via parsePageSize/parseOffset, not limit.
+// ---------------------------------------------------------------------------
+
+// visaTag is the operation tag for visa & immigration endpoints.
+var visaTag = []any{"Visa & Immigration"}
+
+// educationTag is the operation tag for education endpoints.
+var educationTag = []any{"Education"}
+
+// withRequiredTier marks an operation as gated behind a minimum unified
+// user tier — mirrors RequireTier middleware on premium routes.
+func withRequiredTier(op map[string]any, tier string) map[string]any {
+	op["x-required-tier"] = tier
+	return op
+}
+
+func visaRoutesPath() map[string]any {
+	return map[string]any{
+		"get": operation("listVisaRoutes", "List visa routes", "Retrieve visa route pathways for a destination space. Filter by profession, education level, and years of experience. Gated by the visa_routes.enabled feature flag.", visaTag, "api.read.visa", []any{
+			uuidQueryParam("dest", "Destination space ID filter"),
+			queryParam("profession", "Profession filter"),
+			queryParam("education", "Education level filter"),
+			intQueryParam("experience_years", "Years of experience filter"),
+			pageSizeParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": paginatedResponse("List of visa routes", "VisaRoute"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func visaRouteByIDPath() map[string]any {
+	return map[string]any{
+		"get": operation("getVisaRoute", "Get visa route detail", "Retrieve a single visa route by its unique identifier.", visaTag, "api.read.visa", []any{uuidPathParam("id", "Visa route ID")}, map[string]any{
+			"200": singleResponse("Visa route details", "VisaRoute"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func compareVisaRoutesPath() map[string]any {
+	ids := queryParam("ids", "Comma-separated visa route IDs to compare (required, maximum 5)").(map[string]any)
+	ids["required"] = true
+
+	return map[string]any{
+		"get": withRequiredTier(operation("compareVisaRoutes", "Compare visa routes", "Compare up to 5 visa routes side by side. Premium endpoint — requires a pro or business subscription.", visaTag, "api.read.visa", []any{ids}, map[string]any{
+			"200": dataListResponse("Compared visa routes", "VisaRoute"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"429": refResponse("RateLimited"),
+		}), "pro"),
+	}
+}
+
+func visaTimelineStatsPath() map[string]any {
+	return map[string]any{
+		"get": operation("getVisaTimelineStats", "Visa processing-time stats", "Retrieve crowd-sourced visa processing-time statistics for an origin/destination pair. Gated by the visa_timeline.enabled feature flag.", visaTag, "api.read.visa", []any{
+			uuidQueryParam("origin", "Origin space ID filter"),
+			uuidQueryParam("dest", "Destination space ID filter"),
+			queryParam("visa", "Visa category filter"),
+			queryParam("consulate", "Consulate filter"),
+			monthsParam(0, "Look-back window in months (1-60). Omit for all time."),
+		}, map[string]any{
+			"200": dataListResponse("Processing-time statistics", "VisaTimelineStat"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func visaTimelineTrendPath() map[string]any {
+	return map[string]any{
+		"get": withRequiredTier(operation("getVisaTimelineTrend", "Visa processing-time trend", "Retrieve the month-over-month processing-time trend for a destination. Premium endpoint — requires a pro or business subscription.", visaTag, "api.read.visa", []any{
+			uuidQueryParam("dest", "Destination space ID filter"),
+			queryParam("visa", "Visa category filter"),
+			queryParam("consulate", "Consulate filter"),
+			monthsParam(12, "Look-back window in months (1-60)."),
+		}, map[string]any{
+			"200": dataListResponse("Processing-time trend points", "VisaTrendPoint"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"429": refResponse("RateLimited"),
+		}), "pro"),
+	}
+}
+
+func credentialPathwaysPath() map[string]any {
+	return map[string]any{
+		"get": operation("listCredentialPathways", "List credential pathways", "Retrieve credential recognition pathways. Filter by destination space, issuing space, or profession. Gated by the credential_checker.enabled feature flag.", visaTag, "api.read.visa", []any{
+			uuidQueryParam("dest", "Destination space ID filter"),
+			uuidQueryParam("issuing", "Issuing space ID filter"),
+			uuidQueryParam("profession", "Profession ID filter"),
+			pageSizeParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": paginatedResponse("List of credential pathways", "CredentialPathway"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func credentialPathwayByIDPath() map[string]any {
+	return map[string]any{
+		"get": operation("getCredentialPathway", "Get credential pathway detail", "Retrieve a single credential pathway by its unique identifier.", visaTag, "api.read.visa", []any{uuidPathParam("id", "Credential pathway ID")}, map[string]any{
+			"200": singleResponse("Credential pathway details", "CredentialPathway"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func credentialProfessionsPath() map[string]any {
+	return map[string]any{
+		"get": operation("listCredentialProfessions", "List credential professions", "Retrieve the professions that have credential recognition pathways. Gated by the credential_checker.enabled feature flag.", visaTag, "api.read.visa", nil, map[string]any{
+			"200": dataListResponse("List of professions", "CredentialProfession"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func languageTestsPath() map[string]any {
+	return map[string]any{
+		"get": operation("listLanguageTests", "List language tests", "Retrieve supported language proficiency tests (IELTS, TOEFL, etc.). Gated by the language_test_hub.enabled feature flag.", visaTag, "api.read.visa", nil, map[string]any{
+			"200": dataListResponse("List of language tests", "LanguageTest"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func languageTestBySlugPath() map[string]any {
+	return map[string]any{
+		"get": operation("getLanguageTest", "Get language test detail", "Retrieve a single language test by its URL slug.", visaTag, "api.read.visa", []any{stringPathParam("slug", "Language test slug")}, map[string]any{
+			"200": singleResponse("Language test details", "LanguageTest"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func languageTestRequirementsPath() map[string]any {
+	dest := uuidQueryParam("dest", "Destination space ID (required)").(map[string]any)
+	dest["required"] = true
+
+	return map[string]any{
+		"get": operation("listLanguageTestRequirements", "List language test requirements", "Retrieve language test score requirements for a destination space, optionally filtered by visa category.", visaTag, "api.read.visa", []any{
+			dest,
+			queryParam("visa", "Visa category filter"),
+		}, map[string]any{
+			"200": dataListResponse("List of test requirements", "LanguageTestRequirement"),
+			"400": refResponse("BadRequest"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func scholarshipsPath() map[string]any {
+	return map[string]any{
+		"get": operation("findScholarships", "Search scholarships", "Search the scholarship finder. Filters mirror the web scholarship search. Gated by the scholarship_finder.enabled feature flag.", educationTag, "api.read.education", []any{
+			queryParam("country", "Country filter"),
+			queryParam("level", "Study level filter"),
+			queryParam("q", "Free-text search"),
+			queryParam("sort", "Sort order"),
+			queryParam("deadline_from", "Earliest deadline (date)"),
+			queryParam("deadline_to", "Latest deadline (date)"),
+			boolQueryParam("include_expired", "Include scholarships past their deadline"),
+			numberQueryParam("min_amount", "Minimum award amount"),
+			numberQueryParam("max_amount", "Maximum award amount"),
+			boolQueryParam("renewable", "Filter by renewable awards"),
+			pageSizeParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": paginatedResponse("Scholarship search results", "Scholarship"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func scholarshipByIDPath() map[string]any {
+	return map[string]any{
+		"get": operation("getScholarship", "Get scholarship detail", "Retrieve a single scholarship by its guide ID.", educationTag, "api.read.education", []any{uuidPathParam("id", "Scholarship guide ID")}, map[string]any{
+			"200": singleResponse("Scholarship details", "Scholarship"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func scholarshipStatusesPath() map[string]any {
+	return map[string]any{
+		"get": operation("listScholarshipStatuses", "List scholarship statuses", "Retrieve the valid scholarship status options.", educationTag, "api.read.education", nil, map[string]any{
+			"200": dataListResponse("List of status options", "Option"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func scholarshipLevelsPath() map[string]any {
+	return map[string]any{
+		"get": operation("listScholarshipLevels", "List study levels", "Retrieve the valid study-level options for scholarship filtering.", educationTag, "api.read.education", nil, map[string]any{
+			"200": dataListResponse("List of level options", "Option"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func universitiesPath() map[string]any {
+	return map[string]any{
+		"get": operation("listUniversities", "List universities", "Retrieve a paginated list of public university spaces.", educationTag, "api.read.education", []any{
+			queryParam("q", "Free-text search"),
+			queryParam("country", "Country filter"),
+			queryParam("sort", "Sort order"),
+			pageSizeParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": paginatedResponse("List of universities", "University"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func universityBySlugPath() map[string]any {
+	return map[string]any{
+		"get": operation("getUniversity", "Get university detail", "Retrieve a single public university space by its URL slug.", educationTag, "api.read.education", []any{stringPathParam("slug", "University slug")}, map[string]any{
+			"200": singleResponse("University details", "University"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func destinationBriefPath() map[string]any {
+	return map[string]any{
+		"get": withRequiredTier(operation("getDestinationBrief", "Get destination brief", "Retrieve an aggregate brief for a destination space: visa routes, processing timelines, universities, scholarships, and scam alerts composed in parallel. Sections that fail are listed in sections_unavailable — the brief is best-effort. Premium endpoint — requires a pro or business subscription.", []any{"Destinations"}, "api.read.brief", []any{
+			stringPathParam("slug", "Destination space slug"),
+			map[string]any{
+				"name":        "include",
+				"in":          "query",
+				"schema":      map[string]any{"type": "string"},
+				"description": "Comma-separated sections to include: visa, timelines, universities, scholarships, scam_alerts. Omit for all sections.",
+			},
+		}, map[string]any{
+			"200": singleResponse("Destination brief", "DestinationBrief"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}), "pro"),
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Parameter helpers
 // ---------------------------------------------------------------------------
 
@@ -329,6 +626,69 @@ func filterParam(name, description string) map[string]any {
 	}
 }
 
+// pageSizeParam documents the page_size query parameter used by the moat
+// handlers (parsePageSize). The older endpoints above document the same
+// pagination as "limit" — kept for backwards compatibility of the spec.
+func pageSizeParam(defaultVal, maxVal int) map[string]any {
+	return map[string]any{
+		"name":        "page_size",
+		"in":          "query",
+		"schema":      map[string]any{"type": "integer", "default": defaultVal, "minimum": 1, "maximum": maxVal},
+		"description": "Number of results to return per page.",
+	}
+}
+
+func uuidQueryParam(name, description string) any {
+	return map[string]any{
+		"name":        name,
+		"in":          "query",
+		"schema":      map[string]any{"type": "string", "format": "uuid"},
+		"description": description,
+	}
+}
+
+func intQueryParam(name, description string) map[string]any {
+	return map[string]any{
+		"name":        name,
+		"in":          "query",
+		"schema":      map[string]any{"type": "integer"},
+		"description": description,
+	}
+}
+
+func boolQueryParam(name, description string) map[string]any {
+	return map[string]any{
+		"name":        name,
+		"in":          "query",
+		"schema":      map[string]any{"type": "boolean"},
+		"description": description,
+	}
+}
+
+func numberQueryParam(name, description string) map[string]any {
+	return map[string]any{
+		"name":        name,
+		"in":          "query",
+		"schema":      map[string]any{"type": "number"},
+		"description": description,
+	}
+}
+
+// monthsParam documents the months look-back window used by the timeline
+// endpoints (clamped to 1-60 in the handlers; 0 means unset).
+func monthsParam(defaultVal int, description string) map[string]any {
+	schema := map[string]any{"type": "integer", "minimum": 1, "maximum": 60}
+	if defaultVal > 0 {
+		schema["default"] = defaultVal
+	}
+	return map[string]any{
+		"name":        "months",
+		"in":          "query",
+		"schema":      schema,
+		"description": description,
+	}
+}
+
 func uuidPathParam(name, description string) map[string]any {
 	return map[string]any{
 		"name":        name,
@@ -368,6 +728,27 @@ func paginatedResponse(description, itemSchema string) map[string]any {
 						"total":  map[string]any{"type": "integer"},
 						"limit":  map[string]any{"type": "integer"},
 						"offset": map[string]any{"type": "integer"},
+					},
+				},
+			},
+		},
+	}
+}
+
+// dataListResponse is the {data: [...]} envelope used by non-paginated
+// list endpoints (stats, trends, option lists, comparisons).
+func dataListResponse(description, itemSchema string) map[string]any {
+	return map[string]any{
+		"description": description,
+		"content": map[string]any{
+			"application/json": map[string]any{
+				"schema": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"data": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"$ref": "#/components/schemas/" + itemSchema},
+						},
 					},
 				},
 			},
@@ -470,6 +851,64 @@ func buildPublicSchemas() map[string]any {
 				"meta":  map[string]any{"type": "object", "description": "Additional metadata varies by entity type"},
 			},
 		},
+		// Agent Data API DTOs — field shapes mirror the domain DTOs in
+		// internal/visaroutes, internal/visatimeline, internal/credentialchecker,
+		// internal/languagetesthub, internal/scholarships, and brief.go.
+		"VisaRoute": map[string]any{
+			"type":        "object",
+			"description": "A visa route pathway (visaroutes.RouteDTO).",
+		},
+		"VisaTimelineStat": map[string]any{
+			"type":        "object",
+			"description": "Crowd-sourced visa processing-time statistics (visatimeline.ProcessingStatDTO).",
+		},
+		"VisaTrendPoint": map[string]any{
+			"type":        "object",
+			"description": "A single month-over-month processing-time data point (visatimeline.TrendPointDTO).",
+		},
+		"CredentialPathway": map[string]any{
+			"type":        "object",
+			"description": "A credential recognition pathway (credentialchecker.PathwayDTO / PathwayDetailDTO).",
+		},
+		"CredentialProfession": map[string]any{
+			"type":        "object",
+			"description": "A profession with credential pathways (credentialchecker.ProfessionDTO).",
+		},
+		"LanguageTest": map[string]any{
+			"type":        "object",
+			"description": "A language proficiency test (languagetesthub.TestDTO).",
+		},
+		"LanguageTestRequirement": map[string]any{
+			"type":        "object",
+			"description": "A language test score requirement for a destination (languagetesthub.RequirementDTO).",
+		},
+		"Scholarship": map[string]any{
+			"type":        "object",
+			"description": "A scholarship listing (scholarships.ScholarshipResult).",
+		},
+		"Option": map[string]any{
+			"type":        "object",
+			"description": "A labeled filter option (scholarships.Option).",
+			"properties": map[string]any{
+				"value": map[string]any{"type": "string"},
+				"label": map[string]any{"type": "string"},
+			},
+		},
+		"University": map[string]any{
+			"type":        "object",
+			"description": "A public university space.",
+		},
+		"DestinationBrief": map[string]any{
+			"type":        "object",
+			"description": "Aggregate destination brief — best-effort composition of visa, timeline, university, scholarship, and scam-alert sections.",
+			"properties": map[string]any{
+				"destination":          map[string]any{"type": "object"},
+				"summary":              map[string]any{"type": "string"},
+				"sections":             map[string]any{"type": "object"},
+				"sections_unavailable": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"generated_at":         map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
 		"Error": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -493,8 +932,24 @@ func buildPublicSchemas() map[string]any {
 
 func buildPublicResponses() map[string]any {
 	return map[string]any{
+		"BadRequest": map[string]any{
+			"description": "Invalid or missing request parameters",
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": map[string]any{"$ref": "#/components/schemas/Error"},
+				},
+			},
+		},
 		"Unauthorized": map[string]any{
 			"description": "Missing or invalid API key",
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": map[string]any{"$ref": "#/components/schemas/Error"},
+				},
+			},
+		},
+		"Forbidden": map[string]any{
+			"description": "Insufficient scope or subscription tier for this endpoint",
 			"content": map[string]any{
 				"application/json": map[string]any{
 					"schema": map[string]any{"$ref": "#/components/schemas/Error"},
