@@ -310,10 +310,136 @@
       ]
     }
   },
+  "/spaces/{id}/reviews": {
+    "get": {
+      "operationId": "GetSpacesIdReviews",
+      "summary": "GET /spaces/{id}/reviews",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "id identifier"
+        }
+      ]
+    }
+  },
   "/spaces/{slug}/rules": {
     "get": {
       "operationId": "GetSpacesSlugRules",
       "summary": "GET /spaces/{slug}/rules",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      },
+      "parameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "slug identifier"
+        }
+      ]
+    }
+  },
+  "/spaces/regions": {
+    "get": {
+      "operationId": "GetSpacesRegions",
+      "summary": "GET /spaces/regions",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      }
+    }
+  },
+  "/spaces/subregions": {
+    "get": {
+      "operationId": "GetSpacesSubregions",
+      "summary": "GET /spaces/subregions",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      }
+    }
+  },
+  "/spaces/{slug}/achievements": {
+    "get": {
+      "operationId": "GetSpacesSlugAchievements",
+      "summary": "GET /spaces/{slug}/achievements",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1005,6 +1131,32 @@
     "get": {
       "operationId": "GetSearchAutocomplete",
       "summary": "GET /search/autocomplete",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      }
+    }
+  },
+  "/literals": {
+    "get": {
+      "operationId": "GetLiterals",
+      "summary": "GET /literals",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1763,6 +1915,32 @@
       }
     }
   },
+  "/learn/university/catalog/options": {
+    "get": {
+      "operationId": "GetLearnUniversityCatalogOptions",
+      "summary": "GET /learn/university/catalog/options",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      }
+    }
+  },
   "/learn/university/catalog/{slug}": {
     "get": {
       "operationId": "GetLearnUniversityCatalogSlug",
@@ -2133,6 +2311,132 @@
     "get": {
       "operationId": "GetOrganizationsMeta",
       "summary": "GET /organizations/meta",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      }
+    }
+  },
+  "/media/proxy": {
+    "get": {
+      "operationId": "GetMediaProxy",
+      "summary": "GET /media/proxy",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      }
+    }
+  },
+  "/videos/{id}": {
+    "get": {
+      "operationId": "GetVideosId",
+      "summary": "GET /videos/{id}",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "id identifier"
+        }
+      ]
+    }
+  },
+  "/u/{username}/videos": {
+    "get": {
+      "operationId": "GetUUsernameVideos",
+      "summary": "GET /u/{username}/videos",
+      "description": "Public route from the JEOS route catalog.",
+      "tags": [
+        "Public"
+      ],
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "429": {
+          "$ref": "#/components/responses/RateLimited"
+        }
+      },
+      "parameters": [
+        {
+          "name": "username",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "username identifier"
+        }
+      ]
+    }
+  },
+  "/forum": {
+    "get": {
+      "operationId": "GetForum",
+      "summary": "GET /forum",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
