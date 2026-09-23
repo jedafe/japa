@@ -286,30 +286,36 @@
 	// so measure it and feed the rail a bottom offset.
 	let articleEl = $state<HTMLElement>();
 	let childrenWrap = $state<HTMLElement>();
+	let railEndEl = $state<HTMLElement>();
 	let railBottom = $state(0);
 
 	$effect(() => {
-		const wrap = childrenWrap;
 		const art = articleEl;
-		if (!wrap || !art) {
+		if (!art) {
 			railBottom = 0;
 			return;
 		}
+		const wrap = childrenWrap;
+		const plus = railEndEl;
 		const measure = () => {
-			const last = wrap.firstElementChild?.lastElementChild as HTMLElement | null;
-			if (!last) {
+			const last = wrap?.firstElementChild?.lastElementChild as HTMLElement | null;
+			if (last && wrap) {
+				// Rail stops where the last child's elbow starts bending: the elbow
+				// box bottom is at +35 and the corner radius is 12px, so the curve
+				// leaves the rail's column at +23.
+				railBottom = Math.max(0, art.offsetHeight - (wrap.offsetTop + last.offsetTop + 23));
+			} else if (plus) {
+				// No rendered children — the "+" affordance (view replies /
+				// continue thread / expand) is the terminal node on the rail.
+				railBottom = Math.max(0, art.offsetHeight - (plus.offsetTop + plus.offsetHeight / 2));
+			} else {
 				railBottom = 0;
-				return;
 			}
-			// Rail stops where the last child's elbow starts bending: the elbow
-			// box bottom is at +35 and the corner radius is 12px, so the curve
-			// leaves the rail's column at +23.
-			const junction = wrap.offsetTop + last.offsetTop + 23;
-			railBottom = Math.max(0, art.offsetHeight - junction);
 		};
 		measure();
 		const ro = new ResizeObserver(measure);
-		ro.observe(wrap);
+		if (wrap) ro.observe(wrap);
+		if (plus) ro.observe(plus);
 		ro.observe(art);
 		return () => ro.disconnect();
 	});
@@ -624,6 +630,7 @@
 				{#if !repliesLoaded && allReplies.length === 0 && comment.reply_count > 0}
 					<button
 						type="button"
+						bind:this={railEndEl}
 						onclick={loadReplies}
 						disabled={repliesLoading}
 						class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
@@ -637,6 +644,7 @@
 			{:else if allReplies.length > 0}
 				<a
 					href={`#comment-${allReplies[0].id}`}
+					bind:this={railEndEl}
 					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
 				>
 					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
