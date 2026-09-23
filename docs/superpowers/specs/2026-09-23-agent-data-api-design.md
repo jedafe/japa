@@ -90,8 +90,11 @@ Premium tier — requires the domain scope **and** `RequireTier(pro)`:
 |---|---|
 | `GET /public/visa-routes/compare` | `api.read.visa` |
 | `GET /public/visa-timelines/stats/trend` | `api.read.visa` |
-| `GET /public/universities/{slug}/compare` | `api.read.education` |
 | `GET /public/destinations/{slug}/brief` | `api.read.brief` |
+
+(The web route `/universities/{slug}/compare` is a redirect to the JCE
+comparison picker, not a data endpoint, so there is no university-compare
+API in v1.)
 
 ### Tier gating
 
