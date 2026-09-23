@@ -229,4 +229,13 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	// --- Section 104 — AI Content Campaigns ---
 	registry.RegisterHandler("personas.create", PersonasCreateHandler(deps))
 	registry.RegisterHandler("content.campaign.create", ContentCampaignCreateHandler(deps))
+
+	// --- Agent data tools (spec 2026-09-23-agent-data-api) ---
+	// Read-only moat reads via the publicapi facade — the registered names
+	// match the MCP apiKeyToolGates allowlist exactly.
+	registry.RegisterHandler("visa.search", VisaSearchHandler(deps))
+	registry.RegisterHandler("visa.get", VisaGetHandler(deps))
+	registry.RegisterHandler("visa.compare", VisaCompareHandler(deps))
+	registry.RegisterHandler("university.get", UniversityGetHandler(deps))
+	registry.RegisterHandler("destination.brief", DestinationBriefHandler(deps))
 }

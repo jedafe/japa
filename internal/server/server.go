@@ -2327,6 +2327,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIService.SetCache(vkClient.Redis())              // destination-brief response cache
 	publicAPIService.SetSettingsReader(settingsService)      // api.destination_brief.cache_ttl_seconds (Rule 3)
 	mcpServer.SetTierResolver(publicAPIService)              // premium MCP tool gates mirror RequireTier
+	// Agent data tools: the moat facade reaches the ai executor's
+	// AgentDataReader via a wiring-layer adapter — internal/ai cannot
+	// import publicapi (import cycle through visaroutes). agentDeps is a
+	// *ToolDeps read at tool-call time, so this late assignment is safe.
+	agentDeps.AgentData = &agentDataAdapter{svc: publicAPIService}
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 	publicAPIHandlers.SetQueries(gen.New(database.Reader))
 
