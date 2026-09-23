@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/publicapi"
 )
 
 const (
@@ -46,6 +47,45 @@ func supportsProtocolVersion(v string) bool {
 	return false
 }
 
+type mcpContextKey struct{ name string }
+
+var apiKeyCallerKey = mcpContextKey{"api_key_caller"}
+
+// isAPIKeyCaller reports whether the request was authenticated with an API
+// key (vs a user JWT). API-key callers get a read-only tool catalog.
+func isAPIKeyCaller(ctx context.Context) bool {
+	v, _ := ctx.Value(apiKeyCallerKey).(bool)
+	return v
+}
+
+// toolGate is the access policy for a tool exposed to external callers.
+// scope applies to API-key callers only (JWT callers are RBAC-gated at
+// agent.use). minTier applies to BOTH auth types — it gates the caller's
+// subscription tier, mirroring RequireTier on the REST surface so MCP
+// cannot bypass premium endpoints.
+type toolGate struct {
+	scope   string
+	minTier string
+}
+
+// apiKeyToolGates is the read-only tool set exposed to API-key callers,
+// plus the premium gates mirrored from the REST routes. JWT callers keep
+// their full RBAC-filtered catalog but still hit the minTier check.
+var apiKeyToolGates = map[string]toolGate{
+	"content.read":       {scope: "api.read.content"},
+	"content.search":     {scope: "api.read.content"},
+	"rag.search":         {scope: "api.read.content"},
+	"spaces.find":        {scope: "api.read.spaces"},
+	"spaces.read":        {scope: "api.read.spaces"},
+	"spaces.list":        {scope: "api.read.spaces"},
+	"scholarship.search": {scope: "api.read.education"},
+	"visa.search":        {scope: "api.read.visa"},
+	"visa.get":           {scope: "api.read.visa"},
+	"visa.compare":       {scope: "api.read.visa", minTier: "pro"},
+	"university.get":     {scope: "api.read.education"},
+	"destination.brief":  {scope: "api.read.brief", minTier: "pro"},
+}
+
 // SessionStore is the subset of gen.Queries the MCP server needs to create
 // and close the per-tool-call audit session.
 type SessionStore interface {
@@ -56,10 +96,11 @@ type SessionStore interface {
 
 // Server is an http.Handler that speaks MCP over a single HTTP endpoint.
 type Server struct {
-	executor *ai.Executor
-	registry *ai.ToolHandlerRegistry
-	sessions SessionStore
-	perms    ai.PermissionChecker
+	executor     *ai.Executor
+	registry     *ai.ToolHandlerRegistry
+	sessions     SessionStore
+	perms        ai.PermissionChecker
+	tierResolver publicapi.TierResolver
 }
 
 // NewServer creates an MCP server handler backed by the agent executor.
@@ -70,6 +111,56 @@ func NewServer(executor *ai.Executor, registry *ai.ToolHandlerRegistry, sessions
 		sessions: sessions,
 		perms:    perms,
 	}
+}
+
+// SetTierResolver wires the resolver used for premium tool gating.
+// Nil → all callers resolve to "regular" (fail-closed for premium tools).
+func (s *Server) SetTierResolver(tr publicapi.TierResolver) { s.tierResolver = tr }
+
+// callerTier resolves the user's unified tier; nil resolver or error →
+// "regular" (fail-closed, same convention as RequireTier).
+func (s *Server) callerTier(ctx context.Context, userID pgtype.UUID) string {
+	if s.tierResolver == nil {
+		return "regular"
+	}
+	tier, err := s.tierResolver.ResolveUserTier(ctx, userID)
+	if err != nil || tier == "" {
+		return "regular"
+	}
+	return tier
+}
+
+// toolDenied returns a non-empty denial message when name is not callable
+// by this caller, "" otherwise. API-key callers are restricted to the
+// gate map and their key's scopes; everyone is tier-gated on premium tools.
+func (s *Server) toolDenied(ctx context.Context, user *auth.AuthenticatedUser, name string) string {
+	// Resolve the caller tier only when the tool carries a minTier gate —
+	// most tools are not tier-gated and should not pay the resolver cost.
+	var tier string
+	if g, gated := apiKeyToolGates[name]; gated && g.minTier != "" {
+		tier = s.callerTier(ctx, user.UserID)
+	}
+	return s.toolDeniedWithTier(ctx, user, name, tier)
+}
+
+// toolDeniedWithTier is toolDenied with the caller's tier supplied by the
+// caller, so list endpoints can resolve it once for the whole catalog.
+func (s *Server) toolDeniedWithTier(ctx context.Context, user *auth.AuthenticatedUser, name, tier string) string {
+	g, gated := apiKeyToolGates[name]
+	if isAPIKeyCaller(ctx) {
+		if !gated {
+			return fmt.Sprintf("tool %q is not available to API-key callers", name)
+		}
+		if g.scope != "" {
+			if key := publicapi.APIKeyFromContext(ctx); key == nil || !publicapi.HasScope(key.Scopes, g.scope) {
+				return fmt.Sprintf("tool %q requires scope %s", name, g.scope)
+			}
+		}
+	}
+	if gated && g.minTier != "" && !publicapi.TierAtLeast(tier, g.minTier) {
+		return fmt.Sprintf("tool %q requires a %s subscription", name, g.minTier)
+	}
+	return ""
 }
 
 // jsonRPCRequest is the envelope for every MCP message.
@@ -294,6 +385,24 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 		})
 	}
 
+	// Apply the per-tool gates: API-key callers see only the read-only set
+	// their key is scoped for, and premium tools require the caller's tier.
+	// The tier is resolved once, lazily, only if the catalog contains a
+	// tier-gated tool.
+	var tier string
+	tierResolved := false
+	filtered := tools[:0]
+	for _, t := range tools {
+		if g, gated := apiKeyToolGates[t.Name]; gated && g.minTier != "" && !tierResolved {
+			tier = s.callerTier(ctx, user.UserID)
+			tierResolved = true
+		}
+		if s.toolDeniedWithTier(ctx, user, t.Name, tier) == "" {
+			filtered = append(filtered, t)
+		}
+	}
+	tools = filtered
+
 	result := listToolsResult{Tools: tools}
 
 	return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, false
@@ -326,6 +435,12 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 
 	if callReq.Name == "" {
 		return s.errorResp(req.ID, -32602, "Invalid params", "tool name is required"), false
+	}
+
+	// Enforce the per-tool gate (API-key scope + caller tier) before the
+	// catalog check so denied tools get a precise denial message.
+	if msg := s.toolDenied(ctx, user, callReq.Name); msg != "" {
+		return s.errorResp(req.ID, -32602, "Invalid params", msg), false
 	}
 
 	// Validate that the tool is in the user's catalog (fail-fast with a clear

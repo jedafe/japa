@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/publicapi"
 )
 
 func TestMain(m *testing.M) {
@@ -452,6 +453,45 @@ func TestMCP_Initialize_2025_11_25(t *testing.T) {
 	result := out["result"].(map[string]any)
 	if result["protocolVersion"] != protocolVersion {
 		t.Fatalf("expected advertised protocol version %q, got %q", protocolVersion, result["protocolVersion"])
+	}
+}
+
+func TestAPIKeyCallerGetsReadOnlyCatalog(t *testing.T) {
+	srv, deps := newTestMCP(t)
+	_ = deps
+
+	// register a write tool to prove it is filtered
+	deps.registry.RegisterConfig("content.create", ai.ToolConfig{FunctionName: "content.create"}, "", pgtype.UUID{})
+	deps.registry.RegisterConfig("content.read", ai.ToolConfig{FunctionName: "content.read"}, "", pgtype.UUID{})
+	deps.registry.RegisterConfig("destination.brief", ai.ToolConfig{FunctionName: "destination.brief"}, "", pgtype.UUID{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp",
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	ctx := context.WithValue(req.Context(), auth.UserContextKey, &auth.AuthenticatedUser{UserID: testUserID})
+	ctx = context.WithValue(ctx, apiKeyCallerKey, true)
+	// API key with only api.read.content — no api.read.brief scope.
+	ctx = publicapi.WithAPIKeyContext(ctx, &publicapi.APIKeyContext{
+		UserID: testUserID, Scopes: []string{"agent.use", "api.read.content"},
+	})
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req.WithContext(ctx))
+
+	var resp map[string]any
+	json.NewDecoder(rec.Body).Decode(&resp)
+	tools := resp["result"].(map[string]any)["tools"].([]any)
+	seen := map[string]bool{}
+	for _, tool := range tools {
+		name := tool.(map[string]any)["name"].(string)
+		seen[name] = true
+		if name == "content.create" {
+			t.Fatal("write tool leaked to API-key caller")
+		}
+		if name == "destination.brief" {
+			t.Fatal("premium tool leaked to under-scoped key")
+		}
+	}
+	if !seen["content.read"] {
+		t.Fatal("expected content.read to remain visible")
 	}
 }
 
