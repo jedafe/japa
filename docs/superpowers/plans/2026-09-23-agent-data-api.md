@@ -4,7 +4,7 @@
 
 **Goal:** Expose JapaConnect's structured migration data (visa routes, timelines, credentials, language tests, scholarships, universities) through the §47 public API facade with freemium tier gating, a flagship destination-brief endpoint, and hardened MCP API-key access.
 
-**Architecture:** Extend `internal/publicapi` with narrow reader interfaces (`MoatReaders`) that delegate to existing domain services — never re-implementing domain queries. REST handlers return domain DTOs under a consistent `{data,total,limit,offset}` envelope. Premium endpoints are gated by a new `RequireTier` middleware that resolves the key owner's unified tier per request. MCP gets API-key rate limiting and a read-only tool allowlist; new moat tools are backed by the same `publicapi.Service` methods.
+**Architecture:** Extend `internal/publicapi` with narrow reader interfaces (`MoatReaders`) that delegate to existing domain services — never re-implementing domain queries. REST handlers return domain DTOs under a consistent `{data,total,limit,offset}` envelope. Premium endpoints are gated by a new `RequireTier` middleware that resolves the key owner's unified tier per request. MCP gets API-key rate limiting and a read-only tool gate map (scope + tier per tool); new moat tools reach `publicapi.Service` through a `package server` adapter because `ai` cannot import `publicapi` (import cycle via `visaroutes`).
 
 **Tech Stack:** Go, chi router, pgx/v5, sqlc `gen.Queries`, Valkey (asynq/valkey-go), errgroup, existing `internal/errors` envelope.
 
@@ -20,6 +20,7 @@
 - All `/public/*` routes stay inside the existing API-key group in `internal/server/server.go` (~line 4409) to avoid chi radix shadowing.
 - Every new `/public/*` route gets `publicapi.RequireScope(...)`; premium routes additionally get `publicapi.RequireTier(publicAPIService, "pro")`; every domain route group gets `features.Gate(featureChecker, "<domain>.enabled")`.
 - Tests follow the stub-based `httptest` pattern from `internal/mcp/mcp_test.go` — no testdb, no pgxmock.
+- **Import direction:** `internal/ai` must never import `internal/publicapi` or moat domain packages — `visaroutes`/`languagetesthub` already import `ai`, so `ai → publicapi → visaroutes → ai` is a compile-breaking cycle. `publicapi` may import domain services (they do not import `publicapi` back). Cross-boundary types flow through `package server` adapters (`agent_adapters.go`) or ai-local mirror types.
 - Commit to `main`. Do not create branches.
 
 ---
@@ -216,7 +217,7 @@ func RequireTier(tr TierResolver, minTier string) func(http.Handler) http.Handle
 				}
 			}
 
-			if tierRanks[tier] < tierRanks[minTier] {
+			if !TierAtLeast(tier, minTier) {
 				errpkg.WriteError(w, http.StatusForbidden, "tier_required",
 					"This endpoint requires a "+minTier+" subscription")
 				return
@@ -225,6 +226,14 @@ func RequireTier(tr TierResolver, minTier string) func(http.Handler) http.Handle
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// TierAtLeast reports whether tier meets minTier by rank. Unknown tiers
+// rank 0 — fail-closed for any positive minimum. Exported so the MCP
+// tool gate (Task 7) enforces the same premium-tier policy as REST;
+// without it, MCP tools would bypass RequireTier entirely.
+func TierAtLeast(tier, minTier string) bool {
+	return tierRanks[tier] >= tierRanks[minTier]
 }
 ```
 
@@ -274,6 +283,7 @@ git commit -m "feat(publicapi): RequireTier middleware and agent-data scopes"
 **Files:**
 - Create: `internal/publicapi/moat.go`
 - Create: `internal/publicapi/moat_test.go`
+- Modify: `internal/spaces/store.go` (add `GetPublicSpaceBySlug` delegating method)
 
 **Interfaces:**
 - Consumes: `visaroutes.Service`, `visatimeline.Service`, `credentialchecker.Service`, `languagetesthub.Service`, `scholarships.Service`, `spaces.Service`, `scamalert.Service` — all satisfy the interfaces below structurally (signatures verified against their `service.go`/`store.go` files).
@@ -390,11 +400,13 @@ type VisaTimelineReader interface {
 }
 
 // CredentialReader is satisfied by *credentialchecker.Service.
+// NOTE: credentialchecker.Service has no Enabled method — the web route
+// gates via features.Gate("credential_checker.enabled") middleware only,
+// and the public route does the same. Do not add Enabled here.
 type CredentialReader interface {
 	ListProfessions(ctx context.Context) ([]credentialchecker.ProfessionDTO, error)
 	ListPathways(ctx context.Context, destSpaceID, issuingSpaceID, professionID pgtype.UUID, page, limit int32) ([]credentialchecker.PathwayDTO, int64, error)
 	GetPathway(ctx context.Context, id pgtype.UUID) (credentialchecker.PathwayDetailDTO, error)
-	Enabled(ctx context.Context) bool
 }
 
 // LanguageTestReader is satisfied by *languagetesthub.Service.
@@ -414,13 +426,17 @@ type ScholarshipReader interface {
 	Enabled(ctx context.Context) bool
 }
 
-// SpaceReader is satisfied by *spaces.Service. Used for universities
+// SpaceReader is satisfied by *spaces.Service once Task 3 adds the
+// GetPublicSpaceBySlug delegate to store.go. Used for universities
 // (university-type spaces) and destination resolution for the brief.
+// GetPublicSpaceBySlug (db/queries/spaces.sql) enforces
+// visibility='public' AND status='active' AND deleted_at IS NULL in SQL —
+// the §47-intended public guard lives in the query, not app code.
 type SpaceReader interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error)
 	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
 	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
-	GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
+	GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error)
 }
 
 // ScamAlertReader is satisfied by *scamalert.Service (brief only in v1).
@@ -580,24 +596,37 @@ func (s *Service) ListUniversities(ctx context.Context, search, country, sort st
 	return items, total, nil
 }
 
-func (s *Service) GetUniversity(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error) {
+func (s *Service) GetUniversity(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error) {
 	if s.moat == nil || s.moat.Spaces == nil {
-		return gen.GetSpaceBySlugRow{}, ErrReaderUnconfigured
+		return gen.GetPublicSpaceBySlugRow{}, ErrReaderUnconfigured
 	}
 	st, err := s.moat.Spaces.GetSpaceTypeBySlug(ctx, universitySpaceTypeSlug)
 	if err != nil {
-		return gen.GetSpaceBySlugRow{}, err
+		return gen.GetPublicSpaceBySlugRow{}, err
 	}
-	space, err := s.moat.Spaces.GetSpaceBySlug(ctx, slug)
+	// GetPublicSpaceBySlug enforces visibility='public' AND status='active'
+	// AND deleted_at IS NULL in SQL; only the space-type check remains here.
+	space, err := s.moat.Spaces.GetPublicSpaceBySlug(ctx, slug)
 	if err != nil {
-		return gen.GetSpaceBySlugRow{}, err
+		return gen.GetPublicSpaceBySlugRow{}, err
 	}
-	// Public-API guard: GetSpaceBySlug is the internal reader — never leak
-	// non-public/inactive spaces or non-university spaces through /public/*.
-	// Verify the exact literal values against the getPublicSpaceBySlug query
-	// in db/queries/spaces.sql (likely 'public' and 'active').
-	if space.SpaceTypeID != st.ID || space.Visibility != "public" || space.Status != "active" {
-		return gen.GetSpaceBySlugRow{}, ErrDestinationNotFound
+	if space.SpaceTypeID != st.ID {
+		return gen.GetPublicSpaceBySlugRow{}, ErrDestinationNotFound
+	}
+	return space, nil
+}
+```
+
+Add the delegating method to `internal/spaces/store.go` (next to
+`GetSpaceBySlug`, line ~724 — same wrap-and-return style):
+
+```go
+// GetPublicSpaceBySlug returns the space matching the given slug only when
+// it is public, active, and not soft-deleted (Section 47 public surface).
+func (s *Service) GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error) {
+	space, err := s.read.GetPublicSpaceBySlug(ctx, slug)
+	if err != nil {
+		return gen.GetPublicSpaceBySlugRow{}, fmt.Errorf("getting public space by slug: %w", err)
 	}
 	return space, nil
 }
@@ -620,9 +649,9 @@ it temporarily or move it here — put it in `moat.go`:
 var ErrDestinationNotFound = errors.New("destination_not_found")
 ```
 
-**Verify the `gen.GetSpaceBySlugRow` field name** — check whether the
-space-type column is `SpaceTypeID` and adjust the comparison to the actual
-generated field name (read `internal/db/gen/spaces.sql.go` `GetSpaceBySlug`).
+Verified: `gen.GetPublicSpaceBySlugRow` has `SpaceTypeID pgtype.UUID`,
+`GeoCode *string`, `Level string`, `Name`, `Slug`, `MemberCount`,
+`Description *string`, `Visibility`, `Status` (spaces.sql.go:1291).
 
 - [ ] **Step 4: Run tests**
 
@@ -632,7 +661,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/publicapi/moat.go internal/publicapi/moat_test.go internal/publicapi/service.go
+git add internal/publicapi/moat.go internal/publicapi/moat_test.go internal/publicapi/service.go internal/spaces/store.go
 git commit -m "feat(publicapi): moat reader interfaces and service delegation"
 ```
 
@@ -1044,8 +1073,9 @@ scope:
 Check the concrete types: `visaRoutesService` is `*visaroutes.Service` etc.
 If any constructor returns a different type that doesn't satisfy the
 interface, write a 5-line adapter in `server.go`'s helpers rather than
-widening the interface. `spaceService` must satisfy `SpaceReader` — verify
-its methods match (it is the same `*spaces.Service` universities uses).
+widening the interface. `spaceService` (*spaces.Service) satisfies
+`SpaceReader` only after Task 3's `GetPublicSpaceBySlug` delegate is added
+to `internal/spaces/store.go`.
 
 - [ ] **Step 5: Run tests + build**
 
@@ -1333,7 +1363,7 @@ import (
 // stubSpaceReader implements SpaceReader; only the methods a test needs
 // are populated.
 type stubSpaceReader struct {
-	getBySlugFn func(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
+	getBySlugFn func(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error)
 }
 
 func (s stubSpaceReader) GetSpaceTypeBySlug(_ context.Context, _ string) (gen.SpaceType, error) {
@@ -1345,15 +1375,15 @@ func (s stubSpaceReader) ListSpacesByTypePaginated(_ context.Context, _ pgtype.U
 func (s stubSpaceReader) CountSpacesByType(_ context.Context, _ pgtype.UUID, _, _, _, _ string) (int64, error) {
 	return 0, nil
 }
-func (s stubSpaceReader) GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error) {
+func (s stubSpaceReader) GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error) {
 	return s.getBySlugFn(ctx, slug)
 }
 
 func TestGetDestinationBriefUnknownSlug(t *testing.T) {
 	svc := NewService(nil)
 	svc.SetMoatReaders(&MoatReaders{
-		Spaces: stubSpaceReader{getBySlugFn: func(_ context.Context, _ string) (gen.GetSpaceBySlugRow, error) {
-			return gen.GetSpaceBySlugRow{}, pgx.ErrNoRows
+		Spaces: stubSpaceReader{getBySlugFn: func(_ context.Context, _ string) (gen.GetPublicSpaceBySlugRow, error) {
+			return gen.GetPublicSpaceBySlugRow{}, pgx.ErrNoRows
 		}},
 	})
 	h := NewHandlers(svc)
@@ -1372,8 +1402,8 @@ func TestGetDestinationBriefUnknownSlug(t *testing.T) {
 func TestGetDestinationBriefPartialFailure(t *testing.T) {
 	svc := NewService(nil)
 	svc.SetMoatReaders(&MoatReaders{
-		Spaces: stubSpaceReader{getBySlugFn: func(_ context.Context, _ string) (gen.GetSpaceBySlugRow, error) {
-			return gen.GetSpaceBySlugRow{Visibility: "public", Status: "active", Name: "Canada"}, nil
+		Spaces: stubSpaceReader{getBySlugFn: func(_ context.Context, _ string) (gen.GetPublicSpaceBySlugRow, error) {
+			return gen.GetPublicSpaceBySlugRow{Visibility: "public", Status: "active", Name: "Canada"}, nil
 		}},
 		VisaRoutes: stubVisaRoutes{listFn: func(_ context.Context, _ pgtype.UUID, _, _ string, _, _, _ int32) ([]visaroutes.RouteDTO, int64, error) {
 			return nil, 0, errors.New("boom")
@@ -1442,7 +1472,7 @@ var briefSections = []string{"visa", "timelines", "universities", "scholarships"
 // DestinationBrief is the aggregate document returned by
 // GET /public/destinations/{slug}/brief.
 type DestinationBrief struct {
-	Destination         gen.GetSpaceBySlugRow `json:"destination"`
+	Destination         gen.GetPublicSpaceBySlugRow `json:"destination"`
 	Summary             string                `json:"summary"`
 	Sections            map[string]any        `json:"sections"`
 	SectionsUnavailable []string              `json:"sections_unavailable"`
@@ -1473,16 +1503,14 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 		}
 	}
 
-	dest, err := s.moat.Spaces.GetSpaceBySlug(ctx, slug)
+	// GetPublicSpaceBySlug enforces visibility='public' AND status='active'
+	// AND deleted_at IS NULL in SQL — no app-level guard needed.
+	dest, err := s.moat.Spaces.GetPublicSpaceBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrDestinationNotFound
 		}
 		return nil, err
-	}
-	// Public-API guard — same literal values as GetUniversity.
-	if dest.Visibility != "public" || dest.Status != "active" {
-		return nil, ErrDestinationNotFound
 	}
 
 	brief := &DestinationBrief{
@@ -1545,7 +1573,11 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 	}
 	if wants("universities") {
 		g.Go(func() error {
-			items, total, err := s.ListUniversities(gctx, "", "", "", 10, 0)
+			country := ""
+			if dest.GeoCode != nil {
+				country = *dest.GeoCode
+			}
+			items, total, err := s.ListUniversities(gctx, "", country, "", 10, 0)
 			if err != nil {
 				fail("universities")
 				return nil
@@ -1611,7 +1643,7 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 }
 
 // renderBriefSummary produces a deterministic markdown overview — no LLM.
-func renderBriefSummary(dest gen.GetSpaceBySlugRow, b *DestinationBrief) string {
+func renderBriefSummary(dest gen.GetPublicSpaceBySlugRow, b *DestinationBrief) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s — destination brief\n\n", dest.Name)
 	if v, ok := b.Sections["visa"].(map[string]any); ok {
@@ -1717,8 +1749,16 @@ git commit -m "feat(publicapi): aggregate destination brief endpoint"
 - Modify: `internal/server/server.go` (~line 4786, add rate limiter to `/mcp`)
 
 **Interfaces:**
-- Produces: `publicapi.WithAPIKeyContext(ctx, *APIKeyContext) context.Context`
-- Consumes: `publicapi.SlidingWindowRateLimitWithSettings` (existing)
+- Produces: `publicapi.WithAPIKeyContext(ctx, *APIKeyContext) context.Context`; `mcp.Server.SetTierResolver(publicapi.TierResolver)`; per-tool `toolGate` entries enforcing scope + tier inside the MCP layer.
+- Consumes: `publicapi.SlidingWindowRateLimitWithSettings` (existing), `publicapi.APIKeyFromContext`, `publicapi.HasScope`, `publicapi.TierAtLeast` (Task 2).
+
+**Authorization note (review correction):** the REST surface gates premium
+reads behind scope *and* `RequireTier("pro")`. The MCP path must enforce
+the same policy or an `agent.use` key could call `destination.brief` /
+`visa.compare` for free. The gate map below carries a required API-key
+scope (API-key callers only — JWT users are RBAC-gated at `agent.use`) and
+a minimum *user* tier that applies to **both** auth types, since the tier
+is the caller's subscription.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1732,22 +1772,35 @@ func TestAPIKeyCallerGetsReadOnlyCatalog(t *testing.T) {
 	// register a write tool to prove it is filtered
 	deps.registry.RegisterConfig("content.create", ai.ToolConfig{FunctionName: "content.create"}, "", pgtype.UUID{})
 	deps.registry.RegisterConfig("content.read", ai.ToolConfig{FunctionName: "content.read"}, "", pgtype.UUID{})
+	deps.registry.RegisterConfig("destination.brief", ai.ToolConfig{FunctionName: "destination.brief"}, "", pgtype.UUID{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp",
 		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
 	ctx := context.WithValue(req.Context(), auth.UserContextKey, &auth.AuthenticatedUser{UserID: testUserID})
 	ctx = context.WithValue(ctx, apiKeyCallerKey, true)
+	// API key with only api.read.content — no api.read.brief scope.
+	ctx = publicapi.WithAPIKeyContext(ctx, &publicapi.APIKeyContext{
+		UserID: testUserID, Scopes: []string{"agent.use", "api.read.content"},
+	})
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req.WithContext(ctx))
 
 	var resp map[string]any
 	json.NewDecoder(rec.Body).Decode(&resp)
 	tools := resp["result"].(map[string]any)["tools"].([]any)
+	seen := map[string]bool{}
 	for _, tool := range tools {
 		name := tool.(map[string]any)["name"].(string)
+		seen[name] = true
 		if name == "content.create" {
 			t.Fatal("write tool leaked to API-key caller")
 		}
+		if name == "destination.brief" {
+			t.Fatal("premium tool leaked to under-scoped key")
+		}
+	}
+	if !seen["content.read"] {
+		t.Fatal("expected content.read to remain visible")
 	}
 }
 ```
@@ -1808,50 +1861,114 @@ func isAPIKeyCaller(ctx context.Context) bool {
 	return v
 }
 
-// apiKeyToolAllowlist is the read-only tool set exposed to API-key callers.
-// JWT-authenticated callers keep their full RBAC-filtered catalog.
-var apiKeyToolAllowlist = map[string]bool{
-	"content.read":       true,
-	"content.search":     true,
-	"rag.search":         true,
-	"spaces.find":        true,
-	"spaces.read":        true,
-	"spaces.list":        true,
-	"scholarship.search": true,
-	"visa.search":        true,
-	"visa.get":           true,
-	"visa.compare":       true,
-	"university.get":     true,
-	"destination.brief":  true,
+// toolGate is the access policy for a tool exposed to external callers.
+// scope applies to API-key callers only (JWT callers are RBAC-gated at
+// agent.use). minTier applies to BOTH auth types — it gates the caller's
+// subscription tier, mirroring RequireTier on the REST surface so MCP
+// cannot bypass premium endpoints.
+type toolGate struct {
+	scope   string
+	minTier string
+}
+
+// apiKeyToolGates is the read-only tool set exposed to API-key callers,
+// plus the premium gates mirrored from the REST routes. JWT callers keep
+// their full RBAC-filtered catalog but still hit the minTier check.
+var apiKeyToolGates = map[string]toolGate{
+	"content.read":       {scope: "api.read.content"},
+	"content.search":     {scope: "api.read.content"},
+	"rag.search":         {scope: "api.read.content"},
+	"spaces.find":        {scope: "api.read.spaces"},
+	"spaces.read":        {scope: "api.read.spaces"},
+	"spaces.list":        {scope: "api.read.spaces"},
+	"scholarship.search": {scope: "api.read.education"},
+	"visa.search":        {scope: "api.read.visa"},
+	"visa.get":           {scope: "api.read.visa"},
+	"visa.compare":       {scope: "api.read.visa", minTier: "pro"},
+	"university.get":     {scope: "api.read.education"},
+	"destination.brief":  {scope: "api.read.brief", minTier: "pro"},
 }
 ```
 
-In `handleToolsList`, after building `tools`, filter when API-key caller:
+Add a `tierResolver publicapi.TierResolver` field to `Server` plus a setter
+(mirrors `publicapi.Service.SetTierResolver`; `mcpServer` is constructed at
+server.go:2045 before `publicAPIService` exists, so wire the setter after
+~line 2346 alongside the other `publicAPIService` setters):
 
 ```go
+// SetTierResolver wires the resolver used for premium tool gating.
+// Nil → all callers resolve to "regular" (fail-closed for premium tools).
+func (s *Server) SetTierResolver(tr publicapi.TierResolver) { s.tierResolver = tr }
+
+// callerTier resolves the user's unified tier; nil resolver or error →
+// "regular" (fail-closed, same convention as RequireTier).
+func (s *Server) callerTier(ctx context.Context, userID pgtype.UUID) string {
+	if s.tierResolver == nil {
+		return "regular"
+	}
+	tier, err := s.tierResolver.ResolveUserTier(ctx, userID)
+	if err != nil || tier == "" {
+		return "regular"
+	}
+	return tier
+}
+
+// toolDenied returns a non-empty denial message when name is not callable
+// by this caller, "" otherwise. API-key callers are restricted to the
+// gate map and their key's scopes; everyone is tier-gated on premium tools.
+func (s *Server) toolDenied(ctx context.Context, user *auth.AuthenticatedUser, name string) string {
+	g, gated := apiKeyToolGates[name]
 	if isAPIKeyCaller(ctx) {
-		filtered := tools[:0]
-		for _, t := range tools {
-			if apiKeyToolAllowlist[t.Name] {
-				filtered = append(filtered, t)
+		if !gated {
+			return fmt.Sprintf("tool %q is not available to API-key callers", name)
+		}
+		if g.scope != "" {
+			if key := publicapi.APIKeyFromContext(ctx); key == nil || !publicapi.HasScope(key.Scopes, g.scope) {
+				return fmt.Sprintf("tool %q requires scope %s", name, g.scope)
 			}
 		}
-		tools = filtered
 	}
+	if gated && g.minTier != "" && !publicapi.TierAtLeast(s.callerTier(ctx, user.UserID), g.minTier) {
+		return fmt.Sprintf("tool %q requires a %s subscription", name, g.minTier)
+	}
+	return ""
+}
 ```
 
-In `handleToolsCall`, replace the `toolInCatalog` check with:
+In `handleToolsList`, after building `tools`, apply the gate (resolve the
+caller tier once before the loop to avoid a resolver call per tool — pass
+it into `toolDenied` or a small variant):
 
 ```go
-	if isAPIKeyCaller(ctx) && !apiKeyToolAllowlist[callReq.Name] {
-		return s.errorResp(req.ID, -32602, "Invalid params", fmt.Sprintf("tool %q is not available to API-key callers", callReq.Name)), false
+	filtered := tools[:0]
+	for _, t := range tools {
+		if s.toolDenied(ctx, user, t.Name) == "" {
+			filtered = append(filtered, t)
+		}
+	}
+	tools = filtered
+```
+
+In `handleToolsCall`, before the `toolInCatalog` check:
+
+```go
+	if msg := s.toolDenied(ctx, user, callReq.Name); msg != "" {
+		return s.errorResp(req.ID, -32602, "Invalid params", msg), false
 	}
 	if !s.toolInCatalog(ctx, user, callReq.Name) {
 		return s.errorResp(req.ID, -32602, "Invalid params", fmt.Sprintf("tool %q is not available", callReq.Name)), false
 	}
 ```
 
-`internal/server/server.go` line ~4786 — add the rate limiter:
+`internal/server/server.go` — two changes:
+
+1. After `publicAPIService` exists (~line 2346, with the other setters):
+
+```go
+	mcpServer.SetTierResolver(publicAPIService)
+```
+
+2. Line ~4786 — add the rate limiter:
 
 ```go
 			r.With(mcp.AuthMiddleware(kr, vkClient.Redis(), publicAPIService, rbacResolver),
@@ -1875,16 +1992,28 @@ git commit -m "fix(mcp): rate-limit API-key callers and restrict to read-only to
 
 ### Task 8: Moat MCP tools + ai_tools seed migration
 
+**Import-cycle constraint (do not skip):** `internal/visaroutes` and
+`internal/languagetesthub` import `internal/ai` (their `SetAIDispatcher`
+hooks). The `ai` package therefore **must not** import `publicapi` or any
+moat domain package — `ai → publicapi → visaroutes → ai` is a compile-
+breaking cycle. Follow the established adapter pattern from
+`internal/server/agent_adapters.go`: the ai package declares an
+`AgentDataReader` interface whose methods return **opaque `any` payloads**
+(domain DTOs carry json tags and serialize verbatim into tool output), and
+a `package server` adapter delegates to `*publicapi.Service`. Precedent:
+`ScholarshipSearcher` + `newAgentScholarshipAdapter`.
+
 **Files:**
 - Create: `internal/ai/tools_moat.go`
-- Modify: `internal/ai/tools_deps.go` (add `PublicAPI` field)
-- Modify: `internal/ai/tools_register.go` (register new handlers in `RegisterPhase9Tools` or a new `RegisterAgentDataTools` called from server.go)
-- Modify: `internal/server/server.go` (set `agentDeps.PublicAPI = publicAPIService`; call the register function if new)
-- Create: `migrations/000722_seed_ai_tools_agent_data.up.sql` + `.down.sql`
+- Modify: `internal/ai/tools_deps.go` (add `AgentData` field + `AgentDataReader` interface)
+- Modify: `internal/ai/tools_register.go` (register handlers in `RegisterPhase9Tools`)
+- Modify: `internal/server/agent_adapters.go` (add `agentDataAdapter`)
+- Modify: `internal/server/server.go` (set `agentDeps.AgentData` after `publicAPIService` exists)
+- Create: `migrations/000723_seed_ai_tools_agent_data.up.sql` + `.down.sql`
 
 **Interfaces:**
-- Consumes: `publicapi.Service` moat methods (Tasks 3–6) via a narrow `PublicAPIReader` interface on `ToolDeps`.
-- Produces: tool handlers `VisaSearchHandler`, `VisaGetHandler`, `VisaCompareHandler`, `UniversityGetHandler`, `DestinationBriefHandler` registered under the function names in the allowlist (Task 7).
+- Consumes: `publicapi.Service` moat methods (Tasks 3–6) via `agentDataAdapter`.
+- Produces: `ai.AgentDataReader` (5 methods, `any` returns), `ToolDeps.AgentData`, and tool handlers `VisaSearchHandler`, `VisaGetHandler`, `VisaCompareHandler`, `UniversityGetHandler`, `DestinationBriefHandler` registered under the allowlist names (Task 7).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1901,19 +2030,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type stubPublicAPI struct {
-	listVisaFn func(ctx context.Context, dest pgtype.UUID, prof, edu string, yrs, page, limit int32) ([]visaroutes.RouteDTO, int64, error)
+// stubAgentData implements AgentDataReader; populate only what a test needs.
+type stubAgentData struct {
+	listVisaFn func(ctx context.Context, dest pgtype.UUID, prof, edu string, yrs, page, limit int32) (any, int64, error)
 }
 
-func (s stubPublicAPI) ListVisaRoutes(ctx context.Context, dest pgtype.UUID, prof, edu string, yrs, page, limit int32) ([]visaroutes.RouteDTO, int64, error) {
+func (s stubAgentData) ListVisaRoutes(ctx context.Context, dest pgtype.UUID, prof, edu string, yrs, page, limit int32) (any, int64, error) {
 	return s.listVisaFn(ctx, dest, prof, edu, yrs, page, limit)
 }
-// ...remaining PublicAPIReader methods as no-ops...
+func (s stubAgentData) GetVisaRoute(_ context.Context, _ pgtype.UUID) (any, error) {
+	return nil, nil
+}
+func (s stubAgentData) CompareVisaRoutes(_ context.Context, _ []pgtype.UUID) (any, error) {
+	return nil, nil
+}
+func (s stubAgentData) GetUniversity(_ context.Context, _ string) (any, error) {
+	return nil, nil
+}
+func (s stubAgentData) GetDestinationBrief(_ context.Context, _ string, _ []string) (any, error) {
+	return nil, nil
+}
 
 func TestVisaSearchTool(t *testing.T) {
-	h := VisaSearchHandler(&ToolDeps{PublicAPI: stubPublicAPI{
-		listVisaFn: func(_ context.Context, _ pgtype.UUID, _, _ string, _, _, _ int32) ([]visaroutes.RouteDTO, int64, error) {
-			return []visaroutes.RouteDTO{{}}, 1, nil
+	h := VisaSearchHandler(&ToolDeps{AgentData: stubAgentData{
+		listVisaFn: func(_ context.Context, _ pgtype.UUID, _, _ string, _, _, _ int32) (any, int64, error) {
+			return []map[string]any{{"id": "r1"}}, 1, nil
 		},
 	}})
 	res, err := h(context.Background(), json.RawMessage(`{"destination_space_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
@@ -1921,23 +2062,54 @@ func TestVisaSearchTool(t *testing.T) {
 		t.Fatalf("res=%v err=%v", res, err)
 	}
 }
+
+func TestVisaSearchToolUnconfigured(t *testing.T) {
+	h := VisaSearchHandler(&ToolDeps{})
+	res, err := h(context.Background(), json.RawMessage(`{}`), pgtype.UUID{})
+	if err != nil || res == nil || res.Status == ToolCallStatusSuccess {
+		t.Fatalf("expected error result for unconfigured reader; res=%v err=%v", res, err)
+	}
+}
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/ai/ -run TestVisaSearchTool -v`
-Expected: FAIL — `undefined: VisaSearchHandler`, `ToolDeps.PublicAPI`
+Expected: FAIL — `undefined: VisaSearchHandler`, `ToolDeps.AgentData`
 
-- [ ] **Step 3: Implement `tools_moat.go` + ToolDeps field**
+- [ ] **Step 3: Implement `tools_deps.go` field + `tools_moat.go`**
 
-`internal/ai/tools_deps.go` — add to `ToolDeps`:
+`internal/ai/tools_deps.go` — add to `ToolDeps` (near `ScholarshipSearcher`):
 
 ```go
-	// PublicAPI backs the agent data tools (spec 2026-09-23-agent-data-api).
-	PublicAPI PublicAPIReader
+	// AgentData backs the agent data tools (visa.*, university.get,
+	// destination.brief). nil → tools return "not configured".
+	// Ref: docs/superpowers/specs/2026-09-23-agent-data-api-design.md
+	AgentData AgentDataReader
 ```
 
-`internal/ai/tools_moat.go`:
+and declare the interface in the same file (near `ScholarshipSearcher`):
+
+```go
+// AgentDataReader is the subset of the public API moat facade the agent
+// data tools need. Results are opaque any payloads — the domain DTOs
+// carry json tags and serialize verbatim into tool output. The ai package
+// must not import publicapi or the moat domain packages: visaroutes and
+// languagetesthub import internal/ai, so an ai → publicapi → visaroutes
+// edge would be a compile-breaking import cycle. Implemented by
+// agentDataAdapter in package server.
+type AgentDataReader interface {
+	ListVisaRoutes(ctx context.Context, dest pgtype.UUID, profession, education string, experienceYears, page, limit int32) (any, int64, error)
+	GetVisaRoute(ctx context.Context, id pgtype.UUID) (any, error)
+	CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) (any, error)
+	GetUniversity(ctx context.Context, slug string) (any, error)
+	GetDestinationBrief(ctx context.Context, slug string, include []string) (any, error)
+}
+```
+
+`internal/ai/tools_moat.go` — handlers following the
+`ScholarshipSearchHandler` shape (args struct, `json.Unmarshal`, cap limit
+at 50, call `deps.AgentData`, `successToolResult`/`errorToolResult`):
 
 ```go
 package ai
@@ -1946,40 +2118,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/credentialchecker"
-	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/languagetesthub"
-	"github.com/jedafe/japa/internal/publicapi"
-	"github.com/jedafe/japa/internal/scholarships"
-	"github.com/jedafe/japa/internal/visaroutes"
-	"github.com/jedafe/japa/internal/visatimeline"
 )
 
-// PublicAPIReader is the slice of *publicapi.Service the agent data tools
-// need. Satisfied directly by publicapi.Service — same methods the REST
-// endpoints call, so MCP and REST can never drift.
-type PublicAPIReader interface {
-	ListVisaRoutes(ctx context.Context, dest pgtype.UUID, prof, edu string, yrs, page, limit int32) ([]visaroutes.RouteDTO, int64, error)
-	GetVisaRoute(ctx context.Context, id pgtype.UUID) (visaroutes.RouteDTO, error)
-	CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) ([]visaroutes.RouteDTO, error)
-	GetVisaTimelineStats(ctx context.Context, origin, dest pgtype.UUID, cat, consulate string, months int) ([]visatimeline.ProcessingStatDTO, error)
-	ListCredentialPathways(ctx context.Context, dest, issuing, prof pgtype.UUID, page, limit int32) ([]credentialchecker.PathwayDTO, int64, error)
-	ListLanguageTests(ctx context.Context) ([]languagetesthub.TestDTO, error)
-	ListLanguageTestRequirements(ctx context.Context, dest pgtype.UUID, cat string) ([]languagetesthub.RequirementDTO, error)
-	FindScholarships(ctx context.Context, f scholarships.ScholarshipFilters) ([]scholarships.ScholarshipResult, int64, error)
-	ListUniversities(ctx context.Context, search, country, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, int64, error)
-	GetUniversity(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
-	GetDestinationBrief(ctx context.Context, slug string, include []string) (*publicapi.DestinationBrief, error)
-}
-```
-
-Then handlers following the `ScholarshipSearchHandler` shape — args struct,
-`json.Unmarshal`, cap limit at 50, call the reader, `successToolResult` /
-`errorToolResult`:
-
-```go
 type visaSearchArgs struct {
 	DestSpaceID string `json:"destination_space_id,omitempty"`
 	Profession  string `json:"profession,omitempty"`
@@ -1989,9 +2132,12 @@ type visaSearchArgs struct {
 	Page        int32  `json:"page,omitempty"`
 }
 
+// VisaSearchHandler implements the visa.search agent tool. Results are the
+// publicapi facade's RouteDTO list embedded verbatim — same read path as
+// GET /public/visa-routes so REST and MCP can never drift.
 func VisaSearchHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
-		if deps == nil || deps.PublicAPI == nil {
+		if deps == nil || deps.AgentData == nil {
 			return errorToolResult("visa_search_unavailable", "visa search is not configured"), nil
 		}
 		var a visaSearchArgs
@@ -2010,7 +2156,7 @@ func VisaSearchHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_arguments", "invalid destination_space_id"), nil
 			}
 		}
-		routes, total, err := deps.PublicAPI.ListVisaRoutes(ctx, dest, a.Profession, a.Education, a.Years, a.Page, a.Limit)
+		routes, total, err := deps.AgentData.ListVisaRoutes(ctx, dest, a.Profession, a.Education, a.Years, a.Page, a.Limit)
 		if err != nil {
 			return errorToolResult("visa_search_failed", err.Error()), nil
 		}
@@ -2023,7 +2169,7 @@ Implement `VisaGetHandler` (`{"route_id"}` → `GetVisaRoute`),
 `VisaCompareHandler` (`{"route_ids": [...]}` max 5 → `CompareVisaRoutes`),
 `UniversityGetHandler` (`{"slug"}` → `GetUniversity`), and
 `DestinationBriefHandler` (`{"slug", "include"}` → `GetDestinationBrief`)
-the same way.
+the same way — each guards `deps.AgentData == nil` first.
 
 Register in `tools_register.go` — append inside `RegisterPhase9Tools`:
 
@@ -2036,13 +2182,49 @@ Register in `tools_register.go` — append inside `RegisterPhase9Tools`:
 	registry.RegisterHandler("destination.brief", DestinationBriefHandler(deps))
 ```
 
-Wire in `server.go` after `agentDeps` is built (~line 1960):
+- [ ] **Step 4: Implement `agentDataAdapter` + wire it**
+
+Append to `internal/server/agent_adapters.go` (add
+`"github.com/jedafe/japa/internal/publicapi"` to its imports):
 
 ```go
-	agentDeps.PublicAPI = publicAPIService
+// agentDataAdapter adapts *publicapi.Service to ai.AgentDataReader. The ai
+// package cannot import publicapi (publicapi imports visaroutes, which
+// imports ai — an ai → publicapi edge would be a cycle), so the adapter
+// delegates in the wiring layer and returns the domain DTOs as opaque
+// payloads that serialize verbatim into tool output.
+type agentDataAdapter struct{ svc *publicapi.Service }
+
+func (a *agentDataAdapter) ListVisaRoutes(ctx context.Context, dest pgtype.UUID, profession, education string, experienceYears, page, limit int32) (any, int64, error) {
+	return a.svc.ListVisaRoutes(ctx, dest, profession, education, experienceYears, page, limit)
+}
+
+func (a *agentDataAdapter) GetVisaRoute(ctx context.Context, id pgtype.UUID) (any, error) {
+	return a.svc.GetVisaRoute(ctx, id)
+}
+
+func (a *agentDataAdapter) CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) (any, error) {
+	return a.svc.CompareVisaRoutes(ctx, ids)
+}
+
+func (a *agentDataAdapter) GetUniversity(ctx context.Context, slug string) (any, error) {
+	return a.svc.GetUniversity(ctx, slug)
+}
+
+func (a *agentDataAdapter) GetDestinationBrief(ctx context.Context, slug string, include []string) (any, error) {
+	return a.svc.GetDestinationBrief(ctx, slug, include)
+}
 ```
 
-- [ ] **Step 4: Seed migration `000722_seed_ai_tools_agent_data.up.sql`**
+Wire in `server.go` **after** `publicAPIService` is constructed (~line
+2315, next to the `publicAPIHandlers` block — `agentDeps` is a `*ToolDeps`
+read at tool-call time, so a later field assignment is safe):
+
+```go
+	agentDeps.AgentData = &agentDataAdapter{svc: publicAPIService}
+```
+
+- [ ] **Step 5: Seed migration `000723_seed_ai_tools_agent_data.up.sql`**
 
 Mirror `migrations/000388_seed_ai_agent_tools_v1.up.sql` exactly — `BEGIN;`
 … `INSERT INTO ai_tools (tenant_id, name, description, category, config,
@@ -2055,18 +2237,18 @@ structs above), `handler` reference string, `reads_user_data false`,
 `writes_user_data false`, `requires_hitl false`, `is_blocked false`.
 Down migration: `DELETE FROM ai_tools WHERE name IN ('visa.search','visa.get','visa.compare','university.get','destination.brief');`
 
-Check the migration runner naming/numbering convention (latest is 000721;
-use 000722 unless taken — adjust if a newer file landed since).
+Migration `000722` is already taken by `000722_persona_voice_agent_tools`
+— use `000723` (verify no newer file landed since; bump if needed).
 
-- [ ] **Step 5: Run tests + build + migration check**
+- [ ] **Step 6: Run tests + build + migration check**
 
 Run: `go test ./internal/ai/ ./internal/mcp/ -v && go build ./internal/server/ && make migrate-up` (or the repo's local migration target — check `Makefile`)
 Expected: PASS; migration applies cleanly
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add internal/ai/tools_moat.go internal/ai/tools_moat_test.go internal/ai/tools_deps.go internal/ai/tools_register.go internal/server/server.go migrations/000722_seed_ai_tools_agent_data.*
+git add internal/ai/tools_moat.go internal/ai/tools_moat_test.go internal/ai/tools_deps.go internal/ai/tools_register.go internal/server/agent_adapters.go internal/server/server.go migrations/000723_seed_ai_tools_agent_data.*
 git commit -m "feat(ai): agent data tools for visa, university, destination brief"
 ```
 
