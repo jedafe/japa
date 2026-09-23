@@ -21,8 +21,9 @@ export const load: PageServerLoad = async (event) => {
 	);
 
 	const validSorts = new Set((sourceMeta.sorts ?? []).map((s) => s.value));
-	const rawSort = event.url.searchParams.get('sort') ?? 'popular';
-	const sort = validSorts.has(rawSort) ? rawSort : (sourceMeta.sorts?.[0]?.value ?? 'popular');
+	const defaultSort = sourceMeta.sorts?.[0]?.value ?? 'popular';
+	const rawSort = event.url.searchParams.get('sort') ?? defaultSort;
+	const sort = validSorts.has(rawSort) ? rawSort : defaultSort;
 
 	const pageSize = PAGE_SIZE;
 	const page = parseInt(event.url.searchParams.get('page') ?? '1', 10);
@@ -38,8 +39,9 @@ export const load: PageServerLoad = async (event) => {
 
 	// Curated collections only render on the default directory view — the
 	// first page with no search or filters active (sources-directory v2
-	// plan, step 4).
-	const isDirectoryHome = !q && !category && !sourceKind && page === 1;
+	// plan, step 4). A non-default sort is excluded too: the seed collections
+	// ("Recently added", "Trending") would just duplicate the sorted list.
+	const isDirectoryHome = !q && !category && !sourceKind && page === 1 && sort === defaultSort;
 
 	const [listResult, collections] = await Promise.all([
 		apiList<Source>(ctx, `/sources?${params.toString()}`),

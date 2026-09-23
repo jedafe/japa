@@ -13,6 +13,7 @@
 	import ReplyThread from '$lib/components/forum/ReplyThread.svelte';
 	import PollBlock from '$lib/components/forum/PollBlock.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
+	import TagInput from '$lib/components/create/TagInput.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
@@ -103,6 +104,45 @@ import { contentHref } from '$lib/utils/contentLink';
 	$effect(() => {
 		acceptedReplyId = data.acceptedReplyId;
 	});
+
+	// Tag management — tags are universal (Sections 08/14). Attach/detach go
+	// through the content tag endpoints on the thread's backing content row:
+	// POST /content/{id}/tags {tag_slugs} and DELETE /content/{id}/tags/{tagId}.
+	const canManageTags = $derived(data.authed && (data.canEdit || data.canModerate));
+	const tagSlotsLeft = $derived(Math.max(0, 5 - (data.tags?.length ?? 0)));
+	let addingTags = $state(false);
+	let newTagSlugs = $state<string[]>([]);
+	let tagSaving = $state(false);
+	let tagError = $state<string | null>(null);
+	let removingTagId = $state<string | null>(null);
+
+	async function saveTags() {
+		if (tagSaving || !thread.content_id || newTagSlugs.length === 0) return;
+		tagSaving = true;
+		tagError = null;
+		const res = await api.post(`/content/${thread.content_id}/tags`, { tag_slugs: newTagSlugs });
+		tagSaving = false;
+		if (res.error) {
+			tagError = res.error.message || t('forum.tags.add_error', 'Failed to add tags.');
+			return;
+		}
+		newTagSlugs = [];
+		addingTags = false;
+		await invalidateAll();
+	}
+
+	async function removeTag(tagId: string) {
+		if (removingTagId || !thread.content_id) return;
+		removingTagId = tagId;
+		const res = await api.delete(`/content/${thread.content_id}/tags/${tagId}`);
+		removingTagId = null;
+		if (res.error) {
+			tagError = res.error.message || t('forum.tags.remove_error', 'Failed to remove tag.');
+			return;
+		}
+		tagError = null;
+		await invalidateAll();
+	}
 
 	let showPollForm = $state(false);
 	let pollQuestion = $state('');
@@ -460,18 +500,74 @@ import { contentHref } from '$lib/utils/contentLink';
 					{#if thread.is_edited}<span>·</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
 				</div>
 
-				<!-- Tags (Section 08 — tags are first-class on discussions) -->
-				{#if data.tags && data.tags.length > 0}
-					<div class="mt-3 flex flex-wrap gap-1.5">
-						{#each data.tags as tag (tag.id)}
-							<a
-								href="/forum?tag={tag.slug}"
-								class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+				<!-- Tags (Sections 08/14 — tags are universal; chips link to the
+				     shared tag page, add/remove via /content/{id}/tags) -->
+				{#if (data.tags && data.tags.length > 0) || canManageTags}
+					<div class="mt-3 flex flex-wrap items-center gap-1.5">
+						{#each data.tags ?? [] as tag (tag.id)}
+							<span
+								class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]"
 							>
-								{tag.name}
-							</a>
+								<a
+									href="/tags/{tag.slug}"
+									class="transition-colors hover:text-[var(--color-primary)]"
+								>
+									{tag.name}
+								</a>
+								{#if canManageTags}
+									<button
+										type="button"
+										onclick={() => removeTag(tag.id)}
+										disabled={removingTagId === tag.id}
+										class="rounded-full text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)] disabled:opacity-50"
+										aria-label={t('forum.tags.remove', 'Remove tag')}
+									>
+										{#if removingTagId === tag.id}
+											<Loader2 size={12} class="animate-spin" />
+										{:else}
+											<X size={12} />
+										{/if}
+									</button>
+								{/if}
+							</span>
 						{/each}
+						{#if canManageTags && !addingTags && tagSlotsLeft > 0}
+							<button
+								type="button"
+								onclick={() => { addingTags = true; tagError = null; }}
+								class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+							>
+								<Plus size={12} />
+								{t('forum.tags.add', 'Add tag')}
+							</button>
+						{/if}
 					</div>
+					{#if addingTags}
+						<div class="mt-2 space-y-2">
+							<TagInput tags={newTagSlugs} onTags={(next) => (newTagSlugs = next)} maxTags={tagSlotsLeft} />
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									onclick={saveTags}
+									disabled={tagSaving || newTagSlugs.length === 0}
+									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast,var(--color-surface))] transition-opacity disabled:opacity-50"
+								>
+									{#if tagSaving}<Loader2 size={12} class="animate-spin" />{/if}
+									{t('forum.tags.save', 'Save tags')}
+								</button>
+								<button
+									type="button"
+									onclick={() => { addingTags = false; newTagSlugs = []; tagError = null; }}
+									class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+								>
+									{t('common.cancel', 'Cancel')}
+								</button>
+							</div>
+						</div>
+					{/if}
+					{#if tagError}
+						<p class="mt-1.5 text-xs text-[var(--color-primary)]">{tagError}</p>
+					{/if}
 				{/if}
 			</div>
 		</div>

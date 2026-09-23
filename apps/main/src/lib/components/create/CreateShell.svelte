@@ -10,6 +10,7 @@
 	import { classifyError } from '$lib/api/create';
 	import { api } from '$lib/api/client';
 	import { excerpt } from '$lib/utils/seo-score';
+	import { localDateTimeToIso } from '$lib/utils/datetime';
 	import type {
 		ContentRecord,
 		ContentSpace,
@@ -247,8 +248,10 @@
 		// original publish time (in the past) and the PATCH handler rejects
 		// past dates with 400 "publish_at_in_past". Only send it when the
 		// user is actively scheduling (draft/scheduled content with a
-		// future date set via the settings panel).
-		publish_at: draft?.status === 'published' ? null : publishAt,
+		// future date set via the settings panel). The raw value is a
+		// datetime-local string — normalise to an ISO instant (the API
+		// stores timestamptz and only accepts zoned formats).
+		publish_at: draft?.status === 'published' ? null : localDateTimeToIso(publishAt),
 		space_id: spaceIds[0] ?? null,
 		guide_category: isGuide ? guideCategory : null,
 		// Journey fields apply to every content type — source/target country

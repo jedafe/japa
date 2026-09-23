@@ -119,6 +119,10 @@ const (
 	// entity_type 'article' (intel-channels Phase 1: deterministic curator
 	// output from blog/editorial RSS feeds and JSON-LD Article nodes).
 	TypeArticle = "article"
+	// Forum thread — backing contents row for every forum_threads record
+	// (migration 000636; ADR-077 lists it among eligible content types).
+	// Threads are authored through the forum composer, not POST /content.
+	TypeForumThread = "forum_thread"
 )
 
 // Visibility values stored in the contents.visibility column.
@@ -166,6 +170,9 @@ var validContentTypes = map[string]bool{
 	// Article — the intel 'article' entity_type promotion target (curated
 	// blog/editorial feed items).
 	TypeArticle: true,
+	// Forum thread — system-managed backing type (ADR-077); kept out of the
+	// /create composer via the frontend CREATE_ALLOWED_TYPES whitelist.
+	TypeForumThread: true,
 }
 
 // IsValidStatus reports whether s is a valid contents.status value.
@@ -209,6 +216,10 @@ var ContentTypeLabels = map[string]string{
 	TypeVideo: "Video",
 	// News post — intel 'news' promotion target.
 	TypeNews: "News",
+	// Article — intel 'article' promotion target.
+	TypeArticle: "Article",
+	// Forum thread — backing type for forum_threads rows.
+	TypeForumThread: "Forum Thread",
 }
 
 // ContentTypeHasCategory reports whether a content type uses admin-configurable

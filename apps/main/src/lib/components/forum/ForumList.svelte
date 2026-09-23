@@ -62,7 +62,7 @@
 
 		const params = new URLSearchParams(page.url.searchParams);
 		params.set('page_size', String(pageSize));
-		params.set('cursor_created_at', encodeURIComponent(c.createdAt));
+		params.set('cursor_created_at', c.createdAt);
 		params.set('cursor_id', c.id);
 
 		const sort = params.get('sort') ?? 'latest';

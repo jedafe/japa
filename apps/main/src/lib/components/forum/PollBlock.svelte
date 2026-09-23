@@ -2,12 +2,13 @@
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (polls)
 	// Renders a forum poll with options and live vote counts. The poll data
 	// is fetched by the parent (server load) and passed in. Voting is done
-	// client-side via POST /forum/polls/{id}/vote (or /poll-options/{id}/vote).
+	// client-side via POST /forum/polls/{id}/vote; changing or retracting a
+	// vote uses POST /poll-options/{id}/vote / DELETE /poll-options/{id}/vote.
 	// Live updates are pushed over the WebSocket room for the thread's space.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { untrack } from 'svelte';
-	import { BarChart3 } from 'lucide-svelte';
+	import { BarChart3, Loader2 } from 'lucide-svelte';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import type { PollWithResults, PollResult } from '$lib/types';
@@ -50,6 +51,17 @@
 	const totalVotes = $derived(results.reduce((sum, r) => sum + r.vote_count, 0));
 	const isClosed = $derived(!!poll.close_at && new Date(poll.close_at) < new Date());
 
+	async function refreshResults() {
+		const res = await api.get<PollWithResults>(`/forum/polls/${poll.id}`);
+		if (res.data) {
+			poll = res.data.poll;
+			results = res.data.results;
+			selected = new Set(res.data.user_votes ?? []);
+			hasVoted = (res.data.user_votes ?? []).length > 0;
+		}
+	}
+
+	// Pre-vote selection toggle (stage a choice, then press Vote).
 	function toggle(optionId: string) {
 		if (hasVoted || isClosed) return;
 		if (poll.is_multi_select) {
@@ -72,19 +84,41 @@
 			for (const optionId of selected) {
 				await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
 			}
-			// Refresh results.
-			const res = await api.get<PollWithResults>(`/forum/polls/${poll.id}`);
-			if (res.data) {
-				poll = res.data.poll;
-				results = res.data.results;
-				selected = new Set(res.data.user_votes ?? []);
-				hasVoted = (res.data.user_votes ?? []).length > 0;
-			}
+			await refreshResults();
 		} catch {
 			error = t('forum.poll_error');
 		} finally {
 			voting = false;
 		}
+	}
+
+	// Post-vote interactions: clicking the option you already voted on
+	// retracts that vote (DELETE /poll-options/{id}/vote); clicking a
+	// different option changes your vote (single-select polls replace the
+	// prior vote server-side; multi-select adds another). Ref: Section 08.
+	async function changeVote(optionId: string) {
+		if (voting || isClosed) return;
+		if (!(await requireAuthOrRedirect())) return;
+		voting = true;
+		error = '';
+		try {
+			if (selected.has(optionId)) {
+				await api.delete(`/poll-options/${optionId}/vote`);
+			} else {
+				await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
+			}
+			await refreshResults();
+		} catch {
+			error = t('forum.poll_error');
+		} finally {
+			voting = false;
+		}
+	}
+
+	function onOptionClick(optionId: string) {
+		if (isClosed || voting) return;
+		if (hasVoted) changeVote(optionId);
+		else toggle(optionId);
 	}
 
 	function pct(count: number): number {
@@ -97,6 +131,9 @@
 	<div class="mb-3 flex items-center gap-2">
 		<BarChart3 size={16} class="text-[var(--color-primary)]" />
 		<h3 class="text-sm font-semibold text-[var(--color-text)]">{poll.question}</h3>
+		{#if voting}
+			<Loader2 size={14} class="animate-spin text-[var(--color-muted)]" />
+		{/if}
 	</div>
 
 	{#if isClosed}
@@ -108,8 +145,8 @@
 			<li>
 				<button
 					type="button"
-					onclick={() => toggle(r.option_id)}
-					disabled={hasVoted || isClosed}
+					onclick={() => onOptionClick(r.option_id)}
+					disabled={isClosed || voting}
 					class="w-full text-left"
 				>
 					<div class="flex items-center gap-2">
@@ -160,6 +197,9 @@
 	{#if hasVoted || isClosed}
 		<p class="mt-2 text-xs text-[var(--color-muted)]">
 			{totalVotes} {t('forum.poll_votes')}
+			{#if hasVoted && !isClosed}
+				· {t('forum.poll_change_hint', 'Click an option to change or retract your vote')}
+			{/if}
 		</p>
 	{/if}
 </div>

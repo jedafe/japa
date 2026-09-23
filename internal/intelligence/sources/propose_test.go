@@ -124,12 +124,12 @@ func TestBuildProposeParams_SourceKind(t *testing.T) {
 		}
 	})
 
-	t.Run("accepts every kind in the enum", func(t *testing.T) {
+	t.Run("accepts every submittable kind", func(t *testing.T) {
 		t.Parallel()
 
 		for _, kind := range []string{
-			"publisher", "institution", "individual", "aggregator",
-			"institution_site", "personal_blog", "job_board",
+			"publisher", "aggregator",
+			"channel_profile", "institution_site", "personal_blog", "job_board",
 			"gov_portal", "community",
 		} {
 			input := validProposeInput()
@@ -141,6 +141,22 @@ func TestBuildProposeParams_SourceKind(t *testing.T) {
 			}
 			if arg.SourceKind != kind {
 				t.Errorf("source_kind = %v, want %q", arg.SourceKind, kind)
+			}
+		}
+	})
+
+	t.Run("rejects entity-stub kinds", func(t *testing.T) {
+		t.Parallel()
+
+		// institution/individual are valid CHECK values but reserved for
+		// CreateSourceFromEntity stubs — not user-submittable.
+		for _, kind := range []string{"institution", "individual"} {
+			input := validProposeInput()
+			input.SourceKind = kind
+
+			_, err := buildProposeParams(input)
+			if !errors.Is(err, errpkg.ErrInvalid) {
+				t.Fatalf("buildProposeParams(kind=%q) = %v, want ErrInvalid", kind, err)
 			}
 		}
 	})

@@ -11,7 +11,10 @@ import type { GuideListItem } from '$lib/types/content';
  * (page_size + cursor_created_at). Sort=top orders by vote_score descending.
  * Supports ?tag=slug, ?sort=latest|top|featured and ?status=all|solved|open.
  * sort=featured consumes the generic content_featured junction
- * (GET /content?type=discussion&featured=1 — §14).
+ * (GET /content?type=forum_thread&featured=1 — §14). Forum threads are
+ * backed by contents rows with content_type='forum_thread' (BUG-004 /
+ * m000636); 'discussion' is the §49 comment-thread type and never
+ * matches forum threads.
  */
 const PAGE_SIZE = 20;
 
@@ -39,7 +42,7 @@ export const load: PageServerLoad = async (event) => {
 		try {
 			const res = await apiGetEnvelope<GuideListItem[]>(
 				ctx,
-				`/content?type=discussion&featured=1&page_size=${PAGE_SIZE}`
+				`/content?type=forum_thread&featured=1&page_size=${PAGE_SIZE}`
 			);
 			return { ...base, featured: res.data ?? [] };
 		} catch {

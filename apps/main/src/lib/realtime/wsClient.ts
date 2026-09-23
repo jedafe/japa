@@ -85,11 +85,18 @@ class WsClient {
 		const { ticket, status } = await mintTicket();
 		if (!ticket) {
 			// Ticket minting failed (feature.dm off, auth lost, network).
-			// Don't retry permanent conditions (401/403/404) to avoid a
-			// ticket-spam loop; transient network/server errors keep the
-			// exponential backoff.
+			// A 404 means the realtime route/flag is off — retrying is
+			// pointless until it changes (the layout re-calls connect() when
+			// the feature flag flips). 401/403 are not treated as permanent:
+			// the api client already attempted a token refresh for the mint,
+			// and if that raced another rotation or hit a transient backend
+			// error the session may still recover — so auth failures use the
+			// same bounded exponential backoff as network errors. The
+			// MAX_RECONNECT_ATTEMPTS cap keeps a truly-dead session from
+			// minting forever (at most ~10 sparse mints, then it stops until
+			// connect() is invoked again).
 			this.isConnecting = false;
-			if (status === 401 || status === 403 || status === 404) {
+			if (status === 404) {
 				this.shouldReconnect = false;
 				return;
 			}

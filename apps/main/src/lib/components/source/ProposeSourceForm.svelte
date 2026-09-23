@@ -9,7 +9,10 @@
 	// by the /sources/submit page and inside ProposeSourceModal.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { Loader2, ScanSearch, AlertTriangle } from 'lucide-svelte';
+	import { Loader2, ScanSearch, AlertTriangle, X } from 'lucide-svelte';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import { sourceCategoryOptions, sourceCategoryLabel } from '$lib/sources';
 	import type { SourceMeta, ProbeReport } from '$lib/types/sources';
 
 	let {
@@ -40,20 +43,26 @@
 	let probeTimer: ReturnType<typeof setTimeout> | null = null;
 	let probeSeq = 0;
 
-	const kindOptions = $derived(meta.source_kinds ?? []);
-	const categoryOptions = $derived(meta.categories ?? []);
+	const kindOptions = $derived(meta.submittable_source_kinds ?? meta.source_kinds ?? []);
+	// Categories are the shared canonical list (curated catalog ∪ full
+	// taxonomy) — the same set the /sources directory filter offers.
+	const categoryOptions = $derived(sourceCategoryOptions(meta));
+	// Options already picked are removed from the autocomplete list so a
+	// category cannot be selected twice.
+	const categoryItems = $derived<AutocompleteItem[]>(
+		categoryOptions
+			.filter((c) => !categories.includes(c))
+			.map((c) => ({ id: c, label: sourceCategoryLabel(c) }))
+	);
+	const categoryFetcher = $derived(staticAutocompleteFetcher(categoryItems));
 	const probeMethods = $derived(probeReport?.methods ?? []);
 	const probeChannels = $derived(probeReport?.channels ?? []);
 	const probeWarnings = $derived(probeReport?.warnings ?? []);
 	const probeJsonldTypes = $derived(probeReport?.jsonld_types ?? []);
 	const robotsBlocked = $derived(!!probeReport?.robots?.fetched && !probeReport.robots.allowed);
 
-	function toggleCategory(c: string) {
-		categories = categories.includes(c) ? categories.filter((v) => v !== c) : [...categories, c];
-	}
-
-	function categoryLabel(c: string): string {
-		return t(`sources.submit.category.${c}`, c.replace(/_/g, ' '));
+	function removeCategory(c: string) {
+		categories = categories.filter((v) => v !== c);
 	}
 
 	function methodLabel(m: string): string {
@@ -189,7 +198,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-name">
 				{t('sources.submit.name', 'Source name')}
 			</label>
-			<input id="psf-name" name="name" bind:value={name} class={inputClass()} placeholder="Node.js Blog" disabled={loading} />
+			<input id="psf-name" name="name" bind:value={name} class={inputClass()} placeholder="DAAD Scholarships" disabled={loading} />
 		</div>
 
 		<div>
@@ -205,7 +214,7 @@
 					oninput={onUrlInput}
 					onblur={scheduleProbe}
 					class={inputClass()}
-					placeholder="https://nodejs.org/en/blog/"
+					placeholder="https://www.daad.de/en/scholarships/"
 					disabled={loading}
 				/>
 				<button
@@ -333,7 +342,7 @@
 				name="domain"
 				bind:value={domain}
 				class={inputClass()}
-				placeholder="nodejs.org"
+				placeholder="daad.de"
 				disabled={loading}
 			/>
 		</div>
@@ -343,22 +352,38 @@
 				{t('sources.submit.categories', 'Categories')}
 			</span>
 			{#if categoryOptions.length > 0}
-				<div class="flex flex-wrap gap-1.5" role="group" aria-labelledby="psf-categories-label">
-					{#each categoryOptions as c (c)}
-						{@const selected = categories.includes(c)}
-						<button
-							type="button"
-							aria-pressed={selected}
-							onclick={() => toggleCategory(c)}
-							disabled={loading}
-							class="rounded-full border px-2.5 py-1 text-xs transition disabled:opacity-50 {selected
-								? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary)]'
-								: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-subtle)] hover:border-[var(--color-primary)]/50 hover:text-[var(--color-text)]'}"
-						>
-							{categoryLabel(c)}
-						</button>
-					{/each}
-				</div>
+				{#if categories.length > 0}
+					<div class="mb-1.5 flex flex-wrap gap-1.5" role="group" aria-labelledby="psf-categories-label">
+						{#each categories as c (c)}
+							<span
+								class="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 py-1 pl-2.5 pr-1 text-xs font-medium text-[var(--color-primary)]"
+							>
+								{sourceCategoryLabel(c)}
+								<button
+									type="button"
+									aria-label={t('common.remove', 'Remove')}
+									onclick={() => removeCategory(c)}
+									disabled={loading}
+									class="flex items-center justify-center rounded-full p-0.5 transition hover:bg-[var(--color-primary)]/20 disabled:opacity-50"
+								>
+									<X size={11} />
+								</button>
+							</span>
+						{/each}
+					</div>
+				{/if}
+				<Autocomplete
+					id="psf-categories"
+					placeholder={t('sources.submit.categories_placeholder', 'Search categories…')}
+					ariaLabel={t('sources.submit.categories', 'Categories')}
+					emptyMessage={t('sources.submit.categories_empty', 'No matching category')}
+					fetcher={categoryFetcher}
+					initialFetcher={categoryFetcher}
+					selectedId={null}
+					onSelect={(item) => {
+						categories = [...categories, item.id];
+					}}
+				/>
 				<p class="mt-1 text-xs text-[var(--color-muted)]">
 					{t('sources.submit.categories_hint', 'Pick every domain this source covers — at least one.')}
 				</p>
@@ -406,7 +431,7 @@
 				bind:value={description}
 				class={inputClass()}
 				rows={3}
-				placeholder="Official Node.js releases and announcements"
+				placeholder="Official DAAD scholarship database for international students"
 				disabled={loading}
 			></textarea>
 		</div>

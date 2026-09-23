@@ -24,6 +24,10 @@
 		const method = isBlocked ? 'delete' : 'post';
 		try {
 			const res = await api[method]<{ is_blocked: boolean }>(`/sources/${slug}/block`);
+			if (res.error) {
+				error = res.error.message || t('sources.block.error', 'Block failed');
+				return;
+			}
 			isBlocked = res.data?.is_blocked ?? !isBlocked;
 			onChange?.(isBlocked);
 		} catch (err) {

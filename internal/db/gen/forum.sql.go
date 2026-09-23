@@ -90,25 +90,29 @@ func (q *Queries) AddForumPollOption(ctx context.Context, arg AddForumPollOption
 }
 
 const addForumThreadTag = `-- name: AddForumThreadTag :exec
-INSERT INTO forum_thread_tags (thread_id, tag_id) VALUES ($1, $2)
-
-ON CONFLICT DO NOTHING
+INSERT INTO content_tags (content_id, tag_id)
+SELECT ft.content_id, $1
+FROM forum_threads ft
+WHERE ft.id = $2 AND ft.content_id IS NOT NULL
+ON CONFLICT (content_id, tag_id) DO NOTHING
 `
 
 type AddForumThreadTagParams struct {
-	ThreadID pgtype.UUID `json:"thread_id"`
 	TagID    pgtype.UUID `json:"tag_id"`
+	ThreadID pgtype.UUID `json:"thread_id"`
 }
 
+// Attaches a universal tag to the thread's backing content row.
 func (q *Queries) AddForumThreadTag(ctx context.Context, arg AddForumThreadTagParams) error {
-	_, err := q.db.Exec(ctx, addForumThreadTag, arg.ThreadID, arg.TagID)
+	_, err := q.db.Exec(ctx, addForumThreadTag, arg.TagID, arg.ThreadID)
 	return err
 }
 
 const countForumThreadTags = `-- name: CountForumThreadTags :one
 SELECT COUNT(*)::int AS tag_count
-FROM forum_thread_tags
-WHERE thread_id = $1
+FROM content_tags ct
+JOIN forum_threads ft ON ft.content_id = ct.content_id
+WHERE ft.id = $1
 `
 
 // Enforces the "max 5 tags per post" rule at the handler/service layer.
@@ -199,51 +203,6 @@ func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyPara
 		&i.DeletedAt,
 		&i.AmaPending,
 		&i.AmaApprovedAt,
-	)
-	return i, err
-}
-
-const createForumTag = `-- name: CreateForumTag :one
-
-INSERT INTO forum_tags (name, slug, description, rules, cover_image_id, moderator_user_id) VALUES ($1, $2, $3, $4, $5, $6)
-
-RETURNING id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
-`
-
-type CreateForumTagParams struct {
-	Name            string      `json:"name"`
-	Slug            string      `json:"slug"`
-	Description     *string     `json:"description"`
-	Rules           *string     `json:"rules"`
-	CoverImageID    pgtype.UUID `json:"cover_image_id"`
-	ModeratorUserID pgtype.UUID `json:"moderator_user_id"`
-}
-
-// =====================
-// Tags
-// =====================
-func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) (ForumTag, error) {
-	row := q.db.QueryRow(ctx, createForumTag,
-		arg.Name,
-		arg.Slug,
-		arg.Description,
-		arg.Rules,
-		arg.CoverImageID,
-		arg.ModeratorUserID,
-	)
-	var i ForumTag
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Slug,
-		&i.Description,
-		&i.Rules,
-		&i.CoverImageID,
-		&i.FollowerCount,
-		&i.ModeratorUserID,
-		&i.CreatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -670,56 +629,6 @@ func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, id pgtype.UUI
 		&i.AuthorUsername,
 		&i.AuthorDisplayName,
 		&i.AuthorAvatarUrl,
-	)
-	return i, err
-}
-
-const getForumTagByID = `-- name: GetForumTagByID :one
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
-FROM forum_tags
-WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) GetForumTagByID(ctx context.Context, id pgtype.UUID) (ForumTag, error) {
-	row := q.db.QueryRow(ctx, getForumTagByID, id)
-	var i ForumTag
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Slug,
-		&i.Description,
-		&i.Rules,
-		&i.CoverImageID,
-		&i.FollowerCount,
-		&i.ModeratorUserID,
-		&i.CreatedAt,
-		&i.DeletedAt,
-	)
-	return i, err
-}
-
-const getForumTagBySlug = `-- name: GetForumTagBySlug :one
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
-FROM forum_tags
-WHERE slug = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) GetForumTagBySlug(ctx context.Context, slug string) (ForumTag, error) {
-	row := q.db.QueryRow(ctx, getForumTagBySlug, slug)
-	var i ForumTag
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Slug,
-		&i.Description,
-		&i.Rules,
-		&i.CoverImageID,
-		&i.FollowerCount,
-		&i.ModeratorUserID,
-		&i.CreatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1388,58 +1297,17 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, thread
 	return items, nil
 }
 
-const listForumTags = `-- name: ListForumTags :many
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
-FROM forum_tags
-WHERE deleted_at IS NULL
-ORDER BY follower_count DESC, name ASC
-LIMIT $2 OFFSET $1
-`
-
-type ListForumTagsParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
-}
-
-func (q *Queries) ListForumTags(ctx context.Context, arg ListForumTagsParams) ([]ForumTag, error) {
-	rows, err := q.db.Query(ctx, listForumTags, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ForumTag
-	for rows.Next() {
-		var i ForumTag
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Slug,
-			&i.Description,
-			&i.Rules,
-			&i.CoverImageID,
-			&i.FollowerCount,
-			&i.ModeratorUserID,
-			&i.CreatedAt,
-			&i.DeletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listForumThreadTags = `-- name: ListForumThreadTags :many
-SELECT ft.id, ft.name, ft.slug, ft.description, ft.rules,
- ft.cover_image_id, ft.follower_count, ft.moderator_user_id, ft.created_at
-FROM forum_thread_tags ftt
-JOIN forum_tags ft ON ft.id = ftt.tag_id
-WHERE ftt.thread_id = $1 AND ft.deleted_at IS NULL
-ORDER BY ft.name ASC
+
+
+SELECT t.id, t.name, t.slug, t.description, t.rules,
+ t.cover_media_id AS cover_image_id, t.follower_count,
+ NULL::uuid AS moderator_user_id, t.created_at
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+JOIN forum_threads ft ON ft.content_id = ct.content_id
+WHERE ft.id = $1
+ORDER BY t.name ASC
 `
 
 type ListForumThreadTagsRow struct {
@@ -1454,9 +1322,16 @@ type ListForumThreadTagsRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
-// Lists the tags attached to a thread, joining forum_tags for details.
-// Excludes soft-deleted tags. Ref: Section 08 (tags are first-class on
-// discussions) — GET /forum/{id}/tags.
+// =====================
+// Tags
+// =====================
+// Tags are universal (Section 08/14): forum threads attach tags through the
+// shared `tags` + `content_tags` tables via forum_threads.content_id.
+// The legacy forum_tags / forum_thread_tags tables are backfilled by
+// migration 000719 and are no longer written to.
+// Lists the universal tags attached to a thread's backing content row.
+// Output columns keep the legacy ForumTag wire shape so the response
+// contract is unchanged — GET /forum/{id}/tags.
 func (q *Queries) ListForumThreadTags(ctx context.Context, threadID pgtype.UUID) ([]ListForumThreadTagsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadTags, threadID)
 	if err != nil {
@@ -2019,8 +1894,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at
 FROM forum_threads ft
-JOIN forum_thread_tags ftt ON ftt.thread_id = ft.id
-WHERE ftt.tag_id = $1
+JOIN content_tags ct ON ct.content_id = ft.content_id
+WHERE ct.tag_id = $1
  AND ft.deleted_at IS NULL
  AND (ft.created_at < $2 OR ($2 IS NULL))
 ORDER BY ft.created_at DESC, ft.id DESC
@@ -2112,11 +1987,11 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  s.slug AS space_slug,
  s.level AS space_level
 FROM forum_threads ft
-JOIN forum_thread_tags ftt ON ftt.thread_id = ft.id
+JOIN content_tags ct ON ct.content_id = ft.content_id
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ftt.tag_id = $1
+WHERE ct.tag_id = $1
  AND ft.deleted_at IS NULL
  AND ft.solved = COALESCE($2::bool, ft.solved)
  AND (
@@ -2431,8 +2306,10 @@ func (q *Queries) RemoveForumBookmark(ctx context.Context, arg RemoveForumBookma
 }
 
 const removeForumThreadTag = `-- name: RemoveForumThreadTag :exec
-DELETE FROM forum_thread_tags
-WHERE thread_id = $1 AND tag_id = $2
+DELETE FROM content_tags ct
+USING forum_threads ft
+WHERE ct.content_id = ft.content_id
+ AND ft.id = $1 AND ct.tag_id = $2
 `
 
 type RemoveForumThreadTagParams struct {
@@ -2469,16 +2346,6 @@ WHERE id = $1
 
 func (q *Queries) SoftDeleteForumReply(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteForumReply, id)
-	return err
-}
-
-const softDeleteForumTag = `-- name: SoftDeleteForumTag :exec
-UPDATE forum_tags SET deleted_at = now()
-WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) SoftDeleteForumTag(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, softDeleteForumTag, id)
 	return err
 }
 
@@ -2566,71 +2433,6 @@ func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyPara
 		&i.AmaApprovedAt,
 	)
 	return i, err
-}
-
-const updateForumTag = `-- name: UpdateForumTag :one
-UPDATE forum_tags
-SET name = $1,
- slug = $2,
- description = $3,
- rules = $4,
- cover_image_id = $5,
- moderator_user_id = $6
-WHERE id = $7 AND deleted_at IS NULL
-RETURNING id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
-`
-
-type UpdateForumTagParams struct {
-	Name            string      `json:"name"`
-	Slug            string      `json:"slug"`
-	Description     *string     `json:"description"`
-	Rules           *string     `json:"rules"`
-	CoverImageID    pgtype.UUID `json:"cover_image_id"`
-	ModeratorUserID pgtype.UUID `json:"moderator_user_id"`
-	ID              pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) (ForumTag, error) {
-	row := q.db.QueryRow(ctx, updateForumTag,
-		arg.Name,
-		arg.Slug,
-		arg.Description,
-		arg.Rules,
-		arg.CoverImageID,
-		arg.ModeratorUserID,
-		arg.ID,
-	)
-	var i ForumTag
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Slug,
-		&i.Description,
-		&i.Rules,
-		&i.CoverImageID,
-		&i.FollowerCount,
-		&i.ModeratorUserID,
-		&i.CreatedAt,
-		&i.DeletedAt,
-	)
-	return i, err
-}
-
-const updateForumTagFollowerCount = `-- name: UpdateForumTagFollowerCount :exec
-UPDATE forum_tags
-SET follower_count = GREATEST(0, follower_count + $1)
-WHERE id = $2
-`
-
-type UpdateForumTagFollowerCountParams struct {
-	Delta int32       `json:"delta"`
-	ID    pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) UpdateForumTagFollowerCount(ctx context.Context, arg UpdateForumTagFollowerCountParams) error {
-	_, err := q.db.Exec(ctx, updateForumTagFollowerCount, arg.Delta, arg.ID)
-	return err
 }
 
 const updateForumThread = `-- name: UpdateForumThread :one

@@ -34,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
+	"github.com/jedafe/japa/internal/timeparse"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -179,6 +180,16 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	}
 
 	return id, nil
+}
+
+// ParsePublishAtParam parses a JSON publish_at value into a timestamptz.
+// pgtype.Timestamptz.Scan only understands Postgres text format
+// ("2006-01-02 15:04:05+00"), which rejects the RFC 3339 timestamps JSON
+// clients actually send — try RFC 3339 first and fall back to Scan for
+// callers that still send Postgres format. Exported for internal/blog,
+// which shares the same publish_at contract on its create/update handlers.
+func ParsePublishAtParam(s string) (pgtype.Timestamptz, error) {
+	return timeparse.ParseTimestamptz(s)
 }
 
 // requireUser resolves the authenticated user from the request context and
@@ -1034,7 +1045,8 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if input.PublishAt != nil && *input.PublishAt != "" {
-		if err := createInput.PublishAt.Scan(*input.PublishAt); err != nil {
+		var err error
+		if createInput.PublishAt, err = ParsePublishAtParam(*input.PublishAt); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}
@@ -1724,7 +1736,8 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if input.PublishAt != nil && *input.PublishAt != "" {
-		if err := updateInput.PublishAt.Scan(*input.PublishAt); err != nil {
+		var err error
+		if updateInput.PublishAt, err = ParsePublishAtParam(*input.PublishAt); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}

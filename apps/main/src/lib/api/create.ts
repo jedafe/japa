@@ -1,4 +1,5 @@
 import { api } from '$lib/api/client';
+import { localDateTimeToIso } from '$lib/utils/datetime';
 import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries, SpaceType, Space } from '$lib/types';
 import { searchPath, mapUserHits, mapContentHits, mapTagHits, mapCouponHits, mapLiteralHits } from '$lib/tiptap/search';
 
@@ -51,8 +52,10 @@ export const patchContentSpaces = (
 	input: { primary_space_id: string; additional_space_ids: string[] }
 ) => api.patch<{ updated: boolean }>(`/content/${id}/spaces`, input);
 export const publishContent = (id: string) => api.post<ContentRecord>(`/content/${id}/publish`);
+// publish_at arrives as a raw datetime-local value — the API decodes it into
+// a time.Time, which requires RFC 3339, so normalise to an ISO instant here.
 export const scheduleContent = (id: string, publish_at: string) =>
-	api.post<ContentRecord>(`/content/${id}/schedule`, { publish_at });
+	api.post<ContentRecord>(`/content/${id}/schedule`, { publish_at: localDateTimeToIso(publish_at) });
 
 /* ---- tags (deferred linkage) ----
  * The composer tracks tags as slugs (from TagInput), not UUIDs. The spec-

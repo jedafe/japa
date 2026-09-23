@@ -658,7 +658,7 @@
   "intel.kind_aggregator": "Aggregator",
   "intel.kind_individual": "Individual",
   "intel.kind_institution": "Institution",
-  "intel.kind_publisher": "Publisher",
+  "intel.kind_publisher": "Publication",
   "intel.last_probed": "Last probed",
   "intel.last_status": "Last status",
   "intel.load_failed": "Failed to load intelligence data",

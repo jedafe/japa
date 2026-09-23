@@ -115,6 +115,15 @@ func (k SourceKind) IsValid() bool {
 	return false
 }
 
+// IsSubmittable reports whether k may be chosen on a public source proposal.
+// Institution and individual are entity-stub kinds assigned only by
+// CreateSourceFromEntity (org/space/user-backed rows, crawl_method=manual);
+// user-facing equivalents are institution_site, personal_blog and
+// channel_profile.
+func (k SourceKind) IsSubmittable() bool {
+	return k.IsValid() && k != SourceKindInstitution && k != SourceKindIndividual
+}
+
 // CrawlFrequency is a volatility bucket.
 type CrawlFrequency string
 

@@ -4,11 +4,13 @@
 // followed via the follows package (entity_type="tag").
 // // Tag moderation model: all tag mutations (create/update/delete) require
 // the tags.manage permission, held by admins and super_admins. The
-// tag_moderators table records designated moderators per tag for display
-// and audit purposes, but does not grant a separate runtime permission
-// node — tag_moderators is informational only in V1. This matches the
-// forum_tags.moderator_user_id pattern (single nullable moderator) and
-// avoids a tag.moderate.assigned runtime-resolved node. Ref: §08, §26.
+// tag_moderators table grants no standalone permission node, but since the
+// studio moderation spec (.jeos/specs/2026-09-23-studio-moderation-tab.md)
+// it resolves dynamically in the moderator queue: tag moderators see and
+// can action reports on content carrying their tags (content actions only —
+// warn/ban require space/platform/assigned scope). Forum-tag moderators arrive
+// through the same table — forum tags are universal since migration 000719.
+// Ref: §08, §26.
 package tags
 
 import (

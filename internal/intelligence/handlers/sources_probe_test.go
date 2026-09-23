@@ -386,6 +386,19 @@ func TestHandleGetSourcesMeta_IntelChannels(t *testing.T) {
 		}
 	}
 
+	// submittable_source_kinds is the propose-form subset: the 8-kind set
+	// minus the entity-stub kinds (institution, individual).
+	subKinds, ok := data["submittable_source_kinds"].([]any)
+	if !ok || len(subKinds) != 8 {
+		t.Fatalf("submittable_source_kinds = %v, want 8 options", data["submittable_source_kinds"])
+	}
+	for _, k := range subKinds {
+		opt := k.(map[string]any)
+		if v := opt["value"]; v == "institution" || v == "individual" {
+			t.Errorf("submittable_source_kinds must not contain %q", v)
+		}
+	}
+
 	// categories must include the intel-channels additions.
 	cats, ok := data["categories"].([]any)
 	if !ok {

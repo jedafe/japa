@@ -64,9 +64,24 @@ var sourceSortOptions = []sourceOption{
 // Ref: sources directory v2 design (2026-09-11-sources-directory-design.md),
 // intel-channels curation design §1 (2026-09-20-intel-channels-curation-design.md).
 var sourceKindOptions = []sourceOption{
-	{Value: string(sources.SourceKindPublisher), Label: "Publisher"},
+	{Value: string(sources.SourceKindPublisher), Label: "Publication"},
 	{Value: string(sources.SourceKindInstitution), Label: "Institution"},
 	{Value: string(sources.SourceKindIndividual), Label: "Individual"},
+	{Value: string(sources.SourceKindAggregator), Label: "Aggregator"},
+	{Value: string(sources.SourceKindChannelProfile), Label: "Channel or profile"},
+	{Value: string(sources.SourceKindInstitutionSite), Label: "Institution site"},
+	{Value: string(sources.SourceKindPersonalBlog), Label: "Personal blog"},
+	{Value: string(sources.SourceKindJobBoard), Label: "Job board"},
+	{Value: string(sources.SourceKindGovPortal), Label: "Government portal"},
+	{Value: string(sources.SourceKindCommunity), Label: "Community"},
+}
+
+// submittableSourceKindOptions is the propose-form subset of
+// sourceKindOptions: entity-stub kinds (institution, individual) are
+// excluded — they are assigned only by CreateSourceFromEntity and
+// buildProposeParams rejects them. Mirrors sources.SourceKind.IsSubmittable.
+var submittableSourceKindOptions = []sourceOption{
+	{Value: string(sources.SourceKindPublisher), Label: "Publication"},
 	{Value: string(sources.SourceKindAggregator), Label: "Aggregator"},
 	{Value: string(sources.SourceKindChannelProfile), Label: "Channel or profile"},
 	{Value: string(sources.SourceKindInstitutionSite), Label: "Institution site"},
@@ -736,7 +751,11 @@ func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) 
 				"blog", "event", "dataset", "announcement", "scam_alert",
 			},
 			"source_types": []string{"rss", "video", "api", "static"},
-			"source_kinds": sourceKindOptions,
+			// source_kinds is the full 10-kind set for the directory filter
+			// and admin forms; submittable_source_kinds is the propose-form
+			// subset (entity-stub kinds excluded — see IsSubmittable).
+			"source_kinds":             sourceKindOptions,
+			"submittable_source_kinds": submittableSourceKindOptions,
 			// channel_pipelines is the intel_source_channels.pipeline CHECK
 			// set (migration 000681) — extract sends pages to the LLM
 			// extractor, curate promotes itemized records directly, hybrid

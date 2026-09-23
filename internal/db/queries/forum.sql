@@ -61,8 +61,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at
 FROM forum_threads ft
-JOIN forum_thread_tags ftt ON ftt.thread_id = ft.id
-WHERE ftt.tag_id = @tag_id
+JOIN content_tags ct ON ct.content_id = ft.content_id
+WHERE ct.tag_id = @tag_id
  AND ft.deleted_at IS NULL
  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY ft.created_at DESC, ft.id DESC
@@ -230,11 +230,11 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  s.slug AS space_slug,
  s.level AS space_level
 FROM forum_threads ft
-JOIN forum_thread_tags ftt ON ftt.thread_id = ft.id
+JOIN content_tags ct ON ct.content_id = ft.content_id
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ftt.tag_id = @tag_id
+WHERE ct.tag_id = @tag_id
  AND ft.deleted_at IS NULL
  AND ft.solved = COALESCE(sqlc.narg(solved)::bool, ft.solved)
  AND (
@@ -512,79 +512,45 @@ WHERE option_id = @option_id AND user_id = @user_id;
 -- Tags
 -- =====================
 
--- name: CreateForumTag :one
-INSERT INTO forum_tags (name, slug, description, rules, cover_image_id, moderator_user_id) VALUES (@name, @slug, sqlc.narg(description), sqlc.narg(rules), sqlc.narg(cover_image_id), sqlc.narg(moderator_user_id))
-
-RETURNING id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at;
-
--- name: GetForumTagByID :one
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
-FROM forum_tags
-WHERE id = @id AND deleted_at IS NULL;
-
--- name: GetForumTagBySlug :one
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
-FROM forum_tags
-WHERE slug = @slug AND deleted_at IS NULL;
-
--- name: ListForumTags :many
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
-FROM forum_tags
-WHERE deleted_at IS NULL
-ORDER BY follower_count DESC, name ASC
-LIMIT @page_limit OFFSET @page_offset;
+-- Tags are universal (Section 08/14): forum threads attach tags through the
+-- shared `tags` + `content_tags` tables via forum_threads.content_id.
+-- The legacy forum_tags / forum_thread_tags tables are backfilled by
+-- migration 000719 and are no longer written to.
 
 -- name: ListForumThreadTags :many
--- Lists the tags attached to a thread, joining forum_tags for details.
--- Excludes soft-deleted tags. Ref: Section 08 (tags are first-class on
--- discussions) — GET /forum/{id}/tags.
-SELECT ft.id, ft.name, ft.slug, ft.description, ft.rules,
- ft.cover_image_id, ft.follower_count, ft.moderator_user_id, ft.created_at
-FROM forum_thread_tags ftt
-JOIN forum_tags ft ON ft.id = ftt.tag_id
-WHERE ftt.thread_id = @thread_id AND ft.deleted_at IS NULL
-ORDER BY ft.name ASC;
+-- Lists the universal tags attached to a thread's backing content row.
+-- Output columns keep the legacy ForumTag wire shape so the response
+-- contract is unchanged — GET /forum/{id}/tags.
+SELECT t.id, t.name, t.slug, t.description, t.rules,
+ t.cover_media_id AS cover_image_id, t.follower_count,
+ NULL::uuid AS moderator_user_id, t.created_at
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+JOIN forum_threads ft ON ft.content_id = ct.content_id
+WHERE ft.id = @thread_id
+ORDER BY t.name ASC;
 
 -- name: AddForumThreadTag :exec
-INSERT INTO forum_thread_tags (thread_id, tag_id) VALUES (@thread_id, @tag_id)
-
-ON CONFLICT DO NOTHING;
+-- Attaches a universal tag to the thread's backing content row.
+INSERT INTO content_tags (content_id, tag_id)
+SELECT ft.content_id, @tag_id
+FROM forum_threads ft
+WHERE ft.id = @thread_id AND ft.content_id IS NOT NULL
+ON CONFLICT (content_id, tag_id) DO NOTHING;
 
 -- name: CountForumThreadTags :one
 -- Enforces the "max 5 tags per post" rule at the handler/service layer.
 -- Ref: Section 08 Tags Schema.
 SELECT COUNT(*)::int AS tag_count
-FROM forum_thread_tags
-WHERE thread_id = @thread_id;
+FROM content_tags ct
+JOIN forum_threads ft ON ft.content_id = ct.content_id
+WHERE ft.id = @thread_id;
 
 -- name: RemoveForumThreadTag :exec
-DELETE FROM forum_thread_tags
-WHERE thread_id = @thread_id AND tag_id = @tag_id;
-
--- name: UpdateForumTagFollowerCount :exec
-UPDATE forum_tags
-SET follower_count = GREATEST(0, follower_count + @delta)
-WHERE id = @id;
-
--- name: UpdateForumTag :one
-UPDATE forum_tags
-SET name = @name,
- slug = @slug,
- description = @description,
- rules = @rules,
- cover_image_id = @cover_image_id,
- moderator_user_id = @moderator_user_id
-WHERE id = @id AND deleted_at IS NULL
-RETURNING id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at;
-
--- name: SoftDeleteForumTag :exec
-UPDATE forum_tags SET deleted_at = now()
-WHERE id = @id AND deleted_at IS NULL;
+DELETE FROM content_tags ct
+USING forum_threads ft
+WHERE ct.content_id = ft.content_id
+ AND ft.id = @thread_id AND ct.tag_id = @tag_id;
 
 -- name: IncrementForumThreadViewCount :exec
 UPDATE forum_threads SET view_count = view_count + @delta

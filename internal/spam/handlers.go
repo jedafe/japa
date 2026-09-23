@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/timeparse"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -99,8 +100,8 @@ func parseCursorCreatedAt(r *http.Request) pgtype.Timestamptz {
 		return pgtype.Timestamptz{}
 	}
 
-	var ts pgtype.Timestamptz
-	if err := ts.Scan(s); err != nil {
+	ts, err := timeparse.ParseTimestamptz(s)
+	if err != nil {
 		return pgtype.Timestamptz{}
 	}
 
@@ -302,8 +303,8 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 	var expiresAt *pgtype.Timestamptz
 
 	if input.ExpiresAt != nil && *input.ExpiresAt != "" {
-		var ts pgtype.Timestamptz
-		if err := ts.Scan(*input.ExpiresAt); err != nil {
+		ts, err := timeparse.ParseTimestamptz(*input.ExpiresAt)
+		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expires_at", "expires_at must be a valid timestamp")
 			return
 		}

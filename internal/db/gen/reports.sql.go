@@ -96,6 +96,96 @@ func (q *Queries) AutoHideContent(ctx context.Context, id pgtype.UUID) (AutoHide
 	return i, err
 }
 
+const countAssignedReports = `-- name: CountAssignedReports :one
+SELECT COUNT(*)::int FROM content_reports
+WHERE reviewed_by = $1
+`
+
+// Reports explicitly assigned to the caller (reviewed_by = caller). Counts
+// all statuses — assignment is itself a scope grant, so a moderator whose
+// assigned reports are all resolved keeps workbench access.
+func (q *Queries) CountAssignedReports(ctx context.Context, userID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countAssignedReports, userID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countModerationQueue = `-- name: CountModerationQueue :one
+WITH scoped AS (
+    SELECT cr.id,
+           COALESCE(cr.reviewed_by = $9::uuid, false)::bool AS scope_assigned,
+           COALESCE(
+               (cr.entity_type = 'space'   AND cr.entity_id = ANY($10::uuid[])) OR
+               (cr.entity_type = 'content' AND c.space_id   = ANY($10::uuid[])) OR
+               (cr.entity_type = 'comment' AND pc.space_id  = ANY($10::uuid[])),
+               false
+           )::bool AS scope_space,
+           EXISTS (SELECT 1 FROM content_tags ct
+                    WHERE ct.content_id = COALESCE(c.id, pc.id)
+                      AND ct.tag_id = ANY($11::uuid[]))::bool AS scope_tag,
+           cr.status, cr.entity_type, cr.entity_id, cr.reason, cr.notes,
+           COALESCE(c.id, pc.id) AS resolved_content_id,
+           CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
+                ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
+           COALESCE(c.title, pc.title, s.name, tu.username, '') AS entity_title
+    FROM content_reports cr
+    LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_id
+    LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
+    LEFT JOIN contents pc       ON pc.id = cm.content_id
+    LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
+    LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
+)
+SELECT COUNT(*)::int FROM scoped
+WHERE ($1::bool OR scope_assigned OR scope_space OR scope_tag)
+  AND ($2::text IS NULL OR status = $2)
+  AND ($3::text IS NULL OR entity_type = $3)
+  AND ($4::uuid IS NULL OR resolved_space_id = $4::uuid)
+  AND ($5::uuid IS NULL OR
+       EXISTS (SELECT 1 FROM content_tags ct
+                WHERE ct.content_id = resolved_content_id AND ct.tag_id = $5::uuid))
+  AND ($6::bool = false OR scope_assigned)
+  AND ($7::bool = false OR status IN ('pending', 'reviewing'))
+  AND ($8::text IS NULL OR entity_id::text ILIKE '%' || $8 || '%'
+       OR reason ILIKE '%' || $8 || '%'
+       OR COALESCE(notes, '') ILIKE '%' || $8 || '%'
+       OR COALESCE(entity_title, '') ILIKE '%' || $8 || '%')
+`
+
+type CountModerationQueueParams struct {
+	Platform      bool          `json:"platform"`
+	Status        *string       `json:"status"`
+	EntityType    *string       `json:"entity_type"`
+	FilterSpaceID pgtype.UUID   `json:"filter_space_id"`
+	FilterTagID   pgtype.UUID   `json:"filter_tag_id"`
+	AssignedOnly  bool          `json:"assigned_only"`
+	OpenOnly      bool          `json:"open_only"`
+	Q             *string       `json:"q"`
+	Caller        pgtype.UUID   `json:"caller"`
+	SpaceIds      []pgtype.UUID `json:"space_ids"`
+	TagIds        []pgtype.UUID `json:"tag_ids"`
+}
+
+// Same scope + filters as ListModerationQueue, for pagination totals.
+func (q *Queries) CountModerationQueue(ctx context.Context, arg CountModerationQueueParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countModerationQueue,
+		arg.Platform,
+		arg.Status,
+		arg.EntityType,
+		arg.FilterSpaceID,
+		arg.FilterTagID,
+		arg.AssignedOnly,
+		arg.OpenOnly,
+		arg.Q,
+		arg.Caller,
+		arg.SpaceIds,
+		arg.TagIds,
+	)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countPendingReportsForEntity = `-- name: CountPendingReportsForEntity :one
 SELECT COUNT(*)::int FROM content_reports
 WHERE entity_type = $1
@@ -169,6 +259,116 @@ func (q *Queries) DeleteReport(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const getModerationQueueItem = `-- name: GetModerationQueueItem :one
+SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.notes,
+       cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
+       ru.username AS reporter_username,
+       rup.display_name AS reporter_display_name,
+       COALESCE(c.title, pc.title, s.name, tu.username, '') AS entity_title,
+       COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(n #>> '{}', ' ')
+                    FROM jsonb_path_query(cm.body, '$.**.text') AS n), 240), s.description) AS entity_excerpt,
+       COALESCE(c.slug, pc.slug, s.slug, '') AS entity_slug,
+       au.username AS entity_author_username,
+       CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
+            ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
+       sp.name AS entity_space_name,
+       sp.slug AS entity_space_slug,
+       COALESCE(cr.reviewed_by = $1::uuid, false)::bool AS scope_assigned,
+       COALESCE(
+           (cr.entity_type = 'space'   AND cr.entity_id = ANY($2::uuid[])) OR
+           (cr.entity_type = 'content' AND c.space_id   = ANY($2::uuid[])) OR
+           (cr.entity_type = 'comment' AND pc.space_id  = ANY($2::uuid[])),
+           false
+       )::bool AS scope_space,
+       EXISTS (SELECT 1 FROM content_tags ct
+                WHERE ct.content_id = COALESCE(c.id, pc.id)
+                  AND ct.tag_id = ANY($3::uuid[]))::bool AS scope_tag
+FROM content_reports cr
+LEFT JOIN users ru          ON ru.id = cr.reporter_user_id
+LEFT JOIN user_profiles rup ON rup.user_id = cr.reporter_user_id
+LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_id
+LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
+LEFT JOIN contents pc       ON pc.id = cm.content_id
+LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
+LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id)
+LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
+LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id)
+WHERE cr.id = $4
+`
+
+type GetModerationQueueItemParams struct {
+	Caller   pgtype.UUID   `json:"caller"`
+	SpaceIds []pgtype.UUID `json:"space_ids"`
+	TagIds   []pgtype.UUID `json:"tag_ids"`
+	ID       pgtype.UUID   `json:"id"`
+}
+
+type GetModerationQueueItemRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	ReporterUserID       pgtype.UUID        `json:"reporter_user_id"`
+	EntityType           string             `json:"entity_type"`
+	EntityID             pgtype.UUID        `json:"entity_id"`
+	Reason               string             `json:"reason"`
+	Notes                *string            `json:"notes"`
+	EvidenceUrls         []string           `json:"evidence_urls"`
+	Status               string             `json:"status"`
+	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote       *string            `json:"resolution_note"`
+	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	ReporterUsername     *string            `json:"reporter_username"`
+	ReporterDisplayName  *string            `json:"reporter_display_name"`
+	EntityTitle          string             `json:"entity_title"`
+	EntityExcerpt        *string            `json:"entity_excerpt"`
+	EntitySlug           string             `json:"entity_slug"`
+	EntityAuthorUsername *string            `json:"entity_author_username"`
+	ResolvedSpaceID      pgtype.UUID        `json:"resolved_space_id"`
+	EntitySpaceName      *string            `json:"entity_space_name"`
+	EntitySpaceSlug      *string            `json:"entity_space_slug"`
+	ScopeAssigned        bool               `json:"scope_assigned"`
+	ScopeSpace           bool               `json:"scope_space"`
+	ScopeTag             bool               `json:"scope_tag"`
+}
+
+// Single report with the same scope flags + entity preview. The handler checks
+// the returned flags (or @platform) for authorization.
+func (q *Queries) GetModerationQueueItem(ctx context.Context, arg GetModerationQueueItemParams) (GetModerationQueueItemRow, error) {
+	row := q.db.QueryRow(ctx, getModerationQueueItem,
+		arg.Caller,
+		arg.SpaceIds,
+		arg.TagIds,
+		arg.ID,
+	)
+	var i GetModerationQueueItemRow
+	err := row.Scan(
+		&i.ID,
+		&i.ReporterUserID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.Reason,
+		&i.Notes,
+		&i.EvidenceUrls,
+		&i.Status,
+		&i.ReviewedBy,
+		&i.ResolutionNote,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+		&i.ReporterUsername,
+		&i.ReporterDisplayName,
+		&i.EntityTitle,
+		&i.EntityExcerpt,
+		&i.EntitySlug,
+		&i.EntityAuthorUsername,
+		&i.ResolvedSpaceID,
+		&i.EntitySpaceName,
+		&i.EntitySpaceSlug,
+		&i.ScopeAssigned,
+		&i.ScopeSpace,
+		&i.ScopeTag,
+	)
+	return i, err
+}
+
 const getReport = `-- name: GetReport :one
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
  status, reviewed_by, resolution_note, resolved_at, created_at
@@ -194,6 +394,253 @@ func (q *Queries) GetReport(ctx context.Context, id pgtype.UUID) (ContentReport,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listModeratedSpaces = `-- name: ListModeratedSpaces :many
+
+SELECT s.id, s.name, s.slug FROM (
+    SELECT space_id FROM space_moderators WHERE space_moderators.user_id = $1
+    UNION
+    SELECT space_id FROM space_members WHERE space_members.user_id = $1 AND space_members.role = 'owner'
+) m JOIN spaces s ON s.id = m.space_id
+ORDER BY s.name
+`
+
+type ListModeratedSpacesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
+}
+
+// ─── Moderator workbench (spec .jeos/specs/2026-09-23-studio-moderation-tab.md) ───
+// Scoped moderation queue for /studio/moderation: the caller sees a report when
+// they hold a platform node (admin.moderation / reports.review — resolved in Go,
+// passed as @platform), the report is assigned to them (reviewed_by), or the
+// reported entity resolves into a space they moderate/own (space_moderators or
+// space_members.role='owner') or carries a tag they moderate (tag_moderators via
+// content_tags — forum tags are universal since migration 000719, so forum-tag
+// moderators arrive through the same tag_moderators path).
+// Spaces the caller moderates: assigned via space_moderators OR owner via
+// space_members.role='owner' (owner implies spaces.moderate, Section 03).
+// Names/slugs are returned so the frontend filter dropdown needs no N+1 lookups.
+func (q *Queries) ListModeratedSpaces(ctx context.Context, userID pgtype.UUID) ([]ListModeratedSpacesRow, error) {
+	rows, err := q.db.Query(ctx, listModeratedSpaces, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListModeratedSpacesRow
+	for rows.Next() {
+		var i ListModeratedSpacesRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listModeratedTags = `-- name: ListModeratedTags :many
+SELECT t.id, t.name, t.slug
+FROM tag_moderators tm
+JOIN tags t ON t.id = tm.tag_id
+WHERE tm.user_id = $1
+ORDER BY t.name
+`
+
+type ListModeratedTagsRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
+}
+
+// Tags the caller moderates (tag_moderators — runtime scope per the studio
+// moderation spec; previously informational only). Universal tags include
+// forum tags since migration 000719.
+func (q *Queries) ListModeratedTags(ctx context.Context, userID pgtype.UUID) ([]ListModeratedTagsRow, error) {
+	rows, err := q.db.Query(ctx, listModeratedTags, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListModeratedTagsRow
+	for rows.Next() {
+		var i ListModeratedTagsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listModerationQueue = `-- name: ListModerationQueue :many
+WITH scoped AS (
+    SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.notes,
+           cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
+           ru.username AS reporter_username,
+           rup.display_name AS reporter_display_name,
+           COALESCE(c.title, pc.title, s.name, tu.username, '') AS entity_title,
+           COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(n #>> '{}', ' ')
+                    FROM jsonb_path_query(cm.body, '$.**.text') AS n), 240), s.description) AS entity_excerpt,
+           COALESCE(c.slug, pc.slug, s.slug, '') AS entity_slug,
+           au.username AS entity_author_username,
+           COALESCE(c.id, pc.id) AS resolved_content_id,
+           CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
+                ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
+           sp.name AS entity_space_name,
+           sp.slug AS entity_space_slug,
+           COALESCE(cr.reviewed_by = $11::uuid, false)::bool AS scope_assigned,
+           COALESCE(
+               (cr.entity_type = 'space'   AND cr.entity_id = ANY($12::uuid[])) OR
+               (cr.entity_type = 'content' AND c.space_id   = ANY($12::uuid[])) OR
+               (cr.entity_type = 'comment' AND pc.space_id  = ANY($12::uuid[])),
+               false
+           )::bool AS scope_space,
+           EXISTS (SELECT 1 FROM content_tags ct
+                    WHERE ct.content_id = COALESCE(c.id, pc.id)
+                      AND ct.tag_id = ANY($13::uuid[]))::bool AS scope_tag
+    FROM content_reports cr
+    LEFT JOIN users ru          ON ru.id = cr.reporter_user_id
+    LEFT JOIN user_profiles rup ON rup.user_id = cr.reporter_user_id
+    LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_id
+    LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
+    LEFT JOIN contents pc       ON pc.id = cm.content_id
+    LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
+    LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id)
+    LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
+    LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id)
+)
+SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+       status, reviewed_by, resolution_note, resolved_at, created_at,
+       reporter_username, reporter_display_name,
+       entity_title, entity_excerpt, entity_slug, entity_author_username,
+       resolved_space_id, entity_space_name, entity_space_slug,
+       scope_assigned, scope_space, scope_tag
+FROM scoped
+WHERE ($1::bool OR scope_assigned OR scope_space OR scope_tag)
+  AND ($2::text IS NULL OR status = $2)
+  AND ($3::text IS NULL OR entity_type = $3)
+  AND ($4::uuid IS NULL OR resolved_space_id = $4::uuid)
+  AND ($5::uuid IS NULL OR
+       EXISTS (SELECT 1 FROM content_tags ct
+                WHERE ct.content_id = resolved_content_id AND ct.tag_id = $5::uuid))
+  AND ($6::bool = false OR scope_assigned)
+  AND ($7::bool = false OR status IN ('pending', 'reviewing'))
+  AND ($8::text IS NULL OR entity_id::text ILIKE '%' || $8 || '%'
+       OR reason ILIKE '%' || $8 || '%'
+       OR COALESCE(notes, '') ILIKE '%' || $8 || '%'
+       OR COALESCE(entity_title, '') ILIKE '%' || $8 || '%')
+ORDER BY created_at DESC
+LIMIT $10 OFFSET $9
+`
+
+type ListModerationQueueParams struct {
+	Platform      bool          `json:"platform"`
+	Status        *string       `json:"status"`
+	EntityType    *string       `json:"entity_type"`
+	FilterSpaceID pgtype.UUID   `json:"filter_space_id"`
+	FilterTagID   pgtype.UUID   `json:"filter_tag_id"`
+	AssignedOnly  bool          `json:"assigned_only"`
+	OpenOnly      bool          `json:"open_only"`
+	Q             *string       `json:"q"`
+	PageOffset    int32         `json:"page_offset"`
+	PageLimit     int32         `json:"page_limit"`
+	Caller        pgtype.UUID   `json:"caller"`
+	SpaceIds      []pgtype.UUID `json:"space_ids"`
+	TagIds        []pgtype.UUID `json:"tag_ids"`
+}
+
+type ListModerationQueueRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	ReporterUserID       pgtype.UUID        `json:"reporter_user_id"`
+	EntityType           string             `json:"entity_type"`
+	EntityID             pgtype.UUID        `json:"entity_id"`
+	Reason               string             `json:"reason"`
+	Notes                *string            `json:"notes"`
+	EvidenceUrls         []string           `json:"evidence_urls"`
+	Status               string             `json:"status"`
+	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote       *string            `json:"resolution_note"`
+	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	ReporterUsername     *string            `json:"reporter_username"`
+	ReporterDisplayName  *string            `json:"reporter_display_name"`
+	EntityTitle          string             `json:"entity_title"`
+	EntityExcerpt        *string            `json:"entity_excerpt"`
+	EntitySlug           string             `json:"entity_slug"`
+	EntityAuthorUsername *string            `json:"entity_author_username"`
+	ResolvedSpaceID      pgtype.UUID        `json:"resolved_space_id"`
+	EntitySpaceName      *string            `json:"entity_space_name"`
+	EntitySpaceSlug      *string            `json:"entity_space_slug"`
+	ScopeAssigned        bool               `json:"scope_assigned"`
+	ScopeSpace           bool               `json:"scope_space"`
+	ScopeTag             bool               `json:"scope_tag"`
+}
+
+func (q *Queries) ListModerationQueue(ctx context.Context, arg ListModerationQueueParams) ([]ListModerationQueueRow, error) {
+	rows, err := q.db.Query(ctx, listModerationQueue,
+		arg.Platform,
+		arg.Status,
+		arg.EntityType,
+		arg.FilterSpaceID,
+		arg.FilterTagID,
+		arg.AssignedOnly,
+		arg.OpenOnly,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.Caller,
+		arg.SpaceIds,
+		arg.TagIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListModerationQueueRow
+	for rows.Next() {
+		var i ListModerationQueueRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReporterUserID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Reason,
+			&i.Notes,
+			&i.EvidenceUrls,
+			&i.Status,
+			&i.ReviewedBy,
+			&i.ResolutionNote,
+			&i.ResolvedAt,
+			&i.CreatedAt,
+			&i.ReporterUsername,
+			&i.ReporterDisplayName,
+			&i.EntityTitle,
+			&i.EntityExcerpt,
+			&i.EntitySlug,
+			&i.EntityAuthorUsername,
+			&i.ResolvedSpaceID,
+			&i.EntitySpaceName,
+			&i.EntitySpaceSlug,
+			&i.ScopeAssigned,
+			&i.ScopeSpace,
+			&i.ScopeTag,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listReports = `-- name: ListReports :many
@@ -326,6 +773,50 @@ func (q *Queries) ListReportsByReporter(ctx context.Context, arg ListReportsByRe
 		return nil, err
 	}
 	return items, nil
+}
+
+const resolveReportIfOpen = `-- name: ResolveReportIfOpen :one
+UPDATE content_reports
+SET status = $1, reviewed_by = $2, resolution_note = $3,
+ resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END
+WHERE id = $4 AND status IN ('pending', 'reviewing')
+RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+ status, reviewed_by, resolution_note, resolved_at, created_at
+`
+
+type ResolveReportIfOpenParams struct {
+	Status         string      `json:"status"`
+	ReviewedBy     pgtype.UUID `json:"reviewed_by"`
+	ResolutionNote *string     `json:"resolution_note"`
+	ID             pgtype.UUID `json:"id"`
+}
+
+// Atomically transition a report to a terminal status, but only while it is
+// still open — prevents two moderators from double-actioning the same report
+// (e.g. two concurrent bans). ErrNoRows means already resolved.
+func (q *Queries) ResolveReportIfOpen(ctx context.Context, arg ResolveReportIfOpenParams) (ContentReport, error) {
+	row := q.db.QueryRow(ctx, resolveReportIfOpen,
+		arg.Status,
+		arg.ReviewedBy,
+		arg.ResolutionNote,
+		arg.ID,
+	)
+	var i ContentReport
+	err := row.Scan(
+		&i.ID,
+		&i.ReporterUserID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.Reason,
+		&i.Notes,
+		&i.EvidenceUrls,
+		&i.Status,
+		&i.ReviewedBy,
+		&i.ResolutionNote,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const updateReportStatus = `-- name: UpdateReportStatus :one

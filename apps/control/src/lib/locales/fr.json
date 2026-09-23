@@ -665,7 +665,7 @@
   "intel.kind_aggregator": "Agrégateur",
   "intel.kind_individual": "Individu",
   "intel.kind_institution": "Institution",
-  "intel.kind_publisher": "Éditeur",
+  "intel.kind_publisher": "Publication",
   "intel.last_probed": "Dernière analyse",
   "intel.last_status": "Dernier statut",
   "intel.load_failed": "Échec du chargement des données d'intelligence",

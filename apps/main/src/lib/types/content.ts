@@ -105,6 +105,7 @@ export interface GuideListItem {
 	reshare_count?: number;
 	reaction_count?: number;
 	bookmark_count?: number;
+	vote_score?: number;
 	published_at?: string | null;
 	created_at: string;
 	header_image_url?: string | null;

@@ -771,54 +771,107 @@ func (s *Store) incrementEntityBookmarkCount(ctx context.Context, entityID pgtyp
 
 // ---------------------------------------------------------------------------
 // Tags
+// Forum tags are universal — they live in the shared `tags`/`content_tags`
+// tables (Sections 08, 14). The wire shape keeps the legacy ForumTag fields
+// (cover_image_id maps to tags.cover_media_id) so existing consumers are
+// unaffected.
 // ---------------------------------------------------------------------------
 
-// createTag inserts a new forum tag.
-func (s *Store) createTag(ctx context.Context, p gen.CreateForumTagParams) (gen.ForumTag, error) {
-	t, err := s.write.CreateForumTag(ctx, p)
+// createTag inserts a new universal tag.
+func (s *Store) createTag(ctx context.Context, p gen.CreateTagParams) (gen.ForumTag, error) {
+	t, err := s.write.CreateTag(ctx, p)
 	if err != nil {
-		return gen.ForumTag{}, fmt.Errorf("creating forum tag: %w", err)
+		return gen.ForumTag{}, fmt.Errorf("creating tag: %w", err)
 	}
 
-	return t, nil
+	return gen.ForumTag{
+		ID:            t.ID,
+		Name:          t.Name,
+		Slug:          t.Slug,
+		Description:   t.Description,
+		Rules:         t.Rules,
+		CoverImageID:  t.CoverMediaID,
+		FollowerCount: t.FollowerCount,
+		CreatedAt:     t.CreatedAt,
+	}, nil
 }
 
-// getTagByID returns a tag by ID and platform.
+// getTagByID returns a universal tag by ID.
 func (s *Store) getTagByID(ctx context.Context, id pgtype.UUID) (gen.ForumTag, error) {
-	t, err := s.read.GetForumTagByID(ctx, id)
+	t, err := s.read.GetTagByID(ctx, id)
 	if err != nil {
-		return gen.ForumTag{}, fmt.Errorf("getting forum tag by ID: %w", err)
+		return gen.ForumTag{}, fmt.Errorf("getting tag by ID: %w", err)
 	}
 
-	return t, nil
+	return gen.ForumTag{
+		ID:            t.ID,
+		Name:          t.Name,
+		Slug:          t.Slug,
+		Description:   t.Description,
+		Rules:         t.Rules,
+		CoverImageID:  t.CoverMediaID,
+		FollowerCount: t.FollowerCount,
+		CreatedAt:     t.CreatedAt,
+	}, nil
 }
 
-// getTagBySlug returns a tag by slug and platform.
+// getTagBySlug returns a universal tag by slug.
 func (s *Store) getTagBySlug(ctx context.Context, slug string) (gen.ForumTag, error) {
-	t, err := s.read.GetForumTagBySlug(ctx, slug)
+	t, err := s.read.GetTagBySlug(ctx, slug)
 	if err != nil {
-		return gen.ForumTag{}, fmt.Errorf("getting forum tag by slug: %w", err)
+		return gen.ForumTag{}, fmt.Errorf("getting tag by slug: %w", err)
 	}
 
-	return t, nil
+	return gen.ForumTag{
+		ID:            t.ID,
+		Name:          t.Name,
+		Slug:          t.Slug,
+		Description:   t.Description,
+		Rules:         t.Rules,
+		CoverImageID:  t.CoverMediaID,
+		FollowerCount: t.FollowerCount,
+		CreatedAt:     t.CreatedAt,
+	}, nil
 }
 
-// listTags returns paginated tags.
+// getUniversalTagByID returns the full universal tag row so updates can
+// preserve fields the forum surface does not manage (color, is_system,
+// field_values, logo_media_id).
+func (s *Store) getUniversalTagByID(ctx context.Context, id pgtype.UUID) (gen.GetTagByIDRow, error) {
+	return s.read.GetTagByID(ctx, id)
+}
+
+// listTags returns paginated universal tags ordered by recency.
 func (s *Store) listTags(ctx context.Context, limit, offset int32) ([]gen.ForumTag, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListForumTags(ctx, gen.ListForumTagsParams{
-
+	rows, err := s.read.ListTagsPaginated(ctx, gen.ListTagsPaginatedParams{
+		Q:          "",
+		Sort:       "",
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing forum tags: %w", err)
+		return nil, fmt.Errorf("listing tags: %w", err)
 	}
 
-	return rows, nil
+	out := make([]gen.ForumTag, 0, len(rows))
+	for _, t := range rows {
+		out = append(out, gen.ForumTag{
+			ID:            t.ID,
+			Name:          t.Name,
+			Slug:          t.Slug,
+			Description:   t.Description,
+			Rules:         t.Rules,
+			CoverImageID:  t.CoverMediaID,
+			FollowerCount: t.FollowerCount,
+			CreatedAt:     t.CreatedAt,
+		})
+	}
+
+	return out, nil
 }
 
 // listThreadTags returns the tags attached to a thread, joining forum_tags
@@ -868,44 +921,78 @@ func (s *Store) removeThreadTag(ctx context.Context, threadID, tagID pgtype.UUID
 	return nil
 }
 
-// updateTagFollowerCount adjusts a tag's follower_count.
-func (s *Store) updateTagFollowerCount(ctx context.Context, id pgtype.UUID, delta int32) error {
-	if err := s.write.UpdateForumTagFollowerCount(ctx, gen.UpdateForumTagFollowerCountParams{
-		ID: id,
+// updateTag updates a universal tag's mutable fields.
+func (s *Store) updateTag(ctx context.Context, p gen.UpdateTagParams) (gen.ForumTag, error) {
+	t, err := s.write.UpdateTag(ctx, p)
+	if err != nil {
+		return gen.ForumTag{}, fmt.Errorf("updating tag: %w", err)
+	}
 
-		Delta: delta,
-	}); err != nil {
-		return fmt.Errorf("updating forum tag follower count: %w", err)
+	return gen.ForumTag{
+		ID:            t.ID,
+		Name:          t.Name,
+		Slug:          t.Slug,
+		Description:   t.Description,
+		Rules:         t.Rules,
+		CoverImageID:  t.CoverMediaID,
+		FollowerCount: t.FollowerCount,
+		CreatedAt:     t.CreatedAt,
+	}, nil
+}
+
+// countContentByTag returns how many content rows reference a tag. Used by
+// the delete guard: tags may only be deleted while nothing is tagged
+// (Section 08 Admin Tags).
+func (s *Store) countContentByTag(ctx context.Context, tagID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountContentByTag(ctx, tagID)
+	if err != nil {
+		return 0, fmt.Errorf("counting content by tag: %w", err)
+	}
+
+	return count, nil
+}
+
+// deleteTag removes a universal tag row. content_tags and tag_moderators
+// rows cascade.
+func (s *Store) deleteTag(ctx context.Context, id pgtype.UUID) error {
+	if err := s.write.DeleteTag(ctx, id); err != nil {
+		return fmt.Errorf("deleting tag: %w", err)
 	}
 
 	return nil
 }
 
-// updateTag updates a forum tag's mutable fields.
-func (s *Store) updateTag(ctx context.Context, id pgtype.UUID, name, slug, description, rules string, coverImageID, moderatorUserID pgtype.UUID) (gen.ForumTag, error) {
-	tag, err := s.write.UpdateForumTag(ctx, gen.UpdateForumTagParams{
-		ID: id,
-
-		Name:            name,
-		Slug:            slug,
-		Description:     strPtr(description),
-		Rules:           strPtr(rules),
-		CoverImageID:    coverImageID,
-		ModeratorUserID: moderatorUserID,
-	})
+// listTagModerators returns the moderators assigned to a universal tag.
+func (s *Store) listTagModerators(ctx context.Context, tagID pgtype.UUID) ([]gen.ListTagModeratorsRow, error) {
+	rows, err := s.read.ListTagModerators(ctx, tagID)
 	if err != nil {
-		return gen.ForumTag{}, fmt.Errorf("updating forum tag: %w", err)
+		return nil, fmt.Errorf("listing tag moderators: %w", err)
 	}
 
-	return tag, nil
+	return rows, nil
 }
 
-// softDeleteTag marks a forum tag as deleted.
-func (s *Store) softDeleteTag(ctx context.Context, id pgtype.UUID) error {
-	if err := s.write.SoftDeleteForumTag(ctx,
-		id,
-	); err != nil {
-		return fmt.Errorf("soft-deleting forum tag: %w", err)
+// addTagModerator grants a user moderator rights on a universal tag.
+func (s *Store) addTagModerator(ctx context.Context, tagID, userID, assignedByUserID pgtype.UUID) error {
+	if _, err := s.write.AddTagModerator(ctx, gen.AddTagModeratorParams{
+		TagID:            tagID,
+		UserID:           userID,
+		AssignedBy:       "site_admin",
+		AssignedByUserID: assignedByUserID,
+	}); err != nil {
+		return fmt.Errorf("adding tag moderator: %w", err)
+	}
+
+	return nil
+}
+
+// removeTagModerator revokes a user's moderator rights on a universal tag.
+func (s *Store) removeTagModerator(ctx context.Context, tagID, userID pgtype.UUID) error {
+	if err := s.write.RemoveTagModerator(ctx, gen.RemoveTagModeratorParams{
+		TagID:  tagID,
+		UserID: userID,
+	}); err != nil {
+		return fmt.Errorf("removing tag moderator: %w", err)
 	}
 
 	return nil

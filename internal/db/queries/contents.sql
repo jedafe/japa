@@ -237,6 +237,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  u.username AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM contents c
@@ -366,6 +368,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  u.username AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM contents c
@@ -425,10 +429,13 @@ SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
+ COALESCE(ft.vote_score, cs.vote_score, 0) AS vote_score,
  u.username AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN forum_threads ft ON ft.content_id = c.id AND ft.deleted_at IS NULL
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
@@ -462,6 +469,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  u.username AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name,
