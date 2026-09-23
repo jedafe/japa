@@ -4462,6 +4462,33 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/public/trending/spaces", publicAPIHandlers.GetTrendingSpacesHandler)
 				r.With(publicapi.RequireScope("api.read.users.public")).
 					Get("/public/trending/users", publicAPIHandlers.GetTrendingUsersHandler)
+
+				// Agent Data API — visa & immigration (spec 2026-09-23-agent-data-api)
+				r.With(features.Gate(featureChecker, "visa_routes.enabled"), publicapi.RequireScope("api.read.visa"), publicapi.RequireTier(publicAPIService, "pro")).
+					Get("/public/visa-routes/compare", publicAPIHandlers.CompareVisaRoutes)
+				r.With(features.Gate(featureChecker, "visa_routes.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/visa-routes", publicAPIHandlers.ListVisaRoutes)
+				r.With(features.Gate(featureChecker, "visa_routes.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/visa-routes/{id}", publicAPIHandlers.GetVisaRoute)
+
+				r.With(features.Gate(featureChecker, "visa_timeline.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/visa-timelines/stats", publicAPIHandlers.GetVisaTimelineStats)
+				r.With(features.Gate(featureChecker, "visa_timeline.enabled"), publicapi.RequireScope("api.read.visa"), publicapi.RequireTier(publicAPIService, "pro")).
+					Get("/public/visa-timelines/stats/trend", publicAPIHandlers.GetVisaTimelineTrend)
+
+				r.With(features.Gate(featureChecker, "credential_checker.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/credentials/professions", publicAPIHandlers.ListCredentialProfessions)
+				r.With(features.Gate(featureChecker, "credential_checker.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/credentials", publicAPIHandlers.ListCredentialPathways)
+				r.With(features.Gate(featureChecker, "credential_checker.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/credentials/{id}", publicAPIHandlers.GetCredentialPathway)
+
+				r.With(features.Gate(featureChecker, "language_test_hub.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/language-tests/requirements", publicAPIHandlers.ListLanguageTestRequirements)
+				r.With(features.Gate(featureChecker, "language_test_hub.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/language-tests", publicAPIHandlers.ListLanguageTests)
+				r.With(features.Gate(featureChecker, "language_test_hub.enabled"), publicapi.RequireScope("api.read.visa")).
+					Get("/public/language-tests/{slug}", publicAPIHandlers.GetLanguageTest)
 			})
 
 			// User Profile & Preferences routes (catalog: /me, /me/profile)
