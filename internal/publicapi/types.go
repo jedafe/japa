@@ -70,6 +70,12 @@ func APIKeyFromContext(ctx context.Context) *APIKeyContext {
 	return ak
 }
 
+// WithAPIKeyContext stores an APIKeyContext in ctx. Used by the MCP auth
+// middleware so the public API rate limiter sees API-key callers.
+func WithAPIKeyContext(ctx context.Context, k *APIKeyContext) context.Context {
+	return context.WithValue(ctx, apiKeyContextKey, k)
+}
+
 // APIKeyAnalytics holds aggregate analytics data for API keys.
 type APIKeyAnalytics struct {
 	TotalKeys      int64            `json:"total_keys"`

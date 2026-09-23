@@ -2326,6 +2326,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 	publicAPIService.SetCache(vkClient.Redis())              // destination-brief response cache
 	publicAPIService.SetSettingsReader(settingsService)      // api.destination_brief.cache_ttl_seconds (Rule 3)
+	mcpServer.SetTierResolver(publicAPIService)              // premium MCP tool gates mirror RequireTier
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 	publicAPIHandlers.SetQueries(gen.New(database.Reader))
 
@@ -4844,7 +4845,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// endpoint that exposes the agent tool catalog to MCP clients.
 			// Supports both JWT Bearer and X-API-Key auth; GET is the legacy SSE
 			// fallback, POST is the Streamable HTTP JSON-RPC transport.
-			r.With(mcp.AuthMiddleware(kr, vkClient.Redis(), publicAPIService, rbacResolver)).
+			r.With(mcp.AuthMiddleware(kr, vkClient.Redis(), publicAPIService, rbacResolver),
+				publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService, publicAPIService)).
 				Handle("/mcp", mcpServer)
 
 			// Direct comparison endpoint (Section 103 — Comparison Engine,

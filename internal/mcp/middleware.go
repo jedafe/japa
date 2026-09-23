@@ -28,23 +28,24 @@ func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicA
 				return
 			}
 
+			ctx := r.Context()
 			if apiKey != nil {
-				// API-key auth: the key's scopes are the authority for this
-				// stateless, client-initiated MCP surface (mirrors public API
-				// scope enforcement in PUB-015).
 				if !publicapi.HasScope(apiKey.Scopes, agentUsePermission) {
 					http.Error(w, `{"error":{"code":"forbidden","message":"API key lacks required scope: agent.use"}}`, http.StatusForbidden)
 					return
 				}
+				// Expose the key to the public API rate limiter and mark the
+				// caller so tools/list + tools/call restrict to read-only.
+				ctx = publicapi.WithAPIKeyContext(ctx, apiKey)
+				ctx = context.WithValue(ctx, apiKeyCallerKey, true)
 			} else {
-				// JWT auth: use RBAC like the rest of the API.
 				if !resolver.HasPermission(r.Context(), user.UserID, agentUsePermission) {
 					http.Error(w, `{"error":{"code":"forbidden","message":"You do not have permission to use the agent"}}`, http.StatusForbidden)
 					return
 				}
 			}
 
-			ctx := context.WithValue(r.Context(), auth.UserContextKey, user)
+			ctx = context.WithValue(ctx, auth.UserContextKey, user)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
