@@ -656,6 +656,7 @@
 		{:else}
 			<button
 				type="button"
+				bind:this={railEndEl}
 				onclick={() => (collapsed = false)}
 				class="relative -left-12 inline-flex items-center gap-2 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
 			>

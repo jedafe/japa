@@ -126,6 +126,7 @@
 	let replyEl = $state<HTMLElement | null>(null);
 	let copied = $state(false);
 	let childrenWrap = $state<HTMLElement>();
+	let railEndEl = $state<HTMLElement>();
 	let railBottom = $state(0);
 
 	// Thread rail termination: the vertical line ends at the LAST child's
@@ -133,27 +134,32 @@
 	// of the article. CSS can't express "stop at the last child's avatar",
 	// so measure it and feed the rail a bottom offset.
 	$effect(() => {
-		const wrap = childrenWrap;
 		const art = replyEl;
-		if (!wrap || !art) {
+		if (!art) {
 			railBottom = 0;
 			return;
 		}
+		const wrap = childrenWrap;
+		const plus = railEndEl;
 		const measure = () => {
-			const last = wrap.firstElementChild?.lastElementChild as HTMLElement | null;
-			if (!last) {
+			const last = wrap?.firstElementChild?.lastElementChild as HTMLElement | null;
+			if (last && wrap) {
+				// Rail stops where the last child's elbow starts bending: the elbow
+				// box bottom is at +35 and the corner radius is 12px, so the curve
+				// leaves the rail's column at +23.
+				railBottom = Math.max(0, art.offsetHeight - (wrap.offsetTop + last.offsetTop + 23));
+			} else if (plus) {
+				// No rendered children — the "+" affordance (continue thread /
+				// expand) is the terminal node on the rail.
+				railBottom = Math.max(0, art.offsetHeight - (plus.offsetTop + plus.offsetHeight / 2));
+			} else {
 				railBottom = 0;
-				return;
 			}
-			// Rail stops where the last child's elbow starts bending: the elbow
-			// box bottom is at +35 and the corner radius is 12px, so the curve
-			// leaves the rail's column at +23.
-			const junction = wrap.offsetTop + last.offsetTop + 23;
-			railBottom = Math.max(0, art.offsetHeight - junction);
 		};
 		measure();
 		const ro = new ResizeObserver(measure);
-		ro.observe(wrap);
+		if (wrap) ro.observe(wrap);
+		if (plus) ro.observe(plus);
 		ro.observe(art);
 		return () => ro.disconnect();
 	});
@@ -566,6 +572,7 @@
 		{:else}
 			<button
 				type="button"
+				bind:this={railEndEl}
 				onclick={() => (collapsed = false)}
 				class="relative -left-12 inline-flex items-center gap-2 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
 			>
