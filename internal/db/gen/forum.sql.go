@@ -1297,12 +1297,52 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, thread
 	return items, nil
 }
 
+const listForumThreadBodiesByContentIDs = `-- name: ListForumThreadBodiesByContentIDs :many
+
+SELECT content_id, body
+FROM forum_threads
+WHERE content_id = ANY($1::uuid[])
+  AND deleted_at IS NULL
+`
+
+type ListForumThreadBodiesByContentIDsRow struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	Body      []byte      `json:"body"`
+}
+
+// =====================
+// Feed card cover derivation
+// =====================
+// Returns thread bodies keyed by backing contents.id so feed items can derive
+// a card cover from the first image node when no explicit cover media exists.
+func (q *Queries) ListForumThreadBodiesByContentIDs(ctx context.Context, contentIds []pgtype.UUID) ([]ListForumThreadBodiesByContentIDsRow, error) {
+	rows, err := q.db.Query(ctx, listForumThreadBodiesByContentIDs, contentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListForumThreadBodiesByContentIDsRow
+	for rows.Next() {
+		var i ListForumThreadBodiesByContentIDsRow
+		if err := rows.Scan(&i.ContentID, &i.Body); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listForumThreadTags = `-- name: ListForumThreadTags :many
 
 
 SELECT t.id, t.name, t.slug, t.description, t.rules,
  t.cover_media_id AS cover_image_id, t.follower_count,
- NULL::uuid AS moderator_user_id, t.created_at
+ (SELECT tm.user_id FROM tag_moderators tm
+  WHERE tm.tag_id = t.id ORDER BY tm.created_at ASC LIMIT 1) AS moderator_user_id,
+ t.created_at
 FROM content_tags ct
 JOIN tags t ON t.id = ct.tag_id
 JOIN forum_threads ft ON ft.content_id = ct.content_id

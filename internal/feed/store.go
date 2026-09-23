@@ -316,3 +316,23 @@ func (s *Store) listSourcesByContentIDs(ctx context.Context, contentIDs []pgtype
 
 	return out, nil
 }
+
+// forumBodiesByContentIDs returns forum thread bodies (TipTap jsonb) keyed by
+// their backing contents.id — used to derive card cover images from body media.
+func (s *Store) forumBodiesByContentIDs(ctx context.Context, contentIDs []pgtype.UUID) (map[string][]byte, error) {
+	if len(contentIDs) == 0 {
+		return map[string][]byte{}, nil
+	}
+
+	rows, err := s.read.ListForumThreadBodiesByContentIDs(ctx, contentIDs)
+	if err != nil {
+		return nil, fmt.Errorf("listing forum bodies by content ids: %w", err)
+	}
+
+	out := make(map[string][]byte, len(rows))
+	for _, r := range rows {
+		out[r.ContentID.String()] = r.Body
+	}
+
+	return out, nil
+}

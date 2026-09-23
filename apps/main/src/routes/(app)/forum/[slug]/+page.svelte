@@ -405,60 +405,106 @@ import { contentHref } from '$lib/utils/contentLink';
 	</a>
 
 	<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6">
-		<!-- Header -->
-		<div class="flex items-start gap-4">
-			<!-- Desktop vertical vote rail -->
-			<div class="hidden sm:block">
-				<VoteRail
-					entityType="thread"
-					entityId={thread.id}
-					score={thread.vote_score}
-					layout="vertical"
-					authed={data.authed}
-					userVote={threadUserVote}
-				/>
-			</div>
+		<!-- Header — author avatar in the left gutter (universal comment-style
+		     layout; thread voting lives in the footer action row). -->
+		<div class="flex items-start gap-3">
+			{#if thread.is_anonymous}
+				<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]">
+					{authorLabel.charAt(0).toUpperCase()}
+				</span>
+			{:else}
+				<UserHoverCard
+					id={thread.author_user_id}
+					slug={thread.author_username}
+					name={authorLabel}
+					avatar={thread.author_avatar_url}
+					variant="row"
+					class="shrink-0"
+				>
+					{#snippet trigger()}
+						{#if thread.author_avatar_url}
+							<img
+								src={thread.author_avatar_url}
+								alt=""
+								class="h-10 w-10 shrink-0 rounded-full object-cover"
+								loading="lazy"
+							/>
+						{:else}
+							<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]">
+								{authorLabel.charAt(0).toUpperCase()}
+							</span>
+						{/if}
+					{/snippet}
+				</UserHoverCard>
+			{/if}
 
 			<div class="min-w-0 flex-1">
-				<div class="flex flex-wrap items-center gap-2">
-					{#if solved}
-						<span
-							class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-success)]"
+				<!-- Author line sits directly beside the avatar (universal comment
+				     layout), with badges and edit actions right-aligned on the row. -->
+				<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
+					{#if thread.is_anonymous}
+						<span class="text-sm font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+					{:else}
+						<UserHoverCard
+							id={thread.author_user_id}
+							slug={thread.author_username}
+							name={authorLabel}
+							variant="row"
 						>
-							<CheckCircle2 size={12} /> {t('forum.solved', 'Solved')}
+							{#snippet trigger()}
+								<span class="text-sm font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+							{/snippet}
+						</UserHoverCard>
+					{/if}
+					{#if thread.space_name}
+						<span>·</span>
+						<span class="text-[var(--color-text-subtle)]">
+							{#if spaceHref}<a href={spaceHref} class="hover:underline">{thread.space_name}</a>{:else}{thread.space_name}{/if}
 						</span>
 					{/if}
-					<span class="rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
-						{t('content_type.discussion', 'Discussion')}
-					</span>
+					{#if time}<span>·</span><span>{time}</span>{/if}
+					{#if thread.is_edited}<span>·</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
 
-					<!-- Edit button (author or moderator — can_edit from backend) -->
-					{#if data.canEdit && !editing}
-						<button
-							type="button"
-							onclick={startEdit}
-							class="ml-auto inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-						>
-							<Pencil size={12} /> {t('forum.edit', 'Edit')}
-						</button>
-					{/if}
-					{#if data.canDelete && !editing}
-						<button
-							type="button"
-							disabled={deleting}
-							onclick={deleteThread}
-							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-						>
-							{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}<Trash2 size={12} />{/if}
-							{t('forum.delete', 'Delete')}
-						</button>
-					{/if}
-					{#if deleteError}
-						<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-error)]/30 bg-[color-mix(in_srgb,var(--color-error)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-error)]">
-							{deleteError}
-						</p>
-					{/if}
+					<div class="ml-auto flex flex-wrap items-center gap-2">
+						{#if solved}
+							<span
+								class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-success)]"
+							>
+								<CheckCircle2 size={12} /> {t('forum.solved', 'Solved')}
+							</span>
+						{/if}
+						<span class="rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+							{t('content_type.discussion', 'Discussion')}
+						</span>
+
+						<!-- Edit button (author or moderator — can_edit from backend) -->
+						{#if data.canEdit && !editing}
+							<button
+								type="button"
+								onclick={startEdit}
+								class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+							>
+								<Pencil size={12} /> {t('forum.edit', 'Edit')}
+							</button>
+						{/if}
+						{#if data.canDelete && !editing}
+							<button
+								type="button"
+								disabled={deleting}
+								onclick={deleteThread}
+								class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+							>
+								{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}<Trash2 size={12} />{/if}
+								{t('forum.delete', 'Delete')}
+							</button>
+						{/if}
+					</div>
 				</div>
+				{#if deleteError}
+					<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-error)]/30 bg-[color-mix(in_srgb,var(--color-error)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-error)]">
+						{deleteError}
+					</p>
+				{/if}
 
 				{#if editing}
 					<!-- Inline edit mode -->
@@ -474,31 +520,6 @@ import { contentHref } from '$lib/utils/contentLink';
 						{thread.title}
 					</h1>
 				{/if}
-
-				<div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
-					{#if thread.is_anonymous}
-						<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
-					{:else}
-						<UserHoverCard
-							id={thread.author_user_id}
-							slug={thread.author_username}
-							name={authorLabel}
-							variant="row"
-						>
-							{#snippet trigger()}
-								<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
-							{/snippet}
-						</UserHoverCard>
-					{/if}
-					{#if thread.space_name}
-						<span>·</span>
-						<span class="text-[var(--color-text-subtle)]">
-							{#if spaceHref}<a href={spaceHref} class="hover:underline">{thread.space_name}</a>{:else}{thread.space_name}{/if}
-						</span>
-					{/if}
-					{#if time}<span>·</span><span>{time}</span>{/if}
-					{#if thread.is_edited}<span>·</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
-				</div>
 
 				<!-- Tags (Sections 08/14 — tags are universal; chips link to the
 				     shared tag page, add/remove via /content/{id}/tags) -->
@@ -570,22 +591,6 @@ import { contentHref } from '$lib/utils/contentLink';
 					{/if}
 				{/if}
 			</div>
-		</div>
-
-		<!-- Mobile vote rail (horizontal) -->
-		<div class="mt-3 flex items-center justify-between border-b border-[var(--color-border)] pb-3 sm:hidden">
-			<VoteRail
-				entityType="thread"
-				entityId={thread.id}
-				score={thread.vote_score}
-				layout="horizontal"
-				authed={data.authed}
-				userVote={threadUserVote}
-			/>
-			<span class="flex items-center gap-3 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
-				<span class="flex items-center gap-1"><MessageSquare size={13} /> {thread.reply_count}</span>
-				<span class="flex items-center gap-1"><Eye size={13} /> {thread.view_count}</span>
-			</span>
 		</div>
 
 		<!-- Body (view mode) / Edit form (edit mode) -->
@@ -686,45 +691,94 @@ import { contentHref } from '$lib/utils/contentLink';
 			</div>
 		{/if}
 
-		<!-- Footer actions -->
-		<div class="mt-6 flex flex-wrap items-center gap-4 border-t border-[var(--color-border)] pt-4 text-xs text-[var(--color-muted)]">
-			<span class="hidden items-center gap-1 sm:flex [font-variant-numeric:tabular-nums]">
-				<MessageSquare size={14} /> {thread.reply_count} {t('forum.replies', 'replies')}
+		<!-- Reaction rail — mimics the blog single-page ReactionRail horizontal
+		     bar: bordered strip, evenly distributed controls, round icon cells.
+		     The love/reaction slot is replaced by the forum vote group. -->
+		<div class="relative z-30 mt-6 flex w-full flex-row items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-muted)]">
+			<div class="flex flex-1 items-center justify-center">
+				<VoteRail
+					entityType="thread"
+					entityId={thread.id}
+					score={thread.vote_score}
+					layout="rail"
+					authed={data.authed}
+					userVote={threadUserVote}
+				/>
+			</div>
+			<a
+				href="#replies"
+				class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				aria-label={t('forum.replies', 'Replies')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+					<MessageSquare size={18} />
+				</span>
+				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{thread.reply_count}</span>
+			</a>
+			<span class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)]">
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)]">
+					<Eye size={18} />
+				</span>
+				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{thread.view_count}</span>
 			</span>
-			<span class="hidden items-center gap-1 sm:flex [font-variant-numeric:tabular-nums]">
-				<Eye size={14} /> {thread.view_count}
-			</span>
+
+			<!-- Subtle separator between content stats and utility actions -->
+			<div class="h-5 w-px bg-[var(--color-border)]"></div>
+
 			<button
 				type="button"
 				onclick={toggleBookmark}
 				disabled={!data.authed || bookmarking}
-				class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50 [font-variant-numeric:tabular-nums]"
+				class="flex flex-1 items-center justify-center transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+				aria-pressed={bookmarked}
 				title={data.authed ? (bookmarked ? t('forum.remove_bookmark', 'Remove bookmark') : t('forum.add_bookmark', 'Bookmark this discussion')) : t('forum.login_to_bookmark', 'Log in to bookmark')}
 			>
-				<Bookmark size={14} fill={bookmarked ? 'currentColor' : 'none'} class={bookmarked ? 'text-[var(--color-primary)]' : ''} />
-				{bookmarkCount}
+				<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {bookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
+					<Bookmark size={18} fill={bookmarked ? 'currentColor' : 'none'} />
+				</span>
+				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{bookmarkCount > 0 ? bookmarkCount : ''}</span>
 			</button>
-			<button type="button" onclick={shareThread} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
-				<Share2 size={14} /> {shared ? t('forum.shared', 'Copied!') : t('forum.share', 'Share')}
+			<button
+				type="button"
+				onclick={shareThread}
+				class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				aria-label={t('forum.share', 'Share')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+					<Share2 size={18} />
+				</span>
+				{#if shared}<span class="text-sm text-[var(--color-success)]">{t('forum.shared', 'Copied!')}</span>{/if}
 			</button>
-			<button type="button" onclick={openReport} disabled={!data.authed || !thread.content_id} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50" title={!data.authed ? t('forum.login_to_report', 'Log in to report') : thread.content_id ? t('forum.report', 'Report') : t('forum.report_unavailable', 'Reporting unavailable')}>
-				<Flag size={14} /> {t('forum.report', 'Report')}
+			<button
+				type="button"
+				onclick={openReport}
+				disabled={!data.authed || !thread.content_id}
+				class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+				aria-label={t('forum.report', 'Report')}
+				title={!data.authed ? t('forum.login_to_report', 'Log in to report') : thread.content_id ? t('forum.report', 'Report') : t('forum.report_unavailable', 'Reporting unavailable')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-danger)]">
+					<Flag size={18} />
+				</span>
 			</button>
-			{#if data.canSolve}
+		</div>
+		{#if data.canSolve}
+			<div class="mt-3 flex justify-end">
 				<button
 					type="button"
 					onclick={() => toggleSolve()}
 					disabled={solving}
-					class="ml-auto inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 font-medium transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>
 					<CheckCircle2 size={13} />
 					{solved ? t('forum.unsolve', 'Mark unsolved') : t('forum.mark_solved', 'Mark as solved')}
 				</button>
-			{/if}
-		</div>
+			</div>
+		{/if}
 	</article>
 
-	<!-- Threaded replies -->
+	<!-- Threaded replies (id anchors the reaction rail's reply count) -->
+	<div id="replies">
 	<ReplyThread
 		replies={data.replies}
 		threadId={thread.id}
@@ -737,6 +791,7 @@ import { contentHref } from '$lib/utils/contentLink';
 		{deletedUserIds}
 		onMarkSolved={toggleSolve}
 	/>
+	</div>
 
 	<!-- Related posts sidebar (Phase 05.14) -->
 	{#if data.related && data.related.length > 0}

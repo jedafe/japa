@@ -777,6 +777,26 @@ func (s *Store) incrementEntityBookmarkCount(ctx context.Context, entityID pgtyp
 // unaffected.
 // ---------------------------------------------------------------------------
 
+// firstModerators returns the earliest-assigned tag_moderators.user_id per
+// tag, projected into the legacy single-moderator ForumTag shape (§08/49).
+// Failures are non-fatal: the field is cosmetic metadata, not authorization.
+func (s *Store) firstModerators(ctx context.Context, tagIDs []pgtype.UUID) map[pgtype.UUID]pgtype.UUID {
+	out := make(map[pgtype.UUID]pgtype.UUID, len(tagIDs))
+	if len(tagIDs) == 0 {
+		return out
+	}
+
+	rows, err := s.read.ListFirstTagModerators(ctx, tagIDs)
+	if err != nil {
+		return out
+	}
+	for _, r := range rows {
+		out[r.TagID] = r.UserID
+	}
+
+	return out
+}
+
 // createTag inserts a new universal tag.
 func (s *Store) createTag(ctx context.Context, p gen.CreateTagParams) (gen.ForumTag, error) {
 	t, err := s.write.CreateTag(ctx, p)
@@ -785,14 +805,15 @@ func (s *Store) createTag(ctx context.Context, p gen.CreateTagParams) (gen.Forum
 	}
 
 	return gen.ForumTag{
-		ID:            t.ID,
-		Name:          t.Name,
-		Slug:          t.Slug,
-		Description:   t.Description,
-		Rules:         t.Rules,
-		CoverImageID:  t.CoverMediaID,
-		FollowerCount: t.FollowerCount,
-		CreatedAt:     t.CreatedAt,
+		ID:              t.ID,
+		Name:            t.Name,
+		Slug:            t.Slug,
+		Description:     t.Description,
+		Rules:           t.Rules,
+		CoverImageID:    t.CoverMediaID,
+		FollowerCount:   t.FollowerCount,
+		ModeratorUserID: s.firstModerators(ctx, []pgtype.UUID{t.ID})[t.ID],
+		CreatedAt:       t.CreatedAt,
 	}, nil
 }
 
@@ -804,14 +825,15 @@ func (s *Store) getTagByID(ctx context.Context, id pgtype.UUID) (gen.ForumTag, e
 	}
 
 	return gen.ForumTag{
-		ID:            t.ID,
-		Name:          t.Name,
-		Slug:          t.Slug,
-		Description:   t.Description,
-		Rules:         t.Rules,
-		CoverImageID:  t.CoverMediaID,
-		FollowerCount: t.FollowerCount,
-		CreatedAt:     t.CreatedAt,
+		ID:              t.ID,
+		Name:            t.Name,
+		Slug:            t.Slug,
+		Description:     t.Description,
+		Rules:           t.Rules,
+		CoverImageID:    t.CoverMediaID,
+		FollowerCount:   t.FollowerCount,
+		ModeratorUserID: s.firstModerators(ctx, []pgtype.UUID{t.ID})[t.ID],
+		CreatedAt:       t.CreatedAt,
 	}, nil
 }
 
@@ -823,14 +845,15 @@ func (s *Store) getTagBySlug(ctx context.Context, slug string) (gen.ForumTag, er
 	}
 
 	return gen.ForumTag{
-		ID:            t.ID,
-		Name:          t.Name,
-		Slug:          t.Slug,
-		Description:   t.Description,
-		Rules:         t.Rules,
-		CoverImageID:  t.CoverMediaID,
-		FollowerCount: t.FollowerCount,
-		CreatedAt:     t.CreatedAt,
+		ID:              t.ID,
+		Name:            t.Name,
+		Slug:            t.Slug,
+		Description:     t.Description,
+		Rules:           t.Rules,
+		CoverImageID:    t.CoverMediaID,
+		FollowerCount:   t.FollowerCount,
+		ModeratorUserID: s.firstModerators(ctx, []pgtype.UUID{t.ID})[t.ID],
+		CreatedAt:       t.CreatedAt,
 	}, nil
 }
 
@@ -857,17 +880,24 @@ func (s *Store) listTags(ctx context.Context, limit, offset int32) ([]gen.ForumT
 		return nil, fmt.Errorf("listing tags: %w", err)
 	}
 
+	ids := make([]pgtype.UUID, 0, len(rows))
+	for _, t := range rows {
+		ids = append(ids, t.ID)
+	}
+	mods := s.firstModerators(ctx, ids)
+
 	out := make([]gen.ForumTag, 0, len(rows))
 	for _, t := range rows {
 		out = append(out, gen.ForumTag{
-			ID:            t.ID,
-			Name:          t.Name,
-			Slug:          t.Slug,
-			Description:   t.Description,
-			Rules:         t.Rules,
-			CoverImageID:  t.CoverMediaID,
-			FollowerCount: t.FollowerCount,
-			CreatedAt:     t.CreatedAt,
+			ID:              t.ID,
+			Name:            t.Name,
+			Slug:            t.Slug,
+			Description:     t.Description,
+			Rules:           t.Rules,
+			CoverImageID:    t.CoverMediaID,
+			FollowerCount:   t.FollowerCount,
+			ModeratorUserID: mods[t.ID],
+			CreatedAt:       t.CreatedAt,
 		})
 	}
 
@@ -929,14 +959,15 @@ func (s *Store) updateTag(ctx context.Context, p gen.UpdateTagParams) (gen.Forum
 	}
 
 	return gen.ForumTag{
-		ID:            t.ID,
-		Name:          t.Name,
-		Slug:          t.Slug,
-		Description:   t.Description,
-		Rules:         t.Rules,
-		CoverImageID:  t.CoverMediaID,
-		FollowerCount: t.FollowerCount,
-		CreatedAt:     t.CreatedAt,
+		ID:              t.ID,
+		Name:            t.Name,
+		Slug:            t.Slug,
+		Description:     t.Description,
+		Rules:           t.Rules,
+		CoverImageID:    t.CoverMediaID,
+		FollowerCount:   t.FollowerCount,
+		ModeratorUserID: s.firstModerators(ctx, []pgtype.UUID{t.ID})[t.ID],
+		CreatedAt:       t.CreatedAt,
 	}, nil
 }
 

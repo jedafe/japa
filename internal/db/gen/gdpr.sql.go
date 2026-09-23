@@ -563,6 +563,19 @@ func (q *Queries) DeleteContentRevisionsByEditor(ctx context.Context, userID pgt
 	return err
 }
 
+const deleteContentTagsByAuthor = `-- name: DeleteContentTagsByAuthor :exec
+DELETE FROM content_tags
+WHERE content_id IN (SELECT id FROM contents WHERE author_id = $1)
+`
+
+// Remove universal tag junction rows on the user's content during GDPR
+// erasure, matching the forum_thread_tags treatment above. The content_id FK
+// has ON DELETE CASCADE but contents may be retained soft-deleted.
+func (q *Queries) DeleteContentTagsByAuthor(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteContentTagsByAuthor, userID)
+	return err
+}
+
 const deleteCustomFieldValuesByEntity = `-- name: DeleteCustomFieldValuesByEntity :execrows
 DELETE FROM custom_field_values
 WHERE entity_type IN ('user_profile', 'user') AND entity_id = $1
@@ -1719,6 +1732,20 @@ FROM (SELECT id, content_id, user_id, platform, created_at FROM content_shares W
 
 func (q *Queries) GdprExportUserContentShares(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserContentShares, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserContentTags = `-- name: GdprExportUserContentTags :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT ct.content_id, ct.tag_id, ct.created_at FROM content_tags ct JOIN contents c ON c.id = ct.content_id WHERE c.author_id = $1) t
+`
+
+// Universal tag attachments on content authored by the user (Section 08/14 —
+// forum threads, blog posts, and every other content_type share content_tags).
+func (q *Queries) GdprExportUserContentTags(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserContentTags, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

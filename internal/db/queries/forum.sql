@@ -523,7 +523,9 @@ WHERE option_id = @option_id AND user_id = @user_id;
 -- contract is unchanged — GET /forum/{id}/tags.
 SELECT t.id, t.name, t.slug, t.description, t.rules,
  t.cover_media_id AS cover_image_id, t.follower_count,
- NULL::uuid AS moderator_user_id, t.created_at
+ (SELECT tm.user_id FROM tag_moderators tm
+  WHERE tm.tag_id = t.id ORDER BY tm.created_at ASC LIMIT 1) AS moderator_user_id,
+ t.created_at
 FROM content_tags ct
 JOIN tags t ON t.id = ct.tag_id
 JOIN forum_threads ft ON ft.content_id = ct.content_id
@@ -645,3 +647,15 @@ SELECT space_id FROM forum_threads WHERE id = @id AND deleted_at IS NULL;
 -- name: DeleteForumVoteByEntity :exec
 DELETE FROM forum_votes
 WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
+
+-- =====================
+-- Feed card cover derivation
+-- =====================
+
+-- name: ListForumThreadBodiesByContentIDs :many
+-- Returns thread bodies keyed by backing contents.id so feed items can derive
+-- a card cover from the first image node when no explicit cover media exists.
+SELECT content_id, body
+FROM forum_threads
+WHERE content_id = ANY(@content_ids::uuid[])
+  AND deleted_at IS NULL;

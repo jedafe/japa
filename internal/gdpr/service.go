@@ -1200,6 +1200,14 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("deleting forum thread tags by author: %w", err)
 		}
 
+		// Universal tag junction rows on the user's content (content_tags —
+		// the post-000719 successor to forum_thread_tags; Section 08/14).
+		if err := q.DeleteContentTagsByAuthor(ctx,
+			userID,
+		); err != nil {
+			return fmt.Errorf("deleting content tags by author: %w", err)
+		}
+
 		// ticket_comments.user_id has no CASCADE; delete the user's ticket comments.
 		if err := q.DeleteTicketCommentsByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting ticket comments: %w", err)
@@ -2179,6 +2187,7 @@ type UserDataExport struct {
 	ForumBookmarks              []map[string]interface{} `json:"forum_bookmarks"`
 	ForumPollVotes              []map[string]interface{} `json:"forum_poll_votes"`
 	ForumThreadTags             []map[string]interface{} `json:"forum_thread_tags"`
+	ContentTags                 []map[string]interface{} `json:"content_tags"`
 	ReplyViews                  []map[string]interface{} `json:"reply_views"`
 	Media                       []map[string]interface{} `json:"media"`
 	Reviews                     []map[string]interface{} `json:"reviews"`
@@ -2519,6 +2528,14 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.ForumThreadTags = rows
 	} else {
 		slog.Warn("failed to collect forum_thread_tags for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Universal tag attachments on the user's content (all content_types share
+	// content_tags — Section 08/14).
+	if rows, err := s.store.gdprExportUserContentTags(ctx, userID); err == nil {
+		export.ContentTags = rows
+	} else {
+		slog.Warn("failed to collect content_tags for export", "user_id", userID.String(), "error", err)
 	}
 
 	if rows, err := s.store.gdprExportUserReplyViews(ctx, userID); err == nil {

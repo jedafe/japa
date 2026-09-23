@@ -9,7 +9,8 @@
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import JceSelect from '$lib/components/ui/JceSelect.svelte';
+	import { contentHref } from '$lib/utils/contentLink';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Shield, Search, Loader2, X, Flag } from 'lucide-svelte';
 	import type { PageData } from './$types';
@@ -45,20 +46,32 @@
 		{ key: '', label: t('studio.moderation.status_all', 'All') }
 	]);
 
-	const typeOptions = $derived([
-		{ value: '', label: t('studio.moderation.all_types', 'All types') },
-		...data.typeOptions
-	]);
+	const typeItems = $derived(
+		data.typeOptions.map((o): AutocompleteItem => ({ id: o.value, label: o.label }))
+	);
+	const selectedTypeLabel = $derived(
+		typeItems.find((i) => i.id === typeParam)?.label ?? (typeParam || null)
+	);
 
-	const spaceOptions = $derived([
-		{ value: '', label: t('studio.moderation.all_spaces', 'All my spaces') },
-		...(scope?.moderated_spaces ?? []).map((s) => ({ value: s.id, label: s.name }))
-	]);
+	// Space/tag filters are scoped to the caller's own moderated entities —
+	// rendered only when the caller actually moderates spaces/tags. The
+	// Autocomplete fetchers filter these small lists locally (no API call).
+	const spaceItems = $derived(
+		(scope?.moderated_spaces ?? []).map((s): AutocompleteItem => ({ id: s.id, label: s.name }))
+	);
+	const tagItems = $derived(
+		(scope?.moderated_tags ?? []).map((tg): AutocompleteItem => ({ id: tg.id, label: tg.name }))
+	);
 
-	const tagOptions = $derived([
-		{ value: '', label: t('studio.moderation.all_tags', 'All my tags') },
-		...(scope?.moderated_tags ?? []).map((tg) => ({ value: tg.id, label: tg.name }))
-	]);
+	function localFetcher(list: AutocompleteItem[]) {
+		return async (q: string) => {
+			const needle = q.toLowerCase();
+			return list.filter((i) => i.label.toLowerCase().includes(needle));
+		};
+	}
+
+	const selectedSpaceLabel = $derived(spaceItems.find((i) => i.id === spaceParam)?.label ?? null);
+	const selectedTagLabel = $derived(tagItems.find((i) => i.id === tagParam)?.label ?? null);
 
 	function filterParams(overrides: Record<string, string | undefined>): URLSearchParams {
 		const params = new URLSearchParams(page.url.searchParams);
@@ -140,12 +153,22 @@
 	}
 
 	function entityHref(item: ModerationQueueItem): string | null {
-		// entity_slug carries the content slug for content/comment reports and
-		// the space slug for space reports (COALESCE in the query).
-		if (item.entity_type === 'content' && item.entity_slug) return `/content/${item.entity_slug}`;
-		if (item.entity_type === 'comment' && item.entity_slug) return `/content/${item.entity_slug}`;
+		// entity_slug carries the content slug for content/comment reports, the
+		// space slug for space reports, and the source slug for source reports.
+		// entity_content_type picks the canonical per-type route via contentHref
+		// (/story, /video, /guide, /forum, …). thread_slug marks content backing
+		// a forum thread — those render at /forum/[slug]. Messages have no public
+		// page (DMs are private to participants) — the excerpt renders inline.
+		if (item.entity_type === 'content' || item.entity_type === 'comment') {
+			if (item.thread_slug) return `/forum/${item.thread_slug}`;
+			if (item.entity_slug) {
+				return contentHref({ slug: item.entity_slug, content_type: item.entity_content_type });
+			}
+			return null;
+		}
 		if (item.entity_type === 'space' && item.entity_slug) return `/spaces/${item.entity_slug}`;
 		if (item.entity_type === 'user' && item.entity_title) return `/u/${item.entity_title}`;
+		if (item.entity_type === 'source') return `/sources/${item.entity_slug || item.entity_id}`;
 		return null;
 	}
 
@@ -218,16 +241,46 @@
 		</div>
 		<div class="ml-auto flex flex-wrap items-center gap-2">
 			<div class="w-40">
-				<JceSelect value={typeParam} options={typeOptions} onchange={(v) => applyFilter({ entity_type: v || undefined })} class="w-full" />
+				<Autocomplete
+					placeholder={t('studio.moderation.all_types', 'All types')}
+					emptyMessage={t('studio.moderation.no_matches', 'No matches')}
+					fetcher={localFetcher(typeItems)}
+					initialFetcher={async () => typeItems}
+					selectedId={typeParam || null}
+					selectedLabel={selectedTypeLabel}
+					onSelect={(i) => applyFilter({ entity_type: i.id })}
+					onClear={() => applyFilter({ entity_type: undefined })}
+					class="w-full"
+				/>
 			</div>
-			{#if spaceOptions.length > 1}
+			{#if spaceItems.length > 0}
 				<div class="w-44">
-					<JceSelect value={spaceParam} options={spaceOptions} onchange={(v) => applyFilter({ space_id: v || undefined })} class="w-full" />
+					<Autocomplete
+						placeholder={t('studio.moderation.all_spaces', 'All my spaces')}
+						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
+						fetcher={localFetcher(spaceItems)}
+						initialFetcher={async () => spaceItems}
+						selectedId={spaceParam || null}
+						selectedLabel={selectedSpaceLabel}
+						onSelect={(i) => applyFilter({ space_id: i.id })}
+						onClear={() => applyFilter({ space_id: undefined })}
+						class="w-full"
+					/>
 				</div>
 			{/if}
-			{#if tagOptions.length > 1}
+			{#if tagItems.length > 0}
 				<div class="w-44">
-					<JceSelect value={tagParam} options={tagOptions} onchange={(v) => applyFilter({ tag_id: v || undefined })} class="w-full" />
+					<Autocomplete
+						placeholder={t('studio.moderation.all_tags', 'All my tags')}
+						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
+						fetcher={localFetcher(tagItems)}
+						initialFetcher={async () => tagItems}
+						selectedId={tagParam || null}
+						selectedLabel={selectedTagLabel}
+						onSelect={(i) => applyFilter({ tag_id: i.id })}
+						onClear={() => applyFilter({ tag_id: undefined })}
+						class="w-full"
+					/>
 				</div>
 			{/if}
 		</div>

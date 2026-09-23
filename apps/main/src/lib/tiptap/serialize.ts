@@ -95,6 +95,51 @@ export function tiptapExcerpt(b64: string | null | undefined, max = 180): string
 	return text.slice(0, max).trimEnd() + '…';
 }
 
+/** Return the `src` of the first `image` node in a decoded TipTap document
+ * (or bare node array), or undefined when the document has no image. */
+function firstImageSrcInDoc(doc: TipTapDoc | PMNode[] | null): string | undefined {
+	if (!doc) return undefined;
+	const visit = (node: PMNode): string | undefined => {
+		if (node.type === 'image') {
+			const src = node.attrs?.src;
+			if (typeof src === 'string' && src) return src;
+		}
+		if (node.content) {
+			for (const child of node.content) {
+				const found = visit(child);
+				if (found) return found;
+			}
+		}
+		return undefined;
+	};
+	if (Array.isArray(doc)) {
+		for (const node of doc) {
+			const found = visit(node);
+			if (found) return found;
+		}
+		return undefined;
+	}
+	return visit(doc);
+}
+
+/** Return the `src` of the first `image` node in a base64 TipTap body, or
+ * undefined when the document has no image. Used to derive card cover images
+ * for content types without explicit cover media (e.g. forum threads). */
+export function tiptapFirstImageSrc(b64: string | null | undefined): string | undefined {
+	return firstImageSrcInDoc(decodeTipTapDoc(b64));
+}
+
+/** Same as {@link tiptapFirstImageSrc} but takes the raw TipTap JSON string —
+ * e.g. `contents.body` on generic content list payloads (featured tabs). */
+export function tiptapJsonFirstImageSrc(json: string | null | undefined): string | undefined {
+	if (!json) return undefined;
+	try {
+		return firstImageSrcInDoc(JSON.parse(json) as TipTapDoc | PMNode[]);
+	} catch {
+		return undefined;
+	}
+}
+
 /* ------------------------------------------------------------------ *
  * HTML serialization
  * ------------------------------------------------------------------ */

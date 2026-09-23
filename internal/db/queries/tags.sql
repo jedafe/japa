@@ -122,6 +122,15 @@ JOIN users u ON u.id = tm.user_id
 WHERE tm.tag_id = @tag_id
 ORDER BY tm.created_at ASC;
 
+-- name: ListFirstTagModerators :many
+-- Returns the earliest-assigned moderator per tag for a set of tag IDs.
+-- Used to project tag_moderators into the legacy single-moderator wire shape
+-- (forum_tags.moderator_user_id) — Section 08/49.
+SELECT DISTINCT ON (tm.tag_id) tm.tag_id, tm.user_id
+FROM tag_moderators tm
+WHERE tm.tag_id = ANY(@tag_ids::uuid[])
+ORDER BY tm.tag_id, tm.created_at ASC;
+
 -- name: AddTagModerator :one
 -- Idempotent: re-adding an existing moderator just refreshes created_at.
 INSERT INTO tag_moderators (tag_id, user_id, assigned_by, assigned_by_user_id) VALUES (@tag_id, @user_id, @assigned_by, @assigned_by_user_id)

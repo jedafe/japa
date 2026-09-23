@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark, Play, ExternalLink } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { relativeTime } from '$lib/feed/time';
 	import { t, i18n } from '$lib/i18n';
 	import { contentHref } from '$lib/utils/contentLink';
@@ -10,6 +11,7 @@
 	import DailyFeedCard from './DailyFeedCard.svelte';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import VoteRail from '$lib/components/forum/VoteRail.svelte';
 
 	interface Props {
 		item: FeedItem;
@@ -30,6 +32,10 @@
 	const duration = $derived(formatDuration(item.duration_secs));
 
 	const itemHref = $derived(href(item));
+	// Forum threads vote (Section 08) rather than react — the card renders a
+	// functional VoteRail wherever a static score would otherwise show.
+	const isForum = $derived(item.content_type === 'forum_thread' || item.content_type === 'discussion');
+	const authed = $derived(!!page.data.isAuthed);
 	const authorId = $derived(item.author_id ?? '');
 	const authorSlug = $derived(item.author_username ?? null);
 	const authorName = $derived(item.author_name ?? null);
@@ -74,7 +80,22 @@
 
 {#snippet metrics()}
 	<div class="flex items-center gap-4 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
-		<span class="flex items-center gap-1"><ArrowUp size={14} /> {item.vote_score ?? 0}</span>
+		{#if isForum}
+			<!-- Reddit style keeps the score in the left rail; other styles put
+			     the functional vote control in the metrics row. -->
+			{#if style !== 'reddit'}
+				<VoteRail
+					entityType="thread"
+					entityId={item.forum_thread_id ?? ''}
+					slug={item.slug}
+					score={item.vote_score ?? 0}
+					layout="horizontal"
+					{authed}
+				/>
+			{/if}
+		{:else}
+			<span class="flex items-center gap-1"><ArrowUp size={14} /> {item.vote_score ?? 0}</span>
+		{/if}
 		<span class="flex items-center gap-1"><MessageSquare size={14} /> {item.comment_count ?? 0}</span>
 		<span class="flex items-center gap-1"><Eye size={14} /> {item.view_count ?? 0}</span>
 		{#if item.bookmark_count != null}<span class="flex items-center gap-1"><Bookmark size={14} /> {item.bookmark_count}</span>{/if}
@@ -227,7 +248,20 @@
 		onkeydown={onKeyDown}
 		class="flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]"
 	>
-		<span class="flex w-11 shrink-0 items-center gap-1 text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]"><ArrowUp size={13} class="text-[var(--color-muted)]" /> {item.vote_score ?? 0}</span>
+		{#if isForum}
+			<span class="w-16 shrink-0">
+				<VoteRail
+					entityType="thread"
+					entityId={item.forum_thread_id ?? ''}
+					slug={item.slug}
+					score={item.vote_score ?? 0}
+					layout="horizontal"
+					{authed}
+				/>
+			</span>
+		{:else}
+			<span class="flex w-11 shrink-0 items-center gap-1 text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]"><ArrowUp size={13} class="text-[var(--color-muted)]" /> {item.vote_score ?? 0}</span>
+		{/if}
 		<span class="min-w-0 flex-1 flex flex-col justify-center">
 			<span class="truncate text-sm font-medium text-[var(--color-text)]">{item.title}</span>
 			{@render journeyBadges()}
@@ -287,11 +321,22 @@
 		onkeydown={onKeyDown}
 		class="flex cursor-pointer gap-3 px-4 py-3.5 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]"
 	>
-		<span class="flex w-7 shrink-0 flex-col items-center gap-0.5 pt-0.5 text-[var(--color-muted)]">
-			<ArrowUp size={18} />
-			<span class="text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{item.vote_score ?? 0}</span>
-			<ArrowDown size={18} />
-		</span>
+		{#if isForum}
+			<VoteRail
+				entityType="thread"
+				entityId={item.forum_thread_id ?? ''}
+				slug={item.slug}
+				score={item.vote_score ?? 0}
+				layout="vertical"
+				{authed}
+			/>
+		{:else}
+			<span class="flex w-7 shrink-0 flex-col items-center gap-0.5 pt-0.5 text-[var(--color-muted)]">
+				<ArrowUp size={18} />
+				<span class="text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{item.vote_score ?? 0}</span>
+				<ArrowDown size={18} />
+			</span>
+		{/if}
 		<span class="min-w-0 flex-1">
 			{@render metaLine()}
 			<h2 class="mb-0.5 mt-1 text-[15.5px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">{item.title}</h2>

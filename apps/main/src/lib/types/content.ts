@@ -110,6 +110,9 @@ export interface GuideListItem {
 	created_at: string;
 	header_image_url?: string | null;
 	featured_image_url?: string | null;
+	/** Raw contents.body — TipTap JSON text for forum threads; used to derive
+	 *  the card cover image when no explicit featured/header media exists. */
+	body?: string;
 	tags?: string[];
 }
 

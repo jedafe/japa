@@ -10,7 +10,8 @@
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import { compose } from '$lib/components/shell/compose.svelte';
 	import { t } from '$lib/i18n';
-	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import type { CardStyleConfig } from '$lib/feed/cardStyle';
+	import { tiptapJsonFirstImageSrc } from '$lib/tiptap/serialize';
 	import type { FeedItem } from '$lib/types';
 	import type { GuideListItem } from '$lib/types/content';
 	import type { PageData } from './$types';
@@ -55,13 +56,19 @@
 			content_type: 'forum_thread',
 			author_id: g.author_id ?? '',
 			author_name: g.author_display_name ?? g.author_username ?? '',
+			author_username: g.author_username,
+			author_avatar_url: g.author_avatar_url,
 			space_id: g.space_id ?? undefined,
 			space_name: g.space_name ?? undefined,
 			excerpt: g.purpose ?? undefined,
+			// contents.body holds the raw TipTap JSON for forum threads — derive
+			// the card cover from the first embedded image (no explicit cover).
+			cover_image_url: g.featured_image_url ?? g.header_image_url ?? tiptapJsonFirstImageSrc(g.body),
 			created_at: g.published_at ?? g.created_at,
 			view_count: g.view_count,
 			comment_count: g.comment_count,
 			vote_score: g.vote_score ?? 0,
+			bookmark_count: g.bookmark_count,
 			reading_time_minutes: g.read_time_minutes
 		};
 	}
@@ -165,9 +172,10 @@
 					{t('forum.featured_empty', 'No featured discussions yet.')}
 				</p>
 			{:else}
-				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="flex flex-col gap-3">
 					{#each featuredItems as item (item.id)}
-						<FeedCard {item} style={cardStyleFor(item.content_type, cardStyleConfig ?? { default: 'reddit', byType: {} })} layout="stream" />
+						<!-- Featured threads use the same forum card as the thread list. -->
+						<FeedCard {item} style="daily" layout="stream" />
 					{/each}
 				</div>
 			{/if}

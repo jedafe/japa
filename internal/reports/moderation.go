@@ -27,6 +27,10 @@ var ErrActionNotAllowed = errors.New("action not allowed for this moderation sco
 // second moderator resolves it between the queue read and the PATCH.
 var ErrAlreadyResolved = errors.New("report already resolved")
 
+// ErrInvalidAction is returned when the PATCH body's action is not one of
+// dismiss/remove/warn/ban.
+var ErrInvalidAction = errors.New("invalid moderation action")
+
 // ScopedEntity is a moderated space or tag with display fields for the
 // frontend filter dropdowns.
 type ScopedEntity struct {
@@ -256,7 +260,7 @@ func (s *Service) ActionModerationItem(ctx context.Context, caller, id pgtype.UU
 			return gen.ContentReport{}, ErrActionNotAllowed
 		}
 	default:
-		return gen.ContentReport{}, fmt.Errorf("%w: %s", ErrInvalidStatus, action)
+		return gen.ContentReport{}, fmt.Errorf("%w: %s", ErrInvalidAction, action)
 	}
 
 	status := "actioned"

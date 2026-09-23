@@ -116,7 +116,7 @@
 			{t('forum.no_replies', 'No replies yet — be the first to respond.')}
 		</p>
 	{:else}
-		<div class="space-y-5">
+		<div class="space-y-1">
 			{#each allTop as reply (reply.id)}
 				<ReplyItem
 					{reply}
