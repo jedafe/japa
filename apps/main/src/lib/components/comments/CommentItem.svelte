@@ -180,13 +180,16 @@
 	// vertical thread rail and the collapse/expand affordances.
 	const hasChildren = $derived(comment.reply_count > 0 || allReplies.length > 0);
 
-	// Label for the lazy-load replies button. Hidden when the comment has no
-	// published replies. "View reply" for exactly one, "View X replies" otherwise.
-	const viewRepliesLabel = $derived(
-		comment.reply_count === 1
+	// "View reply" for exactly one, "View X replies" otherwise. Used for the
+	// lazy-load button (server count) and the collapsed thread's expand
+	// affordance (loaded-children count).
+	function viewRepliesText(count: number) {
+		return count === 1
 			? t('comments.view_reply', 'View reply')
-			: t('comments.view_replies_count', 'View {count} replies').replace('{count}', String(comment.reply_count))
-	);
+			: t('comments.view_replies_count', 'View {count} replies').replace('{count}', String(count));
+	}
+	const viewRepliesLabel = $derived(viewRepliesText(comment.reply_count));
+	const collapsedLabel = $derived(viewRepliesText(allReplies.length));
 
 	async function loadReplies() {
 		if (repliesLoading || repliesLoaded) return;
@@ -224,6 +227,7 @@
 		localReplies = [...localReplies, res.data];
 		replyBody = '';
 		composing = false;
+		collapsed = false;
 		onReply();
 	}
 
@@ -296,18 +300,20 @@
 			return;
 		}
 		const wrap = childrenWrap;
-		const plus = railEndEl;
+		const endEl = railEndEl;
 		const measure = () => {
 			const last = wrap?.firstElementChild?.lastElementChild as HTMLElement | null;
+			const artBottom = art.getBoundingClientRect().bottom;
 			if (last && wrap) {
 				// Rail stops where the last child's elbow starts bending: the elbow
 				// box bottom is at +35 and the corner radius is 12px, so the curve
 				// leaves the rail's column at +23.
-				railBottom = Math.max(0, art.offsetHeight - (wrap.offsetTop + last.offsetTop + 23));
-			} else if (plus) {
+				railBottom = Math.max(0, artBottom - last.getBoundingClientRect().top - 23);
+			} else if (endEl) {
 				// No rendered children — the "+" affordance (view replies /
-				// continue thread / expand) is the terminal node on the rail.
-				railBottom = Math.max(0, art.offsetHeight - (plus.offsetTop + plus.offsetHeight / 2));
+				// continue thread / collapsed toggle) is the terminal node on the rail.
+				const r = endEl.getBoundingClientRect();
+				railBottom = Math.max(0, artBottom - r.top - r.height / 2);
 			} else {
 				railBottom = 0;
 			}
@@ -315,7 +321,7 @@
 		measure();
 		const ro = new ResizeObserver(measure);
 		if (wrap) ro.observe(wrap);
-		if (plus) ro.observe(plus);
+		if (endEl) ro.observe(endEl);
 		ro.observe(art);
 		return () => ro.disconnect();
 	});
@@ -430,7 +436,7 @@
 	<div class="break-words z-[1] mt-1 ml-[52px]">
 		{#if deleted}
 			<p class="text-sm italic text-[var(--color-muted)]">{t('comments.deleted')}</p>
-		{:else if !collapsed}
+		{:else}
 			{#if editing}
 				<div class="mt-2">
 					<CommentEditor initialBody={editBody} oninput={(b) => (editBody = b)} />
@@ -464,7 +470,7 @@
 			<!-- Actions -->
 			{#if !editing}
 				<div class="relative mt-2 flex flex-row items-center gap-0.5">
-					{#if allReplies.length > 0}
+					{#if allReplies.length > 0 && !collapsed}
 						<button
 							type="button"
 							onclick={() => (collapsed = true)}
@@ -606,7 +612,19 @@
 			{/if}
 
 			<!-- Nested children -->
-			{#if !beyondMaxDepth}
+			{#if collapsed && allReplies.length > 0}
+				<button
+					type="button"
+					bind:this={railEndEl}
+					onclick={() => (collapsed = false)}
+					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
+				>
+					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+						<Plus size={14} />
+					</span>
+					{collapsedLabel}
+				</button>
+			{:else if !collapsed && !beyondMaxDepth}
 				{#if allReplies.length > 0}
 					<div class="relative -left-8 mt-3 pl-5" bind:this={childrenWrap}>
 						<div class="space-y-3">
@@ -641,7 +659,7 @@
 						{repliesLoading ? t('common.loading') : viewRepliesLabel}
 					</button>
 				{/if}
-			{:else if allReplies.length > 0}
+			{:else if !collapsed && allReplies.length > 0}
 				<a
 					href={`#comment-${allReplies[0].id}`}
 					bind:this={railEndEl}
@@ -653,18 +671,6 @@
 					{t('comments.continue_thread')}
 				</a>
 			{/if}
-		{:else}
-			<button
-				type="button"
-				bind:this={railEndEl}
-				onclick={() => (collapsed = false)}
-				class="relative -left-12 inline-flex items-center gap-2 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-			>
-				<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]">
-					<Plus size={14} />
-				</span>
-				{t('comments.expand')}
-			</button>
 		{/if}
 	</div>
 </article>
