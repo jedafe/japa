@@ -64,6 +64,26 @@ var ScopeCatalog = []ScopeOption{
 		Description: "Update the authenticated user's own profile (admin-approved)",
 	},
 	{
+		Value:       "api.read.visa",
+		Label:       "Read Visa & Immigration",
+		Description: "Read visa routes, processing timelines, credential pathways, and language test requirements",
+	},
+	{
+		Value:       "api.read.education",
+		Label:       "Read Education",
+		Description: "Read scholarships and universities",
+	},
+	{
+		Value:       "api.read.brief",
+		Label:       "Read Destination Briefs",
+		Description: "Read aggregate destination briefs (premium endpoint)",
+	},
+	{
+		Value:       "agent.use",
+		Label:       "Use Agent Tools",
+		Description: "Call MCP agent tools via /api/v1/mcp (read-only tool set for API keys)",
+	},
+	{
 		Value:       "api.read.*",
 		Label:       "Read All",
 		Description: "Wildcard — read access to all read-scoped resources",
