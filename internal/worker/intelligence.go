@@ -2570,6 +2570,22 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:promote: load record: %w", err)
 	}
 
+	// Per-domain kill switch (audit B12): a disabled domain
+	// (intel.<domain>.enabled=false) routes records to the human review
+	// queue instead of auto-promoting into the domain projection table.
+	if !intelDomainEnabled(ctx, record.EntityType) {
+		slog.Info("task:intel:promote: domain disabled, routing to review", "record_id", p.RecordID, "entity_type", record.EntityType)
+
+		if err := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+			ID:     recordID,
+			Status: "review_required",
+		}); err != nil {
+			return fmt.Errorf("task:intel:promote: set review status: %w", err)
+		}
+
+		return nil
+	}
+
 	prom, ok := intelPromoters[record.EntityType]
 	if !ok {
 		slog.Warn("task:intel:promote: no promoter registered for entity type, routing to review", "record_id", p.RecordID, "entity_type", record.EntityType)
@@ -2865,14 +2881,24 @@ func HandleIntelRefreshFreshness(ctx context.Context, _ *asynq.Task) error {
 
 	now := time.Now()
 	reEnqueuedSources := make(map[string]bool) // dedup source re-enqueue
+	policies := make(map[string]string)        // per-entity-type decay policy cache
 
 	for _, record := range stale {
 		if !record.SourceID.Valid {
 			continue
 		}
 
-		// Compute the decayed freshness score from last_verified_at.
-		newScore := int32(services.FreshnessScore(record.LastVerifiedAt.Time, now)) // #nosec
+		// Compute the decayed freshness score from last_verified_at, using
+		// the record's domain decay policy (audit B11: the seeded
+		// intel.<domain>.freshness_decay_policy settings were previously
+		// dead config — every record decayed on the same hardcoded curve).
+		policy, ok := policies[record.EntityType]
+		if !ok {
+			policy = intelFreshnessPolicy(ctx, record.EntityType)
+			policies[record.EntityType] = policy
+		}
+
+		newScore := int32(services.FreshnessScoreWithPolicy(record.LastVerifiedAt.Time, now, policy)) // #nosec
 
 		// Update the record's freshness score. The store method
 		// automatically transitions status to 'stale' when score <= 40.
@@ -2957,4 +2983,73 @@ func (e *Enqueuer) EnqueueIntelFetchChannel(channelID, sourceID string) error {
 	}
 
 	return e.Enqueue(TypeIntelFetchChannel, payload)
+}
+
+// ---------------------------------------------------------------------------
+// Per-domain settings helpers (audit B11/B12)
+// ---------------------------------------------------------------------------
+
+// intelEntityDomainAliases maps intel_records.entity_type values to the
+// domain key used by the seeded per-domain settings when they differ
+// (e.g. records store 'job'/'credential_pathways' but the seeds are
+// 'intel.jobs.*' / 'intel.credential.*').
+var intelEntityDomainAliases = map[string]string{
+	"credential_pathways": "credential",
+}
+
+// intelDomainKeyCandidates returns the domain-key candidates for an
+// entity_type, in precedence order: the entity_type itself, a known alias,
+// then the naive plural ('job' → 'jobs', matching the intel.jobs.* seeds).
+func intelDomainKeyCandidates(entityType string) []string {
+	out := []string{entityType}
+
+	if alias, ok := intelEntityDomainAliases[entityType]; ok {
+		out = append(out, alias)
+	}
+
+	out = append(out, entityType+"s")
+
+	return out
+}
+
+// intelDomainEnabled reports whether promotion is enabled for the record's
+// domain. A domain is disabled when ANY candidate key is explicitly false;
+// missing keys default to enabled so un-seeded entity types keep working.
+func intelDomainEnabled(ctx context.Context, entityType string) bool {
+	if appSettings == nil {
+		return true
+	}
+
+	for _, domain := range intelDomainKeyCandidates(entityType) {
+		if !appSettings.GetBoolOr(ctx, "intel."+domain+".enabled", true) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// intelFreshnessPolicy resolves the record's domain decay policy
+// (slow/normal/fast). It tries the canonical per-domain key
+// 'intel.<domain>.freshness_decay_policy' first, then the legacy
+// 'intel.freshness_decay_<domain>' form (the seeded scholarship key uses
+// it). Returns "normal" when unset.
+func intelFreshnessPolicy(ctx context.Context, entityType string) string {
+	if appSettings == nil {
+		return "normal"
+	}
+
+	for _, domain := range intelDomainKeyCandidates(entityType) {
+		if v := appSettings.GetStringOr(ctx, "intel."+domain+".freshness_decay_policy", ""); v != "" {
+			return v
+		}
+	}
+
+	for _, domain := range intelDomainKeyCandidates(entityType) {
+		if v := appSettings.GetStringOr(ctx, "intel.freshness_decay_"+domain, ""); v != "" {
+			return v
+		}
+	}
+
+	return "normal"
 }

@@ -121,19 +121,23 @@
 			<ArrowLeft size={15} />
 			{t('radar.back')}
 		</a>
-		<button
-			onclick={toggleSave}
-			disabled={saving}
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-		>
-			{#if saved}
-				<BookmarkCheck size={14} class="text-[var(--color-primary)]" />
-				{t('radar.detail.saved', 'Saved')}
-			{:else}
-				<Bookmark size={14} />
-				{t('radar.detail.save', 'Save')}
-			{/if}
-		</button>
+		<!-- v1: only scholarships are savable (spec §763 reserves saved_jobs
+		     for later); the save endpoint 404s for other item types. -->
+		{#if item.type === 'scholarship'}
+			<button
+				onclick={toggleSave}
+				disabled={saving}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+			>
+				{#if saved}
+					<BookmarkCheck size={14} class="text-[var(--color-primary)]" />
+					{t('radar.detail.saved', 'Saved')}
+				{:else}
+					<Bookmark size={14} />
+					{t('radar.detail.save', 'Save')}
+				{/if}
+			</button>
+		{/if}
 	</div>
 
 	<article class="mt-5 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -143,10 +147,12 @@
 				<Radar size={12} />
 				{item.type}
 			</span>
-			<span class="inline-flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-				<Globe size={12} />
-				{item.country}
-			</span>
+			{#if item.country}
+				<span class="inline-flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+					<Globe size={12} />
+					{item.country}
+				</span>
+			{/if}
 			<span class="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {verified ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}">
 				{#if verified}
 					<ShieldCheck size={12} />

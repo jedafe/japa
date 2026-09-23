@@ -18,9 +18,10 @@
 		raw_document_id?: string;
 		entity_type: string;
 		external_key?: string;
-		extracted?: string;
-		confidence?: string;
-		evidence?: string;
+		// JSONB columns serialize as inline JSON objects, not base64.
+		extracted?: unknown;
+		confidence?: unknown;
+		evidence?: unknown;
 		confidence_overall: number;
 		status: string;
 		freshness_score: number;
@@ -123,7 +124,7 @@
 
 	function openEdit(rec: ReviewRecord) {
 		editTarget = rec;
-		editExtracted = rec.extracted ?? '';
+		editExtracted = jsonBlobToText(rec.extracted);
 		showEditPanel = true;
 	}
 
@@ -159,23 +160,32 @@
 		}
 	}
 
-	// Decode base64 extracted data to a readable JSON string.
-	function decodeExtracted(rec: ReviewRecord): string {
-		if (!rec.extracted) return '—';
+	// Serialize a JSONB blob (already an inline JSON object from the API) to a
+	// readable pretty-printed string. The backend sends json.RawMessage for
+	// these columns, so atob() decoding was wrong — it turned the object into
+	// "[object Object]" and broke the edit seed.
+	function jsonBlobToText(v: unknown): string {
+		if (v == null || v === '') return '';
+		if (typeof v === 'string') {
+			try {
+				return JSON.stringify(JSON.parse(v), null, 2);
+			} catch {
+				return v;
+			}
+		}
 		try {
-			return atob(rec.extracted);
+			return JSON.stringify(v, null, 2);
 		} catch {
-			return rec.extracted;
+			return String(v);
 		}
 	}
 
+	function decodeExtracted(rec: ReviewRecord): string {
+		return jsonBlobToText(rec.extracted) || '—';
+	}
+
 	function decodeConfidence(rec: ReviewRecord): string {
-		if (!rec.confidence) return '—';
-		try {
-			return atob(rec.confidence);
-		} catch {
-			return rec.confidence;
-		}
+		return jsonBlobToText(rec.confidence) || '—';
 	}
 
 	// Map an intel entity_type to a Studio content_type. Most guide-like
@@ -211,13 +221,16 @@
 	}
 
 	// Derive a topic prompt from a record. Prefer a human-readable title
-	// decoded from the extracted payload; fall back to the external key.
+	// from the extracted payload; fall back to the external key.
 	function topicPromptForRecord(rec: ReviewRecord): string {
 		let title = '';
 		try {
-			const decoded = rec.extracted ? atob(rec.extracted) : '';
-			const parsed = decoded ? JSON.parse(decoded) : null;
-			title = (parsed && (parsed.title || parsed.name)) || '';
+			let parsed: unknown = rec.extracted;
+			if (typeof parsed === 'string') parsed = parsed ? JSON.parse(parsed) : null;
+			if (parsed && typeof parsed === 'object') {
+				const p = parsed as Record<string, unknown>;
+				title = String(p.title ?? p.name ?? '');
+			}
 		} catch {
 			// ignore — fall through to external_key
 		}
@@ -369,9 +382,14 @@
 			params.set('page_size', String(pageSize));
 			const result = await intelReviewApi.queue(params.toString());
 			if (result.ok) {
-				const body = result.data as { data?: ReviewRecord[]; meta?: { count?: number; page_size?: number; page_offset?: number } };
+				const body = result.data as {
+					data?: ReviewRecord[];
+					meta?: { total?: number; count?: number; page_size?: number; page_offset?: number };
+				};
 				const data = (body?.data as ReviewRecord[]) ?? [];
-				const total = body?.meta?.count ?? data.length;
+				// meta.total is the matching-row count for pagination;
+				// meta.count is the current page length.
+				const total = body?.meta?.total ?? body?.meta?.count ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / pageSize));
 				return { data, total, totalPages };
 			}
