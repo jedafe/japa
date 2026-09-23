@@ -90,22 +90,6 @@ func assertIntelUnavailable(t *testing.T, rr *httptest.ResponseRecorder) {
 	}
 }
 
-// sampleItems returns a fresh slice of radar items for filter/facet tests.
-// A fresh copy is returned per call because filterScholarshipsPostQuery
-// filters in place (out := items[:0]), so reusing one slice across calls
-// would corrupt subsequent assertions.
-func sampleItems() []radarItem {
-	descHigh := "high confidence award for stem"
-	descLow := "low confidence listing"
-	uni := "Tokyo University"
-
-	return []radarItem{
-		{Title: "MEXT Award", Description: &descHigh, University: &uni, Country: "JP", ConfidenceOverall: 0.95, DegreeLevel: ptrString("Masters")},
-		{Title: "Small Grant", Description: &descLow, University: &uni, Country: "US", ConfidenceOverall: 0.30, DegreeLevel: ptrString("Bachelors")},
-		{Title: "Other Award", Description: &descLow, University: nil, Country: "GB", ConfidenceOverall: 0.80, DegreeLevel: nil},
-	}
-}
-
 func ptrString(s string) *string { return &s }
 
 // --- helper function tests ---
@@ -260,7 +244,7 @@ func TestScanUUIDParam(t *testing.T) {
 	}
 }
 
-func TestEncodeCursor(t *testing.T) {
+func TestEncodeScholarshipCursor(t *testing.T) {
 	t.Parallel()
 	id := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	ts := pgtype.Timestamptz{Time: time.Date(2026, 1, 15, 12, 30, 0, 123456789, time.UTC), Valid: true}
@@ -268,7 +252,7 @@ func TestEncodeCursor(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Parallel()
 
-		c := encodeCursor(ts, id)
+		c := encodeScholarshipCursor(ts, id)
 		if c == "" {
 			t.Fatal("expected non-empty cursor for valid inputs")
 		}
@@ -283,7 +267,7 @@ func TestEncodeCursor(t *testing.T) {
 	t.Run("invalid_timestamp", func(t *testing.T) {
 		t.Parallel()
 
-		if c := encodeCursor(pgtype.Timestamptz{Valid: false}, id); c != "" {
+		if c := encodeScholarshipCursor(pgtype.Timestamptz{Valid: false}, id); c != "" {
 			t.Errorf("expected empty cursor for invalid timestamp, got %q", c)
 		}
 	})
@@ -291,56 +275,78 @@ func TestEncodeCursor(t *testing.T) {
 	t.Run("invalid_id", func(t *testing.T) {
 		t.Parallel()
 
-		if c := encodeCursor(ts, pgtype.UUID{Valid: false}); c != "" {
+		if c := encodeScholarshipCursor(ts, pgtype.UUID{Valid: false}); c != "" {
 			t.Errorf("expected empty cursor for invalid id, got %q", c)
 		}
 	})
 }
 
-func TestParseCursor(t *testing.T) {
+func TestParseRadarCursor(t *testing.T) {
 	t.Parallel()
 	id := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	ts := pgtype.Timestamptz{Time: time.Date(2026, 1, 15, 12, 30, 0, 987654321, time.UTC), Valid: true}
 
-	t.Run("round_trip", func(t *testing.T) {
+	t.Run("legacy_round_trip", func(t *testing.T) {
 		t.Parallel()
 
-		cursor := encodeCursor(ts, id)
+		// Legacy v1 "nano|uuid" cursors map the checkpoint onto every domain.
+		cursor := encodeScholarshipCursor(ts, id)
 		if cursor == "" {
-			t.Fatal("encodeCursor returned empty for valid inputs")
+			t.Fatal("encodeScholarshipCursor returned empty for valid inputs")
 		}
 
-		gotTS, gotID, ok := parseCursor(cursor)
+		got := parseRadarCursor(cursor)
+		if got == nil {
+			t.Fatalf("parseRadarCursor returned nil for valid cursor %q", cursor)
+		}
+
+		cp, ok := got["scholarship"]
 		if !ok {
-			t.Fatalf("parseCursor ok = false for valid cursor %q", cursor)
+			t.Fatal("no scholarship checkpoint in parsed cursor")
 		}
 
-		if !gotTS.Valid {
-			t.Fatal("parsed timestamp not valid")
+		if cp.TS != ts.Time.UnixNano() {
+			t.Errorf("checkpoint ts = %d, want %d", cp.TS, ts.Time.UnixNano())
 		}
 
-		if gotTS.Time.UnixNano() != ts.Time.UnixNano() {
-			t.Errorf("timestamp nano = %d, want %d", gotTS.Time.UnixNano(), ts.Time.UnixNano())
+		if cp.ID != id.String() {
+			t.Errorf("checkpoint id = %q, want %q", cp.ID, id.String())
+		}
+	})
+
+	t.Run("v2_round_trip", func(t *testing.T) {
+		t.Parallel()
+
+		want := map[string]radarCursorCheckpoint{
+			"scholarship": {TS: ts.Time.UnixNano(), ID: id.String()},
+			"job":         {TS: ts.Time.UnixNano() - 1000, ID: id.String()},
 		}
 
-		if !gotID.Valid || gotID.String() != id.String() {
-			t.Errorf("parsed id = %v, want %q", gotID, id.String())
+		got := parseRadarCursor(encodeRadarCursor(want))
+		if got == nil {
+			t.Fatal("parseRadarCursor returned nil for v2 cursor")
+		}
+
+		for domain, cp := range want {
+			if got[domain] != cp {
+				t.Errorf("domain %s checkpoint = %+v, want %+v", domain, got[domain], cp)
+			}
 		}
 	})
 
 	t.Run("empty", func(t *testing.T) {
 		t.Parallel()
 
-		if _, _, ok := parseCursor(""); ok {
-			t.Error("parseCursor('') ok = true, want false")
+		if got := parseRadarCursor(""); got != nil {
+			t.Error("parseRadarCursor('') non-nil, want nil")
 		}
 	})
 
 	t.Run("malformed_not_base64", func(t *testing.T) {
 		t.Parallel()
 
-		if _, _, ok := parseCursor("!!!not-base64!!!"); ok {
-			t.Error("parseCursor(non-base64) ok = true, want false")
+		if got := parseRadarCursor("!!!not-base64!!!"); got != nil {
+			t.Error("parseRadarCursor(non-base64) non-nil, want nil")
 		}
 	})
 
@@ -348,8 +354,8 @@ func TestParseCursor(t *testing.T) {
 		t.Parallel()
 
 		c := base64.RawURLEncoding.EncodeToString([]byte("noseparatorhere"))
-		if _, _, ok := parseCursor(c); ok {
-			t.Error("parseCursor(no separator) ok = true, want false")
+		if got := parseRadarCursor(c); got != nil {
+			t.Error("parseRadarCursor(no separator) non-nil, want nil")
 		}
 	})
 
@@ -357,10 +363,22 @@ func TestParseCursor(t *testing.T) {
 		t.Parallel()
 
 		c := base64.RawURLEncoding.EncodeToString([]byte("1700000000|not-a-uuid"))
-		if _, _, ok := parseCursor(c); ok {
-			t.Error("parseCursor(bad uuid) ok = true, want false")
+		if got := parseRadarCursor(c); got != nil {
+			t.Error("parseRadarCursor(bad uuid) non-nil, want nil")
 		}
 	})
+}
+
+func TestEncodeRadarCursor_Empty(t *testing.T) {
+	t.Parallel()
+
+	if c := encodeRadarCursor(nil); c != "" {
+		t.Errorf("encodeRadarCursor(nil) = %q, want empty", c)
+	}
+
+	if c := encodeRadarCursor(map[string]radarCursorCheckpoint{}); c != "" {
+		t.Errorf("encodeRadarCursor(empty) = %q, want empty", c)
+	}
 }
 
 // --- aggregation / projection pure-function tests ---
@@ -791,43 +809,122 @@ func TestHandleSourcesDirectory_NilSources(t *testing.T) {
 	assertIntelUnavailable(t, rr)
 }
 
-// --- search post-query filter & facet tests ---
+// --- search param mapping & facet tests ---
 
-func TestFilterScholarshipsPostQuery(t *testing.T) {
+func TestBuildSearchScholarshipsParams(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		name      string
-		q         url.Values
-		wantLen   int
-		wantTitle string // first surviving item title; "" skips the check
-	}{
-		{"min_confidence", url.Values{"min_confidence": {"0.5"}}, 2, ""},
-		{"min_confidence_keeps_all", url.Values{"min_confidence": {"0.0"}}, 3, ""},
-		{"q_text_title", url.Values{"q": {"mext"}}, 1, "MEXT Award"},
-		{"q_text_university", url.Values{"q": {"tokyo"}}, 2, ""},
-		{"q_text_description", url.Values{"q": {"stem"}}, 1, "MEXT Award"},
-		{"combined_confidence_and_text", url.Values{"min_confidence": {"0.5"}, "q": {"tokyo"}}, 1, "MEXT Award"},
-		{"no_filters", url.Values{}, 3, ""},
-		{"q_no_match", url.Values{"q": {"zzznomatch"}}, 0, ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			// Fresh copy per case: filterScholarshipsPostQuery filters in
-			// place over the input's backing array.
-			got := filterScholarshipsPostQuery(sampleItems(), tc.q, "")
-			if len(got) != tc.wantLen {
-				t.Fatalf("len = %d, want %d (items=%+v)", len(got), tc.wantLen, titles(got))
-			}
+	t.Run("text_filters", func(t *testing.T) {
+		t.Parallel()
 
-			if tc.wantTitle != "" {
-				if len(got) == 0 || got[0].Title != tc.wantTitle {
-					t.Errorf("first title = %q, want %q", titles(got), tc.wantTitle)
-				}
+		p := buildSearchScholarshipsParams(url.Values{
+			"country":          {"JP"},
+			"eligible_country": {"NG"},
+			"degree_level":     {"Masters"},
+			"q":                {"robotics"},
+		}, 20, 40)
+
+		if p.Column1 != "JP" || p.Column2 != "NG" || p.Column3 != "Masters" || p.Column8 != "robotics" {
+			t.Errorf("text params = %+v", p)
+		}
+
+		if p.Limit != 20 || p.Offset != 40 {
+			t.Errorf("limit/offset = %d/%d, want 20/40", p.Limit, p.Offset)
+		}
+	})
+
+	t.Run("fields_of_study_csv", func(t *testing.T) {
+		t.Parallel()
+
+		p := buildSearchScholarshipsParams(url.Values{
+			"fields_of_study": {"Engineering, Medicine , ,Law"},
+		}, 20, 0)
+
+		want := []string{"Engineering", "Medicine", "Law"}
+		if len(p.Column6) != len(want) {
+			t.Fatalf("fields_of_study = %v, want %v", p.Column6, want)
+		}
+
+		for i, v := range want {
+			if p.Column6[i] != v {
+				t.Errorf("fields_of_study[%d] = %q, want %q", i, p.Column6[i], v)
 			}
-		})
-	}
+		}
+	})
+
+	t.Run("field_of_study_alias", func(t *testing.T) {
+		t.Parallel()
+
+		p := buildSearchScholarshipsParams(url.Values{
+			"field_of_study": {"Nursing"},
+		}, 20, 0)
+
+		if len(p.Column6) != 1 || p.Column6[0] != "Nursing" {
+			t.Errorf("field_of_study alias = %v, want [Nursing]", p.Column6)
+		}
+	})
+
+	t.Run("min_confidence", func(t *testing.T) {
+		t.Parallel()
+
+		p := buildSearchScholarshipsParams(url.Values{"min_confidence": {"0.75"}}, 20, 0)
+		if p.ConfidenceOverall != 0.75 {
+			t.Errorf("min_confidence = %v, want 0.75", p.ConfidenceOverall)
+		}
+
+		p = buildSearchScholarshipsParams(url.Values{"min_confidence": {"bogus"}}, 20, 0)
+		if p.ConfidenceOverall != 0 {
+			t.Errorf("invalid min_confidence = %v, want 0", p.ConfidenceOverall)
+		}
+	})
+
+	t.Run("funding_tuition_tristate", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tc := range []struct {
+			in   string
+			want string
+		}{
+			{"true", "true"}, {"1", "true"}, {"yes", "true"},
+			{"false", "false"}, {"0", "false"}, {"no", "false"},
+			{"", ""}, {"bogus", ""},
+		} {
+			p := buildSearchScholarshipsParams(url.Values{"funding_tuition": {tc.in}}, 20, 0)
+			if p.Column9 != tc.want {
+				t.Errorf("funding_tuition %q → %q, want %q", tc.in, p.Column9, tc.want)
+			}
+		}
+	})
+
+	t.Run("deadline_params_and_aliases", func(t *testing.T) {
+		t.Parallel()
+
+		p := buildSearchScholarshipsParams(url.Values{
+			"deadline_after":  {"2026-01-01"},
+			"deadline_before": {"2026-12-31"},
+		}, 20, 0)
+
+		if !p.Column4.Valid || p.Column4.Time.Format("2006-01-02") != "2026-01-01" {
+			t.Errorf("deadline_after = %+v", p.Column4)
+		}
+
+		if !p.Column5.Valid || p.Column5.Time.Format("2006-01-02") != "2026-12-31" {
+			t.Errorf("deadline_before = %+v", p.Column5)
+		}
+
+		p = buildSearchScholarshipsParams(url.Values{
+			"deadline_from": {"2026-06-01"},
+			"deadline_to":   {"2026-09-01"},
+		}, 20, 0)
+
+		if !p.Column4.Valid || p.Column4.Time.Format("2006-01-02") != "2026-06-01" {
+			t.Errorf("deadline_from alias = %+v", p.Column4)
+		}
+
+		if !p.Column5.Valid || p.Column5.Time.Format("2006-01-02") != "2026-09-01" {
+			t.Errorf("deadline_to alias = %+v", p.Column5)
+		}
+	})
 }
 
 func TestBuildScholarshipFacets(t *testing.T) {
@@ -894,13 +991,4 @@ func contains(s, sub string) bool {
 	}
 
 	return false
-}
-
-func titles(items []radarItem) []string {
-	out := make([]string, 0, len(items))
-	for _, it := range items {
-		out = append(out, it.Title)
-	}
-
-	return out
 }

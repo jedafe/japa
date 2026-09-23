@@ -20,27 +20,27 @@ import (
 // are omitted; only the fields useful to a public directory listing are
 // exposed.
 type sourceDirectoryEntry struct {
-	ID                  string  `json:"id"`
-	Slug                string  `json:"slug"`
-	Name                string  `json:"name"`
-	Description         *string `json:"description,omitempty"`
-	Domain              string  `json:"domain"`
-	SourceURL           string  `json:"source_url"`
-	Category            string  `json:"category"`
+	ID          string  `json:"id"`
+	Slug        string  `json:"slug"`
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	Domain      string  `json:"domain"`
+	SourceURL   string  `json:"source_url"`
+	Category    string  `json:"category"`
 	// Categories is the multi-category array (intel-channels §6); always
 	// serialized (empty → []) so admin create/update responses echo the
 	// normalized set that was just written.
 	Categories          []string `json:"categories"`
-	SourceType          string  `json:"source_type"`
-	SourceKind          string  `json:"source_kind"`
-	TrustLevel          int16   `json:"trust_level"`
-	AttributionRequired bool    `json:"attribution_required"`
-	SourceLicense       *string `json:"source_license,omitempty"`
-	UsageRestriction    *string `json:"usage_restriction,omitempty"`
-	LogoURL             *string `json:"logo_url,omitempty"`
-	FollowerCount       int32   `json:"follower_count"`
-	PostCount           int32   `json:"post_count"`
-	Enabled             bool    `json:"enabled"`
+	SourceType          string   `json:"source_type"`
+	SourceKind          string   `json:"source_kind"`
+	TrustLevel          int16    `json:"trust_level"`
+	AttributionRequired bool     `json:"attribution_required"`
+	SourceLicense       *string  `json:"source_license,omitempty"`
+	UsageRestriction    *string  `json:"usage_restriction,omitempty"`
+	LogoURL             *string  `json:"logo_url,omitempty"`
+	FollowerCount       int32    `json:"follower_count"`
+	PostCount           int32    `json:"post_count"`
+	Enabled             bool     `json:"enabled"`
 	// EntityTypes is the provider_config.entity_types extraction-domain
 	// override — surfaced so the control panel can manage mixed-domain
 	// sources without exposing the raw config document.
@@ -553,12 +553,33 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Total matching rows for pagination — the prior meta only carried the
+	// current page length, so the admin table computed totalPages=1 and the
+	// queue could never be paged past the first page.
+	var total int64
+	if entityType != "" {
+		total, err = h.intelStores.CountIntelRecordsByStatus(r.Context(), gen.CountIntelRecordsByStatusParams{
+			EntityType: entityType,
+			Status:     "review_required",
+		})
+	} else {
+		total, err = h.intelStores.CountIntelRecordsByStatusAll(r.Context(), "review_required")
+	}
+
+	if err != nil {
+		slog.Error("intel: review queue count failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "review_queue_failed", "Failed to load review queue")
+
+		return
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": intelRecordsToResponse(rows),
 		"meta": map[string]interface{}{
 			"page_size":   limit,
 			"page_offset": (page - 1) * limit,
 			"count":       len(rows),
+			"total":       total,
 		},
 	})
 }
@@ -634,12 +655,30 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	var total int64
+	if entityType != "" {
+		total, err = h.intelStores.CountIntelRecordsByStatus(r.Context(), gen.CountIntelRecordsByStatusParams{
+			EntityType: entityType,
+			Status:     status,
+		})
+	} else {
+		total, err = h.intelStores.CountIntelRecordsByStatusAll(r.Context(), status)
+	}
+
+	if err != nil {
+		slog.Error("intel: records count failed", "status", status, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "records_list_failed", "Failed to list intel records")
+
+		return
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": intelRecordsToResponse(rows),
 		"meta": map[string]interface{}{
 			"page_size":   limit,
 			"page_offset": (page - 1) * limit,
 			"count":       len(rows),
+			"total":       total,
 			"status":      status,
 		},
 	})

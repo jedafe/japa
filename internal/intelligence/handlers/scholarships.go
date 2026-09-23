@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -114,7 +115,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	// query; clients resume by passing page_offset=(prior offset + limit).
 	offset := clampInt32((page - 1) * limit)
 
-	params, fieldsOfStudy := buildSearchScholarshipsParams(q, limit, offset)
+	params := buildSearchScholarshipsParams(q, limit, offset)
 
 	rows, err := h.intelStores.SearchScholarships(r.Context(), params)
 	if err != nil {
@@ -129,18 +130,13 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 		items = append(items, scholarshipToRadarItem(s))
 	}
 
-	// BUG-08 fix: apply post-query filters for params the sqlc query does
-	// not yet support: min_confidence, funding_tuition, q, and additional
-	// fields_of_study CSV elements.
-	items = filterScholarshipsPostQuery(items, q, fieldsOfStudy)
-
 	// Keyset pagination cursor.
 	hasMore := len(items) >= limit
 	nextCursor := ""
 
 	if hasMore && len(items) > 0 {
 		last := items[len(items)-1]
-		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+		nextCursor = encodeScholarshipCursor(last.CreatedAt, last.ID)
 	}
 
 	// Facets: country and degree_level distributions from the result set.
@@ -156,52 +152,74 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// encodeScholarshipCursor emits the legacy "nano|uuid" keyset cursor for
+// the scholarships search response. The query itself paginates by OFFSET;
+// the cursor is returned for clients that prefer resumable iteration.
+func encodeScholarshipCursor(ts pgtype.Timestamptz, id pgtype.UUID) string {
+	if !ts.Valid || !id.Valid {
+		return ""
+	}
+
+	raw := strconv.FormatInt(ts.Time.UnixNano(), 10) + "|" + id.String()
+
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
 // buildSearchScholarshipsParams maps the search query params onto the
 // SearchScholarshipsParams columns (country→Column1, eligible_country→Column2,
 // degree_level→Column3, deadline_after→Column4, deadline_before→Column5,
-// fields_of_study→Column6). It returns the params and the resolved
-// fields_of_study CSV for the post-query filter.
+// fields_of_study→Column6, min_confidence→ConfidenceOverall, q→Column8,
+// funding_tuition→Column9). All filters now run in SQL — the previous
+// implementation post-filtered in memory after LIMIT/OFFSET, which
+// under-filled pages and dropped matches.
 // // Deprecated aliases are honoured for backward compatibility:
 // deadline_from→deadline_after, deadline_to→deadline_before,
 // field_of_study→fields_of_study.
-func buildSearchScholarshipsParams(q url.Values, limit int, offset int32) (gen.SearchScholarshipsParams, string) {
+func buildSearchScholarshipsParams(q url.Values, limit int, offset int32) gen.SearchScholarshipsParams {
 	params := gen.SearchScholarshipsParams{
-		Limit:  clampInt32(limit),
-		Offset: offset,
-	}
-
-	if v := q.Get("country"); v != "" {
-		params.Column1 = v
-	}
-
-	if v := q.Get("eligible_country"); v != "" {
-		params.Column2 = v
-	}
-
-	if v := q.Get("degree_level"); v != "" {
-		params.Column3 = v
+		Column1: q.Get("country"),
+		Column2: q.Get("eligible_country"),
+		Column3: q.Get("degree_level"),
+		Column8: q.Get("q"),
+		Limit:   clampInt32(limit),
+		Offset:  offset,
 	}
 
 	params.Column4 = deadlineParam(q, "deadline_after", "deadline_from")
 	params.Column5 = deadlineParam(q, "deadline_before", "deadline_to")
 
 	// BUG-07 fix: spec uses fields_of_study (plural, CSV); keep
-	// field_of_study (singular) as a deprecated alias.
+	// field_of_study (singular) as a deprecated alias. The SQL matches ANY
+	// element via array overlap.
 	fieldsOfStudy := q.Get("fields_of_study")
 	if fieldsOfStudy == "" {
 		fieldsOfStudy = q.Get("field_of_study")
 	}
 
 	if fieldsOfStudy != "" {
-		// Take the first CSV element for the sqlc query's single-value
-		// filter; additional elements are matched post-query.
-		parts := strings.Split(fieldsOfStudy, ",")
-		if len(parts) > 0 {
-			params.Column6 = strings.TrimSpace(parts[0])
+		for _, p := range strings.Split(fieldsOfStudy, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				params.Column6 = append(params.Column6, p)
+			}
 		}
 	}
 
-	return params, fieldsOfStudy
+	if v := q.Get("min_confidence"); v != "" {
+		if f, err := strconv.ParseFloat(v, 32); err == nil {
+			params.ConfidenceOverall = float32(f)
+		}
+	}
+
+	// funding_tuition is a tri-state filter against the funding JSONB's
+	// tuition flag: 'true'/'false' filter, anything else is ignored.
+	switch strings.ToLower(q.Get("funding_tuition")) {
+	case "true", "1", "yes":
+		params.Column9 = "true"
+	case "false", "0", "no":
+		params.Column9 = "false"
+	}
+
+	return params
 }
 
 // deadlineParam resolves a deadline date filter, falling back to the
@@ -221,59 +239,6 @@ func deadlineParam(q url.Values, primary, alias string) pgtype.Date {
 	}
 
 	return pgtype.Date{}
-}
-
-// filterScholarshipsPostQuery applies filters that the sqlc query does not
-// yet support: min_confidence, funding_tuition, q (text search on title +
-// description + university), and additional fields_of_study CSV elements
-// beyond the first. These are in-memory filters on the already-fetched page;
-// a follow-up sqlc query can push them to the database for large result sets.
-func filterScholarshipsPostQuery(items []radarItem, q url.Values, fieldsOfStudyCSV string) []radarItem {
-	minConfidence := 0.0
-
-	if v := q.Get("min_confidence"); v != "" {
-		if parsed, err := strconv.ParseFloat(v, 32); err == nil {
-			minConfidence = parsed
-		}
-	}
-
-	fundingTuition := q.Get("funding_tuition")
-	queryText := strings.ToLower(strings.TrimSpace(q.Get("q")))
-	_ = fieldsOfStudyCSV // used for the sqlc query filter; multi-value post-filter is a follow-up
-
-	out := items[:0]
-
-	for _, item := range items {
-		if minConfidence > 0 && float64(item.ConfidenceOverall) < minConfidence {
-			continue
-		}
-
-		_ = fundingTuition // funding_tuition requires the full scholarship detail (funding JSONB); follow-up for sqlc
-
-		if queryText != "" {
-			title := strings.ToLower(item.Title)
-
-			desc := ""
-			if item.Description != nil {
-				desc = strings.ToLower(*item.Description)
-			}
-
-			uni := ""
-			if item.University != nil {
-				uni = strings.ToLower(*item.University)
-			}
-
-			if !strings.Contains(title, queryText) &&
-				!strings.Contains(desc, queryText) &&
-				!strings.Contains(uni, queryText) {
-				continue
-			}
-		}
-
-		out = append(out, item)
-	}
-
-	return out
 }
 
 // buildScholarshipFacets computes the country and degree_level facet

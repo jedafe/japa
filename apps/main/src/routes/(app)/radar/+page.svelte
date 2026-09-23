@@ -105,20 +105,28 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// reads body.data) cannot be used. We fetch directly and read `items`.
 	let loadingMore = $state(false);
 	let extraItems = $state<RadarItem[]>([]);
+	let serverHasMore = $state(true);
 	const allFollowedItems = $derived([...followedItems, ...extraItems]);
-	const hasMore = $derived(allFollowedItems.length >= data.pageSize);
+	const hasMore = $derived(serverHasMore && allFollowedItems.length >= data.pageSize);
 
 	async function loadMore() {
 		if (loadingMore || !authed) return;
 		loadingMore = true;
 		const nextOffset = allFollowedItems.length;
 		try {
-			const res = await api.getEnvelope<{ items: RadarItem[] }>(
+			const res = await api.getEnvelope<{ items: RadarItem[]; has_more?: boolean }>(
 				`/intel/radar/followed?page_size=${data.pageSize}&page_offset=${nextOffset}`
 			);
-			if (res.envelope?.items) {
-				const items = res.envelope.items as RadarItem[];
-				extraItems = [...extraItems, ...items];
+			const env = res.envelope as { items?: RadarItem[]; has_more?: boolean } | undefined;
+			if (env?.items) {
+				// Dedupe by id — rows promoted between page fetches can shift the
+				// offset window and re-emit an item from the previous page.
+				const seen = new Set(allFollowedItems.map((i) => i.id));
+				const fresh = env.items.filter((i) => !seen.has(i.id));
+				extraItems = [...extraItems, ...fresh];
+			}
+			if (env && env.has_more === false) {
+				serverHasMore = false;
 			}
 		} catch {
 			// network error — keep existing items

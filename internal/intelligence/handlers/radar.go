@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -250,18 +251,18 @@ func parseRadarCursor(raw string) map[string]radarCursorCheckpoint {
 		return nil
 	}
 
-	parts := splitOnce(string(decoded), '|')
-	if len(parts) != 2 {
+	tsStr, idStr, found := strings.Cut(string(decoded), "|")
+	if !found {
 		return nil
 	}
 
-	nano, err := strconv.ParseInt(parts[0], 10, 64)
+	nano, err := strconv.ParseInt(tsStr, 10, 64)
 	if err != nil {
 		return nil
 	}
 
 	var id pgtype.UUID
-	if err := id.Scan(parts[1]); err != nil || !id.Valid {
+	if err := id.Scan(idStr); err != nil || !id.Valid {
 		return nil
 	}
 
@@ -271,17 +272,6 @@ func parseRadarCursor(raw string) map[string]radarCursorCheckpoint {
 		"scholarship": cp, "job": cp, "visa": cp,
 		"housing": cp, "remittance": cp, "cost_of_living": cp,
 	}
-}
-
-// splitOnce splits s at the first occurrence of sep.
-func splitOnce(s string, sep byte) []string {
-	for i, b := range s {
-		if b == sep {
-			return []string{s[:i], s[i+1:]}
-		}
-	}
-
-	return []string{s}
 }
 
 // timeFromNano converts a UnixNano value to a time.Time.
