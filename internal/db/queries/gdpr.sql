@@ -740,6 +740,19 @@ FROM (SELECT ftt.* FROM forum_thread_tags ftt JOIN forum_threads ft ON ft.id = f
 DELETE FROM forum_thread_tags
 WHERE thread_id IN (SELECT id FROM forum_threads WHERE author_user_id = @user_id);
 
+-- name: GdprExportUserContentTags :one
+-- Universal tag attachments on content authored by the user (Section 08/14 —
+-- forum threads, blog posts, and every other content_type share content_tags).
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT ct.* FROM content_tags ct JOIN contents c ON c.id = ct.content_id WHERE c.author_id = @user_id) t;
+
+-- name: DeleteContentTagsByAuthor :exec
+-- Remove universal tag junction rows on the user's content during GDPR
+-- erasure, matching the forum_thread_tags treatment above. The content_id FK
+-- has ON DELETE CASCADE but contents may be retained soft-deleted.
+DELETE FROM content_tags
+WHERE content_id IN (SELECT id FROM contents WHERE author_id = @user_id);
+
 -- name: GdprExportUserMedia :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM media WHERE uploader_user_id = @user_id) t;

@@ -416,6 +416,41 @@ func (q *Queries) GetTagsBySlugs(ctx context.Context, slugs []string) ([]GetTags
 	return items, nil
 }
 
+const listFirstTagModerators = `-- name: ListFirstTagModerators :many
+SELECT DISTINCT ON (tm.tag_id) tm.tag_id, tm.user_id
+FROM tag_moderators tm
+WHERE tm.tag_id = ANY($1::uuid[])
+ORDER BY tm.tag_id, tm.created_at ASC
+`
+
+type ListFirstTagModeratorsRow struct {
+	TagID  pgtype.UUID `json:"tag_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Returns the earliest-assigned moderator per tag for a set of tag IDs.
+// Used to project tag_moderators into the legacy single-moderator wire shape
+// (forum_tags.moderator_user_id) — Section 08/49.
+func (q *Queries) ListFirstTagModerators(ctx context.Context, tagIds []pgtype.UUID) ([]ListFirstTagModeratorsRow, error) {
+	rows, err := q.db.Query(ctx, listFirstTagModerators, tagIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFirstTagModeratorsRow
+	for rows.Next() {
+		var i ListFirstTagModeratorsRow
+		if err := rows.Scan(&i.TagID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTagModerators = `-- name: ListTagModerators :many
 
 SELECT tm.user_id, u.username, tm.created_at

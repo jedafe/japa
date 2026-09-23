@@ -280,6 +280,40 @@
 		setTimeout(() => (copied = false), 2000);
 	}
 
+	// Thread rail termination: the vertical line ends at the LAST child's
+	// connector junction (the "└" elbow) rather than running to the bottom
+	// of the article. CSS can't express "stop at the last child's avatar",
+	// so measure it and feed the rail a bottom offset.
+	let articleEl = $state<HTMLElement>();
+	let childrenWrap = $state<HTMLElement>();
+	let railBottom = $state(0);
+
+	$effect(() => {
+		const wrap = childrenWrap;
+		const art = articleEl;
+		if (!wrap || !art) {
+			railBottom = 0;
+			return;
+		}
+		const measure = () => {
+			const last = wrap.firstElementChild?.lastElementChild as HTMLElement | null;
+			if (!last) {
+				railBottom = 0;
+				return;
+			}
+			// Rail stops where the last child's elbow starts bending: the elbow
+			// box bottom is at +35 and the corner radius is 12px, so the curve
+			// leaves the rail's column at +23.
+			const junction = wrap.offsetTop + last.offsetTop + 23;
+			railBottom = Math.max(0, art.offsetHeight - junction);
+		};
+		measure();
+		const ro = new ResizeObserver(measure);
+		ro.observe(wrap);
+		ro.observe(art);
+		return () => ro.disconnect();
+	});
+
 	const iconBtn =
 		'grid h-8 w-8 place-items-center rounded-[var(--radius)] transition-colors disabled:opacity-50';
 	const menuItem =
@@ -288,11 +322,15 @@
 
 <article
 	id={`comment-${comment.id}`}
-	class="relative flex flex-col rounded-[var(--radius-card)] p-4 {depth > 0 ? 'comment-reply' : ''}"
+	bind:this={articleEl}
+	class="relative isolate flex flex-col rounded-[var(--radius-card)] p-4 {depth > 0 ? 'comment-reply' : ''}"
 >
 	{#if hasChildren}
 		<!-- Vertical thread rail: runs from the commenter avatar down through descendants. -->
-		<div class="thread-rail absolute left-9 top-9 -z-10 w-px bottom-0 bg-[var(--color-border)]"></div>
+		<div
+			class="thread-rail absolute left-9 top-9 -z-10 w-px bg-[var(--color-border)]"
+			style="bottom: {railBottom}px"
+		></div>
 	{/if}
 
 	<header class="z-[1] flex w-full flex-row self-start gap-3">
@@ -564,7 +602,7 @@
 			<!-- Nested children -->
 			{#if !beyondMaxDepth}
 				{#if allReplies.length > 0}
-					<div class="relative -left-8 mt-3 pl-5">
+					<div class="relative -left-8 mt-3 pl-5" bind:this={childrenWrap}>
 						<div class="space-y-3">
 							{#each allReplies as child (child.id)}
 								<CommentItem
@@ -641,16 +679,19 @@
 		color: var(--color-primary-hover);
 	}
 
-	/* Horizontal thread branch: connects the parent rail (left-9 / avatar center)
-	 * to the child reply avatar. Paired with the .thread-rail vertical line. */
+	/* Curved thread branch (╰ elbow): the parent's rail (left-9 / avatar center)
+	 * bends right into the child reply avatar. Paired with the .thread-rail
+	 * vertical line, which terminates at the last child's junction. */
 	.comment-reply::before {
 		content: '';
 		position: absolute;
 		left: -20px;
-		top: 35px;
+		top: 20px;
 		width: 36px;
-		height: 1px;
-		background: var(--color-border);
+		height: 15px;
+		border-left: 1px solid var(--color-border);
+		border-bottom: 1px solid var(--color-border);
+		border-bottom-left-radius: 12px;
 		z-index: -10;
 	}
 </style>

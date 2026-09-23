@@ -243,6 +243,10 @@ export interface FeedItem {
 	target_country?: string | null;
 	/** §14 guide amendment — category slug when content_type === 'guide'. */
 	guide_category?: string | null;
+	/** For forum threads, the forum_threads.id (item.id is the backing
+	 *  contents.id). The vote API keys on the thread id; feed surfaces leave
+	 *  this unset and resolve it lazily from the slug. */
+	forum_thread_id?: string | null;
 	/** §106 video — linked video_sources row and clip length when the feed
 	 *  query surfaces them (used for the play overlay / duration badge). */
 	video_source_id?: string | null;

@@ -12,7 +12,7 @@
 	import { publishContent, archiveContent, deleteContent } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import { buildContentQuery } from '$lib/studio/contentQuery';
-	import JceSelect from '$lib/components/ui/JceSelect.svelte';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
 import { FileText, Search, Loader2, X } from 'lucide-svelte';
@@ -31,12 +31,6 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 	interface ContentTypeOption {
 		value: string;
 		label: string;
-	}
-
-	interface SelectOption {
-		value: string;
-		label: string;
-		disabled?: boolean;
 	}
 
 	interface ContentManagerData {
@@ -85,16 +79,32 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 		{ key: 'scheduled', labelKey: 'dashboard.content.tab_scheduled' }
 	];
 
-	const sortOptions: SelectOption[] = $derived([
-		{ value: 'newest', label: t('dashboard.content.sort_newest') },
-		{ value: 'oldest', label: t('dashboard.content.sort_oldest') },
-		{ value: 'most_viewed', label: t('dashboard.content.sort_most_viewed') }
+	// Autocomplete option lists — clearing the chip resets the filter (sort
+	// falls back to 'newest', the default). Both lists are small and fixed,
+	// so the fetchers filter locally with no API call.
+	const sortItems: AutocompleteItem[] = $derived([
+		{ id: 'newest', label: t('dashboard.content.sort_newest') },
+		{ id: 'oldest', label: t('dashboard.content.sort_oldest') },
+		{ id: 'most_viewed', label: t('dashboard.content.sort_most_viewed') }
 	]);
 
-	const typeOptions: SelectOption[] = $derived([
-		{ value: '', label: t('dashboard.content.all_types') },
-		...contentTypes.map((ct) => ({ value: ct.value, label: ct.label }))
-	]);
+	const typeItems: AutocompleteItem[] = $derived(
+		contentTypes.map((ct) => ({ id: ct.value, label: ct.label }))
+	);
+
+	function localFetcher(list: AutocompleteItem[]) {
+		return async (q: string) => {
+			const needle = q.toLowerCase();
+			return list.filter((i) => i.label.toLowerCase().includes(needle));
+		};
+	}
+
+	const selectedTypeLabel = $derived(
+		typeItems.find((i) => i.id === typeFilter)?.label ?? (typeFilter || null)
+	);
+	const selectedSortLabel = $derived(
+		sortItems.find((i) => i.id === sortParam)?.label ?? sortParam
+	);
 
 	// Build a querystring preserving every active filter except page_offset
 	// (a filter/tab/search change always resets to the first page).
@@ -293,10 +303,30 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 		</div>
 		<div class="ml-auto flex flex-wrap items-center gap-2">
 			<div class="w-40">
-				<JceSelect value={typeFilter} options={typeOptions} onchange={(v) => setType(v)} class="w-full" />
+				<Autocomplete
+					placeholder={t('dashboard.content.all_types')}
+					emptyMessage={t('dashboard.content.no_matches', 'No matches')}
+					fetcher={localFetcher(typeItems)}
+					initialFetcher={async () => typeItems}
+					selectedId={typeFilter || null}
+					selectedLabel={selectedTypeLabel}
+					onSelect={(i) => setType(i.id)}
+					onClear={() => setType('')}
+					class="w-full"
+				/>
 			</div>
 			<div class="w-40">
-				<JceSelect value={sortParam} options={sortOptions} onchange={(v) => setSort(v)} class="w-full" />
+				<Autocomplete
+					placeholder={t('dashboard.content.sort_label', 'Sort')}
+					emptyMessage={t('dashboard.content.no_matches', 'No matches')}
+					fetcher={localFetcher(sortItems)}
+					initialFetcher={async () => sortItems}
+					selectedId={sortParam}
+					selectedLabel={selectedSortLabel}
+					onSelect={(i) => setSort(i.id)}
+					onClear={() => setSort('')}
+					class="w-full"
+				/>
 			</div>
 		</div>
 	</div>

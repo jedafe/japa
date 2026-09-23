@@ -37,6 +37,8 @@ export interface ModerationQueueItem {
 	entity_title: string;
 	entity_excerpt: string | null;
 	entity_slug: string;
+	thread_slug: string | null;
+	entity_content_type: string;
 	entity_author_username: string | null;
 	resolved_space_id: string | null;
 	entity_space_name: string | null;
@@ -98,7 +100,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Rule 16 — status/entity-type filter options come from the backend
-	// catalogs (auth-only endpoints, so moderators can read them).
+	// catalogs (auth-only endpoints, so moderators can read them). Space/tag
+	// filter options come from the caller's own moderation scope.
 	const [statusOptions, typeOptions] = await Promise.all([
 		apiGet<{ value: string; label: string }[]>(ctx, '/admin/catalogs/reports.status').then((r) => r ?? []).catch(() => []),
 		apiGet<{ value: string; label: string }[]>(ctx, '/admin/catalogs/reports.entity_type').then((r) => r ?? []).catch(() => [])

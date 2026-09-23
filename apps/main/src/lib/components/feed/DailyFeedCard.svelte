@@ -6,7 +6,7 @@
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Bookmark, Check, Flag, MessageSquare, MoreVertical, Play, Share2 } from 'lucide-svelte';
+	import { Bookmark, Flag, MessageSquare, MoreVertical, Play } from 'lucide-svelte';
 	import { DropdownMenu } from 'bits-ui';
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
@@ -16,8 +16,8 @@
 	import { api } from '$lib/api/client';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
+	import VoteRail from '$lib/components/forum/VoteRail.svelte';
 	import ShareButton from '$lib/components/ui/ShareButton.svelte';
-	import ShareMenuItems from '$lib/components/feed/ShareMenuItems.svelte';
 	import type { FeedItem } from '$lib/types';
 
 	interface Props {
@@ -26,8 +26,6 @@
 
 	let { item }: Props = $props();
 
-	let copied = $state(false);
-	let shared = $state(false);
 	let reported = $state(false);
 	let bookmarked = $state(false);
 	let bookmarkCount = $state(0);
@@ -56,8 +54,11 @@
 	});
 	const duration = $derived(formatDuration(item.duration_secs));
 	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
+	// Forum threads use up/down votes (Section 08) instead of emoji reactions —
+	// same card chrome, but the engagement bar shows a functional VoteRail in
+	// place of the love button.
+	const isForum = $derived(item.content_type === 'forum_thread' || item.content_type === 'discussion');
 	const canonicalHref = $derived(contentHref(item));
-	const sharedOrCopied = $derived(shared || copied);
 	const actionLabel = $derived(readPostLabel(item.content_type));
 	const meta = $derived(contentTypeMeta(item.content_type));
 	const Icon = $derived(meta.icon);
@@ -157,23 +158,6 @@
 		}
 	}
 
-	async function nativeShare(e: Event) {
-		e.stopPropagation();
-		try {
-			if (navigator.share) {
-				await navigator.share({ title: item.title ?? '', url: shareUrl });
-				shared = true;
-				setTimeout(() => (shared = false), 2000);
-			} else if (navigator.clipboard) {
-				await navigator.clipboard.writeText(shareUrl);
-				copied = true;
-				setTimeout(() => (copied = false), 1500);
-			}
-		} catch {
-			// User cancelled or share unavailable.
-		}
-	}
-
 	async function reportPost(e: Event) {
 		e.stopPropagation();
 		const reason = window.prompt(t('feed.report_prompt', 'Why are you reporting this post?'));
@@ -227,31 +211,8 @@
 						sideOffset={8}
 						class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
 					>
-						<div class="mb-1 px-3 py-1.5 text-xs font-semibold uppercase text-[var(--color-muted)]">
-							{t('feed.share_to', 'Share to')}
-						</div>
-						<ShareMenuItems
-							contentId={item.id}
-							url={shareUrl}
-							title={item.title ?? ''}
-							onShared={() => {
-								shared = true;
-								setTimeout(() => (shared = false), 2000);
-							}}
-						/>
-						<DropdownMenu.Item
-							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-							onclick={nativeShare}
-						>
-							{#if sharedOrCopied}
-								<Check size={14} class={copied ? 'text-[var(--color-success)]' : ''} />
-								{copied ? t('feed.copied', 'Link copied') : t('common.shared', 'Shared!')}
-							{:else}
-								<Share2 size={14} />
-								{t('blog.copy_link', 'Copy link / Native share')}
-							{/if}
-						</DropdownMenu.Item>
-						<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
+						<!-- Share lives in the bottom action row (ShareButton) —
+						     the ⋮ menu holds moderation actions only. -->
 						<DropdownMenu.Item
 							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)] data-[disabled]:opacity-50"
 							onclick={reportPost}
@@ -320,14 +281,25 @@
 					</span>
 					<span class="transition-colors group-hover/btn:text-[var(--color-primary)]">{item.comment_count ?? 0}</span>
 				</button>
-				<ReactionButton
-					contentId={item.id}
-					count={item.reaction_count ?? 0}
-					ariaLabel={t('feed.card.like', 'Like')}
-					class="group/btn flex items-center gap-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
-					side="top"
-					align="center"
-				/>
+				{#if isForum}
+					<VoteRail
+						entityType="thread"
+						entityId={item.forum_thread_id ?? ''}
+						slug={item.slug}
+						score={item.vote_score ?? 0}
+						layout="horizontal"
+						{authed}
+					/>
+				{:else}
+					<ReactionButton
+						contentId={item.id}
+						count={item.reaction_count ?? 0}
+						ariaLabel={t('feed.card.like', 'Like')}
+						class="group/btn flex items-center gap-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+						side="top"
+						align="center"
+					/>
+				{/if}
 				<button
 					type="button"
 					class="group/btn flex items-center transition-colors {bookmarked ? 'text-[var(--color-primary)]' : ''}"

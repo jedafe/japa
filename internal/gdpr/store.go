@@ -253,6 +253,13 @@ func (s *Store) gdprExportUserForumThreadTags(ctx context.Context, userID pgtype
 	return exportJSONSlice(ctx, s.read.GdprExportUserForumThreadTags, userID)
 }
 
+// gdprExportUserContentTags exports universal tag attachments on the user's
+// content (forum threads, blog posts, and every other content_type share
+// content_tags — Section 08/14).
+func (s *Store) gdprExportUserContentTags(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserContentTags, userID)
+}
+
 func (s *Store) gdprExportUserMedia(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserMedia, userID)
 }

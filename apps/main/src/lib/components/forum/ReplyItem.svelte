@@ -1,11 +1,22 @@
 <script lang="ts">
-	import { ChevronDown, ChevronRight, CornerUpLeft, CheckCircle2, Pencil, Trash2, Loader2 } from 'lucide-svelte';
+	import {
+		CornerUpLeft,
+		CheckCircle2,
+		Pencil,
+		Trash2,
+		Minus,
+		Plus,
+		Share2,
+		MoreHorizontal,
+		Check
+	} from 'lucide-svelte';
+	import { DropdownMenu } from 'bits-ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import type { ForumReply } from '$lib/types';
 	import VoteRail from './VoteRail.svelte';
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
@@ -75,6 +86,9 @@
 			? t('forum.anonymous', 'Anonymous')
 			: reply.author_display_name || reply.author_username || t('forum.member', 'Member')
 	);
+	const authorHandle = $derived(
+		reply.is_anonymous || !reply.author_username ? '' : `@${reply.author_username}`
+	);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);
 
 	// §88 AMA: is this reply from the AMA host? When true, highlight it.
@@ -110,6 +124,39 @@
 	let removed = $state(false);
 	let viewRecorded = $state(false);
 	let replyEl = $state<HTMLElement | null>(null);
+	let copied = $state(false);
+	let childrenWrap = $state<HTMLElement>();
+	let railBottom = $state(0);
+
+	// Thread rail termination: the vertical line ends at the LAST child's
+	// connector junction (the "└" elbow) rather than running to the bottom
+	// of the article. CSS can't express "stop at the last child's avatar",
+	// so measure it and feed the rail a bottom offset.
+	$effect(() => {
+		const wrap = childrenWrap;
+		const art = replyEl;
+		if (!wrap || !art) {
+			railBottom = 0;
+			return;
+		}
+		const measure = () => {
+			const last = wrap.firstElementChild?.lastElementChild as HTMLElement | null;
+			if (!last) {
+				railBottom = 0;
+				return;
+			}
+			// Rail stops where the last child's elbow starts bending: the elbow
+			// box bottom is at +35 and the corner radius is 12px, so the curve
+			// leaves the rail's column at +23.
+			const junction = wrap.offsetTop + last.offsetTop + 23;
+			railBottom = Math.max(0, art.offsetHeight - junction);
+		};
+		measure();
+		const ro = new ResizeObserver(measure);
+		ro.observe(wrap);
+		ro.observe(art);
+		return () => ro.disconnect();
+	});
 
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
 	// Record a view once this reply enters the viewport. Only for authenticated
@@ -187,68 +234,132 @@
 		}
 		removed = true;
 	}
+
+	function shareReply() {
+		if (typeof window === 'undefined' || !navigator.clipboard) return;
+		const url = `${window.location.origin}${window.location.pathname}#reply-${reply.id}`;
+		navigator.clipboard.writeText(url).catch(() => {});
+		copied = true;
+		setTimeout(() => (copied = false), 2000);
+	}
+
+	const iconBtn =
+		'grid h-8 w-8 place-items-center rounded-[var(--radius)] transition-colors disabled:opacity-50';
+	const menuItem =
+		'flex w-full cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]';
 </script>
 
-<div bind:this={replyEl} class={`flex gap-3 ${isHostReply ? 'rounded-[var(--radius-card)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.03] p-3' : ''}`} class:pl-1={depth > 0 && !isHostReply}>
-	<!-- Vote rail (vertical) -->
-	<VoteRail
-		entityType="reply"
-		entityId={reply.id}
-		score={reply.vote_score}
-		layout="vertical"
-		{authed}
-		userVote={myVote}
-	/>
+<!-- Replies render through the universal comment layout (Section 49 parity):
+     avatar on the left, header meta line, indented body + icon action row,
+     thread rails connecting nested children. -->
+<article
+	id={`reply-${reply.id}`}
+	bind:this={replyEl}
+	class="relative isolate flex flex-col rounded-[var(--radius-card)] p-4 {depth > 0 ? 'comment-reply' : ''} {isHostReply ? 'border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.03]' : ''}"
+>
+	{#if allChildren.length > 0}
+		<!-- Vertical thread rail: runs from the replier avatar down through descendants. -->
+		<div
+			class="thread-rail absolute left-9 top-9 -z-10 w-px bg-[var(--color-border)]"
+			style="bottom: {railBottom}px"
+		></div>
+	{/if}
 
-	<div class="min-w-0 flex-1">
-		<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-			{#if isAccepted}
-				<span
-					class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-success)]"
-				>
-					<CheckCircle2 size={11} /> {t('forum.accepted', 'Accepted')}
-				</span>
-			{/if}
-			{#if isHostReply}
-				<span
-					class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
-				>
-					{t('ama.host_badge', 'Host')}
-				</span>
-			{/if}
-			{#if isPending}
-				<span
-					class="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 font-semibold text-amber-600"
-				>
-					{t('ama.pending', 'Pending')}
-				</span>
-			{/if}
-			{#if reply.is_anonymous}
-				<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
-			{:else}
-				<UserHoverCard
-					id={reply.author_user_id}
-					slug={reply.author_username}
-					name={authorLabel}
-					variant="row"
-				>
-					{#snippet trigger()}
-						<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
-					{/snippet}
-				</UserHoverCard>
-			{/if}
-			{#if time}<span>·</span><span>{time}</span>{/if}
-			{#if reply.is_edited}<span>·</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
-			{#if reply.view_count > 0}<span>·</span><span class="italic">{reply.view_count} {t('forum.views', 'views')}</span>{/if}
-		</div>
+	<header class="z-[1] flex w-full flex-row self-start gap-3">
+		{#if !reply.is_anonymous && reply.author_username && reply.author_user_id}
+			<EntityHoverChip
+				type="user"
+				id={reply.author_user_id}
+				slug={reply.author_username}
+				name={authorLabel}
+				avatar={reply.author_avatar_url}
+				variant="row"
+			>
+				{#snippet trigger()}
+					{#if reply.author_avatar_url}
+						<img
+							src={reply.author_avatar_url}
+							alt=""
+							class="h-10 w-10 shrink-0 rounded-full object-cover"
+							loading="lazy"
+						/>
+					{:else}
+						<span
+							class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
+						>
+							{authorLabel.charAt(0).toUpperCase()}
+						</span>
+					{/if}
+					<div class="flex min-w-0 flex-1 flex-col justify-center">
+						<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
+							{#if isAccepted}
+								<span
+									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-success)]"
+								>
+									<CheckCircle2 size={10} /> {t('forum.accepted', 'Accepted')}
+								</span>
+							{/if}
+							{#if isHostReply}
+								<span
+									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+								>
+									{t('ama.host_badge', 'Host')}
+								</span>
+							{/if}
+							{#if isPending}
+								<span
+									class="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 font-semibold text-amber-600"
+								>
+									{t('ama.pending', 'Pending')}
+								</span>
+							{/if}
+							<span class="font-bold text-[var(--color-text)]">{authorLabel}</span>
+							{#if authorHandle}
+								<span class="text-[var(--color-text-subtle)]">{authorHandle}</span>
+							{/if}
+							{#if time}<span>•</span><span>{time}</span>{/if}
+							{#if reply.is_edited}<span>•</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
+							{#if reply.view_count > 0}<span>•</span><span class="italic">{reply.view_count} {t('forum.views', 'views')}</span>{/if}
+						</div>
+					</div>
+				{/snippet}
+			</EntityHoverChip>
+		{:else}
+			<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]">
+				{authorLabel.charAt(0).toUpperCase()}
+			</span>
+			<div class="flex min-w-0 flex-1 flex-col justify-center">
+				<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
+					{#if isAccepted}
+						<span
+							class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-success)]"
+						>
+							<CheckCircle2 size={10} /> {t('forum.accepted', 'Accepted')}
+						</span>
+					{/if}
+					{#if isPending}
+						<span
+							class="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 font-semibold text-amber-600"
+						>
+							{t('ama.pending', 'Pending')}
+						</span>
+					{/if}
+					<span class="font-bold text-[var(--color-text)]">{authorLabel}</span>
+					{#if time}<span>•</span><span>{time}</span>{/if}
+					{#if reply.is_edited}<span>•</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
+					{#if reply.view_count > 0}<span>•</span><span class="italic">{reply.view_count} {t('forum.views', 'views')}</span>{/if}
+				</div>
+			</div>
+		{/if}
+	</header>
 
-		<!-- Body -->
-		{#if !collapsed}
-			{#if removed}
-				<p class="mt-1.5 text-sm italic text-[var(--color-muted)]">
-					{t('forum.deleted_reply', '[deleted]')}
-				</p>
-			{:else if editing}
+	<div class="break-words z-[1] mt-1 ml-[52px]">
+		{#if removed}
+			<p class="text-sm italic text-[var(--color-muted)]">
+				{t('forum.deleted_reply', '[deleted]')}
+			</p>
+		{:else if !collapsed}
+			{#if editing}
 				<div class="mt-2 space-y-2">
 					{#if editError}
 						<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary)]">
@@ -279,82 +390,122 @@
 					</div>
 				</div>
 			{:else}
-				<div class="prose prose-sm mt-1.5 max-w-none text-[14px] leading-relaxed text-[var(--color-text)]" use:hydrateMentions>
+				<div class="prose-comment text-[0.9375rem] leading-[1.55] text-[var(--color-text)]" use:hydrateMentions>
 					{@html bodyHtml}
 				</div>
 			{/if}
 
 			<!-- Actions -->
-			<div class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
-				{#if authed}
+			{#if !editing}
+				<div class="relative mt-2 flex flex-row items-center gap-0.5">
+					{#if allChildren.length > 0}
+						<button
+							type="button"
+							onclick={() => (collapsed = true)}
+							class="{iconBtn} absolute -left-12 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							aria-label={t('comments.collapse', 'Collapse')}
+							title={t('comments.collapse', 'Collapse')}
+						>
+							<Minus size={16} />
+						</button>
+					{/if}
+
+					<VoteRail
+						entityType="reply"
+						entityId={reply.id}
+						score={reply.vote_score}
+						layout="horizontal"
+						{authed}
+						userVote={myVote}
+					/>
+
+					{#if authed}
+						<button
+							type="button"
+							onclick={() => (composing = !composing)}
+							class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							aria-label={t('forum.reply', 'Reply')}
+							title={t('forum.reply', 'Reply')}
+						>
+							<CornerUpLeft size={18} />
+						</button>
+					{/if}
+
 					<button
 						type="button"
-						onclick={() => (composing = !composing)}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
+						onclick={shareReply}
+						class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+						aria-label={copied ? t('comments.copied', 'Link copied') : t('comments.share', 'Share')}
+						title={copied ? t('comments.copied', 'Link copied') : t('comments.share', 'Share')}
 					>
-						<CornerUpLeft size={12} /> {t('forum.reply', 'Reply')}
+						{#if copied}<Check size={18} class="text-[var(--color-success)]" />{:else}<Share2 size={18} />{/if}
 					</button>
+
+					{#if (canEditReply || canDeleteReply || canMarkSolved || (isPending && isHost)) && !removed}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger
+								class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+								aria-label={t('comments.options', 'More options')}
+								title={t('comments.options', 'More options')}
+							>
+								<MoreHorizontal size={18} />
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Portal>
+								<DropdownMenu.Content
+									align="end"
+									sideOffset={8}
+									class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+								>
+									{#if canEditReply}
+										<DropdownMenu.Item class={menuItem}>
+											{#snippet child({ props })}
+												<button type="button" onclick={() => { editing = true; editBody = reply.body; editError = null; }} {...props}>
+													<Pencil size={16} /> {t('forum.edit', 'Edit')}
+												</button>
+											{/snippet}
+										</DropdownMenu.Item>
+									{/if}
+									{#if canDeleteReply}
+										<DropdownMenu.Item class={menuItem}>
+											{#snippet child({ props })}
+												<button type="button" onclick={deleteReply} disabled={deleting} {...props}>
+													<Trash2 size={16} /> {t('forum.delete', 'Delete')}
+												</button>
+											{/snippet}
+										</DropdownMenu.Item>
+									{/if}
+									{#if canMarkSolved}
+										<DropdownMenu.Item class={menuItem}>
+											{#snippet child({ props })}
+												<button type="button" onclick={() => onMarkSolved?.(reply.id)} {...props}>
+													<CheckCircle2 size={16} /> {t('forum.mark_answer', 'Mark as answer')}
+												</button>
+											{/snippet}
+										</DropdownMenu.Item>
+									{/if}
+									{#if isPending && isHost}
+										<DropdownMenu.Item class={menuItem}>
+											{#snippet child({ props })}
+												<button type="button" onclick={approveQuestion} disabled={approving} {...props}>
+													<CheckCircle2 size={16} /> {approving ? t('common.loading', 'Loading') : t('ama.approve', 'Approve')}
+												</button>
+											{/snippet}
+										</DropdownMenu.Item>
+									{/if}
+								</DropdownMenu.Content>
+							</DropdownMenu.Portal>
+						</DropdownMenu.Root>
+					{/if}
+				</div>
+
+				{#if deleteError}
+					<p class="mt-1 text-xs text-[var(--color-danger)]">{deleteError}</p>
 				{/if}
-				{#if isPending && isHost}
-					<button
-						type="button"
-						onclick={approveQuestion}
-						disabled={approving}
-						class="inline-flex items-center gap-1 font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
-					>
-						<CheckCircle2 size={12} /> {approving ? t('common.loading', 'Loading') : t('ama.approve', 'Approve')}
-					</button>
-				{/if}
-				{#if allChildren.length > 0}
-					<button
-						type="button"
-						onclick={() => (collapsed = !collapsed)}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
-						aria-expanded={!collapsed}
-					>
-						{#if collapsed}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
-						{allChildren.length} {t('forum.replies', 'replies')}
-					</button>
-				{/if}
-				{#if canEditReply && !editing && !removed}
-					<button
-						type="button"
-						onclick={() => { editing = true; editBody = reply.body; editError = null; }}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
-					>
-						<Pencil size={12} /> {t('forum.edit', 'Edit')}
-					</button>
-				{/if}
-				{#if canDeleteReply && !editing && !removed}
-					<button
-						type="button"
-						onclick={deleteReply}
-						disabled={deleting}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-error)] disabled:opacity-50"
-					>
-						{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}<Trash2 size={12} />{/if}
-						{t('forum.delete', 'Delete')}
-					</button>
-				{/if}
-				{#if canMarkSolved}
-					<button
-						type="button"
-						onclick={() => onMarkSolved?.(reply.id)}
-						class="inline-flex items-center gap-1 text-[var(--color-success)] transition-colors hover:text-[var(--color-text)]"
-					>
-						<CheckCircle2 size={12} /> {t('forum.mark_answer', 'Mark as answer')}
-					</button>
-				{/if}
-			</div>
-			{#if deleteError}
-				<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-error)]/30 bg-[color-mix(in_srgb,var(--color-error)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-error)]">
-					{deleteError}
-				</p>
 			{/if}
 
 			<!-- Inline reply composer -->
 			{#if composing && authed}
-				<div class="mt-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-2.5">
+				<div class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5">
 					<CommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (replyBody = b)} />
 					<div class="mt-2 flex items-center justify-end gap-2">
 						<button
@@ -377,42 +528,88 @@
 			{/if}
 
 			<!-- Nested children -->
-			{#if allChildren.length > 0 && !beyondMaxDepth}
-				<div class="mt-3 space-y-3 border-l border-[var(--color-border)] pl-3">
-					{#each allChildren as child (child.id)}
-						<ReplyItem
-							reply={child}
-							{childrenOf}
-							depth={depth + 1}
-							{threadId}
-							{authed}
-							{canSolve}
-							isAccepted={false}
-							{userVotes}
-							{canModerate}
-							{currentUserId}
-							{deletedUserIds}
-							{hostUserId}
-							{isHost}
-						/>
-					{/each}
-				</div>
-			{:else if allChildren.length > 0 && beyondMaxDepth}
+			{#if !beyondMaxDepth}
+				{#if allChildren.length > 0}
+					<div class="relative -left-8 mt-3 pl-5" bind:this={childrenWrap}>
+						<div class="space-y-3">
+							{#each allChildren as child (child.id)}
+								<ReplyItem
+									reply={child}
+									{childrenOf}
+									depth={depth + 1}
+									{threadId}
+									{authed}
+									{canSolve}
+									isAccepted={false}
+									{userVotes}
+									{canModerate}
+									{currentUserId}
+									{deletedUserIds}
+									{hostUserId}
+									{isHost}
+								/>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			{:else if allChildren.length > 0}
 				<a
 					href={`/forum/${threadId}?reply=${allChildren[0].id}#continue`}
-					class="mt-2 inline-block text-xs font-medium text-[var(--color-primary)] hover:underline"
+					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
 				>
+					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+						<Plus size={14} />
+					</span>
 					{t('forum.continue_thread', 'Continue this thread →')}
 				</a>
 			{/if}
 		{:else}
 			<button
 				type="button"
-				onclick={() => (collapsed = !collapsed)}
-				class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+				onclick={() => (collapsed = false)}
+				class="relative -left-12 inline-flex items-center gap-2 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
 			>
-				<ChevronRight size={12} /> {t('forum.expand', 'Expand')}
+				<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]">
+					<Plus size={14} />
+				</span>
+				{t('forum.expand', 'Expand')}
 			</button>
 		{/if}
 	</div>
-</div>
+</article>
+
+<style>
+	:global(.prose-comment p) {
+		margin: 0.65rem 0;
+	}
+	:global(.prose-comment p:first-child) {
+		margin-top: 0;
+	}
+	:global(.prose-comment p:last-child) {
+		margin-bottom: 0;
+	}
+	:global(.prose-comment a) {
+		color: var(--color-primary);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	:global(.prose-comment a:hover) {
+		color: var(--color-primary-hover);
+	}
+
+	/* Curved thread branch (╰ elbow): the parent's rail (left-9 / avatar center)
+	 * bends right into the child reply avatar. Paired with the .thread-rail
+	 * vertical line, which terminates at the last child's junction. */
+	.comment-reply::before {
+		content: '';
+		position: absolute;
+		left: -20px;
+		top: 20px;
+		width: 36px;
+		height: 15px;
+		border-left: 1px solid var(--color-border);
+		border-bottom: 1px solid var(--color-border);
+		border-bottom-left-radius: 12px;
+		z-index: -10;
+	}
+</style>

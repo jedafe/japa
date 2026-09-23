@@ -264,10 +264,14 @@ SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.n
        cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
        ru.username AS reporter_username,
        rup.display_name AS reporter_display_name,
-       COALESCE(c.title, pc.title, s.name, tu.username, '') AS entity_title,
-       COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(n #>> '{}', ' ')
-                    FROM jsonb_path_query(cm.body, '$.**.text') AS n), 240), s.description) AS entity_excerpt,
-       COALESCE(c.slug, pc.slug, s.slug, '') AS entity_slug,
+       COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, '') AS entity_title,
+       COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
+                    FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
+                s.description, LEFT(dm.body, 240), isrc.source_url, '') AS entity_excerpt,
+       COALESCE(c.slug, pc.slug, s.slug, isrc.slug, '') AS entity_slug,
+       COALESCE((SELECT thr.slug FROM forum_threads thr
+             WHERE thr.content_id = COALESCE(c.id, pc.id) LIMIT 1), '')::text AS thread_slug,
+       COALESCE(c.content_type, pc.content_type, '')::text AS entity_content_type,
        au.username AS entity_author_username,
        CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
             ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
@@ -292,7 +296,9 @@ LEFT JOIN contents pc       ON pc.id = cm.content_id
 LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
 LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id)
 LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
-LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id)
+LEFT JOIN dm_messages dm    ON cr.entity_type = 'message' AND dm.id = cr.entity_id
+LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
+LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id)
 WHERE cr.id = $4
 `
 
@@ -319,8 +325,10 @@ type GetModerationQueueItemRow struct {
 	ReporterUsername     *string            `json:"reporter_username"`
 	ReporterDisplayName  *string            `json:"reporter_display_name"`
 	EntityTitle          string             `json:"entity_title"`
-	EntityExcerpt        *string            `json:"entity_excerpt"`
+	EntityExcerpt        string             `json:"entity_excerpt"`
 	EntitySlug           string             `json:"entity_slug"`
+	ThreadSlug           string             `json:"thread_slug"`
+	EntityContentType    string             `json:"entity_content_type"`
 	EntityAuthorUsername *string            `json:"entity_author_username"`
 	ResolvedSpaceID      pgtype.UUID        `json:"resolved_space_id"`
 	EntitySpaceName      *string            `json:"entity_space_name"`
@@ -358,6 +366,8 @@ func (q *Queries) GetModerationQueueItem(ctx context.Context, arg GetModerationQ
 		&i.EntityTitle,
 		&i.EntityExcerpt,
 		&i.EntitySlug,
+		&i.ThreadSlug,
+		&i.EntityContentType,
 		&i.EntityAuthorUsername,
 		&i.ResolvedSpaceID,
 		&i.EntitySpaceName,
@@ -486,10 +496,14 @@ WITH scoped AS (
            cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
            ru.username AS reporter_username,
            rup.display_name AS reporter_display_name,
-           COALESCE(c.title, pc.title, s.name, tu.username, '') AS entity_title,
-           COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(n #>> '{}', ' ')
-                    FROM jsonb_path_query(cm.body, '$.**.text') AS n), 240), s.description) AS entity_excerpt,
-           COALESCE(c.slug, pc.slug, s.slug, '') AS entity_slug,
+           COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, '') AS entity_title,
+           COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
+                    FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
+                    s.description, LEFT(dm.body, 240), isrc.source_url, '') AS entity_excerpt,
+           COALESCE(c.slug, pc.slug, s.slug, isrc.slug, '') AS entity_slug,
+           COALESCE((SELECT thr.slug FROM forum_threads thr
+             WHERE thr.content_id = COALESCE(c.id, pc.id) LIMIT 1), '')::text AS thread_slug,
+           COALESCE(c.content_type, pc.content_type, '')::text AS entity_content_type,
            au.username AS entity_author_username,
            COALESCE(c.id, pc.id) AS resolved_content_id,
            CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
@@ -515,12 +529,14 @@ WITH scoped AS (
     LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
     LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id)
     LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
-    LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id)
+    LEFT JOIN dm_messages dm    ON cr.entity_type = 'message' AND dm.id = cr.entity_id
+    LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
+    LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id)
 )
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
        status, reviewed_by, resolution_note, resolved_at, created_at,
        reporter_username, reporter_display_name,
-       entity_title, entity_excerpt, entity_slug, entity_author_username,
+       entity_title, entity_excerpt, entity_slug, thread_slug, entity_content_type, entity_author_username,
        resolved_space_id, entity_space_name, entity_space_slug,
        scope_assigned, scope_space, scope_tag
 FROM scoped
@@ -573,8 +589,10 @@ type ListModerationQueueRow struct {
 	ReporterUsername     *string            `json:"reporter_username"`
 	ReporterDisplayName  *string            `json:"reporter_display_name"`
 	EntityTitle          string             `json:"entity_title"`
-	EntityExcerpt        *string            `json:"entity_excerpt"`
+	EntityExcerpt        string             `json:"entity_excerpt"`
 	EntitySlug           string             `json:"entity_slug"`
+	ThreadSlug           string             `json:"thread_slug"`
+	EntityContentType    string             `json:"entity_content_type"`
 	EntityAuthorUsername *string            `json:"entity_author_username"`
 	ResolvedSpaceID      pgtype.UUID        `json:"resolved_space_id"`
 	EntitySpaceName      *string            `json:"entity_space_name"`
@@ -625,6 +643,8 @@ func (q *Queries) ListModerationQueue(ctx context.Context, arg ListModerationQue
 			&i.EntityTitle,
 			&i.EntityExcerpt,
 			&i.EntitySlug,
+			&i.ThreadSlug,
+			&i.EntityContentType,
 			&i.EntityAuthorUsername,
 			&i.ResolvedSpaceID,
 			&i.EntitySpaceName,

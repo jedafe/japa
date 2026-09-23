@@ -322,6 +322,8 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 // writeServiceError maps Service sentinel errors to HTTP status codes.
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrInvalidAction):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_action", err.Error())
 	case errors.Is(err, ErrInvalidEntityType), errors.Is(err, ErrInvalidReason), errors.Is(err, ErrInvalidStatus):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 	case errors.Is(err, ErrAlreadyReported):

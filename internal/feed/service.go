@@ -199,7 +199,12 @@ func (s *Service) GetFeed(ctx context.Context, timeline string, userID, spaceID,
 		return nil, err
 	}
 
-	return s.attachSources(ctx, items)
+	items, err = s.attachSources(ctx, items)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.attachForumCovers(ctx, items)
 }
 
 // attachSources enriches feed items with source attribution for any content
@@ -248,6 +253,99 @@ func (s *Service) attachSources(ctx context.Context, items []FeedItem) ([]FeedIt
 	}
 
 	return items, nil
+}
+
+// attachForumCovers fills cover_image_url for forum feed items that carry no
+// explicit cover media, using the first image embedded in the thread body
+// (TipTap jsonb). The lookup is batched by backing content id and is
+// best-effort: failures log and return the feed unmodified.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+func (s *Service) attachForumCovers(ctx context.Context, items []FeedItem) ([]FeedItem, error) {
+	contentIDs := make([]pgtype.UUID, 0, len(items))
+	for _, it := range items {
+		if it.CoverImageURL != "" || it.ID == "" || !isForumContentType(it.ContentType) {
+			continue
+		}
+
+		u, err := stringToUUID(it.ID)
+		if err != nil {
+			continue
+		}
+
+		contentIDs = append(contentIDs, u)
+	}
+
+	if len(contentIDs) == 0 {
+		return items, nil
+	}
+
+	bodies, err := s.store.forumBodiesByContentIDs(ctx, contentIDs)
+	if err != nil {
+		slog.Warn("feed: failed to attach forum cover images", "error", err)
+		return items, nil
+	}
+
+	for i := range items {
+		body, ok := bodies[items[i].ID]
+		if !ok {
+			continue
+		}
+
+		if src := firstTipTapImageSrc(body); src != "" {
+			items[i].CoverImageURL = src
+		}
+	}
+
+	return items, nil
+}
+
+// isForumContentType reports whether a feed item renders through the forum
+// card (thread voting + body-derived cover image).
+func isForumContentType(contentType string) bool {
+	return contentType == "forum_thread" || contentType == "discussion"
+}
+
+// firstTipTapImageSrc walks a TipTap document (jsonb) depth-first and returns
+// the src of the first image node, or "" when the body has no image.
+func firstTipTapImageSrc(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	var doc any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return ""
+	}
+
+	var walk func(node any) string
+	walk = func(node any) string {
+		switch v := node.(type) {
+		case map[string]any:
+			if v["type"] == "image" {
+				if attrs, ok := v["attrs"].(map[string]any); ok {
+					if src, ok := attrs["src"].(string); ok {
+						return src
+					}
+				}
+			}
+
+			if children, ok := v["content"].([]any); ok {
+				if src := walk(children); src != "" {
+					return src
+				}
+			}
+		case []any:
+			for _, child := range v {
+				if src := walk(child); src != "" {
+					return src
+				}
+			}
+		}
+
+		return ""
+	}
+
+	return walk(doc)
 }
 
 // getExploreFeed returns the explore feed with the given sort mode.
@@ -1179,7 +1277,7 @@ func (s *Service) GetForYouFeed(
 		return nil, err
 	}
 
-	return pageSlice(ranked, offset, limit), nil
+	return s.attachForumCovers(ctx, pageSlice(ranked, offset, limit))
 }
 
 // readForYouCache returns the cached ranked feed and whether the lookup hit.

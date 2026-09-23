@@ -7,8 +7,9 @@
 	import { t } from '$lib/i18n';
 	import { compose } from '$lib/components/shell/compose.svelte';
 	import type { ForumThread, FeedItem } from '$lib/types';
+	import { tiptapFirstImageSrc } from '$lib/tiptap/serialize';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import type { CardStyleConfig } from '$lib/feed/cardStyle';
 
 	interface Props {
 		threads: ForumThread[];
@@ -16,7 +17,7 @@
 		loadError: boolean;
 		config?: CardStyleConfig;
 	}
-	let { threads: initial, pageSize, loadError, config }: Props = $props();
+	let { threads: initial, pageSize, loadError }: Props = $props();
 
 	let threads = $state<ForumThread[]>(untrack(() => initial));
 	let atEnd = $state(false);
@@ -108,20 +109,18 @@
 			space_name: thread.space_name,
 			space_slug: thread.space_slug,
 			excerpt: undefined,
+			// Forum threads have no explicit cover media — the card uses the
+			// first image embedded in the TipTap body as the feature image.
+			cover_image_url: tiptapFirstImageSrc(thread.body),
 			created_at: thread.created_at,
 			view_count: thread.view_count,
 			comment_count: thread.reply_count,
 			vote_score: thread.vote_score,
+			forum_thread_id: thread.id,
 			bookmark_count: thread.bookmark_count,
 			tags: thread.solved ? [t('forum.solved', 'Solved')] : []
 		};
 	}
-
-	// Card style config — use the global config from the layout, falling back
-	// to a sensible default (compact for forum threads) when not provided.
-	const resolvedConfig = $derived<CardStyleConfig>(
-		config ?? { default: 'reddit', byType: {} }
-	);
 </script>
 
 {#if loadError}
@@ -142,15 +141,11 @@
 		<LoadingSkeleton variant="card" count={3} class="p-2" />
 	{/if}
 
-	<div
-		class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
-	>
+	<div class="flex flex-col gap-3">
 		{#each threads as thread (thread.id)}
-			<FeedCard
-				item={toFeedItem(thread)}
-				style={cardStyleFor('forum_thread', resolvedConfig)}
-				layout="stream"
-			/>
+			<!-- Forum threads always render on the forum card (daily style with
+			     up/down voting) — same card they get in unified feeds. -->
+			<FeedCard item={toFeedItem(thread)} style="daily" layout="stream" />
 		{/each}
 	</div>
 
