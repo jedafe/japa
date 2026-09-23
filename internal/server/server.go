@@ -2324,6 +2324,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Spaces:        spaceService,
 		ScamAlerts:    scamAlertService,
 	})
+	publicAPIService.SetCache(vkClient.Redis())              // destination-brief response cache
+	publicAPIService.SetSettingsReader(settingsService)      // api.destination_brief.cache_ttl_seconds (Rule 3)
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 	publicAPIHandlers.SetQueries(gen.New(database.Reader))
 
@@ -4505,6 +4507,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/public/universities", publicAPIHandlers.ListUniversities)
 				r.With(publicapi.RequireScope("api.read.education")).
 					Get("/public/universities/{slug}", publicAPIHandlers.GetUniversity)
+
+				// Agent Data API — destination brief (premium)
+				r.With(publicapi.RequireScope("api.read.brief"), publicapi.RequireTier(publicAPIService, "pro")).
+					Get("/public/destinations/{slug}/brief", publicAPIHandlers.GetDestinationBrief)
 			})
 
 			// User Profile & Preferences routes (catalog: /me, /me/profile)
