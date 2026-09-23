@@ -10,6 +10,7 @@
 		MoreHorizontal,
 		Check
 	} from 'lucide-svelte';
+	import { untrack } from 'svelte';
 	import { DropdownMenu } from 'bits-ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
@@ -108,7 +109,9 @@
 		reply.ama_pending = false;
 	}
 
-	let collapsed = $state(false);
+	// Replies with children start collapsed — same "View N replies" pattern as
+	// the comments section. untrack: intentional one-time snapshot of props.
+	let collapsed = $state(untrack(() => childrenOf(reply.id).length > 0));
 	let composing = $state(false);
 	let replyBody = $state<string>('');
 	let submitting = $state(false);
@@ -140,18 +143,20 @@
 			return;
 		}
 		const wrap = childrenWrap;
-		const plus = railEndEl;
+		const endEl = railEndEl;
 		const measure = () => {
 			const last = wrap?.firstElementChild?.lastElementChild as HTMLElement | null;
+			const artBottom = art.getBoundingClientRect().bottom;
 			if (last && wrap) {
 				// Rail stops where the last child's elbow starts bending: the elbow
 				// box bottom is at +35 and the corner radius is 12px, so the curve
 				// leaves the rail's column at +23.
-				railBottom = Math.max(0, art.offsetHeight - (wrap.offsetTop + last.offsetTop + 23));
-			} else if (plus) {
+				railBottom = Math.max(0, artBottom - last.getBoundingClientRect().top - 23);
+			} else if (endEl) {
 				// No rendered children — the "+" affordance (continue thread /
-				// expand) is the terminal node on the rail.
-				railBottom = Math.max(0, art.offsetHeight - (plus.offsetTop + plus.offsetHeight / 2));
+				// collapsed toggle) is the terminal node on the rail.
+				const r = endEl.getBoundingClientRect();
+				railBottom = Math.max(0, artBottom - r.top - r.height / 2);
 			} else {
 				railBottom = 0;
 			}
@@ -159,7 +164,7 @@
 		measure();
 		const ro = new ResizeObserver(measure);
 		if (wrap) ro.observe(wrap);
-		if (plus) ro.observe(plus);
+		if (endEl) ro.observe(endEl);
 		ro.observe(art);
 		return () => ro.disconnect();
 	});
@@ -193,6 +198,14 @@
 	// Server-resolved children plus any posted locally during this session.
 	const allChildren = $derived([...childrenOf(reply.id), ...localChildren]);
 
+	// Label for the collapsed thread's expand affordance — same copy as the
+	// comments lazy-load button: "View reply" for one, "View N replies" else.
+	const viewRepliesLabel = $derived(
+		allChildren.length === 1
+			? t('forum.view_reply', 'View reply')
+			: t('forum.view_replies_count', 'View {count} replies').replace('{count}', String(allChildren.length))
+	);
+
 	async function submitReply() {
 		if (!replyBody || submitting || !authed) return;
 		submitting = true;
@@ -205,6 +218,7 @@
 		localChildren = [...localChildren, res.data];
 		replyBody = '';
 		composing = false;
+		collapsed = false;
 	}
 
 	async function saveEdit() {
@@ -364,7 +378,7 @@
 			<p class="text-sm italic text-[var(--color-muted)]">
 				{t('forum.deleted_reply', '[deleted]')}
 			</p>
-		{:else if !collapsed}
+		{:else}
 			{#if editing}
 				<div class="mt-2 space-y-2">
 					{#if editError}
@@ -404,7 +418,7 @@
 			<!-- Actions -->
 			{#if !editing}
 				<div class="relative mt-2 flex flex-row items-center gap-0.5">
-					{#if allChildren.length > 0}
+					{#if allChildren.length > 0 && !collapsed}
 						<button
 							type="button"
 							onclick={() => (collapsed = true)}
@@ -534,7 +548,19 @@
 			{/if}
 
 			<!-- Nested children -->
-			{#if !beyondMaxDepth}
+			{#if collapsed && allChildren.length > 0}
+				<button
+					type="button"
+					bind:this={railEndEl}
+					onclick={() => (collapsed = false)}
+					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
+				>
+					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+						<Plus size={14} />
+					</span>
+					{viewRepliesLabel}
+				</button>
+			{:else if !collapsed && !beyondMaxDepth}
 				{#if allChildren.length > 0}
 					<div class="relative -left-8 mt-3 pl-5" bind:this={childrenWrap}>
 						<div class="space-y-3">
@@ -561,6 +587,7 @@
 			{:else if allChildren.length > 0}
 				<a
 					href={`/forum/${threadId}?reply=${allChildren[0].id}#continue`}
+					bind:this={railEndEl}
 					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
 				>
 					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
@@ -569,18 +596,6 @@
 					{t('forum.continue_thread', 'Continue this thread →')}
 				</a>
 			{/if}
-		{:else}
-			<button
-				type="button"
-				bind:this={railEndEl}
-				onclick={() => (collapsed = false)}
-				class="relative -left-12 inline-flex items-center gap-2 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-			>
-				<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]">
-					<Plus size={14} />
-				</span>
-				{t('forum.expand', 'Expand')}
-			</button>
 		{/if}
 	</div>
 </article>
