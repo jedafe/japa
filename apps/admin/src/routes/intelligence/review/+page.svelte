@@ -45,23 +45,23 @@
 	]);
 
 	let intelReviewEntityTypeOptions = $state<CatalogOption[]>([
-		{ value: 'scholarship', label: 'Scholarship' },
-		{ value: 'job', label: 'Job' },
-		{ value: 'visa', label: 'Visa' },
-		{ value: 'housing', label: 'Housing' },
-		{ value: 'remittance', label: 'Remittance' },
-		{ value: 'cost_of_living', label: 'Cost of Living' },
-		{ value: 'travel_routes', label: 'Travel Routes' },
-		{ value: 'grants', label: 'Grants' },
-		{ value: 'admission', label: 'Admission' },
-		{ value: 'banking', label: 'Banking' },
-		{ value: 'work_career', label: 'Work & Career' },
-		{ value: 'health_insurance', label: 'Health Insurance' },
-		{ value: 'culture_lifestyle', label: 'Culture & Lifestyle' },
-		{ value: 'wiki_page', label: 'Wiki Page' },
-		{ value: 'language_test_requirement', label: 'Language Test Requirement' },
-		{ value: 'tax_obligation_guide', label: 'Tax Obligation Guide' },
-		{ value: 'community_organisation', label: 'Community Organisation' }
+		{ value: 'scholarship', label: t('intel.entity_scholarship', 'Scholarship') },
+		{ value: 'job', label: t('intel.entity_job', 'Job') },
+		{ value: 'visa', label: t('intel.entity_visa', 'Visa') },
+		{ value: 'housing', label: t('intel.entity_housing', 'Housing') },
+		{ value: 'remittance', label: t('intel.entity_remittance', 'Remittance') },
+		{ value: 'cost_of_living', label: t('intel.entity_cost_of_living', 'Cost of Living') },
+		{ value: 'travel_routes', label: t('intel.entity_travel_routes', 'Travel Routes') },
+		{ value: 'grants', label: t('intel.entity_grants', 'Grants') },
+		{ value: 'admission', label: t('intel.entity_admission', 'Admission') },
+		{ value: 'banking', label: t('intel.entity_banking', 'Banking') },
+		{ value: 'work_career', label: t('intel.entity_work_career', 'Work & Career') },
+		{ value: 'health_insurance', label: t('intel.entity_health_insurance', 'Health Insurance') },
+		{ value: 'culture_lifestyle', label: t('intel.entity_culture_lifestyle', 'Culture & Lifestyle') },
+		{ value: 'wiki_page', label: t('intel.entity_wiki_page', 'Wiki Page') },
+		{ value: 'language_test_requirement', label: t('intel.entity_language_test_requirement', 'Language Test Requirement') },
+		{ value: 'tax_obligation_guide', label: t('intel.entity_tax_obligation_guide', 'Tax Obligation Guide') },
+		{ value: 'community_organisation', label: t('intel.entity_community_organisation', 'Community Organisation') }
 	]);
 
 	$effect(() => {

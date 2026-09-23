@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -560,23 +561,43 @@ func (h *Handlers) radarMergePage(ctx context.Context, userID pgtype.UUID, domai
 		fetchLimit = offset + limit
 	}
 
+	// Fan the domain queries out concurrently — the feed unions up to six
+	// tables and running them serially made page latency the sum of all
+	// queries. The sqlc Queries sit on pgxpool, which is goroutine-safe.
+	// Per-domain errors are logged and swallowed so one failing domain
+	// does not blank the whole feed.
+	results := make([][]radarItem, len(domains))
+
+	var wg sync.WaitGroup
+
+	for i, d := range domains {
+		wg.Add(1)
+
+		go func(i int, d radarFetch) {
+			defer wg.Done()
+
+			var ts pgtype.Timestamptz
+
+			var id pgtype.UUID
+			if cp, ok := checkpoints[d.domain]; ok {
+				ts = pgtype.Timestamptz{Time: timeFromNano(cp.TS), Valid: true}
+				_ = id.Scan(cp.ID)
+			}
+
+			rows, err := d.list(ctx, ts, id, clampInt32(fetchLimit))
+			if err != nil {
+				slog.Warn("intel: radar "+d.domain+" query failed", "error", err)
+				return
+			}
+
+			results[i] = rows
+		}(i, d)
+	}
+
+	wg.Wait()
+
 	var merged []radarItem
-
-	for _, d := range domains {
-		var ts pgtype.Timestamptz
-
-		var id pgtype.UUID
-		if cp, ok := checkpoints[d.domain]; ok {
-			ts = pgtype.Timestamptz{Time: timeFromNano(cp.TS), Valid: true}
-			_ = id.Scan(cp.ID)
-		}
-
-		rows, err := d.list(ctx, ts, id, clampInt32(fetchLimit))
-		if err != nil {
-			slog.Warn("intel: radar "+d.domain+" query failed", "error", err)
-			continue
-		}
-
+	for _, rows := range results {
 		merged = append(merged, rows...)
 	}
 
