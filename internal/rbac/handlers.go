@@ -10,7 +10,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/publicapi"
+	"github.com/jedafe/japa/internal/publicapi/scopes"
 )
 
 // Handlers provides HTTP handlers for admin RBAC management.
@@ -636,10 +636,13 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListScopes handles GET /developer/scopes — returns available API scopes.
-// The scope catalog is sourced from publicapi.ScopeCatalog so the developer
-// portal only offers scopes that RequireScope actually enforces (Rule 16 —
-// no hardcoded data that can drift from the enforcement layer).
+// The scope catalog is sourced from the canonical scopes.ScopeCatalog (the
+// leaf package internal/publicapi/scopes — rbac cannot import publicapi
+// itself without creating an import cycle through the moat domain services)
+// so the developer portal only offers scopes that RequireScope actually
+// enforces (Rule 16 — no hardcoded data that can drift from the enforcement
+// layer).
 // // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) ListScopes(w http.ResponseWriter, r *http.Request) {
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": publicapi.AvailableScopes()})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": scopes.AvailableScopes()})
 }

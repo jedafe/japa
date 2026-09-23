@@ -732,6 +732,17 @@ func (s *Service) GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpace
 	return space, nil
 }
 
+// GetPublicSpaceBySlug returns the space matching the given slug only when
+// it is public, active, and not soft-deleted (Section 47 public surface).
+func (s *Service) GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error) {
+	space, err := s.read.GetPublicSpaceBySlug(ctx, slug)
+	if err != nil {
+		return gen.GetPublicSpaceBySlugRow{}, fmt.Errorf("getting public space by slug: %w", err)
+	}
+
+	return space, nil
+}
+
 // CreateSpace creates a new space. The caller is responsible for validating
 // the level and permission axes before calling this method.
 func (s *Service) CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error) {

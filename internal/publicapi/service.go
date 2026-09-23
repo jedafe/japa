@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Store provides pgx-backed CRUD for API keys.
@@ -319,6 +320,9 @@ type Service struct {
 	store          *Store
 	keyCountReader keyCountSettingsReader
 	tierResolver   TierResolver
+	moat           *MoatReaders
+	cache          valkeycompat.Cmdable
+	settingsReader rateLimitSettingsReader
 }
 
 // NewService creates a Service with the given store.
