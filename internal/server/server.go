@@ -2312,6 +2312,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIService := publicapi.NewService(publicAPIStore)
 	publicAPIService.SetKeyCountReader(settingsService) // api.keys.max_per_user (Rule 3)
 	publicAPIService.SetTierResolver(tierService)       // cap rate limits by user tier
+	// Agent Data API: narrow readers over the moat domain services. The
+	// domain services are injected here — publicapi never re-implements
+	// domain queries (docs/superpowers/specs/2026-09-23-agent-data-api-design.md).
+	publicAPIService.SetMoatReaders(&publicapi.MoatReaders{
+		VisaRoutes:    visaRoutesService,
+		VisaTimeline:  visaTimelineService,
+		Credentials:   credentialCheckerService,
+		LanguageTests: languageTestHubService,
+		Scholarships:  scholarshipsService,
+		Spaces:        spaceService,
+		ScamAlerts:    scamAlertService,
+	})
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 	publicAPIHandlers.SetQueries(gen.New(database.Reader))
 
