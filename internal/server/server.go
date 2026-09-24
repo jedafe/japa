@@ -839,6 +839,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	paymentHandlers.SetSettings(settingsService) // SETTING-001: configurable pricing
 	paymentHandlers.StripeWebhookSecret = cfg.StripeWebhookSecret
 	paymentHandlers.NOWPaymentsIPNKey = cfg.NOWPaymentsIPNSecret
+	paymentHandlers.PaystackSecretKey = cfg.PaystackSecretKey
+
+	// §17 recurring billing: tier grants flow through tiers.Service, provider
+	// return URLs are built off the public site URL, and the worker handles
+	// subscription:webhook_process / subscription:expiry_sweep via this seam.
+	paymentService.SetSettings(settingsService)
+	paymentService.SetTierManager(tierService)
+	paymentService.SetSiteURL(cfg.SiteURL)
+	worker.RegisterSubscriptionProcessor(paymentService)
 
 	// Wire wallet, payments, and settings into customfields so SubmitForm can
 	// handle paid form submissions (Section 06 Paid Form Submissions).

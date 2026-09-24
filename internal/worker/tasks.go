@@ -21,6 +21,7 @@ const (
 	TypeNotificationDispatchBatch = "notification:dispatch_batch"
 	TypeWebhookDelivery           = "webhook:deliver"
 	TypePaymentWebhookProcess     = "payment:process_webhook"
+	TypeSubscriptionWebhookProcess = "subscription:webhook_process" // §17 recurring billing lifecycle
 	TypeTicketSendConfirmation    = "ticket:send_confirmation"
 	TypePushDelivery              = "push:deliver"
 	TypeDMNotifyRequest           = "dm:notify_request"
@@ -122,6 +123,7 @@ const (
 	TypeScheduledPublishSweep = "content:publish_sweep"
 	TypeGdprRetentionSweep    = "gdpr:retention_sweep"
 	TypeJceRefreshStale       = "jce:refresh_stale"
+	TypeSubscriptionExpirySweep = "subscription:expiry_sweep" // §17 webhook-miss safety net
 
 	// ---- Intelligence System (Section INTEL) ----.
 
@@ -160,6 +162,7 @@ var handlerRegistry = []struct {
 	{TypeNotificationDispatchBatch, HandleNotificationDispatchBatch},
 	{TypeWebhookDelivery, HandleWebhookDelivery},
 	{TypePaymentWebhookProcess, HandlePaymentWebhookProcess},
+	{TypeSubscriptionWebhookProcess, HandleSubscriptionWebhookProcess},
 	{TypeTicketSendConfirmation, HandleTicketSendConfirmation},
 	{TypePushDelivery, HandlePushDelivery},
 	{TypeDMNotifyRequest, HandleDMNotifyRequest},
@@ -236,6 +239,7 @@ var handlerRegistry = []struct {
 	{TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests},
 	{TypeCouponTrackEvents, HandleCouponTrackEvents},
 	{TypeCouponExpireCheck, HandleCouponExpireCheck},
+	{TypeSubscriptionExpirySweep, HandleSubscriptionExpirySweep},
 	{TypeAffiliateRecordClick, HandleAffiliateRecordClick},
 	{TypeAffiliateCreditCommission, HandleAffiliateCreditCommission},
 	{TypeAffiliateExpireCheck, HandleAffiliateExpireCheck},

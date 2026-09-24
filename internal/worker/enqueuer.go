@@ -80,6 +80,7 @@ var idempotentTasks = map[string]bool{
 	TypeWalletProcessActivityEvent:      true,
 	TypeWalletAwardPoints:               true,
 	TypePaymentWebhookProcess:           true,
+	TypeSubscriptionWebhookProcess:      true,
 	TypeUniversityProcessEnrollment:     true, // AUDIT-BE-005: double-credit guard
 	TypeWalletProcessCreditPurchase:     true, // Section 58: double-credit guard
 }
@@ -106,7 +107,7 @@ func taskDefaults(taskType string) []asynq.Option {
 		TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage:
 		opts = append(opts, asynq.Timeout(30*time.Second), asynq.MaxRetry(10))
 	// Webhook delivery: moderate timeout.
-	case TypeWebhookDelivery, TypePaymentWebhookProcess:
+	case TypeWebhookDelivery, TypePaymentWebhookProcess, TypeSubscriptionWebhookProcess:
 		opts = append(opts, asynq.Timeout(60*time.Second), asynq.MaxRetry(15))
 	// DB-only tasks: standard timeout.
 	case TypeScheduledPublish, TypeScheduledPublishSweep:
@@ -161,6 +162,7 @@ var taskTier = func() map[string]string {
 	// Critical tier
 	for _, t := range []string{
 		TypeNotificationDispatchBatch, TypeWebhookDelivery, TypePaymentWebhookProcess,
+		TypeSubscriptionWebhookProcess, // §17 — subscription activation is entitlement-critical
 		TypeTicketSendConfirmation, TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage,
 		TypeUniversityProcessEnrollment, TypeUniversitySendInstructorPayout,
 		TypeAffiliateCreditCommission, // BUG-012: financial side effect → critical (§56)
@@ -269,6 +271,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
 		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
 		TypeCouponExpireCheck,
+		TypeSubscriptionExpirySweep, // §17 — webhook-miss safety net
 		TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep, TypeJceRefreshStale,
@@ -466,6 +469,8 @@ var taskTypeCatalog = []struct {
 	{TypeDMCleanupDeclinedRequests, "low", "Clean up declined DM requests"},
 	{TypeCouponTrackEvents, "low", "Track coupon usage events"},
 	{TypeCouponExpireCheck, "low", "Expire outdated coupons"},
+	{TypeSubscriptionWebhookProcess, "critical", "Process subscription lifecycle webhook (activate/renew/past_due/cancel)"},
+	{TypeSubscriptionExpirySweep, "low", "Expire subscriptions past entitlement window + downgrade tier"},
 	{TypeAffiliateRecordClick, "default", "Record affiliate link click"},
 	{TypeAffiliateCreditCommission, "critical", "Credit affiliate commission (financial side effect — §56, BUG-012)"},
 	{TypeAffiliateExpireCheck, "low", "Expire stale affiliate links"},

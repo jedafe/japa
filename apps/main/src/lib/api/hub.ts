@@ -173,8 +173,12 @@ export interface PaymentProvider {
 
 export const listPaymentProviders = () => api.get<PaymentProvider[]>('/payment-providers');
 
+export interface SubscriptionCheckout {
+	checkout_url: string;
+}
+
 export const createSubscription = (plan: string, provider: string) =>
-	api.post('/subscriptions', { plan, provider }, {
+	api.post<SubscriptionCheckout>('/subscriptions', { plan, provider }, {
 		// Rule 9: financial state-change endpoints require an Idempotency-Key.
 		'Idempotency-Key': crypto.randomUUID()
 	});

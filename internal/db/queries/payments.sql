@@ -87,12 +87,70 @@ WHERE provider = @provider
 -- =====================
 
 -- name: CreateSubscription :one
-INSERT INTO subscriptions (user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at) VALUES (@user_id, @plan, @provider, sqlc.narg(provider_ref), @status, @current_period_start, @current_period_end, sqlc.narg(cancel_at))
+-- provider_sub_id is the canonical recurring-billing identifier (Stripe
+-- sub_..., Paystack subscription_code); the legacy provider_ref column is
+-- kept for backward compatibility and left NULL for new rows.
+INSERT INTO subscriptions (user_id, plan, provider, provider_sub_id, status, current_period_start, current_period_end, cancel_at) VALUES (@user_id, @plan, @provider, sqlc.narg(provider_sub_id), @status, @current_period_start, @current_period_end, sqlc.narg(cancel_at))
 RETURNING *;
 
 -- name: GetSubscriptionByID :one
 SELECT * FROM subscriptions
 WHERE id = @id;
+
+-- name: GetSubscriptionByProviderSubID :one
+SELECT * FROM subscriptions
+WHERE provider_sub_id = @provider_sub_id;
+
+-- name: RenewSubscriptionPeriod :one
+-- Extends the billing period on a provider-confirmed renewal (JEOS §17).
+-- Also clears past_due so a recovered payment restores 'active'.
+UPDATE subscriptions
+SET status = 'active', current_period_start = @current_period_start,
+    current_period_end = @current_period_end, cancel_at_period_end = false,
+    updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- name: MarkSubscriptionPastDue :one
+UPDATE subscriptions
+SET status = 'past_due', updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- name: SetSubscriptionCancelAtPeriodEnd :one
+-- Syncs the provider-side pending-cancel flag from a webhook
+-- (customer.subscription.updated / subscription.not_renew).
+UPDATE subscriptions
+SET cancel_at_period_end = @cancel_at_period_end, updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- name: ExpireSubscription :one
+UPDATE subscriptions
+SET status = 'expired', updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- name: ListSubscriptionsDueForExpiry :many
+-- Expiry sweep (§17): active rows whose cancel_at_period_end has reached
+-- period end, plus past_due rows past period end + the grace window the
+-- caller subtracts into @grace_cutoff before querying.
+SELECT * FROM subscriptions
+WHERE (status = 'active' AND cancel_at_period_end = true AND current_period_end <= now())
+   OR (status = 'past_due' AND current_period_end <= @grace_cutoff)
+ORDER BY current_period_end
+LIMIT @page_limit;
+
+-- name: UpdateSubscriptionPeriodBounds :one
+-- Syncs period bounds + cancel flag from a provider webhook without
+-- touching status (customer.subscription.updated).
+UPDATE subscriptions
+SET current_period_start = sqlc.narg(current_period_start),
+    current_period_end = sqlc.narg(current_period_end),
+    cancel_at_period_end = @cancel_at_period_end,
+    updated_at = now()
+WHERE id = @id
+RETURNING *;
 
 -- name: GetActiveSubscriptionByUser :one
 SELECT * FROM subscriptions
