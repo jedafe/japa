@@ -418,6 +418,23 @@ func (q *Queries) OrphanThreadEmbeddingsBySpace(ctx context.Context, spaceID pgt
 	return err
 }
 
+const reconcileOrphanThreadEmbeddings = `-- name: ReconcileOrphanThreadEmbeddings :exec
+UPDATE content_embeddings ce
+SET visibility = 'private', space_id = NULL
+FROM forum_threads ft
+WHERE ce.entity_type = 'forum_thread' AND ce.entity_id = ft.id
+  AND ft.space_id IS NULL
+  AND (ce.visibility <> 'private' OR ce.space_id IS NOT NULL)
+`
+
+// Self-healing sweep (§69 amendment): any forum_thread chunk whose source
+// thread lost its space (ON DELETE SET NULL) must fail closed. Runs at the
+// start of reindex so a missed pre-delete reconcile cannot leak.
+func (q *Queries) ReconcileOrphanThreadEmbeddings(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, reconcileOrphanThreadEmbeddings)
+	return err
+}
+
 const searchContentEmbeddings = `-- name: SearchContentEmbeddings :many
 
 SELECT

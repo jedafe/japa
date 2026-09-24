@@ -373,6 +373,13 @@ func (s *Store) UpdateEntityScope(ctx context.Context, ref EntityRef) error {
 	})
 }
 
+// ReconcileOrphanThreadScopes self-heals any forum_thread chunk rows whose
+// source thread lost its space — runs at the start of every reindex sweep so
+// a missed pre-delete reconcile cannot leak stale visibility (§69 amendment).
+func (s *Store) ReconcileOrphanThreadScopes(ctx context.Context) error {
+	return s.queries.ReconcileOrphanThreadEmbeddings(ctx)
+}
+
 // OrphanThreadScopesBySpace fail-closes forum_thread chunk rows whose parent
 // space is about to be deleted (threads survive via ON DELETE SET NULL —
 // §69 amendment). Must run BEFORE the space delete commits: the FK nulls
