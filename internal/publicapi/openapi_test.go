@@ -64,6 +64,15 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 		"/public/universities",
 		"/public/universities/{slug}",
 		"/public/destinations/{slug}/brief",
+		"/public/feeds/{name}",
+		"/public/feeds/tag/{tag}",
+		"/public/feeds/space/{slug}",
+		"/public/me/feed",
+		"/public/content/{id}/markdown",
+		"/public/scam-alerts",
+		"/public/scam-alerts/schema",
+		"/public/scam-alerts/{id}",
+		"/public/search/semantic",
 	}
 	for _, p := range wantPaths {
 		if _, ok := paths[p]; !ok {
