@@ -42,6 +42,10 @@ type CreateAPIKeyInput struct {
 	Scopes        []string            `json:"scopes"`
 	RateLimitTier string              `json:"rate_limit_tier"`
 	ExpiresAt     *pgtype.Timestamptz `json:"expires_at,omitempty"`
+	// UserID optionally overrides the key owner — honored only when the
+	// caller holds api.keys.manage (Phase 3: how an admin grants a
+	// write-scoped key to another user).
+	UserID string `json:"user_id,omitempty"`
 }
 
 // CreateAPIKeyResponse is returned once at creation time with the full key.

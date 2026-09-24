@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -204,6 +205,90 @@ func (s *Service) UpdateEndpoint(ctx context.Context, id pgtype.UUID, input Upda
 // DeleteEndpoint removes a webhook endpoint by ID.
 func (s *Service) DeleteEndpoint(ctx context.Context, id pgtype.UUID) error {
 	return s.store.DeleteEndpoint(ctx, id)
+}
+
+// ---------------------------------------------------------------------------
+// Personal webhook endpoints (scope='user') — Phase 3
+// API-key holders subscribe to content.published; deliveries are filtered to
+// content the owner can see at emit time.
+// ---------------------------------------------------------------------------
+
+// ErrChallengeFailed marks a failed challenge/response verification so
+// handlers can map it to 502 without string-matching.
+var ErrChallengeFailed = errors.New("webhook challenge/response verification failed")
+
+// CreateUserEndpoint registers a personal webhook endpoint. The secret is
+// server-generated and returned in the row for the one-time create response.
+func (s *Service) CreateUserEndpoint(ctx context.Context, ownerID pgtype.UUID, input CreateWebhookRequest) (WebhookEndpointWithSecret, error) {
+	secret, err := generateSecret()
+	if err != nil {
+		return WebhookEndpointWithSecret{}, err
+	}
+	return s.store.CreateUserEndpoint(ctx, ownerID, input.Name, input.URL, secret, input.EventTypes)
+}
+
+// ListUserEndpoints returns the owner's personal endpoints (secrets withheld).
+func (s *Service) ListUserEndpoints(ctx context.Context, ownerID pgtype.UUID) ([]WebhookEndpointResponse, error) {
+	return s.store.ListUserEndpoints(ctx, ownerID)
+}
+
+// CountUserEndpoints returns the owner's personal-endpoint count for the
+// api.webhooks.max_per_key cap.
+func (s *Service) CountUserEndpoints(ctx context.Context, ownerID pgtype.UUID) (int64, error) {
+	return s.store.CountUserEndpoints(ctx, ownerID)
+}
+
+// DeleteUserEndpoint removes a personal endpoint owned by the caller.
+// Returns ErrNotFound when absent or owned by someone else.
+func (s *Service) DeleteUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID) error {
+	n, err := s.store.DeleteUserEndpoint(ctx, ownerID, id)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: webhook endpoint", errpkg.ErrNotFound)
+	}
+	return nil
+}
+
+// VerifyUserEndpoint runs the §12 challenge/response on an owner-scoped
+// personal endpoint and activates it on success.
+func (s *Service) VerifyUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID) error {
+	ep, err := s.store.GetUserEndpoint(ctx, ownerID, id)
+	if err != nil {
+		return fmt.Errorf("%w: webhook endpoint", errpkg.ErrNotFound)
+	}
+
+	token, err := generateChallengeToken()
+	if err != nil {
+		return err
+	}
+
+	challengeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	if err := PerformChallenge(challengeCtx, ep.URL, token); err != nil {
+		slog.Warn("user webhook challenge/response failed", "endpoint_id", id, "url", ep.URL, "error", err)
+		return fmt.Errorf("%w: %v", ErrChallengeFailed, err)
+	}
+
+	if n, err := s.store.VerifyUserEndpoint(ctx, ownerID, id); err != nil {
+		return err
+	} else if n == 0 {
+		return fmt.Errorf("%w: webhook endpoint", errpkg.ErrNotFound)
+	}
+
+	slog.Info("user webhook endpoint verified", "endpoint_id", id, "url", ep.URL)
+	return nil
+}
+
+// ListUserDeliveries returns deliveries for an owner-scoped endpoint after
+// verifying ownership — a foreign endpoint ID yields ErrNotFound.
+func (s *Service) ListUserDeliveries(ctx context.Context, ownerID, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDeliveryResponse, error) {
+	if _, err := s.store.GetUserEndpoint(ctx, ownerID, endpointID); err != nil {
+		return nil, fmt.Errorf("%w: webhook endpoint", errpkg.ErrNotFound)
+	}
+	return s.ListDeliveries(ctx, endpointID, limit, offset)
 }
 
 // VerifyEndpoint performs the §12 challenge/response verification: generates a
@@ -499,6 +584,17 @@ func (s *Service) EmitEvent(ctx context.Context, eventType string, payload any) 
 			continue
 		}
 
+		// Phase 3: personal endpoints (scope='user') only receive events
+		// for content the owner can see. Fail closed — an unresolvable
+		// content reference or a failed check means no delivery row at
+		// all, so a private publish can never produce a phantom signed
+		// payload for a subscriber who shouldn't see it.
+		if ep.Scope == "user" {
+			if !s.userEndpointMayReceive(ctx, ep, eventType, payload) {
+				continue
+			}
+		}
+
 		deliveryID, err := s.CreateDelivery(ctx, ep.ID, eventID, eventType, payload)
 		if err != nil {
 			slog.Error("webhooks: failed to create delivery for emit", "endpoint_id", ep.ID, "event_type", eventType, "error", err)
@@ -515,6 +611,45 @@ func (s *Service) EmitEvent(ctx context.Context, eventType string, payload any) 
 			}
 		}
 	}
+}
+
+// userEndpointMayReceive reports whether a personal endpoint should receive
+// this event: the event must be content.*, carry a resolvable content_id,
+// and that content must be visible to the endpoint's owner (created_by) per
+// the shared visibility predicate (status/visibility/space membership).
+func (s *Service) userEndpointMayReceive(ctx context.Context, ep WebhookEndpointWithSecret, eventType string, payload any) bool {
+	if !ep.CreatedBy.Valid {
+		return false
+	}
+	if !strings.HasPrefix(eventType, "content.") {
+		return false
+	}
+
+	// Payloads are map[string]any from content emitters; marshal/unmarshal
+	// keeps this tolerant of any structured payload shape.
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+	var body struct {
+		ContentID string `json:"content_id"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil || body.ContentID == "" {
+		return false
+	}
+
+	var contentID pgtype.UUID
+	if err := contentID.Scan(body.ContentID); err != nil {
+		return false
+	}
+
+	visible, err := s.store.IsContentVisibleToUser(ctx, contentID, ep.CreatedBy)
+	if err != nil {
+		slog.Warn("webhooks: visibility check failed for user endpoint",
+			"endpoint_id", ep.ID, "content_id", body.ContentID, "error", err)
+		return false
+	}
+	return visible
 }
 
 // endpointMatches reports whether the endpoint's event_types list includes

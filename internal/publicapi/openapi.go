@@ -157,6 +157,13 @@ func buildPublicPaths() map[string]any {
 		"/public/feeds/{name}":          exploreFeedPath(),
 		"/public/me/feed":               myFeedPath(),
 		"/public/me/digest":             digestPath(),
+		// Phase 3 (spec 2026-09-24-agent-data-api-phase3): key-scoped writes.
+		"/public/me/bookmarks":                myBookmarksPath(),
+		"/public/me/bookmarks/{content_id}":   myBookmarkByContentPath(),
+		"/public/me/webhooks":                 myWebhooksPath(),
+		"/public/me/webhooks/{id}/verify":     myWebhookVerifyPath(),
+		"/public/me/webhooks/{id}/deliveries": myWebhookDeliveriesPath(),
+		"/public/me/webhooks/{id}":            myWebhookByIDPath(),
 		"/public/content/{id}/markdown": contentMarkdownPath(),
 		"/public/scam-alerts":           scamAlertsPath(),
 		"/public/scam-alerts/schema":    scamAlertSchemaPath(),
@@ -214,6 +221,48 @@ func contentListPath() map[string]any {
 			"401": refResponse("Unauthorized"),
 			"429": refResponse("RateLimited"),
 		}),
+		"post": map[string]any{
+			"operationId": "createContentDraft",
+			"summary":     "Create draft content",
+			"description": "Create a content draft owned by the API key holder. Publishing stays session-side — the draft is visible to the owner in the composer and can be published there. content_type is restricted to blog_post, guide, story, discussion. The Idempotency-Key header is required; retries with the same key return the original response. Requires the admin-granted api.write.content scope.",
+			"tags":        []any{"Content"},
+			"x-required-scope": "api.write.content",
+			"parameters": []any{map[string]any{
+				"name": "Idempotency-Key", "in": "header", "required": true,
+				"schema":   map[string]any{"type": "string"},
+				"description": "Unique key deduplicating retries for 24h",
+			}},
+			"requestBody": map[string]any{
+				"required": true,
+				"content": map[string]any{"application/json": map[string]any{
+					"schema": map[string]any{
+						"type":     "object",
+						"required": []any{"title"},
+						"properties": map[string]any{
+							"content_type":   map[string]any{"type": "string", "enum": []any{"blog_post", "guide", "story", "discussion"}, "default": "discussion"},
+							"title":          map[string]any{"type": "string"},
+							"slug":           map[string]any{"type": "string", "description": "Optional URL slug; auto-generated from title when omitted"},
+							"body":           map[string]any{"type": "string", "description": "Markdown or plain-text body"},
+							"body_html":      map[string]any{"type": "string", "description": "Optional rendered HTML body"},
+							"space_id":       map[string]any{"type": "string", "format": "uuid"},
+							"tags":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Tag slugs (get-or-create)"},
+							"field_values":   map[string]any{"type": "object", "description": "Content-type field values"},
+							"journey_stage":  map[string]any{"type": "string"},
+							"visa_route":     map[string]any{"type": "string"},
+							"source_country": map[string]any{"type": "string"},
+							"target_country": map[string]any{"type": "string"},
+						},
+					},
+				}},
+			},
+			"responses": map[string]any{
+				"201": singleResponse("Created draft", "ContentDraft"),
+				"400": refResponse("BadRequest"),
+				"401": refResponse("Unauthorized"),
+				"403": refResponse("Forbidden"),
+				"429": refResponse("RateLimited"),
+			},
+		},
 	}
 }
 
@@ -871,6 +920,131 @@ func extensionTokensPath() map[string]any {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 3 path builders — key-scoped writes (spec 2026-09-24-agent-data-api-phase3)
+// ---------------------------------------------------------------------------
+
+func myBookmarksPath() map[string]any {
+	return map[string]any{
+		"get": operation("listMyBookmarks", "List my bookmarks", "List the API key owner's bookmarks, newest first. Requires feature.bookmarks.", []any{"Me"}, "api.read.me", paginationParams("bookmarks"), map[string]any{
+			"200": dataListResponse("The key owner's bookmarks", "Bookmark"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func myBookmarkByContentPath() map[string]any {
+	params := []any{uuidPathParam("content_id", "Content ID")}
+	return map[string]any{
+		"put": map[string]any{
+			"operationId":      "addMyBookmark",
+			"summary":          "Bookmark content",
+			"description":      "Bookmark a content item for the key owner. Idempotent — a repeat PUT updates the folder. Content that is absent or not visible to the owner returns 404 (never 403), so the endpoint cannot probe for restricted rows. Requires feature.bookmarks and the admin-granted api.write.bookmarks scope.",
+			"tags":             []any{"Me"},
+			"x-required-scope": "api.write.bookmarks",
+			"parameters":       params,
+			"requestBody": map[string]any{
+				"required": false,
+				"content": map[string]any{"application/json": map[string]any{
+					"schema": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"folder_id": map[string]any{"type": "string", "format": "uuid", "description": "Optional bookmark folder owned by the key owner"},
+						},
+					},
+				}},
+			},
+			"responses": map[string]any{
+				"201": singleResponse("Created bookmark", "Bookmark"),
+				"400": refResponse("BadRequest"),
+				"401": refResponse("Unauthorized"),
+				"403": refResponse("Forbidden"),
+				"404": refResponse("NotFound"),
+			},
+		},
+		"delete": operation("removeMyBookmark", "Remove bookmark", "Remove the key owner's bookmark for a content item. Requires feature.bookmarks.", []any{"Me"}, "api.write.bookmarks", params, map[string]any{
+			"204": map[string]any{"description": "Bookmark removed"},
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"404": refResponse("NotFound"),
+		}),
+	}
+}
+
+func myWebhooksPath() map[string]any {
+	return map[string]any{
+		"get": operation("listMyWebhooks", "List my webhook subscriptions", "List the key owner's personal webhook endpoints (secrets are never included).", []any{"Webhooks"}, "api.read.me", nil, map[string]any{
+			"200": dataListResponse("Personal webhook endpoints", "WebhookEndpoint"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+		}),
+		"post": map[string]any{
+			"operationId":      "createMyWebhook",
+			"summary":          "Register a personal webhook",
+			"description":      "Register a webhook endpoint owned by the API key holder. event_types is restricted to content.published (the default when omitted). Deliveries only fire for content visible to the key owner at emit time. The endpoint starts inactive — call POST /public/me/webhooks/{id}/verify to complete challenge/response activation. Capped by the api.webhooks.max_per_key system setting (default 5). Requires the admin-granted api.write.me scope. The signing secret is returned exactly once.",
+			"tags":             []any{"Webhooks"},
+			"x-required-scope": "api.write.me",
+			"requestBody": map[string]any{
+				"required": true,
+				"content": map[string]any{"application/json": map[string]any{
+					"schema": map[string]any{
+						"type":     "object",
+						"required": []any{"url"},
+						"properties": map[string]any{
+							"name":        map[string]any{"type": "string"},
+							"url":         map[string]any{"type": "string", "format": "uri"},
+							"event_types": map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []any{"content.published"}}, "default": []any{"content.published"}},
+						},
+					},
+				}},
+			},
+			"responses": map[string]any{
+				"201": singleResponse("Registered endpoint — secret shown once", "WebhookEndpointCreated"),
+				"400": refResponse("BadRequest"),
+				"401": refResponse("Unauthorized"),
+				"403": refResponse("Forbidden"),
+			},
+		},
+	}
+}
+
+func myWebhookByIDPath() map[string]any {
+	return map[string]any{
+		"delete": operation("deleteMyWebhook", "Delete my webhook subscription", "Delete a personal webhook endpoint owned by the API key holder. Foreign or absent IDs return 404.", []any{"Webhooks"}, "api.write.me", []any{uuidPathParam("id", "Webhook endpoint ID")}, map[string]any{
+			"204": map[string]any{"description": "Endpoint deleted"},
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"404": refResponse("NotFound"),
+		}),
+	}
+}
+
+func myWebhookVerifyPath() map[string]any {
+	return map[string]any{
+		"post": operation("verifyMyWebhook", "Verify my webhook subscription", "Run the §12 challenge/response verification against the endpoint URL and activate it on success. The endpoint must echo ?challenge={token} back with a 2xx.", []any{"Webhooks"}, "api.write.me", []any{uuidPathParam("id", "Webhook endpoint ID")}, map[string]any{
+			"200": map[string]any{"description": "Endpoint verified and activated"},
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"404": refResponse("NotFound"),
+			"502": map[string]any{"description": "Challenge/response verification failed"},
+		}),
+	}
+}
+
+func myWebhookDeliveriesPath() map[string]any {
+	return map[string]any{
+		"get": operation("listMyWebhookDeliveries", "List my webhook deliveries", "Recent delivery audit rows for a personal endpoint owned by the key owner. Payloads are omitted.", []any{"Webhooks"}, "api.read.me", append([]any{uuidPathParam("id", "Webhook endpoint ID")}, paginationParams("deliveries")...), map[string]any{
+			"200": dataListResponse("Delivery audit rows", "WebhookDelivery"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"404": refResponse("NotFound"),
+		}),
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Parameter helpers
 // ---------------------------------------------------------------------------
 
@@ -1387,6 +1561,73 @@ func buildPublicSchemas() map[string]any {
 				"expires_at":      map[string]any{"type": "string", "format": "date-time"},
 				"created_at":      map[string]any{"type": "string", "format": "date-time"},
 				"updated_at":      map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"Bookmark": map[string]any{
+			"type":        "object",
+			"description": "A saved bookmark owned by the API key holder (publicapi.PublicBookmarkItem).",
+			"properties": map[string]any{
+				"id":          map[string]any{"type": "string", "format": "uuid"},
+				"entity_type": map[string]any{"type": "string"},
+				"entity_id":   map[string]any{"type": "string", "format": "uuid"},
+				"title":       map[string]any{"type": "string"},
+				"slug":        map[string]any{"type": "string"},
+				"folder":      map[string]any{"type": "string"},
+				"folder_id":   map[string]any{"type": "string", "format": "uuid"},
+				"created_at":  map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"ContentDraft": map[string]any{
+			"type":        "object",
+			"description": "A draft created via POST /public/content (publicapi.PublicDraft).",
+			"properties": map[string]any{
+				"id":           map[string]any{"type": "string", "format": "uuid"},
+				"content_type": map[string]any{"type": "string"},
+				"title":        map[string]any{"type": "string"},
+				"slug":         map[string]any{"type": "string"},
+				"status":       map[string]any{"type": "string", "enum": []any{"draft"}},
+				"created_at":   map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"WebhookEndpoint": map[string]any{
+			"type":        "object",
+			"description": "A personal webhook subscription (scope='user' on webhook_endpoints).",
+			"properties": map[string]any{
+				"id":          map[string]any{"type": "string", "format": "uuid"},
+				"name":        map[string]any{"type": "string"},
+				"url":         map[string]any{"type": "string", "format": "uri"},
+				"event_types": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"status":      map[string]any{"type": "string", "enum": []any{"pending", "active", "disabled"}},
+				"is_active":   map[string]any{"type": "boolean"},
+				"verified_at": map[string]any{"type": "string", "format": "date-time", "nullable": true},
+				"created_at":  map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"WebhookEndpointCreated": map[string]any{
+			"allOf": []any{
+				map[string]any{"$ref": "#/components/schemas/WebhookEndpoint"},
+				map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"secret": map[string]any{"type": "string", "description": "HMAC signing secret — returned exactly once at creation"},
+					},
+				},
+			},
+		},
+		"WebhookDelivery": map[string]any{
+			"type":        "object",
+			"description": "A webhook delivery audit row; payload omitted from the personal surface.",
+			"properties": map[string]any{
+				"id":                 map[string]any{"type": "string", "format": "uuid"},
+				"event_id":           map[string]any{"type": "string", "format": "uuid"},
+				"event_type":         map[string]any{"type": "string"},
+				"status":             map[string]any{"type": "string", "enum": []any{"pending", "delivered", "retrying", "failed"}},
+				"attempts":           map[string]any{"type": "integer"},
+				"last_error":         map[string]any{"type": "string", "nullable": true},
+				"last_response_code": map[string]any{"type": "integer", "nullable": true},
+				"next_attempt_at":    map[string]any{"type": "string", "format": "date-time", "nullable": true},
+				"delivered_at":       map[string]any{"type": "string", "format": "date-time", "nullable": true},
+				"created_at":         map[string]any{"type": "string", "format": "date-time"},
 			},
 		},
 		"ApiKeyCreated": map[string]any{

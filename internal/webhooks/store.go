@@ -108,6 +108,18 @@ func endpointFromListRow(row gen.ListWebhookEndpointsRow) WebhookEndpointWithSec
 		ID: row.ID, Name: row.Name, URL: row.Url,
 		Secret: row.Secret, EventTypes: row.EventTypes, Status: row.Status,
 		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
+		Scope: row.Scope,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+}
+
+// endpointFromUserRow converts user-scoped endpoint rows.
+func endpointFromUserRow(row gen.CreateUserWebhookEndpointRow) WebhookEndpointWithSecret {
+	return WebhookEndpointWithSecret{
+		ID: row.ID, Name: row.Name, URL: row.Url,
+		Secret: row.Secret, EventTypes: row.EventTypes, Status: row.Status,
+		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
+		Scope: row.Scope,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -459,4 +471,123 @@ func (s *Store) MarkWebhookRetrying(ctx context.Context, id pgtype.UUID, attempt
 	}
 
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Personal (user-scoped) endpoints — Phase 3
+// ---------------------------------------------------------------------------
+
+// CreateUserEndpoint registers a personal webhook endpoint owned by an
+// API-key holder (scope='user'). Secret is encrypted at rest like platform
+// endpoints; status starts 'pending'/inactive until challenge verification.
+func (s *Store) CreateUserEndpoint(ctx context.Context, ownerID pgtype.UUID, name, url, secret string, eventTypes []string) (WebhookEndpointWithSecret, error) {
+	encSecret, err := crypto.Encrypt(secret)
+	if err != nil {
+		return WebhookEndpointWithSecret{}, fmt.Errorf("encrypting webhook secret: %w", err)
+	}
+
+	row, err := s.write.CreateUserWebhookEndpoint(ctx, gen.CreateUserWebhookEndpointParams{
+		Name:       name,
+		Url:        url,
+		Secret:     encSecret,
+		EventTypes: eventTypes,
+		CreatedBy:  ownerID,
+	})
+	if err != nil {
+		return WebhookEndpointWithSecret{}, fmt.Errorf("creating user webhook endpoint: %w", err)
+	}
+
+	out := endpointFromUserRow(row)
+	out.Secret = secret // return plaintext once for the create response
+	return out, nil
+}
+
+// ListUserEndpoints returns the owner's personal webhook endpoints (no secrets).
+func (s *Store) ListUserEndpoints(ctx context.Context, ownerID pgtype.UUID) ([]WebhookEndpointResponse, error) {
+	rows, err := s.read.ListUserWebhookEndpoints(ctx, ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("listing user webhook endpoints: %w", err)
+	}
+
+	out := make([]WebhookEndpointResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, WebhookEndpointResponse{
+			ID:         row.ID.String(),
+			Name:       row.Name,
+			URL:        row.Url,
+			EventTypes: row.EventTypes,
+			Status:     row.Status,
+			IsActive:   row.IsActive,
+			CreatedBy:  ownerID.String(),
+			CreatedAt:  row.CreatedAt.Time,
+			UpdatedAt:  row.UpdatedAt.Time,
+		})
+	}
+	return out, nil
+}
+
+// CountUserEndpoints returns how many personal endpoints the owner has.
+func (s *Store) CountUserEndpoints(ctx context.Context, ownerID pgtype.UUID) (int64, error) {
+	n, err := s.read.CountUserWebhookEndpoints(ctx, ownerID)
+	if err != nil {
+		return 0, fmt.Errorf("counting user webhook endpoints: %w", err)
+	}
+	return n, nil
+}
+
+// GetUserEndpoint fetches a personal endpoint scoped to its owner — absent or
+// foreign IDs both return ErrNoRows (no existence leak across users).
+func (s *Store) GetUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID) (WebhookEndpointWithSecret, error) {
+	row, err := s.read.GetUserWebhookEndpoint(ctx, gen.GetUserWebhookEndpointParams{ID: id, CreatedBy: ownerID})
+	if err != nil {
+		return WebhookEndpointWithSecret{}, fmt.Errorf("fetching user webhook endpoint %s: %w", id, err)
+	}
+
+	// Decrypt the secret for delivery-time use (mirrors GetWebhookEndpoint).
+	ep := WebhookEndpointWithSecret{
+		ID: row.ID, Name: row.Name, URL: row.Url,
+		EventTypes: row.EventTypes, Status: row.Status,
+		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
+		Scope: row.Scope,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+	if row.Secret != "" {
+		plain, err := crypto.Decrypt(row.Secret)
+		if err == nil {
+			ep.Secret = plain
+		}
+	}
+	return ep, nil
+}
+
+// VerifyUserEndpoint marks a personal endpoint verified+active, scoped to the
+// owner. Returns rows affected — zero means the endpoint doesn't exist or
+// belongs to someone else.
+func (s *Store) VerifyUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID) (int64, error) {
+	n, err := s.write.VerifyUserWebhookEndpoint(ctx, gen.VerifyUserWebhookEndpointParams{ID: id, CreatedBy: ownerID})
+	if err != nil {
+		return 0, fmt.Errorf("verifying user webhook endpoint %s: %w", id, err)
+	}
+	return n, nil
+}
+
+// DeleteUserEndpoint removes a personal endpoint scoped to its owner.
+// Returns rows affected — zero means not found / not owned.
+func (s *Store) DeleteUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID) (int64, error) {
+	n, err := s.write.DeleteUserWebhookEndpoint(ctx, gen.DeleteUserWebhookEndpointParams{ID: id, CreatedBy: ownerID})
+	if err != nil {
+		return 0, fmt.Errorf("deleting user webhook endpoint %s: %w", id, err)
+	}
+	return n, nil
+}
+
+// IsContentVisibleToUser reports whether a published content item is visible
+// to the given subscriber — the EmitEvent filter for personal endpoints
+// (Phase 3). Runs on the writer pool: the check immediately follows a
+// publish write, and replica lag would otherwise drop legitimate deliveries.
+func (s *Store) IsContentVisibleToUser(ctx context.Context, contentID, userID pgtype.UUID) (bool, error) {
+	return s.write.IsContentVisibleToUser(ctx, gen.IsContentVisibleToUserParams{
+		ContentID: contentID,
+		UserID:    userID,
+	})
 }

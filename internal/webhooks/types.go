@@ -55,8 +55,12 @@ type WebhookEndpointWithSecret struct {
 	IsActive   bool
 	VerifiedAt pgtype.Timestamptz
 	CreatedBy  pgtype.UUID
-	CreatedAt  pgtype.Timestamptz
-	UpdatedAt  pgtype.Timestamptz
+	// Scope discriminates admin-managed platform endpoints ('platform')
+	// from personal API-key subscriptions ('user', owner = CreatedBy).
+	// Phase 3 — spec 2026-09-24-agent-data-api-phase3.
+	Scope     string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 // WebhookEndpointResponse is the JSON-safe representation of a webhook endpoint.
