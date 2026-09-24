@@ -70,14 +70,21 @@ type FeedReader interface {
         limit, offset int32, vc *visitor.VisitorContext) ([]feed.FeedItem, error)
 }
 
+// Service-level (not store): Get/List only return status='confirmed' rows
+// (enforced in SQL) and produce the decorated ScamReportDTO. The public
+// contract maps to a curated PublicScamReport — the service DTO carries
+// moderation internals (reviewed_by, moderator_note, hitl_*, reporter_id)
+// that must not leak.
 type SafetyReader interface {
-    ListReports(ctx context.Context, f scamalert.ListReportsFilter) ([]scamalert.ScamReportRow, int64, error)
-    GetReport(ctx context.Context, id pgtype.UUID) (scamalert.ScamReportRow, error)
+    Enabled(ctx context.Context) bool
+    Schema() scamalert.SchemaOptions
+    Get(ctx context.Context, id pgtype.UUID) (scamalert.ScamReportDTO, error)
+    List(ctx context.Context, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]scamalert.ScamReportDTO, int64, error)
 }
 
 type SemanticSearcher interface {
     Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]rag.RetrievedChunk, error)
-    FormatContext(chunks []rag.RetrievedChunk) string // reuse for agent-ready text
+    EmbedderConfigured() bool // new one-liner on rag.Service — Retrieve returns nil,nil (not an error) when unconfigured
 }
 ```
 
