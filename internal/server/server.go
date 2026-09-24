@@ -4522,6 +4522,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Agent Data API — destination brief (premium)
 				r.With(publicapi.RequireScope("api.read.brief"), publicapi.RequireTier(publicAPIService, "pro")).
 					Get("/public/destinations/{slug}/brief", publicAPIHandlers.GetDestinationBrief)
+
+				// Agent Data API Phase 2 — feeds, markdown, safety, semantic search
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/feeds/tag/{tag}", publicAPIHandlers.GetTagFeed)
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/feeds/space/{slug}", publicAPIHandlers.GetSpaceFeed)
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/feeds/{name}", publicAPIHandlers.GetExploreFeed)
+				r.With(publicapi.RequireScope("api.read.me")).
+					Get("/public/me/feed", publicAPIHandlers.GetMyFeed)
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/content/{id}/markdown", publicAPIHandlers.GetContentMarkdown)
+				r.With(features.Gate(featureChecker, "scam_alert.enabled"), publicapi.RequireScope("api.read.safety")).
+					Get("/public/scam-alerts", publicAPIHandlers.ListScamAlerts)
+				r.With(features.Gate(featureChecker, "scam_alert.enabled"), publicapi.RequireScope("api.read.safety")).
+					Get("/public/scam-alerts/schema", publicAPIHandlers.GetScamAlertSchema)
+				r.With(features.Gate(featureChecker, "scam_alert.enabled"), publicapi.RequireScope("api.read.safety")).
+					Get("/public/scam-alerts/{id}", publicAPIHandlers.GetScamAlert)
+				r.With(publicapi.RequireScope("api.read.search"), publicapi.RequireTier(publicAPIService, "pro")).
+					Get("/public/search/semantic", publicAPIHandlers.SemanticSearch)
 			})
 
 			// User Profile & Preferences routes (catalog: /me, /me/profile)
