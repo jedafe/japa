@@ -102,23 +102,59 @@ type RetrievalScope struct {
 }
 ```
 
-`SearchContentEmbeddings` gains a scope clause. Ordering matters — an
-author-private post inside a member space must not surface to other members:
+**Visibility semantics follow the canonical contract** in
+`internal/content/visibility.VisibilityFilter` — verified against
+`ListContents`/`ListContentByTag` and `spaces.go` constants:
+
+- `public` → everyone.
+- `members` → any authenticated viewer (NOT space members — the platform
+  never joins `space_members` for content visibility).
+- `private` → author only, or privileged viewers
+  (`CanSeePrivate`: superadmin / `content.edit_any` / `admin.moderation`).
+- `space`/`forum_thread` entity types additionally follow *space* semantics:
+  `members` space = listed to authenticated users; `private` space = approved
+  `space_members` only (`status='approved'` — `CheckSpaceMembership`
+  requires it).
+
+`RetrievalScope` mirrors `VisibilityFilter` plus membership:
+
+```go
+type RetrievalScope struct {
+    ViewerID       pgtype.UUID   // zero = anonymous
+    CanSeePrivate  bool          // privileged caller (RBAC-resolved)
+    MemberSpaceIDs []pgtype.UUID // approved memberships only
+}
+```
+
+Both retrieval queries gain the scope clause —
+`SearchContentEmbeddings` (all entity types):
 
 ```sql
 AND (
     ce.visibility = 'public'
-    OR ce.author_id = $viewer_id                        -- own content always
-    OR (
-        ce.space_id = ANY($member_space_ids)            -- member of the space
-        AND NOT (ce.entity_type = 'content' AND ce.visibility = 'private')
-    )
+    OR ce.author_id = $viewer
+    OR (ce.visibility = 'members' AND $viewer IS NOT NULL)
+    OR (ce.visibility = 'private' AND $can_see_private)
+    OR (ce.entity_type IN ('space','forum_thread')
+        AND ce.visibility = 'private'
+        AND ce.space_id = ANY($member_ids))
 )
 ```
 
-The rule is: **public rows for everyone; author's own rows always;
-member-space rows for members — except author-private content, which stays
-author-only even inside member spaces.**
+`SearchContentEmbeddingsGeoFiltered` (content-only — simpler):
+
+```sql
+AND (
+    ce.visibility = 'public'
+    OR ce.author_id = $viewer
+    OR (ce.visibility = 'members' AND $viewer IS NOT NULL)
+    OR (ce.visibility = 'private' AND $can_see_private)
+)
+```
+
+Note: `content` rows never consult `space_id` for visibility (the platform
+contract treats content visibility as self-contained) — the column is still
+stored for future use and consistency.
 
 `Retrieve` signature becomes:
 
@@ -126,23 +162,48 @@ author-only even inside member spaces.**
 Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]RetrievedChunk, error)
 ```
 
-- `viewerID` invalid/zero → `MemberSpaceIDs` empty, author clause never
-  matches → public-only (correct for API-key-free anonymous paths).
-- Membership loaded inside `rag.Service` (`ListMemberSpaceIDs` query on
-  `space_members`) — callers pass only the viewer ID, no caller-side joins.
+- `viewerID` invalid/zero → `MemberSpaceIDs` empty, `members` clause fails
+  (`$viewer IS NOT NULL` false), author clause never matches → public-only.
+- Membership loaded inside `rag.Service` via `ListMemberSpaceIDs` — must
+  filter `status='approved'` (matching `CheckSpaceMembership`).
+- `CanSeePrivate` defaults false for all user-facing paths; reserved for
+  privileged/internal callers.
 - Kill-switch setting `rag.scoped_retrieval.enabled` (default true): when
   false, retrieval falls back to public-only — lets ops degrade to the safe
   subset without a deploy if the scoping misbehaves.
 
-### Caller updates (all existing `Retrieve` call sites)
+### Cache keys must be viewer-scoped (leak vector)
+
+`Retrieve` caches under `jc:rag:query:{hash}` keyed on
+(query_embedding, language, top_k, geo_space_id). Once results are
+viewer-scoped, that key would serve a member's private-corpus results to
+the next viewer with the same query. The hash gains a scope component:
+
+```go
+scopeHash = sha256(viewerID || sort(memberSpaceIDs) || canSeePrivate)
+cacheKey = jc:rag:query:{hash(query_embedding, lang, topK, geo, scopeHash)}
+```
+
+Folding membership into the hash also self-heals on membership changes —
+a new approved space produces a different hash, no invalidation needed.
+Same treatment for `jc:api_semantic:{q}:{lang}:{space}` in
+`publicapi.SemanticSearch` — add the key-owner scope hash.
+
+### Caller updates (all existing `Retrieve` call sites — verified)
 
 | Caller | viewerID |
 |---|---|
-| `internal/ai/handlers.go` chat retrieval | session user |
-| `internal/assessment` | assessed user |
-| `agentRAGAdapter` (`rag.search` JWT tool) | tool-call user |
-| `publicapi.SemanticSearch` | **API-key owner** — the key IS the caller's identity; member-visible content via API mirrors the web |
-| `agentDataAdapter.SemanticSearch` (`search.semantic` MCP tool) | tool-call user (session user or key owner) |
+| `internal/ai/presearch.go:177` (`PreSearcher.PreSearch` — signature gains viewerID; callers `agent.go:294`, `agent_handlers.go:1090` pass session user) | session user |
+| `internal/ai/tools_knowledge.go:93` (`rag.search` tool) via `RAGService` iface `tools_deps.go:53` | tool-call userID |
+| `internal/assessment/service.go:1329` via adapter `server.go:7979` | `input.UserID` (anonymous submissions → zero = public-only) |
+| `internal/server/agent_adapters.go:86` (`agentRAGAdapter`) | tool-call userID |
+| `internal/publicapi/phase2.go:413` (`SemanticSearch`) | **API-key owner** — the key IS the caller's identity |
+
+**Adjacent pre-existing exposure (in scope for this change):**
+`PreSearcher.searchContent` uses `visibility.InternalVisibilityFilter(zero)`
+— the content-search side of presearch sees private content for *every*
+user. Tighten to the viewer's filter (`VisibilityFilter` built from the
+session user) in the same change — same leak vector, same fix shape.
 
 ### Consequence for the Phase 2 post-filter
 
@@ -175,17 +236,21 @@ type EntityRef struct {
 IndexEntity(ctx context.Context, ref EntityRef, body, language string) error
 ```
 
-Call sites:
+Call sites (all nine, verified by grep):
 
-- `spaces.indexSpaceRAG` — space's own visibility; `space_id = space.ID`.
-- `worker.ragIndexAfterEmbed` — needs content `visibility/space_id/author_id`;
-  `GetContentTitleAndBody` lacks them → extend it or add
-  `GetContentEmbeddingMeta` (sqlc).
-- `rag.reindexForumThreads` — join `spaces` for visibility; `space_id =
-  ft.space_id`; `author_id = ft.author_user_id`.
-- `reindexSpaces` — space visibility + id.
-- Content reindex path — content visibility/space/author.
-- `learning` / `wiki` indexers — `visibility='public'`.
+- `spaces/handlers.go:157` `indexSpaceRAG` — space visibility; `space_id = space.ID`.
+- `forum/handlers.go:240` — thread **creation** indexing: space visibility
+  via join, `space_id = ft.space_id`, `author_id = ft.author_user_id`.
+- `worker/handlers.go:2468` content embed task — needs
+  `GetContentEmbeddingMeta` (title/body/status/visibility/space_id/author_id).
+- `learning/handlers.go:145` — `learning_track`, `visibility='public'`.
+- `wiki/handlers.go:626` — `wiki_page`, `visibility='public'`.
+- `rag.reindexForumThreads` (:395) — join `spaces` for visibility.
+- `rag.reindexSpaces` (:450) — space visibility.
+- `rag` content reindex (:505 area) — content meta as above.
+- All `IndexEntity` interface declarations in caller packages
+  (`spaces/handlers.go:62`, `forum/handlers.go:64`, `learning/handlers.go:43`,
+  `wiki/handlers.go:79`, `worker/rag_indexer.go:28`) — signature ripples.
 
 ## Transition Hooks (visibility/status changes update, not just purge)
 

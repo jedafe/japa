@@ -81,21 +81,46 @@ Down migration drops the constraint and three columns.
 **Queries** — edit `internal/db/queries/rag.sql`, regenerate:
 
 - `ListMemberSpaceIDs(userID)` — `SELECT space_id FROM space_members WHERE
-  user_id = $1` (pattern exists in `trending.sql.go:141`).
+  user_id = $1 AND status = 'approved'` — the `status='approved'` filter is
+  mandatory (`CheckSpaceMembership`, `spaces.sql.go:255`, requires it;
+  pending members must not gain retrieval scope).
 - `UpdateEmbeddingScope(entityType, entityID, visibility, spaceID,
   authorID)` — single-entity scope refresh.
 - `UpdateThreadEmbeddingsBySpace(spaceID, visibility)` — bulk update for
   space visibility flips.
 - `GetContentEmbeddingMeta(contentID)` — title, body, status, visibility,
   space_id, author_id (used by the worker embed path).
-- Extend `SearchContentEmbeddings` — add the scope clause:
+- Extend **`SearchContentEmbeddings` AND `SearchContentEmbeddingsGeoFiltered`**
+  — `Retrieve` branches between them (`service.go:243`); both need scope.
+
+Canonical semantics (`internal/content/visibility.VisibilityFilter` —
+verified against `ListContents`, `contents.sql.go:2220`): `members` =
+any authenticated viewer (a bool flag, NOT a space-membership join);
+`private` = author or privileged; `public` = everyone. Space entities
+additionally: `private` space = approved members only.
+
+`SearchContentEmbeddings` (all types):
 
 ```sql
 AND (
     ce.visibility = 'public'
-    OR ce.author_id = $N_viewer
-    OR (ce.space_id = ANY($N_member_ids)
-        AND NOT (ce.entity_type = 'content' AND ce.visibility = 'private'))
+    OR ce.author_id = $viewer
+    OR (ce.visibility = 'members' AND $viewer IS NOT NULL)
+    OR (ce.visibility = 'private' AND $can_see_private)
+    OR (ce.entity_type IN ('space','forum_thread')
+        AND ce.visibility = 'private'
+        AND ce.space_id = ANY($member_ids))
+)
+```
+
+`SearchContentEmbeddingsGeoFiltered` (content-only — no space clause):
+
+```sql
+AND (
+    ce.visibility = 'public'
+    OR ce.author_id = $viewer
+    OR (ce.visibility = 'members' AND $viewer IS NOT NULL)
+    OR (ce.visibility = 'private' AND $can_see_private)
 )
 ```
 
@@ -109,14 +134,22 @@ they catch deletion races between index and query.
 `internal/rag/service.go`:
 
 - `type EntityRef struct { Type string; ID, SpaceID, AuthorID pgtype.UUID; Visibility string }`
+- `type RetrievalScope struct { ViewerID pgtype.UUID; CanSeePrivate bool; MemberSpaceIDs []pgtype.UUID }` — mirrors `visibility.VisibilityFilter` + membership.
 - `IndexEntity(ctx, ref EntityRef, body, language string)` — replaces the
   `(entityType, entityID, body, language)` signature; writes scope columns.
+  Interface decls at `spaces/handlers.go:62`, `forum/handlers.go:64`,
+  `learning/handlers.go:43`, `wiki/handlers.go:79`, `worker/rag_indexer.go:28`
+  all ripple.
 - `Retrieve(ctx, query, language string, geoSpaceID *pgtype.UUID,
   viewerID pgtype.UUID)` — builds `RetrievalScope` internally:
   - `viewerID` invalid → empty member list (public-only).
-  - `viewerID` valid → `ListMemberSpaceIDs`.
+  - `viewerID` valid → `ListMemberSpaceIDs` (approved only).
   - `rag.scoped_retrieval.enabled == false` → force empty scope.
   - Existing `rag.enabled` / embedder / empty-query early-outs unchanged.
+- **Cache key (`ragQueryCacheKey`, `service.go:81`) gains a scope hash** —
+  `sha256(viewerID || sort(memberSpaceIDs) || canSeePrivate)` folded into
+  the `jc:rag:query:` key. Without this, scoped results leak across viewers
+  through the 10-minute cache. Membership changes self-heal via the hash.
 - `ReconcileSpaceScope(ctx, spaceID)` — refresh space entity row + bulk
   thread update (`UpdateThreadEmbeddingsBySpace`); used by the space
   update hook.
@@ -125,32 +158,44 @@ Caller updates (all existing `Retrieve` sites — signature change ripples):
 
 | Site | viewerID source |
 |---|---|
-| `internal/ai/handlers.go:95` (iface) + `presearch.go:177` | caller userID passed down — check where the chat path knows the user |
-| `internal/ai/tools_deps.go:53` `RAGService` + `tools_knowledge.go:93` | tool-call `userID` (already in args/context) |
-| `internal/assessment/service.go:69,1329` + `internal/server/server.go:7979` adapter | assessed user ID |
+| `internal/ai/presearch.go:177` — `PreSearch` signature gains viewerID; callers `agent.go:294` + `agent_handlers.go:1090` pass session user | session user |
+| `internal/ai/tools_deps.go:53` `RAGService` + `tools_knowledge.go:93` | tool-call `userID` |
+| `internal/assessment/service.go:69,1329` + `internal/server/server.go:7979` adapter | `input.UserID` (anonymous → zero = public-only) |
 | `internal/server/agent_adapters.go:86` `agentRAGAdapter` | tool-call userID |
-| `internal/publicapi/phase2.go:63` iface + `:413` call | API-key owner's `UserID` |
+| `internal/publicapi/phase2.go:63` iface + `:413` call | API-key owner's `UserID` — and `jc:api_semantic:` cache key gains the same scope hash |
 
 `ai.RAGService` and `assessment` mirror interfaces gain the `viewerID`
 param — adapters forward it.
+
+**Adjacent fix (same exposure vector):** `presearch.go:201` `searchContent`
+uses `visibility.InternalVisibilityFilter(zero)` — sees private content for
+every user. Build the filter from the session viewer instead
+(`VisibilityFilter{RequesterID: viewerID, CanSeeMembers: viewerID.Valid}`).
 
 ---
 
 ## Task 4 — Index-time metadata wiring
 
-- `internal/spaces` `indexSpaceRAG` — `EntityRef{Type:"space", ID:space.ID,
-  Visibility:space.Visibility, SpaceID:space.ID}`.
-- `internal/worker/embedder.go` `ragIndexAfterEmbed` — load
+All nine `IndexEntity` call sites (verified by grep — the create paths are
+easy to miss, they're not just reindex):
+
+- `internal/spaces/handlers.go:157` `indexSpaceRAG` — `EntityRef{Type:"space",
+  ID:space.ID, Visibility:space.Visibility, SpaceID:space.ID}`.
+- `internal/forum/handlers.go:240` — thread **creation** indexing: space
+  visibility via the thread's space (fetch or join), `space_id = ft.space_id`,
+  `author_id = ft.author_user_id`.
+- `internal/worker/handlers.go:2468` content embed task — load
   `GetContentEmbeddingMeta`; skip embedding entirely when
   `status != 'published'` (self-heal on stale tasks); build `EntityRef`
   from visibility/space/author.
-- `rag.reindexForumThreads` — query must return visibility via
-  `JOIN spaces` (check existing `ListForumThreadIDsForReindex` — extend or
-  new query); threads in a null/deleted space → `visibility='private'`.
-- `reindexSpaces` — read each space's visibility (extend
-  `ListSpaceIDsForReindex` to return visibility, or per-space fetch).
-- Content reindex path — same meta as worker path.
-- `learning` / wiki indexers — `Visibility:"public"`.
+- `internal/learning/handlers.go:145` — `learning_track`, `Visibility:"public"`.
+- `internal/wiki/handlers.go:626` — `wiki_page`, `Visibility:"public"`.
+- `rag.reindexForumThreads` (:395) — extend `ListForumThreadIDsForReindex`
+  to `JOIN spaces` for visibility; threads in a null/deleted space →
+  `visibility='private'` (fail closed).
+- `rag.reindexSpaces` (:450) — extend `ListSpaceIDsForReindex` to return
+  visibility.
+- `rag` content reindex (:505) — same meta as worker path.
 
 ---
 
@@ -169,8 +214,10 @@ param — adapters forward it.
   guard already blocks, but purging keeps the table honest). Verify where
   the existing unpublish path lives (`content/handlers.go` update/publish
   toggles) and hook next to the existing delete/archive purge sites.
-- **Forum thread delete/move**: `PurgeEntity("forum_thread", id)` — check
-  `internal/forum` (or wherever thread delete lives); add if absent.
+- **Forum thread delete/move**: delete purge already exists
+  (`forum/handlers.go:254`) — verify it fires on all delete paths. Thread
+  space reassignment (`forum/handlers.go:~2156` update path) →
+  `UpdateEmbeddingScope` with the new space's visibility.
 
 ---
 
@@ -180,11 +227,10 @@ param — adapters forward it.
 
 - `space` → `GetSpaceByID` must succeed and `status='active'` — visibility
   check removed (retrieval already scoped).
-- `content`/`forum_thread` → resolve via `GetContentByID` (exists,
-  `contents.sql.go:729`) — check its filters at implementation time; if it
-  returns unpublished/deleted rows, add a `deleted_at IS NULL` guard via a
-  new query or reuse the EXISTS clause result implicitly (retrieval already
-  filtered). Attach title/href; unresolved → drop.
+- `content`/`forum_thread` → resolve via `GetContentByID`
+  (`contents.sql.go:729` — verified: filters `deleted_at IS NULL` only;
+  `status='published'` is already enforced by the retrieval EXISTS guard).
+  Attach title/href; unresolved → drop.
 - `wiki_page`/`learning_track` — unchanged.
 - Tests: member-space hit for key owner resolves with title/href;
   deleted entity drops; unresolvable ID drops; keep the existing
