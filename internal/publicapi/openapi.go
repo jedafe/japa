@@ -70,6 +70,8 @@ func buildTags() []any {
 		map[string]any{"name": "Visa & Immigration", "description": "Visa routes, processing timelines, credential pathways, and language tests"},
 		map[string]any{"name": "Education", "description": "Scholarships and universities"},
 		map[string]any{"name": "Destinations", "description": "Aggregate destination briefs"},
+		map[string]any{"name": "Feeds", "description": "Public explore feeds and the key owner's personalized feed"},
+		map[string]any{"name": "Safety", "description": "Confirmed scam reports and the scam alert schema"},
 		map[string]any{"name": "Public", "description": "Public catalog routes that do not require an API key"},
 	}
 }
@@ -138,6 +140,20 @@ func buildPublicPaths() map[string]any {
 		"/public/universities":              universitiesPath(),
 		"/public/universities/{slug}":       universityBySlugPath(),
 		"/public/destinations/{slug}/brief": destinationBriefPath(),
+
+		// Agent Data API Phase 2 — feeds, markdown, safety, semantic search
+		// (spec 2026-09-24-agent-data-api-phase2). Chi registers the static
+		// tag/space segments before {name} and scam-alerts/schema before
+		// scam-alerts/{id}; map order mirrors the router for readability.
+		"/public/feeds/tag/{tag}":       tagFeedPath(),
+		"/public/feeds/space/{slug}":    spaceFeedPath(),
+		"/public/feeds/{name}":          exploreFeedPath(),
+		"/public/me/feed":               myFeedPath(),
+		"/public/content/{id}/markdown": contentMarkdownPath(),
+		"/public/scam-alerts":           scamAlertsPath(),
+		"/public/scam-alerts/schema":    scamAlertSchemaPath(),
+		"/public/scam-alerts/{id}":      scamAlertByIDPath(),
+		"/public/search/semantic":       semanticSearchPath(),
 	}
 }
 
@@ -583,6 +599,204 @@ func destinationBriefPath() map[string]any {
 }
 
 // ---------------------------------------------------------------------------
+// Agent Data API Phase 2 path builders (spec 2026-09-24-agent-data-api-phase2)
+// Query parameters mirror internal/publicapi/handlers_feeds.go — pagination
+// is limit/offset via parseLimit/parseOffset; the tag feed is cursor-based.
+// ---------------------------------------------------------------------------
+
+// feedsTag is the operation tag for feed endpoints.
+var feedsTag = []any{"Feeds"}
+
+// safetyTag is the operation tag for scam-alert endpoints.
+var safetyTag = []any{"Safety"}
+
+// withFeatureFlag marks an operation as gated behind a system feature flag —
+// mirrors features.Gate middleware, which answers 404 feature_disabled when
+// the flag is off.
+func withFeatureFlag(op map[string]any, flag string) map[string]any {
+	op["x-feature-flag"] = flag
+	return op
+}
+
+// feedSortParam documents the ?sort query parameter shared by the feed
+// endpoints (feed.Sort* modes). Handlers fall back to the feed's default
+// ranking on unknown values.
+func feedSortParam() map[string]any {
+	return map[string]any{
+		"name":        "sort",
+		"in":          "query",
+		"schema":      map[string]any{"type": "string", "enum": []any{"latest", "top", "rising", "relevant"}},
+		"description": "Sort order override. Unknown values fall back to the feed's default ranking.",
+	}
+}
+
+func exploreFeedPath() map[string]any {
+	return map[string]any{
+		"get": operation("getExploreFeed", "Get explore feed", "Retrieve a public explore feed. The feed name selects the default ranking (popular → top, latest → latest, rising → rising); a valid ?sort value overrides it.", feedsTag, "api.read.content", []any{
+			map[string]any{
+				"name":        "name",
+				"in":          "path",
+				"required":    true,
+				"schema":      map[string]any{"type": "string", "enum": []any{"popular", "latest", "rising"}},
+				"description": "Explore feed name.",
+			},
+			feedSortParam(),
+			limitParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": feedListResponse("Explore feed items", "PublicFeedItem"),
+			"400": refResponse("BadRequest"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func tagFeedPath() map[string]any {
+	return map[string]any{
+		"get": operation("getTagFeed", "Get tag feed", "Retrieve published, public content for a tag slug. Cursor-paginated: pass the previous response's next_cursor value in ?cursor to fetch the next page.", feedsTag, "api.read.content", []any{
+			stringPathParam("tag", "Tag slug"),
+			map[string]any{
+				"name":        "cursor",
+				"in":          "query",
+				"schema":      map[string]any{"type": "string"},
+				"description": "Opaque pagination cursor returned as next_cursor by the previous page.",
+			},
+			limitParam(20, 100),
+		}, map[string]any{
+			"200": cursorListResponse("Tag feed items", "PublicFeedItem"),
+			"400": refResponse("BadRequest"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func spaceFeedPath() map[string]any {
+	return map[string]any{
+		"get": operation("getSpaceFeed", "Get space feed", "Retrieve the feed for a public, active space. Member-only items resolve using the API key owner's membership, exactly as the web space feed does.", feedsTag, "api.read.content", []any{
+			stringPathParam("slug", "Space slug"),
+			feedSortParam(),
+			limitParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": feedListResponse("Space feed items", "PublicFeedItem"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func myFeedPath() map[string]any {
+	return map[string]any{
+		"get": operation("getMyFeed", "Get for-you feed", "Retrieve the API key owner's ranked for-you feed. The user identity comes from the API key, never a query parameter.", feedsTag, "api.read.me", []any{
+			feedSortParam(),
+			limitParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": feedListResponse("For-you feed items", "PublicFeedItem"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func contentMarkdownPath() map[string]any {
+	return map[string]any{
+		"get": operation("getContentMarkdown", "Get content as markdown", "Retrieve a published, public content item rendered as text/markdown with a front-matter block (title, author, space, canonical URL). GET /public/content/{id} returns the same representation when the request sends Accept: text/markdown.", []any{"Content"}, "api.read.content", []any{uuidPathParam("id", "Content ID")}, map[string]any{
+			"200": map[string]any{
+				"description": "Markdown representation of the content item",
+				"content": map[string]any{
+					"text/markdown": map[string]any{
+						"schema": map[string]any{"type": "string"},
+					},
+				},
+			},
+			"400": refResponse("BadRequest"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func scamAlertsPath() map[string]any {
+	return map[string]any{
+		"get": withFeatureFlag(operation("listScamAlerts", "List scam alerts", "Retrieve confirmed scam reports, optionally filtered by scam type and destination space. Only status=confirmed reports are ever exposed. Gated by the scam_alert.enabled feature flag.", safetyTag, "api.read.safety", []any{
+			queryParam("scam_type", "Scam type filter — see GET /public/scam-alerts/schema for valid values"),
+			uuidQueryParam("destination_space_id", "Destination space ID filter"),
+			limitParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": paginatedResponse("List of confirmed scam reports", "PublicScamReport"),
+			"400": refResponse("BadRequest"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}), "scam_alert.enabled"),
+	}
+}
+
+func scamAlertSchemaPath() map[string]any {
+	return map[string]any{
+		"get": withFeatureFlag(operation("getScamAlertSchema", "Get scam alert schema", "Retrieve the canonical scam_type and platform option lists used to filter and interpret scam reports. Gated by the scam_alert.enabled feature flag.", safetyTag, "api.read.safety", nil, map[string]any{
+			"200": singleResponse("Scam alert schema options", "ScamAlertSchema"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}), "scam_alert.enabled"),
+	}
+}
+
+func scamAlertByIDPath() map[string]any {
+	return map[string]any{
+		"get": withFeatureFlag(operation("getScamAlert", "Get scam alert detail", "Retrieve a single confirmed scam report by its unique identifier. Gated by the scam_alert.enabled feature flag.", safetyTag, "api.read.safety", []any{uuidPathParam("id", "Scam report ID")}, map[string]any{
+			"200": singleResponse("Scam report details", "PublicScamReport"),
+			"400": refResponse("BadRequest"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}), "scam_alert.enabled"),
+	}
+}
+
+func semanticSearchPath() map[string]any {
+	q := queryParam("q", "Search query (required)").(map[string]any)
+	q["required"] = true
+
+	return map[string]any{
+		"get": withRequiredTier(operation("semanticSearch", "Semantic search", "Search indexed content and spaces by embedding similarity (pgvector). Results are cached briefly — cache hits return cached=true. Returns 503 search_unavailable when no embedding provider is configured. Premium endpoint — requires a pro or business subscription.", []any{"Search"}, "api.read.search", []any{
+			q,
+			map[string]any{
+				"name":        "lang",
+				"in":          "query",
+				"schema":      map[string]any{"type": "string", "default": "en"},
+				"description": "Content language filter (ISO language code).",
+			},
+			queryParam("space", "Restrict results to a space slug"),
+			limitParam(20, 50),
+		}, map[string]any{
+			"200": map[string]any{
+				"description": "Semantic search results",
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{"$ref": "#/components/schemas/SemanticSearchResult"},
+					},
+				},
+			},
+			"400": refResponse("BadRequest"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+			"503": refResponse("ServiceUnavailable"),
+		}), "pro"),
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Parameter helpers
 // ---------------------------------------------------------------------------
 
@@ -728,6 +942,53 @@ func paginatedResponse(description, itemSchema string) map[string]any {
 						"total":  map[string]any{"type": "integer"},
 						"limit":  map[string]any{"type": "integer"},
 						"offset": map[string]any{"type": "integer"},
+					},
+				},
+			},
+		},
+	}
+}
+
+// feedListResponse is the {data, limit, offset} envelope used by the feed
+// endpoints — feeds have no cheap total count, so it is omitted.
+func feedListResponse(description, itemSchema string) map[string]any {
+	return map[string]any{
+		"description": description,
+		"content": map[string]any{
+			"application/json": map[string]any{
+				"schema": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"data": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"$ref": "#/components/schemas/" + itemSchema},
+						},
+						"limit":  map[string]any{"type": "integer"},
+						"offset": map[string]any{"type": "integer"},
+					},
+				},
+			},
+		},
+	}
+}
+
+// cursorListResponse is the {data, next_cursor, limit} envelope used by the
+// cursor-paginated tag feed. next_cursor is an empty string when there is no
+// next page.
+func cursorListResponse(description, itemSchema string) map[string]any {
+	return map[string]any{
+		"description": description,
+		"content": map[string]any{
+			"application/json": map[string]any{
+				"schema": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"data": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"$ref": "#/components/schemas/" + itemSchema},
+						},
+						"next_cursor": map[string]any{"type": "string", "description": "Pass as ?cursor to fetch the next page. Empty when there is no next page."},
+						"limit":       map[string]any{"type": "integer"},
 					},
 				},
 			},
@@ -909,6 +1170,82 @@ func buildPublicSchemas() map[string]any {
 				"generated_at":         map[string]any{"type": "string", "format": "date-time"},
 			},
 		},
+		// Agent Data API Phase 2 DTOs — field shapes mirror the public DTOs
+		// in internal/publicapi/phase2.go.
+		"PublicFeedItem": map[string]any{
+			"type":        "object",
+			"description": "A stable feed-card shape for API consumers (publicapi.PublicFeedItem).",
+			"properties": map[string]any{
+				"id":            map[string]any{"type": "string"},
+				"title":         map[string]any{"type": "string"},
+				"slug":          map[string]any{"type": "string"},
+				"content_type":  map[string]any{"type": "string"},
+				"excerpt":       map[string]any{"type": "string"},
+				"space_id":      map[string]any{"type": "string"},
+				"space_slug":    map[string]any{"type": "string"},
+				"space_name":    map[string]any{"type": "string"},
+				"author_name":   map[string]any{"type": "string"},
+				"author_handle": map[string]any{"type": "string"},
+				"vote_score":    map[string]any{"type": "integer"},
+				"comment_count": map[string]any{"type": "integer"},
+				"view_count":    map[string]any{"type": "integer"},
+				"tags":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"published_at":  map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"PublicScamReport": map[string]any{
+			"type":        "object",
+			"description": "A confirmed scam report. Moderation internals (reporter, reviewer, moderator notes, AI provenance) are excluded from the public contract (publicapi.PublicScamReport).",
+			"properties": map[string]any{
+				"id":                      map[string]any{"type": "string", "format": "uuid"},
+				"scam_type":               map[string]any{"type": "string"},
+				"destination_space_name":  map[string]any{"type": "string"},
+				"destination_space_code":  map[string]any{"type": "string"},
+				"origin_space_name":       map[string]any{"type": "string"},
+				"origin_space_code":       map[string]any{"type": "string"},
+				"origin_community":        map[string]any{"type": "string"},
+				"platform_used":           map[string]any{"type": "string"},
+				"approximate_date":        map[string]any{"type": "string"},
+				"amount_range":            map[string]any{"type": "string"},
+				"description":             map[string]any{"type": "string"},
+				"reported_to_authorities": map[string]any{"type": "boolean"},
+				"is_pinned":               map[string]any{"type": "boolean"},
+				"created_at":              map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"ScamAlertSchema": map[string]any{
+			"type":        "object",
+			"description": "Canonical scam_type and platform option lists (scamalert.SchemaOptions).",
+			"properties": map[string]any{
+				"scam_types": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Option"}},
+				"platforms":  map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Option"}},
+			},
+		},
+		"SemanticSearchResult": map[string]any{
+			"type":        "object",
+			"description": "Semantic search response envelope (publicapi.SemanticSearchResult).",
+			"properties": map[string]any{
+				"data":     map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/SemanticHit"}},
+				"query":    map[string]any{"type": "string"},
+				"language": map[string]any{"type": "string"},
+				"space":    map[string]any{"type": "string", "nullable": true, "description": "Space slug the search was restricted to, or null"},
+				"cached":   map[string]any{"type": "boolean", "description": "True when the result was served from the response cache"},
+			},
+		},
+		"SemanticHit": map[string]any{
+			"type":        "object",
+			"description": "One retrieved chunk in a semantic search result (publicapi.PublicSemanticHit).",
+			"properties": map[string]any{
+				"entity_type":  map[string]any{"type": "string"},
+				"entity_id":    map[string]any{"type": "string"},
+				"content_type": map[string]any{"type": "string"},
+				"snippet":      map[string]any{"type": "string"},
+				"similarity":   map[string]any{"type": "number", "format": "float"},
+				"tier":         map[string]any{"type": "string"},
+				"title":        map[string]any{"type": "string", "nullable": true, "description": "Best-effort resolved entity title; null when unresolvable"},
+				"href":         map[string]any{"type": "string", "nullable": true, "description": "Best-effort resolved entity URL path; null when unresolvable"},
+			},
+		},
 		"Error": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -958,6 +1295,14 @@ func buildPublicResponses() map[string]any {
 		},
 		"NotFound": map[string]any{
 			"description": "Resource not found",
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": map[string]any{"$ref": "#/components/schemas/Error"},
+				},
+			},
+		},
+		"ServiceUnavailable": map[string]any{
+			"description": "The endpoint is temporarily unavailable (e.g. semantic search without a configured embedding provider)",
 			"content": map[string]any{
 				"application/json": map[string]any{
 					"schema": map[string]any{"$ref": "#/components/schemas/Error"},
