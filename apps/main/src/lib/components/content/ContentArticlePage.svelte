@@ -9,6 +9,7 @@
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
+	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
@@ -34,6 +35,7 @@
 		commentsLoadError: boolean;
 		rightSidebarWidgets: unknown[];
 		relatedContent: ContentArticle[];
+		recommendedContent: ContentArticle[];
 		analytics: ContentAnalytics | null;
 		seriesPosts: SeriesPost[];
 		jsonLd: unknown;
@@ -186,6 +188,8 @@
 			authed={data.authed}
 			currentUserId={data.currentUserId}
 		/>
+		<!-- Same-type recommendations, ranked by embedding similarity. -->
+		<RecommendedContentCard items={data.recommendedContent ?? []} contentType={article.content_type} />
 		<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
 		{#each sidebarWidgets as widget (widget.id)}
 			<SidebarWidgetRenderer

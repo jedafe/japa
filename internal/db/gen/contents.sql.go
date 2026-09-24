@@ -1950,6 +1950,54 @@ func (q *Queries) IsContentPinned(ctx context.Context, arg IsContentPinnedParams
 	return exists, err
 }
 
+const isContentVisibleToUser = `-- name: IsContentVisibleToUser :one
+SELECT EXISTS (
+    SELECT 1
+    FROM contents c
+    LEFT JOIN spaces s ON s.id = c.space_id
+    WHERE c.id = $1
+      AND c.status = 'published'
+      AND c.deleted_at IS NULL
+      AND c.auto_hidden = false
+      AND (
+          s.id IS NULL
+          OR (s.deleted_at IS NULL AND (
+              s.visibility = 'public'
+              OR EXISTS (
+                  SELECT 1 FROM space_members sm
+                  WHERE sm.space_id = s.id
+                    AND sm.user_id = $2
+                    AND sm.status = 'approved'
+              )
+          ))
+      )
+      AND (
+          c.visibility = 'public'
+          OR c.visibility = 'members'
+          OR (c.visibility = 'private' AND c.author_id = $2)
+      )
+) AS visible
+`
+
+type IsContentVisibleToUserParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+}
+
+// Phase 3 (spec 2026-09-24-agent-data-api-phase3): per-subscriber content
+// visibility check. Used by the personal-webhook delivery filter and the
+// public bookmark write guard so API-key consumers never learn whether an
+// inaccessible content row exists. Mirrors the detail-page predicate:
+// published + not deleted/hidden; the parent space must be live and either
+// public or hold an approved membership for the viewer; 'members' content
+// is visible to any authenticated viewer, 'private' to the author only.
+func (q *Queries) IsContentVisibleToUser(ctx context.Context, arg IsContentVisibleToUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isContentVisibleToUser, arg.ContentID, arg.UserID)
+	var visible bool
+	err := row.Scan(&visible)
+	return visible, err
+}
+
 const listBookmarkedContentIDs = `-- name: ListBookmarkedContentIDs :many
 SELECT entity_id
 FROM bookmarks

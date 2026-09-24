@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
 import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '$lib/types/jce';
 import type { Comment } from '$lib/types';
-import type { ContentAnalytics } from '$lib/types/content';
+import type { ContentAnalytics, ContentArticle } from '$lib/types/content';
 import type { PageServerLoad } from './$types';
 
 function resolvedItems(cmp: JCEComparisonDetail): ResolvedItem[] {
@@ -91,6 +91,20 @@ export const load: PageServerLoad = async (event) => {
 					.catch(() => false)
 			: Promise.resolve(false);
 
+	// "Recommended Comparisons" sidebar card — same-type items ranked by the
+	// related endpoint's content_type filter (Section 14). Best-effort; the
+	// card hides itself when the list is empty.
+	let recommendedContent: ContentArticle[] = [];
+	try {
+		recommendedContent =
+			(await apiGet<ContentArticle[]>(
+				ctx,
+				`/content/${comparison.content.id}/related?content_type=comparison&page_size=5`
+			)) ?? [];
+	} catch {
+		recommendedContent = [];
+	}
+
 	// Moderation affordances: comment pinning needs comments.pin; the Edit
 	// affordance is already handled by canEdit. Backend enforces actual permissions.
 	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
@@ -114,6 +128,7 @@ export const load: PageServerLoad = async (event) => {
 		canModerate,
 		comments,
 		commentsLoadError,
+		recommendedContent,
 		deletedUserIds: commentDeletedUserIds,
 		initiallyFollowing: isFollowing
 	};

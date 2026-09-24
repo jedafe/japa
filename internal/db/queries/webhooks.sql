@@ -89,3 +89,36 @@ WHERE id = @id;
 UPDATE webhook_deliveries
 SET status = 'pending', attempts = 0, last_error = NULL, next_attempt_at = NULL
 WHERE id = @id AND status = 'failed';
+
+-- Phase 3 (spec 2026-09-24-agent-data-api-phase3): personal webhook
+-- endpoints owned by an API-key holder (scope='user', owner = created_by).
+-- Platform endpoints (scope='platform') keep using the unscoped queries above.
+
+-- name: CreateUserWebhookEndpoint :one
+INSERT INTO webhook_endpoints (name, url, secret, event_types, status, is_active, created_by, scope)
+VALUES (@name, @url, @secret, @event_types, 'pending', false, @created_by, 'user')
+RETURNING id, name, url, secret, event_types, status, is_active, verified_at, created_by, scope, created_at, updated_at;
+
+-- name: ListUserWebhookEndpoints :many
+SELECT id, name, url, event_types, status, is_active, verified_at, created_at, updated_at
+FROM webhook_endpoints
+WHERE scope = 'user' AND created_by = @created_by
+ORDER BY created_at DESC;
+
+-- name: CountUserWebhookEndpoints :one
+SELECT count(*) FROM webhook_endpoints
+WHERE scope = 'user' AND created_by = @created_by;
+
+-- name: GetUserWebhookEndpoint :one
+SELECT id, name, url, secret, event_types, status, is_active, verified_at, created_by, scope, created_at, updated_at
+FROM webhook_endpoints
+WHERE id = @id AND scope = 'user' AND created_by = @created_by;
+
+-- name: VerifyUserWebhookEndpoint :execrows
+UPDATE webhook_endpoints
+SET is_active = true, verified_at = now(), status = 'active', updated_at = now()
+WHERE id = @id AND scope = 'user' AND created_by = @created_by;
+
+-- name: DeleteUserWebhookEndpoint :execrows
+DELETE FROM webhook_endpoints
+WHERE id = @id AND scope = 'user' AND created_by = @created_by;

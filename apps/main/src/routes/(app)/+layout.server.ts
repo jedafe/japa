@@ -2,7 +2,6 @@ import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { apiContext, apiGet } from '$lib/server/api';
 import { universityUrl } from '$lib/appOrigins';
-import { isExceptionRoute } from '$lib/components/create/gate';
 
 /**
  * App-shell scoped data for every `(app)` route. This layout is re-run on
@@ -31,11 +30,15 @@ export const load: LayoutServerLoad = async (event) => {
 	const sidebarPath = encodeURIComponent(
 		localePrefix ? event.url.pathname.slice(localePrefix) : event.url.pathname
 	);
-	// ADR-058: the shell hides the right sidebar on every exception route
-	// and zeroes left widgets on /studio, /create, /settings, /dashboard —
-	// skip the resolve calls the layout would throw away anyway.
-	const hideRight = isExceptionRoute(event.route.id);
+	// ADR-058: /studio, /create, and /video/[slug] render no right sidebar
+	// at all, so their resolve call is skipped. The other Exception #1
+	// singles (blog, content, guide, story, comparisons) hide the shell's
+	// sidebar but render their own in-page <aside> fed by
+	// rightSidebarWidgets — skipping the resolve left those permanently
+	// empty.
 	const rid = event.route.id ?? '';
+	const hideRight =
+		rid.startsWith('/(app)/studio') || rid === '/(app)/create' || rid === '/(app)/video/[slug]';
 	const hideLeft =
 		rid.startsWith('/(app)/studio') ||
 		rid === '/(app)/create' ||

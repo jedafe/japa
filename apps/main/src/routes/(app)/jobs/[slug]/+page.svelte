@@ -21,6 +21,24 @@
 	let cvFile = $state<File | null>(null);
 	let coverLetter = $state('');
 
+	// Browsers sometimes report an empty MIME for .doc/.md/.rtf — infer the
+	// declared type from the extension so /media/upload validation succeeds.
+	const CV_EXT_MIME: Record<string, string> = {
+		pdf: 'application/pdf',
+		doc: 'application/msword',
+		docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		odt: 'application/vnd.oasis.opendocument.text',
+		rtf: 'application/rtf',
+		txt: 'text/plain',
+		md: 'text/markdown'
+	};
+
+	function cvMimeType(file: File): string {
+		if (file.type) return file.type;
+		const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+		return CV_EXT_MIME[ext] ?? 'application/pdf';
+	}
+
 	// The viewer's existing application — from SSR (my_application) or set
 	// after a successful apply below. Drives the disabled "Applied" state.
 	const myApplication = $derived(
@@ -64,8 +82,9 @@
 			if (cvFile) {
 				const init = await initiateUpload({
 					filename: cvFile.name,
-					mime_type: cvFile.type || 'application/pdf',
-					file_size: cvFile.size
+					mime_type: cvMimeType(cvFile),
+					file_size: cvFile.size,
+					context: 'document'
 				});
 				if (init.error || !init.data) {
 					applyResult = { error: 'cv_upload_failed' };
@@ -323,7 +342,7 @@
 									<input
 										id="job-cv"
 										type="file"
-										accept=".pdf,.doc,.docx,.txt,.md"
+										accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.md"
 										class="sr-only"
 										onchange={(e) => { cvFile = e.currentTarget.files?.[0] ?? null; }}
 									/>
@@ -339,6 +358,7 @@
 								{/if}
 							</div>
 							<p class="text-xs text-[var(--color-muted)]">
+								{t('jobs.cv_formats', 'PDF, DOC, DOCX, ODT, RTF, TXT or MD')} ·
 								{t('jobs.cv_formatter_hint', 'Need a polished CV?')}
 								<a href="/tools/cv-formatter" target="_blank" rel="noopener" class="text-[var(--color-primary)] hover:underline">
 									{t('jobs.cv_formatter_link', 'Open the CV formatter')}

@@ -1409,3 +1409,38 @@ ORDER BY
  c.view_count DESC,
  c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: IsContentVisibleToUser :one
+-- Phase 3 (spec 2026-09-24-agent-data-api-phase3): per-subscriber content
+-- visibility check. Used by the personal-webhook delivery filter and the
+-- public bookmark write guard so API-key consumers never learn whether an
+-- inaccessible content row exists. Mirrors the detail-page predicate:
+-- published + not deleted/hidden; the parent space must be live and either
+-- public or hold an approved membership for the viewer; 'members' content
+-- is visible to any authenticated viewer, 'private' to the author only.
+SELECT EXISTS (
+    SELECT 1
+    FROM contents c
+    LEFT JOIN spaces s ON s.id = c.space_id
+    WHERE c.id = @content_id
+      AND c.status = 'published'
+      AND c.deleted_at IS NULL
+      AND c.auto_hidden = false
+      AND (
+          s.id IS NULL
+          OR (s.deleted_at IS NULL AND (
+              s.visibility = 'public'
+              OR EXISTS (
+                  SELECT 1 FROM space_members sm
+                  WHERE sm.space_id = s.id
+                    AND sm.user_id = @user_id
+                    AND sm.status = 'approved'
+              )
+          ))
+      )
+      AND (
+          c.visibility = 'public'
+          OR c.visibility = 'members'
+          OR (c.visibility = 'private' AND c.author_id = @user_id)
+      )
+) AS visible;

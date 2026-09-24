@@ -99,16 +99,22 @@ type WikiRevisionDTO struct {
 }
 
 // SubmitRevisionInput is the request body for POST /wiki/:space_slug/:page_slug/revisions.
+// Ops carries §80 community field ops (structured edits); when present the
+// handler records them as a separate fields revision via SubmitFieldOps.
 type SubmitRevisionInput struct {
 	Content json.RawMessage `json:"content"`
 	Summary string          `json:"summary"`
+	Ops     []FieldOp       `json:"ops"`
 }
 
 // UpdatePageInput is the request body for PATCH /admin/wiki/:page_id.
+// DataEntityType binds the page to a child entity class (e.g. 'visa_route')
+// so field ops target that entity instead of the host space (§80).
 type UpdatePageInput struct {
-	IsLocked   *bool `json:"is_locked"`
-	IsFeatured *bool `json:"is_featured"`
-	IsActive   *bool `json:"is_active"`
+	IsLocked       *bool   `json:"is_locked"`
+	IsFeatured     *bool   `json:"is_featured"`
+	IsActive       *bool   `json:"is_active"`
+	DataEntityType *string `json:"data_entity_type"`
 }
 
 // CreateWikiPageInput is the request body for POST /wiki/:space_slug.
@@ -546,14 +552,34 @@ func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID
 
 // ApproveRevision approves a pending revision (moderator+). Returns the
 // approved revision's content (TipTap JSON bytes) so the handler can
-// fire-and-forget RAG indexing (B8, §69/ADR-069).
+// fire-and-forget RAG indexing (B8, §69/ADR-069); fields-only revisions
+// return nil content — they carry no prose worth indexing.
+//
+// §80 community field ops: every kind routes through ApproveRevisionByID so
+// fields/mixed revisions apply their ops array transactionally (approve +
+// apply share one commit) and trigger wiki:fields_propagate. Content
+// revisions take the plain status-flip path inside ApproveRevisionByID.
 func (s *Service) ApproveRevision(ctx context.Context, revID, pageID, reviewerID pgtype.UUID, notes string) ([]byte, error) {
-	content, err := s.store.ApproveRevision(ctx, revID, pageID, reviewerID, notes)
+	rev, err := s.store.GetRevision(ctx, revID)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: approve: %w", err)
 	}
 
-	return content, nil
+	// The page-scoped route only approves revisions bound to that page;
+	// page-less ops revisions go through the revision-keyed route (§80).
+	if !rev.WikiPageID.Valid || rev.WikiPageID != pageID {
+		return nil, pgx.ErrNoRows
+	}
+
+	if err := s.ApproveRevisionByID(ctx, revID, reviewerID, notes); err != nil {
+		return nil, fmt.Errorf("wiki: approve: %w", err)
+	}
+
+	if rev.Kind == "fields" {
+		return nil, nil
+	}
+
+	return rev.Content, nil
 }
 
 // RejectRevision rejects a pending revision (moderator+).
@@ -565,9 +591,10 @@ func (s *Service) RejectRevision(ctx context.Context, revID, reviewerID pgtype.U
 	return nil
 }
 
-// UpdatePage updates admin-managed wiki page fields (lock, feature, active).
+// UpdatePage updates admin-managed wiki page fields (lock, feature, active,
+// data entity binding).
 func (s *Service) UpdatePage(ctx context.Context, pageID pgtype.UUID, input UpdatePageInput) error {
-	if err := s.store.UpdatePage(ctx, pageID, input.IsLocked, input.IsFeatured, input.IsActive); err != nil {
+	if err := s.store.UpdatePage(ctx, pageID, input.IsLocked, input.IsFeatured, input.IsActive, input.DataEntityType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

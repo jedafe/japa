@@ -11,6 +11,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
+	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
@@ -178,6 +179,8 @@
 				authed={data.authed}
 				currentUserId={data.currentUserId}
 			/>
+			<!-- Same-type recommendations, ranked by embedding similarity. -->
+			<RecommendedContentCard items={data.recommendedContent ?? []} contentType="story" />
 			<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
 			{#each sidebarWidgets as widget (widget.id)}
 				<SidebarWidgetRenderer

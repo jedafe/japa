@@ -288,6 +288,7 @@ WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.id != @exclude_id
  AND cs.relevance_embedding IS NOT NULL
+ AND (@content_type::text = '' OR c.content_type = @content_type)
 ORDER BY cs.relevance_embedding <=> @embedding
 LIMIT @page_limit;
 

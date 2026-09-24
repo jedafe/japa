@@ -110,6 +110,10 @@ export interface InitiateUploadInput {
 	filename: string;
 	mime_type: string;
 	file_size: number;
+	/** Upload context selects the backend's allowed-MIME set — 'media'
+	 * (default) for images/video/audio, 'document' for CV-style attachments
+	 * (pdf/doc/docx/odt/rtf/txt/md). */
+	context?: 'media' | 'document' | 'avatar';
 }
 export interface InitiateUploadResult {
 	media_id: string;
