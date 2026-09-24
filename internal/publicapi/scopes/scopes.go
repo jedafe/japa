@@ -94,6 +94,11 @@ var ScopeCatalog = []ScopeOption{
 		Description: "Semantic (embedding) search over indexed content and spaces (premium endpoint)",
 	},
 	{
+		Value:       "api.read.digest",
+		Label:       "Read Digest",
+		Description: "Read the personalized new-tab digest (extension aggregate endpoint)",
+	},
+	{
 		Value:       "agent.use",
 		Label:       "Use Agent Tools",
 		Description: "Call MCP agent tools via /api/v1/mcp (read-only tool set for API keys)",
