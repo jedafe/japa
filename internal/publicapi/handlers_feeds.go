@@ -46,10 +46,8 @@ func parseLimit(r *http.Request, defaultSize, maxSize int32) int32 {
 // name ∈ {popular, latest, rising}; ?sort= overrides the name mapping,
 // ?limit&offset paginate.
 func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
-	if !requireAPIKey(w, r) {
-		return
-	}
-
+	// Scope gate lives in the route middleware (OptionalScope — "popular"
+	// also serves anonymous callers); no key check here.
 	limit := parseLimit(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 

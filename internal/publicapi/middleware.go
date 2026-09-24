@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -78,6 +79,40 @@ func RequireScope(scope string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			keyCtx := APIKeyFromContext(r.Context())
 			if keyCtx == nil {
+				errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+				return
+			}
+
+			if !HasScope(keyCtx.Scopes, scope) {
+				errpkg.WriteError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// OptionalScope is RequireScope's sibling for routes that also serve
+// anonymous callers on a named allowlist. Used by feeds/{name} (Section 47
+// extension digest): a request with no API key passes only when the
+// chi {name} URL param is in anonNames; any other anonymous name still
+// fails closed with 401. A present key is scope-enforced exactly like
+// RequireScope — anonymous leniency never weakens a keyed caller's check.
+//
+// r.With middleware runs after routing, so chi.URLParam is populated.
+func OptionalScope(scope string, anonNames ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			keyCtx := APIKeyFromContext(r.Context())
+			if keyCtx == nil {
+				name := chi.URLParam(r, "name")
+				for _, anon := range anonNames {
+					if name == anon {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
 				errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 				return
 			}
