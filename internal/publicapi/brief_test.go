@@ -18,7 +18,8 @@ import (
 // stubSpaceReader implements SpaceReader; only the methods a test needs
 // are populated.
 type stubSpaceReader struct {
-	getBySlugFn func(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error)
+	getBySlugFn    func(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error)
+	getByGeoCodeFn func(ctx context.Context, geoCode string) (gen.GetPublicSpaceByGeoCodeRow, error)
 }
 
 func (s stubSpaceReader) GetSpaceTypeBySlug(_ context.Context, _ string) (gen.SpaceType, error) {
@@ -32,6 +33,12 @@ func (s stubSpaceReader) CountSpacesByType(_ context.Context, _ pgtype.UUID, _, 
 }
 func (s stubSpaceReader) GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error) {
 	return s.getBySlugFn(ctx, slug)
+}
+func (s stubSpaceReader) GetPublicSpaceByGeoCode(ctx context.Context, geoCode string) (gen.GetPublicSpaceByGeoCodeRow, error) {
+	if s.getByGeoCodeFn == nil {
+		return gen.GetPublicSpaceByGeoCodeRow{}, pgx.ErrNoRows
+	}
+	return s.getByGeoCodeFn(ctx, geoCode)
 }
 
 func TestGetDestinationBriefUnknownSlug(t *testing.T) {

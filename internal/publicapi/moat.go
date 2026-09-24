@@ -81,6 +81,9 @@ type SpaceReader interface {
 	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
 	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
 	GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error)
+	// GetPublicSpaceByGeoCode enforces the same public/active/deleted guard
+	// in SQL — the extension digest resolves destination_country through it.
+	GetPublicSpaceByGeoCode(ctx context.Context, geoCode string) (gen.GetPublicSpaceByGeoCodeRow, error)
 }
 
 // ScamAlertReader is satisfied by *scamalert.Service (brief only in v1).

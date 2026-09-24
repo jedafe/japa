@@ -188,10 +188,11 @@ curated destination-updates corpus; spec a narrow `IntelReader` interface
 (latest N items for a space ID) — same adapter pattern as `FeedReader`/
 `SafetyReader`.
 
-Caching: `jc:api_digest:{scope_hash}` (new catalog key — docs-first),
+Caching: `jc:api_digest:{viewer_hash}` (new catalog key — docs-first),
 TTL from new setting `api.digest.cache_ttl_seconds` (default 120). The
-scope hash is the same mechanism as `jc:api_semantic:` (viewer +
-memberships) since for-you/community content is viewer-scoped.
+key is `sha256(viewer_uuid)` — correction from the original `scope_hash`
+draft: the digest reads no member-scoped data (for_you is keyed on the
+owner directly), so membership scope adds nothing to cache identity.
 
 Anonymous (b) option from above: digest is always key-authed; anonymous
 mode calls only `feeds/popular` directly.
