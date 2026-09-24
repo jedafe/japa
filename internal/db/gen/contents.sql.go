@@ -579,7 +579,7 @@ func (q *Queries) EnsureContentScore(ctx context.Context, contentID pgtype.UUID)
 }
 
 const findRoadmapContentByDimension = `-- name: FindRoadmapContentByDimension :many
-SELECT c.slug, c.title, LEFT(c.body, 200)::text AS description,
+SELECT c.slug, c.title, LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS description,
  c.target_country, c.journey_stage, c.visa_route, c.source_country,
  c.field_values->>'purpose' AS purpose
 FROM contents c
@@ -2197,7 +2197,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
- MAX(LEFT(c.body, 200))::text AS excerpt,
+ MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
  COALESCE(string_agg(t2.name, ',' ORDER BY t2.name), '') AS tags
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
@@ -2814,7 +2814,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  COALESCE(cs.vote_score, 0) AS vote_score,
  COALESCE(cs.bookmark_count, 0) AS bookmark_count,
  COALESCE(cs.velocity_score, 0) AS velocity_score,
- LEFT(c.body, 200)::text AS excerpt,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
  COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
@@ -3793,7 +3793,7 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  COALESCE(cs.bookmark_count, 0) AS bookmark_count,
  COALESCE(cs.velocity_score, 0) AS velocity_score,
- LEFT(c.body, 200)::text AS excerpt,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
  o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
  om.storage_bucket AS org_logo_storage_bucket,
  om.storage_path AS org_logo_storage_path
@@ -4002,7 +4002,7 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  COALESCE(cs.bookmark_count, 0) AS bookmark_count,
  COALESCE(cs.velocity_score, 0) AS velocity_score,
- LEFT(c.body, 200)::text AS excerpt,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
  o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
  om.storage_bucket AS org_logo_storage_bucket,
  om.storage_path AS org_logo_storage_path

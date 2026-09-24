@@ -24,6 +24,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/wallet"
 )
@@ -1166,8 +1167,8 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, steps []RoadmapStep
 		if best.Title != "" {
 			steps[i].Title = best.Title
 		}
-		if best.Description != "" {
-			steps[i].Description = best.Description
+		if desc := feed.CleanExcerpt(best.Description); desc != "" {
+			steps[i].Description = desc
 		}
 		if best.TargetCountry != nil && *best.TargetCountry != "" {
 			steps[i].TargetCountry = *best.TargetCountry
