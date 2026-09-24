@@ -2326,6 +2326,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 	publicAPIService.SetCache(vkClient.Redis())              // destination-brief response cache
 	publicAPIService.SetSettingsReader(settingsService)      // api.destination_brief.cache_ttl_seconds (Rule 3)
+	// Agent Data API Phase 2: feeds, scam alerts, semantic search readers.
+	publicAPIService.SetFeedReader(feedService)
+	publicAPIService.SetSafetyReader(scamAlertService)
+	publicAPIService.SetSemanticSearcher(ragService)
+	publicAPIService.SetQueries(gen.New(database.Reader))
 	mcpServer.SetTierResolver(publicAPIService)              // premium MCP tool gates mirror RequireTier
 	// Agent data tools: the moat facade reaches the ai executor's
 	// AgentDataReader via a wiring-layer adapter — internal/ai cannot
