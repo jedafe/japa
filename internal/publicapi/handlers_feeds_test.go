@@ -67,7 +67,7 @@ func (s stubFeedReader) GetForYouFeed(ctx context.Context, userID pgtype.UUID, s
 }
 
 type stubSafetyReader struct {
-	listFn   func(ctx context.Context, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]scamalert.ScamReportDTO, int64, error)
+	listFn   func(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) ([]scamalert.ScamReportDTO, int64, error)
 	getFn    func(ctx context.Context, id pgtype.UUID) (scamalert.ScamReportDTO, error)
 	schemaFn func() scamalert.SchemaOptions
 }
@@ -88,11 +88,11 @@ func (s stubSafetyReader) Get(ctx context.Context, id pgtype.UUID) (scamalert.Sc
 	return s.getFn(ctx, id)
 }
 
-func (s stubSafetyReader) List(ctx context.Context, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]scamalert.ScamReportDTO, int64, error) {
+func (s stubSafetyReader) ListByOffset(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) ([]scamalert.ScamReportDTO, int64, error) {
 	if s.listFn == nil {
 		return nil, 0, nil
 	}
-	return s.listFn(ctx, destSpaceID, scamType, page, limit)
+	return s.listFn(ctx, destSpaceID, scamType, limit, offset)
 }
 
 type stubSemanticSearcher struct {
@@ -618,8 +618,8 @@ func TestGetContentMarkdown(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`title: "Hello World"`, "author: jane_doe", "space: canada",
-		"canonical: " + canonical, "# Body", "Some text",
+		`title: "Hello World"`, `author: "jane_doe"`, `space: "canada"`,
+		`canonical: "` + canonical + `"`, "# Body", "Some text",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("markdown missing %q; body:\n%s", want, body)
@@ -643,7 +643,7 @@ func TestGetContentByIDAcceptNegotiation(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
 		t.Fatalf("Content-Type = %q, want text/markdown", ct)
 	}
-	if !strings.Contains(rec.Body.String(), "canonical: /content/hello-world") {
+	if !strings.Contains(rec.Body.String(), `canonical: "/content/hello-world"`) {
 		t.Fatalf("expected slug-derived canonical; body:\n%s", rec.Body.String())
 	}
 
@@ -671,11 +671,11 @@ func TestGetContentByIDAcceptNegotiation(t *testing.T) {
 
 func TestListScamAlerts(t *testing.T) {
 	var gotType string
-	var gotPage, gotLimit int32
+	var gotLimit, gotOffset int32
 	svc := NewService(nil)
 	svc.SetSafetyReader(stubSafetyReader{
-		listFn: func(_ context.Context, _ pgtype.UUID, scamType string, page, limit int32) ([]scamalert.ScamReportDTO, int64, error) {
-			gotType, gotPage, gotLimit = scamType, page, limit
+		listFn: func(_ context.Context, _ pgtype.UUID, scamType string, limit, offset int32) ([]scamalert.ScamReportDTO, int64, error) {
+			gotType, gotLimit, gotOffset = scamType, limit, offset
 			return []scamalert.ScamReportDTO{{
 				ID:       "r1",
 				ScamType: "fake_job",
@@ -686,14 +686,16 @@ func TestListScamAlerts(t *testing.T) {
 	h := NewHandlers(svc)
 
 	rec := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/public/scam-alerts?scam_type=fake_job&limit=10&offset=20", nil)
+	// Deliberately misaligned offset — the public contract is limit/offset
+	// and must pass through verbatim (no page flooring).
+	r := httptest.NewRequest(http.MethodGet, "/public/scam-alerts?scam_type=fake_job&limit=10&offset=25", nil)
 	h.ListScamAlerts(rec, withAPIKey(r))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
-	if gotType != "fake_job" || gotPage != 3 || gotLimit != 10 {
-		t.Fatalf("delegate args = %q/page %d/limit %d, want fake_job/3/10", gotType, gotPage, gotLimit)
+	if gotType != "fake_job" || gotLimit != 10 || gotOffset != 25 {
+		t.Fatalf("delegate args = %q/limit %d/offset %d, want fake_job/10/25", gotType, gotLimit, gotOffset)
 	}
 	if !strings.Contains(rec.Body.String(), `"total":1`) {
 		t.Fatalf("expected total in envelope; body: %s", rec.Body.String())
@@ -794,9 +796,11 @@ func TestSemanticSearchMapsResults(t *testing.T) {
 		embedder: true,
 		retrieveFn: func(_ context.Context, _, language string, _ *pgtype.UUID) ([]rag.RetrievedChunk, error) {
 			gotLang = language
+			// wiki_page hits are public-corpus — they surface without a
+			// per-entity visibility resolver.
 			return []rag.RetrievedChunk{
-				{EntityType: "content", EntityID: "e1", ContentType: "post", ChunkText: "visa snippet", Similarity: 0.81},
-				{EntityType: "space", EntityID: "e2", ChunkText: "space snippet", Similarity: 0.72},
+				{EntityType: "wiki_page", EntityID: "e1", ContentType: "wiki", ChunkText: "visa snippet", Similarity: 0.81},
+				{EntityType: "learning_track", EntityID: "e2", ChunkText: "track snippet", Similarity: 0.72},
 			}, nil
 		},
 	})
@@ -812,10 +816,58 @@ func TestSemanticSearchMapsResults(t *testing.T) {
 		t.Fatalf("lang = %q, want default en", gotLang)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"entity_type":"content"`, "visa snippet", `"cached":false`, `"query":"visa"`, `"language":"en"`} {
+	for _, want := range []string{`"entity_type":"wiki_page"`, "visa snippet", `"cached":false`, `"query":"visa"`, `"language":"en"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q; body: %s", want, body)
 		}
+	}
+}
+
+// TestSemanticSearchDropsNonPublicHits verifies the verified-public filter:
+// space hits whose entity is private/inactive are dropped entirely (the
+// embedding index covers all active spaces regardless of visibility), and
+// content hits that don't resolve via GetPublishedContentByID are dropped.
+func TestSemanticSearchDropsNonPublicHits(t *testing.T) {
+	spaceID := pgtype.UUID{Bytes: [16]byte{7}, Valid: true}
+	svc := NewService(nil)
+	svc.SetSemanticSearcher(stubSemanticSearcher{
+		embedder: true,
+		retrieveFn: func(_ context.Context, _ string, _ string, _ *pgtype.UUID) ([]rag.RetrievedChunk, error) {
+			return []rag.RetrievedChunk{
+				{EntityType: "space", EntityID: spaceID.String(), ChunkText: "private space snippet", Similarity: 0.9},
+				{EntityType: "content", EntityID: pgtype.UUID{Bytes: [16]byte{9}, Valid: true}.String(), ChunkText: "unpublished snippet", Similarity: 0.8},
+				{EntityType: "wiki_page", EntityID: "e3", ChunkText: "public wiki snippet", Similarity: 0.7},
+			}, nil
+		},
+	})
+	svc.SetQueries(gen.New(stubDBTX{
+		queryRowFn: func(sql string, _ ...any) pgx.Row {
+			switch {
+			case strings.Contains(sql, "FROM spaces"):
+				// Space resolves but is members-only → must be dropped.
+				vals := spaceByIDVals(spaceID, "private-space")
+				vals[14] = "private"
+				return rowOf(vals)
+			default:
+				// GetPublishedContentByID misses → not published/public.
+				return errRow(pgx.ErrNoRows)
+			}
+		},
+	}))
+	h := NewHandlers(svc)
+
+	rec := httptest.NewRecorder()
+	h.SemanticSearch(rec, withAPIKey(httptest.NewRequest(http.MethodGet, "/public/search/semantic?q=visa", nil)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "private space snippet") || strings.Contains(body, "unpublished snippet") {
+		t.Fatalf("non-public entity snippets leaked; body: %s", body)
+	}
+	if !strings.Contains(body, "public wiki snippet") {
+		t.Fatalf("public-corpus hit missing; body: %s", body)
 	}
 }
 

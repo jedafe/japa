@@ -49,12 +49,13 @@ type FeedReader interface {
 }
 
 // SafetyReader is the subset of scamalert.Service the public API needs.
-// Get/List only ever return status='confirmed' reports (enforced in SQL).
+// Get/ListByOffset only ever return status='confirmed' reports (enforced
+// in SQL).
 type SafetyReader interface {
 	Enabled(ctx context.Context) bool
 	Schema() scamalert.SchemaOptions
 	Get(ctx context.Context, id pgtype.UUID) (scamalert.ScamReportDTO, error)
-	List(ctx context.Context, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]scamalert.ScamReportDTO, int64, error)
+	ListByOffset(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) ([]scamalert.ScamReportDTO, int64, error)
 }
 
 // SemanticSearcher is the subset of rag.Service the public API needs.
@@ -301,9 +302,8 @@ func (s *Service) MyFeed(ctx context.Context, userID pgtype.UUID, sort string, l
 // Scam alerts
 // ---------------------------------------------------------------------------
 
-// ListScamAlerts serves GET /public/scam-alerts. The public contract is
-// offset-based; the domain service paginates by page. Enablement is covered
-// by the route's features.Gate("scam_alert.enabled") middleware.
+// ListScamAlerts serves GET /public/scam-alerts. Enablement is covered by
+// the route's features.Gate("scam_alert.enabled") middleware.
 func (s *Service) ListScamAlerts(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) ([]PublicScamReport, int64, error) {
 	if s.safetyReader == nil {
 		return nil, 0, ErrReaderUnconfigured
@@ -316,9 +316,9 @@ func (s *Service) ListScamAlerts(ctx context.Context, destSpaceID pgtype.UUID, s
 		offset = 0
 	}
 
-	page := offset/limit + 1
-
-	dtos, total, err := s.safetyReader.List(ctx, destSpaceID, scamType, page, limit)
+	// The public contract is limit/offset — ListByOffset is offset-native so
+	// misaligned offsets cannot silently shift the result window.
+	dtos, total, err := s.safetyReader.ListByOffset(ctx, destSpaceID, scamType, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -368,6 +368,12 @@ func (s *Service) SemanticSearch(ctx context.Context, query, lang, spaceSlug str
 	if query == "" {
 		return nil, ErrMissingQuery
 	}
+	// lang defaults here (not in the handlers) so the REST and MCP paths
+	// share it — Retrieve filters on the embedding language and an empty
+	// lang would silently return no rows.
+	if lang == "" {
+		lang = "en"
+	}
 
 	if s.semanticSearcher == nil {
 		return nil, ErrReaderUnconfigured
@@ -398,6 +404,7 @@ func (s *Service) SemanticSearch(ctx context.Context, query, lang, spaceSlug str
 			var cached SemanticSearchResult
 			if json.Unmarshal(raw, &cached) == nil {
 				cached.Cached = true
+				sliceSemanticHits(&cached, limit)
 				return &cached, nil
 			}
 		}
@@ -406,10 +413,6 @@ func (s *Service) SemanticSearch(ctx context.Context, query, lang, spaceSlug str
 	chunks, err := s.semanticSearcher.Retrieve(ctx, query, lang, geoSpaceID)
 	if err != nil {
 		return nil, err
-	}
-
-	if limit > 0 && len(chunks) > int(limit) {
-		chunks = chunks[:limit]
 	}
 
 	result := &SemanticSearchResult{
@@ -422,10 +425,14 @@ func (s *Service) SemanticSearch(ctx context.Context, query, lang, spaceSlug str
 	}
 
 	for _, c := range chunks {
-		result.Data = append(result.Data, s.semanticHit(ctx, c))
+		if hit, ok := s.semanticHit(ctx, c); ok {
+			result.Data = append(result.Data, hit)
+		}
 	}
 
 	// Write-through cache (Rule 3: TTL from system_settings, fallback 300).
+	// The cache stores the full filtered set — limit is applied after the
+	// cache read so a small-limit request cannot poison later callers.
 	if s.cache != nil {
 		ttl := 300
 		if s.settingsReader != nil {
@@ -436,13 +443,24 @@ func (s *Service) SemanticSearch(ctx context.Context, query, lang, spaceSlug str
 		}
 	}
 
+	sliceSemanticHits(result, limit)
 	return result, nil
 }
 
-// semanticHit maps a retrieved chunk to the public DTO and best-effort
-// resolves title/href — a resolution failure leaves them null and never
-// fails the request.
-func (s *Service) semanticHit(ctx context.Context, c rag.RetrievedChunk) PublicSemanticHit {
+// sliceSemanticHits truncates result.Data to limit (no-op when limit <= 0).
+func sliceSemanticHits(result *SemanticSearchResult, limit int32) {
+	if limit > 0 && int32(len(result.Data)) > limit {
+		result.Data = result.Data[:limit]
+	}
+}
+
+// semanticHit maps a retrieved chunk to the public DTO. The embedding index
+// is not visibility-scoped — ListSpaceIDsForReindex embeds every active
+// space and the content reindex embeds every published row regardless of
+// visibility — so hits are only surfaced when the entity can be verified
+// public. The second return value is false for hits that must be dropped
+// (unverifiable or non-public entity); snippet text never escapes for them.
+func (s *Service) semanticHit(ctx context.Context, c rag.RetrievedChunk) (PublicSemanticHit, bool) {
 	hit := PublicSemanticHit{
 		EntityType:  c.EntityType,
 		EntityID:    c.EntityID,
@@ -452,33 +470,41 @@ func (s *Service) semanticHit(ctx context.Context, c rag.RetrievedChunk) PublicS
 		Tier:        c.Tier,
 	}
 
-	if s.queries == nil {
-		return hit
-	}
-
-	var entityID pgtype.UUID
-	if err := entityID.Scan(c.EntityID); err != nil {
-		return hit
-	}
-
 	switch c.EntityType {
-	case "space":
-		if space, err := s.queries.GetSpaceByID(ctx, entityID); err == nil {
+	case "space", "content", "forum_thread":
+		if s.queries == nil {
+			return hit, false
+		}
+		var entityID pgtype.UUID
+		if err := entityID.Scan(c.EntityID); err != nil {
+			return hit, false
+		}
+		if c.EntityType == "space" {
+			space, err := s.queries.GetSpaceByID(ctx, entityID)
+			if err != nil || space.Visibility != "public" || space.Status != "active" {
+				return hit, false
+			}
 			title := space.Name
 			hit.Title = &title
 			href := "/space/" + space.Slug
 			hit.Href = &href
-		}
-	case "content", "forum_thread":
-		if row, err := s.queries.GetPublishedContentByID(ctx, entityID); err == nil {
+		} else {
+			row, err := s.queries.GetPublishedContentByID(ctx, entityID)
+			if err != nil {
+				return hit, false
+			}
 			title := row.Title
 			hit.Title = &title
 			href := "/content/" + row.Slug
 			hit.Href = &href
 		}
+	default:
+		// wiki_page and learning_track corpora are public-facing by design
+		// (approval-gated wiki, public course catalog); they surface without
+		// title/href since there is no cheap per-entity resolver.
 	}
 
-	return hit
+	return hit, true
 }
 
 // semanticQueryHash keys the Valkey cache on the query text.

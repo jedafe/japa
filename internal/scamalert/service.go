@@ -490,6 +490,35 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, scamType st
 	return dtos, total, nil
 }
 
+// ListByOffset is the offset-paginated variant of List. The §47 public API
+// contract is limit/offset — page-flooring a misaligned offset would
+// silently shift the result window.
+func (s *Service) ListByOffset(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) ([]ScamReportDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, total, err := s.store.ListReports(ctx, ListReportsFilter{
+		DestinationSpaceID: destSpaceID,
+		ScamType:           scamType,
+		Limit:              limit,
+		Offset:             offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("scamalert: list by offset: %w", err)
+	}
+
+	dtos := make([]ScamReportDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, rowToDTO(r))
+	}
+
+	return dtos, total, nil
+}
+
 // Subscribe adds a scam-alert subscription for a user + destination space.
 func (s *Service) Subscribe(ctx context.Context, userID, destSpaceID pgtype.UUID) error {
 	if err := s.store.Subscribe(ctx, userID, destSpaceID); err != nil {

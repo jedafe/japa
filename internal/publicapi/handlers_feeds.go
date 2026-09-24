@@ -212,7 +212,9 @@ func (h *Handlers) writeContentMarkdown(w http.ResponseWriter, r *http.Request, 
 
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "---\ntitle: %q\nauthor: %s\nspace: %s\ncanonical: %s\n---\n\n%s",
+	// All scalar fields are %q-quoted — an embedded newline in canonical_url
+	// or a name would otherwise inject extra front-matter lines.
+	fmt.Fprintf(w, "---\ntitle: %q\nauthor: %q\nspace: %q\ncanonical: %q\n---\n\n%s",
 		content.Title, author, space, canonical, content.Body)
 }
 
