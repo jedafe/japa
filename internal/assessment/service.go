@@ -1167,7 +1167,7 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, steps []RoadmapStep
 		if best.Title != "" {
 			steps[i].Title = best.Title
 		}
-		if desc := feed.CleanExcerpt(best.Description); desc != "" {
+		if desc := feed.CleanExcerpt(best.Description, best.Title); desc != "" {
 			steps[i].Description = desc
 		}
 		if best.TargetCountry != nil && *best.TargetCountry != "" {
