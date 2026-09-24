@@ -161,11 +161,11 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
-// enqueueEngagementUpdate enqueues an async content engagement count update
+// EnqueueEngagementUpdate enqueues an async content engagement count update
 // task (worker.TypeEngagementCountUpdate). Fire-and-forget per Rule 8 —
 // errors are logged but never returned to the caller. Used to keep
 // content_scores.comment_count in sync with contents.comment_count.
-func (h *Handlers) enqueueEngagementUpdate(entityType string, entityID pgtype.UUID, engagementType string, delta int) {
+func (h *Handlers) EnqueueEngagementUpdate(entityType string, entityID pgtype.UUID, engagementType string, delta int) {
 	if h.asynqClient == nil {
 		return
 	}
@@ -537,7 +537,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// (used by the feed ranking pipeline) stays in sync with the denormalized
 	// contents.comment_count incremented in the service layer. Fire-and-forget
 	// per Rule 8. Ref: Section 32, Guide §21.
-	h.enqueueEngagementUpdate("content", contentID, "comment", 1)
+	h.EnqueueEngagementUpdate("content", contentID, "comment", 1)
 
 	h.resolveLiterals(r, &comment)
 
@@ -637,7 +637,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		}
 		// Keep content_scores.comment_count in sync with contents.comment_count.
 		if existing.Status == "published" && !existing.DeletedAt.Valid {
-			h.enqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
+			h.EnqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
 		}
 
 		errpkg.WriteJSON(w, http.StatusNoContent, nil)
@@ -659,7 +659,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 
 	// Keep content_scores.comment_count in sync with contents.comment_count.
 	if existing.Status == "published" && !existing.DeletedAt.Valid {
-		h.enqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
+		h.EnqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
 	}
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
@@ -833,7 +833,7 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 
 	// Keep content_scores.comment_count in sync with contents.comment_count.
 	if existing.Status == "published" && !existing.DeletedAt.Valid {
-		h.enqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
+		h.EnqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})

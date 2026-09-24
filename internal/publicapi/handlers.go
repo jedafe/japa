@@ -25,6 +25,7 @@ type Handlers struct {
 	bookmarks BookmarkService
 	drafts    ContentDraftService
 	webhooks  WebhookSubscriptionService
+	comments  CommentService
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -83,6 +84,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusForbidden, "webhook_limit_reached", "Maximum webhook subscriptions reached for this key owner")
 	case errors.Is(err, webhooks.ErrChallengeFailed):
 		errpkg.WriteError(w, http.StatusBadGateway, "verification_failed", "Challenge/response verification failed — the endpoint must echo the challenge token with a 2xx response")
+	case errors.Is(err, ErrContentBlocked):
+		errpkg.WriteError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}

@@ -274,6 +274,36 @@ func contentCommentsPath() map[string]any {
 			"404": refResponse("NotFound"),
 			"429": refResponse("RateLimited"),
 		}),
+		"post": map[string]any{
+			"operationId":      "createContentComment",
+			"summary":          "Create a comment or reply",
+			"description":      "Create a comment on a content item, authored by the API key owner. body is plain text — the server wraps it in a TipTap paragraph document. parent_id creates a reply (session depth cap applies). is_anonymous is rejected: API-key calls are always identified. Invisible or absent content returns 404 (never 403 — the endpoint does not leak restricted content). The session abuse model applies: spam pipeline check, IP block, and space commenting/replying permissions. Requires the admin-granted api.write.comments scope.",
+			"tags":             []any{"Content"},
+			"x-required-scope": "api.write.comments",
+			"parameters":       []any{uuidPathParam("id", "Content ID")},
+			"requestBody": map[string]any{
+				"required": true,
+				"content": map[string]any{"application/json": map[string]any{
+					"schema": map[string]any{
+						"type":     "object",
+						"required": []any{"body"},
+						"properties": map[string]any{
+							"body":         map[string]any{"type": "string", "description": "Plain-text comment body; wrapped in a TipTap paragraph doc server-side"},
+							"parent_id":    map[string]any{"type": "string", "format": "uuid", "description": "Reply to this comment ID (optional)"},
+							"is_anonymous": map[string]any{"type": "boolean", "description": "Rejected when true — API keys cannot post anonymously", "default": false},
+						},
+					},
+				}},
+			},
+			"responses": map[string]any{
+				"201": singleResponse("Created comment", "PublicComment"),
+				"400": refResponse("BadRequest"),
+				"401": refResponse("Unauthorized"),
+				"403": refResponse("Forbidden"),
+				"404": refResponse("NotFound"),
+				"429": refResponse("RateLimited"),
+			},
+		},
 	}
 }
 
@@ -1575,6 +1605,17 @@ func buildPublicSchemas() map[string]any {
 				"folder":      map[string]any{"type": "string"},
 				"folder_id":   map[string]any{"type": "string", "format": "uuid"},
 				"created_at":  map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"PublicComment": map[string]any{
+			"type":        "object",
+			"description": "A comment created via the public API (publicapi.PublicComment).",
+			"properties": map[string]any{
+				"id":         map[string]any{"type": "string", "format": "uuid"},
+				"content_id": map[string]any{"type": "string", "format": "uuid"},
+				"parent_id":  map[string]any{"type": "string", "format": "uuid"},
+				"depth":      map[string]any{"type": "integer"},
+				"created_at": map[string]any{"type": "string", "format": "date-time"},
 			},
 		},
 		"ContentDraft": map[string]any{

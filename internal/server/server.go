@@ -2488,6 +2488,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 	// Phase 3: personal webhook subscriptions (scope='user' endpoints).
 	publicAPIHandlers.SetWebhookSubscriptions(&publicWebhookAdapter{svc: webhookService})
+	// Phase 4: API-key comment writes — the adapter composes the session-side
+	// abuse model (spam pipeline, space perms, notifications, engagement).
+	publicAPIHandlers.SetCommentService(&publicCommentAdapter{
+		comments: commentsService,
+		spam:     spamPipeline,
+		space:    spacePostChecker,
+		notifier: commentNotificationAdapter{svc: notificationService},
+		queries:  gen.New(database.Reader),
+		onCreate: commentsHandlers.EnqueueEngagementUpdate,
+	})
 	usersHandlers := users.NewHandlers(usersService, contentService)
 	// Wire the RBAC resolver so GetMyContent can fall back to a
 	// platform-scoped (non-author-scoped) fetch for super-admins and users
@@ -4733,6 +4743,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// required so retries never double-create.
 				r.With(publicapi.RequireScope("api.write.content"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/public/content", publicAPIHandlers.CreatePublicDraft)
+				// Phase 4: comment writes. api.write.comments is admin-granted —
+				// holding the scope is the permission (§47); the session route's
+				// spam censor + IP-block middleware apply unchanged.
+				r.With(publicapi.RequireScope("api.write.comments"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting)).
+					Post("/public/content/{id}/comments", publicAPIHandlers.CreatePublicComment)
 				// Phase 3: personal webhook subscriptions — content.published
 				// only, capped by api.webhooks.max_per_key, owner-scoped.
 				r.With(publicapi.RequireScope("api.write.me")).
