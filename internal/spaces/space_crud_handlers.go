@@ -853,7 +853,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		desc = *req.Description
 	}
 
-	h.indexSpaceRAG(r.Context(), space.ID, req.Name, desc, nil)
+	h.indexSpaceRAG(r.Context(), space.ID, axes.Visibility, req.Name, desc, nil)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
@@ -1069,7 +1069,16 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		updDesc = *description
 	}
 
-	h.indexSpaceRAG(r.Context(), spaceID, name, updDesc, req.Keywords)
+	h.indexSpaceRAG(r.Context(), spaceID, visibility, name, updDesc, req.Keywords)
+
+	// Scoped retrieval (§69 amendment): a visibility/status change must
+	// refresh the space's embedding rows AND every thread row inside it —
+	// threads inherit space visibility. Fire-and-forget per Rule 8.
+	go func() { // #nosec G118 -- request ctx is cancelled on HTTP return
+		if err := h.ragIndexer.ReconcileSpaceScope(context.Background(), spaceID, visibility); err != nil {
+			slog.Warn("spaces: RAG scope reconcile failed", "space_id", spaceID.String(), "error", err)
+		}
+	}()
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
@@ -1126,6 +1135,17 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusConflict, "space_not_empty",
 			"Cannot delete a space that still has members")
 		return
+	}
+
+	// Scoped retrieval (§69 amendment): threads survive deletion via ON
+	// DELETE SET NULL — orphan their embeddings fail-closed BEFORE the
+	// delete commits, while they still carry the space_id needed to match.
+	// A reconcile miss here leaks the space's stale visibility until the
+	// next reindex sweep, so run synchronously but never block the delete.
+	if h.ragIndexer != nil {
+		if err := h.ragIndexer.ReconcileSpaceDelete(r.Context(), id); err != nil {
+			slog.Warn("spaces: RAG orphan reconcile failed", "space_id", id.String(), "error", err)
+		}
 	}
 
 	if err := h.Service.DeleteSpace(r.Context(), id); err != nil {

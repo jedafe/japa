@@ -90,7 +90,7 @@ func RAGSearchHandler(deps *ToolDeps) ToolHandler {
 			geoSpaceID = uuidPtr(id)
 		}
 
-		chunks, err := deps.RAG.Retrieve(ctx, a.Query, a.Language, geoSpaceID)
+		chunks, err := deps.RAG.Retrieve(ctx, a.Query, a.Language, geoSpaceID, userID)
 		if err != nil {
 			return errorToolResult("rag_search_failed", err.Error()), nil
 		}

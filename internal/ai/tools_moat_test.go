@@ -23,7 +23,7 @@ type stubAgentData struct {
 	myFeedFn      func(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) (any, error)
 	listScamFn    func(ctx context.Context, dest pgtype.UUID, scamType string, limit, offset int32) (any, int64, error)
 	getScamFn     func(ctx context.Context, id pgtype.UUID) (any, error)
-	semanticFn    func(ctx context.Context, query, lang, spaceSlug string, limit int32) (any, error)
+	semanticFn    func(ctx context.Context, viewerID pgtype.UUID, query, lang, spaceSlug string, limit int32) (any, error)
 }
 
 func (s stubAgentData) ListVisaRoutes(ctx context.Context, dest pgtype.UUID, prof, edu string, yrs, page, limit int32) (any, int64, error) {
@@ -77,11 +77,11 @@ func (s stubAgentData) GetScamAlert(ctx context.Context, id pgtype.UUID) (any, e
 	}
 	return s.getScamFn(ctx, id)
 }
-func (s stubAgentData) SemanticSearch(ctx context.Context, query, lang, spaceSlug string, limit int32) (any, error) {
+func (s stubAgentData) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, query, lang, spaceSlug string, limit int32) (any, error) {
 	if s.semanticFn == nil {
 		return nil, nil
 	}
-	return s.semanticFn(ctx, query, lang, spaceSlug, limit)
+	return s.semanticFn(ctx, viewerID, query, lang, spaceSlug, limit)
 }
 
 func TestVisaSearchTool(t *testing.T) {
@@ -262,7 +262,7 @@ func TestScamGetToolMissingID(t *testing.T) {
 func TestSemanticSearchTool(t *testing.T) {
 	var gotQuery, gotLang, gotSpace string
 	h := SemanticSearchHandler(&ToolDeps{AgentData: stubAgentData{
-		semanticFn: func(_ context.Context, query, lang, spaceSlug string, _ int32) (any, error) {
+		semanticFn: func(_ context.Context, _ pgtype.UUID, query, lang, spaceSlug string, _ int32) (any, error) {
 			gotQuery, gotLang, gotSpace = query, lang, spaceSlug
 			return map[string]any{"data": []string{}}, nil
 		},

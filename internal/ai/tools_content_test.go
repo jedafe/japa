@@ -1007,7 +1007,7 @@ type stubRAGService struct {
 	err    error
 }
 
-func (s *stubRAGService) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
+func (s *stubRAGService) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]RAGChunk, error) {
 	return s.chunks, s.err
 }
 

@@ -93,6 +93,36 @@ func (q *Queries) DeleteContentEmbeddingsByType(ctx context.Context, entityType 
 	return err
 }
 
+const getContentEmbeddingMeta = `-- name: GetContentEmbeddingMeta :one
+SELECT title, body, status, visibility, space_id, author_id
+FROM contents
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type GetContentEmbeddingMetaRow struct {
+	Title      string      `json:"title"`
+	Body       string      `json:"body"`
+	Status     string      `json:"status"`
+	Visibility string      `json:"visibility"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	AuthorID   pgtype.UUID `json:"author_id"`
+}
+
+// Scope metadata + source text for the content embed worker task.
+func (q *Queries) GetContentEmbeddingMeta(ctx context.Context, id pgtype.UUID) (GetContentEmbeddingMetaRow, error) {
+	row := q.db.QueryRow(ctx, getContentEmbeddingMeta, id)
+	var i GetContentEmbeddingMetaRow
+	err := row.Scan(
+		&i.Title,
+		&i.Body,
+		&i.Status,
+		&i.Visibility,
+		&i.SpaceID,
+		&i.AuthorID,
+	)
+	return i, err
+}
+
 const getContentEmbeddingStats = `-- name: GetContentEmbeddingStats :one
 
 SELECT
@@ -157,9 +187,12 @@ func (q *Queries) GetContentEmbeddingStatsByType(ctx context.Context) ([]GetCont
 
 const listForumThreadIDsForReindex = `-- name: ListForumThreadIDsForReindex :many
 
-SELECT id FROM forum_threads
-WHERE deleted_at IS NULL
-ORDER BY created_at DESC
+SELECT ft.id, COALESCE(sp.visibility, 'private') AS visibility,
+ ft.space_id, ft.author_user_id
+FROM forum_threads ft
+LEFT JOIN spaces sp ON sp.id = ft.space_id
+WHERE ft.deleted_at IS NULL
+ORDER BY ft.created_at DESC
 LIMIT $2 OFFSET $1
 `
 
@@ -168,23 +201,37 @@ type ListForumThreadIDsForReindexParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
+type ListForumThreadIDsForReindexRow struct {
+	ID           pgtype.UUID `json:"id"`
+	Visibility   string      `json:"visibility"`
+	SpaceID      pgtype.UUID `json:"space_id"`
+	AuthorUserID pgtype.UUID `json:"author_user_id"`
+}
+
 // =====================================================================
 // List all non-deleted forum thread IDs for a platform (for full corpus
 // re-index). Forum threads are part of the RAG corpus (ADR-069 §2).
 // =====================================================================
-func (q *Queries) ListForumThreadIDsForReindex(ctx context.Context, arg ListForumThreadIDsForReindexParams) ([]pgtype.UUID, error) {
+// Scoped retrieval: threads inherit their parent space's visibility.
+// Threads with no space (space deleted, SET NULL) fail closed to private.
+func (q *Queries) ListForumThreadIDsForReindex(ctx context.Context, arg ListForumThreadIDsForReindexParams) ([]ListForumThreadIDsForReindexRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadIDsForReindex, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []pgtype.UUID
+	var items []ListForumThreadIDsForReindexRow
 	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i ListForumThreadIDsForReindexRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Visibility,
+			&i.SpaceID,
+			&i.AuthorUserID,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -231,9 +278,40 @@ func (q *Queries) ListLearningTrackIDsForReindex(ctx context.Context, arg ListLe
 	return items, nil
 }
 
+const listMemberSpaceIDs = `-- name: ListMemberSpaceIDs :many
+
+SELECT space_id FROM space_members
+WHERE user_id = $1 AND status = 'approved'
+`
+
+// =====================================================================
+// Scoped retrieval (§69 amendment) — viewer scope + scope maintenance.
+// =====================================================================
+// Approved memberships only — mirrors CheckSpaceMembership
+// (spaces.sql.go: status = 'approved'). Pending members gain no scope.
+func (q *Queries) ListMemberSpaceIDs(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listMemberSpaceIDs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var space_id pgtype.UUID
+		if err := rows.Scan(&space_id); err != nil {
+			return nil, err
+		}
+		items = append(items, space_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublishedContentIDsForReindex = `-- name: ListPublishedContentIDsForReindex :many
 
-SELECT id FROM contents
+SELECT id, visibility, space_id, author_id FROM contents
 WHERE status = 'published'
  AND deleted_at IS NULL
 ORDER BY created_at DESC
@@ -245,23 +323,37 @@ type ListPublishedContentIDsForReindexParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
+type ListPublishedContentIDsForReindexRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Visibility string      `json:"visibility"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	AuthorID   pgtype.UUID `json:"author_id"`
+}
+
 // =====================================================================
 // List all published content IDs for a platform (for full corpus re-index).
 // Only 'published' content is indexed in the RAG layer (Section 69).
 // =====================================================================
-func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg ListPublishedContentIDsForReindexParams) ([]pgtype.UUID, error) {
+// Scoped retrieval (§69 amendment): returns scope metadata so re-index
+// writes correct visibility/space_id/author_id on each chunk row.
+func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg ListPublishedContentIDsForReindexParams) ([]ListPublishedContentIDsForReindexRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedContentIDsForReindex, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []pgtype.UUID
+	var items []ListPublishedContentIDsForReindexRow
 	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i ListPublishedContentIDsForReindexRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Visibility,
+			&i.SpaceID,
+			&i.AuthorID,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -271,7 +363,7 @@ func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg Lis
 
 const listSpaceIDsForReindex = `-- name: ListSpaceIDsForReindex :many
 
-SELECT id FROM spaces
+SELECT id, visibility FROM spaces
 WHERE status = 'active'
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $1
@@ -282,28 +374,48 @@ type ListSpaceIDsForReindexParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
+type ListSpaceIDsForReindexRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Visibility string      `json:"visibility"`
+}
+
 // =====================================================================
 // List all active space IDs for a platform (for full corpus re-index).
 // Spaces are part of the RAG corpus (ADR-069 §2).
 // =====================================================================
-func (q *Queries) ListSpaceIDsForReindex(ctx context.Context, arg ListSpaceIDsForReindexParams) ([]pgtype.UUID, error) {
+// Scoped retrieval: returns each space's visibility for scope metadata.
+func (q *Queries) ListSpaceIDsForReindex(ctx context.Context, arg ListSpaceIDsForReindexParams) ([]ListSpaceIDsForReindexRow, error) {
 	rows, err := q.db.Query(ctx, listSpaceIDsForReindex, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []pgtype.UUID
+	var items []ListSpaceIDsForReindexRow
 	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i ListSpaceIDsForReindexRow
+		if err := rows.Scan(&i.ID, &i.Visibility); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+const orphanThreadEmbeddingsBySpace = `-- name: OrphanThreadEmbeddingsBySpace :exec
+UPDATE content_embeddings
+SET visibility = 'private', space_id = NULL
+WHERE entity_type = 'forum_thread' AND space_id = $1
+`
+
+// Space deletion: threads survive via ON DELETE SET NULL, but their
+// embedding rows must be orphaned BEFORE the delete commits (the FK makes
+// them unmatchable afterward). Fail closed to private + clear space_id.
+func (q *Queries) OrphanThreadEmbeddingsBySpace(ctx context.Context, spaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, orphanThreadEmbeddingsBySpace, spaceID)
+	return err
 }
 
 const searchContentEmbeddings = `-- name: SearchContentEmbeddings :many
@@ -346,13 +458,29 @@ WHERE ($2::text = '' OR ce.language = $2)
  )
  ELSE true
  END
+ -- Scoped retrieval (§69 amendment): the caller sees public rows, their own
+ -- rows, members rows when authenticated, private rows when privileged, and
+ -- private space/forum_thread rows for approved member spaces. Mirrors the
+ -- content.visibility contract used by ListContents.
+ AND (
+ ce.visibility = 'public'
+ OR ce.author_id = $3
+ OR (ce.visibility = 'members' AND $3::uuid IS NOT NULL)
+ OR (ce.visibility = 'private' AND $4::boolean)
+ OR (ce.entity_type IN ('space','forum_thread')
+ AND ce.visibility = 'private'
+ AND ce.space_id = ANY($5::uuid[]))
+ )
 ORDER BY ce.embedding <=> $1
-LIMIT $3
+LIMIT $6
 `
 
 type SearchContentEmbeddingsParams struct {
 	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
 	Language       string           `json:"language"`
+	ViewerID       pgtype.UUID      `json:"viewer_id"`
+	CanSeePrivate  bool             `json:"can_see_private"`
+	MemberSpaceIds []pgtype.UUID    `json:"member_space_ids"`
 	TopK           int32            `json:"top_k"`
 }
 
@@ -393,7 +521,14 @@ type SearchContentEmbeddingsRow struct {
 // delete, but those are fire-and-forget — a failed purge leaves orphaned
 // embeddings. The CASE expression checks each entity type's status condition.
 func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContentEmbeddingsParams) ([]SearchContentEmbeddingsRow, error) {
-	rows, err := q.db.Query(ctx, searchContentEmbeddings, arg.QueryEmbedding, arg.Language, arg.TopK)
+	rows, err := q.db.Query(ctx, searchContentEmbeddings,
+		arg.QueryEmbedding,
+		arg.Language,
+		arg.ViewerID,
+		arg.CanSeePrivate,
+		arg.MemberSpaceIds,
+		arg.TopK,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -444,14 +579,24 @@ WHERE ($2::text = '' OR ce.language = $2)
  OR c.geo_space_id = $3
  OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = $3)
  )
+ -- Scoped retrieval (§69 amendment): content-only clause — content
+ -- visibility is self-contained (no space_membership join for content).
+ AND (
+ ce.visibility = 'public'
+ OR ce.author_id = $4
+ OR (ce.visibility = 'members' AND $4::uuid IS NOT NULL)
+ OR (ce.visibility = 'private' AND $5::boolean)
+ )
 ORDER BY ce.embedding <=> $1
-LIMIT $4
+LIMIT $6
 `
 
 type SearchContentEmbeddingsGeoFilteredParams struct {
 	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
 	Language       string           `json:"language"`
 	GeoSpaceID     pgtype.UUID      `json:"geo_space_id"`
+	ViewerID       pgtype.UUID      `json:"viewer_id"`
+	CanSeePrivate  bool             `json:"can_see_private"`
 	TopK           int32            `json:"top_k"`
 }
 
@@ -490,6 +635,8 @@ func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg Se
 		arg.QueryEmbedding,
 		arg.Language,
 		arg.GeoSpaceID,
+		arg.ViewerID,
+		arg.CanSeePrivate,
 		arg.TopK,
 	)
 	if err != nil {
@@ -520,18 +667,66 @@ func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg Se
 	return items, nil
 }
 
+const updateEmbeddingScope = `-- name: UpdateEmbeddingScope :exec
+UPDATE content_embeddings
+SET visibility = $1, space_id = $2, author_id = $3
+WHERE entity_type = $4 AND entity_id = $5
+`
+
+type UpdateEmbeddingScopeParams struct {
+	Visibility string      `json:"visibility"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	AuthorID   pgtype.UUID `json:"author_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+// Refresh scope metadata for one entity's chunks (visibility/status
+// transitions, thread space reassignment).
+func (q *Queries) UpdateEmbeddingScope(ctx context.Context, arg UpdateEmbeddingScopeParams) error {
+	_, err := q.db.Exec(ctx, updateEmbeddingScope,
+		arg.Visibility,
+		arg.SpaceID,
+		arg.AuthorID,
+		arg.EntityType,
+		arg.EntityID,
+	)
+	return err
+}
+
+const updateThreadEmbeddingsBySpace = `-- name: UpdateThreadEmbeddingsBySpace :exec
+UPDATE content_embeddings
+SET visibility = $1
+WHERE entity_type = 'forum_thread' AND space_id = $2
+`
+
+type UpdateThreadEmbeddingsBySpaceParams struct {
+	Visibility string      `json:"visibility"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+}
+
+// Bulk scope refresh for all forum_thread rows in a space — used when the
+// space's visibility flips (threads inherit space visibility).
+func (q *Queries) UpdateThreadEmbeddingsBySpace(ctx context.Context, arg UpdateThreadEmbeddingsBySpaceParams) error {
+	_, err := q.db.Exec(ctx, updateThreadEmbeddingsBySpace, arg.Visibility, arg.SpaceID)
+	return err
+}
+
 const upsertContentEmbedding = `-- name: UpsertContentEmbedding :one
 
 
-INSERT INTO content_embeddings (entity_type, entity_id, chunk_index, chunk_text, embedding, language) VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO content_embeddings (entity_type, entity_id, chunk_index, chunk_text, embedding, language, visibility, space_id, author_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
 ON CONFLICT (entity_type, entity_id, chunk_index)
 DO UPDATE SET
  chunk_text = EXCLUDED.chunk_text,
  embedding = EXCLUDED.embedding,
  language = EXCLUDED.language,
+ visibility = EXCLUDED.visibility,
+ space_id = EXCLUDED.space_id,
+ author_id = EXCLUDED.author_id,
  created_at = now()
-RETURNING id, entity_type, entity_id, chunk_index, chunk_text, embedding, language, created_at
+RETURNING id, entity_type, entity_id, chunk_index, chunk_text, embedding, language, created_at, visibility, space_id, author_id
 `
 
 type UpsertContentEmbeddingParams struct {
@@ -541,6 +736,9 @@ type UpsertContentEmbeddingParams struct {
 	ChunkText  string           `json:"chunk_text"`
 	Embedding  *pgvector.Vector `json:"embedding"`
 	Language   string           `json:"language"`
+	Visibility string           `json:"visibility"`
+	SpaceID    pgtype.UUID      `json:"space_id"`
+	AuthorID   pgtype.UUID      `json:"author_id"`
 }
 
 // rag.sql — JapaBot RAG Knowledge Layer queries (Section 69, ADR-069).
@@ -556,6 +754,9 @@ type UpsertContentEmbeddingParams struct {
 // existing ( entity_type, entity_id, chunk_index) tuple,
 // implementing the ADR-069 "UPSERTS, never raw INSERT" rule.
 // =====================================================================
+// Scoped retrieval (§69 amendment): every chunk row carries the entity's
+// visibility/space_id/author_id so SearchContentEmbeddings can filter by
+// the caller's view without joins. Re-index refreshes scope metadata too.
 func (q *Queries) UpsertContentEmbedding(ctx context.Context, arg UpsertContentEmbeddingParams) (ContentEmbedding, error) {
 	row := q.db.QueryRow(ctx, upsertContentEmbedding,
 		arg.EntityType,
@@ -564,6 +765,9 @@ func (q *Queries) UpsertContentEmbedding(ctx context.Context, arg UpsertContentE
 		arg.ChunkText,
 		arg.Embedding,
 		arg.Language,
+		arg.Visibility,
+		arg.SpaceID,
+		arg.AuthorID,
 	)
 	var i ContentEmbedding
 	err := row.Scan(
@@ -575,6 +779,9 @@ func (q *Queries) UpsertContentEmbedding(ctx context.Context, arg UpsertContentE
 		&i.Embedding,
 		&i.Language,
 		&i.CreatedAt,
+		&i.Visibility,
+		&i.SpaceID,
+		&i.AuthorID,
 	)
 	return i, err
 }

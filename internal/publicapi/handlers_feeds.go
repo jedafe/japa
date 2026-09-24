@@ -306,7 +306,9 @@ func (h *Handlers) SemanticSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := parseLimit(r, defaultPageSize, 50)
 
-	result, err := h.Service.SemanticSearch(r.Context(), q.Get("q"), lang,
+	keyCtx := APIKeyFromContext(r.Context())
+
+	result, err := h.Service.SemanticSearch(r.Context(), keyCtx.UserID, q.Get("q"), lang,
 		strings.TrimSpace(q.Get("space")), limit)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

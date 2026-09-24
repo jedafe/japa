@@ -59,8 +59,14 @@ type MediaResolver interface {
 // index space content into content_embeddings (§69/ADR-069). Implemented
 // by rag.Service; nil disables RAG indexing (graceful degradation).
 type RAGEntityIndexer interface {
-	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error
 	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
+	// ReconcileSpaceScope refreshes scope metadata for a space and its
+	// forum threads after a visibility/status change (§69 amendment).
+	ReconcileSpaceScope(ctx context.Context, spaceID pgtype.UUID, visibility string) error
+	// ReconcileSpaceDelete fail-closes thread embeddings whose parent space
+	// is being deleted. Must run BEFORE the delete commits (§69 amendment).
+	ReconcileSpaceDelete(ctx context.Context, spaceID pgtype.UUID) error
 }
 
 // settingsReader is the subset of config.Settings needed by the spaces
@@ -119,7 +125,7 @@ func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
 // indexSpaceRAG fires-and-forgets a RAG indexing call for a space. The body
 // is the space name + description + keywords concatenated for embedding.
 // Errors are logged, never propagated (Rule 8).
-func (h *Handlers) indexSpaceRAG(ctx context.Context, spaceID pgtype.UUID, name, description string, keywords []string) {
+func (h *Handlers) indexSpaceRAG(ctx context.Context, spaceID pgtype.UUID, visibility, name, description string, keywords []string) {
 	if h.ragIndexer == nil {
 		return
 	}
@@ -154,7 +160,7 @@ func (h *Handlers) indexSpaceRAG(ctx context.Context, spaceID pgtype.UUID, name,
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.IndexEntity(bgCtx, "space", spaceID, text, language); err != nil {
+		if err := h.ragIndexer.IndexEntity(bgCtx, "space", spaceID, visibility, spaceID, pgtype.UUID{}, text, language); err != nil {
 			slog.Warn("spaces: RAG index failed for space",
 				"space_id", spaceID.String(), "error", err)
 		}

@@ -2465,7 +2465,28 @@ func ragIndexAfterEmbed(ctx context.Context, contentID [16]byte, text string) {
 		language = appSettings.GetStringOr(ctx, "i18n.default_language", "en")
 	}
 
-	if err := ragIndexer.IndexEntity(ctx, entityTypeContent, contentUUID, text, language); err != nil {
+	// Scoped retrieval (§69 amendment): load the content's scope metadata so
+	// the embedding rows can be filtered per-viewer at retrieval time. Only
+	// published content enters the corpus — the EXISTS guard on retrieval
+	// enforces status too, but skipping here avoids wasted embed calls.
+	queries, err := requireDB()
+	if err != nil {
+		slog.Warn("task:content:generate_embedding: no database for RAG meta, skipping", "error", err)
+		return
+	}
+	meta, err := queries.GetContentEmbeddingMeta(ctx, contentUUID)
+	if err != nil {
+		slog.Warn("task:content:generate_embedding: RAG meta lookup failed, skipping", "content_id", contentUUID.String(), "error", err)
+		return
+	}
+	if meta.Status != "published" {
+		if err := ragIndexer.PurgeEntity(ctx, entityTypeContent, contentUUID); err != nil {
+			slog.Warn("task:content:generate_embedding: RAG purge failed", "content_id", contentUUID.String(), "error", err)
+		}
+		return
+	}
+
+	if err := ragIndexer.IndexEntity(ctx, entityTypeContent, contentUUID, meta.Visibility, meta.SpaceID, meta.AuthorID, text, language); err != nil {
 		slog.Warn("task:content:generate_embedding: RAG index failed", "content_id", contentUUID.String(), "error", err)
 	}
 }

@@ -61,7 +61,7 @@ type MentionNotifier interface {
 // index thread content into content_embeddings (§69/ADR-069). Implemented
 // by rag.Service; nil disables RAG indexing (graceful degradation).
 type RAGEntityIndexer interface {
-	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error
 	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 }
 
@@ -210,7 +210,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID pgtype.UUID) {
 // indexThreadRAG fires-and-forgets a RAG indexing call for a forum thread.
 // Errors are logged, never propagated (Rule 8). The body is the thread title
 // + body concatenated for embedding.
-func (h *Handlers) indexThreadRAG(ctx context.Context, threadID pgtype.UUID, title string, body []byte) {
+func (h *Handlers) indexThreadRAG(ctx context.Context, threadID, spaceID, authorID pgtype.UUID, title string, body []byte) {
 	if h.ragIndexer == nil {
 		return
 	}
@@ -237,7 +237,15 @@ func (h *Handlers) indexThreadRAG(ctx context.Context, threadID pgtype.UUID, tit
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.IndexEntity(bgCtx, "forum_thread", threadID, text, language); err != nil {
+		// Threads inherit their parent space's visibility (§69 scoped
+		// retrieval); a missing space fails closed to private.
+		visibility := "private"
+		if spaceID.Valid {
+			if space, err := h.Service.store.read.GetSpaceByID(bgCtx, spaceID); err == nil {
+				visibility = space.Visibility
+			}
+		}
+		if err := h.ragIndexer.IndexEntity(bgCtx, "forum_thread", threadID, visibility, spaceID, authorID, text, language); err != nil {
 			slog.Warn("forum: RAG index failed for thread", "thread_id", threadID.String(), "error", err)
 		}
 	}()
@@ -562,7 +570,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: forum threads
 	// are part of the RAG corpus).
-	h.indexThreadRAG(r.Context(), thread.ID, input.Title, input.Body)
+	h.indexThreadRAG(r.Context(), thread.ID, spaceID, user.UserID, input.Title, input.Body)
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new thread.
 	h.enqueueSearchIndex("forum_thread", "index", thread.ID)
@@ -1057,7 +1065,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
-	h.indexThreadRAG(r.Context(), id, input.Title, input.Body)
+	h.indexThreadRAG(r.Context(), id, thread.SpaceID, thread.AuthorUserID, input.Title, input.Body)
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the updated thread.
 	h.enqueueSearchIndex("forum_thread", "index", id)

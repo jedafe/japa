@@ -1033,6 +1033,9 @@ type ContentEmbedding struct {
 	Embedding  *pgvector.Vector   `json:"embedding"`
 	Language   string             `json:"language"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	Visibility string             `json:"visibility"`
+	SpaceID    pgtype.UUID        `json:"space_id"`
+	AuthorID   pgtype.UUID        `json:"author_id"`
 }
 
 type ContentEngagement struct {

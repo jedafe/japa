@@ -7,6 +7,7 @@
 package rag
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -73,12 +75,67 @@ func (s *Service) SetCache(c ValkeyCache) { s.cache = c }
 // ragQueryCacheTTL is the TTL for jc:rag:query:{hash} (ADR-069: 10 min).
 const ragQueryCacheTTL = 10 * time.Minute
 
+// scopeForViewer builds the RetrievalScope for a viewer: public rows for
+// everyone; authenticated viewers additionally see 'members' rows, their
+// own rows, and private space/forum_thread rows for approved memberships.
+// The rag.scoped_retrieval.enabled kill switch degrades to public-only.
+func (s *Service) scopeForViewer(ctx context.Context, viewerID pgtype.UUID) RetrievalScope {
+	scope := RetrievalScope{ViewerID: viewerID}
+
+	if s.settings != nil && !s.settings.GetBoolOr(ctx, "rag.scoped_retrieval.enabled", true) {
+		scope.ViewerID = pgtype.UUID{}
+		return scope
+	}
+
+	if viewerID.Valid {
+		ids, err := s.store.ListMemberSpaceIDs(ctx, viewerID)
+		if err != nil {
+			slog.Warn("rag: retrieve: list member spaces failed — degrading to non-member scope", "error", err)
+		} else {
+			scope.MemberSpaceIDs = ids
+		}
+	}
+
+	return scope
+}
+
+// scopeHash digests a RetrievalScope for cache keys — scoped results must
+// never cross viewers through cache. Folding memberships into the hash
+// self-heals on membership changes (a new approved space produces a
+// different key; no invalidation needed).
+func scopeHash(scope RetrievalScope) []byte {
+	h := sha256.New()
+
+	if scope.ViewerID.Valid {
+		h.Write(scope.ViewerID.Bytes[:])
+	}
+	if scope.CanSeePrivate {
+		h.Write([]byte{1})
+	}
+
+	ids := make([]pgtype.UUID, len(scope.MemberSpaceIDs))
+	copy(ids, scope.MemberSpaceIDs)
+	sort.Slice(ids, func(i, j int) bool {
+		return bytes.Compare(ids[i].Bytes[:], ids[j].Bytes[:]) < 0
+	})
+	for _, id := range ids {
+		h.Write(id.Bytes[:])
+	}
+
+	return h.Sum(nil)
+}
+
+// ScopeHash returns the viewer's scope digest for callers that maintain
+// their own scoped caches (e.g. jc:api_semantic:* in the public API).
+func (s *Service) ScopeHash(ctx context.Context, viewerID pgtype.UUID) string {
+	return hex.EncodeToString(scopeHash(s.scopeForViewer(ctx, viewerID)))
+}
+
 // ragQueryCacheKey builds the Valkey key for a cached retrieval result.
-// The hash is over ( query_embedding, language, top_k, geo_space_id)
-// so identical queries hit the cache. geo_space_id is included so a
-// geo-filtered retrieval and an unfiltered retrieval never share a cache
-// entry (§103 Geo-Filtered RAG amendment to §69).
-func ragQueryCacheKey(queryEmbedding []float32, language string, topK int32, geoSpaceID *pgtype.UUID) string {
+// The hash is over ( query_embedding, language, top_k, geo_space_id,
+// viewer scope) so identical queries hit the cache and scoped results
+// never cross viewers (§69 scoped-retrieval amendment).
+func ragQueryCacheKey(queryEmbedding []float32, language string, topK int32, geoSpaceID *pgtype.UUID, scope RetrievalScope) string {
 	h := sha256.New()
 	h.Write(make([]byte, 16))
 
@@ -102,23 +159,45 @@ func ragQueryCacheKey(queryEmbedding []float32, language string, topK int32, geo
 		h.Write([]byte{0})
 	}
 
+	h.Write(scopeHash(scope))
+
 	return valkey.MustKey("rag:query:%s", hex.EncodeToString(h.Sum(nil)))
 }
 
 // IndexEntity chunks the source text, generates embeddings via the AI
-// gateway, and upserts each chunk into content_embeddings. After upserting,
-// stale tail chunks (from a previous, longer index) are deleted.
+// gateway, and upserts each chunk into content_embeddings with the
+// entity's scope metadata (§69 amendment): visibility, spaceID (community
+// space for space/thread entities), authorID. After upserting, stale tail
+// chunks (from a previous, longer index) are deleted.
+// // Scalar params rather than a shared struct: callers like internal/worker
+// cannot import internal/rag (rag imports worker for task-type constants),
+// so the caller-side interfaces declare plain parameters.
 // // This is called by the extended content:generate_embedding task handler.
-func (s *Service) IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error {
+func (s *Service) IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error {
+	// Fail closed: an unset visibility would violate the CHECK constraint
+	// anyway, and 'private' never leaks a row that should have been hidden.
+	if visibility == "" {
+		slog.Warn("rag: index: entity missing visibility — defaulting to private", "entity_type", entityType, "entity_id", entityID.String())
+		visibility = "private"
+	}
+
+	ref := EntityRef{
+		Type:       entityType,
+		ID:         entityID,
+		Visibility: visibility,
+		SpaceID:    spaceID,
+		AuthorID:   authorID,
+	}
+
 	if s.embedder == nil {
-		slog.Warn("rag: index: no embedder configured, skipping", "entity_type", entityType, "entity_id", entityID.String())
+		slog.Warn("rag: index: no embedder configured, skipping", "entity_type", ref.Type, "entity_id", ref.ID.String())
 		return nil
 	}
 
 	plainText := ExtractPlainText(body)
 	if plainText == "" {
 		// No text to index — purge any existing chunks for this entity.
-		return s.store.DeleteEntityEmbeddings(ctx, entityType, entityID)
+		return s.store.DeleteEntityEmbeddings(ctx, ref.Type, ref.ID)
 	}
 
 	maxTokens := s.settings.GetIntOr(ctx, "rag.chunk_max_tokens", 400)
@@ -133,7 +212,7 @@ func (s *Service) IndexEntity(ctx context.Context, entityType string, entityID p
 
 	chunkTexts := ChunkText(plainText, maxTokens, maxTokens/5)
 	if len(chunkTexts) == 0 {
-		return s.store.DeleteEntityEmbeddings(ctx, entityType, entityID)
+		return s.store.DeleteEntityEmbeddings(ctx, ref.Type, ref.ID)
 	}
 
 	model := s.settings.GetStringOr(ctx, "rag.embedding_model", "text-embedding-3-small")
@@ -148,7 +227,7 @@ func (s *Service) IndexEntity(ctx context.Context, entityType string, entityID p
 			return fmt.Errorf("rag: index: empty embedding for chunk %d", i)
 		}
 
-		if err := s.store.UpsertChunk(ctx, entityType, entityID, Chunk{
+		if err := s.store.UpsertChunk(ctx, ref, Chunk{
 			Index:  i,
 			Text:   chunkText,
 			Vector: vec,
@@ -159,11 +238,42 @@ func (s *Service) IndexEntity(ctx context.Context, entityType string, entityID p
 
 	// Delete stale tail chunks from a previous, longer index.
 	// nolint:gosec // G115: bounded
-	if err := s.store.DeleteStaleTail(ctx, entityType, entityID, int32(len(chunkTexts))); err != nil { // #nosec G115 -- len() of a chunked text slice // #nosec //nolint:gosec // G115: bounded
-		slog.Warn("rag: index: failed to delete stale tail", "entity_id", entityID.String(), "error", err)
+	if err := s.store.DeleteStaleTail(ctx, ref.Type, ref.ID, int32(len(chunkTexts))); err != nil { // #nosec G115 -- len() of a chunked text slice // #nosec //nolint:gosec // G115: bounded
+		slog.Warn("rag: index: failed to delete stale tail", "entity_id", ref.ID.String(), "error", err)
 	}
 
-	slog.Info("rag: index: complete", "entity_type", entityType, "entity_id", entityID.String(), "chunks", len(chunkTexts))
+	slog.Info("rag: index: complete", "entity_type", ref.Type, "entity_id", ref.ID.String(), "chunks", len(chunkTexts))
+
+	return nil
+}
+
+// ReconcileSpaceDelete fail-closes forum_thread chunk rows whose parent
+// space is being deleted. Threads survive the delete (space_id → NULL), so
+// this must run BEFORE the space row is removed — after the FK fires the
+// rows are unmatchable by space. Fail closed to private (§69 amendment).
+func (s *Service) ReconcileSpaceDelete(ctx context.Context, spaceID pgtype.UUID) error {
+	if s.store == nil {
+		return nil
+	}
+	return s.store.OrphanThreadScopesBySpace(ctx, spaceID)
+}
+
+// ReconcileSpaceScope refreshes scope metadata when a space's visibility
+// or status changes (§69 amendment): the space's own entity row plus every
+// forum_thread row inside it (threads inherit space visibility).
+func (s *Service) ReconcileSpaceScope(ctx context.Context, spaceID pgtype.UUID, visibility string) error {
+	if err := s.store.UpdateEntityScope(ctx, EntityRef{
+		Type:       EntityTypeSpace,
+		ID:         spaceID,
+		Visibility: visibility,
+		SpaceID:    spaceID,
+	}); err != nil {
+		return fmt.Errorf("rag: reconcile space scope: %w", err)
+	}
+
+	if err := s.store.UpdateThreadScopesBySpace(ctx, spaceID, visibility); err != nil {
+		return fmt.Errorf("rag: reconcile thread scopes: %w", err)
+	}
 
 	return nil
 }
@@ -189,7 +299,7 @@ func (s *Service) PurgeEntityType(ctx context.Context, entityType string) error 
 // invalid, retrieval is unfiltered (backward-compatible with §69).
 // // If rag.enabled is false, returns nil (the chat handler falls back to
 // non-RAG LLM call).
-func (s *Service) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RetrievedChunk, error) {
+func (s *Service) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]RetrievedChunk, error) {
 	if s.settings != nil {
 		if enabled := s.settings.GetBoolOr(ctx, "rag.enabled", true); !enabled {
 			return nil, nil
@@ -227,8 +337,12 @@ func (s *Service) Retrieve(ctx context.Context, query, language string, geoSpace
 
 	geoActive := geoSpaceID != nil && geoSpaceID.Valid
 
-	// Check cache.
-	cacheKey := ragQueryCacheKey(queryVec, language, topK, geoSpaceID)
+	// Build the viewer's retrieval scope (§69 scoped-retrieval amendment).
+	scope := s.scopeForViewer(ctx, viewerID)
+
+	// Check cache — the key folds in the scope hash so scoped results
+	// never cross viewers.
+	cacheKey := ragQueryCacheKey(queryVec, language, topK, geoSpaceID, scope)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 			var results []RetrievedChunk
@@ -240,9 +354,9 @@ func (s *Service) Retrieve(ctx context.Context, query, language string, geoSpace
 
 	var results []RetrievedChunk
 	if geoActive {
-		results, err = s.store.SearchGeoFiltered(ctx, queryVec, language, topK, *geoSpaceID)
+		results, err = s.store.SearchGeoFiltered(ctx, queryVec, language, topK, *geoSpaceID, scope)
 	} else {
-		results, err = s.store.Search(ctx, queryVec, language, topK)
+		results, err = s.store.Search(ctx, queryVec, language, topK, scope)
 	}
 
 	if err != nil {
@@ -317,17 +431,17 @@ func (s *Service) QueueReindex(ctx context.Context) error {
 			break
 		}
 
-		for _, id := range ids {
+		for _, ref := range ids {
 			payload, err := json.Marshal(map[string]string{
-				"content_id": id.ID.String(),
+				"content_id": ref.ID.String(),
 			})
 			if err != nil {
-				slog.Warn("rag: reindex: marshal payload failed", "content_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex: marshal payload failed", "content_id", ref.ID.String(), "error", err)
 				continue
 			}
 
 			if err := s.enqueuer.Enqueue(worker.TypeAIGenerateContentEmbedding, payload); err != nil {
-				slog.Warn("rag: reindex: enqueue failed", "content_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex: enqueue failed", "content_id", ref.ID.String(), "error", err)
 				continue
 			}
 
@@ -380,11 +494,11 @@ func (s *Service) reindexForumThreads() {
 			break
 		}
 
-		for _, id := range ids {
+		for _, ref := range ids {
 			// Fetch thread title + body from DB for embedding.
-			thread, err := s.fetchForumThreadText(ctx, id.ID)
+			thread, err := s.fetchForumThreadText(ctx, ref.ID)
 			if err != nil {
-				slog.Warn("rag: reindex forum threads: fetch failed", "thread_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex forum threads: fetch failed", "thread_id", ref.ID.String(), "error", err)
 				continue
 			}
 
@@ -392,8 +506,9 @@ func (s *Service) reindexForumThreads() {
 				continue
 			}
 
-			if err := s.IndexEntity(ctx, "forum_thread", id.ID, thread, language); err != nil {
-				slog.Warn("rag: reindex forum threads: index failed", "thread_id", id.ID.String(), "error", err)
+			if err := s.IndexEntity(ctx, EntityTypeForumThread, ref.ID,
+				ref.Visibility, ref.SpaceID, ref.AuthorID, thread, language); err != nil {
+				slog.Warn("rag: reindex forum threads: index failed", "thread_id", ref.ID.String(), "error", err)
 				continue
 			}
 
@@ -436,10 +551,10 @@ func (s *Service) reindexSpaces() {
 			break
 		}
 
-		for _, id := range ids {
-			text, err := s.fetchSpaceText(ctx, id.ID)
+		for _, ref := range ids {
+			text, err := s.fetchSpaceText(ctx, ref.ID)
 			if err != nil {
-				slog.Warn("rag: reindex spaces: fetch failed", "space_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex spaces: fetch failed", "space_id", ref.ID.String(), "error", err)
 				continue
 			}
 
@@ -447,8 +562,9 @@ func (s *Service) reindexSpaces() {
 				continue
 			}
 
-			if err := s.IndexEntity(ctx, "space", id.ID, text, language); err != nil {
-				slog.Warn("rag: reindex spaces: index failed", "space_id", id.ID.String(), "error", err)
+			if err := s.IndexEntity(ctx, EntityTypeSpace, ref.ID,
+				ref.Visibility, ref.ID, pgtype.UUID{}, text, language); err != nil {
+				slog.Warn("rag: reindex spaces: index failed", "space_id", ref.ID.String(), "error", err)
 				continue
 			}
 
@@ -492,9 +608,9 @@ func (s *Service) reindexLearningTracks() {
 		}
 
 		for _, id := range ids {
-			text, err := s.fetchLearningTrackText(ctx, id.ID)
+			text, err := s.fetchLearningTrackText(ctx, id)
 			if err != nil {
-				slog.Warn("rag: reindex learning tracks: fetch failed", "track_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex learning tracks: fetch failed", "track_id", id.String(), "error", err)
 				continue
 			}
 
@@ -502,8 +618,9 @@ func (s *Service) reindexLearningTracks() {
 				continue
 			}
 
-			if err := s.IndexEntity(ctx, "learning_track", id.ID, text, language); err != nil {
-				slog.Warn("rag: reindex learning tracks: index failed", "track_id", id.ID.String(), "error", err)
+			if err := s.IndexEntity(ctx, EntityTypeLearningTrack, id,
+				"public", pgtype.UUID{}, pgtype.UUID{}, text, language); err != nil {
+				slog.Warn("rag: reindex learning tracks: index failed", "track_id", id.String(), "error", err)
 				continue
 			}
 

@@ -373,7 +373,7 @@ func SemanticSearchHandler(deps *ToolDeps) ToolHandler {
 		if query == "" {
 			return errorToolResult("missing_query", "query is required"), nil
 		}
-		result, err := deps.AgentData.SemanticSearch(ctx, query, strings.TrimSpace(a.Lang), strings.TrimSpace(a.Space), a.Limit)
+		result, err := deps.AgentData.SemanticSearch(ctx, userID, query, strings.TrimSpace(a.Lang), strings.TrimSpace(a.Space), a.Limit)
 		if err != nil {
 			return errorToolResult("search_semantic_failed", err.Error()), nil
 		}

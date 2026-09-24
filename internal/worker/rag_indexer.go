@@ -23,9 +23,11 @@ import (
 // chunking, AI gateway call, and DB upsert.
 type RAGIndexer interface {
 	// IndexEntity chunks the source text, generates embeddings via the AI
-	// gateway, and upserts each chunk into content_embeddings. If the text
-	// is empty, existing chunks for the entity are purged.
-	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
+	// gateway, and upserts each chunk into content_embeddings with the
+	// entity's scope metadata (§69 amendment — visibility/space/author are
+	// denormalized per chunk so retrieval can filter without joins). If the
+	// text is empty, existing chunks for the entity are purged.
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error
 
 	// PurgeEntity deletes all chunks for an entity. Used on unpublish/delete.
 	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error

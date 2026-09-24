@@ -66,7 +66,7 @@ type AIResponse struct {
 // The assessment service uses it to ground AI-assisted roadmap steps in
 // platform content.
 type RAGRetriever interface {
-	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error)
+	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]RAGChunk, error)
 	FormatContext(chunks []RAGChunk) string
 }
 
@@ -394,7 +394,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInpu
 		}
 
 		if aiEnabled {
-			aiSteps := s.generateAIRoadmapSteps(ctx, result.JourneyContext, result.DimensionScores, result.ThresholdLabel)
+			aiSteps := s.generateAIRoadmapSteps(ctx, input.UserID, result.JourneyContext, result.DimensionScores, result.ThresholdLabel)
 			if len(aiSteps) > 0 {
 				// Append AI steps after curated steps, continuing the priority
 				// sequence. Skip any step that links to content already in the
@@ -1257,7 +1257,7 @@ func stepMatchesJourney(step RoadmapStep, journeyCtx JourneyContext) bool {
 // the AI can target its recommendations to the user's weakest areas.
 // RAG grounding (when available) injects relevant platform content passages
 // so the AI's recommendations reference real JapaConnect resources.
-func (s *Service) generateAIRoadmapSteps(ctx context.Context, journeyCtx JourneyContext, dimensionScores map[string]int, thresholdLabel string) []RoadmapStep {
+func (s *Service) generateAIRoadmapSteps(ctx context.Context, userID pgtype.UUID, journeyCtx JourneyContext, dimensionScores map[string]int, thresholdLabel string) []RoadmapStep {
 	// Build a summary of the user's weakest dimensions for the prompt.
 	weakestDims := make([]string, 0, len(dimensionScores))
 
@@ -1326,7 +1326,7 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, journeyCtx Journey
 	if s.rag != nil {
 		query := "relocation readiness advice for weak areas: " + strings.Join(weakestDims[:min(3, len(weakestDims))], ", ")
 
-		chunks, err := s.rag.Retrieve(ctx, query, "en", &journeyCtx.GeoSpaceID)
+		chunks, err := s.rag.Retrieve(ctx, query, "en", &journeyCtx.GeoSpaceID, userID)
 		if err != nil {
 			slog.Warn("assessment: ai roadmap: RAG retrieve failed", "error", err)
 		} else if len(chunks) > 0 {

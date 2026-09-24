@@ -82,9 +82,10 @@ type agentRAGAdapter struct {
 }
 
 // Retrieve calls rag.Service.Retrieve and converts each RetrievedChunk to
-// the ai-package mirror type.
-func (a *agentRAGAdapter) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]ai.RAGChunk, error) {
-	chunks, err := a.svc.Retrieve(ctx, query, language, geoSpaceID)
+// the ai-package mirror type. viewerID scopes retrieval to the caller
+// (§69 scoped-retrieval amendment).
+func (a *agentRAGAdapter) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]ai.RAGChunk, error) {
+	chunks, err := a.svc.Retrieve(ctx, query, language, geoSpaceID, viewerID)
 	if err != nil {
 		return nil, err
 	}
@@ -2490,6 +2491,6 @@ func (a *agentDataAdapter) GetScamAlert(ctx context.Context, id pgtype.UUID) (an
 	return a.svc.GetScamAlert(ctx, id)
 }
 
-func (a *agentDataAdapter) SemanticSearch(ctx context.Context, query, lang, spaceSlug string, limit int32) (any, error) {
-	return a.svc.SemanticSearch(ctx, query, lang, spaceSlug, limit)
+func (a *agentDataAdapter) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, query, lang, spaceSlug string, limit int32) (any, error) {
+	return a.svc.SemanticSearch(ctx, viewerID, query, lang, spaceSlug, limit)
 }

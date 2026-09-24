@@ -49,8 +49,9 @@ type CustomFieldsService interface {
 }
 
 // RAGService is the subset of internal/rag.Service the knowledge tools call.
+// viewerID scopes retrieval to what the caller may see (§69 scoped retrieval).
 type RAGService interface {
-	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error)
+	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]RAGChunk, error)
 }
 
 // ComparisonService is the subset of internal/comparison.Service the
@@ -898,7 +899,7 @@ type AgentDataReader interface {
 	MyFeed(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) (any, error)
 	ListScamAlerts(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) (any, int64, error)
 	GetScamAlert(ctx context.Context, id pgtype.UUID) (any, error)
-	SemanticSearch(ctx context.Context, query, lang, spaceSlug string, limit int32) (any, error)
+	SemanticSearch(ctx context.Context, viewerID pgtype.UUID, query, lang, spaceSlug string, limit int32) (any, error)
 }
 
 // NewToolDeps creates an empty ToolDeps. Fields are set directly or via the
