@@ -3013,6 +3013,9 @@ export interface WikiPage extends WikiPageIndex {
 	current_content: unknown;
 	revision_summary?: string;
 	submitted_by?: string;
+	/** §80: binds the page to a child entity class (e.g. 'visa_route') so the
+	 *  data panel can list those entities instead of the space's own fields. */
+	data_entity_type?: string | null;
 }
 
 export type WikiRevisionStatus = 'approved' | 'rejected' | 'pending';
