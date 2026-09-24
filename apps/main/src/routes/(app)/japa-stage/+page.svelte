@@ -14,25 +14,29 @@
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 	import { Compass, Users } from 'lucide-svelte';
 	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import { japaStageColors, japaStageLabel, japaStageOptions } from '$lib/enumOptions';
-	import type { JapaStage, MemberStage } from '$lib/types';
+	import { japaStageColors, japaStageLabel, japaStageOptions, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
+	import type { JapaStage, JapaIntent, MemberStage } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const stageOpts = $derived(japaStageOptions(t, data.stages));
+	const intentOpts = $derived(japaIntentOptions(t, data.intents));
 
 	// Local filter state, seeded from SSR-passed filters.
 	let destFilter = $state(untrack(() => data.filters.dest));
+	let intentFilter = $state(untrack(() => data.filters.intent));
 
 	// Keep local filter state in sync when navigating between pages/filters.
 	$effect(() => {
 		destFilter = data.filters.dest;
+		intentFilter = data.filters.intent;
 	});
 
 	function applyFilters() {
 		const params = new URLSearchParams();
 		if (data.filters.stage) params.set('stage', data.filters.stage);
+		if (intentFilter) params.set('intent', intentFilter);
 		if (destFilter) params.set('dest', destFilter);
 		goto(`/japa-stage${params.toString() ? `?${params.toString()}` : ''}`);
 	}
@@ -44,6 +48,7 @@
 	function selectStage(v: string) {
 		const params = new URLSearchParams();
 		if (v !== 'all') params.set('stage', v);
+		if (data.filters.intent) params.set('intent', data.filters.intent);
 		if (data.filters.dest) params.set('dest', data.filters.dest);
 		goto(`/japa-stage${params.toString() ? `?${params.toString()}` : ''}`);
 	}
@@ -51,6 +56,7 @@
 	function changePage(p: number) {
 		const params = new URLSearchParams();
 		if (data.filters.stage) params.set('stage', data.filters.stage);
+		if (data.filters.intent) params.set('intent', data.filters.intent);
 		if (data.filters.dest) params.set('dest', data.filters.dest);
 		params.set('page', String(p));
 		goto(`/japa-stage?${params.toString()}`);
@@ -64,7 +70,7 @@
 		)
 	);
 
-	const hasFilters = $derived(!!data.filters.dest);
+	const hasFilters = $derived(!!data.filters.dest || !!data.filters.intent);
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'all', label: t('japa_stage.all_stages', 'All stages') },
@@ -131,6 +137,20 @@
 		{#if showFilters}
 		<!-- Filter panel -->
 		<div id="japa-stage-filter-panel" class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+			<div class="w-44">
+				<label for="intent-filter" class="sr-only">{t('japa_intent.filter', 'Journey type')}</label>
+				<select
+					id="intent-filter"
+					bind:value={intentFilter}
+					onchange={applyFilters}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)]"
+				>
+					<option value="">{t('japa_intent.all', 'All journey types')}</option>
+					{#each intentOpts as opt (opt.value)}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
+				</select>
+			</div>
 			<div class="w-52">
 				<Autocomplete
 					placeholder={t('japa_stage.filter_dest', 'Destination')}
@@ -216,6 +236,7 @@
 				</span>
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-semibold text-[var(--color-text)]">@{m.username}</p>
+				{#if m.stage}
 				<span
 					class="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
 					style={`background-color: ${japaStageColors[m.stage as JapaStage]}1a; color: ${japaStageColors[m.stage as JapaStage]};`}
@@ -226,6 +247,15 @@
 					></span>
 					{japaStageLabel(t, m.stage as JapaStage)}
 				</span>
+				{:else if m.intent}
+				<!-- Non-relocation intents carry no stage (ADR-122) — show the intent badge instead -->
+				<span
+					class="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
+					style="background-color: var(--color-surface-subtle); color: var(--color-text-subtle);"
+				>
+					{japaIntentLabel(t, m.intent as JapaIntent)}
+				</span>
+				{/if}
 				<div class="mt-1.5 flex flex-col gap-0.5 text-xs text-[var(--color-text-subtle)]">
 					{#if m.destination_space_name}
 						<span>{t('japa_stage.dest', 'Destination')}: {m.destination_space_name}</span>

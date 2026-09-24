@@ -104,17 +104,22 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 
 	pageOffset := (page - 1) * limit
 
-	// v2 source directory: for the default "latest" sort, merge intel_records
-	// with linked video_sources and comparison contents so the source item feed
-	// is not limited to extracted content. The merge fetches (offset + limit)
-	// items from each source, then sorts and slices in memory. To keep the DB
-	// cost bounded, this mixed path is only used when the requested window fits
-	// inside max_page_size * mixed_fetch_page_multiplier.
-	if entityType == "" && sortMode == "latest" && h.canUseMixedFetch(r.Context(), pageOffset+limit) {
-		items, total, err := h.listMixedSourceItems(r.Context(), w, r, src.ID, page, limit, pageOffset)
+	// v2 source directory: the unfiltered feed merges intel_records with
+	// linked video_sources and comparison contents for EVERY sort mode —
+	// previously only "latest" took this path, so video/comparison-backed
+	// sources returned an empty feed under popular/discussed/upvoted. The
+	// merge fetches (offset + limit) items from each source (each sorted at
+	// the DB level by the requested mode), then re-sorts and slices in
+	// memory. To keep the DB cost bounded, this mixed path is only used when
+	// the requested window fits inside max_page_size *
+	// mixed_fetch_page_multiplier.
+	if entityType == "" && h.canUseMixedFetch(r.Context(), pageOffset+limit) {
+		items, total, err := h.listMixedSourceItems(r.Context(), w, r, src.ID, page, limit, pageOffset, sortMode)
 		if err != nil {
 			return
 		}
+
+		h.resolveLiterals(r, &items)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": sourceItemEnvelope{
@@ -130,7 +135,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	// v2 source directory: if the source is a linked video source, the item
 	// feed is served directly from video_sources for the "video" entity type.
 	if entityType == "video" && h.videos != nil {
-		videos, total, err := h.videos.ListItemsBySourceID(r.Context(), src.ID, clampInt32(limit), offset)
+		videos, total, err := h.videos.ListItemsBySourceID(r.Context(), src.ID, sortMode, clampInt32(limit), offset)
 		if err != nil {
 			slog.Error("intel: source video items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -141,6 +146,8 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 		for _, v := range videos {
 			items = append(items, videoSourceToItem(v))
 		}
+
+		h.resolveLiterals(r, &items)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": sourceItemEnvelope{
@@ -157,7 +164,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	// the item feed is served directly from contents for the "comparison"
 	// entity type.
 	if entityType == "comparison" && h.contents != nil {
-		comparisons, total, err := h.contents.ListComparisonContentsBySourceID(r.Context(), src.ID, clampInt32(limit), offset)
+		comparisons, total, err := h.contents.ListComparisonContentsBySourceID(r.Context(), src.ID, sortMode, clampInt32(limit), offset)
 		if err != nil {
 			slog.Error("intel: source comparison items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -168,6 +175,8 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 		for _, c := range comparisons {
 			items = append(items, comparisonContentToItem(c))
 		}
+
+		h.resolveLiterals(r, &items)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": sourceItemEnvelope{
@@ -205,6 +214,8 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 			items = append(items, item)
 		}
 	}
+
+	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": sourceItemEnvelope{
@@ -466,11 +477,11 @@ func (h *Handlers) canUseMixedFetch(ctx context.Context, needed int) bool {
 	return needed <= maxSize*multiplier
 }
 
-func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWriter, r *http.Request, sourceID pgtype.UUID, page, limit, pageOffset int) ([]sourceItem, int64, error) {
+func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWriter, r *http.Request, sourceID pgtype.UUID, page, limit, pageOffset int, sortMode string) ([]sourceItem, int64, error) {
 	slug := chi.URLParam(r, "slug")
 
 	innerLimit := clampInt32(pageOffset + limit)
-	records, err := h.intelStores.ListIntelRecordsBySource(ctx, sourceID, "", "latest", innerLimit, 0)
+	records, err := h.intelStores.ListIntelRecordsBySource(ctx, sourceID, "", sortMode, innerLimit, 0)
 	if err != nil {
 		slog.Error("intel: source records list failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -498,7 +509,7 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 
 	var videoTotal int64
 	if h.videos != nil {
-		videos, vTotal, err := h.videos.ListItemsBySourceID(ctx, sourceID, innerLimit, 0)
+		videos, vTotal, err := h.videos.ListItemsBySourceID(ctx, sourceID, sortMode, innerLimit, 0)
 		if err != nil {
 			slog.Error("intel: source video items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -512,7 +523,7 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 
 	var comparisonTotal int64
 	if h.contents != nil {
-		comparisons, cTotal, err := h.contents.ListComparisonContentsBySourceID(ctx, sourceID, innerLimit, 0)
+		comparisons, cTotal, err := h.contents.ListComparisonContentsBySourceID(ctx, sourceID, sortMode, innerLimit, 0)
 		if err != nil {
 			slog.Error("intel: source comparison items list failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -524,7 +535,7 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 		}
 	}
 
-	sortSourceItems(items, "latest")
+	sortSourceItems(items, sortMode)
 
 	start := pageOffset
 	if start > len(items) {
@@ -561,6 +572,10 @@ func videoSourceToItem(v gen.ListVideoSourceItemsBySourceIDRow) sourceItem {
 		Href:         href,
 		ThumbnailURL: v.ThumbnailUrl,
 		PublishedAt:  v.CreatedAt,
+		ViewCount:    v.ViewCount,
+		CommentCount: v.CommentCount,
+		ShareCount:   v.ShareCount,
+		VoteScore:    v.VoteScore,
 	}
 }
 

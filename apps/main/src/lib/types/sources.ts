@@ -35,6 +35,9 @@ export interface Source {
 	/** §106 video channels only — the channel account username, used to link
 	 *  the claim/report form. The channel has no public /u/ profile. */
 	channel_username?: string;
+	/** Feed entity types this source currently publishes (detail endpoint
+	 *  only) — scopes the entity-type filter pills to types with items. */
+	entity_types?: string[];
 }
 
 export interface SourceItem {

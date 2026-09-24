@@ -334,7 +334,7 @@ import { contentHref } from '$lib/utils/contentLink';
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
 
-	function startEdit() {
+	async function startEdit() {
 		if (!data.canEdit) return;
 		editTitle = thread.title;
 		// The PostEditor initialises from HTML. Render the stored TipTap
@@ -344,6 +344,16 @@ import { contentHref } from '$lib/utils/contentLink';
 		editAnonymous = thread.is_anonymous;
 		editError = null;
 		editing = true;
+		// Fetch the raw (unresolved) thread so {{...}} literals authored via the
+		// token picker survive a re-save — the display payload is resolved.
+		const res = await api.get<ForumThread>(`/forum/${thread.id}?raw=1`);
+		if (!editing || !res.data) return;
+		editTitle = res.data.title;
+		editBodyHtml = tiptapBodyToHtml(res.data.body, {
+			deletedUserIds,
+			deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
+		});
+		editAnonymous = res.data.is_anonymous;
 	}
 
 	function cancelEdit() {

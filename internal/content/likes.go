@@ -3,6 +3,7 @@ package content
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -59,6 +60,12 @@ func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
 
 	if rows == nil {
 		rows = []gen.ListContentLikedByUserRow{}
+	}
+
+	// Resolve template literals in liked-card titles/excerpts (best-effort).
+	rc := buildRenderContext(r, "")
+	if err := h.Service.ResolveContentFields(r.Context(), &rows, rc); err != nil {
+		slog.Warn("content: failed to resolve liked content literals", "error", err)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})

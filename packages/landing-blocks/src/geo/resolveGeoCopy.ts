@@ -16,6 +16,20 @@ const TOKEN_ALIASES: Record<string, keyof GeoCopyTokens> = {
 /** Regex matching {{token}} or {{token|fallback}}. */
 const TOKEN_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)(?:\|([^}]+))?\s*\}\}/g;
 
+// Folded literal maps keyed by the original object so callers can reuse the
+// same `literals` reference across many strings without rebuilding.
+const foldedCache = new WeakMap<Record<string, string>, Record<string, string>>();
+
+function foldedLiterals(literals: Record<string, string>): Record<string, string> {
+  let folded = foldedCache.get(literals);
+  if (!folded) {
+    folded = {};
+    for (const [k, v] of Object.entries(literals)) folded[k.toLowerCase()] = v;
+    foldedCache.set(literals, folded);
+  }
+  return folded;
+}
+
 /** Resolve all {{token}} placeholders in a single string. */
 export function resolveString(
   str: string,
@@ -23,14 +37,18 @@ export function resolveString(
   literals?: Record<string, string>
 ): string {
   if (typeof str !== 'string') return str as unknown as string;
+  const folded = literals ? foldedLiterals(literals) : undefined;
   return str.replace(TOKEN_RE, (match: string, tokenName: string, fallback?: string): string => {
-    const field = TOKEN_ALIASES[tokenName];
+    const field = TOKEN_ALIASES[tokenName.toLowerCase()];
     if (field) {
       const value = tokens[field];
       // The `names` field is an object, not a string — skip it.
       if (typeof value === 'string' && value !== '') return value;
     }
-    if (literals && tokenName in literals) return literals[tokenName];
+    if (folded) {
+      const value = folded[tokenName.toLowerCase()];
+      if (typeof value !== 'undefined') return value;
+    }
     if (typeof fallback !== 'undefined' && fallback !== '') return fallback.trim();
     return match;
   });

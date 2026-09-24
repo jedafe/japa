@@ -414,6 +414,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Template literal catalog — shared by admin, content, and pagebuilder.
 	literalsCatalog := literals.NewCatalog(gen.New(database.Reader), vkClient.Redis())
 	literalsHandlers := literals.NewHandlers(literalsCatalog)
+	bookmarkFoldersHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in folder names
 
 	// Content subsystem (Section 14 — Content Type System). Service created
 	// early because spaces/blog handlers below need it for their
@@ -442,6 +443,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Universities subsystem (Section 39) — read-view over spaces of the
 	// University space-type + their custom field values, no dedicated table.
 	universitiesHandlers := universities.NewHandlers(spaceService, cfService)
+	universitiesHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in universities responses
 
 	// Create Asynq client for enqueuing background tasks (push delivery, etc.)
 	asynqClient := worker.NewClient(worker.DefaultConfig())
@@ -480,6 +482,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	settingsService := config.NewSettings(database, vkClient.Redis())
 	closers = append(closers, settingsService.Close)
 	contentService.SetSettings(settingsService)
+
+	// Template-literal platform name: {{Platform_Name}}/{{Tenant_Name}}
+	// resolve from the hot-reloadable site.name setting (env config fallback).
+	literals.SetPlatformNameResolver(func(ctx context.Context) string {
+		return settingsService.GetStringOr(ctx, "site.name", cfg.SiteName)
+	})
 
 	// Unified user tier service (regular/pro/business). Resolves effective tier
 	// from user_groups, syncs users.profile_type, and enforces per-tier limits.
@@ -584,6 +592,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Subject:    cfg.VAPIDSubject,
 	})
 	notificationHandlers := notifications.NewHandlers(notificationService)
+	// §14: resolve {{...}} literals embedded in notification titles/bodies.
+	notificationHandlers.SetLiteralResolver(literalsCatalog)
 	// C3: wire follow.received notification dispatch (Section 35). Fire-and-forget
 	// per Rule 8 — the adapter ignores the DispatchResult and any error.
 	followService.SetNotificationDispatcher(followNotificationAdapter{svc: notificationService})
@@ -618,6 +628,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// (replies) axes (Section 05 lines 145-154). Reuses the same adapter
 	// already wired for content posting checks.
 	commentsHandlers.SetSpaceChecker(spacePostChecker)
+	// §14: resolve {{...}} literals in comment bodies and discussion thread
+	// titles before they reach user-facing responses.
+	commentsHandlers.SetLiteralResolver(literalsCatalog)
 
 	// Interactions subsystem (Sections 41, 52 — Blocks & Mutes).
 	interactionsService := interactions.NewService(database)
@@ -626,6 +639,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	worker.RegisterSettings(settingsService)
 	worker.RegisterRedis(vkClient.Redis()) // TASK-003: RSS feed caching in Valkey
+	// §14: resolve {{...}} literals in worker-generated output (cached RSS
+	// feeds, digest emails). The adapter binds a request-independent render
+	// context — the worker package can't import literals (import cycle).
+	worker.RegisterLiteralResolver(literalResolverAdapter{cat: literalsCatalog})
 	// BUG-005: configure the Wiki API rate limiter interval from
 	// spaces.wiki_rate_interval_ms (default 2000ms). Hot-reloadable — the
 	// worker re-reads the setting on each wiki enrichment task.
@@ -651,6 +668,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService.SetAsynqClient(asynqClient)
 	notificationService.SetSettings(settingsService)
 	notificationService.SetValkey(vkClient)
+	notificationService.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in live WS payloads
 
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService
@@ -693,6 +711,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Trending & Discovery subsystem (Phase 28).
 	trendingStore := trending.NewStore(database)
 	trendingHandlers := trending.NewHandlers(trendingStore)
+	trendingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in trending titles
 	trendingHandlers.SetCache(vkClient.Valkey())
 
 	// Recommendation engine (ADR-064a) — geo-aware tool/feature suggestions.
@@ -723,11 +742,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// spam pipeline's rate_limit layer (§41, BUG-004). Without this, a spammer
 	// flooding blog posts evades the rate-limit signal.
 	blogHandlers.SetSpamRecorder(spamPipeline)
+	blogHandlers.SetLiteralCatalog(literalsCatalog) // §14: resolve {{...}} in the live RSS fallback
 
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
 	reviewHandlers := reviews.NewHandlers(reviewService)
 	reviewHandlers.AsynqClient = asynqClient
+	reviewHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in review titles/bodies
 
 	// Comparison subsystem (Section 30 — Generic Comparison System).
 	comparisonService := comparison.NewService(database)
@@ -740,6 +761,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// jceResolver is populated below once all backing services are available.
 
 	comparisonHandlers := comparison.NewHandlers(comparisonService)
+	comparisonHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in comparison titles/descriptions
 
 	// Organization system (Section 07).
 	orgService := organizations.NewServiceWithSettings(database, settingsService)
@@ -748,8 +770,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	orgService.SetAsynqClient(asynqClient)      // BUG-018: invitation email:send tasks
 	orgService.SetSiteURL(cfg.SiteURL)          // absolute accept links in invitation emails
 	orgHandlers := organizations.NewHandlers(orgService, followService, contentService)
-	orgHandlers.SetCustomFieldLookup(cfService) // org_type options from custom_fields (Section 07 + 08)
-	orgHandlers.SetAsynqClient(asynqClient)     // §12 stale-index fix: org CRUD enqueues search:index_entity
+	orgHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in org responses
+	orgHandlers.SetCustomFieldLookup(cfService)     // org_type options from custom_fields (Section 07 + 08)
+	orgHandlers.SetAsynqClient(asynqClient)         // §12 stale-index fix: org CRUD enqueues search:index_entity
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
@@ -836,11 +859,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ticketService := tickets.NewServiceWithEnqueuer(database, taskEnqueuer)
 	ticketService.SetSettings(settingsService)
 	ticketHandlers := tickets.NewHandlers(ticketService)
+	ticketHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in tickets responses
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
 	couponService := coupons.NewServiceWithEnqueuer(database, taskEnqueuer)
 	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{platform} caching (§55)
 	couponHandlers := coupons.NewHandlers(couponService)
+	couponHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in coupons responses
 
 	// Wire the coupon service into the renderer for render-time coupon_embed
 	// resolution and affiliate link href rewriting (Section 55 P4, BUG-004/005).
@@ -889,11 +914,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	menusService := menus.NewServiceWithPerms(database, rbacResolver)
 	menusService.SetFeatureChecker(featureChecker)
 	menusHandlers := menus.NewHandlersWithPerms(menusService, rbacResolver)
+	// §14: resolve {{...}} literals in menu labels on the public resolution
+	// endpoint (admin CRUD keeps authored source for editing).
+	menusHandlers.SetLiteralResolver(literalsCatalog)
 
 	// Sidebars — Sidebar Management System (Section 59, ADR-066).
 	// Replaces the deprecated pagebuilder sidebar approach.
 	sidebarService := sidebars.NewServiceWithPerms(database, vkClient.Redis(), rbacResolver)
 	sidebarHandlers := sidebars.NewHandlers(sidebarService)
+	sidebarHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in sidebars responses
 
 	// Email Templates — Platform-customizable transactional emails (ADR-055).
 	emailTemplatesService := emailtemplates.NewService(database)
@@ -1055,8 +1084,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	docsService := docs.NewService(database)
 	docsService.SetCache(vkClient.Redis()) // VALKEY-003: cache doc pages + nav
 	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL, cfg.SiteName)
-	docsHandlers.AsynqClient = asynqClient // SEARCH-001: enqueue Meilisearch index sync
-	docsHandlers.SetRBAC(rbacResolver)     // §44: audience RBAC gating
+	docsHandlers.AsynqClient = asynqClient           // SEARCH-001: enqueue Meilisearch index sync
+	docsHandlers.SetRBAC(rbacResolver)               // §44: audience RBAC gating
+	docsHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in doc titles/bodies
 
 	// Public option catalog (Rule 16 — no hardcoded option lists).
 	catalogHandlers := catalog.NewHandlers()
@@ -1112,6 +1142,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	universityService.SetSpaceLogoUpdater(spaceService)
 	universityService.SetNotifier(notificationService)
 	universityHandlers := university.NewHandlers(universityService)
+	universityHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in university responses
 	// Register university processor for the worker's 5 university Asynq tasks.
 	universityProcessor := university.NewProcessor(universityService)
 	worker.RegisterUniversityProcessor(universityProcessor)
@@ -1121,6 +1152,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	newsletterService.SetAsynqClient(asynqClient)
 	newsletterService.SetSettings(settingsService)
 	newsletterHandlers := newsletter.NewHandlers(newsletterService)
+	newsletterHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in newsletter responses
 
 	// Referral Program subsystem (Section 34 / §60, ADR-078).
 	referralService := referral.NewService(database)
@@ -1140,11 +1172,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jobsService := jobs.NewService(jobsStore, settingsService)
 	jobsService.SetEnqueuer(taskEnqueuer) // jobs:notify_application_status (§63, ADR-081)
 	jobsHandlers := jobs.NewHandlers(jobsService, settingsService)
+	jobsHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in job titles/descriptions
 
 	// Ref: japaconnect-engineering/sections/64-gamification.md (ADR-082)
 	gamificationStore := gamification.NewStore(database)
 	gamificationService := gamification.NewService(gamificationStore, settingsService)
 	gamificationHandlers := gamification.NewHandlers(gamificationService, settingsService)
+	gamificationHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in gamification responses
 	// Wire the wallet service as the gamification PointsAwarder so challenge
 	// completion credits reward_points to the user's wallet (BUG-GAMMA-002).
 	// The wallet service enqueues wallet:award_points fire-and-forget (Rule 8).
@@ -1200,6 +1234,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	travelService := travel.NewService(travelStore, settingsService)
 	travelService.SetCache(vkClient.Redis()) // VALKEY-006: jc:travel:search:{hash} result cache (§67)
 	travelHandlers := travel.NewHandlers(travelService, settingsService)
+	travelHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in travel responses
 
 	// Ref: japaconnect-engineering/sections/68-ai-personas.md (ADR-068)
 	personasStore := personas.NewStore(database)
@@ -1212,12 +1247,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	checklistService.SetFeatureChecker(featureChecker)
 	checklistService.SetEnqueuer(taskEnqueuer) // wallet:award_points on full completion (§28)
 	checklistHandlers := checklist.NewHandlers(checklistService, settingsService)
+	checklistHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in checklist responses
 
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md (ADR-087)
 	storyStore := story.NewStore(database)
 	storyService := story.NewService(storyStore, contentService, settingsService)
 	storyService.SetFeatureChecker(featureChecker)
 	storyHandlers := story.NewHandlers(storyService, settingsService)
+	// §14: resolve {{...}} literals in story titles/bodies.
+	storyHandlers.SetLiteralResolver(literalsCatalog)
 
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (ADR-088)
 	wikiStore := wiki.NewStore(database)
@@ -1241,6 +1279,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	scamAlertService.SetFeatureChecker(featureChecker)
 	scamAlertService.SetRBAC(rbacResolver)
 	scamAlertHandlers := scamalert.NewHandlers(scamAlertService, settingsService)
+	// §14: resolve {{...}} literals in scam report descriptions.
+	scamAlertHandlers.SetLiteralResolver(literalsCatalog)
 	// Wire the Asynq enqueuer for fire-and-forget notification fan-out on
 	// report confirmation (Rule 8), the notification service for
 	// subscriber dispatch (§35), and the gamification service for the
@@ -1259,6 +1299,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	planningGroupService := planninggroups.NewService(planningGroupStore, settingsService).
 		WithNotifier(notificationService)
 	planningGroupHandlers := planninggroups.NewHandlers(planningGroupService, settingsService)
+	planningGroupHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in group/milestone text
 	// Register the service as the planning_group:expire /
 	// planning_group:checkin_reminder processor so the Asynq tasks are
 	// handled (§82, ADR-090).
@@ -1270,6 +1311,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithNotifier(notificationService)
 	visaTimelineService.SetFeatureChecker(featureChecker)
 	visaTimelineHandlers := visatimeline.NewHandlers(visaTimelineService, settingsService)
+	visaTimelineHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in visatimeline responses
 	// Wire the wallet service for the anti-gaming reputation gate on shared
 	// timelines (§83: contribute to aggregate requires reputation ≥
 	// visa_timeline.min_reputation).
@@ -1286,6 +1328,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	digestService.SetEnqueuer(taskEnqueuer)
 	digestService.SetValkey(vkClient.Redis())
 	digestService.SetEmailDispatcher(emailDispatcher)
+	digestService.SetLiteralCatalog(literalsCatalog) // §14: resolve {{...}} in public digests + outbound email
 	digestHandlers := digest.NewHandlers(digestService, settingsService)
 	// Register the service as the digest:generate / digest:send_email
 	// processor so the Asynq tasks are handled (§84, ADR-092).
@@ -1296,6 +1339,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mutualAidService := mutualaid.NewService(mutualAidStore, settingsService)
 	mutualAidService.SetNotifier(notificationService)
 	mutualAidHandlers := mutualaid.NewHandlers(mutualAidService, settingsService)
+	mutualAidHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in mutual-aid post text
 	// Wire RBAC resolver for post_type-specific permission checks
 	// (create_need, create_skill_swap) and wallet service for the
 	// reputation gate on need posts.
@@ -1309,6 +1353,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	calendarService.SetRBAC(rbacResolver)
 	calendarService.SetNotifier(notificationService)
 	calendarHandlers := calendar.NewHandlers(calendarService, settingsService)
+	calendarHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in event titles/descriptions
 	// Register the service as the calendar processor so the
 	// calendar:staleness_check / calendar:send_reminders Asynq tasks are
 	// handled (§86, ADR-094).
@@ -1324,6 +1369,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithNotifier(notificationService).
 		WithHoncho(honcho.NewClient(cfg.HonchoURL))
 	japaStageHandlers := japastage.NewHandlers(japaStageService, settingsService, asynqClient).WithRedis(vkClient.Redis())
+	japaStageHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in japastage responses
 
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md (ADR-096)
 	amaStore := ama.NewStore(database)
@@ -1332,12 +1378,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	amaService.SetWebhookEmitter(&forumWebhookEmitter{svc: webhookService})
 	amaService.SetValkey(vkClient.Redis())
 	amaHandlers := ama.NewHandlers(amaService)
+	// §14: resolve {{...}} literals in AMA titles/bodies.
+	amaHandlers.SetLiteralResolver(literalsCatalog)
 
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md (ADR-097)
 	achievementStore := achievement.NewStore(database)
 	achievementService := achievement.NewService(achievementStore, contentService, settingsService).
 		WithActivityEmitter(&achievementActivityEmitter{svc: walletService})
 	achievementHandlers := achievement.NewHandlers(achievementService, settingsService)
+	achievementHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in achievement titles/bodies
 
 	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-106)
 	serviceDirStore := servicedir.NewStore(database)
@@ -1348,6 +1397,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// servicedir.ReviewFetcher interface using the read pool.
 	serviceDirReviewFetcher := serviceReviewAdapter{read: gen.New(database.Reader)}
 	serviceDirHandlers := servicedir.NewHandlers(serviceDirService, settingsService, rbacResolver, serviceDirReviewFetcher)
+	serviceDirHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in service listings
 
 	// Phase 49 — V2 Functional Tools (§90–§97, §99–§101)
 	// Ref: japaconnect-engineering/sections/90-97,99-101
@@ -1355,6 +1405,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	visaRoutesService := visaroutes.NewService(visaRoutesStore, settingsService)
 	visaRoutesService.SetFeatureChecker(featureChecker)
 	visaRoutesHandlers := visaroutes.NewHandlers(visaRoutesService, settingsService)
+	visaRoutesHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in visaroutes responses
 
 	appointmentAlertStore := appointmentalert.NewStore(database)
 	appointmentAlertService := appointmentalert.NewService(appointmentAlertStore, settingsService)
@@ -1377,10 +1428,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	arrivalChecklistService := arrivalchecklist.NewService(arrivalChecklistStore, settingsService)
 	arrivalChecklistService.SetFeatureChecker(featureChecker)
 	arrivalChecklistHandlers := arrivalchecklist.NewHandlers(arrivalChecklistService, settingsService)
+	arrivalChecklistHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in arrivalchecklist responses
 
 	credentialCheckerStore := credentialchecker.NewStore(database)
 	credentialCheckerService := credentialchecker.NewService(credentialCheckerStore, settingsService)
 	credentialCheckerHandlers := credentialchecker.NewHandlers(credentialCheckerService, settingsService)
+	credentialCheckerHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in credentialchecker responses
 
 	cvFormatterStore := cvformatter.NewStore(database)
 	cvFormatterService := cvformatter.NewService(cvFormatterStore, settingsService)
@@ -1395,16 +1448,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	housingGuideService.SetFeatureChecker(featureChecker)
 	housingGuideService.SetEnqueuer(taskEnqueuer)
 	housingGuideHandlers := housingguide.NewHandlers(housingGuideService, settingsService)
+	housingGuideHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in housingguide responses
 
 	attestationGuideStore := attestationguide.NewStore(database)
 	attestationGuideService := attestationguide.NewService(attestationGuideStore, settingsService)
 	attestationGuideService.SetFeatureChecker(featureChecker)
 	attestationGuideHandlers := attestationguide.NewHandlers(attestationGuideService, settingsService)
+	attestationGuideHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in attestationguide responses
 
 	languageTestHubStore := languagetesthub.NewStore(database)
 	languageTestHubService := languagetesthub.NewService(languageTestHubStore, settingsService)
 	languageTestHubService.SetFeatureChecker(featureChecker)
 	languageTestHubHandlers := languagetesthub.NewHandlers(languageTestHubService, settingsService)
+	languageTestHubHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in languagetesthub responses
 
 	taxCalculatorStore := taxcalculator.NewStore(database)
 	taxCalculatorService := taxcalculator.NewService(taxCalculatorStore, settingsService)
@@ -1415,6 +1471,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	communityLocatorService := communitylocator.NewService(communityLocatorStore, settingsService)
 	communityLocatorService.SetFeatureChecker(featureChecker)
 	communityLocatorHandlers := communitylocator.NewHandlers(communityLocatorService, settingsService)
+	communityLocatorHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in communitylocator responses
 
 	crsCalculatorStore := crscalculator.NewStore(database)
 	crsCalculatorService := crscalculator.NewService(crsCalculatorStore, settingsService)
@@ -1427,6 +1484,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	assessmentService.SetEnqueuer(taskEnqueuer)
 	assessmentService.SetActivityEmitter(walletService) // §64: japa_ready badge
 	assessmentHandlers := assessment.NewHandlers(assessmentService, settingsService)
+	assessmentHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in assessment responses
 	assessmentHandlers.SetFeatureChecker(featureChecker)
 	assessmentHandlers.SetFeedService(feedService)
 
@@ -1441,6 +1499,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	costOfLivingStore := costofliving.NewStore(database)
 	costOfLivingService := costofliving.NewService(costOfLivingStore, settingsService)
 	costOfLivingHandlers := costofliving.NewHandlers(costOfLivingService, settingsService)
+	costOfLivingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in costofliving responses
 
 	// Ref: japaconnect-engineering/sections/73-scholarship-finder.md (ADR-073)
 	scholarshipsStore := scholarships.NewStore(database)
@@ -1448,6 +1507,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	scholarshipsService.SetFeatureChecker(featureChecker)
 	scholarshipsService.SetEnqueuer(taskEnqueuer)
 	scholarshipsHandlers := scholarships.NewHandlers(scholarshipsService)
+	scholarshipsHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in scholarships responses
 	worker.RegisterScholarshipSyncer(scholarshipsStore)
 
 	// Ref: japaconnect-engineering/sections/74-remittance-tracker.md (ADR-075)
@@ -1458,6 +1518,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	remittanceService.SetEnqueuer(taskEnqueuer)        // admin fetch trigger + alert check tasks
 	remittanceService.SetNotifier(notificationService) // rate-alert notification dispatch (ADR-075 §4)
 	remittanceHandlers := remittance.NewHandlers(remittanceService, settingsService)
+	remittanceHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in remittance responses
 
 	pofCalculatorStore := pofcalculator.NewStore(database)
 	pofCalculatorService := pofcalculator.NewService(pofCalculatorStore, settingsService)
@@ -1469,12 +1530,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ecaGuideService := ecaguide.NewService(ecaGuideStore, settingsService)
 	ecaGuideService.SetEnqueuer(taskEnqueuer)
 	ecaGuideHandlers := ecaguide.NewHandlers(ecaGuideService, settingsService)
+	ecaGuideHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in ecaguide responses
 
 	sopGeneratorStore := sopgenerator.NewStore(database)
 	sopGeneratorService := sopgenerator.NewService(sopGeneratorStore, settingsService)
 	sopGeneratorService.SetEnqueuer(taskEnqueuer)
 	sopGeneratorService.SetCache(&sopQuotaCache{rdb: vkClient.Redis()})
 	sopGeneratorHandlers := sopgenerator.NewHandlers(sopGeneratorService, settingsService)
+	sopGeneratorHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in sopgenerator responses
 
 	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (ADR-079)
 	adsSelfServeStore := adsselfserve.NewStore(database)
@@ -1536,6 +1599,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mentorshipService.SetSettingsProvider(settingsService)
 	mentorshipService.SetEventTracker(analyticsEventTrackerAdapter{analyticsService})
 	mentorshipHandlers := mentorship.NewHandlers(mentorshipService)
+	mentorshipHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in mentorship responses
 
 	// Page Builder subsystem (Section 16 — Page Builder admin CRUD).
 	pagebuilderService := pagebuilder.NewService(database)
@@ -1549,6 +1613,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	widgetRenderer := widgets.NewRenderer(database.Reader)
 	widgetService := widgets.NewService(widgetStore, widgetRenderer, vkClient.Redis())
 	widgetHandlers := widgets.NewHandlers(widgetService)
+	widgetHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in rendered widget data post-cache
 
 	// Wire the widget resolver into the page builder so GetPublishedPage
 	// can server-side resolve widget blocks (Section 16: "blocks + resolved
@@ -1830,6 +1895,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// instead of hardcoding "en".
 	spaceHandlers.SetSettings(settingsService)
 	learningHandlers.SetSettings(settingsService)
+	// §14: wire the template-literal catalog into the wiki and learning
+	// handlers so {{...}} placeholders in page titles, revision content,
+	// track/lesson text resolve at render time.
+	wikiHandlers.SetLiteralResolver(literalsCatalog)
+	learningHandlers.SetLiteralResolver(literalsCatalog)
 
 	// AI Agent Executor (Section 103, ADR-111) — Phase 6 wiring.
 	// The agent handler ties together the gateway function-calling extension
@@ -1876,6 +1946,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Section 104 — AI Content Campaigns agent tool adapters.
 	agentDeps.PersonaProvisioner = &agentPersonaProvisionerAdapter{svc: personasService}
 	agentDeps.Campaign = &agentCampaignAdapter{svc: campaignService}
+	// Persona voice + catalog read tools (§68, ADR-114): surfaced to the
+	// agent catalog and the MCP bridge (§119) so callers can discover
+	// voices and personas before drafting content.
+	agentDeps.PersonaVoices = &agentPersonaVoicesAdapter{svc: personasService}
+	agentDeps.PersonaCatalog = &agentPersonaCatalogAdapter{svc: personasService}
 	// Phase 9: extended tool catalog (Section 103). Spaces, custom field
 	// definitions, and content lifecycle services match the ai package
 	// interfaces 1:1 and are wired directly. Learning, docs, menus, and
@@ -2299,6 +2374,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// existing follows service (entity_type "space") and scholarships
 	// service (saved-scholarship tracker) so no parallel tables are needed.
 	intelHandlers := intel_handlers.NewHandlers(intelStores, intelSourcesService, followService, scholarshipsService, asynqClient, settingsService)
+	intelHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in radar/source text
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
@@ -2324,14 +2400,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Spaces:        spaceService,
 		ScamAlerts:    scamAlertService,
 	})
-	publicAPIService.SetCache(vkClient.Redis())              // destination-brief response cache
-	publicAPIService.SetSettingsReader(settingsService)      // api.destination_brief.cache_ttl_seconds (Rule 3)
+	publicAPIService.SetCache(vkClient.Redis())         // destination-brief response cache
+	publicAPIService.SetSettingsReader(settingsService) // api.destination_brief.cache_ttl_seconds (Rule 3)
 	// Agent Data API Phase 2: feeds, scam alerts, semantic search readers.
 	publicAPIService.SetFeedReader(feedService)
 	publicAPIService.SetSafetyReader(scamAlertService)
 	publicAPIService.SetSemanticSearcher(ragService)
 	publicAPIService.SetQueries(gen.New(database.Reader))
-	mcpServer.SetTierResolver(publicAPIService)              // premium MCP tool gates mirror RequireTier
+	mcpServer.SetTierResolver(publicAPIService) // premium MCP tool gates mirror RequireTier
 	// Agent data tools: the moat facade reaches the ai executor's
 	// AgentDataReader via a wiring-layer adapter — internal/ai cannot
 	// import publicapi (import cycle through visaroutes). agentDeps is a
@@ -2350,6 +2426,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
 	usersService.SetTierService(tierService)
+	// Public base URL for canonical profile URLs (Person JSON-LD `url`).
+	usersService.SetSiteURL(cfg.SiteURL)
 	// Wire the media resolver so PATCH /me/profile can accept
 	// avatar_media_id/header_media_id and resolve them to URLs (BUG-004).
 	usersService.MediaResolver = &mediaURLResolver{media: mediaService}
@@ -2388,6 +2466,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the JWT key rotation so ChangePassword can revoke the caller's
 	// current access token JTI after a successful password change.
 	usersHandlers.SetKeyRotation(kr)
+	// §14: resolve {{...}} literals in /me content lists and bookmarks.
+	usersHandlers.SetLiteralResolver(literalsCatalog)
 
 	// Video subsystem (§106 — Video Content Import).
 	// Placed after content handlers because it depends on the users and
@@ -2424,6 +2504,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	worker.RegisterVideoSummaryProcessor(videoService)
 	worker.RegisterVideoChannelSyncer(videoService)
 	videoHandlers := video.NewHandlers(videoService)
+	videoHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in video responses
 	videoHandlers.SetAuthMiddleware(auth.RequireAuth(kr, vkClient.Redis()))
 	videoHandlers.SetPermissionChecker(rbacResolver)
 	videoAdminHandlers := video.NewAdminHandlers(videoService, auth.RequireAuth(kr, vkClient.Redis()), rbacResolver)
@@ -2476,12 +2557,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	searchHandlers := search.NewHandlers(searchEngine)
 	searchHandlers.SetQueries(gen.New(database.Reader))
 	searchHandlers.SetSettings(settingsService)
-	searchHandlers.SetCache(vkClient.Redis()) // BUG-010: jc:cache:search:* read-through cache
+	searchHandlers.SetCache(vkClient.Redis())          // BUG-010: jc:cache:search:* read-through cache
+	searchHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in result titles/excerpts post-cache
 
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database, settingsService)
 	onboardingService.SetFollower(followService)
 	onboardingHandlers := onboarding.NewHandlers(onboardingService)
+	onboardingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in onboarding responses
 
 	// SEO & Performance subsystem (Section 26).
 	seoQueries := gen.New(database.Writer)
@@ -2541,6 +2624,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// These require platform resolution but no authentication.
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return next })
+		// §14 literal safety net — resolves {{...}} in JSON responses
+		// (public settings, OpenAPI). XML/images pass through untouched.
+		r.Use(literals.Middleware(literalsCatalog))
 		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient))
 		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
@@ -2554,6 +2640,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// Universal RSS feeds (public — no auth required, platform-scoped)
 		rssHandlers := rsspkg.NewHandlers(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName)
 		rssHandlers.SetRedis(vkClient.Redis())
+		rssHandlers.SetLiteralCatalog(literalsCatalog) // §14: resolve {{...}} before feed XML render
 		r.Get("/feed.xml", rssHandlers.HandleFeed)
 		r.Get("/spaces/{slug}/feed.xml", rssHandlers.HandleSpaceFeed)
 		r.Get("/tags/{slug}/feed.xml", rssHandlers.HandleTagFeed)
@@ -2583,6 +2670,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Baseline rate limit for all API routes (ADR-022).
 			// Tighter tiers are applied to specific subgroups below.
 			r.Use(mw.RateLimit(vkClient.Redis(), "loose"))
+
+			// Literal safety net (§14): resolves any {{...}} still present in
+			// JSON response bodies so endpoints that don't call a resolver
+			// explicitly can't leak raw template syntax. Skips ?raw=1 (edit
+			// flows) and non-JSON/streaming responses.
+			r.Use(literals.Middleware(literalsCatalog))
 
 			// Ban enforcement middleware (BE-035) — checks Valkey cache then
 			// falls back to DB lookup for active bans on user_moderation_actions.
@@ -3252,11 +3345,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/following", followHandlers.ListMyFollowing)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followers", followHandlers.ListMyFollowers)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followed-tags", followHandlers.ListMyFollowedTags)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/following", followHandlers.GetFollowing)
+				// Follower/following lists are public per Section 31 — the
+				// handlers degrade is_following to false for anonymous callers.
+				// follow-status and mutual remain RequireAuth: both are
+				// caller-scoped and meaningless for guests.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{user_id}/following", followHandlers.GetFollowing)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
 			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)
@@ -3403,6 +3500,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
 			wsDMService.AsynqClient = asynqClient
 			wsDMService.SetValkeyClient(vkClient)
+			wsDMService.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in live DM broadcasts
 			// Wire DM store into mentorship service for auto-opening DM
 			// threads when a mentorship connection is accepted (§102, ADR-110).
 			mentorshipService.SetDMCreator(wsDMStore)
@@ -3411,6 +3509,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// converts websocket.ConversationResult to mutualaid.dmConversationResult.
 			mutualAidHandlers.SetDMInitiator(&mutualAidDMAdapter{dm: wsDMService})
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
+			wsHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in DM bodies
 			wsHandlers.SetSpamPipeline(spamPipeline)
 			wsHandlers.SetSessionChecker(func(userID string) bool {
 				var uid pgtype.UUID
@@ -3590,6 +3689,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// handler can resolve i18n.default_language for RAG indexing
 			// instead of hardcoding "en".
 			forumHandlers.SetSettings(settingsService)
+			forumHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} literals in thread/reply titles+bodies
 			// §12 stale-index fix: wire Asynq so thread/tag CRUD enqueues
 			// search:index_entity tasks.
 			forumHandlers.SetAsynqClient(asynqClient)
@@ -4578,6 +4678,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{id}", usersHandlers.GetMyDraft)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/scheduled", usersHandlers.ListMyScheduled)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/in-review", usersHandlers.ListMyInReview)
+			// Batch viewer-interaction state for content cards: one call returns
+			// the caller's reaction keys + bookmark state across many content
+			// ids, replacing per-card /reactions/me + /bookmark round-trips.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/content-states", contentHandlers.ViewerContentStates)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmarks", usersHandlers.ListMyBookmarks)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.bookmarks"), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/me/bookmarks", usersHandlers.CreateMyBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/bookmarks/{id}", usersHandlers.DeleteMyBookmark)
@@ -6155,6 +6259,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// PATCH /admin/moderation-queue/:id (wired to content_reviews
 			// in admin.ModerateItem, BUG-001).
 			participationHandlers := participation.NewHandlers(database, participationService, settingsService, vkClient.Redis())
+			participationHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in participation responses
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.review")).
 				Get("/admin/participation/queue", participationHandlers.HandleQueue)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
@@ -6380,9 +6485,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/admin/calendar/{id}", calendarHandlers.HandleAdminDelete)
 			})
 
-			// Section 87 — Japa Stage Progress Profiles (ADR-095)
+			// Section 87 — Japa Stage Progress Profiles (ADR-095, ADR-122)
 			r.With(features.Gate(featureChecker, "japa_stage.enabled")).Group(func(r chi.Router) {
 				r.Get("/japa-stage/stages", japaStageHandlers.HandleStages)
+				r.Get("/japa-stage/intents", japaStageHandlers.HandleIntents)
 				r.Get("/users/{username}/japa-stage", japaStageHandlers.HandleGetByUsername)
 				r.Get("/members/by-stage", japaStageHandlers.HandleListByStage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
@@ -7368,6 +7474,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 
 	return r
+}
+
+// ---------------------------------------------------------------------------
+// Adapter: literals.Catalog → worker.literalResolver
+// ---------------------------------------------------------------------------
+
+// literalResolverAdapter adapts *literals.Catalog to the worker package's
+// RenderContext-free literalResolver interface. The worker cannot import
+// internal/literals (import cycle via geoip→auth→worker), so the render
+// context is bound here: a request-independent context — worker output is
+// cached/shared, not per-visitor.
+type literalResolverAdapter struct {
+	cat *literals.Catalog
+}
+
+func (a literalResolverAdapter) ResolveFields(ctx context.Context, v any) {
+	a.cat.ResolveFields(ctx, v, literals.NewContext(ctx, ""))
+}
+
+func (a literalResolverAdapter) ResolveText(ctx context.Context, s string) string {
+	return a.cat.ResolveText(ctx, s, literals.NewContext(ctx, ""))
 }
 
 // ---------------------------------------------------------------------------

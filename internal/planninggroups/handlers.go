@@ -23,6 +23,7 @@
 package planninggroups
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -36,17 +37,44 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers exposes the planning-groups endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates planning-groups handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetLiteralResolver injects the template-literal catalog so group
+// names/descriptions, milestone titles, and check-in notes render {{...}}
+// placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +189,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &groups)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": groups,
 		"pagination": map[string]any{
@@ -196,6 +226,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &group)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": group})
 }
@@ -240,6 +272,8 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &group)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": group})
 }
@@ -472,6 +506,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &group)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": group})
 }
 
@@ -546,6 +582,8 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.resolveLiterals(r, &milestones)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": milestones})
 }
 
@@ -589,6 +627,8 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 
 		return
 	}
+
+	h.resolveLiterals(r, &milestone)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": milestone})
 }
@@ -672,6 +712,8 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &checkins)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": checkins})
 }
 
@@ -723,6 +765,8 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &checkin)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": checkin})
 }
 
@@ -768,6 +812,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &groups)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": groups,

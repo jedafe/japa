@@ -34,6 +34,11 @@ type Env struct {
 	Now      time.Time
 	Depth    int
 	MaxDepth int
+
+	// foldVars lazily maps upper-cased variable names to their canonical
+	// keys so identifiers resolve case-insensitively ({{current_year}} ==
+	// {{Current_Year}}). Built on the first case-insensitive lookup miss.
+	foldVars map[string]string
 }
 
 // NewEnv creates a new evaluation environment anchored at the provided time.
@@ -328,7 +333,7 @@ func evalNode(ctx context.Context, n Node, env *Env) (any, error) {
 	case StringNode:
 		return t.Val, nil
 	case IdentNode:
-		v, ok := env.Vars[t.Name]
+		v, ok := env.LookupVar(t.Name)
 		if !ok {
 			return nil, fmt.Errorf("unknown variable %q", t.Name)
 		}
@@ -343,6 +348,37 @@ func evalNode(ctx context.Context, n Node, env *Env) (any, error) {
 	}
 
 	return nil, fmt.Errorf("unknown node type %T", n)
+}
+
+// LookupVar resolves a variable by name. Exact match first, then a
+// case-insensitive match against the canonical key ({{current_year}} ==
+// {{Current_Year}}).
+func (e *Env) LookupVar(name string) (any, bool) {
+	if v, ok := e.Vars[name]; ok {
+		return v, true
+	}
+
+	if actual, ok := e.lookupVarFold(name); ok {
+		return e.Vars[actual], true
+	}
+
+	return nil, false
+}
+
+// lookupVarFold resolves name to a canonical Vars key case-insensitively.
+// The fold index is built once per environment on the first miss — Vars are
+// populated before evaluation and not mutated during it.
+func (e *Env) lookupVarFold(name string) (string, bool) {
+	if e.foldVars == nil {
+		e.foldVars = make(map[string]string, len(e.Vars))
+		for k := range e.Vars {
+			e.foldVars[strings.ToUpper(k)] = k
+		}
+	}
+
+	actual, ok := e.foldVars[strings.ToUpper(name)]
+
+	return actual, ok
 }
 
 func evalUnary(ctx context.Context, t UnaryNode, env *Env) (any, error) {

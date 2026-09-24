@@ -66,6 +66,13 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve template literals in card titles/bodies before the excerpt is
+	// derived from body_html (best-effort).
+	rc := buildRenderContext(r, "")
+	if err := h.Service.ResolveContentFields(r.Context(), &items, rc); err != nil {
+		slog.Warn("content: failed to resolve author post literals", "error", err)
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toPostCards(items)})
 }
 
@@ -309,6 +316,13 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
 		return
+	}
+
+	// Resolve template literals in card titles/bodies before the excerpt is
+	// derived from body_html (best-effort).
+	rc := buildRenderContext(r, "")
+	if err := h.Service.ResolveContentFields(r.Context(), &items, rc); err != nil {
+		slog.Warn("content: failed to resolve org post literals", "error", err)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toOrgPostCards(items)})

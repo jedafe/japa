@@ -23,7 +23,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let entry: CalendarEntry;
 	try {
-		entry = await apiGet<CalendarEntry>(ctx, `/calendar/${id}`);
+		entry = await apiGet<CalendarEntry>(ctx, `/calendar/${id}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Calendar entry not found' });

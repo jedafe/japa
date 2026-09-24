@@ -143,7 +143,20 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		entityType = input.EntityType
 	}
 
-	followed, err := h.service.ToggleFollow(r.Context(), user.UserID, entityType, entityID)
+	// POST means "ensure follow" and DELETE means "ensure unfollow" — never
+	// toggle. A raw toggle would let DELETE on a non-followed entity create a
+	// follow (and vice versa for stale clients), violating the catalog's
+	// method semantics. Ref: conventions/api-routes-catalog.md (POST/DELETE
+	// /users/{id}/follow).
+	var followed bool
+
+	var err error
+
+	if r.Method == http.MethodDelete {
+		followed, err = h.service.EnsureUnfollow(r.Context(), user.UserID, entityType, entityID)
+	} else {
+		followed, err = h.service.EnsureFollow(r.Context(), user.UserID, entityType, entityID)
+	}
 	if err != nil {
 		if errors.Is(err, ErrEntityNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "entity_not_found", "The target entity does not exist")

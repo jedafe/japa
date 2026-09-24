@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -307,8 +308,8 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid userId format")
 			return
 		}
-	case chi.URLParam(r, "username") != "":
-		targetUserID, err = h.Service.GetUserIDByUsername(r.Context(), chi.URLParam(r, "username"))
+	case httpx.URLParamDecoded(r, "username") != "":
+		targetUserID, err = h.Service.GetUserIDByUsername(r.Context(), httpx.URLParamDecoded(r, "username"))
 		if err != nil {
 			handleServiceError(w, err)
 			return

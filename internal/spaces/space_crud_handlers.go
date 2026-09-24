@@ -13,6 +13,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
 )
 
@@ -613,6 +614,13 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			isPending = rel.IsPending
 			isFollowing = rel.IsFollowing
 		}
+	}
+
+	// Resolve template literals in the space description (best-effort —
+	// space descriptions are authored via the shared TipTap editor which
+	// offers the {{ token picker).
+	if err := h.content.ResolveContentFields(r.Context(), &space, literals.NewRequestContext(r, "")); err != nil {
+		slog.Warn("spaces: failed to resolve space literals", "error", err)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

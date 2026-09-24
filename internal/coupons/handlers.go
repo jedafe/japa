@@ -1,6 +1,7 @@
 package coupons
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,11 +13,37 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // Handlers provides HTTP handlers for coupons and affiliate providers.
 type Handlers struct {
 	Service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates a Handlers backed by the given service.
@@ -107,6 +134,8 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &coupons)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons})
 }
 
@@ -124,6 +153,8 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &coupon)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupon})
 }
@@ -184,6 +215,8 @@ func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &providers)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
 }
@@ -307,6 +340,8 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &coupons)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons})
 }
@@ -440,6 +475,8 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &rendered)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rendered})
 }
 
@@ -467,6 +504,8 @@ func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &rendered)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rendered})
 }
@@ -516,6 +555,8 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 			"created_at": row.CreatedAt.Time,
 		})
 	}
+
+	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }
@@ -620,6 +661,8 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 			"author_commission_pct": pctF.Float64, "credited": row.Credited, "created_at": row.CreatedAt.Time,
 		})
 	}
+
+	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }

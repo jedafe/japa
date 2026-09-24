@@ -446,7 +446,9 @@ ORDER BY u.id;
 
 -- name: ListPublicUsers :many
 -- Public user directory at GET /users — PII-safe (no email/status/last_login/groups).
--- Only active users who have not opted out of search indexability. Search filters
+-- Only active, non-synthetic users who have not opted out of search indexability.
+-- Synthetic video-channel anchors are excluded — their public page is /sources/{slug}
+-- (§106 sources-directory channel model). Search filters
 -- by username or display_name. profile_type filter is optional (empty = all).
 -- Ordered by follower_count DESC then created_at DESC so the directory surfaces
 -- prominent users first.
@@ -471,6 +473,7 @@ FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
+ AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
  AND (@profile_type::text = '' OR u.profile_type = @profile_type)
@@ -483,6 +486,7 @@ FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
+ AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
  AND (@profile_type::text = '' OR u.profile_type = @profile_type);

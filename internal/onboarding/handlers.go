@@ -1,6 +1,7 @@
 package onboarding
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -8,11 +9,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // Handlers holds dependencies for onboarding HTTP handlers.
 type Handlers struct {
 	Service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -53,6 +80,8 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &status)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": status})
 }
@@ -105,6 +134,8 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &recs)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": recs})
 }
@@ -166,6 +197,8 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &templates)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": templates})
 }

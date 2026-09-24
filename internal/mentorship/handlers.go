@@ -32,6 +32,7 @@
 package mentorship
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -41,9 +42,11 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -55,6 +58,31 @@ const (
 // Handlers holds dependencies for mentorship admin HTTP handlers.
 type Handlers struct {
 	Service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -119,6 +147,8 @@ func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &programs)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": programs})
 }
 
@@ -137,6 +167,8 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Program not found")
 		return
 	}
+
+	h.resolveLiterals(r, &program)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
@@ -174,6 +206,8 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &program)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": program})
 }
 
@@ -206,6 +240,8 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &program)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
@@ -227,6 +263,8 @@ func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &matches)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": matches})
 }
@@ -262,6 +300,8 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &match)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": match})
 }
@@ -395,6 +435,8 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + int(limit) - 1) / int(limit)
 	}
 
+	h.resolveLiterals(r, &mentors)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": mentors,
 		"meta": map[string]any{
@@ -410,7 +452,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/mentors/{username}.
 func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 
-	username := chi.URLParam(r, "username")
+	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
@@ -428,6 +470,8 @@ func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &mentor)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": mentor})
 }
@@ -468,6 +512,8 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &mentors)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": mentors})
 }
 
@@ -487,6 +533,8 @@ func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &profile)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
@@ -526,6 +574,8 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 
 		return
 	}
+
+	h.resolveLiterals(r, &profile)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
@@ -585,6 +635,8 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &conn)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": conn})
 }
 
@@ -607,6 +659,8 @@ func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Reques
 
 		return
 	}
+
+	h.resolveLiterals(r, &conns)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conns})
 }
@@ -661,6 +715,8 @@ func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	h.resolveLiterals(r, &conns)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conns})
 }
 
@@ -694,6 +750,8 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &conn)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }
@@ -729,6 +787,8 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &conn)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }
 
@@ -762,6 +822,8 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &conn)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }
@@ -809,6 +871,8 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &conn)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }
 
@@ -835,6 +899,8 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &conns)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conns})
 }

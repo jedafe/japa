@@ -45,7 +45,9 @@
 		loadError = '';
 		const [userRes, videosRes, claimsRes] = await Promise.all([
 			api.get<PublicUser>(`/users/${username}`),
-			api.get<{ items: VideoSource[] }>(`/u/${username}/videos`),
+			// GET /u/{username}/videos returns a bare array in `data` (not an
+			// {items} wrapper) — read it directly.
+			api.get<VideoSource[]>(`/u/${username}/videos?limit=100`),
 			listMyVideoClaims()
 		]);
 		loading = false;
@@ -57,7 +59,7 @@
 			loadError = t('video_claims.load_failed', 'Failed to load profile');
 		}
 		if (videosRes.data) {
-			videos = videosRes.data.items ?? [];
+			videos = videosRes.data ?? [];
 		}
 		myClaims = claimsRes.data ?? [];
 		// Default to claim when the target is synthetic; otherwise takedown.

@@ -4,6 +4,7 @@
 package participation
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -54,6 +56,31 @@ type Handlers struct {
 	service  *Service
 	settings *config.Settings
 	vk       valkeycompat.Cmdable
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates a Handlers backed by the given database, service,
@@ -160,6 +187,8 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	if total > 0 {
 		totalPages = (total + pageSize - 1) / pageSize
 	}
+
+	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": QueueResponse{

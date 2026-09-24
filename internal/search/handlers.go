@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -84,12 +85,20 @@ type searchSettingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14 Global Template Literals). Implemented by *literals.Catalog;
+// nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for search HTTP handlers.
 type Handlers struct {
 	engine   Engine
 	queries  *gen.Queries
 	settings searchSettingsReader
 	cache    valkeycompat.Cmdable // nil disables caching (tests)
+	lit      literalResolver      // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates Handlers backed by the given search engine.
@@ -113,6 +122,27 @@ func (h *Handlers) SetSettings(s searchSettingsReader) {
 // (jc:cache:search:* per valkey-keys-catalog.md). nil disables caching.
 func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 	h.cache = c
+}
+
+// SetLiteralResolver injects the template-literal catalog so search and
+// autocomplete result titles/excerpts render {{...}} placeholders (§14).
+// Resolution happens post-cache so each request gets its own render context.
+func (h *Handlers) SetLiteralResolver(l literalResolver) {
+	h.lit = l
+}
+
+// resolveLiterals resolves {{...}} placeholders on a search DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // searchCacheKey builds jc:cache:search:{}:{query_hash}:{type}:{geo}:{limit}:{page}:{sort}.
@@ -277,6 +307,10 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		// the flat view, but groups is the canonical field per ADR-017.
 	}
 
+	// §14: resolve post-cache so each request renders literals with its own
+	// geo/time context — the cached payload must stay unresolved.
+	h.resolveLiterals(r, &resp)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": resp,
 	})
@@ -325,6 +359,8 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: results}})
 
@@ -733,6 +769,8 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 		suggestions = h.filterBlockedUsers(r.Context(), user.UserID, suggestions)
 	}
 
+	h.resolveLiterals(r, &suggestions)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": AutocompleteResponse{Suggestions: suggestions},
 	})
@@ -943,6 +981,8 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	h.resolveLiterals(r, &results)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": SearchResponse{Results: results},
 	})
@@ -1057,6 +1097,8 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 			Item: mapHitToItem("content", hit),
 		})
 	}
+
+	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": SearchResponse{Results: results},

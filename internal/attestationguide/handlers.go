@@ -19,6 +19,7 @@
 package attestationguide
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -32,12 +33,38 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // Handlers exposes the attestation guide endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates attestation guide handlers bound to the provided
@@ -139,6 +166,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &pathways)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pathways,
 		"pagination": map[string]any{
@@ -175,6 +204,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &pathway)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pathway})
 }
@@ -264,6 +295,8 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &update)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": update})
 }
 
@@ -323,6 +356,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &pathways)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pathways,
 		"pagination": map[string]any{
@@ -361,6 +396,8 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+
+	h.resolveLiterals(r, &updates)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": updates,

@@ -60,6 +60,8 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 	// the "Org Leader" sidebar widget. Best-effort: a missing/deleted owner
 	// degrades to a nil owner field (the widget shows its empty state).
 	orgDTO := toPublicOrg(org)
+	h.resolveLiterals(r, &orgDTO)
+
 	if ownerRow, oErr := h.service.GetOrgOwnerPublicProfile(r.Context(), org.ID); oErr == nil {
 		orgDTO.Owner = &OrgOwnerResponse{
 			ID:          ownerRow.ID,
@@ -101,7 +103,10 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toOrgMembers(rows)})
+	members := toOrgMembers(rows)
+	h.resolveLiterals(r, &members)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": members})
 }
 
 // ListPublicOrganizations handles GET /organizations (public): active orgs,
@@ -140,8 +145,11 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	orgs := toPublicOrgList(rows)
+	h.resolveLiterals(r, &orgs)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": toPublicOrgList(rows),
+		"data": orgs,
 		"meta": map[string]any{
 			"total":       total,
 			"page":        offset / limit,

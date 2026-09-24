@@ -15,6 +15,7 @@ import type {
 	MutualAidCategory,
 	ServiceCategory,
 	JapaStage,
+	JapaIntent,
 	CalendarCategory,
 	TrendingWindow
 } from '$lib/types';
@@ -118,6 +119,19 @@ export function japaStageOptions(
 	stages: JapaStage[] = []
 ): { value: JapaStage; label: string }[] {
 	return stages.map((value) => ({ value, label: japaStageLabel(t, value) }));
+}
+
+// --- Japa intent (ADR-122) ---
+
+export function japaIntentLabel(t: Translator, value: JapaIntent): string {
+	return t(`japa_intent.${value}`, value.charAt(0).toUpperCase() + value.slice(1));
+}
+
+export function japaIntentOptions(
+	t: Translator,
+	intents: JapaIntent[] = []
+): { value: JapaIntent; label: string }[] {
+	return intents.map((value) => ({ value, label: japaIntentLabel(t, value) }));
 }
 
 // --- Calendar ---

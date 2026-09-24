@@ -182,6 +182,7 @@ FROM follows f
 JOIN users u ON u.id = f.follower_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE f.entity_type = $1 AND f.entity_id = $2
+  AND u.status = 'active'
 ORDER BY f.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -268,6 +269,10 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  END::text AS entity_avatar_url
 FROM follows f
 WHERE f.follower_id = $1
+  AND (f.entity_type <> 'user' OR EXISTS (
+    SELECT 1 FROM users fu
+    WHERE fu.id = f.entity_id AND fu.status = 'active'
+  ))
 ORDER BY f.created_at DESC
 LIMIT $3 OFFSET $2
 `
@@ -345,6 +350,10 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  END::text AS entity_avatar_url
 FROM follows f
 WHERE f.follower_id = $1 AND f.entity_type = $2
+  AND (f.entity_type <> 'user' OR EXISTS (
+    SELECT 1 FROM users fu
+    WHERE fu.id = f.entity_id AND fu.status = 'active'
+  ))
 ORDER BY f.created_at DESC
 LIMIT $4 OFFSET $3
 `

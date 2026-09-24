@@ -32,7 +32,14 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers exposes the service directory endpoints.
 type Handlers struct {
@@ -40,6 +47,7 @@ type Handlers struct {
 	settings *config.Settings
 	rbac     RBACResolver
 	reviews  ReviewFetcher
+	lit      literalResolver // nil disables literal resolution (§14)
 }
 
 // RBACResolver is the subset of the RBAC resolver needed to check
@@ -82,6 +90,24 @@ type ReviewFetcher interface {
 // GET /services/:slug omits the reviews/aggregate sidecar fields.
 func NewHandlers(service *Service, settings *config.Settings, rbac RBACResolver, reviews ReviewFetcher) *Handlers {
 	return &Handlers{service: service, settings: settings, rbac: rbac, reviews: reviews}
+}
+
+// SetLiteralResolver injects the template-literal catalog so listing
+// titles/bodies render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +218,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &services)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": services,
 		"meta": map[string]any{
@@ -234,6 +262,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	// reviews table (entity_type='service_listing', entity_id=content_id).
 	// Reviews are fetched best-effort: a failure logs but does not fail
 	// the detail request — the listing still renders without reviews.
+	h.resolveLiterals(r, &service)
+
 	resp := map[string]any{"data": service}
 
 	if h.reviews != nil {
@@ -243,6 +273,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			if revErr != nil {
 				slog.Warn("servicedir: fetch reviews for service detail", "slug", slug, "error", revErr)
 			} else {
+				h.resolveLiterals(r, &reviews)
 				resp["reviews"] = reviews
 			}
 
@@ -298,6 +329,8 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &service)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": service})
 }
@@ -355,6 +388,8 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &service)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": service})
 }
@@ -476,6 +511,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &services)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": services,

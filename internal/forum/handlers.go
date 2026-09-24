@@ -26,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/worker"
@@ -82,6 +83,13 @@ type ContentStore interface {
 	EnsureContentScore(ctx context.Context, contentID pgtype.UUID) error
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14 Global Template Literals). Implemented by *literals.Catalog;
+// nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for forum HTTP handlers.
 type Handlers struct {
 	Service         *Service
@@ -92,6 +100,7 @@ type Handlers struct {
 	ragIndexer      RAGEntityIndexer     // nil disables RAG indexing (§69)
 	settings        settingsReader       // nil falls back to defaults
 	asynqClient     *asynq.Client        // nil disables search index enqueue (test-only)
+	literals        literalResolver      // nil disables literal resolution
 }
 
 // NewHandlers creates Handlers with the given Service and optional JSON-LD
@@ -128,6 +137,24 @@ func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
 // search:index_entity tasks (§12 stale-index fix). nil disables enqueue
 // (test-only).
 func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
+
+// SetLiteralResolver injects the template-literal catalog so thread/reply
+// titles and bodies render {{...}} placeholders (§14). nil disables.
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.literals = l }
+
+// resolveLiterals resolves {{...}} placeholders on a thread/reply row or
+// slice. Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.literals == nil {
+		return
+	}
+
+	h.literals.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
+}
 
 // enqueueSearchIndex enqueues a Meilisearch re-index task for a forum entity
 // (thread or tag). operation is "index" (create/update) or "delete".
@@ -540,6 +567,8 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new thread.
 	h.enqueueSearchIndex("forum_thread", "index", thread.ID)
 
+	h.resolveLiterals(r, &thread)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
 
@@ -605,6 +634,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			threads = []gen.ListForumThreadsBySpaceWithDetailsRow{}
 		}
 
+		h.resolveLiterals(r, &threads)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case authorIDStr != "":
@@ -624,6 +655,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			threads = []gen.ListForumThreadsByAuthorWithDetailsRow{}
 		}
 
+		h.resolveLiterals(r, &threads)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case tagIDStr != "":
@@ -642,6 +675,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		if threads == nil {
 			threads = []gen.ListForumThreadsByTagWithDetailsRow{}
 		}
+
+		h.resolveLiterals(r, &threads)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
@@ -664,6 +699,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			threads = []gen.ListForumThreadsByTagWithDetailsRow{}
 		}
 
+		h.resolveLiterals(r, &threads)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	default:
@@ -680,6 +717,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		if threads == nil {
 			threads = []gen.ListForumThreadsWithDetailsRow{}
 		}
+
+		h.resolveLiterals(r, &threads)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 	}
@@ -701,6 +740,10 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Resolve {{...}} literals in title/body before the JSON-LD is built so
+	// structured data also carries resolved text.
+	h.resolveLiterals(r, &thread)
 
 	// BUG-021: enqueue the view-count increment to a shared background
 	// worker instead of spawning a per-request goroutine. Non-blocking.
@@ -1023,6 +1066,8 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	// GET regenerates with the updated title/body.
 	h.Service.deleteJSONLDCache(r.Context(), id)
 
+	h.resolveLiterals(r, &thread)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
@@ -1189,6 +1234,8 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 
 	h.dispatchMentionNotifications(r.Context(), user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
 
+	h.resolveLiterals(r, &reply)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }
 
@@ -1212,6 +1259,9 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 	if replies == nil {
 		replies = []gen.ListForumRepliesByThreadWithAuthorRow{}
 	}
+
+	// Resolve {{...}} literals in reply bodies (best-effort).
+	h.resolveLiterals(r, &replies)
 
 	// GDPR / ADR-029: compute erased-mention IDs across all reply bodies so
 	// the frontend can render @[deleted user] for mentions of erased users
@@ -1288,6 +1338,8 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &reply)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reply})
 }
@@ -1514,6 +1566,9 @@ func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Resolve {{...}} literals in bookmarked thread titles (best-effort).
+	h.resolveLiterals(r, &bookmarks)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
 }

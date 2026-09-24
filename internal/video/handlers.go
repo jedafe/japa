@@ -9,10 +9,12 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 const (
@@ -41,6 +43,31 @@ type Handlers struct {
 	// perms is optional — when set, §106 permission nodes are enforced on the
 	// mutating endpoints. nil keeps the routes auth-only (tests, dev wiring).
 	perms permissionChecker
+	lit   literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers returns video HTTP handlers.
@@ -146,6 +173,8 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 
 	_ = user // authenticated user is the actor, but author is the synthetic channel
 
+	h.resolveLiterals(r, &result)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -229,6 +258,8 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &result)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -257,6 +288,8 @@ func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Video source has been removed")
 		return
 	}
+
+	h.resolveLiterals(r, &source)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": source})
 }
@@ -297,7 +330,7 @@ func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
 // ListChannelVideos handles GET /api/v1/u/{username}/videos.
 func (h *Handlers) ListChannelVideos(w http.ResponseWriter, r *http.Request) {
 
-	username := chi.URLParam(r, "username")
+	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
@@ -310,6 +343,8 @@ func (h *Handlers) ListChannelVideos(w http.ResponseWriter, r *http.Request) {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &sources)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sources})
 }
@@ -392,6 +427,8 @@ func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &job)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": job})
 }
 
@@ -412,6 +449,8 @@ func (h *Handlers) runUserList(w http.ResponseWriter, r *http.Request, fetch use
 		errpkg.HandleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
@@ -436,7 +475,7 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := chi.URLParam(r, "username")
+	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return

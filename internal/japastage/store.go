@@ -42,6 +42,7 @@ type ProfileRow struct {
 	DisplayName       *string
 	AvatarURL         *string
 	JapaStage         *string
+	JapaIntent        *string
 	JapaStageDestID   pgtype.UUID
 	JapaStageDestName *string
 	JapaStageDestCode *string
@@ -57,6 +58,7 @@ type DirectoryRow struct {
 	DisplayName       *string
 	AvatarURL         *string
 	JapaStage         *string
+	JapaIntent        *string
 	JapaStageDestID   pgtype.UUID
 	JapaStageDestName *string
 	JapaStageDestCode *string
@@ -68,7 +70,7 @@ type DirectoryRow struct {
 func (s *Store) GetUserProfile(ctx context.Context, userID pgtype.UUID) (ProfileRow, error) {
 	const q = `
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
-       up.japa_stage, up.japa_stage_dest_space_id,
+       up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at
 FROM user_profiles up
@@ -82,7 +84,7 @@ LIMIT 1
 
 	err := s.pool.Reader.QueryRow(ctx, q, userID).Scan(
 		&r.UserID, &r.Username, &r.DisplayName, &r.AvatarURL,
-		&r.JapaStage, &r.JapaStageDestID,
+		&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
 	)
@@ -102,7 +104,7 @@ LIMIT 1
 func (s *Store) GetProfileByUsername(ctx context.Context, username string) (ProfileRow, error) {
 	const q = `
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
-       up.japa_stage, up.japa_stage_dest_space_id,
+       up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at
 FROM user_profiles up
@@ -116,7 +118,7 @@ LIMIT 1
 
 	err := s.pool.Reader.QueryRow(ctx, q, username).Scan(
 		&r.UserID, &r.Username, &r.DisplayName, &r.AvatarURL,
-		&r.JapaStage, &r.JapaStageDestID,
+		&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
 	)
@@ -131,48 +133,56 @@ LIMIT 1
 	return r, nil
 }
 
-// UpdateStage upserts japa_stage, japa_stage_dest_space_id,
+// UpdateStage upserts japa_stage, japa_intent, japa_stage_dest_space_id,
 // japa_stage_is_public (when isPublic is non-nil), and
 // japa_stage_updated_at, and appends a transition record to the
 // japa_stage_history jsonb array. destSpaceID may be NULL to clear it.
+// // stage is a pointer: nil leaves japa_stage unchanged, a non-nil empty
+// string clears it to NULL (used when switching to a non-relocation intent
+// per ADR-122), and a non-empty value sets it. intent follows the same
+// contract: nil leaves japa_intent unchanged, a non-empty value sets it.
 // // The upsert (INSERT ... ON CONFLICT DO UPDATE) ensures a user without an
 // existing user_profiles row — e.g. a newly registered member who has not
 // yet visited profile settings — can still set their japa stage. CreateUser
 // (auth.sql) only inserts into `users`; no trigger auto-creates the profile
 // row, so a plain UPDATE would affect 0 rows and 404.
-// // The history record uses the spec key `set_at` (§87:
-// `japa_stage_history: [{stage, dest_space_id, set_at}]`); the destination
-// is stored as a `spaces` row (country-level space per ADR-053) because no
-// `geo_countries` table exists.
-func (s *Store) UpdateStage(ctx context.Context, userID pgtype.UUID, stage string, destSpaceID pgtype.UUID, isPublic *bool) error {
+// // The history record uses the spec keys (§87:
+// `japa_stage_history: [{intent, stage, dest_space_id, set_at}]`); each entry
+// records the effective intent+stage pair after the update so the log stays
+// self-describing (ADR-122). The destination is stored as a `spaces` row
+// (country-level space per ADR-053) because no `geo_countries` table exists.
+func (s *Store) UpdateStage(ctx context.Context, userID pgtype.UUID, stage *string, intent *string, destSpaceID pgtype.UUID, isPublic *bool) error {
 	const q = `
-INSERT INTO user_profiles (user_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history)
+INSERT INTO user_profiles (user_id, japa_stage, japa_intent, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history)
 VALUES (
-    $2, $1, $3, $4, now(),
+    $1, NULLIF($2::text, ''), $3::text, $4, now(),
     COALESCE($5::bool, true),
     jsonb_build_array(
         jsonb_build_object(
-            'stage', $3::text,
-            'dest_space_id', CASE WHEN $4::uuid IS NULL THEN 'null'::jsonb ELSE to_jsonb($4::uuid) END,
+            'intent', to_jsonb($3::text),
+            'stage', to_jsonb(NULLIF($2::text, '')),
+            'dest_space_id', to_jsonb($4::uuid),
             'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
         )
     )
 )
 ON CONFLICT (user_id) DO UPDATE SET
-    japa_stage = EXCLUDED.japa_stage,
+    japa_stage = CASE WHEN $2::text IS NULL THEN user_profiles.japa_stage ELSE NULLIF($2::text, '') END,
+    japa_intent = CASE WHEN $3::text IS NULL THEN user_profiles.japa_intent ELSE $3::text END,
     japa_stage_dest_space_id = EXCLUDED.japa_stage_dest_space_id,
     japa_stage_updated_at = now(),
     japa_stage_is_public = CASE WHEN $5::bool IS NULL THEN user_profiles.japa_stage_is_public ELSE $5::bool END,
     japa_stage_history = user_profiles.japa_stage_history || jsonb_build_array(
         jsonb_build_object(
-            'stage', $3::text,
-            'dest_space_id', CASE WHEN $4::uuid IS NULL THEN 'null'::jsonb ELSE to_jsonb($4::uuid) END,
+            'intent', to_jsonb(COALESCE($3::text, user_profiles.japa_intent)),
+            'stage', to_jsonb(CASE WHEN $2::text IS NULL THEN user_profiles.japa_stage ELSE NULLIF($2::text, '') END),
+            'dest_space_id', to_jsonb($4::uuid),
             'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
         )
     )
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, userID, stage, destSpaceID, isPublic)
+	cmd, err := s.pool.Writer.Exec(ctx, q, userID, stage, intent, destSpaceID, isPublic)
 	if err != nil {
 		return fmt.Errorf("japastage: update stage: %w", err)
 	}
@@ -205,10 +215,12 @@ WHERE user_id = $1
 }
 
 // ListByStage returns a paginated directory of public japa stage profiles.
-// stage, when non-empty, filters to that stage; when empty, all public
-// profiles with a set japa_stage are returned. destSpaceID, when valid,
-// further filters by destination (geo-aware ?dest= filter, §87).
-func (s *Store) ListByStage(ctx context.Context, stage string, destSpaceID pgtype.UUID, limit, offset int32) ([]DirectoryRow, int64, error) {
+// stage, when non-empty, filters to that stage. intent, when non-empty,
+// filters to that journey class (ADR-122) — including stage-less members
+// for non-relocation intents. When both are empty, all public profiles with
+// a set japa_stage are returned. destSpaceID, when valid, further filters
+// by destination (geo-aware ?dest= filter, §87).
+func (s *Store) ListByStage(ctx context.Context, stage, intent string, destSpaceID pgtype.UUID, limit, offset int32) ([]DirectoryRow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -235,7 +247,17 @@ func (s *Store) ListByStage(ctx context.Context, stage string, destSpaceID pgtyp
 		countPredicates = append(countPredicates, fmt.Sprintf("japa_stage = $%d", len(countArgs)+1))
 		listArgs = append(listArgs, stage)
 		countArgs = append(countArgs, stage)
-	} else {
+	}
+
+	if intent != "" {
+		listPredicates = append(listPredicates, fmt.Sprintf("up.japa_intent = $%d", len(listArgs)+1))
+		countPredicates = append(countPredicates, fmt.Sprintf("japa_intent = $%d", len(countArgs)+1))
+		listArgs = append(listArgs, intent)
+		countArgs = append(countArgs, intent)
+	} else if stage == "" {
+		// Unfiltered directory keeps the ADR-095 shape: members who set a
+		// stage. An intent filter bypasses this so stage-less visit/business
+		// members are listable (ADR-122).
 		listPredicates = append(listPredicates, "up.japa_stage IS NOT NULL")
 		countPredicates = append(countPredicates, "japa_stage IS NOT NULL")
 	}
@@ -249,7 +271,7 @@ func (s *Store) ListByStage(ctx context.Context, stage string, destSpaceID pgtyp
 
 	listQuery := fmt.Sprintf(`
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
-       up.japa_stage, up.japa_stage_dest_space_id,
+       up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_updated_at
 FROM user_profiles up
@@ -291,7 +313,7 @@ func scanDirectoryRows(rows pgx.Rows) ([]DirectoryRow, error) {
 		var r DirectoryRow
 		if err := rows.Scan(
 			&r.UserID, &r.Username, &r.DisplayName, &r.AvatarURL,
-			&r.JapaStage, &r.JapaStageDestID,
+			&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 			&r.JapaStageDestName, &r.JapaStageDestCode,
 			&r.JapaStageUpdated,
 		); err != nil {
@@ -334,4 +356,43 @@ var validStages = []string{
 // for error messages.
 func JoinStages() string {
 	return strings.Join(validStages, ", ")
+}
+
+// ValidIntent reports whether intent is one of the allowed japa_intent
+// values enforced by the user_profiles CHECK constraint (ADR-122).
+func ValidIntent(intent string) bool {
+	for _, v := range validIntents {
+		if v == intent {
+			return true
+		}
+	}
+
+	return false
+}
+
+var validIntents = []string{
+	"relocation",
+	"study",
+	"work",
+	"family",
+	"visit",
+	"business",
+}
+
+// IsRelocationIntent reports whether the intent belongs to the relocation
+// journey class — the only class that may carry a japa_stage (ADR-122
+// composite CHECK user_profiles_intent_stage_chk).
+func IsRelocationIntent(intent string) bool {
+	switch intent {
+	case "relocation", "study", "work", "family":
+		return true
+	}
+
+	return false
+}
+
+// JoinIntents returns the valid intents as a comma-separated string, useful
+// for error messages.
+func JoinIntents() string {
+	return strings.Join(validIntents, ", ")
 }

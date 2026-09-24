@@ -188,6 +188,45 @@ func (q *Queries) GetUserReactions(ctx context.Context, arg GetUserReactionsPara
 	return items, nil
 }
 
+const getUserReactionsForContents = `-- name: GetUserReactionsForContents :many
+SELECT entity_id, reaction_key
+FROM reactions
+WHERE entity_type = 'content' AND user_id = $1 AND entity_id = ANY($2::uuid[])
+`
+
+type GetUserReactionsForContentsParams struct {
+	UserID pgtype.UUID   `json:"user_id"`
+	Ids    []pgtype.UUID `json:"ids"`
+}
+
+type GetUserReactionsForContentsRow struct {
+	EntityID    pgtype.UUID `json:"entity_id"`
+	ReactionKey string      `json:"reaction_key"`
+}
+
+// Batch variant for card lists: one query returns the caller's reaction keys
+// across many content ids (GET /me/content-states). Replaces per-card
+// /content/{id}/reactions/me calls on feed/profile listings.
+func (q *Queries) GetUserReactionsForContents(ctx context.Context, arg GetUserReactionsForContentsParams) ([]GetUserReactionsForContentsRow, error) {
+	rows, err := q.db.Query(ctx, getUserReactionsForContents, arg.UserID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserReactionsForContentsRow
+	for rows.Next() {
+		var i GetUserReactionsForContentsRow
+		if err := rows.Scan(&i.EntityID, &i.ReactionKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listContentLikedByUser = `-- name: ListContentLikedByUser :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.created_at, c.view_count, c.comment_count,

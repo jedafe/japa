@@ -23,7 +23,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let service: ServiceListing;
 	try {
-		service = await apiGet<ServiceListing>(ctx, `/services/${slug}`);
+		service = await apiGet<ServiceListing>(ctx, `/services/${slug}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Service not found' });

@@ -289,11 +289,14 @@ func (s *Store) GetChannelUsernameBySourceID(ctx context.Context, sourceID pgtyp
 
 // ListItemsBySourceID returns the video sources for a canonical intel source
 // enriched with the author username and published content slug so /sources
-// item cards can link to the in-app video page (§106).
-func (s *Store) ListItemsBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListVideoSourceItemsBySourceIDRow, int64, error) {
+// item cards can link to the in-app video page (§106). sortMode matches the
+// source item feed modes (latest|popular|discussed|upvoted); unknown values
+// fall back to latest.
+func (s *Store) ListItemsBySourceID(ctx context.Context, sourceID pgtype.UUID, sortMode string, limit, offset int32) ([]gen.ListVideoSourceItemsBySourceIDRow, int64, error) {
 	rows, err := s.read.ListVideoSourceItemsBySourceID(ctx, gen.ListVideoSourceItemsBySourceIDParams{
 
 		SourceID:   sourceID,
+		SortMode:   sortMode,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

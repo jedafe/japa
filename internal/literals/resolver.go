@@ -24,6 +24,10 @@ var (
 // Resolve replaces {{...}} placeholders in text using the provided render context
 // and platform token definitions. Unknown tokens are left unchanged.
 func Resolve(ctx context.Context, text string, rc RenderContext, tokens []TemplateLiteral) (string, error) {
+	if rc.raw {
+		return text, nil
+	}
+
 	return resolveWithSeen(ctx, text, rc, tokens, nil), nil
 }
 
@@ -43,6 +47,10 @@ func resolveWithSeen(ctx context.Context, text string, rc RenderContext, tokens 
 }
 
 func resolveWithMap(ctx context.Context, text string, env *expr.Env, tokenMap map[string]TemplateLiteral, seen map[string]bool) string {
+	if seen == nil {
+		seen = make(map[string]bool)
+	}
+
 	// First pass: replace bare tokens with optional inline fallback.
 	text = tokenRegex.ReplaceAllStringFunc(text, func(match string) string {
 		m := tokenRegex.FindStringSubmatch(match)
@@ -83,9 +91,9 @@ func resolveWithMap(ctx context.Context, text string, env *expr.Env, tokenMap ma
 }
 
 func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env, tokenMap map[string]TemplateLiteral, seen map[string]bool) string {
-	lit, ok := tokenMap[key]
+	lit, ok := tokenMap[normalizeKey(key)]
 	if !ok {
-		if v, exists := env.Vars[key]; exists {
+		if v, exists := env.LookupVar(key); exists {
 			s, _ := expr.ToString(v)
 			// Unset context var (e.g. no detected source country) — honor the
 			// inline fallback before emitting an empty string.
@@ -103,12 +111,12 @@ func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env
 		return fmt.Sprintf("{{%s}}", key)
 	}
 
-	if seen[key] {
+	if seen[normalizeKey(key)] {
 		return resolveFailure(key, inlineFallback, lit.Fallback)
 	}
 
-	seen[key] = true
-	defer delete(seen, key)
+	seen[normalizeKey(key)] = true
+	defer delete(seen, normalizeKey(key))
 
 	if lit.Kind == expr.LiteralKindStatic {
 		return resolveWithMap(ctx, lit.Value, env, tokenMap, seen)
@@ -144,10 +152,16 @@ func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env
 func buildTokenMap(tokens []TemplateLiteral) map[string]TemplateLiteral {
 	m := make(map[string]TemplateLiteral, len(tokens))
 	for _, t := range tokens {
-		m[t.Key] = t
+		m[normalizeKey(t.Key)] = t
 	}
 
 	return m
+}
+
+// normalizeKey upper-cases a token key so lookups are case-insensitive
+// ({{current_year}} resolves the same literal as {{Current_Year}}).
+func normalizeKey(key string) string {
+	return strings.ToUpper(key)
 }
 
 func resolveFailure(key, inlineFallback string, fallback *string) string {

@@ -1049,6 +1049,36 @@ func (q *Queries) ListBlockedSourceIDs(ctx context.Context, blockerID pgtype.UUI
 	return items, nil
 }
 
+const listDistinctIntelRecordEntityTypesBySource = `-- name: ListDistinctIntelRecordEntityTypesBySource :many
+SELECT DISTINCT entity_type FROM intel_records
+WHERE source_id = $1
+ AND status = 'published'
+ORDER BY entity_type
+`
+
+// Distinct published entity types in a source's feed — the public detail
+// page scopes its entity-type filter pills to types that actually have
+// items instead of offering every global type.
+func (q *Queries) ListDistinctIntelRecordEntityTypesBySource(ctx context.Context, sourceID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDistinctIntelRecordEntityTypesBySource, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var entity_type string
+		if err := rows.Scan(&entity_type); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_type)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDueIntelSources = `-- name: ListDueIntelSources :many
 SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
 WHERE enabled = true

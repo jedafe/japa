@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go"
@@ -34,15 +35,40 @@ const trendingCacheTTL = 30 * time.Minute
 // suggestionsCacheTTL is the TTL for jc:suggestions:* cache keys (Section 53).
 const suggestionsCacheTTL = 1 * time.Hour
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for trending HTTP handlers.
 type Handlers struct {
 	Store *Store
-	cache valkey.Client // nil disables caching (tests)
+	cache valkey.Client   // nil disables caching (tests)
+	lit   literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates Handlers with the given Store.
 func NewHandlers(store *Store) *Handlers {
 	return &Handlers{Store: store}
+}
+
+// SetLiteralResolver injects the template-literal catalog so trending
+// titles/names render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // SetCache injects a Valkey cache client for jc:trending:tags caching (BUG-015).
@@ -240,6 +266,8 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 		data = data[:limit]
 	}
 
+	h.resolveLiterals(r, &data)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
@@ -293,6 +321,8 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	if int32(len(data)) > limit { // #nosec //nolint:gosec // G115: bounded
 		data = data[:limit]
 	}
+
+	h.resolveLiterals(r, &data)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
@@ -381,6 +411,8 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 		data = data[:limit]
 	}
 
+	h.resolveLiterals(r, &data)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
@@ -410,6 +442,8 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 	if data == nil {
 		data = []gen.GetTrendingUsersRow{}
 	}
+
+	h.resolveLiterals(r, &data)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
@@ -453,6 +487,8 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &data)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
@@ -491,6 +527,8 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &data)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
@@ -515,6 +553,8 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 	if data == nil {
 		data = []gen.GetSuggestedTagsRow{}
 	}
+
+	h.resolveLiterals(r, &data)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
@@ -552,6 +592,8 @@ func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
 	if data == nil {
 		data = []gen.GetSuggestedContentRow{}
 	}
+
+	h.resolveLiterals(r, &data)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }

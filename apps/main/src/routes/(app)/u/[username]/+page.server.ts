@@ -33,6 +33,11 @@ type RawFollowing = {
 	entity_type?: string;
 };
 
+// Raw shape returned by GET /users/{id}/followers (FollowerInfo). `id` is the
+// follow row's id — `follower_id` is the actual user id the FollowButton and
+// each-key need.
+type RawFollower = PublicUser & { follower_id?: string; is_following?: boolean };
+
 /**
  * Public user profile at /u/[username] — SSR, indexable.
  *
@@ -160,12 +165,15 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following, videos] = await Promise.all([
-		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(catchEmpty<ProfilePost>('posts')),
-		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(catchEmpty<ProfileReply>('replies')),
-		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(catchEmpty<ProfileMedia>('media')),
-		apiList<ProfileSpace>(ctx, `/users/${userId}/spaces`).then((r) => r.items).catch(catchEmpty<ProfileSpace>('spaces')),
-		apiList<ProfileCertificate>(ctx, `/users/${userId}/certificates`).then((r) => r.items).catch(catchEmpty<ProfileCertificate>('certificates')),
-		apiList<ProfileLike>(ctx, `/users/${userId}/likes`).then((r) => r.items).catch(catchEmpty<ProfileLike>('likes')),
+		// Tabs paginate client-side over the loaded list, so request the max
+		// page size (100, same cap as the follow lists) — the backend default
+		// of 20 would silently truncate tabs for prolific users.
+		apiList<ProfilePost>(ctx, `/users/${userId}/content?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfilePost>('posts')),
+		apiList<ProfileReply>(ctx, `/users/${userId}/replies?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileReply>('replies')),
+		apiList<ProfileMedia>(ctx, `/users/${userId}/media?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileMedia>('media')),
+		apiList<ProfileSpace>(ctx, `/users/${userId}/spaces?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileSpace>('spaces')),
+		apiList<ProfileCertificate>(ctx, `/users/${userId}/certificates?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileCertificate>('certificates')),
+		apiList<ProfileLike>(ctx, `/users/${userId}/likes?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileLike>('likes')),
 		// Phase 11.07 — analytics dashboard, owner-only per JEOS §342 [auth,
 		// self]. Only fetch for the profile owner; for guests and other users
 		// the tab is hidden and the route would 403, so skip the request.
@@ -199,8 +207,8 @@ export const load: PageServerLoad = async (event) => {
 		// stage set. The route returns an empty DTO (no stage field) when
 		// is_public is false, so we treat a missing stage as "no badge".
 		apiGet<PublicJapaStage>(ctx, `/users/${username}/japa-stage`).catch(catchNull<PublicJapaStage>('japa-stage')),
-		apiList<PublicUser & { is_following?: boolean }>(ctx, `/users/${userId}/followers?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
-			.then((r) => r.items.map((u) => ({ ...u, entity_type: 'user' as const })))
+		apiList<RawFollower>(ctx, `/users/${userId}/followers?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
+			.then((r) => r.items.map((u) => ({ ...u, id: u.follower_id ?? u.id, entity_type: 'user' as const })))
 			.catch(catchEmpty<ProfileFollower>('followers')),
 		apiList<RawFollowing>(ctx, `/users/${userId}/following?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
 			.then((r) =>

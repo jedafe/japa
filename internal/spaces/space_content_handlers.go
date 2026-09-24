@@ -14,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // ListSpaceContent handles GET /api/v1/spaces/{slug}/content — content
@@ -40,6 +41,11 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 
 		if items == nil {
 			items = []gen.SearchContentsBySpaceRow{}
+		}
+
+		// Resolve template literals in titles/excerpts (best-effort).
+		if err := h.content.ResolveContentFields(r.Context(), &items, literals.NewRequestContext(r, "")); err != nil {
+			slog.Warn("spaces: failed to resolve content literals", "error", err)
 		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
@@ -70,6 +76,11 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		items = []gen.ListContentsBySpaceRow{}
 	}
 
+	// Resolve template literals in titles/excerpts (best-effort).
+	if err := h.content.ResolveContentFields(r.Context(), &items, literals.NewRequestContext(r, "")); err != nil {
+		slog.Warn("spaces: failed to resolve content literals", "error", err)
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -93,6 +104,11 @@ func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
 
 	if pins == nil {
 		pins = []gen.ListPinnedContentBySpaceRow{}
+	}
+
+	// Resolve template literals in pinned-card titles/excerpts (best-effort).
+	if err := h.content.ResolveContentFields(r.Context(), &pins, literals.NewRequestContext(r, "")); err != nil {
+		slog.Warn("spaces: failed to resolve pinned content literals", "error", err)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pins})

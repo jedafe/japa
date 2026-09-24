@@ -17,6 +17,7 @@
 package checklist
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -28,12 +29,38 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // Handlers exposes the checklist endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates checklist handlers bound to the provided service.
@@ -111,6 +138,8 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &result)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -142,6 +171,8 @@ func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &guide)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
@@ -175,6 +206,8 @@ func (h *Handlers) HandleGetProgress(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
@@ -310,6 +343,8 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	h.resolveLiterals(r, &rows)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
 		"pagination": map[string]any{
@@ -341,6 +376,8 @@ func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Req
 
 		return
 	}
+
+	h.resolveLiterals(r, &stats)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stats,

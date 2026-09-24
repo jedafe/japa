@@ -243,8 +243,12 @@
 	let deleteError = $state<string | null>(null);
 	let copied = $state(false);
 
-	function startEdit() {
-		editBody = comment.body;
+	async function startEdit() {
+		// Fetch the raw (unresolved) body so hand-typed {{...}} literals survive
+		// a re-save — the display payload has them already resolved, and
+		// CommentEditor only reads initialBody once at mount.
+		const res = await api.get<Comment>(`/comments/${comment.id}?raw=1`);
+		editBody = res.data?.body ?? comment.body;
 		editing = true;
 	}
 

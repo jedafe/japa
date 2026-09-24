@@ -10,6 +10,19 @@ vi.mock('$app/state', () => ({
 	}
 }));
 
+// $lib/auth/guest reads the page through $app/stores + get() — mock an
+// authenticated viewer so requireAuthOrRedirect() passes in tests.
+vi.mock('$app/stores', () => ({
+	page: {
+		subscribe: (fn: (v: unknown) => void) => {
+			fn({ url: new URL('http://localhost/sources/submit'), data: { isAuthed: true } });
+			return () => {};
+		}
+	}
+}));
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+
 const meta: SourceMeta = {
 	categories: ['news', 'job', 'blog'],
 	// The form's category picker prefers the full taxonomy list.

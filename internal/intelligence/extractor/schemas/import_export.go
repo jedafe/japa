@@ -9,7 +9,7 @@ var ImportExport = EntitySchema{
 	EntityType: EntityTypeImportExport,
 	Fields: []FieldSpec{
 		{Name: "title", Type: "string", Required: true},
-		{Name: "origin_country", Type: "country_array", Required: true}, // origin ISO-3, 1-element
+		{Name: "origin_country", Type: "country_array", Required: true},      // origin ISO-3, 1-element
 		{Name: "destination_country", Type: "country_array", Required: true}, // destination ISO-3, 1-element
 		{Name: "product_category", Type: "string", Required: false, EnumValues: []string{"agriculture_food", "textiles_apparel", "electronics", "machinery", "cosmetics", "arts_crafts", "other"}},
 		{Name: "hs_code", Type: "string", Required: false},

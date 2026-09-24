@@ -17,6 +17,7 @@
 package achievement
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -30,17 +31,43 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers exposes the achievement feed endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates achievement handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetLiteralResolver injects the template-literal catalog so achievement
+// titles/bodies render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on an achievement DTO or
+// slice. Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +152,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &achievements)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": achievements,
 		"pagination": map[string]any{
@@ -170,6 +199,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &achievement)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievement})
 }
@@ -235,6 +266,8 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &achievement)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": achievement})
 }
 
@@ -289,6 +322,8 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &achievement)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievement})
 }
@@ -367,6 +402,8 @@ func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &achievements)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievements})
 }
 
@@ -403,6 +440,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &achievements)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": achievements,
@@ -453,6 +492,8 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 
 		return
 	}
+
+	h.resolveLiterals(r, &achievement)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievement})
 }

@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { MemberStage, JapaStage, GeoCountry } from '$lib/types';
+import type { MemberStage, JapaStage, JapaIntent, GeoCountry } from '$lib/types';
 
 const PAGE_SIZE = 20;
 
@@ -20,6 +20,7 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 	const stage = event.url.searchParams.get('stage') ?? '';
+	const intent = event.url.searchParams.get('intent') ?? '';
 	const dest = event.url.searchParams.get('dest') ?? '';
 	const page = Number(event.url.searchParams.get('page') ?? '1') || 1;
 
@@ -29,6 +30,7 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		const params = new URLSearchParams({ page_size: String(PAGE_SIZE), page: String(page) });
 		if (stage) params.set('stage', stage);
+		if (intent) params.set('intent', intent);
 		if (dest) params.set('dest', dest);
 		const { items, meta } = await apiList<MemberStage>(ctx, `/members/by-stage?${params.toString()}`);
 		members = items;
@@ -54,15 +56,24 @@ export const load: PageServerLoad = async (event) => {
 		stages = [];
 	}
 
+	let intents: JapaIntent[] = [];
+	try {
+		const list = await apiGet<{ value: string; label: string }[]>(ctx, '/japa-stage/intents');
+		intents = (list ?? []).map((o) => o.value as JapaIntent);
+	} catch {
+		intents = [];
+	}
+
 	return {
 		members,
 		authed,
 		countries,
 		stages,
+		intents,
 		pageSize: PAGE_SIZE,
 		currentPage: page,
 		totalPages,
 		loadError,
-		filters: { stage, dest }
+		filters: { stage, intent, dest }
 	};
 };

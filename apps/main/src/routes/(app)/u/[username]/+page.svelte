@@ -415,6 +415,13 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="profile" />
 	<meta property="og:url" content={page.url.href} />
+	<!-- §26 — per-user RSS autodiscovery (proxied to the backend profile feed). -->
+	<link
+		rel="alternate"
+		type="application/rss+xml"
+		title={`${displayName} — ${t('app.name')}`}
+		href="/u/{user.username}/feed.xml"
+	/>
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 

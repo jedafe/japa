@@ -125,6 +125,10 @@ type publicSource struct {
 	// video_channel source's videos (§106) — lets the detail page link to
 	// the claim/report form without exposing the channel profile.
 	ChannelUsername string `json:"channel_username,omitempty"`
+	// EntityTypes is the set of feed entity types the source currently
+	// publishes (detail endpoint only) — the detail page scopes its filter
+	// pills to it instead of offering every global type.
+	EntityTypes []string `json:"entity_types,omitempty"`
 }
 
 type linkedEntity struct {
@@ -251,6 +255,8 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 		collections = append(collections, coll)
 	}
 
+	h.resolveLiterals(r, &collections)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": collections})
 }
 
@@ -310,6 +316,8 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 		}
 		entries = append(entries, intelSourceToPublic(s, isFollowing, false, nil))
 	}
+
+	h.resolveLiterals(r, &entries)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": entries,
@@ -400,7 +408,11 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	src.EntityTypes = h.resolveSourceFeedEntityTypes(r.Context(), row.ID)
+
 	h.ensureSourceTags(r.Context(), &src)
+
+	h.resolveLiterals(r, &src)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": src,
@@ -565,6 +577,44 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource) {
 	}
 
 	src.TagSlugs = tagSlugs
+}
+
+// resolveSourceFeedEntityTypes returns the entity types a source's item feed
+// can actually return right now: the distinct published intel_record types,
+// plus "video"/"comparison" when those linked feeds have items. Values are
+// emitted in the canonical sourceItemEntityTypes order so the detail page's
+// filter pills render deterministically and never offer a guaranteed-empty
+// type.
+func (h *Handlers) resolveSourceFeedEntityTypes(ctx context.Context, sourceID pgtype.UUID) []string {
+	have := map[string]bool{}
+
+	recordTypes, err := h.intelStores.ListDistinctIntelRecordEntityTypesBySource(ctx, sourceID)
+	if err != nil {
+		slog.Error("intel: source entity types lookup failed", "error", err)
+	} else {
+		for _, et := range recordTypes {
+			have[et] = true
+		}
+	}
+
+	if h.videos != nil {
+		if _, total, vErr := h.videos.ListItemsBySourceID(ctx, sourceID, "latest", 1, 0); vErr == nil && total > 0 {
+			have["video"] = true
+		}
+	}
+	if h.contents != nil {
+		if _, total, cErr := h.contents.ListComparisonContentsBySourceID(ctx, sourceID, "latest", 1, 0); cErr == nil && total > 0 {
+			have["comparison"] = true
+		}
+	}
+
+	out := make([]string, 0, len(have))
+	for _, opt := range sourceItemEntityTypes {
+		if have[opt.Value] {
+			out = append(out, opt.Value)
+		}
+	}
+	return out
 }
 
 func buildLinkedEntity(row gen.GetIntelSourceBySlugWithLinkedEntityRow) *linkedEntity {
@@ -850,6 +900,8 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 
 	slug := derefString(src.Slug)
 
+	h.resolveLiterals(r, &src)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": map[string]interface{}{
 			"id":               pgtypeUUIDString(src.ID),
@@ -902,6 +954,8 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 			Domain: src.Domain,
 		})
 	}
+
+	h.resolveLiterals(r, &sources)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": sources})
 }

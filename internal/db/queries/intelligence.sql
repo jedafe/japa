@@ -333,6 +333,15 @@ WHERE source_id = $1
  AND status = 'published'
  AND ($2::text IS NULL OR $2 = '' OR entity_type = $2);
 
+-- name: ListDistinctIntelRecordEntityTypesBySource :many
+-- Distinct published entity types in a source's feed — the public detail
+-- page scopes its entity-type filter pills to types that actually have
+-- items instead of offering every global type.
+SELECT DISTINCT entity_type FROM intel_records
+WHERE source_id = $1
+ AND status = 'published'
+ORDER BY entity_type;
+
 -- name: ListSourcesByRecordIDs :many
 -- Returns a map-friendly list of sources for a batch of intel record IDs.
 -- Used by scholarship, job, and remittance responses to attach attribution.

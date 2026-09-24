@@ -85,14 +85,14 @@
 				class="transition-colors hover:text-[var(--color-text)]"
 				onclick={() => (followersModalOpen = true)}
 			>
-				{t('profile.followers', '{n} followers').replace('{n}', String(user.follower_count))}
+				{(user.follower_count === 1 ? t('profile.followers_one', '{n} follower') : t('profile.followers', '{n} followers')).replace('{n}', String(user.follower_count))}
 			</button>
 			<button
 				type="button"
 				class="transition-colors hover:text-[var(--color-text)]"
 				onclick={() => (followingModalOpen = true)}
 			>
-				{t('profile.following', '{n} following').replace('{n}', String(user.following_count))}
+				{(user.following_count === 1 ? t('profile.following_one', '{n} following') : t('profile.following', '{n} following')).replace('{n}', String(user.following_count))}
 			</button>
 			<span class="flex items-center gap-1"><Calendar size={14} /> {t('profile.joined', 'Joined')} {joinDate}</span>
 			<a

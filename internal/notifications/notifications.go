@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -88,7 +89,13 @@ type Service struct {
 	settings    SettingsProvider
 	wsHub       WSHuber
 	valkeyCache valkeycompat.Cmdable
+	lit         literalResolver // nil disables literal resolution (§14)
 }
+
+// SetLiteralResolver injects the template-literal catalog so notification
+// titles/bodies in the real-time WebSocket payload render {{...}}
+// placeholders — the live event has no later read-path resolution (§14).
+func (s *Service) SetLiteralResolver(l literalResolver) { s.lit = l }
 
 // SetValkey injects the Valkey client for unread-count caching.
 // BUG-013: previously every unread-count badge poll hit the DB.
@@ -195,9 +202,15 @@ func (s *Service) SetWSHub(h WSHuber) {
 // broadcastNotification sends a `notification` WS event to the recipient.
 // Called after every successful notification insert (batch or direct).
 // BUG-002: previously missing — real-time delivery was broken.
-func (s *Service) broadcastNotification(recipientID pgtype.UUID, payload interface{}) {
+func (s *Service) broadcastNotification(ctx context.Context, recipientID pgtype.UUID, payload interface{}) {
 	if s.wsHub == nil {
 		return
+	}
+
+	// §14: resolve {{...}} in the live payload — the WS event has no later
+	// read-path resolution.
+	if s.lit != nil {
+		s.lit.ResolveData(ctx, payload, literals.NewContext(ctx, ""))
 	}
 
 	s.wsHub.BroadcastToUser(recipientID.String(), WSEventPayload{

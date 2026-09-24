@@ -18,5 +18,6 @@ export { default as PageAction } from './PageAction.svelte';
 export { default as UrlTabs } from './UrlTabs.svelte';
 export type { UrlTab } from './UrlTabs.svelte';
 export { default as FilterToggle } from './FilterToggle.svelte';
+export { default as LiteralSuggest } from './LiteralSuggest.svelte';
 export { resolveIcon } from './icons';
 export type { IconComponent } from './icons';

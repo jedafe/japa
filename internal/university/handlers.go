@@ -1,6 +1,7 @@
 package university
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,18 +16,44 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers exposes HTTP endpoints for the Japa University creator economy.
 // Each handler parses input, calls one service method, and renders a JSON
 // response following the JapaConnect API envelope.
 type Handlers struct {
 	service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates university handlers bound to the provided service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so track/instructor
+// titles and descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a university DTO or
+// slice. Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +295,9 @@ func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
 		live = append(live, trackFromPublishedRow(t))
 	}
 
+	h.resolveLiterals(r, &prof)
+	h.resolveLiterals(r, &live)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"instructor": prof,
@@ -304,6 +334,8 @@ func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		tracks = append(tracks, trackFromGetRow(row))
 	}
+
+	h.resolveLiterals(r, &tracks)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
@@ -609,6 +641,8 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 		items = append(items, catalogTrackFromRow(row))
 	}
 
+	h.resolveLiterals(r, &items)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
@@ -629,6 +663,9 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &track)
+
 	// Map through CatalogTrackDetailFromRow to add the `level` JSON alias for
 	// the frontend TrackDetail.level contract (ADR-060).
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": CatalogTrackDetailFromRow(track)})

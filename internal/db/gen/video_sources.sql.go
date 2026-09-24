@@ -300,11 +300,18 @@ const listVideoSourceItemsBySourceID = `-- name: ListVideoSourceItemsBySourceID 
 SELECT vs.id, vs.title, vs.description, vs.source_url, vs.thumbnail_url,
        vs.duration_secs, vs.created_at, vs.slug AS video_slug,
        u.username AS author_username,
-       COALESCE(c.slug, '') AS content_slug
+       COALESCE(c.slug, '') AS content_slug,
+       COALESCE(c.view_count, 0) AS view_count,
+       COALESCE(c.comment_count, 0) AS comment_count,
+       COALESCE(c.share_count, 0) AS share_count,
+       COALESCE(c.vote_score, 0) AS vote_score
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
 LEFT JOIN LATERAL (
-    SELECT c1.slug FROM contents c1
+    SELECT c1.slug, c1.view_count, c1.comment_count, c1.share_count,
+           (SELECT COUNT(*)::int FROM reactions r
+            WHERE r.entity_id = c1.id AND r.entity_type = 'content') AS vote_score
+    FROM contents c1
     WHERE c1.video_source_id = vs.id
       AND c1.deleted_at IS NULL
       AND c1.status = 'published'
@@ -312,12 +319,19 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) c ON TRUE
 WHERE vs.source_id = $1 AND vs.status = 'active'
-ORDER BY vs.created_at DESC, vs.id DESC
-LIMIT $3 OFFSET $2
+ORDER BY
+ CASE
+ WHEN $2::text = 'popular' THEN COALESCE(c.view_count, 0)
+ WHEN $2::text = 'discussed' THEN COALESCE(c.comment_count, 0)
+ WHEN $2::text = 'upvoted' THEN COALESCE(c.vote_score, 0)
+ END DESC NULLS LAST,
+ vs.created_at DESC, vs.id DESC
+LIMIT $4 OFFSET $3
 `
 
 type ListVideoSourceItemsBySourceIDParams struct {
 	SourceID   pgtype.UUID `json:"source_id"`
+	SortMode   string      `json:"sort_mode"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -333,13 +347,24 @@ type ListVideoSourceItemsBySourceIDRow struct {
 	VideoSlug      string             `json:"video_slug"`
 	AuthorUsername string             `json:"author_username"`
 	ContentSlug    string             `json:"content_slug"`
+	ViewCount      int32              `json:"view_count"`
+	CommentCount   int32              `json:"comment_count"`
+	ShareCount     int32              `json:"share_count"`
+	VoteScore      int32              `json:"vote_score"`
 }
 
 // Same scope as ListVideoSourcesBySourceID, plus the author's username and the
 // published content slug (if the video was imported as a post) so /sources
 // item cards can link in-app instead of to the external video URL (§106).
+// The content's engagement counters ride along so the source item feed can
+// sort by them — without them popular/discussed/upvoted were all-zero ties.
 func (q *Queries) ListVideoSourceItemsBySourceID(ctx context.Context, arg ListVideoSourceItemsBySourceIDParams) ([]ListVideoSourceItemsBySourceIDRow, error) {
-	rows, err := q.db.Query(ctx, listVideoSourceItemsBySourceID, arg.SourceID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listVideoSourceItemsBySourceID,
+		arg.SourceID,
+		arg.SortMode,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -358,6 +383,10 @@ func (q *Queries) ListVideoSourceItemsBySourceID(ctx context.Context, arg ListVi
 			&i.VideoSlug,
 			&i.AuthorUsername,
 			&i.ContentSlug,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.VoteScore,
 		); err != nil {
 			return nil, err
 		}

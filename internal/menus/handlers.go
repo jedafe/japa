@@ -11,13 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers is an exported type.
 type Handlers struct {
 	Service     *Service
 	RBACService *rbac.RBAC
+	lit         literalResolver // nil disables literal resolution (§14)
+}
+
+// SetLiteralResolver injects the template-literal catalog so menu labels on
+// the public resolution endpoint render {{...}} placeholders (§14). Admin
+// CRUD responses intentionally keep the authored source for editing.
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a menu response.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers constructs menus Handlers without RBAC permission resolution.
@@ -427,6 +454,8 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &menu)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": menu})
 }

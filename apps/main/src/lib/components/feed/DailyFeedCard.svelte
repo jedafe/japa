@@ -14,6 +14,7 @@
 	import { contentHref } from '$lib/utils/contentLink';
 	import { formatDuration } from '$lib/utils/duration';
 	import { api } from '$lib/api/client';
+	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
 	import VoteRail from '$lib/components/forum/VoteRail.svelte';
@@ -45,12 +46,10 @@
 	$effect(() => {
 		if (bookmarkInitialized || !authed) return;
 		bookmarkInitialized = true;
-		(async () => {
-			const res = await api.get<{ bookmarked: boolean }>(`/content/${item.id}/bookmark`);
-			if (res.data) {
-				bookmarked = res.data.bookmarked;
-			}
-		})();
+		// Batched: one GET /me/content-states serves every card on the page.
+		getViewerState(item.id).then((state) => {
+			bookmarked = state.bookmarked;
+		});
 	});
 	const duration = $derived(formatDuration(item.duration_secs));
 	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
@@ -142,6 +141,7 @@
 		const next = !bookmarked;
 		bookmarked = next;
 		bookmarkCount += next ? 1 : -1;
+		updateViewerState(item.id, { bookmarked: next });
 		try {
 			if (next) {
 				const res = await api.post(`/content/${item.id}/bookmark`, {});
@@ -153,6 +153,7 @@
 		} catch {
 			bookmarked = !next;
 			bookmarkCount += next ? -1 : 1;
+			updateViewerState(item.id, { bookmarked: !next });
 		} finally {
 			bookmarkPending = false;
 		}

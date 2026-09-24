@@ -69,24 +69,24 @@ func NewStore(database *db.DB) *Store {
 type OrgRow struct {
 	ID pgtype.UUID
 
-	Name                 string
-	Slug                 string
-	OrgType              string
-	OriginCommunity      string
-	DestinationSpaceID   pgtype.UUID
-	DestSpaceName        *string
-	DestSpaceCode        *string
-	CitySpaceID          pgtype.UUID
-	CitySpaceName        *string
-	CitySpaceCode        *string
-	Address              *string
-	Latitude             *float64
-	Longitude            *float64
-	WebsiteURL           *string
-	MeetingFrequency     *string
-	ContactInfo          *string
-	JapaconnectSpaceID   pgtype.UUID
-	JapaconnectOrgID     pgtype.UUID
+	Name               string
+	Slug               string
+	OrgType            string
+	OriginCommunity    string
+	DestinationSpaceID pgtype.UUID
+	DestSpaceName      *string
+	DestSpaceCode      *string
+	CitySpaceID        pgtype.UUID
+	CitySpaceName      *string
+	CitySpaceCode      *string
+	Address            *string
+	Latitude           *float64
+	Longitude          *float64
+	WebsiteURL         *string
+	MeetingFrequency   *string
+	ContactInfo        *string
+	JapaconnectSpaceID pgtype.UUID
+	JapaconnectOrgID   pgtype.UUID
 	// Slug of the linked Geo Space — needed because the public space URL is
 	// /spaces/{slug}, not /spaces/{id}.
 	JapaconnectSpaceSlug *string
@@ -579,7 +579,7 @@ LIMIT $%d OFFSET $%d
 			&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 			&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
 			&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
-		&r.JapaconnectSpaceSlug,
+			&r.JapaconnectSpaceSlug,
 			&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 			&r.Status, &r.SubmittedBy, &r.SubmitterName,
 			&r.ReviewedBy, &r.ReviewedAt,
@@ -884,7 +884,7 @@ LIMIT $%d OFFSET $%d
 			&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 			&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
 			&r.ContactInfo, &r.JapaconnectSpaceID, &r.JapaconnectOrgID,
-		&r.JapaconnectSpaceSlug,
+			&r.JapaconnectSpaceSlug,
 			&r.ClaimStatus, &r.IsVerified, &r.IsActive, &r.IsCommunitySubmitted,
 			&r.Status, &r.SubmittedBy, &r.SubmitterName,
 			&r.ReviewedBy, &r.ReviewedAt,

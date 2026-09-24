@@ -694,6 +694,8 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 
 	followedSpaces := h.resolveFollowedSpaceIDs(r.Context(), userID)
 
+	h.resolveLiterals(r, &items)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"items":              items,
 		"next_cursor":        encodeRadarCursor(next),
@@ -832,6 +834,8 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Radar envelope (spec §739), NOT the generic {data, meta} envelope.
+	h.resolveLiterals(r, &items)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"items":              items,
 		"next_cursor":        encodeRadarCursor(next),
@@ -1105,6 +1109,8 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	h.resolveLiterals(r, &item)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": item,
 	})
@@ -1139,6 +1145,8 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 	if rows == nil {
 		rows = []scholarships.SavedScholarshipResponse{}
 	}
+
+	h.resolveLiterals(r, &rows)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,

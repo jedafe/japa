@@ -102,7 +102,7 @@ func (h *Handlers) SetContentResolver(r contentFieldResolver) {
 // Best-effort: failures are logged, never fatal. Called after the explore
 // cache read so request-scoped literals ({{Current_Year}}, geo) stay fresh.
 func (h *Handlers) resolveFeedLiterals(r *http.Request, items []FeedItem) {
-	if h.contentResolver == nil || len(items) == 0 {
+	if h.contentResolver == nil || len(items) == 0 || literals.IsRawRequest(r) {
 		return
 	}
 

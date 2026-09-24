@@ -760,6 +760,10 @@ func (h *Handlers) ListPublishedPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for i := range pages {
+		h.resolvePageText(r, &pages[i])
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
@@ -787,12 +791,43 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 		page.Blocks = h.resolveWidgetBlocks(r.Context(), page.Blocks)
 	}
 
+	// §14: resolve {{...}} literals server-side — title, description, meta,
+	// and every block prop including expressions ({{Current_Year + 1}}) and
+	// the widget data injected above. The frontend's token map stays for
+	// any client-side inserts.
+	h.resolvePageText(r, &page)
+
 	literalsMap := h.resolvePageLiterals(r)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":     page,
 		"literals": literalsMap,
 	})
+}
+
+// resolvePageText resolves {{...}} placeholders across a published page —
+// title, description, meta JSON, and every string in the blocks array —
+// using the request's geo/locale render context (§14). Unlike the content
+// resolver, request geo is preserved (not content-scoped): landing pages
+// render the visitor's {{Destination_Country}}, not the page's own.
+// Best-effort — catalog failures degrade to the authored text.
+func (h *Handlers) resolvePageText(r *http.Request, page *Page) {
+	if h.Catalog == nil || page == nil {
+		return
+	}
+
+	ctx := r.Context()
+	rc := literals.NewRequestContext(r, "")
+
+	page.Title = h.Catalog.ResolveText(ctx, page.Title, rc)
+
+	if page.Description != nil {
+		d := h.Catalog.ResolveText(ctx, *page.Description, rc)
+		page.Description = &d
+	}
+
+	page.Meta = h.Catalog.ResolveJSON(ctx, page.Meta, rc)
+	page.Blocks = h.Catalog.ResolveJSON(ctx, page.Blocks, rc)
 }
 
 func (h *Handlers) resolvePageLiterals(r *http.Request) map[string]string {

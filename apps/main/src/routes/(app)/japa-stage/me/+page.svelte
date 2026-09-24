@@ -11,19 +11,22 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 	import { ArrowLeft, Compass, Save } from 'lucide-svelte';
-	import { japaStageColors, japaStageLabel, japaStageOptions } from '$lib/enumOptions';
-	import type { JapaStage, MyJapaStage } from '$lib/types';
+	import { japaStageColors, japaStageLabel, japaStageOptions, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
+	import type { JapaStage, JapaIntent, MyJapaStage } from '$lib/types';
+	import { RELOCATION_INTENTS } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const stageOpts = $derived(japaStageOptions(t, data.stages));
+	const intentOpts = $derived(japaIntentOptions(t, data.intents));
 
 	function stageIndex(s: JapaStage): number {
 		return data.stages.indexOf(s);
 	}
 
 	// Form state, seeded from the SSR-loaded stage.
+	let intent = $state<JapaIntent>(untrack(() => (data.myStage?.intent as JapaIntent) ?? 'relocation'));
 	let stage = $state<JapaStage>(untrack(() => (data.myStage?.stage as JapaStage) ?? (data.stages[0] ?? 'considering')));
 	let destCountry = $state<string>(untrack(() => data.myStage?.destination_space_id ?? ''));
 	let isPublic = $state<boolean>(untrack(() => data.myStage?.is_public ?? false));
@@ -36,17 +39,21 @@
 	$effect(() => {
 		const ms = data.myStage;
 		if (ms) {
-			stage = ms.stage as JapaStage;
+			intent = (ms.intent as JapaIntent) ?? 'relocation';
+			stage = (ms.stage as JapaStage) ?? (data.stages[0] ?? 'considering');
 			destCountry = ms.destination_space_id ?? '';
 			isPublic = ms.is_public ?? false;
 		}
 	});
 
+	// Non-relocation intents (visit/business) carry no stage (ADR-122).
+	const isRelocation = $derived(RELOCATION_INTENTS.includes(intent));
+
 	const currentStage = $derived((data.myStage?.stage as JapaStage) ?? stage);
 	const currentIndex = $derived(stageIndex(currentStage));
 
 	const historyEntries = $derived(
-		(data.myStage?.history as Array<{ stage: JapaStage; dest_space_id?: string; set_at: string }> | undefined) ?? []
+		(data.myStage?.history as Array<{ intent?: string; stage?: JapaStage; dest_space_id?: string; set_at: string }> | undefined) ?? []
 	);
 
 	// Resolve a dest_space_id UUID to the destination name using the
@@ -64,7 +71,10 @@
 		loading = true;
 		try {
 			const res = await api.patch<MyJapaStage>('/me/japa-stage', {
-				stage,
+				intent,
+				// Non-relocation intents carry no stage — omit it so the
+				// backend clears any stored stage (ADR-122).
+				...(isRelocation ? { stage } : {}),
 				destination_space_id: destCountry || null,
 				is_public: isPublic
 			});
@@ -140,7 +150,8 @@
 		/>
 	{/if}
 
-	<!-- Visual stepper showing current stage position -->
+	<!-- Visual stepper showing current stage position (relocation intents only) -->
+	{#if isRelocation}
 	<div class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<p class="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
 			{t('japa_stage.progression', 'Stage progression')}
@@ -170,9 +181,22 @@
 			</p>
 		{/if}
 	</div>
+	{/if}
 
 	<!-- Update form -->
 	<form onsubmit={submit} class="space-y-4 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6" novalidate>
+		<div class="flex flex-col gap-1.5">
+			<label for="intent" class="text-sm font-medium text-[var(--color-text)]">
+				{t('japa_intent.label', 'Journey type')}
+			</label>
+			<select id="intent" bind:value={intent} class={inputClass}>
+				{#each intentOpts as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</div>
+
+		{#if isRelocation}
 		<div class="flex flex-col gap-1.5">
 			<label for="stage" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.current_stage', 'Current stage')}
@@ -183,6 +207,7 @@
 				{/each}
 			</select>
 		</div>
+		{/if}
 
 		<div class="flex flex-col gap-1.5">
 			<label for="dest" class="text-sm font-medium text-[var(--color-text)]">
@@ -244,9 +269,20 @@
 					<li class="flex items-center gap-2 text-sm">
 						<span
 							class="inline-block h-2 w-2 shrink-0 rounded-full"
-							style={`background-color: ${japaStageColors[entry.stage as JapaStage] ?? 'var(--color-muted)'};`}
+							style={`background-color: ${entry.stage ? japaStageColors[entry.stage as JapaStage] ?? 'var(--color-muted)' : 'var(--color-muted)'};`}
 						></span>
-						<span class="font-medium text-[var(--color-text)]">{japaStageLabel(t, entry.stage as JapaStage)}</span>
+						<span class="font-medium text-[var(--color-text)]">
+							{#if entry.stage}
+								{japaStageLabel(t, entry.stage as JapaStage)}
+							{:else if entry.intent}
+								{japaIntentLabel(t, entry.intent as JapaIntent)}
+							{:else}
+								{t('japa_stage.history_updated', 'Journey updated')}
+							{/if}
+						</span>
+						{#if entry.intent && entry.stage}
+							<span class="text-[var(--color-text-subtle)]">({japaIntentLabel(t, entry.intent as JapaIntent)})</span>
+						{/if}
 						{#if entry.dest_space_id}
 							<span class="text-[var(--color-text-subtle)]">→ {destName(entry.dest_space_id) || t('japa_stage.dest_set', 'Destination set')}</span>
 						{/if}

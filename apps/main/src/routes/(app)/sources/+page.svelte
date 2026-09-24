@@ -16,6 +16,7 @@
 	import SourceCard from '$lib/components/source/SourceCard.svelte';
 	import ProposeSourceModal from '$lib/components/source/ProposeSourceModal.svelte';
 	import { sourceCategoryOptions, sourceCategoryLabel } from '$lib/sources';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 	import type { Source } from '$lib/types/sources';
@@ -138,7 +139,10 @@
 			<div class="flex shrink-0 items-center gap-2">
 				<button
 					type="button"
-					onclick={() => (proposeOpen = true)}
+					onclick={async () => {
+						if (!(await requireAuthOrRedirect())) return;
+						proposeOpen = true;
+					}}
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 				>
 					<Plus size={15} />

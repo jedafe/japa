@@ -25,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/worker"
@@ -89,8 +90,33 @@ type TaskEnqueuer interface {
 type Handlers struct {
 	spaces       SpacesService
 	customFields CustomFieldsService
-	media        MediaResolver // nil = logo_url omitted from responses
-	enqueuer     TaskEnqueuer  // nil = logo_url fetch is skipped on create/update
+	media        MediaResolver   // nil = logo_url omitted from responses
+	enqueuer     TaskEnqueuer    // nil = logo_url fetch is skipped on create/update
+	lit          literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates Handlers with the given services.
@@ -331,6 +357,8 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("universities: viewer relation check failed", "error", relErr)
 	}
 
+	h.resolveLiterals(r, &items)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"meta": map[string]any{
@@ -406,6 +434,8 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 	if int(total)%limit != 0 {
 		totalPages++
 	}
+
+	h.resolveLiterals(r, &universities)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": universities,
@@ -503,6 +533,8 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("universities: viewer relation check failed", "error", relErr)
 		}
 	}
+
+	h.resolveLiterals(r, &space)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": universityDetail{
 		GetSpaceBySlugRow: space,
