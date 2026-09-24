@@ -302,6 +302,19 @@ func (s *Service) stripeActivate(ctx context.Context, obj map[string]interface{}
 	meta, _ := obj["metadata"].(map[string]interface{})
 	userID, plan := str(meta, "user_id"), str(meta, "plan")
 	if userID == "" || plan == "" {
+		// checkout.session.completed can also carry it under
+		// subscription_data.metadata (what CreateSubscriptionCheckout sets).
+		if sd, ok := obj["subscription_data"].(map[string]interface{}); ok {
+			sm, _ := sd["metadata"].(map[string]interface{})
+			if userID == "" {
+				userID = str(sm, "user_id")
+			}
+			if plan == "" {
+				plan = str(sm, "plan")
+			}
+		}
+	}
+	if userID == "" || plan == "" {
 		slog.Warn("subscription webhook: stripe activation missing metadata", "sub", subID)
 		return nil
 	}

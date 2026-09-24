@@ -482,10 +482,17 @@ func (p *StripeProvider) CreateSubscriptionCheckout(ctx context.Context, req Sub
 		return PaymentResponse{}, errors.New("stripe price ID is required")
 	}
 
+	// Metadata is set on both the session and the subscription: the
+	// checkout.session.completed webhook exposes session metadata on
+	// data.object.metadata, while customer.subscription.* events expose
+	// subscription_data.metadata. Both are read by stripeActivate.
 	form := fmt.Sprintf(
 		"mode=subscription&line_items[0][price]=%s&line_items[0][quantity]=1"+
+			"&metadata[user_id]=%s&metadata[plan]=%s"+
 			"&subscription_data[metadata][user_id]=%s&subscription_data[metadata][plan]=%s",
 		url.QueryEscape(req.PriceCode),
+		url.QueryEscape(req.UserID),
+		url.QueryEscape(req.Plan),
 		url.QueryEscape(req.UserID),
 		url.QueryEscape(req.Plan),
 	)
