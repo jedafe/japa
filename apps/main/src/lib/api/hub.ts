@@ -58,6 +58,11 @@ export const deletePushToken = (id: string) => api.delete(`/me/push-tokens/${id}
 /* ---- api keys ---- */
 export const createApiKey = (v: { name: string; scopes: string[] }) =>
 	api.post<{ id: string; key: string }>('/me/api-keys', v);
+// Browser-extension mint (Section 47 v1.3) — narrow read scopes are fixed
+// server-side; install_id is optional (the page can't know the extension's
+// generated ID).
+export const createExtensionToken = (v?: { install_id?: string }) =>
+	api.post<{ id: string; key: string }>('/me/extension-tokens', v ?? {});
 export const rotateApiKey = (id: string) => api.post<{ key: string }>(`/me/api-keys/${id}/rotate`);
 export const updateApiKey = (id: string, v: { name?: string; scopes?: string[] }) =>
 	api.patch(`/me/api-keys/${id}`, v);

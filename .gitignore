@@ -30,6 +30,10 @@ node_modules/
 dist/
 build/
 
+# WXT browser extension (apps/extension)
+.wxt/
+.output/
+
 # IDE
 .vscode/
 .idea/

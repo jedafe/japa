@@ -12,7 +12,7 @@
 	import { untrack, onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { createApiKey, rotateApiKey, revokeApiKey } from '$lib/api/hub';
+	import { createApiKey, createExtensionToken, rotateApiKey, revokeApiKey } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import { invalidate } from '$app/navigation';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -51,6 +51,7 @@
 	let newName = $state('');
 	let selectedScopes = $state<string[]>([]);
 	let creating = $state(false);
+	let connecting = $state(false);
 	let error = $state<string | null>(null);
 
 	let revealOpen = $state(false);
@@ -104,6 +105,22 @@
 		revealOpen = true;
 		newName = '';
 		selectedScopes = [];
+		await invalidate('/api/v1/me/api-keys');
+	}
+
+	// Browser-extension mint (Section 47 v1.3) — scopes are fixed
+	// server-side; the minted key is revealed once, like any other key.
+	async function doConnectExtension() {
+		connecting = true;
+		error = null;
+		const res = await createExtensionToken();
+		connecting = false;
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		revealedKey = res.data?.key ?? '';
+		revealOpen = true;
 		await invalidate('/api/v1/me/api-keys');
 	}
 
@@ -267,6 +284,19 @@
 			{creating ? t('settings.apikeys.creating') : t('settings.apikeys.create')}
 		</button>
 	</form>
+
+	<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+		<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('settings.apikeys.connect_extension')}</p>
+		<p class="mb-3 text-xs text-[var(--color-muted)]">{t('settings.apikeys.connect_extension_hint')}</p>
+		<button
+			type="button"
+			disabled={connecting}
+			onclick={doConnectExtension}
+			class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+		>
+			{connecting ? t('settings.apikeys.connecting') : t('settings.apikeys.connect_extension')}
+		</button>
+	</div>
 
 	{#if keys.length === 0}
 		<EmptyState icon={Key} title={t('settings.apikeys.empty_title')} body={t('settings.apikeys.empty_body')} />
