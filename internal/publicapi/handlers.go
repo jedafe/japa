@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -60,7 +61,18 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
-	errpkg.HandleServiceError(w, err)
+	// Package-local sentinels are mapped here first (Phase 2 agent data
+	// API), then everything else falls through to the shared mapper.
+	switch {
+	case errors.Is(err, ErrInvalidFeedName):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_feed_name", "Feed name must be one of: popular, latest, rising")
+	case errors.Is(err, ErrSearchUnavailable):
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Semantic search is unavailable")
+	case errors.Is(err, ErrMissingQuery):
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "q query parameter is required")
+	default:
+		errpkg.HandleServiceError(w, err)
+	}
 }
 
 func parsePageSize(r *http.Request, defaultSize, maxSize int32) int32 {
@@ -597,6 +609,13 @@ func (h *Handlers) GetContentByID(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+
+	// Content negotiation: agents may request the markdown representation
+	// directly on the JSON route (the /markdown route is the primary surface).
+	if strings.Contains(r.Header.Get("Accept"), "text/markdown") {
+		h.writeContentMarkdown(w, r, content)
 		return
 	}
 
