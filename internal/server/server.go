@@ -1268,6 +1268,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// wiki:seed_stub_pages task (§80, ADR-088). Auto-seeds the 7 default
 	// wiki sub-pages for a Country Space when wiki.enabled is activated.
 	worker.RegisterWikiSeedStubPagesProcessor(wiki.NewWorkerAdapter(wikiService))
+	// Register the wiki fields propagator for the worker's
+	// wiki:fields_propagate task (§80 Community Field Ops, §30 Sub-spec 5):
+	// busts JCE comparison caches when an approved fields revision changes
+	// an entity's structured values.
+	worker.RegisterWikiFieldsPropagator(wiki.NewWorkerAdapter(wikiService))
+	// Community field ops collaborators (§80): the custom-fields read store
+	// backs submit-time ops validation and the entity field schema; the RBAC
+	// resolver enforces the wiki.fields.* per-op permission tiers; the Asynq
+	// enqueuer fires wiki:fields_propagate post-approval (Rule 8).
+	wikiService.SetCustomFields(cfService)
+	wikiService.SetPermissionChecker(rbacResolver)
+	wikiService.SetEnqueuer(taskEnqueuer)
 	// B4/B5: wire the reputation (points) checker and RBAC resolver so the
 	// wiki.edit submission gate can enforce wiki.min_reputation_to_edit and
 	// wiki.community_edits (§80 business-logic gates).
@@ -1711,6 +1723,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		DescColumn: "", PlatformColumn: "", ActiveWhere: "t.is_active = true",
 	}, resolver.WithQueries(jceReadQueries)))
 	comparisonService.SetResolver(jceResolver)
+	// §80 Community Field Ops: the wiki service resolves suggest/target
+	// entities through the same item_ref registry and busts JCE comparison
+	// caches via the comparison service when a fields revision is approved
+	// (§30 Sub-spec 5 propagation, wiki:fields_propagate).
+	wikiService.SetEntityResolver(jceResolver)
+	wikiService.SetJCECacheBuster(comparisonService)
 
 	// JCE Sub-spec 2/3 service and handlers — must be created after comparisonService
 	// and jceResolver are wired so the scoring engine factory receives a fully

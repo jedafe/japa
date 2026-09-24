@@ -362,3 +362,18 @@ func (s *Store) listUserGroupIDsForUser(ctx context.Context, userID pgtype.UUID)
 
 	return ids, nil
 }
+
+// listComparisonContentIDsByItemRef returns the distinct content_ids of
+// comparisons containing an item whose item_ref matches {type, id} exactly
+// (§30 Sub-spec 5 propagation — used by the wiki:fields_propagate cache bust).
+func (s *Store) listComparisonContentIDsByItemRef(ctx context.Context, entityType, entityID string) ([]pgtype.UUID, error) {
+	ids, err := s.read.ListComparisonContentIDsByItemRef(ctx, gen.ListComparisonContentIDsByItemRefParams{
+		EntityType: entityType,
+		EntityID:   entityID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing comparison content IDs by item_ref: %w", err)
+	}
+
+	return ids, nil
+}

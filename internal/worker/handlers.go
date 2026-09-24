@@ -5254,3 +5254,42 @@ func HandleWikiSeedStubPages(ctx context.Context, t *asynq.Task) error {
 
 	return nil
 }
+
+// HandleWikiFieldsPropagate busts JCE comparison caches for one entity after a
+// wiki fields/mixed revision containing value-affecting ops (set_value,
+// upsert_field) is approved (§80 Community Field Ops, §30 Sub-spec 5).
+// The task is idempotent: entities referenced by no comparison are a no-op and
+// cache deletion is best-effort, so retries are safe.
+func HandleWikiFieldsPropagate(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:wiki:fields_propagate")
+
+	if wikiFieldsPropagator == nil {
+		slog.Warn("task:wiki:fields_propagate: no propagator registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		EntityType string `json:"entity_type"`
+		EntityID   string `json:"entity_id"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:wiki:fields_propagate: invalid payload", "error", err)
+		return err
+	}
+
+	if payload.EntityType == "" || payload.EntityID == "" {
+		return errors.New("wiki:fields_propagate: entity_type and entity_id are required")
+	}
+
+	if err := wikiFieldsPropagator.PropagateFields(ctx, payload.EntityType, payload.EntityID); err != nil {
+		slog.Error("task:wiki:fields_propagate: failed",
+			"entity_type", payload.EntityType, "entity_id", payload.EntityID, "error", err)
+		return err
+	}
+
+	slog.Info("task:wiki:fields_propagate: completed",
+		"entity_type", payload.EntityType, "entity_id", payload.EntityID)
+
+	return nil
+}
