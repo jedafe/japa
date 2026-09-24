@@ -703,7 +703,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		pageID, spaceID, err := h.service.GetPageEntityTarget(r.Context(), spaceSlug, pageSlug)
+		pageID, _, err := h.service.GetPageEntityTarget(r.Context(), spaceSlug, pageSlug)
 		if err != nil {
 			if errors.Is(err, ErrSpaceNotFound) {
 				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -723,7 +723,11 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 
 		canManage := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, PermFieldsManage)
 
-		revID, autoApproved, err := h.service.SubmitFieldOps(r.Context(), user.UserID, pageID, "space", spaceID, input.Ops, input.Summary, canManage)
+		// Pass an empty entity target — resolveOpsTarget derives it from the
+		// ops themselves, so pages bound to a child entity class
+		// (data_entity_type) can submit ops against those entities and the
+		// common space-targeted case still resolves (ops carry entity fields).
+		revID, autoApproved, err := h.service.SubmitFieldOps(r.Context(), user.UserID, pageID, "", pgtype.UUID{}, input.Ops, input.Summary, canManage)
 		if err != nil {
 			writeFieldOpsError(w, err)
 			return
