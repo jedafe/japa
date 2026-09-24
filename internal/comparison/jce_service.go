@@ -463,6 +463,9 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 					Label:         f.Label,
 					DimensionType: fieldTypeToDimensionType(f.FieldType),
 					Position:      toInt32(i),
+					// §30 Sub-spec 5: link the dimension to its source field so
+					// matrix cells can hydrate from entity field values.
+					SourceFieldID: f.ID,
 				})
 				if derr != nil {
 					return JCEComparisonResult{}, fmt.Errorf("auto-creating dimension %d: %w", i, derr)
@@ -481,6 +484,7 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 					Label:         label,
 					DimensionType: DimensionTypeText,
 					Position:      toInt32(i),
+					SourceFieldID: pgtype.UUID{},
 				})
 				if derr != nil {
 					return JCEComparisonResult{}, fmt.Errorf("creating comparison dimension %d: %w", i, derr)
@@ -868,6 +872,9 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, userID pgtype.UU
 				Label:         dim.Label,
 				DimensionType: dim.DimensionType,
 				Position:      dim.Position,
+				// Preserve the source-field link so cloned/promoted comparisons
+				// keep hydrating cells from entity field values (§30 Sub-spec 5).
+				SourceFieldID: dim.SourceFieldID,
 			})
 			if derr != nil {
 				return JCEComparisonResult{}, fmt.Errorf("cloning dimension %d: %w", i, derr)

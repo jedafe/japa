@@ -554,6 +554,9 @@ func (s *Service) CreateComparison(ctx context.Context, userID pgtype.UUID, inpu
 					Label:         f.Label,
 					DimensionType: fieldTypeToDimensionType(f.FieldType),
 					Position:      toInt32(i),
+					// §30 Sub-spec 5: link the dimension to its source field so
+					// matrix cells can hydrate from entity field values.
+					SourceFieldID: f.ID,
 				})
 				if derr != nil {
 					return CreateComparisonResult{}, fmt.Errorf("auto-creating dimension %d: %w", i, derr)
@@ -573,6 +576,7 @@ func (s *Service) CreateComparison(ctx context.Context, userID pgtype.UUID, inpu
 					Label:         label,
 					DimensionType: DimensionTypeText,
 					Position:      toInt32(i),
+					SourceFieldID: pgtype.UUID{},
 				})
 				if err != nil {
 					return CreateComparisonResult{}, fmt.Errorf("creating comparison dimension %d: %w", i, err)
@@ -1156,6 +1160,7 @@ func (s *Service) CreateComparisonDimension(ctx context.Context, input CreateCom
 		Label:         input.Label,
 		DimensionType: input.DimensionType,
 		Position:      input.Position,
+		SourceFieldID: pgtype.UUID{},
 	})
 }
 
@@ -1181,12 +1186,20 @@ func (s *Service) UpdateComparisonDimension(ctx context.Context, id pgtype.UUID,
 		return gen.UpdateComparisonDimensionRow{}, fmt.Errorf("invalid dimension type: %s", input.DimensionType)
 	}
 
+	// The update query writes source_field_id unconditionally; preserve the
+	// existing link (§30 Sub-spec 5) since PATCH does not carry it.
+	existing, err := s.store.getComparisonDimensionByID(ctx, id)
+	if err != nil {
+		return gen.UpdateComparisonDimensionRow{}, err
+	}
+
 	return s.store.updateComparisonDimension(ctx, gen.UpdateComparisonDimensionParams{
 		ID: id,
 
 		Label:         input.Label,
 		DimensionType: input.DimensionType,
 		Position:      input.Position,
+		SourceFieldID: existing.SourceFieldID,
 	})
 }
 

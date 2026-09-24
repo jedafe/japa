@@ -80,8 +80,8 @@ func (q *Queries) CountComparisonsWithFilters(ctx context.Context, arg CountComp
 
 const createComparisonDimension = `-- name: CreateComparisonDimension :one
 
-INSERT INTO comparison_dimensions (content_id, type_id, label, dimension_type, position) VALUES ($1, $2, $3, $4, $5)
-RETURNING id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
+INSERT INTO comparison_dimensions (content_id, type_id, label, dimension_type, position, source_field_id) VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, content_id, type_id, label, dimension_type, position, source_field_id, created_at, deleted_at
 `
 
 type CreateComparisonDimensionParams struct {
@@ -90,6 +90,7 @@ type CreateComparisonDimensionParams struct {
 	Label         string      `json:"label"`
 	DimensionType string      `json:"dimension_type"`
 	Position      int32       `json:"position"`
+	SourceFieldID pgtype.UUID `json:"source_field_id"`
 }
 
 type CreateComparisonDimensionRow struct {
@@ -99,6 +100,7 @@ type CreateComparisonDimensionRow struct {
 	Label         string             `json:"label"`
 	DimensionType string             `json:"dimension_type"`
 	Position      int32              `json:"position"`
+	SourceFieldID pgtype.UUID        `json:"source_field_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 }
@@ -113,6 +115,7 @@ func (q *Queries) CreateComparisonDimension(ctx context.Context, arg CreateCompa
 		arg.Label,
 		arg.DimensionType,
 		arg.Position,
+		arg.SourceFieldID,
 	)
 	var i CreateComparisonDimensionRow
 	err := row.Scan(
@@ -122,6 +125,7 @@ func (q *Queries) CreateComparisonDimension(ctx context.Context, arg CreateCompa
 		&i.Label,
 		&i.DimensionType,
 		&i.Position,
+		&i.SourceFieldID,
 		&i.CreatedAt,
 		&i.DeletedAt,
 	)
@@ -503,7 +507,7 @@ func (q *Queries) GetComparisonContentMetadata(ctx context.Context, contentID pg
 }
 
 const getComparisonDimensionByID = `-- name: GetComparisonDimensionByID :one
-SELECT id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
+SELECT id, content_id, type_id, label, dimension_type, position, source_field_id, created_at, deleted_at
 FROM comparison_dimensions
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -515,6 +519,7 @@ type GetComparisonDimensionByIDRow struct {
 	Label         string             `json:"label"`
 	DimensionType string             `json:"dimension_type"`
 	Position      int32              `json:"position"`
+	SourceFieldID pgtype.UUID        `json:"source_field_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 }
@@ -529,6 +534,7 @@ func (q *Queries) GetComparisonDimensionByID(ctx context.Context, id pgtype.UUID
 		&i.Label,
 		&i.DimensionType,
 		&i.Position,
+		&i.SourceFieldID,
 		&i.CreatedAt,
 		&i.DeletedAt,
 	)
@@ -747,24 +753,68 @@ func (q *Queries) InsertComparisonContentMetadata(ctx context.Context, arg Inser
 	return err
 }
 
+const listComparisonContentIDsByItemRef = `-- name: ListComparisonContentIDsByItemRef :many
+
+SELECT DISTINCT content_id
+FROM comparison_items
+WHERE deleted_at IS NULL
+  AND item_ref @> jsonb_build_object('type', $1::text, 'id', $2::text)
+`
+
+type ListComparisonContentIDsByItemRefParams struct {
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+}
+
+// =====================
+// item_ref propagation lookup (§30 Sub-spec 5)
+// =====================
+// Finds comparison contents containing an item whose item_ref matches
+// {type, id} exactly (§30 Sub-spec 5 propagation).
+func (q *Queries) ListComparisonContentIDsByItemRef(ctx context.Context, arg ListComparisonContentIDsByItemRefParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listComparisonContentIDsByItemRef, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var content_id pgtype.UUID
+		if err := rows.Scan(&content_id); err != nil {
+			return nil, err
+		}
+		items = append(items, content_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listComparisonDimensionsByContent = `-- name: ListComparisonDimensionsByContent :many
-SELECT id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
-FROM comparison_dimensions
-WHERE content_id = $1 AND deleted_at IS NULL
-ORDER BY position ASC, created_at ASC
+SELECT d.id, d.content_id, d.type_id, d.label, d.dimension_type, d.position,
+ d.source_field_id, cf.key AS source_field_key, d.created_at, d.deleted_at
+FROM comparison_dimensions d
+LEFT JOIN custom_fields cf ON cf.id = d.source_field_id
+WHERE d.content_id = $1 AND d.deleted_at IS NULL
+ORDER BY d.position ASC, d.created_at ASC
 `
 
 type ListComparisonDimensionsByContentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	TypeID        pgtype.UUID        `json:"type_id"`
-	Label         string             `json:"label"`
-	DimensionType string             `json:"dimension_type"`
-	Position      int32              `json:"position"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	ID             pgtype.UUID        `json:"id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	TypeID         pgtype.UUID        `json:"type_id"`
+	Label          string             `json:"label"`
+	DimensionType  string             `json:"dimension_type"`
+	Position       int32              `json:"position"`
+	SourceFieldID  pgtype.UUID        `json:"source_field_id"`
+	SourceFieldKey *string            `json:"source_field_key"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
+// LEFT JOINs custom_fields so the matrix assembler gets the source field key
+// without a second lookup (§30 Sub-spec 5 entity-field hydration).
 func (q *Queries) ListComparisonDimensionsByContent(ctx context.Context, contentID pgtype.UUID) ([]ListComparisonDimensionsByContentRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonDimensionsByContent, contentID)
 	if err != nil {
@@ -781,6 +831,8 @@ func (q *Queries) ListComparisonDimensionsByContent(ctx context.Context, content
 			&i.Label,
 			&i.DimensionType,
 			&i.Position,
+			&i.SourceFieldID,
+			&i.SourceFieldKey,
 			&i.CreatedAt,
 			&i.DeletedAt,
 		); err != nil {
@@ -1626,15 +1678,17 @@ func (q *Queries) UpdateComparisonContentMetadata(ctx context.Context, arg Updat
 
 const updateComparisonDimension = `-- name: UpdateComparisonDimension :one
 UPDATE comparison_dimensions
-SET label = $1, dimension_type = $2, position = $3
-WHERE id = $4 AND deleted_at IS NULL
-RETURNING id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
+SET label = $1, dimension_type = $2, position = $3,
+ source_field_id = $4
+WHERE id = $5 AND deleted_at IS NULL
+RETURNING id, content_id, type_id, label, dimension_type, position, source_field_id, created_at, deleted_at
 `
 
 type UpdateComparisonDimensionParams struct {
 	Label         string      `json:"label"`
 	DimensionType string      `json:"dimension_type"`
 	Position      int32       `json:"position"`
+	SourceFieldID pgtype.UUID `json:"source_field_id"`
 	ID            pgtype.UUID `json:"id"`
 }
 
@@ -1645,6 +1699,7 @@ type UpdateComparisonDimensionRow struct {
 	Label         string             `json:"label"`
 	DimensionType string             `json:"dimension_type"`
 	Position      int32              `json:"position"`
+	SourceFieldID pgtype.UUID        `json:"source_field_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 }
@@ -1654,6 +1709,7 @@ func (q *Queries) UpdateComparisonDimension(ctx context.Context, arg UpdateCompa
 		arg.Label,
 		arg.DimensionType,
 		arg.Position,
+		arg.SourceFieldID,
 		arg.ID,
 	)
 	var i UpdateComparisonDimensionRow
@@ -1664,6 +1720,7 @@ func (q *Queries) UpdateComparisonDimension(ctx context.Context, arg UpdateCompa
 		&i.Label,
 		&i.DimensionType,
 		&i.Position,
+		&i.SourceFieldID,
 		&i.CreatedAt,
 		&i.DeletedAt,
 	)
