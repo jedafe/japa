@@ -34,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // permissionChecker is the minimal RBAC interface needed for in-handler
@@ -65,6 +66,12 @@ type dmInitiator interface {
 	SendMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers exposes the mutual aid board endpoints.
 type Handlers struct {
 	service  *Service
@@ -72,6 +79,7 @@ type Handlers struct {
 	perms    permissionChecker
 	points   pointsChecker
 	dm       dmInitiator
+	lit      literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates mutual aid handlers bound to the provided service.
@@ -96,6 +104,24 @@ func (h *Handlers) SetPointsChecker(pc pointsChecker) {
 // once during server wiring.
 func (h *Handlers) SetDMInitiator(dm dmInitiator) {
 	h.dm = dm
+}
+
+// SetLiteralResolver injects the template-literal catalog so post titles and
+// descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a post DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // permKeyForPostType maps a post_type to its RBAC node per §85.
@@ -246,6 +272,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	// per_page, total, total_pages } }. The frontend apiList helper reads
 	// `meta` (not `pagination`), so emitting `meta` is required for the
 	// pagination nav to render. BUG-006.
+	h.resolveLiterals(r, &posts)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": posts,
 		"meta": map[string]any{
@@ -282,6 +310,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &post)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": post})
 }
@@ -387,6 +417,8 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &post)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
 }
 
@@ -437,6 +469,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &post)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": post})
 }
@@ -610,6 +644,8 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &post)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": post})
 }
 
@@ -705,6 +741,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	// Geo-aware tool pattern admin list envelope: { data, meta: { page,
 	// per_page, total, total_pages } }. The admin EntityPage reads
 	// `meta.total` / `meta.total_pages` for pagination. BUG-007.
+	h.resolveLiterals(r, &posts)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": posts,
 		"meta": map[string]any{

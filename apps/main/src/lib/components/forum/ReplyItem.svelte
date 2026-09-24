@@ -221,6 +221,17 @@
 		collapsed = false;
 	}
 
+	async function startEdit() {
+		editError = null;
+		// Fetch the raw (unresolved) body so authored {{...}} literals survive a
+		// re-save — the display payload is resolved and CommentEditor reads
+		// initialBody once at mount.
+		const res = await api.get<ForumReply[]>(`/forum/${threadId}/replies?raw=1`);
+		const raw = res.data?.find((r) => r.id === reply.id);
+		editBody = raw?.body ?? reply.body;
+		editing = true;
+	}
+
 	async function saveEdit() {
 		if (savingEdit || !canEditReply || !editBody) return;
 		savingEdit = true;
@@ -387,7 +398,7 @@
 						</p>
 					{/if}
 					<CommentEditor
-						initialBody={reply.body}
+						initialBody={editBody}
 						oninput={(b) => (editBody = b)}
 						placeholder={t('forum.edit_placeholder', 'Edit your reply…')}
 					/>
@@ -479,7 +490,7 @@
 									{#if canEditReply}
 										<DropdownMenu.Item class={menuItem}>
 											{#snippet child({ props })}
-												<button type="button" onclick={() => { editing = true; editBody = reply.body; editError = null; }} {...props}>
+												<button type="button" onclick={startEdit} {...props}>
 													<Pencil size={16} /> {t('forum.edit', 'Edit')}
 												</button>
 											{/snippet}

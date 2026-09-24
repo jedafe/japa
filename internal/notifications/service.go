@@ -224,7 +224,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	// sees it without a manual refresh. Ref: §35 L88, §11.
 	// BUG-005: include the real notification ID so the client can mark-as-read
 	// directly from the realtime push without a refetch.
-	s.broadcastNotification(window.RecipientID, map[string]any{
+	s.broadcastNotification(ctx, window.RecipientID, map[string]any{
 		"id":                notifID,
 		"notification_type": window.NotificationType,
 		"actor_type":        ActorTypeUser,
@@ -350,7 +350,7 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 	// sees it without a manual refresh. Ref: §35 L88, §11.
 	// BUG-005: include the real notification ID so the client can mark-as-read
 	// directly from the realtime push without a refetch.
-	s.broadcastNotification(recipientID, map[string]any{
+	s.broadcastNotification(ctx, recipientID, map[string]any{
 		"id":                notifID,
 		"notification_type": nType,
 		"actor_type":        actorType,

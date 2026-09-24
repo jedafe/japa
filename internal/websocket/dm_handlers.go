@@ -86,6 +86,8 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &conversations)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conversations})
 }
 
@@ -186,6 +188,8 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get messages")
 		return
 	}
+
+	h.resolveLiterals(r, &messages)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": messages})
 }
@@ -514,6 +518,8 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list message requests")
 		return
 	}
+
+	h.resolveLiterals(r, &requests)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": requests})
 }

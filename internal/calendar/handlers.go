@@ -34,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // updater is the subset of Service methods used by the public edit handler.
@@ -42,16 +43,41 @@ type updater interface {
 	Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error)
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers exposes the calendar endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
 	updater  updater
+	lit      literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates calendar handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings, updater: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so entry titles and
+// descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on an entry DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -187,6 +213,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &entries)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"pagination": map[string]any{
@@ -225,6 +253,8 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + int64(limit) - 1) / int64(limit)
 	}
 
+	h.resolveLiterals(r, &entries)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"meta": map[string]any{
@@ -261,6 +291,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &entry)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": entry})
 }
@@ -384,6 +416,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &entry)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": entry})
 }
@@ -623,6 +657,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Geo-aware tool pattern response envelope: { data, meta: { page, per_page, total, total_pages } }
+	h.resolveLiterals(r, &entries)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"meta": map[string]any{

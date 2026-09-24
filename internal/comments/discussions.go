@@ -187,6 +187,8 @@ func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &discussions)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": discussions,
 		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},

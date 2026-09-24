@@ -55,6 +55,14 @@ SELECT entity_type, entity_id, user_id, reaction_key, created_at
 FROM reactions
 WHERE entity_type = @entity_type AND entity_id = @entity_id AND user_id = @user_id;
 
+-- name: GetUserReactionsForContents :many
+-- Batch variant for card lists: one query returns the caller's reaction keys
+-- across many content ids (GET /me/content-states). Replaces per-card
+-- /content/{id}/reactions/me calls on feed/profile listings.
+SELECT entity_id, reaction_key
+FROM reactions
+WHERE entity_type = 'content' AND user_id = @user_id AND entity_id = ANY(@ids::uuid[]);
+
 -- name: ListContentLikedByUser :many
 -- Public "Likes" tab: published+public content the user has reacted to (any
 -- reaction key), one row per content (GROUP BY collapses multiple reaction

@@ -1950,6 +1950,39 @@ func (q *Queries) IsContentPinned(ctx context.Context, arg IsContentPinnedParams
 	return exists, err
 }
 
+const listBookmarkedContentIDs = `-- name: ListBookmarkedContentIDs :many
+SELECT entity_id
+FROM bookmarks
+WHERE user_id = $1 AND entity_type = 'content' AND entity_id = ANY($2::uuid[])
+`
+
+type ListBookmarkedContentIDsParams struct {
+	UserID pgtype.UUID   `json:"user_id"`
+	Ids    []pgtype.UUID `json:"ids"`
+}
+
+// Batch bookmark check for card lists (GET /me/content-states): returns which
+// of the given content ids the caller has bookmarked.
+func (q *Queries) ListBookmarkedContentIDs(ctx context.Context, arg ListBookmarkedContentIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listBookmarkedContentIDs, arg.UserID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var entity_id pgtype.UUID
+		if err := rows.Scan(&entity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBookmarksByFolder = `-- name: ListBookmarksByFolder :many
 SELECT b.id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
 FROM bookmarks b
@@ -2073,12 +2106,20 @@ WHERE c.intel_source_id = $1
  AND c.deleted_at IS NULL
  AND c.status = 'published'
  AND c.visibility = 'public'
-ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
-LIMIT $3 OFFSET $2
+ORDER BY
+ CASE
+ WHEN $2::text = 'popular' THEN c.view_count
+ WHEN $2::text = 'discussed' THEN c.comment_count
+ WHEN $2::text = 'upvoted' THEN
+  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content')
+ END DESC NULLS LAST,
+ c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+LIMIT $4 OFFSET $3
 `
 
 type ListComparisonContentsBySourceIDParams struct {
 	IntelSourceID pgtype.UUID `json:"intel_source_id"`
+	SortMode      string      `json:"sort_mode"`
 	PageOffset    int32       `json:"page_offset"`
 	PageLimit     int32       `json:"page_limit"`
 }
@@ -2103,7 +2144,12 @@ type ListComparisonContentsBySourceIDRow struct {
 
 // Source item feed: comparison contents linked to a canonical source.
 func (q *Queries) ListComparisonContentsBySourceID(ctx context.Context, arg ListComparisonContentsBySourceIDParams) ([]ListComparisonContentsBySourceIDRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonContentsBySourceID, arg.IntelSourceID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listComparisonContentsBySourceID,
+		arg.IntelSourceID,
+		arg.SortMode,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

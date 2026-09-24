@@ -18,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/wallet"
@@ -164,8 +165,8 @@ func contentGeoFromFieldValues(fieldValues []byte) (source, target string) {
 		return "", ""
 	}
 
-	source = toCountryCode(geoFieldValue(fv, "source_country", "origin_country"))
-	target = toCountryCode(geoFieldValue(fv, "target_country", "destination_country", "country"))
+	source = literals.ToCountryCode(literals.GeoFieldValue(fv, "source_country", "origin_country"))
+	target = literals.ToCountryCode(literals.GeoFieldValue(fv, "target_country", "destination_country", "country"))
 
 	return source, target
 }
@@ -183,7 +184,7 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 		return
 	}
 
-	destCode := toCountryCode(*target)
+	destCode := literals.ToCountryCode(*target)
 	if destCode == "" {
 		return
 	}
@@ -202,7 +203,7 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 	var origin pgtype.UUID
 	originResolved := false
 	if source != nil {
-		if srcCode := toCountryCode(*source); srcCode != "" {
+		if srcCode := literals.ToCountryCode(*source); srcCode != "" {
 			if sp, err := q.GetCountrySpaceIDByGeoCode(ctx,
 
 				&srcCode,
@@ -518,7 +519,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// destination country space (same behaviour as POST /stories).
 	if input.ContentType == TypeStory && !input.GeoSpaceID.Valid && !input.SpaceID.Valid {
 		if input.TargetCountry != nil {
-			if code := toCountryCode(*input.TargetCountry); code != "" {
+			if code := literals.ToCountryCode(*input.TargetCountry); code != "" {
 				if sp, err := readQ.GetCountrySpaceIDByGeoCode(ctx, &code); err == nil {
 					input.GeoSpaceID = sp
 				}
@@ -1793,6 +1794,54 @@ func (s *Service) GetUserReactions(ctx context.Context, entityType string, entit
 	}
 
 	return reactions, nil
+}
+
+// ViewerContentState is the caller's interaction state for one content item.
+type ViewerContentState struct {
+	ReactionKeys []string `json:"reaction_keys"`
+	Bookmarked   bool     `json:"bookmarked"`
+}
+
+// GetViewerContentStates returns the caller's reaction keys + bookmark state
+// for a batch of content ids in two queries. Backs GET /me/content-states so
+// card lists resolve all per-item viewer state in one round-trip instead of
+// firing /reactions/me + /bookmark per card.
+func (s *Service) GetViewerContentStates(ctx context.Context, userID pgtype.UUID, ids []pgtype.UUID) (map[string]*ViewerContentState, error) {
+	states := make(map[string]*ViewerContentState, len(ids))
+
+	reactionRows, err := s.read.GetUserReactionsForContents(ctx, gen.GetUserReactionsForContentsParams{
+		UserID: userID,
+		Ids:    ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting batch user reactions: %w", err)
+	}
+	for _, row := range reactionRows {
+		st := states[row.EntityID.String()]
+		if st == nil {
+			st = &ViewerContentState{}
+			states[row.EntityID.String()] = st
+		}
+		st.ReactionKeys = append(st.ReactionKeys, row.ReactionKey)
+	}
+
+	bookmarked, err := s.read.ListBookmarkedContentIDs(ctx, gen.ListBookmarkedContentIDsParams{
+		UserID: userID,
+		Ids:    ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting batch bookmarks: %w", err)
+	}
+	for _, entityID := range bookmarked {
+		st := states[entityID.String()]
+		if st == nil {
+			st = &ViewerContentState{}
+			states[entityID.String()] = st
+		}
+		st.Bookmarked = true
+	}
+
+	return states, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -15,8 +15,15 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/worker"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers provides HTTP handlers for organization management.
 type Handlers struct {
@@ -24,7 +31,8 @@ type Handlers struct {
 	follows           FollowService
 	jsonldResolver    JSONLDResolver
 	customFieldLookup CustomFieldLookup
-	asynqClient       *asynq.Client // nil disables search index enqueue (test-only)
+	asynqClient       *asynq.Client   // nil disables search index enqueue (test-only)
+	lit               literalResolver // nil disables literal resolution (§14)
 }
 
 // FollowService is the subset of the follows.Service used by org handlers.
@@ -63,6 +71,24 @@ func (h *Handlers) SetCustomFieldLookup(l CustomFieldLookup) {
 // search:index_entity tasks (§12 stale-index fix). nil disables enqueue
 // (test-only).
 func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
+
+// SetLiteralResolver injects the template-literal catalog so organization
+// names/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on an organization DTO or
+// slice. Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
+}
 
 // enqueueSearchIndex enqueues a Meilisearch re-index task for an organization.
 // operation is "index" (create/update) or "delete". Fire-and-forget per Rule 8.
@@ -257,6 +283,8 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new org.
 	h.enqueueSearchIndex("index", result.ID)
 
+	h.resolveLiterals(r, &result)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -317,6 +345,8 @@ func (h *Handlers) ListMyOrganizations(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &orgs)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orgs})
 }
@@ -872,6 +902,8 @@ func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	h.resolveLiterals(r, &items)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"meta": map[string]any{
@@ -928,6 +960,8 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new org.
 	h.enqueueSearchIndex("index", result.ID)
+
+	h.resolveLiterals(r, &result)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }

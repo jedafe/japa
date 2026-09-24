@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/valkey"
@@ -35,6 +36,13 @@ var wsUpgrader = websocket.Upgrader{
 	},
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+	ResolveText(ctx context.Context, s string, rc literals.RenderContext) string
+}
+
 // Handlers holds dependencies for WebSocket and DM HTTP handlers.
 type Handlers struct {
 	service        *Service
@@ -44,6 +52,25 @@ type Handlers struct {
 	keyRotation    *auth.KeyRotation
 	spamPipeline   *spam.SpamPipeline
 	sessionChecker func(userID string) bool // BUG-018
+	lit            literalResolver          // nil disables literal resolution (§14)
+}
+
+// SetLiteralResolver injects the template-literal catalog so DM bodies
+// render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates Handlers with the given dependencies.

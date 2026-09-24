@@ -265,7 +265,13 @@ func (h *SitemapHandler) latestSpacesLastMod(ctx context.Context) string {
 func (h *SitemapHandler) latestUsersLastMod(ctx context.Context) string {
 	var ts time.Time
 
-	err := h.reader.QueryRow(ctx, `SELECT u.updated_at FROM users u JOIN user_groups ug ON u.user_group_id = ug.id WHERE u.status = 'active' AND COALESCE(ug.allow_search_indexing, true) ORDER BY u.updated_at DESC LIMIT 1`).Scan(&ts)
+	err := h.reader.QueryRow(ctx, `SELECT u.updated_at FROM users u
+		 WHERE u.status = 'active'
+		   AND (NOT EXISTS (SELECT 1 FROM user_group_memberships ugm WHERE ugm.user_id = u.id)
+		     OR EXISTS (SELECT 1 FROM user_group_memberships ugm
+		                JOIN user_groups ug ON ug.id = ugm.group_id
+		                WHERE ugm.user_id = u.id AND ug.allow_search_indexing))
+		 ORDER BY u.updated_at DESC LIMIT 1`).Scan(&ts)
 	if err != nil {
 		return ""
 	}
@@ -457,10 +463,16 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Users map to groups through user_group_memberships (not a users.user_group_id
+	// column). A user is indexable when they have no group or belong to at least
+	// one group with allow_search_indexing = true — matching the Section 26 gate
+	// while tolerating multi-group users.
 	rows, err := h.reader.Query(r.Context(), `SELECT u.username, u.updated_at FROM users u
-		 JOIN user_groups ug ON u.user_group_id = ug.id
 		 WHERE u.status = 'active'
-		   AND COALESCE(ug.allow_search_indexing, true) = true
+		   AND (NOT EXISTS (SELECT 1 FROM user_group_memberships ugm WHERE ugm.user_id = u.id)
+		     OR EXISTS (SELECT 1 FROM user_group_memberships ugm
+		                JOIN user_groups ug ON ug.id = ugm.group_id
+		                WHERE ugm.user_id = u.id AND ug.allow_search_indexing))
 		 ORDER BY u.updated_at DESC`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")

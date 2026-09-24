@@ -178,6 +178,88 @@ func addBuiltinVars(out map[string]string, env *expr.Env) {
 	}
 }
 
+// ResolveText resolves {{...}} placeholders in a single string using the
+// catalog's active literals. Load failures log a warning and return the
+// input unchanged — literal resolution is best-effort and must never break
+// a response.
+func (c *Catalog) ResolveText(ctx context.Context, s string, rc RenderContext) string {
+	if c == nil || rc.raw || !strings.Contains(s, "{{") {
+		return s
+	}
+
+	tokens, err := c.GetActive(ctx)
+	if err != nil {
+		slog.Warn("literals: failed to load literals for ResolveText", "error", err)
+
+		return s
+	}
+
+	out, _ := Resolve(ctx, s, rc, tokens)
+
+	return out
+}
+
+// ResolveFields resolves the named text fields (Title, Body, Excerpt,
+// Content, Description, and friends) on any content-like struct or slice of
+// structs using the catalog's active literals. Best-effort: failures log a
+// warning and leave the input unchanged.
+func (c *Catalog) ResolveFields(ctx context.Context, v any, rc RenderContext) {
+	if c == nil || v == nil || rc.raw {
+		return
+	}
+
+	tokens, err := c.GetActive(ctx)
+	if err != nil {
+		slog.Warn("literals: failed to load literals for ResolveFields", "error", err)
+
+		return
+	}
+
+	_ = ResolveFields(ctx, v, rc, tokens)
+}
+
+// ResolveData resolves every string inside a JSON-shaped payload (maps,
+// slices, nested values) plus named fields on any structs it contains.
+// Used for rendered widget data and response envelopes. Best-effort.
+func (c *Catalog) ResolveData(ctx context.Context, v any, rc RenderContext) {
+	if c == nil || v == nil || rc.raw {
+		return
+	}
+
+	tokens, err := c.GetActive(ctx)
+	if err != nil {
+		slog.Warn("literals: failed to load literals for ResolveData", "error", err)
+
+		return
+	}
+
+	ResolveData(ctx, v, rc, tokens)
+}
+
+// ResolveJSON resolves every string inside a raw JSON payload (rendered
+// widget data, page-builder block props) and returns the re-marshaled JSON.
+// When the payload contains no "{{" marker or fails to unmarshal, the input
+// is returned unchanged. Best-effort — never errors.
+func (c *Catalog) ResolveJSON(ctx context.Context, raw json.RawMessage, rc RenderContext) json.RawMessage {
+	if c == nil || rc.raw || len(raw) == 0 || !strings.Contains(string(raw), "{{") {
+		return raw
+	}
+
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return raw
+	}
+
+	c.ResolveData(ctx, &v, rc)
+
+	out, err := json.Marshal(v)
+	if err != nil {
+		return raw
+	}
+
+	return out
+}
+
 // Invalidate removes the cached active literal list for a platform.
 func (c *Catalog) Invalidate(ctx context.Context) error {
 	if c.valkey == nil {

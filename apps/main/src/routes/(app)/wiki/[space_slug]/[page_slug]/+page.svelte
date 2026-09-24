@@ -6,7 +6,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import { BookOpen, Lock, Pencil, History, ArrowLeft, Send } from 'lucide-svelte';
-	import type { WikiCategory } from '$lib/types';
+	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
@@ -38,8 +38,18 @@
 	let submitted = $state(false);
 	let errorKey = $state('');
 
-	function startEdit() {
-		const c = data.page?.current_content;
+	async function startEdit() {
+		summary = '';
+		submitted = false;
+		errorKey = '';
+		editing = true;
+		// Fetch the raw (unresolved) revision so authored {{...}} literals
+		// survive a re-save — the display payload has them resolved.
+		const res = await api.get<WikiPage>(
+			`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(data.pageSlug)}?raw=1`
+		);
+		const c = res.data?.current_content ?? data.page?.current_content;
+		if (!editing) return;
 		if (typeof c === 'string') {
 			editBodyHtml = c;
 			editBodyJson = { type: 'doc', content: [] };
@@ -50,10 +60,6 @@
 			editBodyHtml = '';
 			editBodyJson = { type: 'doc', content: [] };
 		}
-		summary = '';
-		submitted = false;
-		errorKey = '';
-		editing = true;
 	}
 
 	function cancelEdit() {

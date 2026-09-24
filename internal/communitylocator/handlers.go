@@ -18,6 +18,7 @@
 package communitylocator
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -31,12 +32,38 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // Handlers exposes the Diaspora Community Locator endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates community locator handlers bound to the provided
@@ -151,6 +178,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &orgs)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": orgs,
 		"pagination": map[string]any{
@@ -173,7 +202,10 @@ func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": h.service.OrgTypes()})
+	types := h.service.OrgTypes()
+	h.resolveLiterals(r, &types)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // HandleGet handles GET /community-locator/:slug — single published
@@ -203,6 +235,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &org)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": org})
 }
@@ -272,6 +306,8 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &org)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": org})
 }
@@ -356,6 +392,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &orgs)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": orgs,

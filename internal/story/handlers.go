@@ -13,6 +13,7 @@
 package story
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -26,18 +27,44 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers exposes the story wall endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates story handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetLiteralResolver injects the template-literal catalog so story titles
+// and bodies render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a story DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +197,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &stories)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stories,
 		"pagination": map[string]any{
@@ -231,6 +260,8 @@ func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &story)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": story})
 }
 
@@ -279,6 +310,8 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &story)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": story})
 }
@@ -329,6 +362,8 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &story)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": story})
 }
@@ -505,6 +540,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &stories)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stories,

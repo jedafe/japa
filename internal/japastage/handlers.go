@@ -21,13 +21,14 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -39,6 +40,31 @@ type Handlers struct {
 	settings    *config.Settings
 	asynqClient *asynq.Client
 	redis       valkeycompat.Cmdable // nil disables cache invalidation (tests)
+	lit         literalResolver      // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates japa stage handlers bound to the provided service.
@@ -134,7 +160,24 @@ func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stages := h.service.Stages()
+	h.resolveLiterals(r, &stages)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stages})
+}
+
+// HandleIntents handles GET /japa-stage/intents — returns the canonical
+// japa_intent option list (Rule 16, ADR-122).
+func (h *Handlers) HandleIntents(w http.ResponseWriter, r *http.Request) {
+
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
+		return
+	}
+
+	intents := h.service.Intents()
+	h.resolveLiterals(r, &intents)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": intents})
 }
 
 // HandleGetByUsername handles GET /users/:username/japa-stage — public stage
@@ -147,7 +190,7 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := chi.URLParam(r, "username")
+	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
@@ -166,12 +209,15 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &profile)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // HandleListByStage handles GET /members/by-stage — public directory of
-// members filtered by stage. Query params: ?stage=&dest=&page=&page_size=
-// (dest is the destination space id, geo-aware ?dest= filter per §87).
+// members filtered by stage and/or intent. Query params:
+// ?stage=&intent=&dest=&page=&page_size= (dest is the destination space id,
+// geo-aware ?dest= filter per §87; intent per ADR-122).
 func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
@@ -185,10 +231,16 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	intent := r.URL.Query().Get("intent")
+	if intent != "" && !ValidIntent(intent) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_intent", "Invalid intent; must be one of: "+JoinIntents())
+		return
+	}
+
 	dest := r.URL.Query().Get("dest")
 	page, limit := parsePageParams(r)
 
-	members, total, err := h.service.ListByStage(r.Context(), stage, dest, page, limit)
+	members, total, err := h.service.ListByStage(r.Context(), stage, intent, dest, page, limit)
 	if err != nil {
 		slog.Error("japastage: list by stage failed", "stage", stage, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list members by stage")
@@ -202,6 +254,8 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	if limit > 0 && total > 0 {
 		totalPages = (total + int64(limit) - 1) / int64(limit)
 	}
+
+	h.resolveLiterals(r, &members)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": members,
@@ -244,14 +298,18 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &profile)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // HandleUpdateOwn handles PATCH /me/japa-stage — update the authenticated
-// user's own japa stage, destination, and (optionally) visibility. Auth
-// required (profile.japa_stage.edit permission checked at route
-// registration). On success a japa_stage:recommend Asynq task is enqueued
-// fire-and-forget (Rule 8) so the worker can dispatch recommendations.
+// user's own japa stage, intent, destination, and (optionally) visibility.
+// Auth required (profile.japa_stage.edit permission checked at route
+// registration). Stage and intent are independently optional; at least one
+// is required (ADR-122 — intent may be set before a stage is picked). On
+// success a japa_stage:recommend Asynq task is enqueued fire-and-forget
+// (Rule 8) so the worker can dispatch recommendations.
 func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -269,13 +327,23 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Stage == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_stage", "Stage is required")
+	if input.Stage == "" && input.Intent == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_stage", "Stage or intent is required")
 		return
 	}
 
-	if !ValidStage(input.Stage) {
+	if input.Stage != "" && !ValidStage(input.Stage) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage", "Invalid stage; must be one of: "+JoinStages())
+		return
+	}
+
+	if input.Intent != "" && !ValidIntent(input.Intent) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_intent", "Invalid intent; must be one of: "+JoinIntents())
+		return
+	}
+
+	if input.Stage != "" && input.Intent != "" && !IsRelocationIntent(input.Intent) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage_for_intent", "A stage cannot be set for a non-relocation intent")
 		return
 	}
 
@@ -283,6 +351,11 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidStageForIntent) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage_for_intent", "A stage cannot be set for a non-relocation intent")
 			return
 		}
 
@@ -305,7 +378,8 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		payload, _ := json.Marshal(map[string]any{
 			"user_id": user.UserID.String(),
 
-			"stage":                input.Stage,
+			"stage":                profile.Stage,
+			"intent":               profile.Intent,
 			"destination_space_id": input.DestSpaceID,
 		})
 
@@ -321,6 +395,8 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	} else {
 		slog.Warn("japastage: asynq client nil, skipping japa_stage:recommend fan-out")
 	}
+
+	h.resolveLiterals(r, &profile)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }

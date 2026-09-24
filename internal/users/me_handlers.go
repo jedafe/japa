@@ -416,6 +416,8 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &content)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
@@ -438,6 +440,8 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &content)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
@@ -561,6 +565,8 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &content)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
@@ -586,6 +592,8 @@ func (h *Handlers) ListMyInReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &content)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
@@ -641,6 +649,8 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &bookmarks)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
 }

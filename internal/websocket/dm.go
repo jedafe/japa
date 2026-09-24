@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -350,11 +352,27 @@ type DMService struct {
 	hub         *Hub
 	AsynqClient *asynq.Client
 	vkClient    *valkey.Client
+	lit         literalResolver // nil disables literal resolution (§14)
 }
 
 // NewDMService creates a DMService with the given store and hub.
 func NewDMService(store *DMStore, hub *Hub) *DMService {
 	return &DMService{store: store, hub: hub}
+}
+
+// SetLiteralResolver injects the template-literal catalog so text emitted
+// through channels with no later read-path resolution (the live WebSocket
+// broadcast, push notification previews) renders {{...}} placeholders.
+func (s *DMService) SetLiteralResolver(l literalResolver) { s.lit = l }
+
+// resolveDMText resolves {{...}} placeholders in outbound text — best-effort,
+// returns the input unchanged when no resolver is wired.
+func (s *DMService) resolveDMText(ctx context.Context, text string) string {
+	if s.lit == nil || !strings.Contains(text, "{{") {
+		return text
+	}
+
+	return s.lit.ResolveText(ctx, text, literals.NewContext(ctx, ""))
 }
 
 // SetValkeyClient injects the Valkey client used to maintain the
@@ -530,13 +548,14 @@ func (s *DMService) SendMessage(ctx context.Context, conversationID, senderID pg
 		return fmt.Errorf("updating conversation last message: %w", err)
 	}
 
-	// Broadcast DM message event via WebSocket hub.
+	// Broadcast DM message event via WebSocket hub. §14: resolve {{...}} —
+	// the live event has no later read-path resolution.
 	s.hub.BroadcastToUser(recipientID.String(), WSEvent{
 		Type: EventDMMessage,
 		Payload: map[string]interface{}{
 			"conversation_id": conversationID.String(),
 			"sender_id":       senderID.String(),
-			"body":            body,
+			"body":            s.resolveDMText(ctx, body),
 		},
 	})
 

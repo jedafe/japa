@@ -20,7 +20,9 @@
 	}
 
 	interface RawFollower {
+		/** Follow row id — NOT the user id. Use follower_id for user-scoped actions. */
 		id: string;
+		follower_id?: string;
 		username: string;
 		display_name?: string;
 		avatar_url?: string | null;
@@ -68,7 +70,7 @@
 			}));
 		}
 		return (raw as RawFollower[]).map((f) => ({
-			id: f.id,
+			id: f.follower_id ?? f.id,
 			username: f.username,
 			display_name: f.display_name || f.username,
 			avatar_url: f.avatar_url,

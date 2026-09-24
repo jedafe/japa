@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { Send, MessageSquareOff, ArrowLeft, Pencil, Trash2, Plus, Settings } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, LiteralSuggest } from '$lib/components/ui';
 	import { realtime, type DMMessageEvent } from '$lib/realtime/realtime.svelte';
 	import type { DMConversation, DMMessage } from '$lib/types';
 	import type { PageData } from './$types';
@@ -145,9 +145,15 @@
 	}
 
 	// BUG-021: edit own message (15-min window enforced server-side)
-	function startEdit(msg: DMMessage) {
+	async function startEdit(msg: DMMessage) {
 		editingId = msg.id;
 		editBody = msg.body;
+		// Fetch the raw (unresolved) body so hand-typed {{...}} literals survive
+		// a re-save — the display payload has them already resolved.
+		if (!activeId) return;
+		const res = await api.get<DMMessage[]>(`/dm/conversations/${activeId}/messages?raw=1`);
+		const raw = res.data?.find((m) => m.id === msg.id);
+		if (editingId === msg.id && raw) editBody = raw.body;
 	}
 
 	async function saveEdit(msg: DMMessage) {
@@ -342,11 +348,13 @@
 								<div class="max-w-[75%] rounded-[var(--radius)] px-3 py-2 text-sm {mine ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]'}">
 									{#if editingId === msg.id}
 										<!-- BUG-021: edit mode -->
-										<textarea
+										<LiteralSuggest
+											textarea
 											bind:value={editBody}
 											class="w-full resize-none rounded-[var(--radius)] bg-[var(--color-surface)] px-2 py-1 text-[var(--color-text)] focus:outline-none"
-											rows="2"
-										></textarea>
+											wrapperClass="relative w-full"
+											rows={2}
+										/>
 										<div class="mt-1 flex gap-2">
 											<button
 												type="button"
@@ -403,11 +411,10 @@
 					sendMessage();
 				}}
 			>
-				<input
-					type="text"
+				<LiteralSuggest
 					bind:value={draft}
 					placeholder={t('messages.placeholder', 'Type a message…')}
-					class="flex-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="w-full rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 				<button
 					type="submit"
@@ -449,12 +456,14 @@
 					placeholder={t('messages.recipient_id', 'Recipient user ID')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
-				<textarea
+				<LiteralSuggest
+					textarea
 					bind:value={newMessage}
 					placeholder={t('messages.placeholder', 'Type a message…')}
-					rows="3"
+					rows={3}
+					wrapperClass="relative w-full"
 					class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-				></textarea>
+				/>
 				<div class="flex justify-end gap-2">
 					<button
 						type="button"

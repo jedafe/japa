@@ -106,7 +106,7 @@
 			<SourceActions
 				{source}
 				showBlock={false}
-				showDelete={true}
+				showShare={false}
 				triggerClass="grid h-9 w-9 place-items-center rounded-full border-0 bg-black/40 text-white opacity-90 backdrop-blur-sm transition hover:bg-black/60 hover:opacity-100 focus:opacity-100"
 				onEdit={onEdit}
 			/>

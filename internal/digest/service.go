@@ -21,6 +21,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/email"
+	"github.com/jedafe/japa/internal/literals"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -77,6 +78,13 @@ type DigestEditionDetailDTO struct {
 	Content json.RawMessage `json:"content"`
 }
 
+// literalCatalog resolves {{...}} template literals inside digest content
+// JSON (§14 Global Template Literals). Implemented by *literals.Catalog;
+// nil disables resolution.
+type literalCatalog interface {
+	ResolveJSON(ctx context.Context, raw json.RawMessage, rc literals.RenderContext) json.RawMessage
+}
+
 // Service holds the business logic for the Community Digest.
 type Service struct {
 	store           *Store
@@ -85,6 +93,7 @@ type Service struct {
 	vk              valkeycompat.Cmdable
 	emailDispatcher EmailDispatcher
 	checker         FeatureChecker
+	lit             literalCatalog // nil disables literal resolution (§14)
 }
 
 // NewService creates a digest service.
@@ -116,6 +125,22 @@ func (s *Service) SetEmailDispatcher(d EmailDispatcher) { s.emailDispatcher = d 
 // feature_flags table (the single source of truth for feature reachability)
 // instead of system_settings. Falls back to system_settings when nil.
 func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// SetLiteralCatalog injects the template-literal catalog so published digest
+// content renders {{...}} placeholders (§14). Applied on public reads and
+// outbound email — never on the admin edit payload, which must keep the
+// authored tokens.
+func (s *Service) SetLiteralCatalog(c literalCatalog) { s.lit = c }
+
+// resolveContent resolves {{...}} placeholders inside a digest content JSON
+// payload using a request-independent context — digest output is shared.
+func (s *Service) resolveContent(ctx context.Context, raw json.RawMessage) json.RawMessage {
+	if s.lit == nil {
+		return raw
+	}
+
+	return s.lit.ResolveJSON(ctx, raw, literals.NewContext(ctx, ""))
+}
 
 // Enabled checks whether the digest feature is enabled for the given platform.
 // Delegates to the features.Checker (feature_flags table) when available,
@@ -153,7 +178,10 @@ func (s *Service) GetLatest(ctx context.Context, spaceID pgtype.UUID) (DigestEdi
 		return DigestEditionDetailDTO{}, fmt.Errorf("digest: get latest: %w", err)
 	}
 
-	return editionToDetailDTO(edition), nil
+	dto := editionToDetailDTO(edition)
+	dto.Content = s.resolveContent(ctx, dto.Content)
+
+	return dto, nil
 }
 
 // Get returns a single published edition by id (public browse).
@@ -171,7 +199,10 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (DigestEditionDetailD
 		return DigestEditionDetailDTO{}, pgx.ErrNoRows
 	}
 
-	return editionToDetailDTO(edition), nil
+	dto := editionToDetailDTO(edition)
+	dto.Content = s.resolveContent(ctx, dto.Content)
+
+	return dto, nil
 }
 
 // AdminListFilter holds admin list filter parameters (§84 admin pattern:
@@ -441,7 +472,9 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 
 	baseURL := s.resolveBaseURL(ctx)
 	subject := s.emailSubject(ctx)
-	htmlBody := renderDigestEmail(edition.Content, baseURL)
+	// §14: resolve {{...}} placeholders before HTML render so outbound
+	// email never contains raw literals.
+	htmlBody := renderDigestEmail(s.resolveContent(ctx, edition.Content), baseURL)
 
 	sent, failed := 0, 0
 

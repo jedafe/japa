@@ -35,6 +35,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 const (
@@ -104,6 +105,31 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 // Handlers holds dependencies for newsletter admin HTTP handlers.
 type Handlers struct {
 	Service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -188,6 +214,8 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	// SubscribedAt is always valid and cannot be used to distinguish a new
 	// insert from a re-subscribe. Return 200 for the idempotent success —
 	// the subscriber is subscribed either way.
+	h.resolveLiterals(r, &subscriber)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscriber})
 }
 
@@ -434,6 +462,8 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		// #nosec G115 // bounded
 		totalPages = int32((total + int64(limit) - 1) / int64(limit))
 	}
+
+	h.resolveLiterals(r, &campaigns)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -769,6 +799,8 @@ func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "No subscription found")
 		return
 	}
+
+	h.resolveLiterals(r, &subscriber)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscriber})
 }

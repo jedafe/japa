@@ -132,12 +132,12 @@ type TemplateRequest struct {
 
 // SampleRequest is the admin create/update body for a sample.
 type SampleRequest struct {
-	DestinationSpaceID string  `json:"destination_space_id"`
-	ProgramLevel       string  `json:"program_level"`
-	FieldOfStudy       string  `json:"field_of_study"`
-	Title              string  `json:"title"`
-	Body               string  `json:"body"`
-	WordCount          *int32  `json:"word_count"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	ProgramLevel       string `json:"program_level"`
+	FieldOfStudy       string `json:"field_of_study"`
+	Title              string `json:"title"`
+	Body               string `json:"body"`
+	WordCount          *int32 `json:"word_count"`
 }
 
 // QuotaDTO is the GET /sop/quota response.

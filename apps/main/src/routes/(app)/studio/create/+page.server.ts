@@ -143,7 +143,10 @@ export const load: PageServerLoad = async (event) => {
 			// from the JCE endpoint so the ComparisonBuilder can render them.
 			if (draft?.content_type === 'comparison') {
 				try {
-					const jce = await apiGet<JCEComparison>(ctx, `/jce/comparisons/${draft.id}`);
+					// ?raw=1 keeps authored {{...}} literals unresolved so the
+					// editor restores the original template source (the resolved
+					// display payload would be persisted on the next save).
+					const jce = await apiGet<JCEComparison>(ctx, `/jce/comparisons/${draft.id}?raw=1`);
 					comparisonDetail = {
 						id: jce.content.id,
 						author_id: jce.content.author_id,
@@ -159,7 +162,7 @@ export const load: PageServerLoad = async (event) => {
 					// §30 — restore the existing comparison matrix so the
 					// ComparisonBuilder can display and continue editing cell values.
 					try {
-						const matrix = await apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${draft.id}/matrix`);
+						const matrix = await apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${draft.id}/matrix?raw=1`);
 						const itemIndex = new Map<string, number>(comparisonDetail.items.map((it, i) => [it.id, i]));
 						const dimIndex = new Map<string, number>(
 							comparisonDetail.dimensions.map((d, i) => [d.id, i])

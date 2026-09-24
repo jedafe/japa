@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,18 +12,46 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 const defaultPageSize int32 = 20
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+	ResolveData(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for notification HTTP handlers.
 type Handlers struct {
 	service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so notification
+// titles/bodies render {{...}} placeholders captured from subject content
+// (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a notification DTO or
+// slice. Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // requireUser resolves the authenticated user from the request context.
@@ -94,6 +123,8 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get notifications")
 		return
 	}
+
+	h.resolveLiterals(r, &notifications)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": notifications})
 }

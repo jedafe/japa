@@ -139,7 +139,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<EmptyState icon={Users} title={t('users.empty', 'No people yet.')} />
 		{:else}
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{data.total} {t('users.results', 'people')}
+				{data.total} {data.total === 1 ? t('users.results_one', 'person') : t('users.results', 'people')}
 			</p>
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each data.users as user (user.id)}
@@ -153,7 +153,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						hueSeed={user.id}
 						round
 						verified={user.profile_type === 'business' || user.profile_type === 'pro'}
-						meta={[{ icon: Users, text: t('profile.followers', '{n} followers').replace('{n}', String(user.follower_count)) }]}
+						meta={[{ icon: Users, text: (user.follower_count === 1 ? t('profile.followers_one', '{n} follower') : t('profile.followers', '{n} followers')).replace('{n}', String(user.follower_count)) }]}
 						entityType="user"
 						entityId={user.id}
 						entitySlug={user.username}

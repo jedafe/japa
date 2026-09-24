@@ -22,6 +22,7 @@
 package sopgenerator
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -35,12 +36,38 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // Handlers exposes the SOP generator endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates SOP handlers bound to the service.
@@ -121,6 +148,8 @@ func (h *Handlers) HandleListTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &templates)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": templates})
 }
 
@@ -148,6 +177,8 @@ func (h *Handlers) HandleListSamples(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &samples)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       samples,
 		"pagination": map[string]any{"page": page, "limit": limit, "total": total},
@@ -171,6 +202,8 @@ func (h *Handlers) HandleGetSample(w http.ResponseWriter, r *http.Request) {
 		serviceErr(w, r, err, "Sample not found")
 		return
 	}
+
+	h.resolveLiterals(r, &sample)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sample})
 }
@@ -242,6 +275,8 @@ func (h *Handlers) HandleListDrafts(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list drafts")
 		return
 	}
+
+	h.resolveLiterals(r, &drafts)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       drafts,
@@ -347,6 +382,8 @@ func (h *Handlers) HandleAdminListTemplates(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list templates")
 		return
 	}
+
+	h.resolveLiterals(r, &templates)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       templates,
@@ -558,6 +595,8 @@ func (h *Handlers) HandleAdminListSamples(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list samples")
 		return
 	}
+	h.resolveLiterals(r, &samples)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       samples,
 		"pagination": map[string]any{"page": page, "limit": limit, "total": total},

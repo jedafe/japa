@@ -231,7 +231,7 @@ type DigestProcessor interface {
 // via Honcho, and prompts a Readiness Assessment when stage=planning and the
 // member has no completed assessment.
 type JapaStageProcessor interface {
-	RecommendForStage(ctx context.Context, userID pgtype.UUID, stage, destSpaceID string) error
+	RecommendForStage(ctx context.Context, userID pgtype.UUID, stage, intent, destSpaceID string) error
 }
 
 // PlanningGroupProcessor handles Planning Groups background tasks (§82,
@@ -1222,6 +1222,7 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 	var p struct {
 		UserID             string `json:"user_id"`
 		Stage              string `json:"stage"`
+		Intent             string `json:"intent"`
 		DestinationSpaceID string `json:"destination_space_id"`
 	}
 
@@ -1234,7 +1235,7 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:japa_stage:recommend: bad user_id: %w", err)
 	}
 
-	if err := japaStageProcessor.RecommendForStage(ctx, userID, p.Stage, p.DestinationSpaceID); err != nil {
+	if err := japaStageProcessor.RecommendForStage(ctx, userID, p.Stage, p.Intent, p.DestinationSpaceID); err != nil {
 		return fmt.Errorf("task:japa_stage:recommend: %w", err)
 	}
 

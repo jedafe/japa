@@ -33,7 +33,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let job: JobDetail;
 	try {
-		job = await apiGet<JobDetail>(ctx, `/jobs/${slug}`);
+		job = await apiGet<JobDetail>(ctx, `/jobs/${slug}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Job not found' });

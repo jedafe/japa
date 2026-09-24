@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -50,6 +51,13 @@ type settingsReader interface {
 	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14 Global Template Literals). Implemented by *literals.Catalog;
+// nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers exposes HTTP endpoints for the learning platform. Each handler
 // reads platform context from the request, parses input, delegates to the
 // store, and writes a JSON response. Guard clauses at the top of every
@@ -60,6 +68,7 @@ type Handlers struct {
 	jsonldResolver JSONLDResolver
 	ragIndexer     RAGEntityIndexer // nil disables RAG indexing (§69)
 	settings       settingsReader   // nil falls back to defaults
+	lit            literalResolver  // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates a learning handler bound to the provided store. A nil
@@ -76,6 +85,24 @@ func (h *Handlers) SetRAGIndexer(r RAGEntityIndexer) { h.ragIndexer = r }
 // system_settings (e.g. i18n.default_language for RAG indexing). nil falls
 // back to compiled-in defaults.
 func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
+
+// SetLiteralResolver injects the template-literal catalog so track, module,
+// and lesson text renders {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a learning DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
+}
 
 // resolveRAGLanguage resolves the indexing language from i18n.default_language
 // (§7 i18n). Falls back to "en" when settings are not injected or the key is
@@ -172,6 +199,8 @@ func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &tracks)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
@@ -193,6 +222,8 @@ func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
+
+	h.resolveLiterals(r, detail)
 
 	// JSON-LD structured data (Section 14 / Section 26). Resolve the
 	// admin-managed Course template, interpolating the track's field values.
@@ -298,6 +329,8 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	h.resolveLiterals(r, lesson)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})
 }
 
@@ -384,6 +417,8 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &certs)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": certs})
 }
 
@@ -404,6 +439,8 @@ func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.resolveLiterals(r, &certs)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": certs})
 }
 
@@ -419,6 +456,8 @@ func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
 		return
 	}
+
+	h.resolveLiterals(r, &tracks)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
@@ -837,6 +876,8 @@ func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &enrollments)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": enrollments})
 }
 
@@ -885,6 +926,8 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	h.resolveLiterals(r, lesson)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})
 }
@@ -972,6 +1015,8 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &questions)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": questions})
 }
 
@@ -1052,6 +1097,8 @@ func (h *Handlers) GetCertificateDetail(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusNotFound, "certificate_not_found", "Certificate not found")
 		return
 	}
+
+	h.resolveLiterals(r, cert)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cert})
 }
@@ -1231,6 +1278,8 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.resolveLiterals(r, &enrollments)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": enrollments})
 }
 
@@ -1243,6 +1292,8 @@ func (h *Handlers) ListAllModules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &modules)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": modules})
 }
 
@@ -1254,6 +1305,8 @@ func (h *Handlers) ListAllLessons(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list lessons")
 		return
 	}
+
+	h.resolveLiterals(r, &lessons)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lessons})
 }
@@ -1275,6 +1328,8 @@ func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
 		return
 	}
+
+	h.resolveLiterals(r, &modules)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": modules})
 }
@@ -1358,6 +1413,8 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, review)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
@@ -1379,6 +1436,8 @@ func (h *Handlers) ListTrackReviews(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list reviews")
 		return
 	}
+
+	h.resolveLiterals(r, &reviews)
 
 	aggregate, err := h.store.GetTrackReviewAggregate(r.Context(), trackID)
 	if err != nil {

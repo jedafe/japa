@@ -78,14 +78,23 @@ WHERE source_id = @source_id AND status = 'active';
 -- Same scope as ListVideoSourcesBySourceID, plus the author's username and the
 -- published content slug (if the video was imported as a post) so /sources
 -- item cards can link in-app instead of to the external video URL (§106).
+-- The content's engagement counters ride along so the source item feed can
+-- sort by them — without them popular/discussed/upvoted were all-zero ties.
 SELECT vs.id, vs.title, vs.description, vs.source_url, vs.thumbnail_url,
        vs.duration_secs, vs.created_at, vs.slug AS video_slug,
        u.username AS author_username,
-       COALESCE(c.slug, '') AS content_slug
+       COALESCE(c.slug, '') AS content_slug,
+       COALESCE(c.view_count, 0) AS view_count,
+       COALESCE(c.comment_count, 0) AS comment_count,
+       COALESCE(c.share_count, 0) AS share_count,
+       COALESCE(c.vote_score, 0) AS vote_score
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
 LEFT JOIN LATERAL (
-    SELECT c1.slug FROM contents c1
+    SELECT c1.slug, c1.view_count, c1.comment_count, c1.share_count,
+           (SELECT COUNT(*)::int FROM reactions r
+            WHERE r.entity_id = c1.id AND r.entity_type = 'content') AS vote_score
+    FROM contents c1
     WHERE c1.video_source_id = vs.id
       AND c1.deleted_at IS NULL
       AND c1.status = 'published'
@@ -93,7 +102,13 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) c ON TRUE
 WHERE vs.source_id = @source_id AND vs.status = 'active'
-ORDER BY vs.created_at DESC, vs.id DESC
+ORDER BY
+ CASE
+ WHEN @sort_mode::text = 'popular' THEN COALESCE(c.view_count, 0)
+ WHEN @sort_mode::text = 'discussed' THEN COALESCE(c.comment_count, 0)
+ WHEN @sort_mode::text = 'upvoted' THEN COALESCE(c.vote_score, 0)
+ END DESC NULLS LAST,
+ vs.created_at DESC, vs.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: LinkVideoSourcesToChannel :exec

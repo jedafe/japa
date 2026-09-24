@@ -66,6 +66,8 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &items)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": toReplyCards(items),
 		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},

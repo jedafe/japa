@@ -35,6 +35,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/feed"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/visitor"
 )
 
@@ -44,6 +45,31 @@ type Handlers struct {
 	feedService *feed.Service
 	settings    *config.Settings
 	checker     FeatureChecker
+	lit         literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // FeatureChecker resolves feature flag state from the feature_flags table —
@@ -217,6 +243,8 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	h.resolveLiterals(r, &form)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":            form.ID,
@@ -346,6 +374,8 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	h.resolveLiterals(r, &result)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
 }
 
@@ -401,6 +431,8 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 			return
 		}
 	}
+
+	h.resolveLiterals(r, &result)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
 }
@@ -593,6 +625,8 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	h.resolveLiterals(r, &items)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"pagination": map[string]any{
@@ -745,6 +779,8 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 			"created_at":      formatTimestamp(r.CreatedAt),
 		})
 	}
+
+	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,

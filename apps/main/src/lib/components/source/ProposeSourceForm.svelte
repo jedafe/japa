@@ -9,6 +9,7 @@
 	// by the /sources/submit page and inside ProposeSourceModal.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Loader2, ScanSearch, AlertTriangle, X } from 'lucide-svelte';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
@@ -102,6 +103,9 @@
 		}
 		const url = sourceUrl.trim();
 		if (!looksLikeUrl(url) || loading) return;
+		// Probe requires auth — send guests to login instead of surfacing a
+		// raw 401 under the URL field.
+		if (!(await requireAuthOrRedirect())) return;
 
 		const seq = ++probeSeq;
 		probeLoading = true;
@@ -147,6 +151,9 @@
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		if (!validate()) return;
+		// Proposals require auth — send guests to login instead of surfacing
+		// a raw 401 from /sources/propose.
+		if (!(await requireAuthOrRedirect())) return;
 		loading = true;
 		error = '';
 		try {

@@ -17,6 +17,7 @@
 package arrivalchecklist
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -30,12 +31,38 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // Handlers exposes the arrival checklist endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates arrival checklist handlers bound to the provided
@@ -108,6 +135,8 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &selectors)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": selectors})
 }
 
@@ -138,6 +167,8 @@ func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &items)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -165,6 +196,8 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+
+	h.resolveLiterals(r, &checklists)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": checklists})
 }
@@ -200,6 +233,8 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 
 		return
 	}
+
+	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
@@ -240,6 +275,8 @@ func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) 
 
 		return
 	}
+
+	h.resolveLiterals(r, &guide)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": guide})
 }
@@ -338,6 +375,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if limit > 0 {
 		totalPages = (total + int64(limit) - 1) / int64(limit)
 	}
+
+	h.resolveLiterals(r, &guides)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": guides,

@@ -4037,6 +4037,7 @@ type UserGroup struct {
 	AutoWithdrawalLimit        *int32             `json:"auto_withdrawal_limit"`
 	RequiresWithdrawalApproval bool               `json:"requires_withdrawal_approval"`
 	Tier                       *string            `json:"tier"`
+	AllowSearchIndexing        bool               `json:"allow_search_indexing"`
 }
 
 type UserGroupMembership struct {
@@ -4138,6 +4139,7 @@ type UserProfile struct {
 	MentorEmbedding          *pgvector.Vector   `json:"mentor_embedding"`
 	Location                 *string            `json:"location"`
 	BannerMediaID            pgtype.UUID        `json:"banner_media_id"`
+	JapaIntent               *string            `json:"japa_intent"`
 }
 
 type UserRole struct {

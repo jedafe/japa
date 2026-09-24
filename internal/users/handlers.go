@@ -11,11 +11,13 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -41,6 +43,13 @@ type PermissionResolver interface {
 // `forum.ama.create`) instead of hardcoded role names (Rule 16).
 type PermissionLister interface {
 	UserPermissions(ctx context.Context, userID pgtype.UUID) (map[string]bool, error)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14 Global Template Literals). Implemented by *literals.Catalog;
+// nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
 }
 
 // Handlers holds dependencies for user HTTP handlers.
@@ -73,6 +82,9 @@ type Handlers struct {
 	// setup. When nil, JTI revocation is skipped (refresh token revocation
 	// still happens via the store).
 	keyRot *auth.KeyRotation
+	// lit resolves {{...}} template literals in /me list responses (§14).
+	// Optional — when nil, literals render as authored.
+	lit literalResolver
 }
 
 // NewHandlers creates Handlers with the given Service. A nil resolver is
@@ -116,6 +128,29 @@ func (h *Handlers) SetAuthSettings(s auth.SettingsReader) {
 // Ref: §02 "Session invalidation on password change".
 func (h *Handlers) SetKeyRotation(kr *auth.KeyRotation) {
 	h.keyRot = kr
+}
+
+// SetLiteralResolver injects the template-literal catalog so /me card lists
+// and bookmarks render {{...}} placeholders (§14). Called once during server
+// setup; nil disables resolution.
+func (h *Handlers) SetLiteralResolver(l literalResolver) {
+	h.lit = l
+}
+
+// resolveLiterals resolves {{...}} placeholders on a /me DTO or slice.
+// Best-effort — failures are logged inside the resolver. NOT applied to
+// editor payloads (GetContentForEditor/GetUserContent) — those must return
+// the raw source so saving doesn't persist resolved text.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // requireUser resolves the authenticated user from the request context.
@@ -221,7 +256,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 // GetUserByUsername handles GET /api/v1/users/{username}.
 func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 
-	username := chi.URLParam(r, "username")
+	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
@@ -240,7 +275,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"data": profile}
 
 	if h.jsonldResolver != nil {
-		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), "Person", profileJSONLDFields(profile)); jErr == nil && len(jsonLd) > 0 {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), "Person", h.profileJSONLDFields(profile)); jErr == nil && len(jsonLd) > 0 {
 			resp["json_ld"] = json.RawMessage(jsonLd)
 		} else if jErr != nil {
 			slog.Warn("users: JSON-LD template resolution failed", "username", username, "error", jErr)
@@ -251,8 +286,11 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 }
 
 // profileJSONLDFields builds the {{field_key}} → value map for interpolating
-// a Person JSON-LD template from a public profile response.
-func profileJSONLDFields(p *PublicProfileResponse) map[string]string {
+// a Person JSON-LD template from a public profile response. profile_url is the
+// canonical public profile URL built from the configured site URL. Fields the
+// profile model does not carry (job_title, company_name, social URLs) are
+// emitted empty and pruned from the output by the interpolator.
+func (h *Handlers) profileJSONLDFields(p *PublicProfileResponse) map[string]string {
 	fullName := p.Username
 	if p.DisplayName != nil && *p.DisplayName != "" {
 		fullName = *p.DisplayName
@@ -268,10 +306,15 @@ func profileJSONLDFields(p *PublicProfileResponse) map[string]string {
 		bio = *p.Bio
 	}
 
+	profileURL := ""
+	if h.Service.siteURL != "" {
+		profileURL = h.Service.siteURL + "/u/" + p.Username
+	}
+
 	return map[string]string{
 		"full_name":    fullName,
 		"username":     p.Username,
-		"profile_url":  "",
+		"profile_url":  profileURL,
 		"avatar_url":   avatar,
 		"bio":          bio,
 		"job_title":    "",

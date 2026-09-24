@@ -3,6 +3,8 @@
 	import { Bookmark, MessageCircle, Share2, Check, Heart, Copy } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { getReactionTypes, type ReactionType } from '$lib/api/reactions';
+	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { shareContrastColor } from '$lib/utils/shareColor';
@@ -15,21 +17,9 @@
 		color: string;
 	}
 
-	interface ReactionType {
-		key: string;
-		emoji: string;
-		label: string;
-		enabled: boolean;
-		position: number;
-	}
-
 	interface ReactionCount {
 		reaction_key: string;
 		count: number;
-	}
-
-	interface UserReaction {
-		reaction_key: string;
 	}
 
 	interface Props {
@@ -69,6 +59,11 @@
 	let isBookmarked = $state(untrack(() => bookmarked));
 	let activeReactions = $state<Set<string>>(new Set());
 	let reactionCounts = $state<Record<string, number>>({});
+	// Net optimistic deltas applied while the counts fetch is in flight. That
+	// snapshot can predate a toggle's POST/DELETE — even one that already
+	// completed — because the GET may have been dispatched first, so the
+	// deltas must be re-applied on top of whatever the server returns.
+	let inflightDeltas: Record<string, number> | null = {};
 	let reactionPending = $state<string | null>(null);
 	let bookmarkPending = $state(false);
 	let shared = $state(false);
@@ -81,67 +76,45 @@
 	let reactionTypes = $state<ReactionType[]>([]);
 
 	// Fetch admin-configured reaction types (Section 14 — reactions are
-	// admin-configurable per platform, not hardcoded).
+	// admin-configurable per platform, not hardcoded). Shared cached loader —
+	// one HTTP request per page, not one per rail instance.
 	$effect(() => {
 		if (!reactionsEnabled || !contentId) return;
-		untrack(() => {});
-		(async () => {
-			const res = await api.get<ReactionType[]>('/reaction-types');
-			if (res.data) {
-				reactionTypes = res.data
-					.filter((r) => r.enabled)
-					.sort((a, b) => a.position - b.position);
-			}
-		})();
+		getReactionTypes().then((types) => {
+			reactionTypes = types;
+		});
 	});
 
 	// Fetch per-type reaction counts (public since Section 14 counts are not
-	 // user-scoped) so guest visitors see the same counts as authenticated users.
+	// user-scoped) so guest visitors see the same counts as authenticated users.
+	// One request per page — this rail is used on single-item pages only.
 	$effect(() => {
 		if (!reactionsEnabled || !contentId) return;
-		untrack(() => {});
 		(async () => {
 			const res = await api.get<ReactionCount[]>(`/content/${contentId}/reactions`);
+			const deltas = inflightDeltas;
+			inflightDeltas = null;
 			if (res.data) {
 				const next: Record<string, number> = {};
 				for (const c of res.data) {
 					next[c.reaction_key] = c.count;
+				}
+				for (const [k, d] of Object.entries(deltas ?? {})) {
+					next[k] = (next[k] ?? 0) + d;
 				}
 				reactionCounts = next;
 			}
 		})();
 	});
 
-	// Fetch the current user's active reactions and bookmark status.
+	// Caller's active reactions + bookmark status — batched across all cards on
+	// the page into one GET /me/content-states request (see $lib/api/viewerState).
 	$effect(() => {
 		if (!authed || !contentId) return;
-		untrack(() => {});
-		(async () => {
-			const reqs: Promise<void>[] = [];
-			if (reactionsEnabled) {
-				reqs.push(
-					api
-						.get<UserReaction[]>(`/content/${contentId}/reactions/me`)
-						.then((res) => {
-							if (res.data) {
-								activeReactions = new Set(res.data.map((r) => r.reaction_key));
-							}
-						})
-				);
-			}
-			if (bookmarksEnabled) {
-				reqs.push(
-					api
-						.get<{ bookmarked: boolean }>(`/content/${contentId}/bookmark`)
-						.then((res) => {
-							if (res.data) {
-								isBookmarked = res.data.bookmarked;
-							}
-						})
-				);
-			}
-			await Promise.all(reqs);
-		})();
+		getViewerState(contentId).then((state) => {
+			if (reactionsEnabled) activeReactions = new Set(state.reactionKeys);
+			if (bookmarksEnabled) isBookmarked = state.bookmarked;
+		});
 	});
 
 	// Fetch enabled share platforms (public, no auth needed).
@@ -192,7 +165,10 @@
 			next.add(reactionKey);
 		}
 		activeReactions = next;
-		reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + (wasActive ? -1 : 1);
+		const delta = wasActive ? -1 : 1;
+		reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + delta;
+		if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + delta;
+		updateViewerState(contentId, { reactionKeys: [...next] });
 
 		try {
 			if (wasActive) {
@@ -213,7 +189,10 @@
 				rollback.delete(reactionKey);
 			}
 			activeReactions = rollback;
-			reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + (wasActive ? 1 : -1);
+			const rollbackDelta = wasActive ? 1 : -1;
+			reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + rollbackDelta;
+			if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + rollbackDelta;
+			updateViewerState(contentId, { reactionKeys: [...rollback] });
 		} finally {
 			reactionPending = null;
 		}
@@ -224,6 +203,7 @@
 		bookmarkPending = true;
 		const wasBookmarked = isBookmarked;
 		isBookmarked = !wasBookmarked;
+		updateViewerState(contentId, { bookmarked: !wasBookmarked });
 
 		try {
 			if (wasBookmarked) {

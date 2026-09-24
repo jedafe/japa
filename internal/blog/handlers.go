@@ -105,6 +105,12 @@ type MentionNotifier interface {
 	) error
 }
 
+// literalCatalog resolves {{...}} template literals on feed row fields
+// (§14 Global Template Literals). Implemented by *literals.Catalog.
+type literalCatalog interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for blog HTTP handlers.
 type Handlers struct {
 	Service         *Service
@@ -116,6 +122,7 @@ type Handlers struct {
 	notifier        MentionNotifier         // nil disables mention notifications (test-only)
 	mentionCheckers *mentions.DBCheckers    // nil disables erased-mention redaction
 	spamRecorder    ContentCreationRecorder // nil disables spam rate-limit recording (test-only)
+	lit             literalCatalog          // nil disables literal resolution (§14)
 }
 
 // TaskEnqueueClient is the subset of asynq.Client used by blog handlers.
@@ -169,6 +176,11 @@ func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionChecker
 // notifications in blog posts (Section 15 / ADR-029). nil disables
 // mention notifications (backward compat / tests).
 func (h *Handlers) SetMentionNotifier(n MentionNotifier) { h.notifier = n }
+
+// SetLiteralCatalog injects the template-literal catalog so the live
+// RSS feed fallback renders {{...}} placeholders (§14). The cached feed
+// is already resolved by the rss:regenerate worker task.
+func (h *Handlers) SetLiteralCatalog(c literalCatalog) { h.lit = c }
 
 // dispatchMentionNotifications extracts @mentioned users from a blog post
 // body (TipTap JSON) and fires a mention.content notification to each via
@@ -1371,6 +1383,12 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// §14: resolve {{...}} placeholders on titles/bodies before XML render.
+	// Request-independent context — the feed is shared, not per-visitor.
+	if h.lit != nil {
+		h.lit.ResolveFields(r.Context(), &posts, literals.NewContext(r.Context(), ""))
 	}
 
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")

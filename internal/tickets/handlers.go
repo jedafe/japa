@@ -8,6 +8,7 @@
 package tickets
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -28,6 +30,31 @@ const defaultPageSize int32 = 20
 // Handlers holds dependencies for ticket HTTP handlers.
 type Handlers struct {
 	Service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -188,6 +215,8 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &ticket)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": ticket})
 }
 
@@ -208,6 +237,8 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &tickets)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tickets})
 }
@@ -248,6 +279,12 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing ticket attachments", "ticket_id", id, "error", err)
 	}
+
+	h.resolveLiterals(r, &ticket)
+
+	h.resolveLiterals(r, &comments)
+
+	h.resolveLiterals(r, &attachments)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -307,6 +344,8 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &comment)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -348,6 +387,8 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &tickets)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tickets})
 }
 
@@ -385,6 +426,14 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing ticket events", "ticket_id", id, "error", err)
 	}
+
+	h.resolveLiterals(r, &ticket)
+
+	h.resolveLiterals(r, &comments)
+
+	h.resolveLiterals(r, &attachments)
+
+	h.resolveLiterals(r, &events)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -433,6 +482,8 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		h.resolveLiterals(r, &ticket)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 
 		return
@@ -450,6 +501,8 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		h.resolveLiterals(r, &ticket)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 
 		return
@@ -465,6 +518,8 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
+		h.resolveLiterals(r, &ticket)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 
@@ -487,6 +542,8 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
+		h.resolveLiterals(r, &ticket)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 
@@ -550,6 +607,8 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &comment)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -606,6 +665,8 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &comment)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -635,6 +696,8 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &events)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": events})
 }
@@ -674,6 +737,8 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &ticket)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 }
@@ -721,6 +786,8 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &types)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
@@ -776,6 +843,8 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &attachment)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": attachment})
 }
 
@@ -806,6 +875,8 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &attachments)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": attachments})
 }

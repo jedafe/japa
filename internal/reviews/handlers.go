@@ -7,6 +7,7 @@
 package reviews
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -28,15 +30,40 @@ type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for review HTTP handlers.
 type Handlers struct {
 	Service     *Service
 	AsynqClient TaskEnqueueClient
+	lit         literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so review titles
+// and bodies render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a review DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // enqueueReviewAggregateRecalc enqueues an async review aggregate recalculation
@@ -194,6 +221,8 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async review aggregate recalculation — fire-and-forget.
 	h.enqueueReviewAggregateRecalc(entityType, entityID)
 
+	h.resolveLiterals(r, &review)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
@@ -230,6 +259,8 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			reviews = []gen.Review{}
 		}
 
+		h.resolveLiterals(r, &reviews)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 
 		return
@@ -252,6 +283,8 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 		if reviews == nil {
 			reviews = []gen.Review{}
 		}
+
+		h.resolveLiterals(r, &reviews)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 
@@ -281,6 +314,10 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Resolve {{...}} literals on the gen rows before the map projection so
+	// the echoed title/body carry rendered values.
+	h.resolveLiterals(r, &rows)
 
 	items := make([]map[string]any, 0, len(rows))
 
@@ -360,6 +397,8 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &reviews)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"reviews": reviews, "total": total}})
 }
 
@@ -377,6 +416,8 @@ func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &review)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
@@ -418,6 +459,8 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue async review aggregate recalculation — fire-and-forget.
 	h.enqueueReviewAggregateRecalc(review.EntityType, review.EntityID)
+
+	h.resolveLiterals(r, &review)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
@@ -569,6 +612,8 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &review)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }

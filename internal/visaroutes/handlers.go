@@ -19,6 +19,7 @@
 package visaroutes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -33,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // maxCompareIDs is the maximum number of routes the compare endpoint
@@ -43,6 +45,31 @@ const maxCompareIDs = 4
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates visa routes handlers bound to the provided service.
@@ -135,6 +162,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &routes)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": routes,
 		"pagination": map[string]any{
@@ -201,6 +230,8 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &routes)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": routes})
 }
 
@@ -230,6 +261,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &route)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": route})
 }
@@ -286,6 +319,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &routes)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": routes,

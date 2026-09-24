@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/worker"
@@ -41,6 +42,12 @@ var AudienceGates = map[string]string{
 	"superadmin":    "admin.panel.access", // super_admin group holds wildcard
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for documentation HTTP handlers.
 type Handlers struct {
 	Service     *Service
@@ -48,11 +55,30 @@ type Handlers struct {
 	siteName    string
 	AsynqClient TaskEnqueueClient
 	rbac        PermissionChecker
+	lit         literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service, siteURL, siteName string) *Handlers {
 	return &Handlers{Service: service, siteURL: siteURL, siteName: siteName}
+}
+
+// SetLiteralResolver injects the template-literal catalog so doc page
+// titles/content render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a doc DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // SetRBAC injects the RBAC resolver for audience-gating checks (§44).
@@ -186,6 +212,8 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &pages)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
@@ -211,6 +239,8 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &page)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
@@ -226,6 +256,8 @@ func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &nav)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nav})
 }
@@ -278,6 +310,8 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }

@@ -150,6 +150,49 @@ func RegisterRedis(client redisCache) {
 	rdb = client
 }
 
+// literalResolver resolves {{...}} template literals on row/DTO fields
+// (§14 Global Template Literals). The interface is deliberately
+// RenderContext-free — the worker package cannot import internal/literals
+// (import cycle via geoip→auth→worker), so the render context is bound by
+// the adapter wired in server bootstrap. Nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any)
+	ResolveText(ctx context.Context, s string) string
+}
+
+// litResolver is the injected literal resolver for worker-generated
+// user-facing output (RSS feeds, digest emails). Nil disables resolution.
+var litResolver literalResolver
+
+// RegisterLiteralResolver injects the template-literal resolver so worker
+// output (cached RSS feeds, digest items) renders {{...}} placeholders.
+func RegisterLiteralResolver(l literalResolver) {
+	litResolver = l
+}
+
+// resolveLiterals resolves {{...}} placeholders on a row slice using the
+// injected resolver. The render context is bound at registration time —
+// worker output is cached/shared, so geo tokens fall back to each entity's
+// own geo metadata or the literal fallback.
+func resolveLiterals(ctx context.Context, v any) {
+	if litResolver == nil {
+		return
+	}
+
+	litResolver.ResolveFields(ctx, v)
+}
+
+// resolveText resolves {{...}} placeholders in a single string — used for
+// strings emitted directly to channels that have no later read-path
+// resolution (push notifications, outbound email subject/body).
+func resolveText(ctx context.Context, s string) string {
+	if litResolver == nil || !strings.Contains(s, "{{") {
+		return s
+	}
+
+	return litResolver.ResolveText(ctx, s)
+}
+
 // settingsReader is the subset of config.Settings the worker needs to read
 // hot-reloadable operational limits. Declared as a local interface so the
 // worker package does not import config (avoids an import cycle); *config.Settings
@@ -1118,6 +1161,12 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	// When a template_slug is provided, look up the DB-stored template and
 	// render it with html/template for XSS safety.
 	subject, body, isHTML = resolveEmailTemplate(ctx, payload, subject, body, isHTML)
+
+	// §14: resolve {{...}} literals in the final subject/body — notification
+	// and digest emails embed entity titles that can carry placeholders.
+	// Go-template {{.Var}} syntax is unaffected (it fails literal parsing).
+	subject = resolveText(ctx, subject)
+	body = resolveText(ctx, body)
 
 	if payload.To == "" || subject == "" {
 		return errors.New("task:email:send: to and subject are required")
@@ -3074,6 +3123,10 @@ func sendDigestToUser(ctx context.Context, userID, email, period string) error {
 		return fmt.Errorf("fetching feed: %w", err)
 	}
 
+	// §14: resolve {{...}} placeholders on digest item titles before
+	// template rendering so outbound email never contains raw literals.
+	resolveLiterals(ctx, &feedItems)
+
 	// Build digest HTML using html/template for XSS safety.
 	digestTmpl, err := template.New("digest").Parse(`<h2>{{.Period}} Digest</h2>
 <ul>
@@ -3285,6 +3338,10 @@ func generateRSSForPlatform(ctx context.Context, baseURL string) {
 		return
 	}
 
+	// §14: resolve {{...}} placeholders on titles/bodies before item mapping
+	// so the cached feed never contains raw literals.
+	resolveLiterals(ctx, &rows)
+
 	items := make([]rssmodel.Item, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, rssmodel.ItemFromRow(
@@ -3325,6 +3382,9 @@ func generateBlogRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL str
 		slog.Error("task:rss_regenerate: failed to list blog posts", "error", err)
 		return
 	}
+
+	// §14: resolve {{...}} placeholders on titles/bodies before item mapping.
+	resolveLiterals(ctx, &rows)
 
 	items := make([]rssmodel.Item, 0, len(rows))
 
@@ -4027,6 +4087,11 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 		slog.Error("task:push:deliver: failed to query subscriptions", "user_id", payload.UserID, "error", err)
 		return fmt.Errorf("task:push:deliver: query subscriptions: %w", err)
 	}
+
+	// §14: resolve {{...}} literals — push text is delivered straight to the
+	// device and has no later read-path resolution.
+	payload.Title = resolveText(ctx, payload.Title)
+	payload.Body = resolveText(ctx, payload.Body)
 
 	// Build the push payload.
 	type pushPayload struct {

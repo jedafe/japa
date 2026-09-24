@@ -35,6 +35,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // pointsChecker returns the user's lifetime points (reputation) for the
@@ -49,6 +50,31 @@ type Handlers struct {
 	service  *Service
 	settings *config.Settings
 	points   pointsChecker
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates visa-timeline handlers bound to the provided service.
@@ -152,6 +178,8 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &stats)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
@@ -190,6 +218,8 @@ func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &points)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": points})
 }
 
@@ -218,6 +248,8 @@ func (h *Handlers) HandleListOwn(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &timelines)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": timelines})
 }
@@ -277,6 +309,8 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &timeline)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": timeline})
 }
@@ -376,6 +410,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &timeline)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": timeline})
 }
 
@@ -431,6 +467,8 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &milestone)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": milestone})
 }
@@ -554,6 +592,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &timelines)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": timelines,

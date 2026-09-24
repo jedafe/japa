@@ -903,6 +903,16 @@ func (s *Service) GetPersonaVoice(ctx context.Context, id pgtype.UUID) (PersonaV
 	return personaVoiceFromRow(row), nil
 }
 
+// GetPersonaVoiceBySlug returns a single shared voice by slug.
+func (s *Service) GetPersonaVoiceBySlug(ctx context.Context, slug string) (PersonaVoice, error) {
+	row, err := s.store.GetPersonaVoiceBySlug(ctx, slug)
+	if err != nil {
+		return PersonaVoice{}, err
+	}
+
+	return personaVoiceFromRow(row), nil
+}
+
 // GetVoicePrompt returns the voice prompt for a shared voice, but only if the
 // voice is system-owned or owned by the calling user. It is exposed as an
 // interface method so the AI core handlers can inject the service as a

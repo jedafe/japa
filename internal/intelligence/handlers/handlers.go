@@ -30,6 +30,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/probe"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/intelligence/stores"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/tags"
@@ -85,17 +86,19 @@ type videoStore interface {
 	// ListItemsBySourceID returns the same rows enriched with the author's
 	// username and the published content slug, so item cards link to the
 	// in-app video page (/video/{slug} or /video/{id}) instead of the raw
-	// external video URL (§106).
-	ListItemsBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListVideoSourceItemsBySourceIDRow, int64, error)
+	// external video URL (§106). sortMode is the source item feed sort
+	// (latest|popular|discussed|upvoted).
+	ListItemsBySourceID(ctx context.Context, sourceID pgtype.UUID, sortMode string, limit, offset int32) ([]gen.ListVideoSourceItemsBySourceIDRow, int64, error)
 	// GetChannelUsernameBySourceID returns the channel account username
 	// behind a video_channel source (used to link the claim form, §106).
 	GetChannelUsernameBySourceID(ctx context.Context, sourceID pgtype.UUID) (string, error)
 }
 
 // contentStore is the small surface of the content service needed for source
-// item feeds that include linked comparison contents.
+// item feeds that include linked comparison contents. sortMode is the source
+// item feed sort (latest|popular|discussed|upvoted).
 type contentStore interface {
-	ListComparisonContentsBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error)
+	ListComparisonContentsBySourceID(ctx context.Context, sourceID pgtype.UUID, sortMode string, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error)
 }
 
 // reportService creates a user report for an entity (content, source, etc).
@@ -132,6 +135,31 @@ type Handlers struct {
 	tagSvc       tagService           // optional; ensures source keyword tags exist
 	prober       previewProber        // optional; enables POST /sources/probe (intel-channels §2)
 	rdb          valkeycompat.Cmdable // optional; probe quota counter (jc:intel:probe_quota:{user_id})
+	lit          literalResolver      // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so source/radar
+// titles and descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates intelligence handlers. The followsSvc and scholarSvc

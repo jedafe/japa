@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -72,6 +74,13 @@ type Handlers struct {
 	siteName  string
 	redis     CacheClient // nil disables cache reads/writes
 	feedLimit int32
+	cat       literalCatalog // nil disables literal resolution
+}
+
+// literalCatalog resolves {{...}} template literals on feed item fields
+// (§14 Global Template Literals). Implemented by *literals.Catalog.
+type literalCatalog interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
 }
 
 // NewHandlers creates Handlers with the given queries and site config.
@@ -88,6 +97,24 @@ func NewHandlers(q *gen.Queries, siteURL, siteName string) *Handlers {
 // feeds.
 func (h *Handlers) SetRedis(r CacheClient) {
 	h.redis = r
+}
+
+// SetLiteralCatalog injects the template-literal catalog so feed item
+// titles and descriptions render {{...}} placeholders (§14). Resolution
+// runs on the cache-miss render path so cached XML is already resolved.
+func (h *Handlers) SetLiteralCatalog(c literalCatalog) {
+	h.cat = c
+}
+
+// resolveItems resolves {{...}} placeholders on feed items using a
+// request-independent context — feeds are cached and shared, so geo tokens
+// fall back to each item's own geo metadata or the literal fallback.
+func (h *Handlers) resolveItems(ctx context.Context, items []RSSItem) {
+	if h.cat == nil {
+		return
+	}
+
+	h.cat.ResolveFields(ctx, &items, literals.NewContext(ctx, ""))
 }
 
 // HandleFeed serves the universal feed at /feed.xml.
@@ -126,6 +153,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := feedItemsFromAllRows(rows, siteURL)
+	h.resolveItems(r.Context(), items)
 	serveRSSFeed(w, h.siteName, siteURL+"/feed.xml", h.siteName+" — latest content", items)
 }
 
@@ -160,6 +188,10 @@ func (h *Handlers) serveCachedOrLive(
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
 		return
 	}
+
+	// §14: resolve literals before XML render so cached and live feeds
+	// alike never contain raw {{...}} placeholders.
+	h.resolveItems(r.Context(), items)
 
 	// Render to bytes so we can both write it to the cache and serve it.
 	xmlBytes := renderFeedXML(title, link, description, items)
@@ -244,7 +276,7 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 
 // HandleUserFeed serves a user-specific RSS feed at /users/{username}/feed.xml.
 func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
-	username := chi.URLParam(r, "username")
+	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "Username is required")
 		return

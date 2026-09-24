@@ -135,6 +135,7 @@
 					<SourceActions
 						source={source}
 						isBlocked={isBlocked}
+						showDelete={true}
 						onBlockChange={(v) => { isBlocked = v; }}
 						onEdit={onEdit}
 					/>

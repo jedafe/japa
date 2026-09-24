@@ -3,24 +3,14 @@
 	import { Heart } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { getReactionTypes, type ReactionType } from '$lib/api/reactions';
+	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
 	import { page } from '$app/state';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
-
-	interface ReactionType {
-		key: string;
-		emoji: string;
-		label: string;
-		enabled: boolean;
-		position: number;
-	}
 
 	interface ReactionCount {
 		reaction_key: string;
 		count: number;
-	}
-
-	interface UserReaction {
-		reaction_key: string;
 	}
 
 	interface Props {
@@ -54,44 +44,61 @@
 	let reactionTypes = $state<ReactionType[]>([]);
 	let activeReactions = $state<Set<string>>(new Set());
 	let reactionCounts = $state<Record<string, number>>({});
+	let countsLoaded = $state(false);
+	let countDelta = $state(0);
 	let reactionPending = $state<string | null>(null);
 	let showReactions = $state(false);
 	let simpleActive = $state(false);
+	// Net optimistic deltas applied while the breakdown fetch is in flight.
+	// That snapshot can predate a toggle's POST/DELETE — even one that already
+	// completed — because the GET may have been dispatched first, so the
+	// deltas must be re-applied on top of whatever the server returns.
+	let inflightDeltas: Record<string, number> | null = null;
 
 	$effect(() => {
 		if (!reactionsEnabled || !contentId) return;
-		(async () => {
-			const res = await api.get<ReactionType[]>('/reaction-types');
-			if (res.data) {
-				reactionTypes = res.data
-					.filter((r) => r.enabled)
-					.sort((a, b) => a.position - b.position);
-			}
-		})();
+		getReactionTypes().then((types) => {
+			reactionTypes = types;
+		});
 	});
 
+	// The per-type breakdown is only rendered inside the popover — fetch it
+	// lazily on first open instead of once per card on page load. The visible
+	// aggregate comes from the content payload's reaction_count until then.
 	$effect(() => {
-		if (!reactionsEnabled || !contentId) return;
+		if (!showReactions || countsLoaded || !contentId || !reactionsEnabled) return;
+		countsLoaded = true;
+		// Fold any pre-popover optimistic delta (e.g. the click that opened this
+		// popover also toggled the primary reaction) into the breakdown baseline.
+		if (countDelta !== 0) {
+			reactionCounts[primaryKey] = (reactionCounts[primaryKey] ?? 0) + countDelta;
+			countDelta = 0;
+		}
+		inflightDeltas = {};
 		(async () => {
 			const res = await api.get<ReactionCount[]>(`/content/${contentId}/reactions`);
+			const deltas = inflightDeltas;
+			inflightDeltas = null;
 			if (res.data) {
 				const next: Record<string, number> = {};
 				for (const c of res.data) {
 					next[c.reaction_key] = c.count;
+				}
+				for (const [k, d] of Object.entries(deltas ?? {})) {
+					next[k] = (next[k] ?? 0) + d;
 				}
 				reactionCounts = next;
 			}
 		})();
 	});
 
+	// Caller's active reactions — batched across all cards on the page into a
+	// single GET /me/content-states request (see $lib/api/viewerState).
 	$effect(() => {
 		if (!authed || !reactionsEnabled || !contentId) return;
-		(async () => {
-			const res = await api.get<UserReaction[]>(`/content/${contentId}/reactions/me`);
-			if (res.data) {
-				activeReactions = new Set(res.data.map((r) => r.reaction_key));
-			}
-		})();
+		getViewerState(contentId).then((state) => {
+			activeReactions = new Set(state.reactionKeys);
+		});
 	});
 
 	const primaryReaction = $derived(
@@ -101,7 +108,9 @@
 	const primaryKey = $derived(primaryReaction.key);
 	const primaryActive = $derived(activeReactions.has(primaryKey));
 	const totalReactions = $derived(
-		reactionsEnabled ? reactionTypes.reduce((sum, r) => sum + (reactionCounts[r.key] ?? 0), 0) : count
+		countsLoaded
+			? reactionTypes.reduce((sum, r) => sum + (reactionCounts[r.key] ?? 0), 0)
+			: count + countDelta
 	);
 
 	function countFor(key: string): number {
@@ -128,7 +137,14 @@
 			next.add(reactionKey);
 		}
 		activeReactions = next;
-		reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + (wasActive ? -1 : 1);
+		const delta = wasActive ? -1 : 1;
+		if (countsLoaded) {
+			reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + delta;
+			if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + delta;
+		} else {
+			countDelta += delta;
+		}
+		updateViewerState(contentId, { reactionKeys: [...next] });
 
 		try {
 			if (wasActive) {
@@ -146,7 +162,14 @@
 				rollback.delete(reactionKey);
 			}
 			activeReactions = rollback;
-			reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + (wasActive ? 1 : -1);
+			const rollbackDelta = wasActive ? 1 : -1;
+			if (countsLoaded) {
+				reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + rollbackDelta;
+				if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + rollbackDelta;
+			} else {
+				countDelta += rollbackDelta;
+			}
+			updateViewerState(contentId, { reactionKeys: [...rollback] });
 		} finally {
 			reactionPending = null;
 		}

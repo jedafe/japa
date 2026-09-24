@@ -34,7 +34,15 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14 Global Template Literals). Implemented by *literals.Catalog;
+// nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers exposes the wiki endpoints.
 type Handlers struct {
@@ -43,6 +51,7 @@ type Handlers struct {
 	points   pointsChecker
 	perms    permissionChecker
 	rag      ragIndexer
+	lit      literalResolver // nil disables literal resolution
 }
 
 // NewHandlers creates wiki handlers bound to the provided service.
@@ -86,6 +95,26 @@ func (h *Handlers) SetPermissionChecker(pc permissionChecker) {
 // (B8). Called once during server wiring; nil disables RAG indexing.
 func (h *Handlers) SetRAGIndexer(ri ragIndexer) {
 	h.rag = ri
+}
+
+// SetLiteralResolver injects the template-literal catalog so wiki page
+// titles and revision content render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) {
+	h.lit = l
+}
+
+// resolveLiterals resolves {{...}} placeholders on a wiki DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -157,6 +186,8 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		h.resolveLiterals(r, &pages)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 
 		return
@@ -180,6 +211,8 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &pages)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
@@ -274,6 +307,8 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &page)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
@@ -308,6 +343,8 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &revs)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": revs,

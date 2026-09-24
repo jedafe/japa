@@ -2486,6 +2486,53 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": counts})
 }
 
+// viewerStateMaxIDs caps the batch so a request cannot fan out to an
+// unbounded ANY() array.
+const viewerStateMaxIDs = 100
+
+// ViewerContentStates handles GET /api/v1/me/content-states?ids=uuid,uuid,...
+// Returns the caller's reaction keys + bookmark state for many content items
+// in one round-trip: { "<content_id>": { "reaction_keys": [...], "bookmarked":
+// true } }. Content ids with no state are simply absent from the map.
+// Ref: japaconnect-engineering/conventions/api-routes-catalog.md (batch viewer
+// state — replaces per-card /reactions/me + /bookmark calls on card lists).
+func (h *Handlers) ViewerContentStates(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	rawIDs := strings.TrimSpace(r.URL.Query().Get("ids"))
+	if rawIDs == "" {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{}})
+		return
+	}
+
+	parts := strings.Split(rawIDs, ",")
+	if len(parts) > viewerStateMaxIDs {
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", fmt.Sprintf("A maximum of %d ids may be requested at once", viewerStateMaxIDs))
+		return
+	}
+
+	ids := make([]pgtype.UUID, 0, len(parts))
+	for _, p := range parts {
+		var id pgtype.UUID
+		if err := id.Scan(strings.TrimSpace(p)); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+			return
+		}
+		ids = append(ids, id)
+	}
+
+	states, err := h.Service.GetViewerContentStates(r.Context(), user.UserID, ids)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": states})
+}
+
 // ListUserReactions handles GET /api/v1/content/{id}/reactions/me.
 // Returns the current user's reactions for a content item (used by the
 // frontend to initialise the like button state on page load).
@@ -3089,6 +3136,12 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Resolve template literals in related-card titles/excerpts (best-effort).
+	rc := buildRenderContext(r, "")
+	if err := h.Service.ResolveContentFields(r.Context(), &contents, rc); err != nil {
+		slog.Warn("content: failed to resolve related content literals", "error", err)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": contents})

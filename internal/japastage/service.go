@@ -37,6 +37,7 @@ type ProfileDTO struct {
 	DisplayName   string          `json:"display_name,omitempty"`
 	AvatarURL     string          `json:"avatar_url,omitempty"`
 	Stage         string          `json:"stage,omitempty"`
+	Intent        string          `json:"intent,omitempty"`
 	DestSpaceID   string          `json:"destination_space_id,omitempty"`
 	DestSpaceName string          `json:"destination_space_name,omitempty"`
 	DestSpaceCode string          `json:"destination_space_code,omitempty"`
@@ -53,6 +54,7 @@ type PublicProfileDTO struct {
 	DisplayName   string `json:"display_name,omitempty"`
 	AvatarURL     string `json:"avatar_url,omitempty"`
 	Stage         string `json:"stage"`
+	Intent        string `json:"intent,omitempty"`
 	DestSpaceID   string `json:"destination_space_id,omitempty"`
 	DestSpaceName string `json:"destination_space_name,omitempty"`
 	DestSpaceCode string `json:"destination_space_code,omitempty"`
@@ -62,11 +64,19 @@ type PublicProfileDTO struct {
 // UpdateStageInput is the request body for PATCH /me/japa-stage. IsPublic
 // is a pointer so omitted (`null`/absent) means "leave unchanged" while an
 // explicit `false` clears visibility (§87 japa_stage_is_public toggle).
+// Stage may be omitted when only the intent is being set (ADR-122); Intent
+// may be omitted to leave the journey class unchanged.
 type UpdateStageInput struct {
 	Stage       string `json:"stage"`
+	Intent      string `json:"intent"`
 	DestSpaceID string `json:"destination_space_id"`
 	IsPublic    *bool  `json:"is_public"`
 }
+
+// ErrInvalidStageForIntent is returned when a non-relocation intent is
+// paired with a japa_stage (ADR-122 intent×stage rule). The HTTP layer maps
+// it to a 400 invalid_stage_for_intent response.
+var ErrInvalidStageForIntent = errors.New("japastage: stage is not valid for a non-relocation intent")
 
 // Notifier is the interface used to dispatch japa-stage recommendation
 // notifications. Satisfied by *notifications.Service; declared here to
@@ -149,6 +159,25 @@ func (s *Service) Stages() []Option {
 	return out
 }
 
+var intentLabels = map[string]string{
+	"relocation": "Relocation",
+	"study":      "Study abroad",
+	"work":       "Work",
+	"family":     "Family",
+	"visit":      "Visit / tourism",
+	"business":   "Business",
+}
+
+// Intents returns the canonical japa_intent option list (Rule 16, ADR-122).
+func (s *Service) Intents() []Option {
+	out := make([]Option, 0, len(validIntents))
+	for _, v := range validIntents {
+		out = append(out, Option{Value: v, Label: intentLabels[v]})
+	}
+
+	return out
+}
+
 // GetOwn returns the authenticated user's own japa stage profile (full
 // view, including history and the visibility flag). Backs GET /me/japa-stage.
 func (s *Service) GetOwn(ctx context.Context, userID pgtype.UUID) (ProfileDTO, error) {
@@ -184,14 +213,62 @@ func (s *Service) GetByUsername(ctx context.Context, username string) (PublicPro
 	return profileRowToPublicDTO(row), nil
 }
 
-// UpdateOwn updates the authenticated user's own japa stage, destination
-// space, and (when IsPublic is non-nil) visibility. The stage must be one
-// of the allowed values; destSpaceID may be empty to clear it. On success
-// the caller should fire the japa_stage:recommend Asynq task (Rule 8 —
-// fire-and-forget) so the worker can dispatch recommendations.
+// UpdateOwn updates the authenticated user's own japa stage, intent,
+// destination space, and (when IsPublic is non-nil) visibility. Stage and
+// intent are independently optional: a stage-only PATCH leaves the intent
+// unchanged, an intent-only PATCH leaves the stage unchanged — except that
+// switching to a non-relocation intent (visit/business) clears the stage
+// (ADR-122 intent×stage rule). On success the caller should fire the
+// japa_stage:recommend Asynq task (Rule 8 — fire-and-forget) so the worker
+// can dispatch recommendations.
 func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input UpdateStageInput) (ProfileDTO, error) {
-	if !ValidStage(input.Stage) {
+	if input.Stage != "" && !ValidStage(input.Stage) {
 		return ProfileDTO{}, fmt.Errorf("invalid stage %q; must be one of: %s", input.Stage, JoinStages())
+	}
+
+	if input.Intent != "" && !ValidIntent(input.Intent) {
+		return ProfileDTO{}, fmt.Errorf("invalid intent %q; must be one of: %s", input.Intent, JoinIntents())
+	}
+
+	if input.Stage == "" && input.Intent == "" {
+		return ProfileDTO{}, errors.New("stage or intent is required")
+	}
+
+	// Resolve the effective intent: the submitted value wins, otherwise the
+	// stored one applies. Needed to validate a submitted stage against the
+	// intent×stage rule even when the member did not resend the intent.
+	var currentIntent string
+	if cur, err := s.store.GetUserProfile(ctx, userID); err == nil {
+		if cur.JapaIntent != nil {
+			currentIntent = *cur.JapaIntent
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return ProfileDTO{}, fmt.Errorf("japastage: read current profile: %w", err)
+	}
+
+	effectiveIntent := input.Intent
+	if effectiveIntent == "" {
+		effectiveIntent = currentIntent
+	}
+
+	var stageParam *string
+	switch {
+	case input.Stage != "":
+		if effectiveIntent != "" && !IsRelocationIntent(effectiveIntent) {
+			return ProfileDTO{}, ErrInvalidStageForIntent
+		}
+		stageParam = &input.Stage
+	case input.Intent != "" && !IsRelocationIntent(input.Intent):
+		// Moving to a non-relocation class drops the relocation stage —
+		// the CHECK forbids visit/business + stage, and a cleared stage
+		// keeps the history self-describing.
+		clear := ""
+		stageParam = &clear
+	}
+
+	var intentParam *string
+	if input.Intent != "" {
+		intentParam = &input.Intent
 	}
 
 	var destSpaceID pgtype.UUID
@@ -201,7 +278,7 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 		}
 	}
 
-	if err := s.store.UpdateStage(ctx, userID, input.Stage, destSpaceID, input.IsPublic); err != nil {
+	if err := s.store.UpdateStage(ctx, userID, stageParam, intentParam, destSpaceID, input.IsPublic); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ProfileDTO{}, pgx.ErrNoRows
 		}
@@ -231,14 +308,15 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 // abort the others. The task is idempotent on (user_id, stage, set_at) —
 // notification dedup + Honcho memory content are keyed on the same stage
 // payload, so a retry never double-sends a divergent recommendation.
-func (s *Service) RecommendForStage(ctx context.Context, userID pgtype.UUID, stage, destSpaceID string) error {
+// intent is the member's journey class (ADR-122) and may be empty.
+func (s *Service) RecommendForStage(ctx context.Context, userID pgtype.UUID, stage, intent, destSpaceID string) error {
 	if s.settings == nil {
 		return nil
 	}
 
 	// (1) Tool recommendation notification.
 	if s.notifier != nil {
-		tools := s.resolveToolSlugs(ctx, stage)
+		tools := s.resolveToolSlugs(ctx, stage, intent)
 		title := "Recommended tools for your stage"
 
 		body := "Based on your japa stage, these tools may help next."
@@ -254,10 +332,10 @@ func (s *Service) RecommendForStage(ctx context.Context, userID pgtype.UUID, sta
 
 	// (2) JapaBot peer card update via Honcho (§69).
 	if s.honcho != nil {
-		content := fmt.Sprintf("japa_stage=%s; destination_space_id=%s", stage, destSpaceID)
+		content := fmt.Sprintf("japa_stage=%s; japa_intent=%s; destination_space_id=%s", stage, intent, destSpaceID)
 		if _, err := s.honcho.AddMemory(ctx, userID.String(), honcho.AddMemoryInput{
 			Content:  content,
-			Metadata: map[string]any{"japa_stage": stage, "destination_space_id": destSpaceID},
+			Metadata: map[string]any{"japa_stage": stage, "japa_intent": intent, "destination_space_id": destSpaceID},
 		}); err != nil {
 			slog.Warn("japastage: honcho peer card update failed", "error", err)
 		}
@@ -297,8 +375,10 @@ func (s *Service) RecommendForStage(ctx context.Context, userID pgtype.UUID, sta
 // and returns the tool slugs for the given stage. Resolution order per
 // ADR-064a: exact "{archetype}:{stage}" → "{archetype}:*" → "*:{stage}" →
 // "*:*". The archetype is resolved by the recommendations resolver (§50);
-// here only the stage-only fallbacks ("*:{stage}" and "*:*") are used.
-func (s *Service) resolveToolSlugs(ctx context.Context, stage string) []string {
+// here the member's japa_intent fills the archetype slot (ADR-122 — e.g.
+// "study:applied" beats "*:applied"), with the stage-only and wildcard
+// fallbacks preserved.
+func (s *Service) resolveToolSlugs(ctx context.Context, stage, intent string) []string {
 	raw := s.settings.GetStringOr(ctx, "geo_personalization.stage_tool_matrix", "")
 	if raw == "" {
 		return nil
@@ -308,6 +388,12 @@ func (s *Service) resolveToolSlugs(ctx context.Context, stage string) []string {
 	if err := json.Unmarshal([]byte(raw), &matrix); err != nil {
 		slog.Warn("japastage: invalid stage_tool_matrix JSON", "error", err)
 		return nil
+	}
+
+	if intent != "" {
+		if v, ok := matrix[intent+":"+stage]; ok && len(v) > 0 {
+			return v
+		}
 	}
 
 	if v, ok := matrix["*:"+stage]; ok && len(v) > 0 {
@@ -322,12 +408,17 @@ func (s *Service) resolveToolSlugs(ctx context.Context, stage string) []string {
 }
 
 // ListByStage returns a paginated directory of public japa stage profiles.
-// stage, when non-empty, filters to that stage; when empty, all public
+// stage, when non-empty, filters to that stage; intent, when non-empty,
+// filters to that journey class (ADR-122). When both are empty, all public
 // profiles with a set stage are returned. destSpaceID, when non-empty,
 // further filters by destination (geo-aware ?dest= filter, §87).
-func (s *Service) ListByStage(ctx context.Context, stage, destSpaceID string, page, limit int32) ([]PublicProfileDTO, int64, error) {
+func (s *Service) ListByStage(ctx context.Context, stage, intent, destSpaceID string, page, limit int32) ([]PublicProfileDTO, int64, error) {
 	if stage != "" && !ValidStage(stage) {
 		return nil, 0, fmt.Errorf("invalid stage %q; must be one of: %s", stage, JoinStages())
+	}
+
+	if intent != "" && !ValidIntent(intent) {
+		return nil, 0, fmt.Errorf("invalid intent %q; must be one of: %s", intent, JoinIntents())
 	}
 
 	if limit <= 0 {
@@ -351,7 +442,7 @@ func (s *Service) ListByStage(ctx context.Context, stage, destSpaceID string, pa
 		}
 	}
 
-	rows, total, err := s.store.ListByStage(ctx, stage, dest, limit, offset)
+	rows, total, err := s.store.ListByStage(ctx, stage, intent, dest, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("japastage: list by stage: %w", err)
 	}
@@ -386,6 +477,10 @@ func profileRowToDTO(r ProfileRow) ProfileDTO {
 
 	if r.JapaStage != nil {
 		dto.Stage = *r.JapaStage
+	}
+
+	if r.JapaIntent != nil {
+		dto.Intent = *r.JapaIntent
 	}
 
 	if r.JapaStageDestID.Valid {
@@ -430,6 +525,10 @@ func profileRowToPublicDTO(r ProfileRow) PublicProfileDTO {
 		dto.Stage = *r.JapaStage
 	}
 
+	if r.JapaIntent != nil {
+		dto.Intent = *r.JapaIntent
+	}
+
 	if r.JapaStageDestID.Valid {
 		dto.DestSpaceID = r.JapaStageDestID.String()
 	}
@@ -465,6 +564,10 @@ func directoryRowToDTO(r DirectoryRow) PublicProfileDTO {
 
 	if r.JapaStage != nil {
 		dto.Stage = *r.JapaStage
+	}
+
+	if r.JapaIntent != nil {
+		dto.Intent = *r.JapaIntent
 	}
 
 	if r.JapaStageDestID.Valid {

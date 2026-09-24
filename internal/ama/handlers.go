@@ -34,6 +34,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // patcher is the subset of Service methods used by the PATCH /forum/ama/:id
@@ -43,15 +44,40 @@ type patcher interface {
 	UpdateAMA(ctx context.Context, threadID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error)
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers exposes the AMA endpoints.
 type Handlers struct {
 	service *Service
 	patcher patcher
+	lit     literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates AMA handlers.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service, patcher: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so AMA titles and
+// bodies render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on an AMA DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -121,6 +147,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &dtos)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dtos})
 }
 
@@ -144,6 +172,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &thread)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
@@ -215,6 +245,8 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		handleCreateError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &dto)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": dto})
 }
@@ -325,6 +357,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &dto)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dto})
 }

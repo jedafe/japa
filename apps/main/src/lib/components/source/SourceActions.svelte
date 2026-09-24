@@ -20,6 +20,12 @@
 		showBlock?: boolean;
 		/** If true, a Delete source item is shown for privileged users. */
 		showDelete?: boolean;
+		/** If true, the Report item is shown. */
+		showReport?: boolean;
+		/** If true, the Share item is shown. Item cards set this false — they
+		 *  already render an item-level ShareButton in the footer, so the
+		 *  menu's source-URL share would be a confusing duplicate. */
+		showShare?: boolean;
 		/** Optional trigger button classes. */
 		triggerClass?: string;
 	}
@@ -32,6 +38,8 @@
 		onDelete,
 		showBlock = true,
 		showDelete = false,
+		showReport = true,
+		showShare = true,
 		triggerClass
 	}: Props = $props();
 
@@ -198,26 +206,30 @@
 				</DropdownMenu.Item>
 			{/if}
 
-			<DropdownMenu.Item
-				onSelect={openReport}
-				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-			>
-				<Flag class="h-4 w-4" />
-				{t('sources.report', 'Report')}
-			</DropdownMenu.Item>
+			{#if showReport}
+				<DropdownMenu.Item
+					onSelect={openReport}
+					class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
+				>
+					<Flag class="h-4 w-4" />
+					{t('sources.report', 'Report')}
+				</DropdownMenu.Item>
+			{/if}
 
-			<DropdownMenu.Item
-				onSelect={share}
-				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-			>
-				{#if shared}
-					<Check class="h-4 w-4 text-[var(--color-success)]" />
-					{t('common.copied', 'Copied')}
-				{:else}
-					<Share2 class="h-4 w-4" />
-					{t('common.share', 'Share')}
-				{/if}
-			</DropdownMenu.Item>
+			{#if showShare}
+				<DropdownMenu.Item
+					onSelect={share}
+					class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
+				>
+					{#if shared}
+						<Check class="h-4 w-4 text-[var(--color-success)]" />
+						{t('common.copied', 'Copied')}
+					{:else}
+						<Share2 class="h-4 w-4" />
+						{t('common.share', 'Share')}
+					{/if}
+				</DropdownMenu.Item>
+			{/if}
 		</DropdownMenu.Content>
 	</DropdownMenu.Portal>
 </DropdownMenu.Root>

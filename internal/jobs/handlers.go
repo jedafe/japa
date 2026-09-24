@@ -35,6 +35,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // createJobListingRequest is the JSON body for POST /org/{org_id}/jobs.
@@ -64,16 +65,41 @@ type listingUpdater interface {
 	UpdateJobListing(ctx context.Context, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error)
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers exposes the Jobs Board HTTP endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
 	updater  listingUpdater
+	lit      literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates Jobs handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings, updater: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so job titles,
+// summaries, and bodies render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a job DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +201,8 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &results)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
 		"meta": map[string]any{
@@ -201,6 +229,8 @@ func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &detail)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": detail,
@@ -271,6 +301,8 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.resolveLiterals(r, &results)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
 		"meta": map[string]any{
@@ -319,6 +351,8 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
@@ -378,6 +412,8 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.resolveLiterals(r, &listing)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": listing,
 	})
@@ -432,6 +468,8 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &listing)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": listing})
 }
 
@@ -471,6 +509,8 @@ func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Requ
 
 		return
 	}
+
+	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
@@ -598,6 +638,8 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &results)
 
 	// Include listing status distribution for the admin dashboard.
 	dist, _ := h.service.AdminJobStatusDistribution(r.Context())

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,10 @@ func (h *Handlers) ListSpaceRules(w http.ResponseWriter, r *http.Request) {
 
 	if rules == nil {
 		rules = []gen.SpaceRule{}
+	}
+
+	if h.content != nil {
+		_ = h.content.ResolveContentFields(r.Context(), &rules, literals.NewRequestContext(r, ""))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rules})

@@ -20,15 +20,41 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
 
 // Handlers exposes the scholarship finder HTTP routes.
 type Handlers struct {
 	svc *Service
+	lit literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates scholarship finder handlers.
 func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
+
+// SetLiteralResolver injects the template-literal catalog so scholarship
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a scholarship DTO or
+// slice. Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
+}
 
 // HandleFindScholarships searches published scholarship guides.
 // GET /scholarships.
@@ -88,6 +114,8 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 		results = []ScholarshipResult{}
 	}
 
+	h.resolveLiterals(r, &results)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": results,
 		"meta": map[string]interface{}{
@@ -118,6 +146,8 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship not found")
 		return
 	}
+
+	h.resolveLiterals(r, &result)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": result})
 }
@@ -303,6 +333,8 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 	if rows == nil {
 		rows = []SavedScholarshipResponse{}
 	}
+
+	h.resolveLiterals(r, &rows)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,
@@ -712,6 +744,8 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to count scholarships")
 		return
 	}
+
+	h.resolveLiterals(r, &rows)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,

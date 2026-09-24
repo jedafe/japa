@@ -17,7 +17,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let achievement: Achievement;
 	try {
-		achievement = await apiGet<Achievement>(ctx, `/achievements/${slug}`);
+		achievement = await apiGet<Achievement>(ctx, `/achievements/${slug}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Achievement not found' });

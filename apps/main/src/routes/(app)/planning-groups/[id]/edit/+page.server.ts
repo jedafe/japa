@@ -13,7 +13,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let group: PlanningGroup | null = null;
 	try {
-		group = await apiGet<PlanningGroup>(ctx, `/planning-groups/${id}`);
+		group = await apiGet<PlanningGroup>(ctx, `/planning-groups/${id}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Planning group not found' });

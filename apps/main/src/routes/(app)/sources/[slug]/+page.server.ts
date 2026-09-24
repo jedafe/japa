@@ -30,7 +30,14 @@ export const load: PageServerLoad = async (event) => {
 		item_sorts: []
 	}));
 
-	const entityTypes = sourceMeta.entity_types ?? [];
+	// Scope the filter pills to the entity types this source actually
+	// publishes (GET /sources/{slug}.entity_types) — offering the global
+	// meta list rendered guaranteed-empty feeds for most types. Fall back
+	// to the full meta list only when the field is absent (older backend).
+	const sourceTypes = source.entity_types;
+	const entityTypes = (sourceMeta.entity_types ?? []).filter(
+		(e) => !sourceTypes || sourceTypes.includes(e.value)
+	);
 	const validEntityTypes = new Set(['', ...entityTypes.map((e) => e.value)]);
 
 	const rawEntityType = event.url.searchParams.get('entity_type') ?? '';

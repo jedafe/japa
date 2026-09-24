@@ -16,6 +16,7 @@
 package languagetesthub
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -30,6 +31,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -43,6 +45,31 @@ type Handlers struct {
 	service     *Service
 	settings    *config.Settings
 	asynqClient TaskEnqueueClient
+	lit         literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates language test hub handlers bound to the provided
@@ -145,6 +172,8 @@ func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &tests)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tests})
 }
 
@@ -175,6 +204,8 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+
+	h.resolveLiterals(r, &requirements)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": requirements})
 }
@@ -224,6 +255,12 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &test)
+
+	h.resolveLiterals(r, &resources)
+
+	h.resolveLiterals(r, &stories)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"test":              test,
@@ -270,6 +307,8 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &resources)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": resources,
@@ -326,6 +365,8 @@ func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &stories)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stories,
 		"pagination": map[string]any{
@@ -379,6 +420,8 @@ func (h *Handlers) HandleCreateStory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &story)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": story})
 }
 
@@ -423,6 +466,8 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 
 		return
 	}
+
+	h.resolveLiterals(r, &requirements)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": requirements,

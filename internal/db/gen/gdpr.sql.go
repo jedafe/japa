@@ -2165,7 +2165,7 @@ func (q *Queries) GdprExportUserPreferences(ctx context.Context, userID pgtype.U
 const gdprExportUserProfiles = `-- name: GdprExportUserProfiles :one
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history, is_mentor, mentor_capacity, active_mentee_count, mentor_areas, mentor_bio, mentor_since, mentor_embedding, location, banner_media_id FROM user_profiles WHERE user_id = $1) t
+FROM (SELECT id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history, is_mentor, mentor_capacity, active_mentee_count, mentor_areas, mentor_bio, mentor_since, mentor_embedding, location, banner_media_id, japa_intent FROM user_profiles WHERE user_id = $1) t
 `
 
 // =====================

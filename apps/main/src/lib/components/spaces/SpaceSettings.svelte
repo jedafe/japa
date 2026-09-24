@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
@@ -52,6 +52,16 @@
 
 	let name = $state(untrack(() => space.name));
 	let description = $state(untrack(() => space.description ?? ''));
+
+	onMount(async () => {
+		// Fetch the raw (unresolved) space so authored {{...}} literals in the
+		// name/description survive a re-save — the display payload is resolved.
+		// The equality guards avoid clobbering edits made before the fetch lands.
+		const res = await api.get<Space>(`/spaces/${space.id}?raw=1`);
+		if (!res.data) return;
+		if (name === space.name) name = res.data.name;
+		if (description === (space.description ?? '')) description = res.data.description ?? '';
+	});
 	// Wiki content: the API stores it as base64-encoded bytes. The
 	// auto-populate task stores JSON {title, extract, ...}; manual edits
 	// via this form store raw HTML. Handle both.

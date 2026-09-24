@@ -1410,6 +1410,18 @@ func (s *Store) CountIntelRecordsBySource(ctx context.Context, sourceID pgtype.U
 	return count, nil
 }
 
+// ListDistinctIntelRecordEntityTypesBySource returns the distinct entity
+// types of a source's published records. Used to scope the detail page's
+// entity-type filter pills to types that actually have items.
+func (s *Store) ListDistinctIntelRecordEntityTypesBySource(ctx context.Context, sourceID pgtype.UUID) ([]string, error) {
+	types, err := s.queries.ListDistinctIntelRecordEntityTypesBySource(ctx, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list distinct intel record entity types: %w", err)
+	}
+
+	return types, nil
+}
+
 // IncrementSourcePostCount bumps the post_count for a source.
 func (s *Store) IncrementSourcePostCount(ctx context.Context, sourceID pgtype.UUID) error {
 	if err := s.queries.IncrementSourcePostCount(ctx, sourceID); err != nil {

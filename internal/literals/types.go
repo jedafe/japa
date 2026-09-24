@@ -30,6 +30,11 @@ type RenderContext struct {
 	DestinationCountry string
 	DestinationCode    string
 	PlatformName       string
+
+	// raw marks a ?raw=1 request: every Resolve* entry point becomes a no-op
+	// so editor flows receive the author's original {{...}} source. Set by
+	// NewRequestContext; unexported so it can only come from the request.
+	raw bool
 }
 
 // reservedKeys are built-in variable and function names that cannot be
@@ -45,6 +50,7 @@ var reservedKeys = map[string]struct{}{
 	"Destination_Country": {},
 	"Destination_Code":    {},
 	"Platform_Name":       {},
+	"Tenant_Name":         {},
 	"Locale":              {},
 	"adjective":           {},
 	"year":                {},
@@ -74,6 +80,7 @@ func (rc RenderContext) ToEnv() *expr.Env {
 	env.Vars["Destination_Country"] = rc.DestinationCountry
 	env.Vars["Destination_Code"] = rc.DestinationCode
 	env.Vars["Platform_Name"] = rc.PlatformName
+	env.Vars["Tenant_Name"] = rc.PlatformName
 	env.Vars["Locale"] = rc.Locale
 
 	return env

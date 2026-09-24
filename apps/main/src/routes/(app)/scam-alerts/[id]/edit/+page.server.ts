@@ -23,7 +23,8 @@ export const load: PageServerLoad = async (event) => {
 
 	let alert: ScamReport;
 	try {
-		alert = await apiGet<ScamReport>(ctx, `/scam-alerts/${id}`);
+		// ?raw=1 keeps authored {{...}} literals unresolved for the edit form.
+		alert = await apiGet<ScamReport>(ctx, `/scam-alerts/${id}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Scam alert not found' });

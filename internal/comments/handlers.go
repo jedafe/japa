@@ -16,6 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/worker"
@@ -61,6 +62,13 @@ type SpaceCommentChecker interface {
 	CanReplyInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 }
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14 Global Template Literals). Implemented by *literals.Catalog;
+// nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for comment HTTP handlers.
 type Handlers struct {
 	Service         *Service
@@ -70,6 +78,7 @@ type Handlers struct {
 	perms           PermissionChecker      // nil disables delete_any moderator path
 	mentionCheckers *mentions.DBCheckers   // nil disables erased-mention redaction
 	spaceChecker    SpaceCommentChecker    // nil disables space perm checks (test-only)
+	lit             literalResolver        // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -103,6 +112,25 @@ func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionChecker
 // commenting_perm and replying_perm axes (Section 05, BUG-002). nil disables
 // the check (backward compat / tests).
 func (h *Handlers) SetSpaceChecker(c SpaceCommentChecker) { h.spaceChecker = c }
+
+// SetLiteralResolver injects the template-literal catalog so comment bodies
+// and discussion thread titles render {{...}} placeholders (§14). nil
+// disables resolution (backward compat / tests).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a comment DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
+}
 
 // computeErasedMentionIDs returns the set of mentioned user IDs in a comment
 // body whose accounts have been erased (Section 15 / ADR-029). Returns nil
@@ -304,6 +332,8 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 				r.AvatarUrl = ""
 			})
 
+		h.resolveLiterals(r, &replies)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": replies})
 
 		return
@@ -327,6 +357,8 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			c.DisplayName = ""
 			c.AvatarUrl = ""
 		})
+
+	h.resolveLiterals(r, &comments)
 
 	// GDPR / ADR-029: compute erased-mention IDs across all comments so the
 	// frontend can render @[deleted user] for mentions of erased users.
@@ -382,6 +414,8 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 		comment.DisplayName = ""
 		comment.AvatarUrl = ""
 	}
+
+	h.resolveLiterals(r, &comment)
 
 	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.
 	resp := map[string]any{"data": comment}
@@ -505,6 +539,8 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// per Rule 8. Ref: Section 32, Guide §21.
 	h.enqueueEngagementUpdate("content", contentID, "comment", 1)
 
+	h.resolveLiterals(r, &comment)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -551,6 +587,8 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	if h.notifier != nil {
 		h.Service.DispatchMentionNotifications(r.Context(), comment, h.notifier)
 	}
+
+	h.resolveLiterals(r, &comment)
 
 	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.
 	resp := map[string]any{"data": comment}

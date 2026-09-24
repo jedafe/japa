@@ -19,7 +19,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let post: MutualAidPost;
 	try {
-		post = await apiGet<MutualAidPost>(ctx, `/mutual-aid/${id}`);
+		post = await apiGet<MutualAidPost>(ctx, `/mutual-aid/${id}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Mutual aid post not found' });

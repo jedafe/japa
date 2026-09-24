@@ -3271,6 +3271,17 @@ export type JapaStage =
 	| 'relocated'
 	| 'settled';
 
+/** ADR-122: journey class — only relocation-class intents carry a stage. */
+export type JapaIntent =
+	| 'relocation'
+	| 'study'
+	| 'work'
+	| 'family'
+	| 'visit'
+	| 'business';
+
+export const RELOCATION_INTENTS: readonly JapaIntent[] = ['relocation', 'study', 'work', 'family'];
+
 /** GET /me/japa-stage — the caller's own stage profile. */
 export interface MyJapaStage {
 	user_id: string;
@@ -3278,6 +3289,7 @@ export interface MyJapaStage {
 	display_name?: string;
 	avatar_url?: string;
 	stage?: string;
+	intent?: string;
 	destination_space_id?: string;
 	destination_space_name?: string;
 	destination_space_code?: string;
@@ -3293,6 +3305,7 @@ export interface MemberStage {
 	display_name?: string;
 	avatar_url?: string;
 	stage: string;
+	intent?: string;
 	destination_space_id?: string;
 	destination_space_name?: string;
 	destination_space_code?: string;
@@ -3304,6 +3317,7 @@ export interface PublicJapaStage {
 	user_id: string;
 	username?: string;
 	stage?: string;
+	intent?: string;
 	destination_space_id?: string;
 	destination_space_name?: string;
 	destination_space_code?: string;

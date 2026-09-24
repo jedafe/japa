@@ -19,19 +19,45 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
 )
 
 const defaultPageSize int32 = 20
 
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
 // Handlers holds dependencies for comparison HTTP handlers.
 type Handlers struct {
 	Service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so comparison
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a comparison DTO or
+// slice. Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +251,8 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &types)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
@@ -246,6 +274,8 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &comparisons)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": comparisons})
 }
@@ -308,6 +338,8 @@ func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.resolveLiterals(r, &comparisons)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": comparisons})
 }
 
@@ -325,6 +357,8 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &result)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
@@ -573,6 +607,8 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &result)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -604,6 +640,8 @@ func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	h.resolveLiterals(r, &detail)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
 }
@@ -659,6 +697,8 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &result)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
@@ -726,6 +766,8 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &matrix)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": matrix})
 }
@@ -801,6 +843,8 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.resolveLiterals(r, &item)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": item})
 }
 
@@ -869,6 +913,8 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &item)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
 }
@@ -977,6 +1023,8 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	h.resolveLiterals(r, &dim)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": dim})
 }
 
@@ -1029,6 +1077,8 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
+	h.resolveLiterals(r, &dim)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dim})
 }

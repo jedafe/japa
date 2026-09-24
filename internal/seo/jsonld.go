@@ -39,7 +39,7 @@ func InterpolateJSONLD(template []byte, fields map[string]string) (json.RawMessa
 		return nil, fmt.Errorf("parsing JSON-LD template: %w", err)
 	}
 
-	interpolated := interpolateNode(node, fields)
+	interpolated := pruneEmptyNodes(interpolateNode(node, fields))
 
 	out, err := json.Marshal(interpolated)
 	if err != nil {
@@ -69,6 +69,67 @@ func interpolateNode(node any, fields map[string]string) any {
 		return interpolateString(v, fields)
 	default:
 		return node
+	}
+}
+
+// pruneEmptyNodes removes nodes that carry no information after interpolation:
+// empty strings, empty arrays, and empty objects are dropped from their parent
+// object or array. Without this, a field that resolves to "" leaks malformed
+// schema — e.g. `"sameAs": ["", ""]` or `"worksFor": {"name": ""}` — which
+// search engines flag as invalid structured data (Section 26). Scalar
+// false/0/null values are kept: they are meaningful JSON-LD.
+func pruneEmptyNodes(node any) any {
+	switch v := node.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, val := range v {
+			pruned := pruneEmptyNodes(val)
+			if isEmptyNode(pruned) {
+				continue
+			}
+
+			out[key] = pruned
+		}
+
+		return out
+	case []any:
+		out := make([]any, 0, len(v))
+		for _, val := range v {
+			pruned := pruneEmptyNodes(val)
+			if isEmptyNode(pruned) {
+				continue
+			}
+
+			out = append(out, pruned)
+		}
+
+		return out
+	default:
+		return node
+	}
+}
+
+// isEmptyNode reports whether a post-interpolation node carries no data. A map
+// holding only "@type" is also empty — a typed object with no properties (e.g.
+// {"@type":"PostalAddress"}) is meaningless to consumers.
+func isEmptyNode(node any) bool {
+	switch v := node.(type) {
+	case string:
+		return v == ""
+	case map[string]any:
+		if len(v) == 0 {
+			return true
+		}
+		if len(v) == 1 {
+			_, onlyType := v["@type"]
+			return onlyType
+		}
+
+		return false
+	case []any:
+		return len(v) == 0
+	default:
+		return false
 	}
 }
 

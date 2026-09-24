@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -9,16 +10,33 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
+
+// literalResolver resolves {{...}} template literals inside rendered widget
+// JSON (§14 Global Template Literals). Implemented by *literals.Catalog;
+// nil disables resolution.
+type literalResolver interface {
+	ResolveJSON(ctx context.Context, raw json.RawMessage, rc literals.RenderContext) json.RawMessage
+}
 
 // Handlers holds dependencies for widget HTTP handlers.
 type Handlers struct {
 	Service *Service
+	lit     literalResolver // nil disables literal resolution
 }
 
 // NewHandlers creates Handlers.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so rendered
+// widget data resolves {{...}} placeholders per-request (§14). Resolution
+// runs after the Valkey cache lookup — the cached payload stays unresolved
+// so each request renders with its own geo/time context.
+func (h *Handlers) SetLiteralResolver(l literalResolver) {
+	h.lit = l
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -198,6 +216,10 @@ func (h *Handlers) RenderWidget(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Cache", "HIT")
 	} else {
 		w.Header().Set("X-Cache", "MISS")
+	}
+
+	if h.lit != nil {
+		rendered.Data = h.lit.ResolveJSON(r.Context(), rendered.Data, literals.NewRequestContext(r, ""))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rendered})

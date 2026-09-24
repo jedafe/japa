@@ -23,6 +23,7 @@
 package gamification
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -30,16 +31,43 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // Handlers exposes the gamification HTTP endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	lit      literalResolver // nil disables literal resolution (§14)
+}
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// SetLiteralResolver injects the template-literal catalog so user-facing
+// titles/descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
+// Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
 // NewHandlers creates gamification handlers bound to the provided service.
@@ -129,6 +157,8 @@ func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &badges)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badges,
 	})
@@ -154,6 +184,8 @@ func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) 
 
 		return
 	}
+
+	h.resolveLiterals(r, &challenges)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": challenges,
@@ -211,6 +243,8 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.resolveLiterals(r, &entries)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 	})
@@ -240,6 +274,8 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &badges)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badges,
@@ -271,6 +307,8 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveLiterals(r, &progress)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": progress,
 	})
@@ -280,7 +318,7 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 // display for a user's profile. Public route.
 func (h *Handlers) HandleUserBadges(w http.ResponseWriter, r *http.Request) {
 
-	username := chi.URLParam(r, "username")
+	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
@@ -302,6 +340,8 @@ func (h *Handlers) HandleUserBadges(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.resolveLiterals(r, &badges)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badges,
@@ -334,6 +374,8 @@ func (h *Handlers) HandleAdminListBadges(w http.ResponseWriter, r *http.Request)
 
 		return
 	}
+
+	h.resolveLiterals(r, &badges)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badges,
@@ -371,6 +413,8 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.resolveLiterals(r, &badge)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": badge,
 	})
@@ -407,6 +451,8 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+
+	h.resolveLiterals(r, &badge)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badge,
@@ -459,6 +505,8 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 
 		return
 	}
+
+	h.resolveLiterals(r, &badge)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badge,
@@ -517,6 +565,8 @@ func (h *Handlers) HandleAdminListChallenges(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	h.resolveLiterals(r, &challenges)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": challenges,
 		"pagination": map[string]any{
@@ -554,6 +604,8 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	h.resolveLiterals(r, &challenge)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": challenge,
 	})
@@ -590,6 +642,8 @@ func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Req
 
 		return
 	}
+
+	h.resolveLiterals(r, &challenge)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": challenge,

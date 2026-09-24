@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
 )
 
@@ -32,6 +33,9 @@ type ContentService interface {
 	UnpinContent(ctx context.Context, spaceID, contentID pgtype.UUID) error
 	ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]gen.SpacePinnedPost, error)
 	ListPinnedContentBySpace(ctx context.Context, spaceID pgtype.UUID, filter visibility.VisibilityFilter) ([]gen.ListPinnedContentBySpaceRow, error)
+	// ResolveContentFields resolves {{...}} template literals in the named
+	// text fields of content-like structs/slices (§14 literals).
+	ResolveContentFields(ctx context.Context, v any, rc literals.RenderContext) error
 }
 
 // PermCacheInvalidator flushes a user's permission cache (jc:perm:{user_id})

@@ -627,7 +627,14 @@ WHERE c.intel_source_id = @intel_source_id
  AND c.deleted_at IS NULL
  AND c.status = 'published'
  AND c.visibility = 'public'
-ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+ORDER BY
+ CASE
+ WHEN @sort_mode::text = 'popular' THEN c.view_count
+ WHEN @sort_mode::text = 'discussed' THEN c.comment_count
+ WHEN @sort_mode::text = 'upvoted' THEN
+  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content')
+ END DESC NULLS LAST,
+ c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountComparisonContentsBySourceID :one
@@ -1063,6 +1070,13 @@ SELECT EXISTS(
  SELECT 1 FROM bookmarks
  WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id
 ) AS is_bookmarked;
+
+-- name: ListBookmarkedContentIDs :many
+-- Batch bookmark check for card lists (GET /me/content-states): returns which
+-- of the given content ids the caller has bookmarked.
+SELECT entity_id
+FROM bookmarks
+WHERE user_id = @user_id AND entity_type = 'content' AND entity_id = ANY(@ids::uuid[]);
 
 -- name: ListBookmarksByUser :many
 SELECT b.id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
