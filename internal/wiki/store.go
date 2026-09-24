@@ -88,9 +88,17 @@ type WikiDestination struct {
 type WikiRevision struct {
 	ID pgtype.UUID
 
-	WikiPageID      pgtype.UUID
-	Content         []byte // TipTap JSON
-	Summary         *string
+	WikiPageID pgtype.UUID // nullable — page-less ops revisions (§80)
+	Content    []byte      // TipTap JSON
+	Summary    *string
+	// §80 community field ops: kind is content|fields|mixed; ops carries the
+	// structured field/group mutation array; target_* identifies the
+	// polymorphic entity the ops apply to.
+	Kind             string
+	Ops              []byte
+	TargetEntityType *string
+	TargetEntityID   pgtype.UUID
+
 	Status          string // pending|approved|rejected
 	SubmittedBy     pgtype.UUID
 	ReviewedBy      pgtype.UUID
@@ -226,7 +234,10 @@ ORDER BY wp.category, wp.title`
 	return out, nil
 }
 
-var destinationLevels = []string{"country", "state", "city"}
+// destinationLevels are the space levels that may carry wiki pages. Geo
+// destinations (country/state/city) plus university spaces (§80 amendment —
+// University Spaces).
+var destinationLevels = []string{"country", "state", "city", "university"}
 
 func isDestinationLevel(level string) bool {
 	for _, l := range destinationLevels {
@@ -242,7 +253,7 @@ func isDestinationLevel(level string) bool {
 // with their active wiki page count. Optional level, parent and region filters
 // narrow the result. When hasWiki is true, only spaces with at least one active
 // wiki page are returned; otherwise all destination spaces are included.
-func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region string, hasWiki bool) ([]WikiDestination, error) {
+func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region, search string, hasWiki bool) ([]WikiDestination, error) {
 	var conds []string
 
 	var args []any
@@ -250,10 +261,19 @@ func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, reg
 	argn := 1
 
 	conds = append(conds, "sp.status = 'active'")
-	conds = append(conds, "sp.level IN ('country', 'state', 'city')")
+	// University spaces are typed via space_types.slug = 'university' — most
+	// carry level = 'custom' — so the base set is geo levels plus the two
+	// legacy level='university' rows; typed universities enter via the
+	// explicit ?level=university filter or has_wiki below.
+	conds = append(conds, "(sp.level IN ('country', 'state', 'city', 'university') OR st.slug = 'university')")
 
 	if isDestinationLevel(level) {
-		conds = append(conds, fmt.Sprintf("sp.level = $%d", argn))
+		if level == "university" {
+			// Match by space type so level='custom' universities are included.
+			conds = append(conds, fmt.Sprintf("(sp.level = $%d OR st.slug = $%d)", argn, argn))
+		} else {
+			conds = append(conds, fmt.Sprintf("sp.level = $%d", argn))
+		}
 		args = append(args, level)
 		argn++
 	}
@@ -261,6 +281,12 @@ func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, reg
 	if region != "" {
 		conds = append(conds, fmt.Sprintf("sp.region = $%d", argn))
 		args = append(args, region)
+		argn++
+	}
+
+	if search != "" {
+		conds = append(conds, fmt.Sprintf("sp.name ILIKE '%%' || $%d || '%%'", argn))
+		args = append(args, search)
 		argn++
 	}
 
@@ -282,6 +308,7 @@ func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, reg
 		q = fmt.Sprintf(`
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level, COUNT(wp.id) AS page_count
 FROM spaces sp
+LEFT JOIN space_types st ON st.id = sp.space_type_id
 JOIN wiki_pages wp ON wp.space_id = sp.id AND wp.is_active = true
 WHERE %s
 GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
@@ -291,6 +318,7 @@ ORDER BY sp.name`, where)
 		q = fmt.Sprintf(`
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level, COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
 FROM spaces sp
+LEFT JOIN space_types st ON st.id = sp.space_type_id
 LEFT JOIN wiki_pages wp ON wp.space_id = sp.id
 WHERE %s
 GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
@@ -322,9 +350,12 @@ ORDER BY sp.name`, where)
 }
 
 // GetApprovedRevision returns the latest approved revision for a wiki page.
+// kind='fields' revisions are excluded: they carry no prose (content='{}') and
+// approving one must never replace the page's body (§80 community field ops).
 func (s *Store) GetApprovedRevision(ctx context.Context, pageID pgtype.UUID) (WikiRevision, error) {
 	const q = `
 SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
+       wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
@@ -332,6 +363,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
 WHERE wr.wiki_page_id = $1 AND wr.status = 'approved'
+  AND wr.kind IN ('content', 'mixed')
 ORDER BY wr.created_at DESC
 LIMIT 1
 `
@@ -340,6 +372,7 @@ LIMIT 1
 
 	err := s.pool.Reader.QueryRow(ctx, q, pageID).Scan(
 		&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
+		&r.Kind, &r.Ops, &r.TargetEntityType, &r.TargetEntityID,
 		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
 		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
@@ -368,6 +401,7 @@ func (s *Store) ListRevisions(ctx context.Context, pageID pgtype.UUID, limit, of
 
 	const q = `
 SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
+       wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
@@ -394,6 +428,7 @@ LIMIT $2 OFFSET $3
 		var r WikiRevision
 		if err := rows.Scan(
 			&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
+			&r.Kind, &r.Ops, &r.TargetEntityType, &r.TargetEntityID,
 			&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
 			&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 			&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
@@ -422,11 +457,45 @@ LIMIT $2 OFFSET $3
 // Callers should map this to a 409 duplicate_content API error.
 var ErrDuplicateContent = errors.New("wiki: duplicate content")
 
-// SubmitRevision inserts a new pending revision for a wiki page.
+// revisionContentHash computes the dedupe hash for a revision (Rule 12):
+// plain text extracted from the TipTap body plus a NUL-separated ops payload.
+// Appending the ops bytes keeps idx_wiki_revisions_page_hash deduping
+// identical submissions while preventing fields-only revisions (empty prose)
+// from all colliding on the hash of an empty document.
+// Ref: japaconnect-engineering/AGENTS.md Rule 12
+func revisionContentHash(body, ops []byte) string {
+	// Normalize here (not just in insertRevision) so every caller hashes the
+	// same input whether ops arrives as nil or []byte("[]").
+	if len(ops) == 0 {
+		ops = []byte("[]")
+	}
+
+	plainText := rag.ExtractPlainText(string(body))
+
+	return contentpkg.ComputeContentHash(plainText + "\x00" + string(ops))
+}
+
+// SubmitRevision inserts a new pending revision. pageID may be an invalid
+// pgtype.UUID for page-less ops revisions (§80 community field ops); kind is
+// content|fields|mixed; body may be empty for fields-only revisions (stored
+// as '{}'::jsonb); ops is the marshaled FieldOp array ('[]' when nil).
 // BUG-002: computes content_hash (Rule 12) and rejects duplicate no-op edits
 // with ErrDuplicateContent when the unique index idx_wiki_revisions_page_hash
 // conflicts.
-func (s *Store) SubmitRevision(ctx context.Context, pageID, userID pgtype.UUID, body []byte, summary string, aiGenerated bool, aiModel, aiPromptHash string) (pgtype.UUID, error) {
+func (s *Store) SubmitRevision(ctx context.Context, pageID, userID pgtype.UUID, kind string, body, ops []byte, summary string, targetType *string, targetID pgtype.UUID) (pgtype.UUID, error) {
+	return s.insertRevision(ctx, pageID, userID, kind, body, ops, summary, targetType, targetID, false, "", "")
+}
+
+// SubmitAIRevision inserts a pending revision flagged as AI-generated
+// (ai_generated, ai_model, ai_prompt_hash) — used by GenerateDraft
+// (ADR-088 HITL pipeline). Ops revisions never carry AI provenance, so this
+// always records kind='content' with an empty ops array.
+func (s *Store) SubmitAIRevision(ctx context.Context, pageID, userID pgtype.UUID, body []byte, summary, aiModel, aiPromptHash string) (pgtype.UUID, error) {
+	return s.insertRevision(ctx, pageID, userID, "content", body, nil, summary, nil, pgtype.UUID{}, true, aiModel, aiPromptHash)
+}
+
+// insertRevision is the shared INSERT for SubmitRevision/SubmitAIRevision.
+func (s *Store) insertRevision(ctx context.Context, pageID, userID pgtype.UUID, kind string, body, ops []byte, summary string, targetType *string, targetID pgtype.UUID, aiGenerated bool, aiModel, aiPromptHash string) (pgtype.UUID, error) {
 	var revID pgtype.UUID
 
 	var summaryPtr *string
@@ -443,17 +512,33 @@ func (s *Store) SubmitRevision(ctx context.Context, pageID, userID pgtype.UUID, 
 		aiPromptHashPtr = &aiPromptHash
 	}
 
-	// BUG-002: compute content_hash per Rule 12. Extract plain text from the
-	// TipTap JSON body, then hash with the standard content.ComputeContentHash.
-	// Ref: japaconnect-engineering/AGENTS.md Rule 12
-	plainText := rag.ExtractPlainText(string(body))
-	contentHash := contentpkg.ComputeContentHash(plainText)
+	if kind == "" {
+		kind = "content"
+	}
+
+	// content is NOT NULL — fields-only revisions store an empty doc so
+	// ::text excerpt rendering keeps working.
+	if len(body) == 0 {
+		body = []byte("{}")
+	}
+
+	// ops is NOT NULL DEFAULT '[]' — normalize nil to an empty array so the
+	// content_hash input is stable whether callers pass nil or []byte("[]").
+	if len(ops) == 0 {
+		ops = []byte("[]")
+	}
+
+	// BUG-002: compute content_hash per Rule 12 (see revisionContentHash).
+	contentHash := revisionContentHash(body, ops)
 
 	err := s.pool.Writer.QueryRow(ctx, `
-INSERT INTO wiki_revisions (wiki_page_id, content, summary, status,
-    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8)
+INSERT INTO wiki_revisions (wiki_page_id, kind, content, ops, summary,
+    target_entity_type, target_entity_id, status,
+    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12)
 RETURNING id
-`, pageID, body, summaryPtr, userID, aiGenerated, aiModelPtr, aiPromptHashPtr, contentHash).Scan(&revID)
+`, pageID, kind, body, ops, summaryPtr, targetType, targetID,
+		userID, aiGenerated, aiModelPtr, aiPromptHashPtr, contentHash).Scan(&revID)
 	if err != nil {
 		// Map unique-violation on idx_wiki_revisions_page_hash to ErrDuplicateContent.
 		var pgErr *pgconn.PgError
@@ -533,6 +618,324 @@ WHERE id = $1 AND status = 'pending'
 	return nil
 }
 
+// revisionColumns is the canonical SELECT column list materializing a
+// WikiRevision (scan order must match the struct fills below).
+const revisionColumns = `wr.id, wr.wiki_page_id, wr.content, wr.summary,
+       wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
+       wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
+       wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
+       wr.created_at`
+
+// scanRevision scans one row produced by revisionColumns (plus optional
+// trailing username columns handled by callers) into a WikiRevision.
+func scanRevision(r *WikiRevision, row interface{ Scan(...any) error }, extra ...any) error {
+	dest := []any{
+		&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
+		&r.Kind, &r.Ops, &r.TargetEntityType, &r.TargetEntityID,
+		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
+		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
+		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
+		&r.CreatedAt,
+	}
+
+	return row.Scan(append(dest, extra...)...)
+}
+
+// GetRevision returns a single revision row by ID (any kind/status), with
+// submitter/reviewer usernames resolved like ListRevisions.
+func (s *Store) GetRevision(ctx context.Context, revID pgtype.UUID) (WikiRevision, error) {
+	q := `
+SELECT ` + revisionColumns + `,
+       u.username AS submitted_by_name, ru.username AS reviewed_by_name
+FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN users ru ON ru.id = wr.reviewed_by
+WHERE wr.id = $1
+`
+
+	var r WikiRevision
+
+	err := scanRevision(&r, s.pool.Reader.QueryRow(ctx, q, revID), &r.SubmittedByName, &r.ReviewedByName)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WikiRevision{}, pgx.ErrNoRows
+		}
+
+		return WikiRevision{}, fmt.Errorf("wiki: get revision: %w", err)
+	}
+
+	return r, nil
+}
+
+// ApproveRevisionByID marks a revision as approved by revision ID alone —
+// used by the revision-keyed review routes where the caller may not know the
+// host page (page-less ops revisions have NULL wiki_page_id, §80). Returns
+// the full approved row (kind + ops + content) so the caller can apply ops
+// and enqueue propagation. The host page's updated_at is bumped when the
+// revision is page-bound.
+func (s *Store) ApproveRevisionByID(ctx context.Context, revID, reviewerID pgtype.UUID, reviewNotes string) (WikiRevision, error) {
+	tx, err := s.pool.Writer.Begin(ctx)
+	if err != nil {
+		return WikiRevision{}, fmt.Errorf("wiki: approve: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var notesPtr *string
+	if reviewNotes != "" {
+		notesPtr = &reviewNotes
+	}
+
+	var r WikiRevision
+
+	err = tx.QueryRow(ctx, `
+UPDATE wiki_revisions
+SET status = 'approved', reviewed_by = $2, reviewed_at = now(),
+    hitl_reviewed_by = $2, hitl_reviewed_at = now(), hitl_review_notes = $3
+WHERE id = $1 AND status = 'pending'
+RETURNING id, wiki_page_id, content, summary,
+    kind, ops, target_entity_type, target_entity_id,
+    status, submitted_by, reviewed_by, reviewed_at,
+    ai_generated, ai_model, ai_prompt_hash,
+    hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
+    created_at
+`, revID, reviewerID, notesPtr).Scan(
+		&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
+		&r.Kind, &r.Ops, &r.TargetEntityType, &r.TargetEntityID,
+		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
+		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
+		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
+		&r.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WikiRevision{}, errors.New("wiki: approve: revision not found or not pending")
+		}
+
+		return WikiRevision{}, fmt.Errorf("wiki: approve: update revision: %w", err)
+	}
+
+	if r.WikiPageID.Valid {
+		if _, err := tx.Exec(ctx, `
+UPDATE wiki_pages SET updated_at = now() WHERE id = $1
+`, r.WikiPageID); err != nil {
+			return WikiRevision{}, fmt.Errorf("wiki: approve: update page: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return WikiRevision{}, fmt.Errorf("wiki: approve: commit: %w", err)
+	}
+
+	return r, nil
+}
+
+// RejectRevisionByID marks a revision as rejected by revision ID alone —
+// the revision-keyed counterpart used by the admin review queue (§80).
+// RejectRevision already keys on revision ID, so this delegates to it.
+func (s *Store) RejectRevisionByID(ctx context.Context, revID, reviewerID pgtype.UUID, reviewNotes string) error {
+	return s.RejectRevision(ctx, revID, reviewerID, reviewNotes)
+}
+
+// ListRevisionsByTarget returns revisions (all statuses, newest first)
+// targeting a specific entity via target_entity_type + target_entity_id.
+func (s *Store) ListRevisionsByTarget(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32) ([]WikiRevision, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	if limit > 100 {
+		limit = 100
+	}
+
+	q := `
+SELECT ` + revisionColumns + `,
+       u.username AS submitted_by_name, ru.username AS reviewed_by_name
+FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN users ru ON ru.id = wr.reviewed_by
+WHERE wr.target_entity_type = $1 AND wr.target_entity_id = $2
+ORDER BY wr.created_at DESC
+LIMIT $3 OFFSET $4
+`
+
+	rows, err := s.pool.Reader.Query(ctx, q, entityType, entityID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("wiki: list revisions by target: %w", err)
+	}
+
+	defer rows.Close()
+
+	var out []WikiRevision
+
+	for rows.Next() {
+		var r WikiRevision
+		if err := scanRevision(&r, rows, &r.SubmittedByName, &r.ReviewedByName); err != nil {
+			return nil, 0, fmt.Errorf("wiki: scan revision: %w", err)
+		}
+
+		out = append(out, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("wiki: iterate revisions by target: %w", err)
+	}
+
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx, `
+SELECT COUNT(*) FROM wiki_revisions
+WHERE target_entity_type = $1 AND target_entity_id = $2
+`, entityType, entityID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("wiki: count revisions by target: %w", err)
+	}
+
+	return out, total, nil
+}
+
+// AdminListRevisions returns revisions for the admin review queue (newest
+// first). kind and status are optional filters — an empty string means no
+// filter (§80 community field ops review).
+func (s *Store) AdminListRevisions(ctx context.Context, kind, status string, limit, offset int32) ([]WikiRevision, int64, error) {
+	var (
+		conditions []string
+		args       []any
+		argIdx     = 1
+	)
+
+	if kind != "" {
+		conditions = append(conditions, fmt.Sprintf("wr.kind = $%d", argIdx))
+		args = append(args, kind)
+		argIdx++
+	}
+
+	if status != "" {
+		conditions = append(conditions, fmt.Sprintf("wr.status = $%d", argIdx))
+		args = append(args, status)
+		argIdx++
+	}
+
+	if limit <= 0 {
+		limit = 20
+	}
+
+	if limit > 200 {
+		limit = 200
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	whereClause := "true"
+	if len(conditions) > 0 {
+		whereClause = strings.Join(conditions, " AND ")
+	}
+
+	countArgs := make([]any, len(args))
+	copy(countArgs, args)
+
+	listQ := fmt.Sprintf(`
+SELECT %s,
+       u.username AS submitted_by_name, ru.username AS reviewed_by_name
+FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN users ru ON ru.id = wr.reviewed_by
+WHERE %s
+ORDER BY wr.created_at DESC
+LIMIT $%d OFFSET $%d
+`, revisionColumns, whereClause, argIdx, argIdx+1)
+
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("wiki: admin list revisions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WikiRevision
+
+	for rows.Next() {
+		var r WikiRevision
+		if err := scanRevision(&r, rows, &r.SubmittedByName, &r.ReviewedByName); err != nil {
+			return nil, 0, fmt.Errorf("wiki: admin scan revision: %w", err)
+		}
+
+		out = append(out, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("wiki: admin iterate revisions: %w", err)
+	}
+
+	var total int64
+
+	countQ := "SELECT COUNT(*) FROM wiki_revisions wr WHERE " + whereClause
+	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("wiki: admin count revisions: %w", err)
+	}
+
+	return out, total, nil
+}
+
+// CountPendingByTarget returns the number of pending revisions targeting an
+// entity — used to surface "N pending" badges on the entity fields panel.
+func (s *Store) CountPendingByTarget(ctx context.Context, entityType string, entityID pgtype.UUID) (int64, error) {
+	var n int64
+
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT COUNT(*) FROM wiki_revisions
+WHERE target_entity_type = $1 AND target_entity_id = $2 AND status = 'pending'
+`, entityType, entityID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("wiki: count pending by target: %w", err)
+	}
+
+	return n, nil
+}
+
+// FindHostPageID returns the first active wiki page for a space+category —
+// the "host page" an entity-bound ops revision attaches to when the entity
+// is space-backed (§80). Returns pgx.ErrNoRows when no page matches.
+func (s *Store) FindHostPageID(ctx context.Context, spaceID pgtype.UUID, category string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT id FROM wiki_pages
+WHERE space_id = $1 AND category = $2 AND is_active = true
+ORDER BY created_at ASC
+LIMIT 1
+`, spaceID, category).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, pgx.ErrNoRows
+		}
+
+		return pgtype.UUID{}, fmt.Errorf("wiki: find host page: %w", err)
+	}
+
+	return id, nil
+}
+
+// GetSpaceTypeID returns the space_type_id for a space — needed to resolve
+// entity_class for space-backed field group assignments (§06/§80).
+func (s *Store) GetSpaceTypeID(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error) {
+	var id pgtype.UUID
+
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT space_type_id FROM spaces WHERE id = $1
+`, spaceID).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, pgx.ErrNoRows
+		}
+
+		return pgtype.UUID{}, fmt.Errorf("wiki: get space type id: %w", err)
+	}
+
+	return id, nil
+}
+
 // UpdatePage updates wiki page admin-managed fields (lock, feature, active).
 func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, isFeatured, isActive *bool) error {
 	var (
@@ -582,18 +985,22 @@ UPDATE wiki_pages SET %s WHERE id = $%d
 	return nil
 }
 
-// GetSpaceBySlug resolves a destination (country/state/city) space slug to its
-// ID and level within a platform. Returns pgx.ErrNoRows if the space does not
-// exist or is not a destination space.
+// GetSpaceBySlug resolves a destination (country/state/city/university) space
+// slug to its ID and level within a platform. Returns pgx.ErrNoRows if the
+// space does not exist or is not a destination space.
 func (s *Store) GetSpaceBySlug(ctx context.Context, spaceSlug string) (pgtype.UUID, string, error) {
 	var id pgtype.UUID
 
 	var level string
 
+	// University spaces are typed via space_types.slug = 'university' — most
+	// carry level = 'custom', so matching on level alone would miss them.
 	err := s.pool.Reader.QueryRow(ctx, `
-SELECT id, level
-FROM spaces
-WHERE slug = $1 AND level IN ('country', 'state', 'city') AND status = 'active'
+SELECT sp.id, sp.level
+FROM spaces sp
+LEFT JOIN space_types st ON st.id = sp.space_type_id
+WHERE sp.slug = $1 AND sp.status = 'active'
+  AND (sp.level IN ('country', 'state', 'city', 'university') OR st.slug = 'university')
 LIMIT 1`, spaceSlug).Scan(&id, &level)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -606,14 +1013,38 @@ LIMIT 1`, spaceSlug).Scan(&id, &level)
 	return id, level, nil
 }
 
-// GetSpaceByID resolves a destination (country/state/city) space ID to its
-// slug and level within a platform. Returns pgx.ErrNoRows if the space does not
-// exist or is not a destination space.
+// IsUniversitySpaceBySlug reports whether the slug resolves to an active
+// university space — typed via space_types.slug = 'university' or, for the
+// seeded university spaces, level = 'university'. Unknown slugs return false.
+func (s *Store) IsUniversitySpaceBySlug(ctx context.Context, spaceSlug string) (bool, error) {
+	var isUni bool
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT (sp.level = 'university' OR st.slug = 'university')
+FROM spaces sp
+LEFT JOIN space_types st ON st.id = sp.space_type_id
+WHERE sp.slug = $1 AND sp.status = 'active'
+LIMIT 1`, spaceSlug).Scan(&isUni)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("wiki: is university space: %w", err)
+	}
+
+	return isUni, nil
+}
+
+// GetSpaceByID resolves a destination (country/state/city/university) space ID
+// to its slug and level within a platform. Returns pgx.ErrNoRows if the space
+// does not exist or is not a destination space.
 func (s *Store) GetSpaceByID(ctx context.Context, spaceID pgtype.UUID) (slug, level string, err error) {
 	err = s.pool.Reader.QueryRow(ctx, `
-SELECT slug, level
-FROM spaces
-WHERE id = $1 AND level IN ('country', 'state', 'city') AND status = 'active'
+SELECT sp.slug, sp.level
+FROM spaces sp
+LEFT JOIN space_types st ON st.id = sp.space_type_id
+WHERE sp.id = $1 AND sp.status = 'active'
+  AND (sp.level IN ('country', 'state', 'city', 'university') OR st.slug = 'university')
 LIMIT 1`, spaceID).Scan(&slug, &level)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -670,9 +1101,10 @@ RETURNING id
 		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page: %w", err)
 	}
 
-	// Compute content_hash per Rule 12.
-	plainText := rag.ExtractPlainText(string(content))
-	contentHash := contentpkg.ComputeContentHash(plainText)
+	// Compute content_hash per Rule 12 — same pipeline as insertRevision
+	// (plain text + NUL + ops) so a later identical SubmitRevision still
+	// dedupes against this initial revision.
+	contentHash := revisionContentHash(content, nil)
 
 	var summaryPtr *string
 	if summary != "" {
@@ -681,7 +1113,13 @@ RETURNING id
 
 	// Insert the initial pending revision.
 	var revIDResult pgtype.UUID
-	if err := tx.QueryRow(ctx, "\nINSERT INTO wiki_revisions (wiki_page_id, content, summary, status,\n    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)\nVALUES ($1, $2, $3, $4, 'pending', $5, false, NULL, $6)\nRETURNING", pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
+	if err := tx.QueryRow(ctx, `
+INSERT INTO wiki_revisions (wiki_page_id, kind, content, ops, summary,
+    target_entity_type, target_entity_id, status,
+    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)
+VALUES ($1, 'content', $2, '[]'::jsonb, $3, NULL, NULL, 'pending', $4, false, NULL, NULL, $5)
+RETURNING id
+`, pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "wiki_revisions_page_hash") {
 			return pgtype.UUID{}, pgtype.UUID{}, ErrDuplicateContent

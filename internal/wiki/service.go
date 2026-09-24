@@ -217,8 +217,8 @@ func (s *Service) MinReputationToEdit(ctx context.Context) int {
 // non-empty parentSlug filters to direct children of that space; a non-empty
 // region filters country-level spaces by spaces.region; hasWiki, when true,
 // only returns spaces with at least one active wiki page.
-func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, region string, hasWiki bool) ([]WikiDestinationDTO, error) {
-	dests, err := s.store.ListWikiDestinations(ctx, level, parentSlug, region, hasWiki)
+func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, region, search string, hasWiki bool) ([]WikiDestinationDTO, error) {
+	dests, err := s.store.ListWikiDestinations(ctx, level, parentSlug, region, search, hasWiki)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: get destinations: %w", err)
 	}
@@ -245,6 +245,13 @@ func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, re
 	}
 
 	return dtos, nil
+}
+
+// IsUniversitySpace reports whether the slug resolves to a university space
+// (spaces.level = 'university' or space_types.slug = 'university'). Unknown
+// slugs return false.
+func (s *Service) IsUniversitySpace(ctx context.Context, spaceSlug string) (bool, error) {
+	return s.store.IsUniversitySpaceBySlug(ctx, spaceSlug)
 }
 
 // GetWikiIndex returns all active wiki pages for a destination space (by space slug).
@@ -443,7 +450,9 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 		}()
 	}
 
-	revID, err := s.store.SubmitRevision(ctx, page.ID, userID, input.Content, input.Summary, false, "", "")
+	// Content-only submission for now — Task 6 wires real kind/ops/target
+	// values when field ops land in SubmitRevisionInput.
+	revID, err := s.store.SubmitRevision(ctx, page.ID, userID, "content", input.Content, nil, input.Summary, nil, pgtype.UUID{})
 	if err != nil {
 		if errors.Is(err, ErrDuplicateContent) {
 			return "", ErrDuplicateContent
@@ -761,7 +770,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 	aiModel := "content_agent_v1"
 	summary := fmt.Sprintf("AI-generated draft (model: %s)", aiModel)
 
-	if _, err := s.store.SubmitRevision(ctx, pageID, createdBy, tiptapJSON, summary, true, aiModel, promptHash); err != nil {
+	if _, err := s.store.SubmitAIRevision(ctx, pageID, createdBy, tiptapJSON, summary, aiModel, promptHash); err != nil {
 		return GenerateDraftResponse{}, fmt.Errorf("wiki: generate draft: submit revision: %w", err)
 	}
 
