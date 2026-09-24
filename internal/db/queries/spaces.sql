@@ -709,6 +709,22 @@ WHERE slug = @slug
  AND status = 'active'
  AND deleted_at IS NULL;
 
+-- name: GetPublicSpaceByGeoCode :one
+-- Public API (Section 47 extension digest): resolves a country-level space
+-- from an ISO geo_code, guarded identically to GetPublicSpaceBySlug —
+-- non-public or inactive spaces are never exposed to external consumers.
+-- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
+ logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+ follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code
+FROM spaces
+WHERE geo_code = @geo_code
+ AND level = 'country'
+ AND visibility = 'public'
+ AND status = 'active'
+ AND deleted_at IS NULL;
+
 -- name: CreateSpace :one
 INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status) VALUES (sqlc.narg(parent_id), @space_type_id, @name, @slug, sqlc.narg(description), sqlc.narg(wiki_content), sqlc.narg(geo_code), @level, @visibility, @posting_perm, @replying_perm, @commenting_perm, @joining_perm, @status)
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,

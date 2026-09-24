@@ -743,6 +743,19 @@ func (s *Service) GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.Ge
 	return space, nil
 }
 
+// GetPublicSpaceByGeoCode returns the country-level space for an ISO
+// geo_code only when it is public, active, and not soft-deleted (Section
+// 47 extension digest — destination resolution). Unlike GetSpaceByGeoCode
+// the visibility/status guard lives in the query.
+func (s *Service) GetPublicSpaceByGeoCode(ctx context.Context, geoCode string) (gen.GetPublicSpaceByGeoCodeRow, error) {
+	space, err := s.read.GetPublicSpaceByGeoCode(ctx, &geoCode)
+	if err != nil {
+		return gen.GetPublicSpaceByGeoCodeRow{}, fmt.Errorf("getting public space by geo code: %w", err)
+	}
+
+	return space, nil
+}
+
 // CreateSpace creates a new space. The caller is responsible for validating
 // the level and permission axes before calling this method.
 func (s *Service) CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error) {

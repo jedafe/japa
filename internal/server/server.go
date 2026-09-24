@@ -2407,6 +2407,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIService.SetFeedReader(feedService)
 	publicAPIService.SetSafetyReader(scamAlertService)
 	publicAPIService.SetSemanticSearcher(ragService)
+	// Extension digest (Section 47 v1.3): destination intel via the radar's
+	// promoted-domain queries with null keyset cursors (latest-N merge).
+	publicAPIService.SetIntelReader(&intelDigestReader{q: gen.New(database.Reader)})
 	publicAPIService.SetQueries(gen.New(database.Reader))
 	mcpServer.SetTierResolver(publicAPIService) // premium MCP tool gates mirror RequireTier
 	// Agent data tools: the moat facade reaches the ai executor's
@@ -4671,6 +4674,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/public/feeds/{name}", publicAPIHandlers.GetExploreFeed)
 				r.With(publicapi.RequireScope("api.read.me")).
 					Get("/public/me/feed", publicAPIHandlers.GetMyFeed)
+				r.With(publicapi.RequireScope("api.read.digest")).
+					Get("/public/me/digest", publicAPIHandlers.GetDigest)
 				r.With(publicapi.RequireScope("api.read.content")).
 					Get("/public/content/{id}/markdown", publicAPIHandlers.GetContentMarkdown)
 				r.With(features.Gate(featureChecker, "scam_alert.enabled"), publicapi.RequireScope("api.read.safety")).

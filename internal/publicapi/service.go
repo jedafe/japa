@@ -329,6 +329,7 @@ type Service struct {
 	feedReader       FeedReader
 	safetyReader     SafetyReader
 	semanticSearcher SemanticSearcher
+	intelReader      IntelReader
 	queries          *gen.Queries
 }
 

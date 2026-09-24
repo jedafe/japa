@@ -70,9 +70,10 @@ type stubSafetyReader struct {
 	listFn   func(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) ([]scamalert.ScamReportDTO, int64, error)
 	getFn    func(ctx context.Context, id pgtype.UUID) (scamalert.ScamReportDTO, error)
 	schemaFn func() scamalert.SchemaOptions
+	disabled bool // when true, Enabled reports false (scam_alert.enabled off)
 }
 
-func (s stubSafetyReader) Enabled(_ context.Context) bool { return true }
+func (s stubSafetyReader) Enabled(_ context.Context) bool { return !s.disabled }
 
 func (s stubSafetyReader) Schema() scamalert.SchemaOptions {
 	if s.schemaFn == nil {

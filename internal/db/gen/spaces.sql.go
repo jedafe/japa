@@ -1276,6 +1276,82 @@ func (q *Queries) GetPermissionPresetByName(ctx context.Context, name string) (S
 	return i, err
 }
 
+const getPublicSpaceByGeoCode = `-- name: GetPublicSpaceByGeoCode :one
+SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
+ logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+ follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code
+FROM spaces
+WHERE geo_code = $1
+ AND level = 'country'
+ AND visibility = 'public'
+ AND status = 'active'
+ AND deleted_at IS NULL
+`
+
+type GetPublicSpaceByGeoCodeRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+// Public API (Section 47 extension digest): resolves a country-level space
+// from an ISO geo_code, guarded identically to GetPublicSpaceBySlug —
+// non-public or inactive spaces are never exposed to external consumers.
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+func (q *Queries) GetPublicSpaceByGeoCode(ctx context.Context, geoCode *string) (GetPublicSpaceByGeoCodeRow, error) {
+	row := q.db.QueryRow(ctx, getPublicSpaceByGeoCode, geoCode)
+	var i GetPublicSpaceByGeoCodeRow
+	err := row.Scan(
+		&i.ID,
+		&i.ParentID,
+		&i.SpaceTypeID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.WikiContent,
+		&i.LogoMediaID,
+		&i.HeaderImageID,
+		&i.GeoCode,
+		&i.Level,
+		&i.MemberCount,
+		&i.PostCount,
+		&i.FollowerCount,
+		&i.Visibility,
+		&i.PostingPerm,
+		&i.ReplyingPerm,
+		&i.CommentingPerm,
+		&i.JoiningPerm,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.CurrencyCode,
+	)
+	return i, err
+}
+
 const getPublicSpaceBySlug = `-- name: GetPublicSpaceBySlug :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
