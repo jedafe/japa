@@ -3,11 +3,13 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { wikiAdminApi, apiRaw } from '$lib/api';
+	import { Tabs } from '$lib/components/ui/tabs';
+	import RevisionDiff from '$lib/components/wiki/RevisionDiff.svelte';
+	import { wikiAdminApi, apiRaw, type WikiRevisionItem } from '$lib/api';
 	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, XCircle, Sparkles, Lock, Unlock, Star } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Sparkles, Lock, Unlock, Star, FileDiff } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type WikiItem = {
@@ -37,28 +39,75 @@
 		countryUtils.load();
 	});
 
+	// ── View switcher: Pages (existing page-scoped queue) vs Revisions (§80
+	// flat revision queue with kind/status filters + field-ops diff) ────────
+	let view = $state<'pages' | 'revisions'>('pages');
+
 	// ── State-action confirmation modal (reject with optional reason) ────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
+	let revisionsController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
 	let actionTarget = $state<WikiItem | null>(null);
+	let revisionActionTarget = $state<WikiRevisionItem | null>(null);
 	let showRejectModal = $state(false);
 	let rejectReason = $state('');
 
+	const rejectTargetLabel = $derived(
+		actionTarget?.title ?? revisionActionTarget?.summary ?? revisionActionTarget?.id ?? ''
+	);
+
 	function openReject(item: WikiItem) {
 		actionTarget = item;
+		revisionActionTarget = null;
+		rejectReason = '';
+		showRejectModal = true;
+	}
+
+	function openRevisionReject(rev: WikiRevisionItem) {
+		revisionActionTarget = rev;
+		actionTarget = null;
 		rejectReason = '';
 		showRejectModal = true;
 	}
 
 	async function confirmReject() {
-		if (!actionTarget || !actionTarget.latest_revision_id) return;
+		if (acting) return;
 		acting = true;
 		pageError = '';
 		try {
-			const result = await wikiAdminApi.rejectRevision(actionTarget.id, actionTarget.latest_revision_id, { reason: rejectReason });
+			if (revisionActionTarget) {
+				// Revision-keyed route (§80): works for page-less ops revisions too.
+				const result = await wikiAdminApi.rejectWikiRevision(revisionActionTarget.id, { reason: rejectReason });
+				if (result.ok) {
+					showRejectModal = false;
+					revisionsController?.reload();
+				} else {
+					pageError = result.error ?? t('common.error', 'An error occurred');
+				}
+			} else if (actionTarget?.latest_revision_id) {
+				const result = await wikiAdminApi.rejectRevision(actionTarget.id, actionTarget.latest_revision_id, { reason: rejectReason });
+				if (result.ok) {
+					showRejectModal = false;
+					entityController?.reload();
+				} else {
+					pageError = result.error ?? t('common.error', 'An error occurred');
+				}
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function approveRevision(item: WikiItem) {
+		if (!item.latest_revision_id || acting) return;
+		acting = true;
+		pageError = '';
+		try {
+			const result = await wikiAdminApi.approveRevision(item.id, item.latest_revision_id);
 			if (result.ok) {
-				showRejectModal = false;
 				entityController?.reload();
 			} else {
 				pageError = result.error ?? t('common.error', 'An error occurred');
@@ -70,14 +119,16 @@
 		}
 	}
 
-	async function approveRevision(item: WikiItem) {
-		if (!item.latest_revision_id) return;
+	// Revision-keyed approve (§80): required for fields/mixed revisions, which
+	// may target an entity without a host wiki page.
+	async function approveRevisionById(rev: WikiRevisionItem) {
+		if (acting) return;
 		acting = true;
 		pageError = '';
 		try {
-			const result = await wikiAdminApi.approveRevision(item.id, item.latest_revision_id);
+			const result = await wikiAdminApi.approveWikiRevision(rev.id);
 			if (result.ok) {
-				entityController?.reload();
+				revisionsController?.reload();
 			} else {
 				pageError = result.error ?? t('common.error', 'An error occurred');
 			}
@@ -253,7 +304,8 @@
 		fields,
 		load: async (params) => {
 			const qs = new URLSearchParams();
-			if (params.page) qs.set('page', String(params.page));
+			// EntityPage's params.page is 0-based; the backend page param is 1-based.
+			qs.set('page', String(params.page + 1));
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) qs.set('sort', params.sort);
@@ -272,6 +324,149 @@
 		},
 		viewSnippet: WikiView
 	});
+
+	// ── Revisions queue (§80): flat list from GET /admin/wiki/revisions ─────
+	// Content revisions belong to a page; fields/mixed revisions carry an ops
+	// array and may be page-less. Approve/reject use the revision-keyed routes.
+
+	const revisionFilters = $derived.by<FilterDef[]>(() => [
+		{
+			key: 'kind',
+			label: t('app.wiki.filter_kind', 'Kind'),
+			type: 'select',
+			options: [
+				{ value: 'all', label: t('common.all', 'All') },
+				{ value: 'content', label: t('app.wiki.kind_content', 'Content') },
+				{ value: 'fields', label: t('app.wiki.kind_fields', 'Fields') },
+				{ value: 'mixed', label: t('app.wiki.kind_mixed', 'Mixed') }
+			]
+		},
+		{
+			key: 'status',
+			label: t('app.wiki.col_status', 'Status'),
+			type: 'select',
+			options: [
+				{ value: 'all', label: t('common.all', 'All') },
+				{ value: 'pending', label: t('app.wiki.status_pending', 'Pending') },
+				{ value: 'approved', label: t('app.wiki.status_approved', 'Approved') },
+				{ value: 'rejected', label: t('app.wiki.status_rejected', 'Rejected') }
+			]
+		}
+	]);
+
+	const revisionActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{
+				label: t('app.wiki.view_ops', 'View Ops'),
+				icon: FileDiff,
+				onclick: (row: WikiRevisionItem, ctx) => ctx?.openView(row),
+				show: (row: WikiRevisionItem) => row.kind !== 'content'
+			},
+			{
+				label: t('common.view', 'View'),
+				icon: Eye,
+				onclick: (row: WikiRevisionItem, ctx) => ctx?.openView(row),
+				show: (row: WikiRevisionItem) => row.kind === 'content'
+			}
+		];
+		if (canReview) {
+			acts.push({
+				label: t('app.wiki.approve_revision', 'Approve Revision'),
+				icon: CheckCircle,
+				onclick: approveRevisionById,
+				show: (row: WikiRevisionItem) => row.status === 'pending'
+			});
+			acts.push({
+				label: t('app.wiki.reject_revision', 'Reject Revision'),
+				icon: XCircle,
+				variant: 'destructive',
+				onclick: openRevisionReject,
+				show: (row: WikiRevisionItem) => row.status === 'pending'
+			});
+		}
+		return acts;
+	});
+
+	// Minimal FieldDef set — EntityPage requires `fields` even for readonly pages.
+	const revisionFields: FieldDef[] = [
+		{ key: 'summary', label: t('app.wiki.col_summary', 'Summary'), type: 'text' }
+	];
+
+	const revisionConfig = $derived<EntityPageConfig>({
+		title: t('app.wiki.revisions_heading', 'Revision Queue'),
+		description: t('app.wiki.revisions_desc', 'Review pending wiki revisions, including community field ops'),
+		readonly: true,
+		pageSize: 25,
+		filters: revisionFilters,
+		columns: [
+			{ key: 'kind', label: t('app.wiki.col_kind', 'Kind'), sortable: false },
+			{
+				key: 'summary',
+				label: t('app.wiki.col_summary', 'Summary'),
+				sortable: false,
+				render: (value: string) => value || '—'
+			},
+			{
+				key: 'target_entity_type',
+				label: t('app.wiki.col_target', 'Target'),
+				sortable: false,
+				render: (_value: string, row: WikiRevisionItem) =>
+					row.target_entity_type
+						? `${row.target_entity_type} · ${(row.target_entity_id ?? '').slice(0, 8)}`
+						: '—'
+			},
+			{
+				key: 'submitted_by',
+				label: t('app.wiki.col_submitted_by', 'Submitted By'),
+				sortable: false,
+				render: (value: string) => value || '—'
+			},
+			{ key: 'status', label: t('app.wiki.col_status', 'Status'), sortable: false },
+			{
+				key: 'created_at',
+				label: t('app.wiki.col_created', 'Submitted'),
+				sortable: false,
+				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
+			}
+		],
+		actions: revisionActions,
+		fields: revisionFields,
+		load: async (params) => {
+			const qs = new URLSearchParams();
+			// EntityPage's params.page is 0-based; the backend page param is 1-based.
+			qs.set('page', String(params.page + 1));
+			if (params.pageSize) qs.set('limit', String(params.pageSize));
+			const kind = params.filter?.kind;
+			if (kind && kind !== 'all') qs.set('kind', kind);
+			const status = params.filter?.status;
+			if (status && status !== 'all') qs.set('status', status);
+			const result = await wikiAdminApi.listWikiRevisions(qs.toString());
+			if (result.ok) {
+				const data = result.data.data ?? [];
+				const total = result.data.pagination?.total ?? data.length;
+				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				return { data, total, totalPages };
+			}
+			throw new Error(result.error ?? t('common.error', 'An error occurred'));
+		},
+		viewSnippet: RevisionView
+	});
+
+	// Revision content is stored as a TipTap JSON doc (or a plain JSON string);
+	// extract the text nodes for a readable preview in the view slide-over.
+	function extractContentText(content: unknown): string {
+		if (content == null) return '';
+		if (typeof content === 'string') return content;
+		const parts: string[] = [];
+		const walk = (node: unknown) => {
+			if (!node || typeof node !== 'object') return;
+			const n = node as Record<string, unknown>;
+			if (typeof n.text === 'string') parts.push(n.text);
+			if (Array.isArray(n.content)) n.content.forEach(walk);
+		};
+		walk(content);
+		return parts.join(' ');
+	}
 </script>
 
 <svelte:head>
@@ -287,22 +482,35 @@
 	</div>
 {/if}
 
-{#if canManage}
-	<div class="mb-4 flex justify-end">
-		<Button onclick={openGenerate}>
-			<Sparkles size={16} class="mr-1.5" />
-			{t('app.wiki.generate_draft', 'Generate AI Draft')}
-		</Button>
-	</div>
-{/if}
+<Tabs
+	class="mb-4"
+	tabs={[
+		{ value: 'pages', label: t('app.wiki.tab_pages', 'Pages') },
+		{ value: 'revisions', label: t('app.wiki.tab_revisions', 'Revisions') }
+	]}
+	bind:value={view}
+/>
 
-<EntityPage {config} bind:controller={entityController} />
+{#if view === 'pages'}
+	{#if canManage}
+		<div class="mb-4 flex justify-end">
+			<Button onclick={openGenerate}>
+				<Sparkles size={16} class="mr-1.5" />
+				{t('app.wiki.generate_draft', 'Generate AI Draft')}
+			</Button>
+		</div>
+	{/if}
+
+	<EntityPage {config} bind:controller={entityController} />
+{:else}
+	<EntityPage config={revisionConfig} bind:controller={revisionsController} />
+{/if}
 
 <!-- ── Reject revision confirmation modal ─────────────────────────────────── -->
 <Modal bind:open={showRejectModal} title={t('app.wiki.modal_reject_revision', 'Reject Revision')}>
 	<div class="space-y-4">
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{t('app.wiki.reject_confirm', 'Are you sure you want to reject the revision for "{title}"?').replace('{title}', actionTarget?.title ?? '')}
+			{t('app.wiki.reject_confirm', 'Are you sure you want to reject the revision for "{title}"?').replace('{title}', rejectTargetLabel)}
 		</p>
 		<div>
 			<label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.reason_optional', 'Reason (optional)')}</label>
@@ -416,5 +624,54 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_featured', 'Featured')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_featured ? t('app.wiki.featured_yes', 'Yes') : t('app.wiki.featured_no', 'No')}</p>
 		</div>
+	</div>
+{/snippet}
+
+<!-- ── Revision view slide-over body (revisions queue) ───────────────────── -->
+{#snippet RevisionView({ row }: { row: WikiRevisionItem })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_kind', 'Kind')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.kind || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_summary', 'Summary')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.summary || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_submitted_by', 'Submitted By')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.submitted_by || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_created', 'Submitted')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</p>
+		</div>
+		{#if row.reviewed_by || row.reviewed_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_reviewed_by', 'Reviewed By')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.reviewed_by || '—'}{row.reviewed_at ? ` · ${new Date(row.reviewed_at).toLocaleString()}` : ''}
+				</p>
+			</div>
+		{/if}
+		{#if row.kind !== 'fields'}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.detail_content', 'Content')}</p>
+				<pre
+					class="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border p-3 text-xs"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				>{extractContentText(row.content) || '—'}</pre>
+			</div>
+		{/if}
+		{#if row.kind !== 'content'}
+			<div>
+				<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.detail_field_ops', 'Field Ops')}</p>
+				<RevisionDiff revision={row} />
+			</div>
+		{/if}
 	</div>
 {/snippet}

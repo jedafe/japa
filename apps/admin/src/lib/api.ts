@@ -1891,12 +1891,74 @@ export const storyAdminApi = {
 	delete: (id: string) => api<unknown>(`/admin/stories/${id}`, { method: 'DELETE' }),
 };
 
+// WikiFieldOp is one entry in a fields/mixed revision's ops array (§80
+// community field ops). Members are op-dependent: set_value uses
+// entity_type/entity_id/field_key/value, propose_field/upsert_field carry a
+// `field` definition, propose_group carries a `group` definition, and
+// assign_group uses group_slug/entity_class.
+export type WikiFieldOp = {
+	op: string;
+	entity_type?: string;
+	entity_id?: string;
+	field_key?: string;
+	group_slug?: string;
+	entity_class?: string;
+	source_url?: string;
+	value?: unknown;
+	field?: { key?: string; label?: string; field_type?: string };
+	group?: { slug?: string; name?: string; description?: string; fields?: Array<{ key?: string; label?: string; field_type?: string }> };
+};
+
+// WikiRevisionItem is one row of GET /admin/wiki/revisions (WikiRevisionDTO).
+export type WikiRevisionItem = {
+	id: string;
+	status: string;
+	kind: string; // 'content' | 'fields' | 'mixed'
+	ops?: WikiFieldOp[];
+	content?: unknown;
+	summary?: string;
+	ai_generated?: boolean;
+	target_entity_type?: string;
+	target_entity_id?: string;
+	submitted_by?: string;
+	reviewed_by?: string;
+	reviewed_at?: string;
+	created_at?: string;
+};
+
+// WikiEntityFields is the response of GET /wiki/entities/:type/:id/fields —
+// the entity's field groups with current values, plus a pending-revision count.
+export type WikiEntityFields = {
+	groups?: Array<{
+		id: string;
+		slug: string;
+		name: string;
+		fields?: Array<{ id: string; key: string; label: string; field_type: string; value?: unknown; can_edit?: boolean; visible?: boolean }>;
+	}>;
+	pending_count?: number;
+};
+
 export const wikiAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/wiki${params ? `?${params}` : ''}`),
 	approveRevision: (pageId: string, revId: string) =>
 		api<unknown>(`/admin/wiki/${pageId}/revisions/${revId}/approve`, { method: 'POST', body: {} }),
 	rejectRevision: (pageId: string, revId: string, body?: { reason?: string }) =>
 		api<unknown>(`/admin/wiki/${pageId}/revisions/${revId}/reject`, { method: 'POST', body: body ?? {} }),
+	// §80 community field ops: flat revision queue (kind/status filters) plus
+	// revision-keyed approve/reject — canonical for page-less ops revisions
+	// whose wiki_page_id is NULL.
+	listWikiRevisions: (params?: string) =>
+		apiRaw<{ data: WikiRevisionItem[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/wiki/revisions${params ? `?${params}` : ''}`
+		),
+	approveWikiRevision: (revId: string, body?: { notes?: string }) =>
+		api<unknown>(`/admin/wiki/revisions/${revId}/approve`, { method: 'POST', body: body ?? {} }),
+	rejectWikiRevision: (revId: string, body?: { reason?: string }) =>
+		api<unknown>(`/admin/wiki/revisions/${revId}/reject`, { method: 'POST', body: body ?? {} }),
+	// Current field values for an entity — used to render current → proposed
+	// diffs for set_value ops in the review queue.
+	getEntityFields: (entityType: string, entityId: string) =>
+		api<WikiEntityFields>(`/wiki/entities/${entityType}/${entityId}/fields`),
 	update: (pageId: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/wiki/${pageId}`, { method: 'PATCH', body }),
 	generate: (body: Record<string, unknown>) =>
