@@ -5,6 +5,10 @@
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
+	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
+	import SuggestEdit from '$lib/components/wiki/SuggestEdit.svelte';
+	import { searchEntities } from '$lib/api/jce';
+	import type { ResolvedItem } from '$lib/types/jce';
 	import { BookOpen, Lock, Pencil, History, ArrowLeft, Send } from 'lucide-svelte';
 	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
@@ -114,6 +118,36 @@
 	);
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	const minReputation = $derived(Number(data.siteSettings?.['wiki.min_reputation_to_edit'] ?? 100));
+
+	// §80 community field ops — the data panel + per-entity "suggest an edit"
+	// affordances only render when the structured_edits flag is on.
+	const structuredEditsOn = $derived(
+		wikiEnabled && data.features?.['wiki.structured_edits'] === true
+	);
+	// The page's structured-data target is its host space (entity_type 'space').
+	const panelSpaceId = $derived(data.page?.space_id ?? data.spaceDetail?.space?.id ?? '');
+	// When the page is bound to a child entity class (data_entity_type, e.g.
+	// 'visa_route'), list that space's entities with per-row suggest buttons.
+	// The page DTO does not yet expose the column — the block stays dormant
+	// until the backend emits it.
+	const dataEntityType = $derived(data.page?.data_entity_type ?? '');
+
+	let childEntities = $state<ResolvedItem[]>([]);
+	let childEntitiesLoading = $state(false);
+
+	$effect(() => {
+		const type = dataEntityType;
+		const spaceId = panelSpaceId;
+		if (!structuredEditsOn || !type || !spaceId) {
+			childEntities = [];
+			return;
+		}
+		childEntitiesLoading = true;
+		searchEntities(type, '', { geo_space_id: spaceId }, { pageSize: 50 })
+			.then((items) => (childEntities = items))
+			.catch(() => (childEntities = []))
+			.finally(() => (childEntitiesLoading = false));
+	});
 </script>
 
 <svelte:head>
@@ -273,6 +307,40 @@
 					<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]">
 						{@html htmlContent}
 					</div>
+
+					{#if structuredEditsOn && panelSpaceId}
+						<EntityFieldsPanel entityType="space" entityId={panelSpaceId} />
+					{/if}
+
+					{#if structuredEditsOn && dataEntityType}
+						<section
+							class="mt-6 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+						>
+							<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">
+								{t('wiki.data_entities_title', 'Listed entries')}
+							</h2>
+							{#if childEntitiesLoading}
+								<p class="text-sm text-[var(--color-muted)]">
+									{t('common.loading', 'Loading')}…
+								</p>
+							{:else if childEntities.length === 0}
+								<p class="text-sm text-[var(--color-muted)]">
+									{t('wiki.data_entities_empty', 'No entries yet.')}
+								</p>
+							{:else}
+								<ul class="divide-y divide-[var(--color-border)]">
+									{#each childEntities as item (item.id)}
+										<li class="flex items-center justify-between gap-3 py-2">
+											<span class="min-w-0 truncate text-sm text-[var(--color-text)]">
+												{item.title}
+											</span>
+											<SuggestEdit entityType={dataEntityType} entityId={item.id} />
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</section>
+					{/if}
 				{/if}
 			</article>
 		{/if}
