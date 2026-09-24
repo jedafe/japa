@@ -687,23 +687,17 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// §80 community field ops: when the submission carries structured ops,
-	// record them as a separate fields revision targeting the page's host
-	// space. V1 split — SubmitFieldOps stores ops-only revisions
-	// (DeriveKind(false, ops)), so content+ops submissions become two
-	// revisions rather than one 'mixed' row. Ops go first so RBAC and
-	// op-validation failures return before a prose revision is created.
-	var opsRevID string
-
-	var opsAutoApproved bool
-
+	// §80 community field ops: a submission carrying ops is stored as ONE
+	// revision — kind='fields' for ops-only, kind='mixed' when prose rides
+	// along — so one user action produces one queue entry and approval
+	// applies prose + ops atomically in a single transaction.
 	if len(input.Ops) > 0 {
 		if !h.service.StructuredEditsEnabled(r.Context()) {
 			errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
 			return
 		}
 
-		pageID, _, err := h.service.GetPageEntityTarget(r.Context(), spaceSlug, pageSlug)
+		pageID, _, locked, err := h.service.GetPageEntityTarget(r.Context(), spaceSlug, pageSlug)
 		if err != nil {
 			if errors.Is(err, ErrSpaceNotFound) {
 				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -721,75 +715,74 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		if locked {
+			errpkg.WriteError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
+			return
+		}
+
 		canManage := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, PermFieldsManage)
 
 		// Pass an empty entity target — resolveOpsTarget derives it from the
 		// ops themselves, so pages bound to a child entity class
 		// (data_entity_type) can submit ops against those entities and the
 		// common space-targeted case still resolves (ops carry entity fields).
-		revID, autoApproved, err := h.service.SubmitFieldOps(r.Context(), user.UserID, pageID, "", pgtype.UUID{}, input.Ops, input.Summary, canManage)
+		revID, autoApproved, err := h.service.SubmitFieldOps(r.Context(), user.UserID, pageID, "", pgtype.UUID{}, input.Content, input.Ops, input.Summary, canManage)
 		if err != nil {
 			writeFieldOpsError(w, err)
 			return
 		}
 
-		opsRevID, opsAutoApproved = revID, autoApproved
+		status := "pending"
+		if autoApproved {
+			status = "approved"
+		}
+
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+			"revision_id":   revID,
+			"status":        status,
+			"auto_approved": autoApproved,
+		}})
+
+		return
 	}
 
-	var revID string
-
-	if len(input.Content) > 0 {
-		var err error
-
-		revID, err = h.service.SubmitRevision(r.Context(), user.UserID, spaceSlug, pageSlug, input)
-		if err != nil {
-			if errors.Is(err, ErrSpaceNotFound) {
-				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
-				return
-			}
-
-			if errors.Is(err, pgx.ErrNoRows) {
-				errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
-				return
-			}
-
-			if errors.Is(err, ErrPageLocked) {
-				errpkg.WriteError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
-				return
-			}
-
-			if errors.Is(err, ErrEditInProgress) {
-				errpkg.WriteError(w, http.StatusConflict, "edit_in_progress", "A wiki edit is already in progress for this page")
-				return
-			}
-
-			if errors.Is(err, ErrDuplicateContent) {
-				errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "This content is identical to an existing revision")
-				return
-			}
-
-			slog.Error("wiki: submit revision failed", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
-
+	revID, err := h.service.SubmitRevision(r.Context(), user.UserID, spaceSlug, pageSlug, input)
+	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
 			return
 		}
-	}
 
-	data := map[string]any{"status": "pending"}
-	if revID != "" {
-		data["revision_id"] = revID
-	}
-
-	if opsRevID != "" {
-		data["ops_revision_id"] = opsRevID
-		data["ops_auto_approved"] = opsAutoApproved
-
-		if opsAutoApproved && revID == "" {
-			data["status"] = "approved"
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+			return
 		}
+
+		if errors.Is(err, ErrPageLocked) {
+			errpkg.WriteError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
+			return
+		}
+
+		if errors.Is(err, ErrEditInProgress) {
+			errpkg.WriteError(w, http.StatusConflict, "edit_in_progress", "A wiki edit is already in progress for this page")
+			return
+		}
+
+		if errors.Is(err, ErrDuplicateContent) {
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "This content is identical to an existing revision")
+			return
+		}
+
+		slog.Error("wiki: submit revision failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
+
+		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+		"revision_id": revID,
+		"status":      "pending",
+	}})
 }
 
 // SuggestFieldsInput is the request body for POST /wiki/suggest — an

@@ -87,6 +87,7 @@ ALTER TABLE wiki_revisions
   ADD COLUMN ops                 jsonb NOT NULL DEFAULT '[]',
   ADD COLUMN target_entity_type  text,
   ADD COLUMN target_entity_id    uuid,
+  ADD COLUMN apply_error         text,  -- last ops-apply failure on a pending revision
   ALTER COLUMN wiki_page_id DROP NOT NULL;
 CREATE INDEX idx_wiki_revisions_target
   ON wiki_revisions (target_entity_type, target_entity_id);
@@ -148,8 +149,10 @@ page-attached rows; page-less rows are unaffected.
    Otherwise `status='pending'`.
 3. **Review.** Revision-keyed approve/reject routes (page-scoped routes remain
    as aliases). Approve runs the ops transaction;
-   per-op failures reject the whole revision with an annotated error (no partial
-   application — reviewers see an all-or-nothing diff).
+   per-op failures roll back with an annotated error (no partial
+   application — reviewers see an all-or-nothing diff), and the failure reason
+   is persisted on the revision's `apply_error` column so the queue shows why a
+   pending revision cannot be approved; a later successful approve clears it.
 4. **Propagate.** Approved `set_value`/`upsert_field` ops enqueue
    `wiki:fields_propagate` (Asynq, default tier, idempotent on
    `{entity_type}:{entity_id}`).
@@ -193,6 +196,17 @@ entity via `custom_field_group_assignments`:
 
 Entities with no assigned group return an empty schema; the UI then offers
 "Propose a field group" — the community bootstrap path.
+
+### 8.1a Field-permission bootstrap
+
+`custom_field_permissions` starts effectively empty and the field-level check
+is fail-closed, so without a seed the community surface would be inert.
+Migration `000733` seeds: fields whose group is assigned to an entity class get
+`can_view+can_edit` for every non-guest user group (assignment is the opt-in to
+community editing); all other non-system fields get `can_view` only. Existing
+rows are never overwritten — explicit admin denials survive — and admins narrow
+grants per field/group in the admin UI. Field-level grants never bypass the
+`wiki.fields.*` RBAC nodes or the reputation gate checked at submit.
 
 ### 8.2 Child entities on a space wiki page
 

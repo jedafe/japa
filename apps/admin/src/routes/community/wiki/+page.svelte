@@ -658,6 +658,15 @@
 				</p>
 			</div>
 		{/if}
+		{#if row.apply_error}
+			<div
+				class="rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-danger, #dc2626); background: var(--color-danger-bg, rgba(220,38,38,0.08)); color: var(--color-foreground)"
+			>
+				<p class="font-medium">{t('app.wiki.apply_error', 'Last apply attempt failed')}</p>
+				<p class="mt-1" style="color: var(--color-muted)">{row.apply_error}</p>
+			</div>
+		{/if}
 		{#if row.kind !== 'fields'}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.detail_content', 'Content')}</p>

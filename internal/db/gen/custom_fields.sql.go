@@ -965,6 +965,38 @@ func (q *Queries) ListCustomFieldsByGroup(ctx context.Context, groupID pgtype.UU
 	return items, nil
 }
 
+const listEditableFieldIDsForUser = `-- name: ListEditableFieldIDsForUser :many
+SELECT DISTINCT cfp.field_id
+FROM custom_field_permissions cfp
+JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
+WHERE ugm.user_id = $1
+ AND cfp.can_edit = true
+`
+
+// Returns the field_ids the given user is allowed to edit — the batched
+// counterpart of CheckFieldPermissionForUser's can_edit arm, used by the
+// §80 wiki entity-fields schema and set_value validation to avoid one
+// query per field (Section 06 field-level RBAC).
+func (q *Queries) ListEditableFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listEditableFieldIDsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var field_id pgtype.UUID
+		if err := rows.Scan(&field_id); err != nil {
+			return nil, err
+		}
+		items = append(items, field_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPermissionsByField = `-- name: ListPermissionsByField :many
 
 SELECT field_id, user_group_id, can_view, can_edit

@@ -104,6 +104,10 @@ type WikiRevision struct {
 	SubmittedBy     pgtype.UUID
 	ReviewedBy      pgtype.UUID
 	ReviewedAt      pgtype.Timestamptz
+	// ApplyError records the last ops-application failure on a pending
+	// fields/mixed revision (§80) — set when approve+applyOps rolls back so
+	// reviewers can see why; cleared on successful approval.
+	ApplyError      *string
 	AiGenerated     bool
 	AiModel         *string
 	AiPromptHash    *string
@@ -364,6 +368,7 @@ func (s *Store) GetApprovedRevision(ctx context.Context, pageID pgtype.UUID) (Wi
 SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.apply_error,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at, u.username AS submitted_by_name
@@ -381,6 +386,7 @@ LIMIT 1
 		&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
 		&r.Kind, &r.Ops, &r.TargetEntityType, &r.TargetEntityID,
 		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
+		&r.ApplyError,
 		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
 		&r.CreatedAt, &r.SubmittedByName,
@@ -410,6 +416,7 @@ func (s *Store) ListRevisions(ctx context.Context, pageID pgtype.UUID, limit, of
 SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.apply_error,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at, u.username AS submitted_by_name,
@@ -437,6 +444,7 @@ LIMIT $2 OFFSET $3
 			&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
 			&r.Kind, &r.Ops, &r.TargetEntityType, &r.TargetEntityID,
 			&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
+			&r.ApplyError,
 			&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 			&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
 			&r.CreatedAt, &r.SubmittedByName, &r.ReviewedByName,
@@ -636,6 +644,7 @@ WHERE id = $1 AND status = 'pending'
 const revisionColumns = `wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.apply_error,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at`
@@ -647,6 +656,7 @@ func scanRevision(r *WikiRevision, row interface{ Scan(...any) error }, extra ..
 		&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
 		&r.Kind, &r.Ops, &r.TargetEntityType, &r.TargetEntityID,
 		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
+		&r.ApplyError,
 		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
 		&r.CreatedAt,
@@ -730,11 +740,13 @@ func (s *Store) ApproveRevisionTx(ctx context.Context, tx pgx.Tx, revID, reviewe
 	err := tx.QueryRow(ctx, `
 UPDATE wiki_revisions
 SET status = 'approved', reviewed_by = $2, reviewed_at = now(),
+    apply_error = NULL,
     hitl_reviewed_by = $2, hitl_reviewed_at = now(), hitl_review_notes = $3
 WHERE id = $1 AND status = 'pending'
 RETURNING id, wiki_page_id, content, summary,
     kind, ops, target_entity_type, target_entity_id,
     status, submitted_by, reviewed_by, reviewed_at,
+    apply_error,
     ai_generated, ai_model, ai_prompt_hash,
     hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
     created_at
@@ -742,6 +754,7 @@ RETURNING id, wiki_page_id, content, summary,
 		&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
 		&r.Kind, &r.Ops, &r.TargetEntityType, &r.TargetEntityID,
 		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
+		&r.ApplyError,
 		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
 		&r.CreatedAt,
@@ -770,6 +783,22 @@ UPDATE wiki_pages SET updated_at = now() WHERE id = $1
 // RejectRevision already keys on revision ID, so this delegates to it.
 func (s *Store) RejectRevisionByID(ctx context.Context, revID, reviewerID pgtype.UUID, reviewNotes string) error {
 	return s.RejectRevision(ctx, revID, reviewerID, reviewNotes)
+}
+
+// SetApplyError records an ops-application failure on a revision (§80). It
+// runs outside the failed approve transaction — the status flip and ops
+// mutations roll back, but the failure reason persists so the admin queue
+// can show why the revision cannot be approved. Errors are swallowed by
+// callers (best-effort observability, never blocks the real error return).
+func (s *Store) SetApplyError(ctx context.Context, revID pgtype.UUID, applyErr string) error {
+	_, err := s.pool.Writer.Exec(ctx, `
+UPDATE wiki_revisions SET apply_error = $2 WHERE id = $1
+`, revID, applyErr)
+	if err != nil {
+		return fmt.Errorf("wiki: set apply error: %w", err)
+	}
+
+	return nil
 }
 
 // ListRevisionsByTarget returns revisions (all statuses, newest first)

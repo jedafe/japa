@@ -96,12 +96,17 @@ type WikiRevisionDTO struct {
 	SubmittedBy string `json:"submitted_by,omitempty"`
 	ReviewedBy  string `json:"reviewed_by,omitempty"`
 	ReviewedAt  string `json:"reviewed_at,omitempty"`
-	CreatedAt   string `json:"created_at"`
+	// ApplyError is the last ops-application failure recorded on a pending
+	// fields/mixed revision (§80) — surfaced in the admin queue so reviewers
+	// can see why an approve attempt rolled back.
+	ApplyError string `json:"apply_error,omitempty"`
+	CreatedAt  string `json:"created_at"`
 }
 
 // SubmitRevisionInput is the request body for POST /wiki/:space_slug/:page_slug/revisions.
 // Ops carries §80 community field ops (structured edits); when present the
-// handler records them as a separate fields revision via SubmitFieldOps.
+// handler stores a single fields/mixed revision via SubmitFieldOps — prose
+// and ops approve atomically rather than splitting into two queue entries.
 type SubmitRevisionInput struct {
 	Content json.RawMessage `json:"content"`
 	Summary string          `json:"summary"`
@@ -759,6 +764,10 @@ func revisionToDTO(r WikiRevision) WikiRevisionDTO {
 	}
 
 	dto.ReviewedAt = formatTs(r.ReviewedAt)
+
+	if r.ApplyError != nil {
+		dto.ApplyError = *r.ApplyError
+	}
 
 	return dto
 }

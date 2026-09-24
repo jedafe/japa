@@ -1923,6 +1923,9 @@ export type WikiRevisionItem = {
 	submitted_by?: string;
 	reviewed_by?: string;
 	reviewed_at?: string;
+	// Last ops-application failure on a pending fields/mixed revision (§80) —
+	// shown in the queue so reviewers see why an approve attempt rolled back.
+	apply_error?: string;
 	created_at?: string;
 };
 
