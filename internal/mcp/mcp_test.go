@@ -515,7 +515,7 @@ func apiKeyCtx(ctx context.Context, scopes ...string) context.Context {
 }
 
 func registerPhase2Tools(deps *testDeps) {
-	for _, name := range []string{"feeds.explore", "feeds.for_you", "scam.list", "scam.get", "search.semantic"} {
+	for _, name := range []string{"feeds.explore", "feeds.for_you", "scam.list", "scam.get", "search.semantic", "rag.search"} {
 		deps.registry.RegisterConfig(name, ai.ToolConfig{FunctionName: name}, "", pgtype.UUID{})
 	}
 }
@@ -628,6 +628,59 @@ func TestPhase2SemanticTierDenialJWT(t *testing.T) {
 	data, _ := errObj["data"].(string)
 	if !strings.Contains(data, "pro") {
 		t.Fatalf("expected tier denial naming pro, got %q", data)
+	}
+}
+
+// rag.search is restored to the API-key allowlist under the same gate as
+// search.semantic (api.read.search + pro) now that retrieval is
+// viewer-scoped to the key owner (§69 scoped-retrieval amendment).
+func TestRAGSearchGateForAPIKeys(t *testing.T) {
+	srv, deps := newTestMCP(t)
+	registerPhase2Tools(deps)
+
+	// Under-scoped key (content only): not visible in the catalog.
+	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "api.read.content")
+	status, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}
+	}`)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %v", status, out)
+	}
+	for _, tool := range out["result"].(map[string]any)["tools"].([]any) {
+		if tool.(map[string]any)["name"] == "rag.search" {
+			t.Fatal("rag.search leaked to api.read.content-scoped key")
+		}
+	}
+
+	// Scoped but regular tier: tools/call denied on minTier.
+	srv.SetTierResolver(stubTierResolver{tier: "regular"})
+	ctx = apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "api.read.search")
+	_, out = postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": {"name": "rag.search", "arguments": {"query": "visa"}}
+	}`)
+	errObj := out["error"].(map[string]any)
+	if int(errObj["code"].(float64)) != -32602 {
+		t.Fatalf("expected -32602, got %v", errObj["code"])
+	}
+	if data, _ := errObj["data"].(string); !strings.Contains(data, "pro") {
+		t.Fatalf("expected tier denial naming pro, got %q", data)
+	}
+
+	// Scoped + pro: the call reaches the handler.
+	srv.SetTierResolver(stubTierResolver{tier: "pro"})
+	deps.registry.RegisterHandler("rag.search", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ai.ToolResult, error) {
+		return &ai.ToolResult{Status: ai.ToolCallStatusSuccess, Content: `{"results":[]}`}, nil
+	})
+	_, out = postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+		"params": {"name": "rag.search", "arguments": {"query": "visa"}}
+	}`)
+	if out["error"] != nil {
+		t.Fatalf("expected rag.search call to pass the gate, got %v", out["error"])
+	}
+	if res := out["result"].(map[string]any); res["isError"] == true {
+		t.Fatalf("expected successful result, got %v", res)
 	}
 }
 
