@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -1417,6 +1419,11 @@ type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name 
 	Value        *string     `json:"value"`
 	ValueRating  *float64    `json:"value_rating"`
 	ValueBoolean *bool       `json:"value_boolean"`
+	// HydratedFrom records how the cell was filled when no persisted
+	// comparison_values row exists. "entity_field" means the value came from
+	// the resolved item's field_values metadata via the dimension's
+	// source_field_key (§30 Sub-spec 5 entity-field hydration).
+	HydratedFrom string `json:"hydrated_from,omitempty"`
 }
 
 // GetComparisonMatrix assembles the full items×dimensions matrix for a comparison.
@@ -1467,6 +1474,44 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 		valueIndex[key] = mergeComparisonValues(valueIndex[key], v)
 	}
 
+	// Lazily-resolved item cache for entity-field hydration: each distinct
+	// item_ref is resolved at most once per matrix call. A nil entry records a
+	// failed/unresolvable ref so it is not retried per dimension.
+	resolvedItems := make(map[string]*resolver.ResolvedItem)
+
+	resolveItem := func(item gen.ListComparisonItemsByContentRow) *resolver.ResolvedItem {
+		if s.resolver == nil {
+			return nil
+		}
+
+		key := itemRefDedupKey(item.ItemRef)
+		if key == "" {
+			return nil
+		}
+
+		if it, ok := resolvedItems[key]; ok {
+			return it
+		}
+
+		resolvedItems[key] = nil
+
+		ref, err := resolver.CoerceMap(item.ItemRef)
+		if err != nil {
+			slog.Warn("comparison: malformed item_ref during matrix hydration", "item_id", item.ID.String(), "error", err)
+			return nil
+		}
+
+		resolved, err := s.resolver.Resolve(ctx, ref)
+		if err != nil {
+			slog.Warn("comparison: item_ref resolution failed during matrix hydration", "item_id", item.ID.String(), "error", err)
+			return nil
+		}
+
+		resolvedItems[key] = &resolved
+
+		return &resolved
+	}
+
 	matrix := make([]ComparisonMatrixItem, 0, len(dedupedItems))
 
 	for _, item := range dedupedItems {
@@ -1489,6 +1534,12 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 				}
 
 				md.ValueBoolean = val.ValueBoolean
+			} else if dim.SourceFieldKey != nil && *dim.SourceFieldKey != "" {
+				// §30 Sub-spec 5: no persisted value — hydrate from the
+				// resolved entity's field_values metadata.
+				if resolved := resolveItem(item); resolved != nil {
+					hydrateMatrixCell(&md, dim.DimensionType, *dim.SourceFieldKey, resolved.Metadata)
+				}
 			}
 
 			mi.Dimensions = append(mi.Dimensions, md)
@@ -1498,6 +1549,178 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 	}
 
 	return matrix, nil
+}
+
+// hydrateMatrixCell fills an empty matrix cell from the resolved item's
+// field_values metadata, coercing the raw value into the dimension's storage
+// slot (rating/number/currency → value_rating, boolean → value_boolean,
+// anything else → value). It sets HydratedFrom="entity_field" only when a
+// value was actually written.
+func hydrateMatrixCell(md *ComparisonMatrixDimension, dimType, fieldKey string, meta map[string]any) {
+	fieldValues, ok := meta["field_values"].(map[string]any)
+	if !ok {
+		return
+	}
+
+	raw, ok := fieldValues[fieldKey]
+	if !ok || raw == nil {
+		return
+	}
+
+	switch dimType {
+	case DimensionTypeRating, DimensionTypeNumber, DimensionTypeCurrency:
+		if n, ok := matrixCellNumber(raw); ok {
+			md.ValueRating = &n
+			md.HydratedFrom = "entity_field"
+		}
+	case DimensionTypeBoolean:
+		if b, ok := matrixCellBool(raw); ok {
+			md.ValueBoolean = &b
+			md.HydratedFrom = "entity_field"
+		}
+	default:
+		if str, ok := matrixCellString(raw); ok {
+			md.Value = &str
+			md.HydratedFrom = "entity_field"
+		}
+	}
+}
+
+// matrixCellNumber coerces a hydrated field value to float64 for rating,
+// number, and currency dimensions. Strings that parse as numbers are
+// accepted; json.Number is handled for JSON-decoded sources.
+func matrixCellNumber(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint, uint8, uint16, uint32:
+		return float64(reflectUint(n)), true
+	case uint64:
+		return 0, false
+	case json.Number:
+		if f, err := n.Float64(); err == nil {
+			return f, true
+		}
+	case string:
+		if f, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
+			return f, true
+		}
+	}
+
+	return 0, false
+}
+
+// reflectUint converts an unsigned integer any to uint64 without reflection
+// tricks — the switch callers guarantee the concrete type.
+func reflectUint(v any) uint64 {
+	switch n := v.(type) {
+	case uint:
+		return uint64(n)
+	case uint8:
+		return uint64(n)
+	case uint16:
+		return uint64(n)
+	case uint32:
+		return uint64(n)
+	}
+
+	return 0
+}
+
+// matrixCellBool coerces a hydrated field value to bool for boolean
+// dimensions. Accepts bools, numbers (non-zero = true), and common string
+// spellings.
+func matrixCellBool(v any) (bool, bool) {
+	switch b := v.(type) {
+	case bool:
+		return b, true
+	case string:
+		s := strings.ToLower(strings.TrimSpace(b))
+		switch s {
+		case "true", "yes", "y", "on", "1":
+			return true, true
+		case "false", "no", "n", "off", "0":
+			return false, true
+		}
+	case json.Number:
+		if f, err := b.Float64(); err == nil {
+			return f != 0, true
+		}
+	}
+
+	if n, ok := matrixCellNumber(v); ok {
+		return n != 0, true
+	}
+
+	return false, false
+}
+
+// matrixCellString renders a hydrated field value as text for text-like
+// dimensions. Strings pass through; slices join with ", " when all elements
+// are strings; other scalars use fmt.Sprint; maps and mixed slices are
+// JSON-encoded.
+func matrixCellString(v any) (string, bool) {
+	switch x := v.(type) {
+	case string:
+		if x == "" {
+			return "", false
+		}
+
+		return x, true
+	case []any:
+		parts := make([]string, 0, len(x))
+		allStrings := true
+
+		for _, item := range x {
+			s, ok := item.(string)
+			if !ok {
+				allStrings = false
+				break
+			}
+
+			parts = append(parts, s)
+		}
+
+		if allStrings {
+			if len(parts) == 0 {
+				return "", false
+			}
+
+			return strings.Join(parts, ", "), true
+		}
+	case []string:
+		if len(x) == 0 {
+			return "", false
+		}
+
+		return strings.Join(x, ", "), true
+	case bool:
+		return strconv.FormatBool(x), true
+	case json.Number:
+		return x.String(), true
+	}
+
+	if n, ok := matrixCellNumber(v); ok {
+		return strconv.FormatFloat(n, 'f', -1, 64), true
+	}
+
+	if b, err := json.Marshal(v); err == nil && len(b) > 0 {
+		return string(b), true
+	}
+
+	return "", false
 }
 
 // ListComparisonsFilter holds optional filters for the comparison list.

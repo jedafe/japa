@@ -205,6 +205,12 @@ func jobListingFromAny(row any, tags []string) ResolvedItem {
 		meta["tags"] = tags
 	}
 
+	// §30 Sub-spec 5: expose the listing's field_values JSONB map (keyed by
+	// field key) so matrix cells can hydrate from entity field values.
+	if fields := parseDBFieldValues(fieldValues); len(fields) > 0 {
+		meta["field_values"] = fields
+	}
+
 	return ResolvedItem{
 		Type:        "job_listing",
 		ID:          id.String(),

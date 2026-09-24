@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // DBConfig describes a simple table that can be resolved and searched with a
@@ -58,13 +60,18 @@ type DBTX interface {
 // DBResolver resolves items by reading a PostgreSQL table directly.
 // All identifiers are whitelisted before use, so dynamic SQL is safe.
 type DBResolver struct {
-	db  DBTX
-	cfg DBConfig
+	db      DBTX
+	cfg     DBConfig
+	queries *gen.Queries // optional: enables custom_field_values hydration
 }
 
-// NewDBResolver creates a resolver backed by a single table.
-func NewDBResolver(db DBTX, cfg DBConfig) *DBResolver {
-	return &DBResolver{db: db, cfg: cfg}
+// NewDBResolver creates a resolver backed by a single table. Pass
+// WithQueries to also merge custom_field_values rows (the canonical store)
+// into the item's field_values metadata on Resolve.
+func NewDBResolver(db DBTX, cfg DBConfig, opts ...Option) *DBResolver {
+	o := newResolverOptions(opts...)
+
+	return &DBResolver{db: db, cfg: cfg, queries: o.queries}
 }
 
 // EntityType returns the configured entity type for this resolver.
@@ -250,7 +257,29 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any)
 		return ResolvedItem{}, false, fmt.Errorf("resolving %s by %s: %w", r.cfg.Entity, col, err)
 	}
 
-	return r.toItem(rv), true, nil
+	item := r.toItem(rv)
+
+	// §30 Sub-spec 5: merge canonical custom_field_values rows into
+	// field_values so matrix cells can hydrate even for tables without a
+	// field_values column. cfv wins over the raw column (canonical truth).
+	if r.queries != nil {
+		if id, perr := ParseUUID(rv.id); perr == nil {
+			if cfv := resolveFieldValues(ctx, r.queries, r.cfg.Entity, id); len(cfv) > 0 {
+				merged, _ := item.Metadata["field_values"].(map[string]any)
+				if merged == nil {
+					merged = make(map[string]any, len(cfv))
+				}
+
+				for k, v := range cfv {
+					merged[k] = v
+				}
+
+				item.Metadata["field_values"] = merged
+			}
+		}
+	}
+
+	return item, true, nil
 }
 
 // Search performs a case-insensitive prefix/substring search against the title
@@ -400,6 +429,14 @@ func (r *DBResolver) toItem(rv *dbRowValues) ResolvedItem {
 
 	if r.cfg.TagsColumn != "" && len(rv.tags) > 0 {
 		meta["tags"] = rv.tags
+	}
+
+	// §30 Sub-spec 5: expose the raw field_values JSONB map (keyed by field
+	// key) so matrix cells can hydrate from entity field values.
+	if r.cfg.FieldValuesColumn != "" {
+		if fields := parseDBFieldValues(rv.fieldValues); len(fields) > 0 {
+			meta["field_values"] = fields
+		}
 	}
 
 	return ResolvedItem{

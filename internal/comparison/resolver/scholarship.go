@@ -110,6 +110,18 @@ func scholarshipToResolvedItem(s scholarships.ScholarshipResult) ResolvedItem {
 		meta["tags"] = s.FieldsOfStudy
 	}
 
+	// §30 Sub-spec 5: the scholarships service already loads the guide's
+	// custom_field_values (entity_type='content', entity_id=guide_id) into
+	// FieldValues — expose them so matrix cells can hydrate from them.
+	if len(s.FieldValues) > 0 {
+		fv := make(map[string]any, len(s.FieldValues))
+		for k, v := range s.FieldValues {
+			fv[k] = v
+		}
+
+		meta["field_values"] = fv
+	}
+
 	return ResolvedItem{
 		Type:        "scholarship",
 		ID:          s.GuideID,

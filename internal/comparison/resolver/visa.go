@@ -131,6 +131,13 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 		meta["tags"] = []string{route.VisaCategory}
 	}
 
+	// §30 Sub-spec 5: visa_routes has no field_values column; its
+	// requirements_json object is the entity's field bag, so expose it for
+	// matrix hydration.
+	if req := visaRequirementsMap(route.Requirements); len(req) > 0 {
+		meta["field_values"] = req
+	}
+
 	return ResolvedItem{
 		Type:        "visa_route",
 		ID:          route.ID,

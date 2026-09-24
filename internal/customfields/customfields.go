@@ -231,6 +231,17 @@ func EntityClassFromType(entityType string) string {
 	return entityType
 }
 
+// ValueEntityType normalizes an entity type to the custom_field_values
+// entity_type convention (§06): space-backed types all store under 'space'.
+func ValueEntityType(entityType string) string {
+	switch entityType {
+	case "space", "university", "country", "state", "city":
+		return "space"
+	default:
+		return entityType
+	}
+}
+
 // Service provides custom field operations with reader/writer pool
 // separation. Reads go through the reader pool; writes go through the
 // writer pool. This follows the same pattern as the existing db.DB struct.
