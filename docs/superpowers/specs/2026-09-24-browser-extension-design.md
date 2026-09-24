@@ -252,9 +252,13 @@ the permission prompt at install stays minimal.
 - Extension key scopes are read-only and exclude `agent.use` (no MCP),
   `api.read.search`/`api.read.brief` (premium surfaces stay web/paid-API
   only in V1).
-- `api.read.digest` is mintable ONLY through `/me/extension-tokens` —
-  `CreateAPIKey` must reject the scope for self-serve keys (scope
-  allowlist check, same pattern as existing scope validation).
+- `api.read.digest` is a normal catalog scope — correction from the
+  original draft, which claimed it would be mintable only through
+  `/me/extension-tokens`. That is unenforceable: `CreateKey` does not
+  validate submitted scopes against the catalog, and `api.read.*`
+  wildcards cover `api.read.digest` regardless. The mint endpoint's
+  value is convenience and narrow defaults, not exclusivity — any key
+  holding `api.read.digest` (or `api.read.*`) may call the endpoint.
 - The key is a bearer secret in `chrome.storage.local` — the manifest
   requests no host permissions beyond japa.to origins, and the packaged
   build embeds no secrets.
@@ -274,8 +278,9 @@ the permission prompt at install stays minimal.
 
 1. Anonymous `feeds/popular` unauthenticated access — recommend (b)
    above; alternative is requiring connect before ANY content shows.
-2. Should `api.read.digest` be mintable via `/me/extension-tokens` only
-   (recommended), or also selectable in the dev portal?
+2. ~~Should `api.read.digest` be mintable via `/me/extension-tokens`
+   only~~ — resolved during plan-writing: it is a normal catalog scope;
+   exclusivity is unenforceable via scopes (see Security section).
 3. Destination override in extension settings (user picks a different
    destination than their profile) — V1: no, profile field is canonical;
    revisit after launch.
