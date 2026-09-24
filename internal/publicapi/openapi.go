@@ -37,6 +37,12 @@ func GetPublicOpenAPISpec(siteURL, siteName string) map[string]any {
 					"name":        "X-API-Key",
 					"description": "API key obtained from the Developer Portal. Prefixed with jc_live_ (production) or jc_test_ (sandbox).",
 				},
+				"bearerAuth": map[string]any{
+					"type":         "http",
+					"scheme":       "bearer",
+					"bearerFormat": "JWT",
+					"description":  "Session access token — used only by the /me/extension-tokens mint routes, which are web-session authenticated rather than API-key authenticated.",
+				},
 			},
 			"schemas":   buildPublicSchemas(),
 			"responses": buildPublicResponses(),
@@ -72,6 +78,7 @@ func buildTags() []any {
 		map[string]any{"name": "Destinations", "description": "Aggregate destination briefs"},
 		map[string]any{"name": "Feeds", "description": "Public explore feeds and the key owner's personalized feed"},
 		map[string]any{"name": "Safety", "description": "Confirmed scam reports and the scam alert schema"},
+		map[string]any{"name": "Developer", "description": "Session-authenticated developer tooling (extension token mint)"},
 		map[string]any{"name": "Public", "description": "Public catalog routes that do not require an API key"},
 	}
 }
@@ -149,11 +156,18 @@ func buildPublicPaths() map[string]any {
 		"/public/feeds/space/{slug}":    spaceFeedPath(),
 		"/public/feeds/{name}":          exploreFeedPath(),
 		"/public/me/feed":               myFeedPath(),
+		"/public/me/digest":             digestPath(),
 		"/public/content/{id}/markdown": contentMarkdownPath(),
 		"/public/scam-alerts":           scamAlertsPath(),
 		"/public/scam-alerts/schema":    scamAlertSchemaPath(),
 		"/public/scam-alerts/{id}":      scamAlertByIDPath(),
 		"/public/search/semantic":       semanticSearchPath(),
+
+		// Browser extension (Section 47 v1.3 — Browser-Extension Digest).
+		// /me/extension-tokens is session-authenticated (bearerAuth), not
+		// API-key authenticated — it exists so a signed-in user can mint the
+		// narrow key an extension install consumes.
+		"/me/extension-tokens": extensionTokensPath(),
 	}
 }
 
@@ -631,25 +645,27 @@ func feedSortParam() map[string]any {
 }
 
 func exploreFeedPath() map[string]any {
-	return map[string]any{
-		"get": operation("getExploreFeed", "Get explore feed", "Retrieve a public explore feed. The feed name selects the default ranking (popular → top, latest → latest, rising → rising); a valid ?sort value overrides it.", feedsTag, "api.read.content", []any{
-			map[string]any{
-				"name":        "name",
-				"in":          "path",
-				"required":    true,
-				"schema":      map[string]any{"type": "string", "enum": []any{"popular", "latest", "rising"}},
-				"description": "Explore feed name.",
-			},
-			feedSortParam(),
-			limitParam(20, 100),
-			offsetParam(),
-		}, map[string]any{
-			"200": feedListResponse("Explore feed items", "PublicFeedItem"),
-			"400": refResponse("BadRequest"),
-			"401": refResponse("Unauthorized"),
-			"429": refResponse("RateLimited"),
-		}),
-	}
+	op := operation("getExploreFeed", "Get explore feed", "Retrieve a public explore feed. The feed name selects the default ranking (popular → top, latest → latest, rising → rising); a valid ?sort value overrides it. Anonymous requests (no X-API-Key) are permitted for name=popular only — IP rate-limited at a loose tier; latest and rising always require api.read.content.", feedsTag, "api.read.content", []any{
+		map[string]any{
+			"name":        "name",
+			"in":          "path",
+			"required":    true,
+			"schema":      map[string]any{"type": "string", "enum": []any{"popular", "latest", "rising"}},
+			"description": "Explore feed name.",
+		},
+		feedSortParam(),
+		limitParam(20, 100),
+		offsetParam(),
+	}, map[string]any{
+		"200": feedListResponse("Explore feed items", "PublicFeedItem"),
+		"400": refResponse("BadRequest"),
+		"401": refResponse("Unauthorized"),
+		"429": refResponse("RateLimited"),
+	})
+	// Feeds an unauthenticated caller may request (IP rate-limited). Only
+	// "popular" — the browser extension's anonymous new-tab feed.
+	op["x-anonymous-feeds"] = []any{"popular"}
+	return map[string]any{"get": op}
 }
 
 func tagFeedPath() map[string]any {
@@ -793,6 +809,64 @@ func semanticSearchPath() map[string]any {
 			"429": refResponse("RateLimited"),
 			"503": refResponse("ServiceUnavailable"),
 		}), "pro"),
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Browser extension path builders (Section 47 v1.3 — Browser-Extension Digest)
+// ---------------------------------------------------------------------------
+
+func digestPath() map[string]any {
+	return map[string]any{
+		"get": operation("getDigest", "Get personalized digest", "Retrieve the aggregate new-tab digest for the API key owner: for-you feed, destination section (resolved from the key owner's destination_country profile field — null when unset or non-public), destination scam alerts, intel items, and the popular community feed. Optional sections degrade to null/empty on failure; a for-you feed outage fails the request. Responses are cached briefly per viewer (cached=true on a hit). Built for the browser extension; any key with api.read.digest may call it.", feedsTag, "api.read.digest", nil, map[string]any{
+			"200": singleResponse("Personalized digest", "Digest"),
+			"401": refResponse("Unauthorized"),
+			"403": refResponse("Forbidden"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
+}
+
+func extensionTokensPath() map[string]any {
+	sessionAuth := []any{map[string]any{"bearerAuth": []any{}}}
+	return map[string]any{
+		"get": map[string]any{
+			"operationId": "listExtensionTokens",
+			"summary":     "List extension tokens",
+			"description": "List the session user's active browser-extension tokens (api_keys rows whose name carries the extension: prefix). Revoked tokens are omitted. Revocation uses DELETE /me/api-keys/{id}.",
+			"tags":        []any{"Developer"},
+			"security":    sessionAuth,
+			"responses": map[string]any{
+				"200": dataListResponse("Active extension tokens", "ApiKey"),
+				"401": refResponse("Unauthorized"),
+			},
+		},
+		"post": map[string]any{
+			"operationId": "createExtensionToken",
+			"summary":     "Mint an extension token",
+			"description": "Mint a narrow-scoped API key for a browser-extension install. Scopes are fixed server-side (api.read.digest, api.read.content, api.read.me, api.read.safety — no search, no agent.use). The full key is returned once — store it in the extension's local storage. install_id is optional; when omitted the server generates a name suffix. The requested rate-limit tier is standard but is capped by the account's unified user tier.",
+			"tags":        []any{"Developer"},
+			"security":    sessionAuth,
+			"requestBody": map[string]any{
+				"required": false,
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"install_id": map[string]any{"type": "string", "format": "uuid", "description": "Optional extension-generated install identifier; becomes the key name suffix"},
+							},
+						},
+					},
+				},
+			},
+			"responses": map[string]any{
+				"201": singleResponse("Minted extension token — full key shown once", "ApiKeyCreated"),
+				"400": refResponse("BadRequest"),
+				"401": refResponse("Unauthorized"),
+				"403": refResponse("Forbidden"),
+			},
+		},
 	}
 }
 
@@ -1244,6 +1318,88 @@ func buildPublicSchemas() map[string]any {
 				"tier":         map[string]any{"type": "string"},
 				"title":        map[string]any{"type": "string", "nullable": true, "description": "Best-effort resolved entity title; null when unresolvable"},
 				"href":         map[string]any{"type": "string", "nullable": true, "description": "Best-effort resolved entity URL path; null when unresolvable"},
+			},
+		},
+		// Browser extension digest DTOs — field shapes mirror
+		// internal/publicapi/digest.go (PublicDigest et al.).
+		"Digest": map[string]any{
+			"type":        "object",
+			"description": "Aggregate new-tab digest for the API key owner (publicapi.PublicDigest).",
+			"properties": map[string]any{
+				"for_you":      map[string]any{"$ref": "#/components/schemas/DigestFeedSection"},
+				"destination":  map[string]any{"$ref": "#/components/schemas/DigestDestination", "nullable": true, "description": "Null when the owner has no destination_country or it resolves to a non-public space"},
+				"community":    map[string]any{"$ref": "#/components/schemas/DigestCommunity"},
+				"generated_at": map[string]any{"type": "string", "format": "date-time"},
+				"cached":       map[string]any{"type": "boolean", "description": "True when served from the per-viewer digest cache"},
+			},
+		},
+		"DigestFeedSection": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"items":  map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/PublicFeedItem"}},
+				"source": map[string]any{"type": "string", "description": "Feed source identifier (e.g. for_you)"},
+			},
+		},
+		"DigestDestination": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"space":       map[string]any{"$ref": "#/components/schemas/DigestSpaceRef"},
+				"scam_alerts": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/PublicScamReport"}},
+				"intel":       map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/IntelDigestItem"}},
+			},
+		},
+		"DigestSpaceRef": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"slug":  map[string]any{"type": "string"},
+				"name":  map[string]any{"type": "string"},
+				"level": map[string]any{"type": "string"},
+			},
+		},
+		"IntelDigestItem": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":         map[string]any{"type": "string"},
+				"kind":       map[string]any{"type": "string", "enum": []any{"visa_route", "job"}},
+				"title":      map[string]any{"type": "string"},
+				"summary":    map[string]any{"type": "string"},
+				"created_at": map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"DigestCommunity": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"popular": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/PublicFeedItem"}},
+			},
+		},
+		"ApiKey": map[string]any{
+			"type":        "object",
+			"description": "API key metadata (publicapi.APIKey). The full secret is never present on list/read responses — only at creation/rotation.",
+			"properties": map[string]any{
+				"id":              map[string]any{"type": "string", "format": "uuid"},
+				"name":            map[string]any{"type": "string"},
+				"key_prefix":      map[string]any{"type": "string"},
+				"scopes":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"rate_limit_tier": map[string]any{"type": "string"},
+				"status":          map[string]any{"type": "string"},
+				"request_count":   map[string]any{"type": "integer"},
+				"last_used_at":    map[string]any{"type": "string", "format": "date-time"},
+				"expires_at":      map[string]any{"type": "string", "format": "date-time"},
+				"created_at":      map[string]any{"type": "string", "format": "date-time"},
+				"updated_at":      map[string]any{"type": "string", "format": "date-time"},
+			},
+		},
+		"ApiKeyCreated": map[string]any{
+			"type":        "object",
+			"description": "Freshly minted API key (publicapi.CreateAPIKeyResponse). The key field contains the full secret exactly once — it is never retrievable again.",
+			"properties": map[string]any{
+				"id":              map[string]any{"type": "string", "format": "uuid"},
+				"key":             map[string]any{"type": "string", "description": "Full API key secret — shown only once"},
+				"name":            map[string]any{"type": "string"},
+				"key_prefix":      map[string]any{"type": "string"},
+				"scopes":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"rate_limit_tier": map[string]any{"type": "string"},
+				"created_at":      map[string]any{"type": "string", "format": "date-time"},
 			},
 		},
 		"Error": map[string]any{
