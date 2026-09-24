@@ -21,11 +21,13 @@ import (
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 
 // IntelReader is the narrow destination-intel seam the digest needs —
-// latest promoted intel items for a space. Satisfied by a wiring-layer
-// adapter over the intel domain queries (ListVisaRoutesBySpaces +
-// ListIntelJobsBySpaces), mirroring the radar corpus.
+// latest promoted intel items for a space, filtered by the viewer's
+// blocked intel sources (same as the radar followed feed). Satisfied by a
+// wiring-layer adapter over the intel domain queries
+// (ListVisaRoutesBySpaces + ListIntelJobsBySpaces), mirroring the radar
+// corpus.
 type IntelReader interface {
-	ListRecentForSpace(ctx context.Context, spaceID pgtype.UUID, limit int32) ([]IntelDigestItem, error)
+	ListRecentForSpace(ctx context.Context, viewerID, spaceID pgtype.UUID, limit int32) ([]IntelDigestItem, error)
 }
 
 // IntelDigestItem is the curated public DTO for a destination intel card.
@@ -104,7 +106,9 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 
 	limit := int32(8)
 	if s.settingsReader != nil {
-		limit = int32(s.settingsReader.GetIntOr(ctx, "api.digest.section_limit", 8))
+		if v := s.settingsReader.GetIntOr(ctx, "api.digest.section_limit", 8); v > 0 {
+			limit = int32(v)
+		}
 	}
 
 	digest := &PublicDigest{GeneratedAt: time.Now().UTC()}
@@ -132,7 +136,9 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 	if s.cache != nil {
 		ttl := 120
 		if s.settingsReader != nil {
-			ttl = s.settingsReader.GetIntOr(ctx, "api.digest.cache_ttl_seconds", 120)
+			if v := s.settingsReader.GetIntOr(ctx, "api.digest.cache_ttl_seconds", 120); v > 0 {
+				ttl = v
+			}
 		}
 		if raw, err := json.Marshal(digest); err == nil {
 			_ = s.cache.Set(ctx, cacheKey, raw, time.Duration(ttl)*time.Second).Err()
@@ -185,7 +191,7 @@ func (s *Service) digestDestination(ctx context.Context, viewerID pgtype.UUID) *
 	}
 
 	if s.intelReader != nil {
-		if items, err := s.intelReader.ListRecentForSpace(ctx, space.ID, 3); err == nil {
+		if items, err := s.intelReader.ListRecentForSpace(ctx, viewerID, space.ID, 3); err == nil {
 			dest.Intel = items
 		}
 	}

@@ -7,12 +7,17 @@
 	const meta = $derived(
 		[item.space_name, item.author_name].filter(Boolean).join(' · '),
 	);
+	// Some content types store ProseMirror JSON in excerpt — never render
+	// the raw document blob as card text.
+	const excerpt = $derived(
+		item.excerpt && !item.excerpt.trimStart().startsWith('{') ? item.excerpt : null,
+	);
 </script>
 
 <a class="card" {href}>
 	<span class="card-title">{item.title}</span>
-	{#if item.excerpt}
-		<span class="card-excerpt">{item.excerpt}</span>
+	{#if excerpt}
+		<span class="card-excerpt">{excerpt}</span>
 	{/if}
 	<span class="card-meta">
 		{#if meta}{meta}{/if}

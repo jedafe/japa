@@ -19,25 +19,33 @@
 	let installId = $state('');
 	let copied = $state(false);
 
+	// jc_live_ for production, jc_test_ for dev/staging keys.
+	const validKey = $derived(
+		keyInput.trim().startsWith('jc_live_') || keyInput.trim().startsWith('jc_test_'),
+	);
+
 	$effect(() => {
 		getInstallId().then((id) => (installId = id));
 	});
 
 	async function save() {
-		const key = keyInput.trim();
-		if (!key.startsWith('jc_live_') || saving) return;
+		if (!validKey || saving) return;
 		saving = true;
 		try {
-			await onConnected(key);
+			await onConnected(keyInput.trim());
 		} finally {
 			saving = false;
 		}
 	}
 
 	async function copyInstallId() {
-		await navigator.clipboard.writeText(installId);
-		copied = true;
-		setTimeout(() => (copied = false), 1500);
+		try {
+			await navigator.clipboard.writeText(installId);
+			copied = true;
+			setTimeout(() => (copied = false), 1500);
+		} catch {
+			// clipboard API unavailable — the ID is visible for manual copy
+		}
 	}
 </script>
 
@@ -57,7 +65,7 @@
 	{:else}
 		<ol class="steps">
 			<li>
-				Open <a href={siteUrl('/settings/developer')}>Settings → API keys</a> on japa.to and
+				Open <a href={siteUrl('/settings/api-keys')}>Settings → API keys</a> on japa.to and
 				click <strong>Connect browser extension</strong>.
 			</li>
 			<li>Copy the key shown once — it is scoped read-only for this extension.</li>
@@ -73,14 +81,14 @@
 				spellcheck="false"
 			/>
 		</label>
-		<button class="primary" onclick={save} disabled={saving || !keyInput.trim().startsWith('jc_live_')}>
+		<button class="primary" onclick={save} disabled={saving || !validKey}>
 			{saving ? 'Connecting…' : 'Connect'}
 		</button>
 		<details class="install-id">
 			<summary>Advanced: install ID</summary>
 			<p class="hint">
-				If the site asks for this browser's install ID when minting the key, it is
-				<code>{installId}</code>.
+				Paste <code>{installId}</code> into the optional Install ID field on the mint form to
+				name this browser's token recognizably.
 				<button class="ghost" onclick={copyInstallId}>{copied ? 'Copied' : 'Copy'}</button>
 			</p>
 		</details>

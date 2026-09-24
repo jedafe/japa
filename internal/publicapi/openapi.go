@@ -9,7 +9,7 @@ func GetPublicOpenAPISpec(siteURL, siteName string) map[string]any {
 		"info": map[string]any{
 			"title":       siteName + " Public API",
 			"version":     "1.0.0",
-			"description": "Public API for the " + siteName + " platform. Requires API key authentication via the X-API-Key header.",
+			"description": "Public API for the " + siteName + " platform. Requires API key authentication via the X-API-Key header, except where an operation declares bearerAuth (the session-authenticated extension-token mint) or x-anonymous-feeds (unauthenticated explore feeds).",
 			"contact": map[string]any{
 				"name":  siteName + " Developer Support",
 				"email": "api@" + extractDomain(siteURL),

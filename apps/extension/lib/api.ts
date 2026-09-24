@@ -1,9 +1,10 @@
+import { SITE_ORIGIN } from './links';
 import type { Digest, FeedItem } from './types';
 
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
-// (Browser-Extension Digest). Base URL is build-time config — point
-// WXT_JC_API_URL at a dev/staging API for local work.
-const API_BASE = (import.meta.env.WXT_JC_API_URL ?? 'https://japa.to/api/v1').replace(/\/+$/, '');
+// (Browser-Extension Digest). Same-origin API — WXT_JC_SITE_URL (see
+// lib/links.ts) points dev/staging builds at a different origin.
+const API_BASE = `${SITE_ORIGIN}/api/v1`;
 
 export class ApiError extends Error {
 	constructor(
