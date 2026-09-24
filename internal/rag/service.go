@@ -481,6 +481,13 @@ func (s *Service) QueueReindex(ctx context.Context) error {
 // goroutine from QueueReindex.
 func (s *Service) reindexForumThreads() {
 	ctx := context.Background()
+
+	// §69 amendment: self-heal any thread rows orphaned since the last
+	// sweep (e.g. a ReconcileSpaceDelete miss) before re-indexing.
+	if err := s.store.ReconcileOrphanThreadScopes(ctx); err != nil {
+		slog.Warn("rag: reindex forum threads: orphan reconcile failed", "error", err)
+	}
+
 	language := "en"
 
 	if s.settings != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/wallet"
+	"github.com/jedafe/japa/internal/worker"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -1333,6 +1334,18 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 			"title":      content.Title,
 			"actor_id":   content.AuthorID,
 		})
+	}
+
+	// Scoped retrieval (§69 amendment): reconcile RAG state on every status
+	// transition, not just the HTTP update route — blog review, agent draft
+	// approval, and studio publishing all funnel through here. Leaving
+	// 'published' purges chunks; entering it re-indexes (the embed task also
+	// refreshes visibility/space/author scope metadata). Fire-and-forget:
+	// the retrieval-time EXISTS guard already fails closed on status.
+	if status == StatusPublished {
+		worker.EnqueueContentEmbedding(ctx, id)
+	} else {
+		worker.PurgeRAGEntity(ctx, "content", id)
 	}
 
 	return content, nil

@@ -11,6 +11,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -41,6 +42,31 @@ var ragIndexer RAGIndexer
 // skips the RAG indexing step (graceful degradation).
 func RegisterRAGIndexer(r RAGIndexer) {
 	ragIndexer = r
+}
+
+// EnqueueContentEmbedding enqueues the content:generate_embedding task so a
+// content row is (re-)embedded and its scope metadata refreshed — §69
+// scoped-retrieval amendment: every publish transition must re-index, not
+// just those that flow through the HTTP update handler. Fire-and-forget:
+// errors are logged but never propagated; a nil enqueuer is a no-op.
+func EnqueueContentEmbedding(ctx context.Context, contentID pgtype.UUID) {
+	if taskEnqueuer == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"content_id": contentID.String(),
+	})
+	if err != nil {
+		slog.Warn("worker: RAG enqueue marshal failed",
+			"content_id", contentID.String(), "error", err)
+		return
+	}
+
+	if err := taskEnqueuer.Enqueue(TypeAIGenerateContentEmbedding, payload); err != nil {
+		slog.Warn("worker: RAG embed enqueue failed",
+			"content_id", contentID.String(), "error", err)
+	}
 }
 
 // PurgeRAGEntity deletes all RAG embeddings for a specific entity. This is
