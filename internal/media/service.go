@@ -69,7 +69,9 @@ type UploadResult struct {
 
 // InitiateUpload creates a media row and returns presigned URL details.
 // The client uploads directly to SeaweedFS using the presigned URL.
-func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64) (UploadResult, error) {
+// uploadCtx selects which MIME allowlist applies (§34); "document" permits
+// CV-style attachments used by job applications (§63).
+func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64, uploadCtx UploadContext) (UploadResult, error) {
 	// Guard: validate inputs early.
 	if filename == "" {
 		return UploadResult{}, errors.New("filename is required")
@@ -91,13 +93,13 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 		return UploadResult{}, fmt.Errorf("file too large: %d bytes exceeds limit of %d bytes", fileSize, maxBytes)
 	}
 
-	if !s.isAllowedMIME(ctx, mimeType) {
+	if !s.isAllowedMIME(ctx, mimeType, uploadCtx) {
 		return UploadResult{}, fmt.Errorf("unsupported MIME type: %s", mimeType)
 	}
 
 	// Generate unique storage path under temp/ prefix.
 	ext := filepath.Ext(filename)
-	storagePath := fmt.Sprintf("%s//%s%s", StoragePathTemp,
+	storagePath := fmt.Sprintf("%s/%s%s", StoragePathTemp,
 
 		uuid.New().String(),
 		ext)
@@ -118,7 +120,7 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 	// Generate presigned URL for client upload.
 	// Uses S3 client if configured, otherwise falls back to local path.
 	expiresAt := time.Now().Add(15 * time.Minute)
-	presignedURL := "/seaweedfs/upload/" + storagePath // fallback
+	presignedURL := "/seaweedfs/upload/" + DefaultBucket + "/" + storagePath // fallback
 
 	if s.s3 != nil {
 		url, err := s.s3.PresignPut(ctx, storagePath, 15*time.Minute)
@@ -261,8 +263,16 @@ func (s *Service) fetchFromLocal(bucket, path string, n int64) ([]byte, error) {
 
 // openLocalFile attempts to open a file from the local filesystem for
 // development. In production this would be replaced by an S3 client.
+// Resolves through resolveMediaPath so the lookup matches the
+// data/media/{bucket}/{storagePath} layout used by SeaweedFSUpload,
+// storeLocalMediaFile and ServeMedia.
 func openLocalFile(bucket, path string) (io.ReadCloser, error) {
-	return openFile(fmt.Sprintf("%s/%s", bucket, path))
+	localPath, err := resolveMediaPath(bucket, path)
+	if err != nil {
+		return nil, err
+	}
+
+	return openFile(localPath)
 }
 
 // openFileFunc is a package-level function variable so tests can override it.
@@ -275,19 +285,19 @@ func defaultOpenFile(path string) (io.ReadCloser, error) {
 	return os.Open(path) // #nosec G304 // path validated by validateMediaPath
 }
 
-// getMediaForScan retrieves a media item by ID without platform filtering.
-// This is used by background workers that operate across all platforms.
+// getMediaForScan retrieves a media item by ID for the background
+// virus-scan worker.
 func (s *Service) getMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {
 	return s.store.GetMediaForScan(ctx, mediaID)
 }
 
-// confirmMediaByID marks a media item as confirmed, scoped to platform.
+// confirmMediaByID marks a media item as confirmed.
 // Used by the background scan processor.
 func (s *Service) confirmMediaByID(ctx context.Context, mediaID []byte) error {
 	return s.store.ConfirmMediaByID(ctx, mediaID)
 }
 
-// rejectMediaByID quarantines a media item, scoped to platform.
+// rejectMediaByID quarantines a media item.
 // This gives admins a chance to review false positives before removal.
 func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, virusName string) error {
 	return s.store.QuarantineMedia(ctx, mediaID, virusName)
@@ -523,27 +533,30 @@ func IsAllowedMIMEType(mimeType string) bool {
 	return AllowedMIMETypes[mimeType]
 }
 
-// isAllowedMIME checks if a MIME type is allowed for upload, considering
-// system_settings 'media.allowed_video_types' for video types (Rule 3).
-// When settings are not configured, falls back to the static AllowedMIMETypes
-// map.
-func (s *Service) isAllowedMIME(ctx context.Context, mimeType string) bool {
+// isAllowedMIME checks if a MIME type is allowed for upload under the given
+// upload context, considering system_settings 'media.allowed_video_types'
+// for video types (Rule 3). Unknown contexts reject everything.
+func (s *Service) isAllowedMIME(ctx context.Context, mimeType string, uploadCtx UploadContext) bool {
 	canonical := CanonicalMIMEType(mimeType)
 
-	// Non-video types use the static allowed set.
-	if !strings.HasPrefix(canonical, "video/") {
-		return AllowedMIMETypes[canonical]
+	allowed := AllowedMIMETypesByContext[uploadCtx]
+	if allowed == nil {
+		return false
 	}
 
-	// Video types: check against media.allowed_video_types from system_settings.
-	// Default is "mp4,webm,mov" per the system-settings-catalog.
-	if s.settings == nil {
-		return AllowedMIMETypes[canonical]
+	if !ValidateFileType(canonical, allowed) {
+		return false
 	}
 
-	allowedCSV := s.settings.GetStringOr(ctx, "media.allowed_video_types", "mp4,webm,mov")
+	// Video types additionally check media.allowed_video_types from
+	// system_settings. Default is "mp4,webm,mov" per the
+	// system-settings-catalog.
+	if strings.HasPrefix(canonical, "video/") && s.settings != nil {
+		allowedCSV := s.settings.GetStringOr(ctx, "media.allowed_video_types", "mp4,webm,mov")
+		return isVideoTypeAllowed(canonical, allowedCSV)
+	}
 
-	return isVideoTypeAllowed(canonical, allowedCSV)
+	return true
 }
 
 // isVideoTypeAllowed checks if a canonical video MIME type is in the
@@ -630,7 +643,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 			ext = fe
 		}
 	}
-	storagePath := fmt.Sprintf("%s//%s%s", StoragePathMedia,
+	storagePath := fmt.Sprintf("%s/%s%s", StoragePathMedia,
 
 		uuid.New().String(),
 		ext,

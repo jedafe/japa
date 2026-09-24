@@ -132,6 +132,19 @@ var containerCompat = map[string][]string{
 	},
 }
 
+// textCompat lists declared types whose content is plain text or XML and is
+// therefore indistinguishable to http.DetectContentType — it reports
+// "text/plain" or "text/xml" for all of them. Markdown, RTF, and SVG have no
+// magic bytes.
+var textCompat = map[string]bool{
+	"text/plain":      true,
+	"text/markdown":   true,
+	"text/csv":        true,
+	"text/xml":        true,
+	"application/rtf": true,
+	"image/svg+xml":   true,
+}
+
 // ---------------------------------------------------------------------------
 // Core Functions
 // ---------------------------------------------------------------------------
@@ -195,6 +208,13 @@ func VerifyMIMEType(fileBytes []byte, declaredMimeType string) (detectedType str
 		if inner == declared {
 			return detected, true, nil
 		}
+	}
+
+	// Text-based formats (markdown, RTF, SVG…) are indistinguishable to
+	// DetectContentType — it reports "text/plain" or "text/xml" for all of
+	// them. Accept a declared type from the text-compat set.
+	if (canonical == "text/plain" || canonical == "text/xml") && textCompat[declared] {
+		return detected, true, nil
 	}
 
 	return detected, false, nil

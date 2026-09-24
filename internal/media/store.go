@@ -427,15 +427,13 @@ func (s *Store) UpdateMediaStoragePath(ctx context.Context, id pgtype.UUID, stor
 	return nil
 }
 
-// GetMediaForScan retrieves a media item by ID with its .
-// Used by background workers that operate across all platforms — the
-// returned from this read is threaded into subsequent write operations
-// (ConfirmMediaByID, QuarantineMedia) to prevent cross-platform modification.
+// GetMediaForScan retrieves a media item by ID for the background virus
+// scan worker.
 func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {
 	var row ScanMediaRow
 
 	err := s.readPool.QueryRow(ctx, `
-		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text, the id::text
+		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text
 		FROM media
 		WHERE id = $1 AND deleted_at IS NULL
 	`, mediaID).Scan(&row.StorageBucket, &row.StoragePath, &row.OriginalFilename, &row.UploaderUserID)
@@ -446,7 +444,7 @@ func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaR
 	return row, nil
 }
 
-// ConfirmMediaByID marks a media item as confirmed, scoped to platform.
+// ConfirmMediaByID marks a media item as confirmed.
 // Used by the background scan processor after a clean virus scan.
 func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte) error {
 	_, err := s.writePool.Exec(ctx, `
@@ -475,7 +473,7 @@ func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, virusName s
 	return nil
 }
 
-// QuarantineMedia marks a media item as quarantined, scoped to platform.
+// QuarantineMedia marks a media item as quarantined.
 // This allows admins to review false positives before permanent removal.
 func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, reason string) error {
 	_, err := s.writePool.Exec(ctx, `

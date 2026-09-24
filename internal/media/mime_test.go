@@ -44,6 +44,27 @@ var mp4Bytes = []byte{0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73
 // WebP header: RIFF....WEBP.
 var webPBytes = []byte{0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50}
 
+// ZIP local file header: 50 4B 03 04 (PK\x03\x04) — the container format
+// DetectContentType sees for OOXML documents (.docx/.xlsx/.pptx).
+var zipBytes = []byte{0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00}
+
+// OLE2 compound document header: D0 CF 11 E0 A1 B1 1A E1 — the container
+// format for legacy Office files (.doc/.xls/.ppt). Newer Go releases detect
+// this as "application/x-ole-storage"; this toolchain's DetectContentType
+// has no OLE signature, so it sniffs as application/octet-stream and passes
+// through the unidentified-content path — still a valid match for .doc.
+var ole2Bytes = []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
+
+// Plain text — DetectContentType returns "text/plain; charset=utf-8".
+var textBytes = []byte("Jane Doe\nSenior Engineer\nPlain text resume\n")
+
+// RTF content — ASCII text, no magic bytes; DetectContentType returns
+// "text/plain; charset=utf-8".
+var rtfBytes = []byte(`{\rtf1\ansi Jane Doe RTF CV}`)
+
+// SVG with XML prolog — DetectContentType returns "text/xml; charset=utf-8".
+var svgXMLBytes = []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>`)
+
 // ---------------------------------------------------------------------------
 // CanonicalMIMEType
 // ---------------------------------------------------------------------------
@@ -82,6 +103,12 @@ func TestCanonicalMIMEType(t *testing.T) {
 		// Unknown types return lowercased input.
 		{"custom/type", "custom/type"},
 		{"", ""},
+
+		// Parameters are stripped (http.DetectContentType emits
+		// "text/plain; charset=utf-8" for text content).
+		{"text/plain; charset=utf-8", "text/plain"},
+		{"Text/HTML; Charset=UTF-8", "text/html"},
+		{"application/pdf;", "application/pdf"},
 	}
 	for _, tt := range tests {
 		got := CanonicalMIMEType(tt.input)
@@ -112,6 +139,14 @@ func TestVerifyMIMEType_Matches(t *testing.T) {
 		{"PDF matches application/pdf", pdfBytes, "application/pdf", true},
 		{"MP4 matches video/mp4", mp4Bytes, "video/mp4", true},
 		{"WebP matches image/webp", webPBytes, "image/webp", true},
+
+		// Document containers: DetectContentType sees the outer container.
+		{"DOCX (zip) matches OOXML document", zipBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", true},
+		{"DOC (OLE2) matches msword", ole2Bytes, "application/msword", true},
+		{"Text matches text/plain (charset param)", textBytes, "text/plain", true},
+		{"Text matches text/markdown (charset param)", textBytes, "text/markdown", true},
+		{"RTF (sniffs as text) matches application/rtf", rtfBytes, "application/rtf", true},
+		{"SVG w/ prolog (sniffs as text/xml) matches image/svg+xml", svgXMLBytes, "image/svg+xml", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,6 +178,10 @@ func TestVerifyMIMEType_Mismatches(t *testing.T) {
 		{"BMP claimed as JPEG", bmpBytes, "image/jpeg"},
 		{"GIF claimed as JPEG", gifBytes, "image/jpeg"},
 		{"PNG claimed as GIF", pngBytes, "image/gif"},
+
+		// Container mismatch: a zip renamed to .png is still a zip.
+		{"ZIP claimed as PNG", zipBytes, "image/png"},
+		{"ZIP claimed as PDF", zipBytes, "application/pdf"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -320,6 +359,14 @@ func TestMIMETypeFromExtension(t *testing.T) {
 		{"sound.ogg", "audio/ogg"},
 		{"recording.wav", "audio/wav"},
 		{"document.pdf", "application/pdf"},
+		{"resume.doc", "application/msword"},
+		{"resume.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+		{"resume.odt", "application/vnd.oasis.opendocument.text"},
+		{"resume.rtf", "application/rtf"},
+		{"notes.txt", "text/plain"},
+		{"readme.md", "text/markdown"},
+		{"README.MD", "text/markdown"},
+		{"changelog.markdown", "text/markdown"},
 		{"unknown.xyz", ""},
 		{"noext", ""},
 	}
@@ -350,7 +397,20 @@ func TestIsAllowedMIMETypeForContext(t *testing.T) {
 		{"JPEG allowed for avatar", "image/jpeg", UploadContextAvatar, true},
 		{"GIF denied for avatar", "image/gif", UploadContextAvatar, false},
 		{"PDF allowed for document", "application/pdf", UploadContextDocument, true},
+		{"DOC allowed for document", "application/msword", UploadContextDocument, true},
+		{"DOCX allowed for document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", UploadContextDocument, true},
+		{"ODT allowed for document", "application/vnd.oasis.opendocument.text", UploadContextDocument, true},
+		{"RTF allowed for document", "application/rtf", UploadContextDocument, true},
+		{"RTF alias allowed for document", "application/x-rtf", UploadContextDocument, true},
+		{"TXT allowed for document", "text/plain", UploadContextDocument, true},
+		{"TXT with charset allowed for document", "text/plain; charset=utf-8", UploadContextDocument, true},
+		{"Markdown allowed for document", "text/markdown", UploadContextDocument, true},
+		{"x-markdown alias allowed for document", "text/x-markdown", UploadContextDocument, true},
 		{"EXE denied for document", "application/x-msdownload", UploadContextDocument, false},
+		{"SVG denied for document", "image/svg+xml", UploadContextDocument, false},
+		{"MP4 denied for document", "video/mp4", UploadContextDocument, false},
+		{"TXT denied for media", "text/plain", UploadContextMedia, false},
+		{"DOCX denied for media", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", UploadContextMedia, false},
 		{"Unknown context denied", "image/jpeg", UploadContext("bogus"), false},
 	}
 	for _, tt := range tests {
