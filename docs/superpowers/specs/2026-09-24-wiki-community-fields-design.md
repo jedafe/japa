@@ -120,6 +120,12 @@ page-attached rows; page-less rows are unaffected.
 - `set_value` writes the column selected by `customfields.FieldTypeValueColumn`
   into `custom_field_values` and merges `key→value` into the entity's
   denormalized `field_values` JSONB when the entity table has that column.
+- **Entity-type normalization:** space-backed ops (`university`, `country`,
+  `state`, `city`, `space`) write `custom_field_values.entity_type='space'` —
+  the existing convention (`enrichUniversityFields` in
+  `internal/spaces/processoradapter.go`, `spaces.sql` cfv join). The revision's
+  `target_entity_type` keeps the submitted type for display and propagation.
+  This prevents duplicate values under both `space` and `university`.
 - `propose_*` creates definition rows on approval — proposals never mutate live
   schema before review.
 - `upsert_field`/`assign_group` are `wiki.fields.manage`-gated; submitted by

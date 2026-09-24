@@ -125,12 +125,24 @@ Append to `internal/db/queries/comparison.sql`:
 
 ```sql
 -- name: ListComparisonContentIDsByItemRef :many
--- Finds published comparison contents containing an item whose item_ref
--- matches {type, id} exactly (§30 Sub-spec 5 propagation).
+-- Finds comparison contents containing an item whose item_ref matches
+-- {type, id} exactly (§30 Sub-spec 5 propagation).
 SELECT DISTINCT content_id
 FROM comparison_items
 WHERE deleted_at IS NULL
-  AND item_ref @> @item_ref::jsonb;
+  AND item_ref @> jsonb_build_object('type', @entity_type::text, 'id', @entity_id::text);
+```
+
+Also update `ListComparisonDimensionsByContent` to LEFT JOIN the source field so
+the matrix assembler gets the key without a second lookup:
+
+```sql
+SELECT d.id, d.content_id, d.type_id, d.label, d.dimension_type, d.position,
+       d.source_field_id, cf.key AS source_field_key, d.created_at, d.deleted_at
+FROM comparison_dimensions d
+LEFT JOIN custom_fields cf ON cf.id = d.source_field_id
+WHERE d.content_id = @content_id AND d.deleted_at IS NULL
+ORDER BY d.position ASC, d.created_at ASC;
 ```
 
 - [ ] **Step 3: Regenerate + build**
@@ -160,7 +172,11 @@ git commit -m "Link comparison dimensions to source fields; add item_ref propaga
 - Consumes: migration columns from Task 1.
 - Produces:
   - `WikiRevision` fields: `Kind string`, `Ops []byte`, `TargetEntityType *string`, `TargetEntityID pgtype.UUID`
-  - `Store.SubmitRevision(ctx, pageID, userID pgtype.UUID, kind string, body, ops []byte, summary string, targetType *string, targetID pgtype.UUID) (pgtype.UUID, error)` — extended signature (update existing callers)
+  - `Store.SubmitRevision(ctx, pageID pgtype.UUID, userID pgtype.UUID, kind string, body, ops []byte, summary string, targetType *string, targetID pgtype.UUID) (pgtype.UUID, error)` — extended signature; `pageID` may be `pgtype.UUID{Valid:false}` for page-less revisions (update existing callers)
+
+  **Two correctness requirements the implementer MUST honor:**
+  - `content_hash`: compute as `ComputeContentHash(ExtractPlainText(body) + "\x00" + string(ops))` so `idx_wiki_revisions_page_hash` still dedupes identical submissions but fields-only revisions (empty prose) don't all collide on the hash of an empty doc.
+  - `GetApprovedRevision` (the page's current-content query) MUST exclude `kind = 'fields'` revisions — otherwise approving an ops-only revision would replace the page's prose with the empty `'{}'` body. `kind IN ('content','mixed')` is the correct filter.
   - `Store.GetRevision(ctx, revID pgtype.UUID) (WikiRevision, error)`
   - `Store.ApproveRevisionByID(ctx, revID, reviewerID pgtype.UUID, notes string) (WikiRevision, error)` — revision-keyed approve returning the full row (kind+ops+content)
   - `Store.RejectRevisionByID(ctx, revID, reviewerID pgtype.UUID, notes string) error`
@@ -254,27 +270,28 @@ git commit -m "wiki: field ops types and structural validation"
 - Test: `internal/wiki/fieldops_apply_test.go`
 
 **Interfaces:**
-- Consumes: `customfields.Service` methods (`GetFieldGroupBySlug`, `GetCustomFieldByKey`, `UpsertFieldValue`, `CreateField`, `CreateFieldGroup`, `CreateAssignment`, `CheckFieldPermissionForUser`) — accessed through a narrow interface defined here so wiki stays decoupled.
+- Consumes: `gen.Queries` methods (`UpsertCustomFieldValue`, `GetCustomFieldByKey`, `CreateCustomField`, `UpdateCustomField`, `CreateCustomFieldGroup`, `CreateAssignment` — exact generated names in `internal/db/queries/custom_fields.sql`); `customfields.Service` only for read-side checks at submit time (`CheckFieldPermissionForUser`, `GetCustomFieldByKey`).
 - Produces:
-  - `type FieldStore interface { GetFieldGroupBySlug(ctx, string) (gen.CustomFieldGroup, error); GetCustomFieldByKey(ctx, string) (gen.GetCustomFieldByKeyRow, error); UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error); CreateField(ctx, gen.CreateCustomFieldParams) (gen.CreateCustomFieldRow, error); UpdateField(ctx, gen.UpdateCustomFieldParams) (gen.UpdateCustomFieldRow, error); CreateFieldGroup(ctx, name, slug string, desc *string, isSystem bool) (gen.CustomFieldGroup, error); CreateAssignment(ctx, gen.CreateAssignmentParams) (gen.CustomFieldGroupAssignment, error); CheckFieldPermissionForUser(ctx, fieldID, userID pgtype.UUID) (bool, bool, error) }`
-  - `func (s *Service) applyOps(ctx context.Context, ops []FieldOp) error` — executes ops in order; callers MUST invoke it inside `db.WithTx(ctx, s.db.Writer, ...)` so a revision applies all-or-nothing
+  - `func (s *Service) applyOps(ctx context.Context, tx pgx.Tx, ops []FieldOp) error` — executes ops in order inside the caller's transaction. Implementation: `q := gen.New(tx)` for all sqlc writes; raw `tx.Exec` only for the whitelisted denorm merge. Callers obtain `tx` via `s.pool.Writer.Begin(ctx)` (the wiki store already uses `s.pool.Writer` directly — `db.WithTx` only yields `*gen.Queries`, which cannot run the dynamic-table denorm UPDATE, so a manual `pgx.Tx` is required here).
+  - `func valuesEntityType(entityType string) string` — normalizes space-backed types for the `custom_field_values.entity_type` column: `university|country|state|city|space → "space"` (matches the existing `spaces.sql` cfv join and `enrichUniversityFields` in `internal/spaces/processoradapter.go`); all other types pass through unchanged (`organization`, `visa_route`, …). The revision's `target_entity_type` keeps the submitted type — only the value write is normalized.
   - `var entityFieldValuesTable = map[string]string{"space":"spaces","university":"spaces","country":"spaces","state":"spaces","city":"spaces","organization":"organizations","bank":"organizations","content":"contents"}` — whitelisted denorm targets; entity types not in the map skip the denorm write (canonical store is `custom_field_values`)
   - `func valueToUpsertParams(field gen.GetCustomFieldByKeyRow, entityType string, entityID pgtype.UUID, v json.RawMessage) (gen.UpsertCustomFieldValueParams, error)` — picks the value column via `customfields.FieldTypeValueColumn`
+  - `customfields.ValueEntityType(entityType string) string` — define this exported helper in `internal/customfields/customfields.go` (it encodes the §06 `entity_type` convention); wiki apply and the comparison resolvers both use it, so the mapping lives in exactly one place
 
 - [ ] **Step 1: Write failing tests**
 
-Table-test `valueToUpsertParams`: text→ValueText, number→ValueNumber, bool→ValueBool, select→ValueJson, bad JSON→error. Test `applyOps` ordering with a fake FieldStore (propose_group → assign_group → set_value in one ops array applies cleanly).
+Table-test `valueToUpsertParams`: text→ValueText, number→ValueNumber, bool→ValueBool, select→ValueJson, bad JSON→error. `applyOps` takes `pgx.Tx` (an interface) — test with a fake tx that records `Exec` calls and a stub `gen.DBTX` if needed; if that's too invasive for unit-level, keep `applyOps` split: pure `planOps(q, ops)` returning ordered write closures exercised in tests, thin `applyOps` running them against the tx (propose_group → assign_group → set_value in one ops array applies cleanly).
 
 - [ ] **Step 2: Run to verify failure** — `go test ./internal/wiki/ -run TestApplyOps -v` → FAIL.
 
 - [ ] **Step 3: Implement**
 
-`applyOps` switch per `op.Op`:
-- `set_value`: resolve field via `GetCustomFieldByKey(op.FieldKey)` → `valueToUpsertParams` → `UpsertFieldValue`; then `UPDATE <table> SET field_values = field_values || jsonb_build_object(key, value) WHERE id = $1` when `entityFieldValuesTable[op.EntityType]` exists (table name from the whitelist map only — never from op input).
-- `propose_field`: `GetFieldGroupBySlug` → `CreateField` (params from `FieldDefInput`; `is_system=false`).
-- `propose_group`: `CreateFieldGroup` → `CreateField` per `group.Fields` → `CreateAssignment{EntityClass: op.EntityClass}`.
-- `upsert_field`: `GetFieldGroupBySlug` + `GetCustomFieldByKey` → `UpdateField` (add `UpdateField` to FieldStore iface: `UpdateField(ctx, gen.UpdateCustomFieldParams)`).
-- `assign_group`: `GetFieldGroupBySlug` → `CreateAssignment`.
+`applyOps` switch per `op.Op` — all through `q := gen.New(tx)`:
+- `set_value`: `q.GetCustomFieldByKey(op.FieldKey)` → `valueToUpsertParams` (entity_type via `customfields.ValueEntityType(op.EntityType)`) → `q.UpsertCustomFieldValue`; then `tx.Exec("UPDATE "+table+" SET field_values = field_values || jsonb_build_object($1, $2::jsonb) WHERE id = $3", fieldKey, valueJSON, entityID)` when `entityFieldValuesTable[op.EntityType]` exists (table name from the whitelist map only — never from op input).
+- `propose_field`: `q.GetCustomFieldGroupBySlug` → `q.CreateCustomField` (params from `FieldDefInput`; `is_system=false`).
+- `propose_group`: `q.CreateCustomFieldGroup` → `q.CreateCustomField` per `group.Fields` → `q.CreateAssignment{EntityClass: op.EntityClass}`.
+- `upsert_field`: `q.GetCustomFieldGroupBySlug` + `q.GetCustomFieldByKey` → `q.UpdateCustomField`.
+- `assign_group`: `q.GetCustomFieldGroupBySlug` → `q.CreateAssignment`.
 
 - [ ] **Step 4: Test + commit**
 
@@ -293,15 +310,21 @@ git commit -m "wiki: transactional field-ops apply (values, proposals, definitio
 - Test: extend `internal/wiki/fieldops_test.go` or new `service_ops_test.go`
 
 **Interfaces:**
-- Consumes: Task 3 store methods, Task 4 `FieldOp`/`ValidateOps`/`DeriveKind`, Task 5 `applyOps`/`FieldStore`, `resolver.Registry.Resolve(ctx, map[string]any)`.
+- Consumes: Task 3 store methods, Task 4 `FieldOp`/`ValidateOps`/`DeriveKind`, Task 5 `applyOps`, `resolver.Registry.Resolve(ctx, map[string]any)`.
 - Produces:
-  - `Service.SetFieldStore(fs FieldStore)` and `Service.SetEntityResolver(r interface{ Resolve(context.Context, map[string]any) (resolver.ResolvedItem, error) })` — wire `*comparison.Service`'s resolver registry in server.go (comparison already exposes `SetResolver`; export a small `ResolveItemRef(ctx, entityType, entityID string) error` helper on comparison.Service if the registry isn't directly reachable — pick whichever compiles cleanly).
-  - `Service.SubmitFieldOps(ctx, userID pgtype.UUID, pageID *pgtype.UUID, entityType string, entityID pgtype.UUID, ops []FieldOp, summary string, canManage bool) (revID string, autoApproved bool, err error)`
-  - `Service.SuggestFields(ctx, userID pgtype.UUID, entityType string, entityID pgtype.UUID, ops []FieldOp, summary string, canManage bool) (string, bool, error)` — resolves entity via resolver (`{"type":entityType,"id":entityID.String()}`), best-effort `FindHostPageID` on the entity's `Metadata["geo_space_id"]`, delegates to `SubmitFieldOps` with `pageID=nil` when no host page.
-  - `Service.GetEntityFields(ctx, userID, entityType string, entityID pgtype.UUID) (EntityFieldsDTO, error)` — field groups via `ListAssignmentsByEntityClass(entityClassFor(entityType, spaceTypeID))` + `ListFieldValuesWithDefsByEntity` + `CountPendingByTarget`; visible/canEdit flags via `CheckFieldPermissionForUser`.
+  - `Service.SetCustomFields(cfs fieldReadStore)` — narrow read interface over `customfields.Service` for submit-time checks: `CheckFieldPermissionForUser`, `GetCustomFieldByKey`, `ListAssignmentsByEntityClass`, `ListFieldValuesWithDefsByEntity`. (Writes go through `gen.New(tx)` inside `applyOps` — the pool-bound service cannot join the caller's transaction.)
+  - `Service.SetEntityResolver(r interface{ Resolve(context.Context, map[string]any) (resolver.ResolvedItem, error) })` — wire `*comparison.Service`'s resolver registry in server.go (comparison already exposes `SetResolver`; export a small `ResolveItemRef(ctx, entityType, entityID string) error` helper on comparison.Service if the registry isn't directly reachable — pick whichever compiles cleanly).
+  - `Service.SetJCECacheBuster(b interface{ BustCachesForItemRef(ctx context.Context, entityType, entityID string) error })` — implemented by `comparison.Service` (Task 7).
+  - `Service.SubmitFieldOps(ctx, userID pgtype.UUID, pageID pgtype.UUID, entityType string, entityID pgtype.UUID, ops []FieldOp, summary string, canManage bool) (revID string, autoApproved bool, err error)` — `pageID` may be invalid/zero for page-less submissions
+  - `Service.SuggestFields(ctx, userID pgtype.UUID, entityType string, entityID pgtype.UUID, ops []FieldOp, summary string, canManage bool) (string, bool, error)` — resolves entity via resolver (`{"type":entityType,"id":entityID.String()}`), best-effort `FindHostPageID` on the entity's `Metadata["geo_space_id"]`, delegates to `SubmitFieldOps` with an invalid `pageID` when no host page.
+  - `Service.GetEntityFields(ctx, userID, entityType string, entityID pgtype.UUID) (EntityFieldsDTO, error)` — field groups via `ListAssignmentsByEntityClass(entityClassFor(entityType, spaceTypeID))` + `ListFieldValuesWithDefsByEntity` (entity_type normalized via `customfields.ValueEntityType`) + `CountPendingByTarget`; visible/canEdit flags via `CheckFieldPermissionForUser`.
   - `Service.ListEntityRevisions(ctx, entityType string, entityID pgtype.UUID, page, limit int32)` → `ListRevisionsByTarget`.
-  - `Service.ApproveRevisionByID(ctx, revID, reviewerID pgtype.UUID, notes string) error` — store approve + `applyOps` inside `db.WithTx` + enqueue propagate.
-  - `entityClassFor(entityType string, spaceTypeID pgtype.UUID) string` — `space|university|country|state|city → "space_type:"+id`; `organization|bank → "organization"`; `content:* → "content_type:*"`; everything else → `"jce_entity:"+entityType`.
+  - `Service.ApproveRevisionByID(ctx, revID, reviewerID pgtype.UUID, notes string) error` — store approve + `applyOps` inside one `pgx.Tx` + enqueue `wiki:fields_propagate` after commit.
+  - `entityClassFor(entityType string, spaceTypeID pgtype.UUID) string` — `space|university|country|state|city → "space_type:"+spaceTypeID`; `organization|bank → "organization"`; `content:* → "content_type:*"`; everything else → `"jce_entity:"+entityType`. For space-backed entity types the caller needs the space's `space_type_id` — add `Store.GetSpaceTypeID(ctx, spaceID pgtype.UUID) (pgtype.UUID, error)` (`SELECT space_type_id FROM spaces WHERE id = $1`).
+
+**Validation subtleties (must be in the implementation):**
+- A `set_value` op may reference a `field_key` that doesn't exist yet **if an earlier op in the same array proposes it** (`propose_field`/`propose_group` with that key) — collect proposed keys first, then validate `set_value` targets against `existing ∪ proposed`. Such ops skip the `can_edit` pre-check (the new field has no permission rows; §06 defaults apply on creation).
+- Per-op permission mapping checked in the service (not route middleware): `set_value`→`wiki.fields.edit`, `propose_*`→`wiki.fields.propose`, `upsert_field`/`assign_group`→`wiki.fields.manage`. A submission is rejected if any op exceeds the submitter's grants.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -316,7 +339,9 @@ func TestApproveRevisionByID_AppliesOpsAndEnqueues(t *testing.T) { … }
 
 - [ ] **Step 3: Implement**
 
-Submit path: `ValidateOps(ops, settings "wiki.suggest.max_ops_per_revision" default 50)` → for each `set_value`, `CheckFieldPermissionForUser` must return `canEdit` (skip check when `canManage`) → store `SubmitRevision` with `kind=DeriveKind(false, ops)`, `ops` marshaled, `target_*` set → if `canManage`, immediately run approve path. Edit lock: reuse the existing `jc:wiki_edit_lock:{page_id}:{user_id}` pattern only when a host page exists — page-less `suggest` submissions skip locking (ops are re-validated and applied idempotently at approve time, so a duplicate submission is harmless).
+Submit path: `ValidateOps(ops, settings "wiki.suggest.max_ops_per_revision" default 50)` → per-op permission check (mapping above) → for each `set_value`, `CheckFieldPermissionForUser` must return `canEdit` (skip check when `canManage`) → store `SubmitRevision` with `kind=DeriveKind(false, ops)`, `ops` marshaled, `target_*` set → if `canManage`, immediately run the same approve path (validate → tx{approve + applyOps} → post-commit propagate).
+
+Edit lock: reuse the existing `jc:wiki_edit_lock:{page_id}:{user_id}` pattern only when a host page exists. Page-less `suggest` submissions take no lock. Concurrency semantics to document in code: two pending revisions may target the same entity+field and both can be approved — last-approver wins on the value (standard wiki semantics; the content_hash dedupe prevents identical double-submissions). If review finds this unacceptable for high-traffic entities, the fallback is a `jc:wiki_entity_lock:{entity_type}:{entity_id}` advisory key — but do NOT add it unless needed (new Valkey key requires catalog registration).
 
 - [ ] **Step 4: Test + commit**
 
@@ -337,7 +362,9 @@ git commit -m "wiki service: field-ops submit/suggest/approve with tiered auto-a
 
 **Interfaces:**
 - Consumes: `comparison.Service.DeleteJCEComparisonCaches(ctx, contentID)`; `gen.Queries.ListComparisonContentIDsByItemRef` (Task 2).
-- Produces: `TypeWikiFieldsPropagate = "wiki:fields_propagate"`; payload `{entity_type, entity_id}`; `wiki.WorkerAdapter.PropagateFields(ctx, entityType, entityID string) error` implemented via a new `Service.PropagateFields` that runs the GIN lookup then calls the injected `comparisonCacheBuster` interface (`DeleteJCEComparisonCaches(ctx, pgtype.UUID)`).
+- Produces:
+  - `comparison.Service.BustCachesForItemRef(ctx context.Context, entityType, entityID string) error` — owns the whole propagation: runs `ListComparisonContentIDsByItemRef` then `DeleteJCEComparisonCaches` per content. Comparison cache keys stay inside the comparison package.
+  - `TypeWikiFieldsPropagate = "wiki:fields_propagate"`; payload `{entity_type, entity_id}`; `wiki.WorkerAdapter.PropagateFields(ctx, entityType, entityID string) error` delegates to `wiki.Service.PropagateFields`, which calls the injected `jceCacheBuster` (`SetJCECacheBuster`, Task 6).
 
 - [ ] **Step 1: Write failing test** — handler with bad payload errors; valid payload calls adapter once (spy processor).
 
@@ -398,7 +425,11 @@ git commit -m "worker: wiki:fields_propagate task busts JCE caches for edited en
 
 ```go
 r.With(features.Gate(featureChecker, "wiki.structured_edits")).Group(func(r chi.Router) {
-    r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.fields.edit")).
+    // Auth-only: per-op permission checks happen in the service layer
+    // (set_value→wiki.fields.edit, propose_*→wiki.fields.propose,
+    // upsert_field/assign_group→wiki.fields.manage) — a single
+    // RequirePermission node can't express per-op requirements.
+    r.With(auth.RequireAuth(kr, vkClient.Redis())).
         Post("/wiki/suggest", wikiHandlers.HandleSuggestFields)
     r.Get("/wiki/entities/{type}/{id}/fields", wikiHandlers.HandleGetEntityFields)
     r.Get("/wiki/entities/{type}/{id}/revisions", wikiHandlers.HandleGetEntityRevisions)
@@ -411,15 +442,17 @@ r.With(features.Gate(featureChecker, "wiki.structured_edits")).Group(func(r chi.
 })
 ```
 
-Note chi route-conflict check: `/wiki/{space_slug}` vs `/wiki/suggest` — chi matches literals before wildcards at the same position, and `/wiki/entities/...` is a distinct prefix. Verify with `go build` + a quick `chi.WalkRoutes`-style sanity test if one exists; order registration so literal routes are added before `{space_slug}` if needed.
+Chi precedence: `POST /wiki/suggest` (literal) beats `POST /wiki/{space_slug}` (param) — same mechanism that already lets `/wiki/categories` and `/wiki/destinations` coexist with `/wiki/{space_slug}`. `/wiki/entities/{type}/{id}/...` is a distinct literal prefix. No conflict — but smoke-test `POST /wiki/suggest` end-to-end anyway.
 
-- [ ] **Step 4: Seed the feature flag** — follow the existing flag-seeding pattern (search `feature.jce` seeds in migrations) — add `wiki.structured_edits` default `false` in the same migration file style (separate `000732_…` migration if the seeder is a migration; check `system_settings` vs `feature_flags` table used by `features.Gate`).
+Also extend `UpdatePageInput` + `Store.UpdatePage` with `DataEntityType *string` so `PATCH /admin/wiki/{page_id}` (wiki.manage) can bind a page to a child entity type (spec §8.2).
+
+- [ ] **Step 4: Register the feature flag** — flags are code-registered, not migrated: add `{Key: "wiki.structured_edits", Label: "Wiki Community Fields", Default: false}` to the registry in `internal/features/registry.go` (next to `wiki.enabled`, ~line 58). `features.Gate` reads `feature_flags` rows with registry defaults as fallback — no migration needed.
 
 - [ ] **Step 5: Build + smoke + commit**
 
 ```bash
 go build ./... && go test ./internal/wiki/ ./internal/server/
-git add internal/wiki/ internal/server/server.go migrations/000732*
+git add internal/wiki/ internal/server/server.go internal/features/registry.go
 git commit -m "wiki: structured field-ops API routes (suggest, entity fields, revision-keyed review)"
 ```
 
@@ -435,8 +468,8 @@ git commit -m "wiki: structured field-ops API routes (suggest, entity fields, re
 **Interfaces:**
 - Consumes: Task 2 `source_field_id` on dimension rows; `resolver.Registry` already on `Service` (`s.resolver` — check field name at `comparison.go:129` `SetResolver`).
 - Produces:
-  - `ComparisonMatrixDimension.SourceFieldID pgtype.UUID \`json:"source_field_id,omitempty"\``, `HydratedFrom string \`json:"hydrated_from,omitempty"\`` (`"entity_field"`)
-  - `ResolvedItem.Metadata["field_values"]` = `map[string]any` from the entity's field_values column (DBResolver: `parseDBFieldValues(rv.fieldValues)` raw, in addition to existing `score_inputs`).
+  - `ComparisonMatrixDimension.HydratedFrom string \`json:"hydrated_from,omitempty"\`` (`"entity_field"`)
+  - `ResolvedItem.Metadata["field_values"]` = `map[string]any` keyed by field **key** → current value. DBResolver: return `parseDBFieldValues(rv.fieldValues)` raw alongside `score_inputs`. Space/university/content resolvers: build the map via the gen query backing `customfields.Service.ListFieldValuesWithDefsByEntity` (joins defs → key + typed value), using `customfields.ValueEntityType(entityType)` for the `entity_type` predicate (space-backed entities read `entity_type='space'`).
 
 - [ ] **Step 1: Write failing test**
 
@@ -452,7 +485,7 @@ func TestGetComparisonMatrix_HydratesFromEntityField(t *testing.T) {
 
 - [ ] **Step 3: Implement**
 
-In `GetComparisonMatrix`: collect dims with `SourceFieldID.Valid`; batch-load `custom_fields` rows (need `field.key` — add a `customfields` lookup the service already has via `s.cfSvc`, e.g. `GetField`/`GetCustomFieldByKey` — check available method on `cfSvc`); for each item with non-empty `item_ref`, call `s.resolver.Resolve` once and cache per item; fill empty cells from `fieldValues[field.Key]`, setting `HydratedFrom="entity_field"`. Resolver changes: in `dbResolverScoreInputs`/`toItem`, add `meta["field_values"] = fields` (raw map); space/university/content resolvers do the same from their entity's `field_values` column (universities live in `spaces`/`universities` — check which table the resolver reads and use that row's `field_values`).
+In `GetComparisonMatrix`: the dimension rows already carry `source_field_key` (from the Task 2 LEFT JOIN) — no `cfSvc` lookup needed. For each item with non-empty `item_ref`, call `s.resolver.Resolve` once and cache the result per item; for each dimension with a `source_field_key` and no `comparison_values` row, fill the cell from `resolvedItem.Metadata["field_values"][source_field_key]` (coerce to the dimension type for `value_rating`/`value_boolean`), setting `HydratedFrom="entity_field"`. Resolver changes: in `toItem` (DBResolver), add `meta["field_values"] = fields` (the raw `parseDBFieldValues` map, alongside `score_inputs`); space/university/content resolvers build `Metadata["field_values"]` from `custom_field_values` via the defs-join query so the map is keyed by field key — use `customfields.ValueEntityType` for the `entity_type` predicate.
 
 - [ ] **Step 4: Test + commit**
 
