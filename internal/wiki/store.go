@@ -49,6 +49,7 @@ type WikiPage struct {
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
 	IsJapabotIndexed bool
+	DataEntityType   *string
 }
 
 // WikiPageWithSpace includes the space slug/name for the wiki index listing.
@@ -120,6 +121,7 @@ func (s *Store) GetWikiPageBySlug(ctx context.Context, spaceSlug, pageSlug strin
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -134,6 +136,7 @@ LIMIT 1
 		&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 		&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 		&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
+		&p.DataEntityType,
 		&p.SpaceSlug, &p.SpaceName,
 	)
 	if err != nil {
@@ -154,6 +157,7 @@ func (s *Store) ListWikiPagesBySpace(ctx context.Context, spaceSlug string) ([]W
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -176,6 +180,7 @@ ORDER BY wp.category, wp.title
 			&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
+			&p.DataEntityType,
 			&p.SpaceSlug, &p.SpaceName,
 		); err != nil {
 			return nil, fmt.Errorf("wiki: scan page: %w", err)
@@ -198,6 +203,7 @@ func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, spaceID pgtype.UUID)
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -219,6 +225,7 @@ ORDER BY wp.category, wp.title`
 			&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
+			&p.DataEntityType,
 			&p.SpaceSlug, &p.SpaceName,
 		); err != nil {
 			return nil, fmt.Errorf("wiki: scan page: %w", err)
@@ -1242,6 +1249,7 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type,
        sp.slug AS space_slug, sp.name AS space_name,
        lr.id AS latest_revision_id, lr.status AS latest_revision_status,
        lr.excerpt
@@ -1277,6 +1285,7 @@ LIMIT $%d OFFSET $%d
 			&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
+			&p.DataEntityType,
 			&p.SpaceSlug, &p.SpaceName,
 			&p.LatestRevisionID, &p.LatestRevisionStatus, &p.Excerpt,
 		); err != nil {
