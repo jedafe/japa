@@ -63,8 +63,18 @@ func (s *Service) SetEmbedder(e EmbeddingGenerator) { s.embedder = e }
 // EmbedderConfigured reports whether an embedding provider is wired.
 // The public semantic-search endpoint uses this to answer 503 honestly —
 // Retrieve returns nil, nil without an embedder and cannot be distinguished
-// from a legitimately empty result set.
-func (s *Service) EmbedderConfigured() bool { return s.embedder != nil }
+// from a legitimately empty result set. The embedder wrapper is always
+// non-nil once wired, so when it exposes a Configured check (ai.RAGEmbedder
+// → dispatcher.HasCategory("embedding")) we defer to it.
+func (s *Service) EmbedderConfigured() bool {
+	if s.embedder == nil {
+		return false
+	}
+	if c, ok := s.embedder.(interface{ Configured() bool }); ok {
+		return c.Configured()
+	}
+	return true
+}
 
 // SetEnqueuer injects the Asynq task enqueuer for re-index jobs.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }

@@ -27,3 +27,11 @@ func NewRAGEmbedder(dispatcher *Dispatcher) *RAGEmbedder {
 func (r *RAGEmbedder) GenerateEmbedding(ctx context.Context, text, model string) ([]float32, error) {
 	return GenerateContentEmbedding(ctx, r.dispatcher, text, model)
 }
+
+// Configured reports whether the dispatcher has a provider registered for
+// the "embedding" category. The embedder wrapper is always non-nil once
+// wired, so rag.Service.EmbedderConfigured type-asserts this to answer
+// "is search actually available" honestly (§69 / agent data API Phase 2).
+func (r *RAGEmbedder) Configured() bool {
+	return r.dispatcher != nil && r.dispatcher.HasCategory("embedding")
+}
