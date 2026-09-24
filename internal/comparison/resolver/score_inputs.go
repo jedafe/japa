@@ -7,10 +7,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/costofliving"
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/visaroutes"
 )
@@ -154,6 +156,14 @@ func resolveSpaceBase(ctx context.Context, deps *scoreDeps, entityType string, b
 		"score_inputs": spaceScoreInputs(ctx, deps, entityType, base),
 	}
 
+	// §30 Sub-spec 5: expose the entity's custom field values so matrix cells
+	// can hydrate from them when no comparison_values row exists.
+	if deps != nil && deps.queries != nil {
+		if fv := resolveFieldValues(ctx, deps.queries, entityType, base.ID); len(fv) > 0 {
+			meta["field_values"] = fv
+		}
+	}
+
 	if entityType != "space" {
 		meta["space"] = true
 	}
@@ -231,7 +241,7 @@ func universityScoreInputs(ctx context.Context, deps *scoreDeps, base spaceBase)
 
 	var values map[string]any
 	if deps != nil && deps.queries != nil {
-		values = customFieldValues(ctx, deps.queries, base.ID)
+		values = resolveFieldValues(ctx, deps.queries, "university", base.ID)
 	}
 
 	if values != nil {
@@ -258,9 +268,20 @@ func universityScoreInputs(ctx context.Context, deps *scoreDeps, base spaceBase)
 	return inputs
 }
 
-func customFieldValues(ctx context.Context, q *gen.Queries, entityID pgtype.UUID) map[string]any {
+// resolveFieldValues returns an entity's custom field values keyed by field
+// key, read from custom_field_values joined to custom_fields (§30 Sub-spec 5
+// entity-field hydration). The entity type is normalized through
+// customfields.ValueEntityType so space-backed types read entity_type='space'.
+// It returns nil when the resolver has no queries handle, the entity ID is
+// invalid, or the lookup fails — field_values metadata is best-effort
+// enrichment and must never fail a resolve.
+func resolveFieldValues(ctx context.Context, q *gen.Queries, entityType string, entityID pgtype.UUID) map[string]any {
+	if q == nil || !entityID.Valid {
+		return nil
+	}
+
 	rows, err := q.ListCustomFieldValuesWithDefsByEntity(ctx, gen.ListCustomFieldValuesWithDefsByEntityParams{
-		EntityType: "space",
+		EntityType: customfields.ValueEntityType(entityType),
 		EntityID:   entityID,
 	})
 	if err != nil {
@@ -274,47 +295,89 @@ func customFieldValues(ctx context.Context, q *gen.Queries, entityID pgtype.UUID
 			continue
 		}
 
-		var v any
-
-		switch row.FieldType {
-		case "number":
-			if row.ValueNumber.Valid {
-				if f, err := row.ValueNumber.Float64Value(); err == nil && f.Valid {
-					v = f.Float64
-				}
-			}
-		case "boolean":
-			if row.ValueBool != nil {
-				v = *row.ValueBool
-			}
-		case "multiselect", "checkbox":
-			if len(row.ValueJson) > 0 {
-				var list []any
-				if err := json.Unmarshal(row.ValueJson, &list); err == nil {
-					v = list
-				}
-			}
-
-			if v == nil && row.ValueText != nil {
-				v = *row.ValueText
-			}
-		default:
-			if row.ValueText != nil {
-				v = *row.ValueText
-			} else if len(row.ValueJson) > 0 {
-				var m any
-				if err := json.Unmarshal(row.ValueJson, &m); err == nil {
-					v = m
-				}
-			}
-		}
-
-		if v != nil {
+		if v := cfvTypedValue(row); v != nil {
 			values[row.FieldKey] = v
 		}
 	}
 
 	return values
+}
+
+// cfvTypedValue extracts the effective value from a custom_field_values row,
+// using the field's declared type to pick the typed column and falling back
+// to whichever column is populated for legacy or unmapped field types.
+func cfvTypedValue(row gen.ListCustomFieldValuesWithDefsByEntityRow) any {
+	col, _ := customfields.FieldTypeValueColumn(row.FieldType)
+
+	var v any
+
+	switch col {
+	case "value_number":
+		v = cfvNumber(row.ValueNumber)
+	case "value_bool":
+		if row.ValueBool != nil {
+			v = *row.ValueBool
+		}
+	case "value_date":
+		if row.ValueDate.Valid {
+			v = row.ValueDate.Time.Format(time.RFC3339)
+		}
+	case "value_json":
+		v = cfvJSON(row.ValueJson)
+	default:
+		if row.ValueText != nil {
+			v = *row.ValueText
+		}
+	}
+
+	if v != nil {
+		return v
+	}
+
+	// Fallback: return the first populated column so unmapped field types
+	// (e.g. legacy "checkbox") still expose their stored value.
+	if row.ValueText != nil {
+		return *row.ValueText
+	}
+
+	if n := cfvNumber(row.ValueNumber); n != nil {
+		return n
+	}
+
+	if row.ValueBool != nil {
+		return *row.ValueBool
+	}
+
+	if row.ValueDate.Valid {
+		return row.ValueDate.Time.Format(time.RFC3339)
+	}
+
+	return cfvJSON(row.ValueJson)
+}
+
+func cfvNumber(n pgtype.Numeric) any {
+	if !n.Valid {
+		return nil
+	}
+
+	if f, err := n.Float64Value(); err == nil && f.Valid {
+		return f.Float64
+	}
+
+	return nil
+}
+
+func cfvJSON(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+
+	var m any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil
+	}
+
+	return m
 }
 
 func universityScoreInputsFromCustomFields(values map[string]any) map[string]any {

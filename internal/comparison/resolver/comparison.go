@@ -211,11 +211,13 @@ func comparisonResolvedItem(row any, typeID pgtype.UUID, typeSlug, typeName stri
 
 	var sourceCountry, targetCountry *string
 
+	var fieldValues []byte
+
 	switch r := row.(type) {
 	case gen.GetContentByIDRow:
-		id, title, slug, body, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Slug, r.Body, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+		id, title, slug, body, status, visibility, geoSpaceID, sourceCountry, targetCountry, fieldValues = r.ID, r.Title, r.Slug, r.Body, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry, r.FieldValues
 	case gen.GetContentBySlugRow:
-		id, title, slug, body, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Slug, r.Body, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+		id, title, slug, body, status, visibility, geoSpaceID, sourceCountry, targetCountry, fieldValues = r.ID, r.Title, r.Slug, r.Body, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry, r.FieldValues
 	default:
 		return ResolvedItem{Type: "comparison"}
 	}
@@ -245,6 +247,12 @@ func comparisonResolvedItem(row any, typeID pgtype.UUID, typeSlug, typeName stri
 
 	if len(tags) > 0 {
 		meta["tags"] = tags
+	}
+
+	// §30 Sub-spec 5: expose the backing content's field_values JSONB map so
+	// matrix cells can hydrate from entity field values.
+	if fields := parseDBFieldValues(fieldValues); len(fields) > 0 {
+		meta["field_values"] = fields
 	}
 
 	return ResolvedItem{

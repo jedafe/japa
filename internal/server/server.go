@@ -1689,27 +1689,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceResolver.Register("remittance", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "remittance", Table: "remittance_providers", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "website_url", PlatformColumn: "", ActiveWhere: "t.is_active = true",
-	}))
+	}, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("organization", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "organization", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verified = true",
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
-	}))
+	}, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("bank", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "bank", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verified = true",
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
-	}))
+	}, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("job", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "job", Table: "intel_jobs", IDColumn: "id", TitleColumn: "title", SlugColumn: "",
 		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verification_status = 'verified'",
 		GeoSpaceIDColumn: "country_space_id", CountryColumn: "country", TagsColumn: "skills",
-	}))
+	}, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("job_listing", resolver.NewJobListingResolver(contentService))
 	jceResolver.Register("travel", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "travel", Table: "travel_providers", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "", PlatformColumn: "", ActiveWhere: "t.is_active = true",
-	}))
+	}, resolver.WithQueries(jceReadQueries)))
 	comparisonService.SetResolver(jceResolver)
 
 	// JCE Sub-spec 2/3 service and handlers — must be created after comparisonService
