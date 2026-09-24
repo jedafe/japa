@@ -91,6 +91,11 @@ var apiKeyToolGates = map[string]toolGate{
 	"scam.list":       {scope: "api.read.safety"},
 	"scam.get":        {scope: "api.read.safety"},
 	"search.semantic": {scope: "api.read.search", minTier: "pro"},
+	// rag.search was restored to the key-caller allowlist after the §69
+	// scoped-retrieval amendment landed — retrieval is viewer-scoped to the
+	// key owner, so raw chunks cannot leak non-visible entities. Gated like
+	// search.semantic: api.read.search scope + pro tier.
+	"rag.search": {scope: "api.read.search", minTier: "pro"},
 	// Persona catalog tools are agent infrastructure, not public REST
 	// data, so they gate on agent.use itself. The RBAC persona.view
 	// filter in CatalogForUser still applies to the key's owner.

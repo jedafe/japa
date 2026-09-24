@@ -21,6 +21,10 @@ type CourseCatalog struct {
 	DeletedAt            pgtype.Timestamptz
 	CreatedAt            pgtype.Timestamptz
 	UpdatedAt            pgtype.Timestamptz
+
+	// OfferingCount is the number of non-deleted offerings referencing this
+	// catalog course — populated by the admin list/detail queries.
+	OfferingCount int64
 }
 
 // CourseOffering links a CourseCatalog entry to a specific university with

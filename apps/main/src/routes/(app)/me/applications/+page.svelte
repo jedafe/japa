@@ -2,7 +2,8 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Briefcase, FileText } from 'lucide-svelte';
-	import { EmptyState, RelativeTime } from '$lib/components/ui';
+	import { goto } from '$app/navigation';
+	import { EmptyState, PaginationControls, RelativeTime } from '$lib/components/ui';
 	import type { JobApplication } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -10,10 +11,14 @@
 
 	const title = $derived(t('jobs.my_applications', 'My Applications — JapaConnect'));
 	const applications = $derived<JobApplication[]>(data.applications);
+	const meta = $derived(data.meta);
 
+	// Statuses mirror the job_applications CHECK constraint (Section 63):
+	// applied, reviewing, shortlisted, rejected, offered, withdrawn.
 	const statusColor = (status: string): string => {
 		switch (status) {
-			case 'accepted': return 'text-[var(--color-success)]';
+			case 'offered': return 'text-[var(--color-success)]';
+			case 'shortlisted': return 'text-[var(--color-info)]';
 			case 'rejected': return 'text-[var(--color-danger)]';
 			case 'reviewing': return 'text-[var(--color-info)]';
 			default: return 'text-[var(--color-muted)]';
@@ -61,12 +66,26 @@
 								</p>
 							</div>
 							<span class="shrink-0 text-xs font-medium capitalize {statusColor(app.status)}">
-								{app.status}
+								{t(`jobs.status_${app.status}`, app.status)}
 							</span>
 						</div>
 					</div>
 				{/each}
 			</div>
+
+			{#if meta?.total && meta.total > (meta.limit ?? 20)}
+				<div class="mt-4">
+					<PaginationControls
+						page={data.currentPage}
+						totalPages={Math.ceil((meta.total ?? 0) / (meta.limit ?? 20))}
+						onPageChange={(p) => {
+							const params = new URLSearchParams(page.url.searchParams);
+							params.set('page', String(p));
+							goto(`/me/applications?${params.toString()}`);
+						}}
+					/>
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>

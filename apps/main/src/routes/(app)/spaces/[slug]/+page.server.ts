@@ -186,11 +186,14 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Destination wiki index for this space, gated by the wiki feature flag
-	// and the space being a destination (country/state/city). A 404 from the
-	// wiki index simply means the space has no wiki or is not a destination.
+	// and the space being a destination (country/state/city/university per the
+	// §80 University Spaces amendment). A 404 from the wiki index simply means
+	// the space has no wiki or is not a wiki-capable level.
 	let wikiPages: WikiPageIndex[] | null = null;
 	const wikiEnabled = !!features['wiki.enabled'];
-	const isDestination = ['country', 'state', 'city'].includes(space.level);
+	// University spaces are typed via space_types.slug = 'university' (most
+	// carry level = 'custom'), so include isUniversity alongside the level set.
+	const isDestination = ['country', 'state', 'city', 'university'].includes(space.level) || isUniversity;
 	if (wikiEnabled && isDestination) {
 		wikiPages = await apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
 			.then((r) => r.items)

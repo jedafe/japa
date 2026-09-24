@@ -184,6 +184,12 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 		Limit:           limit,
 	}
 
+	// The route catalog (§63) documents ?type= for the job_type filter —
+	// accept it as an alias so documented requests actually filter.
+	if filters.JobType == "" {
+		filters.JobType = q.Get("type")
+	}
+
 	// The "remote" query param is a shorthand for location_type=remote.
 	if filters.LocationType == "" && q.Get("location_type") != "" {
 		filters.LocationType = q.Get("location_type")
@@ -216,6 +222,11 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 // HandleJobDetail handles GET /api/v1/jobs/:slug — public job detail.
 func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
 
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Job slug is required")
@@ -228,6 +239,15 @@ func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found")
 
 		return
+	}
+
+	// Viewer-scoped: include the caller's own application so the detail page
+	// renders the applied state instead of the submit form.
+	if user := auth.FromContext(r.Context()); user != nil {
+		var jobUUID pgtype.UUID
+		if jobUUID.Scan(detail.ID) == nil {
+			detail.MyApplication = h.service.ViewerApplicationForJob(r.Context(), jobUUID, user.UserID)
+		}
 	}
 
 	h.resolveLiterals(r, &detail)
@@ -245,6 +265,11 @@ type applyRequest struct {
 // HandleApply handles POST /api/v1/jobs/:id/apply — submit an on-platform
 // application. Auth required.
 func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -406,6 +431,10 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 
 	listing, err := h.service.CreateJobListing(r.Context(), orgID, user.UserID, req.Title, req.Slug, "", req.Body, req.FieldValues)
 	if err != nil {
+		if errors.Is(err, ErrDuplicateContent) {
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A listing with identical content already exists")
+			return
+		}
 		slog.Error("jobs: create listing failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_listing_failed", "Failed to create job listing")
 
@@ -454,6 +483,11 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrNotOrgMember) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+
+		if errors.Is(err, ErrDuplicateContent) {
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A listing with identical content already exists")
 			return
 		}
 
@@ -630,8 +664,9 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
+	q := r.URL.Query().Get("q")
 
-	results, total, err := h.service.AdminListJobs(r.Context(), status, page, limit)
+	results, total, err := h.service.AdminListJobs(r.Context(), status, q, page, limit)
 	if err != nil {
 		slog.Error("jobs: admin list jobs failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list job listings")
@@ -712,6 +747,10 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.service.AdminUpdateJob(r.Context(), jobID, body.Title, body.Summary, body.Body, body.Status, body.FieldValues); err != nil {
+		if errors.Is(err, ErrDuplicateContent) {
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A listing with identical content already exists")
+			return
+		}
 		slog.Error("jobs: admin update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update job listing")
 

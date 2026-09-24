@@ -3,12 +3,13 @@
 	// Global wiki landing at /wiki — geo-aware destination chooser and directory.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { goto } from '$app/navigation';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { WikiDestination } from '$lib/types';
 	import { page } from '$app/state';
-	import { BookOpen, Globe, MapPin } from 'lucide-svelte';
+	import { BookOpen, Globe, MapPin, GraduationCap } from 'lucide-svelte';
 	import { ListPageBar } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
@@ -159,6 +160,30 @@
 	function pageCountLabel(count: number): string {
 		return t('wiki.destination_page_count', '{count} guides').replace('{count}', String(count));
 	}
+
+	// §80 amendment — University Spaces: university wikis are searched by name
+	// via /wiki/destinations?level=university&q= (server-side — the set is too
+	// large to filter client-side) and the browse grid lists universities that
+	// already carry wiki pages.
+	// svelte-ignore state_referenced_locally
+	const universityWikis = data.universityWikis ?? [];
+
+	async function searchUniversities(q: string): Promise<AutocompleteItem[]> {
+		// Require a query — the university set is too large to list unfiltered.
+		const query = q.trim();
+		if (!query) return [];
+		try {
+			const params = new URLSearchParams({ level: 'university', has_wiki: 'false', q: query });
+			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${params.toString()}`);
+			return (res.data ?? []).map(toAutocompleteItem);
+		} catch {
+			return [];
+		}
+	}
+
+	function onSelectUniversity(item: AutocompleteItem) {
+		if (item.id) goto(`/wiki/${encodeURIComponent(item.id)}`);
+	}
 </script>
 
 <svelte:head>
@@ -234,6 +259,47 @@
 				<p class="mt-4 text-xs text-[var(--color-muted)]">{t('wiki.destination_loading', 'Loading destinations…')}</p>
 			{/if}
 		</div>
+
+		<!-- §80 amendment — University Spaces: search any university by name
+		     and browse universities that already carry wiki pages. Rendered
+		     above the (long) destination grid so it stays visible. -->
+		<div class="mt-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<div class="mb-4 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<GraduationCap size={16} />
+				{t('wiki.universities_label', 'University wikis')}
+			</div>
+			<div class="w-full max-w-sm">
+				<Autocomplete
+					id="wiki-university"
+					placeholder={t('wiki.university_search_hint', 'Search a university…')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={searchUniversities}
+					selectedId={null}
+					selectedLabel={null}
+					onSelect={onSelectUniversity}
+				/>
+			</div>
+		</div>
+
+		{#if universityWikis.length > 0}
+			<div class="mt-6">
+				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+					{t('wiki.browse_universities', 'University wikis')}
+				</h2>
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each universityWikis as uni (uni.slug)}
+						<a
+							href="/wiki/{encodeURIComponent(uni.slug)}"
+							class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+							data-sveltekit-preload-data="hover"
+						>
+							<span class="text-sm font-medium text-[var(--color-text)]">{uni.name}</span>
+							<span class="text-xs text-[var(--color-muted)]">{pageCountLabel(uni.page_count)}</span>
+						</a>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		<div class="mt-6">
 			{#if browseLoading}

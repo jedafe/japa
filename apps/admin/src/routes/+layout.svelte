@@ -99,6 +99,10 @@
 		'/spaces': 'spaces.admin',
 		'/geo': 'geo.lookup',
 		'/tags': 'tags.manage',
+		// More-specific universities sub-routes must precede the /universities
+		// prefix — PAGE_PERMISSIONS matches by startsWith in insertion order.
+		'/universities/course-catalog': 'universities.course_catalog.list',
+		'/universities/course-offerings': 'universities.course_offering.list',
 		'/universities': 'admin.settings',
 		'/university/instructors': 'university.instructor.approve',
 		'/university/tracks': 'university.course.approve',

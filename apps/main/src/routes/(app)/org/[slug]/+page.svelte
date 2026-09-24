@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
-	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight } from 'lucide-svelte';
+	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight, Briefcase, Pencil } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import OrgHeader from '$lib/components/profile/OrgHeader.svelte';
 	import OrgProfileSidebar from '$lib/components/profile/OrgProfileSidebar.svelte';
@@ -18,6 +18,9 @@
 
 	const org = $derived(data.org);
 	const canManage = $derived(data.canManage);
+	const canManageJobs = $derived(data.canManageJobs ?? false);
+	const isJobAdmin = $derived(data.isJobAdmin ?? false);
+	const orgJobs = $derived(data.orgJobs ?? []);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
 	// Map ProfilePost → FeedItem so org posts render through the shared FeedCard.
 	function toFeedItem(post: ProfilePost): FeedItem {
@@ -66,6 +69,9 @@
 		{ value: 'posts', label: t('profile.tab.posts', 'Posts') },
 		{ value: 'media', label: t('profile.tab.media', 'Media') },
 		{ value: 'members', label: t('profile.tab.members', 'Members') },
+		// Section 63 — org job editors get a Jobs management tab. Hidden for
+		// guests and regular members (the backing endpoint requires the role).
+		...(canManageJobs ? [{ value: 'jobs', label: t('profile.tab.jobs', 'Jobs') }] : []),
 		...(isUniversity
 			? [{ value: 'compare', label: t('profile.tab.compare', 'Compare') }]
 			: [])
@@ -216,6 +222,47 @@
 						</li>
 					{/each}
 				</ul>
+			{/if}
+		{:else if activeTab === 'jobs'}
+			<!-- Section 63 — org job management. Each listing links to the
+			applications view (admin-only actions) and the public edit page. -->
+			{#if orgJobs.length === 0}
+				<EmptyState
+					icon={Briefcase}
+					title={t('jobs.org_empty', 'No job listings yet')}
+					body={t('jobs.org_empty_body', 'Post a job to start receiving applications.')}
+					action={{ label: t('jobs.create_button', 'Post a job'), href: '/jobs/create' }}
+				/>
+			{:else}
+				<div class="space-y-2">
+					{#each orgJobs as job (job.id)}
+						<div class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+							<div class="min-w-0 flex-1">
+								<a href="/jobs/{job.slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:underline">
+									{job.title}
+								</a>
+								<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+									{job.field_values?.company_name ?? ''}
+									{#if job.field_values?.job_type}· {job.field_values.job_type}{/if}
+								</p>
+							</div>
+							{#if isJobAdmin}
+								<a
+									href="/org/{org.slug}/jobs/{job.id}"
+									class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								>
+									{t('jobs.view_applications', 'Applications')}
+								</a>
+							{/if}
+							<a
+								href="/jobs/{job.slug}/edit"
+								class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								<Pencil size={12} /> {t('common.edit', 'Edit')}
+							</a>
+						</div>
+					{/each}
+				</div>
 			{/if}
 		{:else if activeTab === 'compare'}
 			<!-- Section 39 — Compare tab for university-type orgs.

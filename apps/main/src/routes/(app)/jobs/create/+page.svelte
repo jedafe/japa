@@ -8,9 +8,9 @@
 	import { EmptyState } from '$lib/components/ui';
 	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import CustomFieldGroupCmp from '$lib/components/create/panel/CustomFieldGroup.svelte';
+	import JobGeoFields from '$lib/components/jobs/JobGeoFields.svelte';
 	import type { JobDetail } from '$lib/types';
 	import type { PageData } from './$types';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -27,6 +27,15 @@
 		...data.organizations.map((o) => ({ value: o.id, label: o.name }))
 	]);
 	let fieldValues = $state<Record<string, unknown>>({});
+
+	// country/city are rendered by the geo-space cascade (JobGeoFields), not
+	// the generic custom-field inputs — exclude them here.
+	const nonGeoFields = $derived(
+		data.fieldGroup?.fields.filter((f) => f.key !== 'country' && f.key !== 'city') ?? []
+	);
+	const hasGeoFields = $derived(
+		data.fieldGroup?.fields.some((f) => f.key === 'country' || f.key === 'city') ?? false
+	);
 
 	function markDirty() {
 		// no-op kept for CustomFieldGroupCmp callback interface
@@ -116,7 +125,7 @@
 
 			<div class="space-y-2">
 				<label for="job-title" class="text-sm font-medium text-[var(--color-text)]">
-					{t('jobs.title', 'Job title')} <span class="text-[var(--destructive)]">*</span>
+					{t('jobs.job_title', 'Job title')} <span class="text-[var(--destructive)]">*</span>
 				</label>
 				<input
 					id="job-title"
@@ -127,19 +136,18 @@
 				/>
 			</div>
 
-			<AiBodyField
-				id="job-body"
-				label={t('jobs.body', 'Description')}
-				contentType="job"
-				title={titleVal}
-				body={bodyVal}
-				onBody={(v) => (bodyVal = v)}
-				onTitle={(v) => (titleVal = v)}
-				user={data.user}
-				features={data.features ?? {}}
-				placeholder={t('jobs.body_placeholder', 'Describe the role, responsibilities, and requirements…')}
-				rows={5}
-			/>
+			<div class="space-y-2">
+				<label for="job-body" class="text-sm font-medium text-[var(--color-text)]">
+					{t('jobs.body', 'Description')}
+				</label>
+				<textarea
+					id="job-body"
+					rows="5"
+					bind:value={bodyVal}
+					placeholder={t('jobs.body_placeholder', 'Describe the role, responsibilities, and requirements…')}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+				></textarea>
+			</div>
 
 			<div class="space-y-2">
 				<label for="job-org" class="text-sm font-medium text-[var(--color-text)]">
@@ -153,15 +161,26 @@
 				/>
 			</div>
 
-			{#if data.fieldGroup && data.fieldGroup.fields.length > 0}
+			{#if data.fieldGroup && (nonGeoFields.length > 0 || hasGeoFields)}
 				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{data.fieldGroup.name}</h2>
-					<CustomFieldGroupCmp
-						fields={data.fieldGroup.fields}
-						values={fieldValues}
-						onvalues={(v) => { fieldValues = v; }}
-						onedit={markDirty}
-					/>
+					{#if nonGeoFields.length > 0}
+						<CustomFieldGroupCmp
+							fields={nonGeoFields}
+							values={fieldValues}
+							onvalues={(v) => { fieldValues = v; }}
+							onedit={markDirty}
+						/>
+					{/if}
+					{#if hasGeoFields}
+						<div class:mt-3={nonGeoFields.length > 0}>
+							<JobGeoFields
+								values={fieldValues}
+								onvalues={(v) => { fieldValues = v; }}
+								onedit={markDirty}
+							/>
+						</div>
+					{/if}
 				</div>
 			{/if}
 

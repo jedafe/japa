@@ -33,7 +33,7 @@
 		catLoading = true;
 		(async () => {
 			try {
-				const catRes = await api.get<{ slug: WikiCategory; label_key: string; label: string }[]>('/wiki/categories');
+				const catRes = await api.get<{ slug: WikiCategory; label_key: string; label: string }[]>(`/wiki/categories?space=${encodeURIComponent(data.spaceSlug)}`);
 				const catItems = catRes.data ?? [];
 				categories = catItems.map((c: { slug: WikiCategory; label: string }) => ({ slug: c.slug, label: c.label }));
 				if (categories.length > 0 && category === '') {

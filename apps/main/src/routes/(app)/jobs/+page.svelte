@@ -5,6 +5,7 @@
 	import { enhance } from '$app/forms';
 	import { Briefcase, Lock, MapPin, Clock, ArrowRight, Plus, GitCompare, Loader2, ExternalLink } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, FilterToggle, PageAction, type SearchSuggestion } from '$lib/components/ui';
+	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -28,7 +29,21 @@
 	let q = $state(page.url.searchParams.get('q') ?? '');
 	let country = $state(page.url.searchParams.get('country') ?? '');
 	let jobType = $state(page.url.searchParams.get('job_type') ?? '');
-	let remote = $state(page.url.searchParams.get('remote') ?? '');
+	let remote = $state(page.url.searchParams.get('remote') ?? page.url.searchParams.get('location_type') ?? '');
+	let visaSponsorship = $state(page.url.searchParams.get('visa_sponsorship') === 'true');
+	let sort = $state(page.url.searchParams.get('sort') ?? 'newest');
+
+	const locationTypeOptions = $derived([
+		{ value: '', label: t('jobs.any_location', 'Any location') },
+		{ value: 'remote', label: t('jobs.remote', 'Remote') },
+		{ value: 'hybrid', label: t('jobs.hybrid', 'Hybrid') },
+		{ value: 'onsite', label: t('jobs.onsite', 'On-site') }
+	]);
+	const sortOptions = $derived([
+		{ value: 'newest', label: t('jobs.sort_newest', 'Newest') },
+		{ value: 'deadline_asc', label: t('jobs.sort_deadline', 'Deadline (soonest)') },
+		{ value: 'salary_desc', label: t('jobs.sort_salary', 'Salary (highest)') }
+	]);
 
 	function applyFilters() {
 		const params = new URLSearchParams();
@@ -36,6 +51,8 @@
 		if (country) params.set('country', country);
 		if (jobType) params.set('job_type', jobType);
 		if (remote) params.set('remote', remote);
+		if (visaSponsorship) params.set('visa_sponsorship', 'true');
+		if (sort && sort !== 'newest') params.set('sort', sort);
 		goto(`/jobs?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
@@ -51,6 +68,8 @@
 		country = '';
 		jobType = '';
 		remote = '';
+		visaSponsorship = false;
+		sort = 'newest';
 		goto('/jobs');
 	}
 
@@ -58,7 +77,9 @@
 		return job.field_values?.[key] ?? '';
 	}
 
-	const hasActiveFilters = $derived(!!q || !!country || !!jobType || !!remote);
+	const hasActiveFilters = $derived(
+		!!q || !!country || !!jobType || !!remote || visaSponsorship || (sort !== 'newest' && !!sort)
+	);
 
 	// job_type is a free-text filter over listing field_values — suggest the
 	// values present in the loaded page, allow arbitrary input via allowFreeText.
@@ -137,6 +158,11 @@
 			{/if}
 			{#if authed && !disabled}
 				<PageAction
+					href="/me/applications"
+					icon={Briefcase}
+					label={t('jobs.my_applications_link', 'My applications')}
+				/>
+				<PageAction
 					href="/jobs/create"
 					icon={Plus}
 					label={t('jobs.create_button', 'Post a job')}
@@ -189,6 +215,25 @@
 					onSelect={(item) => { jobType = item.id; applyFilters(); }}
 					onClear={() => { jobType = ''; applyFilters(); }}
 				/>
+				<SelectField
+					value={remote}
+					options={locationTypeOptions}
+					onValueChange={(v) => { remote = v; applyFilters(); }}
+				/>
+				<SelectField
+					value={sort}
+					options={sortOptions}
+					onValueChange={(v) => { sort = v; applyFilters(); }}
+				/>
+				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+					<input
+						type="checkbox"
+						checked={visaSponsorship}
+						onchange={() => { visaSponsorship = !visaSponsorship; applyFilters(); }}
+						class="accent-[var(--color-primary)]"
+					/>
+					{t('jobs.visa_sponsorship', 'Visa sponsorship')}
+				</label>
 			</form>
 			{#if hasActiveFilters}
 				<button
@@ -280,7 +325,14 @@
 										class="mt-1 accent-[var(--color-primary)]"
 									/>
 									<a href="/jobs/{job.slug}" class="block min-w-0 flex-1">
-										<h3 class="text-sm font-medium text-[var(--color-text)]">{job.title}</h3>
+										<h3 class="text-sm font-medium text-[var(--color-text)]">
+											{job.title}
+											{#if field(job, 'is_featured') === 'true'}
+												<span class="ml-1.5 inline-flex items-center rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+													{t('jobs.featured', 'Featured')}
+												</span>
+											{/if}
+										</h3>
 										{#if job.summary}
 											<p class="mt-1 line-clamp-2 text-xs text-[var(--color-muted)]">{job.summary}</p>
 										{/if}
@@ -304,7 +356,7 @@
 											{/if}
 										</div>
 									</a>
-								{#if job.source}
+								{#if job.source?.id}
 									{@const source = job.source}
 									<div class="mt-1.5 flex items-center gap-1 text-xs">
 										<EntityHoverChip

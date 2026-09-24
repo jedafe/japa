@@ -870,6 +870,88 @@ export const universitiesAdminApi = {
 		api(`/admin/universities/${id}/status`, { method: 'PATCH', body }),
 };
 
+// --- University Course Catalog + Offerings (Section 39) ---
+// Institutional degree programs (university_course_catalog +
+// university_course_offerings) — distinct from the Japa University creator
+// tracks under universityAdminApi.
+
+export type CourseCatalogEntry = {
+	id: string;
+	title: string;
+	slug: string;
+	description?: string | null;
+	degree_type?: string | null;
+	department?: string | null;
+	field_of_study?: string | null;
+	language: string;
+	default_duration_years?: number | null;
+	is_published: boolean;
+	offering_count: number;
+	created_at: string;
+	updated_at: string;
+};
+
+export type CourseOffering = {
+	id: string;
+	course_id: string;
+	university_id: string;
+	slug: string;
+	tuition?: number | null;
+	currency?: string | null;
+	duration_years?: number | null;
+	study_mode?: string | null;
+	intake_months?: string[] | null;
+	entry_requirements?: string | null;
+	accreditation?: string | null;
+	is_published: boolean;
+	created_at: string;
+	updated_at: string;
+	course: {
+		title: string;
+		slug: string;
+		description?: string | null;
+		degree_type?: string | null;
+		department?: string | null;
+		field_of_study?: string | null;
+		language?: string;
+		default_duration_years?: number | null;
+	};
+	university: { name: string; slug: string };
+};
+
+export const courseCatalogAdminApi = {
+	list: (params?: string) =>
+		apiRaw<{ data: CourseCatalogEntry[]; meta: { total: number; page: number; limit: number; total_pages: number } }>(
+			`/admin/course-catalog${params ? `?${params}` : ''}`),
+	get: (id: string) =>
+		api<CourseCatalogEntry>(`/admin/course-catalog/${id}`),
+	create: (body: Partial<CourseCatalogEntry>) =>
+		api<CourseCatalogEntry>('/admin/course-catalog', { method: 'POST', body }),
+	update: (id: string, body: Partial<CourseCatalogEntry>) =>
+		api<CourseCatalogEntry>(`/admin/course-catalog/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/course-catalog/${id}`, { method: 'DELETE' }),
+};
+
+export const courseOfferingsAdminApi = {
+	list: (params?: string) =>
+		apiRaw<{ data: CourseOffering[]; meta: { total: number; page: number; limit: number; total_pages: number } }>(
+			`/admin/course-offerings${params ? `?${params}` : ''}`),
+	get: (id: string) =>
+		api<CourseOffering>(`/admin/course-offerings/${id}`),
+	create: (body: Partial<CourseOffering>) =>
+		api<CourseOffering>('/admin/course-offerings', { method: 'POST', body }),
+	update: (id: string, body: Partial<CourseOffering>) =>
+		api<CourseOffering>(`/admin/course-offerings/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/course-offerings/${id}`, { method: 'DELETE' }),
+	bulk: (action: 'publish' | 'unpublish' | 'delete', ids: string[]) =>
+		api<{ ok: boolean; affected: number }>('/admin/course-offerings/bulk', {
+			method: 'POST',
+			body: { action, ids }
+		}),
+};
+
 // --- Japa University Creator Economy (ADR-063) ---
 
 export const universityAdminApi = {

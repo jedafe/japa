@@ -278,9 +278,11 @@ const listJobApplicationsByJob = `-- name: ListJobApplicationsByJob :many
 SELECT
  ja.id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
  u.username AS applicant_username,
- u.email AS applicant_email
+ u.email AS applicant_email,
+ fs.field_values AS submission_fields
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
+LEFT JOIN form_submissions fs ON fs.id = ja.submission_id
 WHERE ja.job_id = $1
  AND ($2::text = '' OR ja.status = $2)
 ORDER BY ja.applied_at DESC
@@ -305,6 +307,7 @@ type ListJobApplicationsByJobRow struct {
 	StatusUpdatedAt   pgtype.Timestamptz `json:"status_updated_at"`
 	ApplicantUsername string             `json:"applicant_username"`
 	ApplicantEmail    string             `json:"applicant_email"`
+	SubmissionFields  []byte             `json:"submission_fields"`
 }
 
 // =====================================================================
@@ -335,6 +338,7 @@ func (q *Queries) ListJobApplicationsByJob(ctx context.Context, arg ListJobAppli
 			&i.StatusUpdatedAt,
 			&i.ApplicantUsername,
 			&i.ApplicantEmail,
+			&i.SubmissionFields,
 		); err != nil {
 			return nil, err
 		}

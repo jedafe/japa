@@ -43,9 +43,11 @@ WHERE id = @id;
 SELECT
  ja.*,
  u.username AS applicant_username,
- u.email AS applicant_email
+ u.email AS applicant_email,
+ fs.field_values AS submission_fields
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
+LEFT JOIN form_submissions fs ON fs.id = ja.submission_id
 WHERE ja.job_id = @job_id
  AND (@status::text = '' OR ja.status = @status)
 ORDER BY ja.applied_at DESC

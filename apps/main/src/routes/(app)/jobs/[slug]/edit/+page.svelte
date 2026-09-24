@@ -7,6 +7,7 @@
 	import { api } from '$lib/api/client';
 	import { EmptyState } from '$lib/components/ui';
 	import CustomFieldGroupCmp from '$lib/components/create/panel/CustomFieldGroup.svelte';
+	import JobGeoFields from '$lib/components/jobs/JobGeoFields.svelte';
 	import type { JobDetail } from '$lib/types';
 	import type { PageData } from './$types';
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
@@ -21,8 +22,17 @@
 	let error = $state<string | null>(null);
 	let titleVal = $state(untrack(() => job.title));
 	let bodyVal = $state(untrack(() => job.body));
-	let orgId = $state<string>(untrack(() => job.org_id ?? data.organizations[0]?.id ?? ''));
+	let orgId = $state<string>(untrack(() => job.organization_id ?? data.organizations[0]?.id ?? ''));
 	let fieldValues = $state<Record<string, unknown>>(untrack(() => ({ ...job.field_values })));
+
+	// country/city are rendered by the geo-space cascade (JobGeoFields), not
+	// the generic custom-field inputs — exclude them here.
+	const nonGeoFields = $derived(
+		data.fieldGroup?.fields.filter((f) => f.key !== 'country' && f.key !== 'city') ?? []
+	);
+	const hasGeoFields = $derived(
+		data.fieldGroup?.fields.some((f) => f.key === 'country' || f.key === 'city') ?? false
+	);
 
 	function markDirty() {
 		// no-op kept for CustomFieldGroupCmp callback interface
@@ -115,7 +125,7 @@
 
 			<div class="space-y-2">
 				<label for="job-title" class="text-sm font-medium text-[var(--color-text)]">
-					{t('jobs.title', 'Job title')} <span class="text-[var(--destructive)]">*</span>
+					{t('jobs.job_title', 'Job title')} <span class="text-[var(--destructive)]">*</span>
 				</label>
 				<input
 					id="job-title"
@@ -157,15 +167,26 @@
 				<p class="text-xs text-[var(--color-muted)]">{t('jobs.org_readonly', 'The organization for an existing job cannot be changed.')}</p>
 			</div>
 
-			{#if data.fieldGroup && data.fieldGroup.fields.length > 0}
+			{#if data.fieldGroup && (nonGeoFields.length > 0 || hasGeoFields)}
 				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{data.fieldGroup.name}</h2>
-					<CustomFieldGroupCmp
-						fields={data.fieldGroup.fields}
-						values={fieldValues}
-						onvalues={(v) => { fieldValues = v; }}
-						onedit={markDirty}
-					/>
+					{#if nonGeoFields.length > 0}
+						<CustomFieldGroupCmp
+							fields={nonGeoFields}
+							values={fieldValues}
+							onvalues={(v) => { fieldValues = v; }}
+							onedit={markDirty}
+						/>
+					{/if}
+					{#if hasGeoFields}
+						<div class:mt-3={nonGeoFields.length > 0}>
+							<JobGeoFields
+								values={fieldValues}
+								onvalues={(v) => { fieldValues = v; }}
+								onedit={markDirty}
+							/>
+						</div>
+					{/if}
 				</div>
 			{/if}
 
