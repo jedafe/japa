@@ -29,16 +29,17 @@ import (
 // WikiPageDTO is the API response shape for a wiki page (index listing).
 // //nolint:revive // exported: stutter naming is intentional
 type WikiPageDTO struct {
-	ID         string `json:"id"`
-	SpaceID    string `json:"space_id"`
-	Slug       string `json:"slug"`
-	Title      string `json:"title"`
-	Category   string `json:"category"`
-	IsFeatured bool   `json:"is_featured"`
-	IsLocked   bool   `json:"is_locked"`
-	UpdatedAt  string `json:"updated_at"`
-	SpaceSlug  string `json:"space_slug,omitempty"`
-	SpaceName  string `json:"space_name,omitempty"`
+	ID             string  `json:"id"`
+	SpaceID        string  `json:"space_id"`
+	Slug           string  `json:"slug"`
+	Title          string  `json:"title"`
+	Category       string  `json:"category"`
+	IsFeatured     bool    `json:"is_featured"`
+	IsLocked       bool    `json:"is_locked"`
+	UpdatedAt      string  `json:"updated_at"`
+	SpaceSlug      string  `json:"space_slug,omitempty"`
+	SpaceName      string  `json:"space_name,omitempty"`
+	DataEntityType *string `json:"data_entity_type,omitempty"`
 }
 
 // AdminWikiPageDTO extends WikiPageDTO with the latest revision metadata
@@ -704,16 +705,17 @@ func (s *Service) GeneratePage(ctx context.Context, userID pgtype.UUID, input Ge
 // pageToDTO converts a WikiPage (with its space context) to a WikiPageDTO.
 func pageToDTO(p WikiPageWithSpace) WikiPageDTO {
 	return WikiPageDTO{
-		ID:         p.ID.String(),
-		SpaceID:    p.SpaceID.String(),
-		Slug:       p.Slug,
-		Title:      p.Title,
-		Category:   p.Category,
-		IsFeatured: p.IsFeatured,
-		IsLocked:   p.IsLocked,
-		UpdatedAt:  formatTs(p.UpdatedAt),
-		SpaceSlug:  p.SpaceSlug,
-		SpaceName:  p.SpaceName,
+		ID:             p.ID.String(),
+		SpaceID:        p.SpaceID.String(),
+		Slug:           p.Slug,
+		Title:          p.Title,
+		Category:       p.Category,
+		IsFeatured:     p.IsFeatured,
+		IsLocked:       p.IsLocked,
+		UpdatedAt:      formatTs(p.UpdatedAt),
+		SpaceSlug:      p.SpaceSlug,
+		SpaceName:      p.SpaceName,
+		DataEntityType: p.DataEntityType,
 	}
 }
 
