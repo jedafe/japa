@@ -74,7 +74,6 @@ type toolGate struct {
 var apiKeyToolGates = map[string]toolGate{
 	"content.read":       {scope: "api.read.content"},
 	"content.search":     {scope: "api.read.content"},
-	"rag.search":         {scope: "api.read.content"},
 	"spaces.find":        {scope: "api.read.spaces"},
 	"spaces.read":        {scope: "api.read.spaces"},
 	"spaces.list":        {scope: "api.read.spaces"},
