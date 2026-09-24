@@ -288,7 +288,7 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          derefInt32(r.VoteScore),
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt),
+			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),

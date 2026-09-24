@@ -381,23 +381,33 @@ func TestCleanExcerpt(t *testing.T) {
 	cases := []struct {
 		name  string
 		input string
+		title string
 		want  string
 	}{
-		{"empty", "", ""},
-		{"whitespace", "   \n\t  ", ""},
-		{"plain text", "Visa bulletin for October.", "Visa bulletin for October."},
-		{"html", `<p>Gangnam <strong>Style</strong> broke the internet.</p>`, "Gangnam Style broke the internet."},
-		{"nested html", `<div><p>First</p><p>Second</p></div>`, "First Second"},
-		{"markdown", "# Title\n\nSome **bold** body text.", "Title Some bold body text."},
-		{"truncated prosemirror fragment", `{"type": "doc", "content": [{"type": "paragraph", "cont`, ""},
-		{"complete prosemirror doc", `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello world"}]}]}`, "Hello world"},
-		{"truncated html tail", `<p>Hello world this is a long excerpt that got cut mid-tag <st`, "Hello world this is a long excerpt that got cut mid-tag"},
-		{"long text", long, strings.TrimSpace(long)},
+		{"empty", "", "", ""},
+		{"whitespace", "   \n\t  ", "", ""},
+		{"plain text", "Visa bulletin for October.", "", "Visa bulletin for October."},
+		{"html", `<p>Gangnam <strong>Style</strong> broke the internet.</p>`, "", "Gangnam Style broke the internet."},
+		{"nested html", `<div><p>First</p><p>Second</p></div>`, "", "First Second"},
+		{"markdown", "# Title\n\nSome **bold** body text.", "", "Title Some bold body text."},
+		{"truncated prosemirror fragment", `{"type": "doc", "content": [{"type": "paragraph", "cont`, "", ""},
+		{"complete prosemirror doc", `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello world"}]}]}`, "", "Hello world"},
+		{"truncated html tail", `<p>Hello world this is a long excerpt that got cut mid-tag <st`, "", "Hello world this is a long excerpt that got cut mid-tag"},
+		{"long text", long, "", strings.TrimSpace(long)},
+		// Leading body H1 duplicating the card title is stripped.
+		{"title prefix in html", `<h1>Remote Work Platforms</h1><p>This comparison helps.</p>`, "Remote Work Platforms", "This comparison helps."},
+		{"title prefix with colon", "Express Entry: Canada's main route.", "Express Entry", "Canada's main route."},
+		{"title case-insensitive", "express entry manages programs.", "Express Entry", "manages programs."},
+		{"title whole excerpt", "Just the title", "Just the title", ""},
+		// Word-boundary: "Express Entry" must not clip "Express Entryway".
+		{"title word boundary", "Express Entryway renovation tips.", "Express Entry", "Express Entryway renovation tips."},
+		{"title not a prefix", "Body text first.", "Other title", "Body text first."},
+		{"no title", "Body text.", "", "Body text."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := CleanExcerpt(tc.input); got != tc.want {
-				t.Errorf("CleanExcerpt(%q) = %q, want %q", tc.input, got, tc.want)
+			if got := CleanExcerpt(tc.input, tc.title); got != tc.want {
+				t.Errorf("CleanExcerpt(%q, %q) = %q, want %q", tc.input, tc.title, got, tc.want)
 			}
 		})
 	}

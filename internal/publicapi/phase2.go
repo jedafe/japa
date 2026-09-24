@@ -570,7 +570,7 @@ func tagRowToFeedItem(r gen.ListContentByTagRow) PublicFeedItem {
 		Title:        r.Title,
 		Slug:         r.Slug,
 		ContentType:  r.ContentType,
-		Excerpt:      feed.CleanExcerpt(r.Excerpt),
+		Excerpt:      feed.CleanExcerpt(r.Excerpt, r.Title),
 		SpaceSlug:    r.SpaceSlug,
 		SpaceName:    r.SpaceName,
 		AuthorName:   r.AuthorName,

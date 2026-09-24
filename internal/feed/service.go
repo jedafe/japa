@@ -23,9 +23,11 @@ import (
 
 // CleanExcerpt normalizes the SQL excerpt column — LEFT(body_html-or-body,
 // 400) — to plain text for feed cards: residual HTML tags and markdown
-// markers are stripped. Exported for other surfaces that render the same
-// excerpt columns (e.g. publicapi tag feeds).
-func CleanExcerpt(raw string) string {
+// markers are stripped, and a leading repeat of the item's title is
+// dropped (bodies commonly open with an H1 duplicating it). Exported for
+// other surfaces that render the same excerpt columns (e.g. publicapi
+// tag feeds, assessment roadmap steps).
+func CleanExcerpt(raw, title string) string {
 	raw = strings.TrimSpace(raw)
 	// A ProseMirror body that reaches here (body_html empty) is a
 	// LEFT(...,400) fragment — invalid JSON that cannot be parsed, only
@@ -34,7 +36,29 @@ func CleanExcerpt(raw string) string {
 	if strings.HasPrefix(raw, "{") && !json.Valid([]byte(raw)) {
 		return ""
 	}
-	return rag.ExtractPlainText(raw)
+	text := rag.ExtractPlainText(raw)
+	return stripTitlePrefix(text, title)
+}
+
+// stripTitlePrefix removes a leading occurrence of the item's title —
+// bodies frequently open with an H1 that duplicates the card's title line.
+// Word-wise comparison keeps whole-word matching ("Express Entry" doesn't
+// clip "Express Entryway renovation") and tolerates trailing punctuation.
+func stripTitlePrefix(text, title string) string {
+	titleWords := strings.Fields(title)
+	textWords := strings.Fields(text)
+	if len(titleWords) == 0 || len(textWords) < len(titleWords) {
+		return text
+	}
+	trimWord := func(w string) string {
+		return strings.TrimRight(strings.ToLower(w), ".,:;!?—–-·\"'")
+	}
+	for i, w := range titleWords {
+		if trimWord(textWords[i]) != trimWord(w) {
+			return text
+		}
+	}
+	return strings.Join(textWords[len(titleWords):], " ")
 }
 
 // FeedItem represents a single item in a feed response, normalized across
@@ -634,7 +658,7 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 			authorName = *r.AuthorUsername
 		}
 
-		excerpt := CleanExcerpt(r.Excerpt)
+		excerpt := CleanExcerpt(r.Excerpt, r.Title)
 
 		items[i] = FeedItem{
 			ID:                 uuidToString(r.ID),
@@ -824,7 +848,7 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt),
+			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -867,7 +891,7 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt),
+			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -910,7 +934,7 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt),
+			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -953,7 +977,7 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          derefInt32(r.VoteScore),
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt),
+			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -996,7 +1020,7 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt),
+			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -1039,7 +1063,7 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt),
+			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
