@@ -51,8 +51,11 @@ the caller's view, rather than collapsing the corpus to public-only.
 
 - Re-ranking, hybrid search, or retrieval-quality changes.
 - New entity types in the corpus.
-- `rag.search` re-admission to the API-key allowlist (permanent removal —
-  `search.semantic` is the key-facing semantic surface).
+- ~~`rag.search` re-admission to the API-key allowlist (permanent removal —
+  `search.semantic` is the key-facing semantic surface).~~ **Revisited
+  2026-09-24:** restored for API keys at `api.read.search` + pro tier — the
+  same gate as `search.semantic` — now that retrieval is viewer-scoped to
+  the key owner. See §119.
 - Embedding model changes.
 
 ## Schema (migration 000728 — verify next free at plan time)
@@ -276,8 +279,10 @@ gen files):
 
 ## MCP / API-Key Surface
 
-- `rag.search` stays out of `apiKeyToolGates` permanently — documented in
-  §119 (done in `c454eb42` + jeos `337efec`).
+- ~~`rag.search` stays out of `apiKeyToolGates` permanently — documented in
+  §119 (done in `c454eb42` + jeos `337efec`).~~ **Revisited 2026-09-24:**
+  re-admitted at `{scope: "api.read.search", minTier: "pro"}` once scoped
+  retrieval proved viewer-scoped for key owners (§119 updated).
 - `search.semantic` (REST + MCP) returns the caller-scoped corpus — premium
   unchanged.
 - JEOS §69 (RAG) gets a "scoped retrieval" amendment documenting the corpus
