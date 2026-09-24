@@ -94,7 +94,13 @@
 		if (d) {
 			for (const g of d.groups) {
 				for (const f of g.fields) {
-					if (f.visible) v[f.key] = f.value ?? '';
+					if (!f.visible) continue;
+					let val = f.value ?? '';
+					// value_date arrives as RFC3339; <input type="date"> needs YYYY-MM-DD.
+					if (f.field_type === 'date' && typeof val === 'string' && val.length > 10) {
+						val = val.slice(0, 10);
+					}
+					v[f.key] = val;
 				}
 			}
 		}

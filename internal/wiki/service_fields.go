@@ -353,6 +353,13 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 			dto.Visible = canView || canManage
 			dto.CanEdit = canEdit || canManage
 
+			if !dto.Visible {
+				// A field the caller cannot view must not leak its stored
+				// value — the schema entry stays so the shape is stable, but
+				// the value is withheld on this public route.
+				dto.Value = nil
+			}
+
 			dtos = append(dtos, dto)
 		}
 
