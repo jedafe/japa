@@ -352,6 +352,75 @@ func TestCreateMyWebhookMaxPerKey(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Comment handler
+// ---------------------------------------------------------------------------
+
+type stubCommentService struct {
+	createFn func(ctx context.Context, userID, contentID, parentID pgtype.UUID, body, clientIP string) (PublicComment, error)
+}
+
+func (s stubCommentService) CreateComment(ctx context.Context, u, c, p pgtype.UUID, b, ip string) (PublicComment, error) {
+	return s.createFn(ctx, u, c, p, b, ip)
+}
+
+func commentRequest(t *testing.T, body string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/public/content/x/comments", strings.NewReader(body))
+	req = withChiParams(req, map[string]string{"id": testContentID.String()})
+	return withAPIKeyUser(req, pgtype.UUID{Valid: true})
+}
+
+func TestCreatePublicCommentValidation(t *testing.T) {
+	h := NewHandlers(NewService(nil))
+	h.SetCommentService(stubCommentService{createFn: func(context.Context, pgtype.UUID, pgtype.UUID, pgtype.UUID, string, string) (PublicComment, error) {
+		return PublicComment{ID: "c1", Depth: 0}, nil
+	}})
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want int
+	}{
+		{"missing body", `{"body":"  "}`, http.StatusBadRequest},
+		{"anonymous rejected", `{"body":"hi","is_anonymous":true}`, http.StatusBadRequest},
+		{"bad parent_id", `{"body":"hi","parent_id":"nope"}`, http.StatusBadRequest},
+		{"ok", `{"body":"hi"}`, http.StatusCreated},
+		{"reply ok", `{"body":"hi","parent_id":"` + testContentID.String() + `"}`, http.StatusCreated},
+	} {
+		rec := httptest.NewRecorder()
+		h.CreatePublicComment(rec, commentRequest(t, tc.body))
+		if rec.Code != tc.want {
+			t.Errorf("%s: got %d, want %d — %s", tc.name, rec.Code, tc.want, rec.Body.String())
+		}
+	}
+}
+
+func TestCreatePublicCommentPrivacyAndBlocking(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+		code string
+	}{
+		{"invisible content → 404", errpkg.ErrNotFound, http.StatusNotFound, "not_found"},
+		{"spam blocked → 403", ErrContentBlocked, http.StatusForbidden, "content_blocked"},
+	} {
+		h := NewHandlers(NewService(nil))
+		h.SetCommentService(stubCommentService{createFn: func(context.Context, pgtype.UUID, pgtype.UUID, pgtype.UUID, string, string) (PublicComment, error) {
+			return PublicComment{}, tc.err
+		}})
+		rec := httptest.NewRecorder()
+		h.CreatePublicComment(rec, commentRequest(t, `{"body":"hi"}`))
+		if rec.Code != tc.want {
+			t.Errorf("%s: got %d, want %d — %s", tc.name, rec.Code, tc.want, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), tc.code) {
+			t.Errorf("%s: want code %q, got %s", tc.name, tc.code, rec.Body.String())
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // OpenAPI surface
 // ---------------------------------------------------------------------------
 
