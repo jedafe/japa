@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -56,6 +57,35 @@ type WebhookEvent struct {
 	RawPayload  []byte
 }
 
+// SubscriptionProvider is the subset of Provider capabilities needed for
+// recurring billing (JEOS §17). Only Stripe and Paystack implement it —
+// NOWPayments, manual transfer, and Credit have no recurring-charge mechanism.
+type SubscriptionProvider interface {
+	Provider
+	// CreateSubscriptionCheckout starts a hosted recurring checkout and
+	// returns the URL the user is redirected to. No local subscription row
+	// exists until the provider's webhook confirms the first charge.
+	CreateSubscriptionCheckout(ctx context.Context, req SubscriptionRequest) (PaymentResponse, error)
+	// CancelSubscription schedules cancellation at the end of the current
+	// billing period (Stripe) or stops renewals (Paystack).
+	CancelSubscription(ctx context.Context, providerSubID string) error
+	// ReactivateSubscription undoes a pending cancellation.
+	ReactivateSubscription(ctx context.Context, providerSubID string) error
+}
+
+// SubscriptionRequest carries everything a provider needs to open a
+// recurring-billing checkout.
+type SubscriptionRequest struct {
+	UserID    string
+	Email     string
+	Plan      string // local plan code (pro_monthly, business_yearly, …)
+	Amount    int64  // smallest currency unit; Paystack requires it on initialize
+	Currency  string
+	PriceCode string // Stripe Price ID or Paystack plan_code (from settings)
+	ReturnURL string // where the provider sends the user after checkout
+	Metadata  map[string]interface{}
+}
+
 // ---------------------------------------------------------------------------
 // HTTP client shared by all providers
 // ---------------------------------------------------------------------------
@@ -88,6 +118,7 @@ type paystackInitRequest struct {
 	Email       string                 `json:"email"`
 	Currency    string                 `json:"currency,omitempty"`
 	Reference   string                 `json:"reference,omitempty"`
+	Plan        string                 `json:"plan,omitempty"` // plan_code — makes the charge recurring
 	CallbackURL string                 `json:"callback_url,omitempty"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -157,6 +188,174 @@ func (p *PaystackProvider) InitiatePayment(ctx context.Context, req PaymentReque
 		CheckoutURL: apiResp.Data.AuthorizationURL,
 		Reference:   apiResp.Data.Reference,
 	}, nil
+}
+
+// CreateSubscriptionCheckout opens a Paystack checkout that creates a
+// subscription: /transaction/initialize with a plan code makes Paystack
+// bill the customer on the plan's interval and fire subscription.* webhooks.
+// Ref: JEOS §17 (Recurring Subscription Lifecycle).
+func (p *PaystackProvider) CreateSubscriptionCheckout(ctx context.Context, req SubscriptionRequest) (PaymentResponse, error) {
+	if p.secretKey == "" {
+		return PaymentResponse{}, errors.New("paystack secret key not configured")
+	}
+	if req.PriceCode == "" {
+		return PaymentResponse{}, errors.New("paystack plan code is required")
+	}
+
+	payload := paystackInitRequest{
+		Amount:      req.Amount,
+		Email:       req.Email,
+		Currency:    req.Currency,
+		Plan:        req.PriceCode,
+		CallbackURL: req.ReturnURL,
+		Metadata:    req.Metadata,
+	}
+	if payload.Currency == "" {
+		payload.Currency = "NGN"
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("marshaling paystack request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.paystack.co/transaction/initialize", bytes.NewReader(body))
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("creating paystack request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+p.secretKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("paystack initialize: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("reading paystack response: %w", err)
+	}
+
+	var apiResp paystackInitResponse
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return PaymentResponse{}, fmt.Errorf("parsing paystack response: %w", err)
+	}
+
+	if !apiResp.Status {
+		return PaymentResponse{}, fmt.Errorf("paystack error: %s", apiResp.Message)
+	}
+
+	return PaymentResponse{
+		CheckoutURL: apiResp.Data.AuthorizationURL,
+		Reference:   apiResp.Data.Reference,
+	}, nil
+}
+
+// paystackSubscriptionResponse is the subset of GET /subscription/{code}
+// needed for lifecycle management — email_token is required by the
+// disable/enable endpoints.
+type paystackSubscriptionResponse struct {
+	Status  bool   `json:"status"`
+	Message string `json:"message"`
+	Data    struct {
+		SubscriptionCode string `json:"subscription_code"`
+		EmailToken       string `json:"email_token"`
+		Status           string `json:"status"`
+		NextPaymentDate  string `json:"next_payment_date"`
+	} `json:"data"`
+}
+
+// paystackEmailToken fetches the subscription's email_token — Paystack's
+// disable/enable endpoints authenticate with (code, token), not just the
+// secret key.
+func (p *PaystackProvider) paystackEmailToken(ctx context.Context, code string) (string, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.paystack.co/subscription/"+code, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating paystack request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+p.secretKey)
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("paystack fetch subscription: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading paystack response: %w", err)
+	}
+
+	var apiResp paystackSubscriptionResponse
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return "", fmt.Errorf("parsing paystack response: %w", err)
+	}
+	if !apiResp.Status {
+		return "", fmt.Errorf("paystack error: %s", apiResp.Message)
+	}
+	if apiResp.Data.EmailToken == "" {
+		return "", errors.New("paystack subscription has no email_token")
+	}
+	return apiResp.Data.EmailToken, nil
+}
+
+// paystackSubscriptionAction posts to /subscription/{disable,enable} with
+// the subscription code + email token pair Paystack requires.
+func (p *PaystackProvider) paystackSubscriptionAction(ctx context.Context, code, action string) error {
+	token, err := p.paystackEmailToken(ctx, code)
+	if err != nil {
+		return err
+	}
+
+	body, err := json.Marshal(map[string]string{"code": code, "token": token})
+	if err != nil {
+		return fmt.Errorf("marshaling paystack request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.paystack.co/subscription/"+action, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating paystack request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+p.secretKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("paystack %s: %w", action, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading paystack response: %w", err)
+	}
+
+	var apiResp struct {
+		Status  bool   `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return fmt.Errorf("parsing paystack response: %w", err)
+	}
+	if !apiResp.Status {
+		return fmt.Errorf("paystack error: %s", apiResp.Message)
+	}
+	return nil
+}
+
+// CancelSubscription stops Paystack renewals. Paystack has no native
+// cancel-at-period-end — the local row keeps status active until
+// current_period_end so the entitlement is unaffected (JEOS §17).
+func (p *PaystackProvider) CancelSubscription(ctx context.Context, providerSubID string) error {
+	return p.paystackSubscriptionAction(ctx, providerSubID, "disable")
+}
+
+// ReactivateSubscription re-enables a disabled Paystack subscription.
+func (p *PaystackProvider) ReactivateSubscription(ctx context.Context, providerSubID string) error {
+	return p.paystackSubscriptionAction(ctx, providerSubID, "enable")
 }
 
 // VerifyWebhookSignature validates the Paystack webhook signature.
@@ -269,6 +468,108 @@ func (p *StripeProvider) InitiatePayment(ctx context.Context, req PaymentRequest
 		CheckoutURL: session.URL,
 		Reference:   session.ID,
 	}, nil
+}
+
+// CreateSubscriptionCheckout opens a Stripe Checkout Session in subscription
+// mode against a pre-created Price (payments.stripe.price.* settings keys).
+// user_id + plan land on the Subscription via subscription_data.metadata so
+// lifecycle webhooks can resolve the owner. Ref: JEOS §17.
+func (p *StripeProvider) CreateSubscriptionCheckout(ctx context.Context, req SubscriptionRequest) (PaymentResponse, error) {
+	if p.secretKey == "" {
+		return PaymentResponse{}, errors.New("stripe secret key not configured")
+	}
+	if req.PriceCode == "" {
+		return PaymentResponse{}, errors.New("stripe price ID is required")
+	}
+
+	form := fmt.Sprintf(
+		"mode=subscription&line_items[0][price]=%s&line_items[0][quantity]=1"+
+			"&subscription_data[metadata][user_id]=%s&subscription_data[metadata][plan]=%s",
+		url.QueryEscape(req.PriceCode),
+		url.QueryEscape(req.UserID),
+		url.QueryEscape(req.Plan),
+	)
+	if req.Email != "" {
+		form += "&customer_email=" + url.QueryEscape(req.Email)
+	}
+	if req.ReturnURL != "" {
+		form += "&success_url=" + url.QueryEscape(req.ReturnURL+"?subscribed=1")
+		form += "&cancel_url=" + url.QueryEscape(req.ReturnURL)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.stripe.com/v1/checkout/sessions", strings.NewReader(form))
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("creating stripe request: %w", err)
+	}
+	httpReq.SetBasicAuth(p.secretKey, "")
+	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("stripe checkout: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("reading stripe response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return PaymentResponse{}, fmt.Errorf("stripe error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var session stripeCheckoutResponse
+	if err := json.Unmarshal(respBody, &session); err != nil {
+		return PaymentResponse{}, fmt.Errorf("parsing stripe response: %w", err)
+	}
+
+	return PaymentResponse{
+		PaymentID:   session.ID,
+		CheckoutURL: session.URL,
+		Reference:   session.ID,
+	}, nil
+}
+
+// stripeSetCancelAtPeriodEnd posts cancel_at_period_end to the subscription.
+// Stripe keeps the subscription active until the period ends — the
+// customer.subscription.deleted webhook arrives then, not now.
+func (p *StripeProvider) stripeSetCancelAtPeriodEnd(ctx context.Context, subID string, cancel bool) error {
+	if p.secretKey == "" {
+		return errors.New("stripe secret key not configured")
+	}
+
+	body := fmt.Sprintf("cancel_at_period_end=%t", cancel)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.stripe.com/v1/subscriptions/"+subID, strings.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating stripe request: %w", err)
+	}
+	httpReq.SetBasicAuth(p.secretKey, "")
+	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("stripe subscription update: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading stripe response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("stripe error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// CancelSubscription schedules Stripe cancellation at period end.
+func (p *StripeProvider) CancelSubscription(ctx context.Context, providerSubID string) error {
+	return p.stripeSetCancelAtPeriodEnd(ctx, providerSubID, true)
+}
+
+// ReactivateSubscription clears a pending Stripe cancellation.
+func (p *StripeProvider) ReactivateSubscription(ctx context.Context, providerSubID string) error {
+	return p.stripeSetCancelAtPeriodEnd(ctx, providerSubID, false)
 }
 
 // VerifyWebhookSignature validates the Stripe webhook signature.

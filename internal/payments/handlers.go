@@ -659,6 +659,34 @@ func extractPaystackEventID(payload map[string]interface{}) string {
 		return id
 	}
 
+	// Subscription/invoice lifecycle events have no transaction reference —
+	// they nest the object id under data.id. Without this, every such event
+	// produces an empty event_id and the payment_webhook_events dedupe
+	// collapses them all onto a single (provider, "") row: the first event
+	// wins and every later lifecycle event is silently dropped.
+	if data, ok := payload["data"].(map[string]interface{}); ok {
+		switch v := data["id"].(type) {
+		case float64:
+			return fmt.Sprintf("%s:%d", ev, int64(v))
+		case string:
+			if v != "" {
+				return fmt.Sprintf("%s:%s", ev, v)
+			}
+		}
+		// Last resort: the subscription code distinguishes lifecycle events
+		// on the same object across event types.
+		if code, ok := data["subscription_code"].(string); ok && code != "" && ev != "" {
+			return fmt.Sprintf("%s:%s", ev, code)
+		}
+	}
+
+	// Final fallback: hash the canonical payload — identical provider retries
+	// dedupe correctly while distinct events never collapse onto "".
+	if raw, err := json.Marshal(payload); err == nil {
+		sum := sha256.Sum256(raw)
+		return fmt.Sprintf("%s:%x", ev, sum[:16])
+	}
+
 	return ""
 }
 
@@ -892,16 +920,27 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscription, err := h.Service.CreateSubscription(r.Context(), user.UserID, CreateSubscriptionInput{
+	result, err := h.Service.CreateSubscription(r.Context(), user.UserID, CreateSubscriptionInput{
 		Plan:     input.Plan,
 		Provider: input.Provider,
 	})
 	if err != nil {
-		handleServiceError(w, err)
+		switch {
+		case errors.Is(err, ErrAlreadySubscribed):
+			errpkg.WriteError(w, http.StatusConflict, "already_subscribed", "An active subscription already exists — cancel it before starting a new one")
+		case errors.Is(err, ErrPlanNotConfigured):
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "plan_not_configured", "This plan is not available for the selected provider")
+		case errors.Is(err, ErrProviderFailure):
+			errpkg.WriteError(w, http.StatusBadGateway, "provider_error", "The payment provider could not start checkout")
+		default:
+			handleServiceError(w, err)
+		}
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": subscription})
+	// Hosted checkout — the client redirects to checkout_url. No local row
+	// exists until the provider's first-charge webhook confirms (§17).
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // ListSubscriptions handles GET /api/v1/subscriptions.

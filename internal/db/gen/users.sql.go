@@ -1278,6 +1278,19 @@ func (q *Queries) GetUserForVideoClaim(ctx context.Context, username string) (Ge
 	return i, err
 }
 
+const getUserIDByEmail = `-- name: GetUserIDByEmail :one
+SELECT id FROM users WHERE email = $1 AND status != 'deleted'
+`
+
+// Resolves a user by email — used by the Paystack subscription.create webhook,
+// whose payload carries the customer email rather than our metadata (§17).
+func (q *Queries) GetUserIDByEmail(ctx context.Context, email string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getUserIDByEmail, email)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getUserPasswordHash = `-- name: GetUserPasswordHash :one
 SELECT id, password_hash FROM users WHERE id = $1
 `

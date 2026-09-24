@@ -30,6 +30,11 @@ WHERE id = @user_id;
 -- Platform-scoped per §04.
 SELECT email FROM users WHERE id = @user_id;
 
+-- name: GetUserIDByEmail :one
+-- Resolves a user by email — used by the Paystack subscription.create webhook,
+-- whose payload carries the customer email rather than our metadata (§17).
+SELECT id FROM users WHERE email = @email AND status != 'deleted';
+
 -- name: GetUserEmailVerifiedStatus :one
 -- Returns email_verified_at for the user. Used by the CanPostInSpace
 -- "verified" posting_perm axis (Section 05 line 149, BUG-003).

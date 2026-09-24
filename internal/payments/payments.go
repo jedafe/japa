@@ -116,13 +116,15 @@ const (
 
 // Service provides payment operations with reader/writer pool separation.
 type Service struct {
-	store     *Store
-	db        *db.DB
-	wallet    CreditSpender
-	enqueuer  paymentsEnqueuer
-	providers map[string]Provider
-	settings  paymentSettingsReader
-	webhooks  webhookEmitter
+	store       *Store
+	db          *db.DB
+	wallet      CreditSpender
+	enqueuer    paymentsEnqueuer
+	providers   map[string]Provider
+	settings    paymentSettingsReader
+	webhooks    webhookEmitter
+	tierManager TierManager
+	siteURL     string
 }
 
 // webhookEmitter fans a payment.* event out to all subscribed webhook

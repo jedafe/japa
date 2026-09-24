@@ -111,6 +111,13 @@
 	const subscribablePlans = $derived(plans.filter((p) => p.monthly.amount > 0));
 	const enabledProviders = $derived(providers.filter((p) => p.enabled));
 
+	// §17 hosted checkout: the provider returns the user here with
+	// ?subscribed=1 — activation lands via webhook a beat later, so a
+	// pending notice shows until the row appears.
+	const justSubscribed = $derived(
+		!sub && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('subscribed') === '1'
+	);
+
 	// Currency symbols from the API (Rule 16 — no hardcoded data).
 	// Falls back to the currency code if the symbol is not found.
 	const currencySymbolMap = $derived(
@@ -137,30 +144,27 @@
 		error = null;
 		success = null;
 		loading = true;
-		// Map plan slug + billing cycle to the backend plan constant.
-		// Backend expects "pro_monthly" or "pro_yearly" (PlanProMonthly/PlanProYearly).
+		// Map plan slug + billing cycle to the backend plan constant
+		// (pro_monthly, pro_yearly, business_monthly, business_yearly).
 		const planCode = `${selectedPlan}_${billingCycle}`;
 		try {
 			const res = await createSubscription(planCode, selectedProvider);
-			loading = false;
 			if (res.error) {
-				// BUG-P012: the backend CreateSubscription returns
-				// not_implemented for all providers (recurring billing is
-				// not yet built). Show a user-friendly message instead of a
-				// generic error so the user understands the feature is
-				// unavailable rather than broken.
-				if (res.error.code === 'not_implemented') {
-					error = t(
-						'settings.subscription.recurring_not_available',
-						'Recurring subscription billing is not yet available. You can still purchase Pro membership as a one-time payment.'
-					);
-				} else {
-					error = t('settings.subscription.subscribe_error');
-				}
-			} else {
-				success = t('settings.subscription.subscribe_success');
-				await invalidateAll();
+				loading = false;
+				error = res.error.message ?? t('settings.subscription.subscribe_error');
+				return;
 			}
+			// §17: hosted checkout — the response carries the provider's
+			// checkout URL. Redirect there; the subscription activates when
+			// the provider's first-charge webhook lands.
+			const checkoutUrl = res.data?.checkout_url;
+			if (checkoutUrl) {
+				window.location.href = checkoutUrl;
+				return;
+			}
+			loading = false;
+			success = t('settings.subscription.subscribe_success');
+			await invalidateAll();
 		} catch {
 			loading = false;
 			error = t('settings.subscription.subscribe_error');
@@ -272,9 +276,20 @@
 			</Dialog.Root>
 		{/if}
 	{:else}
-		<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<p class="text-sm text-[var(--color-muted)]">{t('settings.subscription.empty')}</p>
-		</div>
+		{#if justSubscribed}
+			<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<p class="text-sm text-[var(--color-text)]">
+					{t(
+						'settings.subscription.activation_pending',
+						'Payment received — your subscription activates as soon as the provider confirms it. This usually takes a few seconds; refresh to check.'
+					)}
+				</p>
+			</div>
+		{:else}
+			<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<p class="text-sm text-[var(--color-muted)]">{t('settings.subscription.empty')}</p>
+			</div>
+		{/if}
 
 		{#if error}<p class="mb-4 text-xs text-[var(--color-danger)]">{error}</p>{/if}
 		{#if success}<p class="mb-4 text-xs text-[var(--color-success)]">{success}</p>{/if}

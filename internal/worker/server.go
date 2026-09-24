@@ -104,6 +104,12 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	schedule("*/30 * * * *", TypeMaintenanceCheckExpiredBans, 30*time.Minute)
 	schedule("*/30 * * * *", TypeMaintenanceCheckExpiredBoosts, 30*time.Minute)
 
+	// §17: subscription expiry sweep — expires rows whose entitlement window
+	// ended (cancel_at_period_end reached, or past_due past grace) and
+	// downgrades the granted tier. Webhook-miss safety net; default 30 min,
+	// overridable via JC_SCHEDULER_CRON_SUBSCRIPTION_EXPIRY_SWEEP.
+	schedule("*/30 * * * *", TypeSubscriptionExpirySweep, 30*time.Minute)
+
 	// Hourly: trending, llms.txt, analytics views, RSS, GDPR retention sweep.
 	schedule("0 * * * *", TypeComputeTrending, 1*time.Hour)
 	schedule("0 * * * *", TypeMaintenanceRegenerateLLMsTxt, 1*time.Hour)

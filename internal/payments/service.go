@@ -379,11 +379,12 @@ func (s *Service) ProcessWebhook(ctx context.Context, provider string, event Web
 	}
 
 	// Enqueue async processing BEFORE marking the event as processed
-	// (BUG-P011). The worker handles payment status updates, subscription
-	// activation, wallet adjustments, and affiliate commission crediting.
-	// The provider_ref is passed so the worker can match the payment directly
-	// instead of scanning all pending payments (BUG-002 / BUG-019).
+	// (BUG-P011). Subscription lifecycle events route to
+	// subscription:webhook_process (§17 recurring billing); everything else
+	// stays on payment:process_webhook. The provider_ref is passed so the
+	// worker can match the payment directly (BUG-002 / BUG-019).
 	if s.enqueuer != nil {
+		taskType := worker.TypePaymentWebhookProcess
 		payload, _ := json.Marshal(map[string]string{
 			"event_id": event.EventID,
 
@@ -391,12 +392,23 @@ func (s *Service) ProcessWebhook(ctx context.Context, provider string, event Web
 			"provider_ref": event.ProviderRef,
 			"provider":     provider,
 		})
-		if err := s.enqueuer.Enqueue(worker.TypePaymentWebhookProcess, payload); err != nil {
-			slog.Error("payments: failed to enqueue webhook processing", "event_id", event.EventID, "provider", provider, "error", err)
-			errpkg.CaptureException(fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err))
+
+		if isSubscriptionLifecycleEvent(provider, event.EventType, event.Payload) {
+			taskType = worker.TypeSubscriptionWebhookProcess
+			payload, _ = json.Marshal(map[string]interface{}{
+				"provider":   provider,
+				"event_id":   event.EventID,
+				"event_type": event.EventType,
+				"payload":    json.RawMessage(event.RawPayload),
+			})
+		}
+
+		if err := s.enqueuer.Enqueue(taskType, payload); err != nil {
+			slog.Error("payments: failed to enqueue webhook processing", "event_id", event.EventID, "provider", provider, "task", taskType, "error", err)
+			errpkg.CaptureException(fmt.Errorf("enqueue %s (event %s): %w", taskType, event.EventID, err))
 			// Return the error so the provider receives a 5xx and retries.
 			// The event is NOT marked processed, so on retry we re-enqueue.
-			return fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err)
+			return fmt.Errorf("enqueue %s (event %s): %w", taskType, event.EventID, err)
 		}
 	}
 
@@ -420,45 +432,9 @@ type CreateSubscriptionInput struct {
 	Provider string
 }
 
-// CreateSubscription creates a new subscription.
-// // JEOS §17 requires recurring Pro billing to go through Stripe or Paystack
-// with a real provider subscription created (provider_sub_id stored) and
-// activation deferred to the provider webhook. The previous implementation
-// inserted a local row with status='active' and no provider call, granting
-// Pro access immediately without charging — a free-entitlement bug (BUG-003).
-// Until the provider subscription integration is built, this endpoint
-// returns a not_implemented error so no unearned entitlement is granted.
-func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, input CreateSubscriptionInput) (gen.Subscription, error) {
-	if input.Plan == "" {
-		return gen.Subscription{}, errors.New("plan is required")
-	}
-
-	if input.Provider == "" {
-		return gen.Subscription{}, errors.New("provider is required")
-	}
-
-	// JEOS §17 / ADR-012: recurring billing (Pro membership) is restricted
-	// to Stripe and Paystack only — never NOWPayments or manual transfer,
-	// since neither has a reliable mechanism for automated recurring charges.
-	// Credit is also excluded (one-time-purchase-only restriction class).
-	if input.Provider != ProviderStripe && input.Provider != ProviderPaystack {
-		return gen.Subscription{}, fmt.Errorf("invalid provider for subscription: %s (only stripe and paystack support recurring billing)", input.Provider)
-	}
-
-	// Validate plan.
-	switch input.Plan {
-	case PlanProMonthly, PlanProYearly:
-	default:
-		return gen.Subscription{}, fmt.Errorf("invalid plan: %s", input.Plan)
-	}
-
-	// Provider subscription creation (Stripe Subscription / Paystack plan
-	// subscription) is not yet implemented. Creating a local row with
-	// status='active' and no provider_sub_id would grant Pro access
-	// without a real billing cycle — a free-entitlement bug. Return a
-	// clear not_implemented error until the provider integration lands.
-	return gen.Subscription{}, fmt.Errorf("%w: subscription billing is not yet available; use POST /payments/intent with purpose_type=pro_membership for one-time Pro purchases", errpkg.ErrNotImplemented)
-}
+// CreateSubscription — see subscriptions.go. It returns a hosted-checkout
+// URL; the subscriptions row is created by the provider's first-charge
+// webhook (§17: deferred creation, webhook is the source of truth).
 
 // GetSubscription retrieves a subscription by ID.
 func (s *Service) GetSubscription(ctx context.Context, id pgtype.UUID) (gen.Subscription, error) {
@@ -475,16 +451,8 @@ func (s *Service) ListSubscriptionsByUser(ctx context.Context, userID pgtype.UUI
 	return s.store.listSubscriptionsByUser(ctx, userID, limit, offset)
 }
 
-// CancelSubscription cancels a subscription.
-func (s *Service) CancelSubscription(ctx context.Context, id pgtype.UUID) (gen.Subscription, error) {
-	return s.store.cancelSubscription(ctx, id)
-}
-
-// ReactivateSubscription reactivates the caller's most recently canceled
-// subscription. Returns the updated subscription row.
-func (s *Service) ReactivateSubscription(ctx context.Context, userID pgtype.UUID) (gen.Subscription, error) {
-	return s.store.reactivateSubscription(ctx, userID)
-}
+// CancelSubscription / ReactivateSubscription — see subscriptions.go.
+// Both call the provider first and only mutate local state on success.
 
 // ---------------------------------------------------------------------------
 // Discount Codes

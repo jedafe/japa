@@ -236,7 +236,7 @@ func (q *Queries) CreateRefund(ctx context.Context, arg CreateRefundParams) (Pay
 
 const createSubscription = `-- name: CreateSubscription :one
 
-INSERT INTO subscriptions (user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO subscriptions (user_id, plan, provider, provider_sub_id, status, current_period_start, current_period_end, cancel_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
@@ -244,7 +244,7 @@ type CreateSubscriptionParams struct {
 	UserID             pgtype.UUID        `json:"user_id"`
 	Plan               string             `json:"plan"`
 	Provider           string             `json:"provider"`
-	ProviderRef        *string            `json:"provider_ref"`
+	ProviderSubID      *string            `json:"provider_sub_id"`
 	Status             string             `json:"status"`
 	CurrentPeriodStart pgtype.Timestamptz `json:"current_period_start"`
 	CurrentPeriodEnd   pgtype.Timestamptz `json:"current_period_end"`
@@ -254,12 +254,15 @@ type CreateSubscriptionParams struct {
 // =====================
 // Subscriptions
 // =====================
+// provider_sub_id is the canonical recurring-billing identifier (Stripe
+// sub_..., Paystack subscription_code); the legacy provider_ref column is
+// kept for backward compatibility and left NULL for new rows.
 func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (Subscription, error) {
 	row := q.db.QueryRow(ctx, createSubscription,
 		arg.UserID,
 		arg.Plan,
 		arg.Provider,
-		arg.ProviderRef,
+		arg.ProviderSubID,
 		arg.Status,
 		arg.CurrentPeriodStart,
 		arg.CurrentPeriodEnd,
@@ -293,6 +296,35 @@ WHERE id = $1
 func (q *Queries) DeleteDiscountCode(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteDiscountCode, id)
 	return err
+}
+
+const expireSubscription = `-- name: ExpireSubscription :one
+UPDATE subscriptions
+SET status = 'expired', updated_at = now()
+WHERE id = $1
+RETURNING id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
+`
+
+func (q *Queries) ExpireSubscription(ctx context.Context, id pgtype.UUID) (Subscription, error) {
+	row := q.db.QueryRow(ctx, expireSubscription, id)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Plan,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.Status,
+		&i.CurrentPeriodStart,
+		&i.CurrentPeriodEnd,
+		&i.CancelAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
+	)
+	return i, err
 }
 
 const getActiveSubscriptionByUser = `-- name: GetActiveSubscriptionByUser :one
@@ -478,6 +510,33 @@ WHERE id = $1
 
 func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (Subscription, error) {
 	row := q.db.QueryRow(ctx, getSubscriptionByID, id)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Plan,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.Status,
+		&i.CurrentPeriodStart,
+		&i.CurrentPeriodEnd,
+		&i.CancelAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
+const getSubscriptionByProviderSubID = `-- name: GetSubscriptionByProviderSubID :one
+SELECT id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
+WHERE provider_sub_id = $1
+`
+
+func (q *Queries) GetSubscriptionByProviderSubID(ctx context.Context, providerSubID *string) (Subscription, error) {
+	row := q.db.QueryRow(ctx, getSubscriptionByProviderSubID, providerSubID)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
@@ -967,6 +1026,86 @@ func (q *Queries) ListSubscriptionsByUser(ctx context.Context, arg ListSubscript
 	return items, nil
 }
 
+const listSubscriptionsDueForExpiry = `-- name: ListSubscriptionsDueForExpiry :many
+SELECT id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
+WHERE (status = 'active' AND cancel_at_period_end = true AND current_period_end <= now())
+   OR (status = 'past_due' AND current_period_end <= $1)
+ORDER BY current_period_end
+LIMIT $2
+`
+
+type ListSubscriptionsDueForExpiryParams struct {
+	GraceCutoff pgtype.Timestamptz `json:"grace_cutoff"`
+	PageLimit   int32              `json:"page_limit"`
+}
+
+// Expiry sweep (§17): active rows whose cancel_at_period_end has reached
+// period end, plus past_due rows past period end + the grace window the
+// caller subtracts into @grace_cutoff before querying.
+func (q *Queries) ListSubscriptionsDueForExpiry(ctx context.Context, arg ListSubscriptionsDueForExpiryParams) ([]Subscription, error) {
+	rows, err := q.db.Query(ctx, listSubscriptionsDueForExpiry, arg.GraceCutoff, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Subscription
+	for rows.Next() {
+		var i Subscription
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Plan,
+			&i.Provider,
+			&i.ProviderRef,
+			&i.Status,
+			&i.CurrentPeriodStart,
+			&i.CurrentPeriodEnd,
+			&i.CancelAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProviderSubID,
+			&i.CancelAtPeriodEnd,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markSubscriptionPastDue = `-- name: MarkSubscriptionPastDue :one
+UPDATE subscriptions
+SET status = 'past_due', updated_at = now()
+WHERE id = $1
+RETURNING id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
+`
+
+func (q *Queries) MarkSubscriptionPastDue(ctx context.Context, id pgtype.UUID) (Subscription, error) {
+	row := q.db.QueryRow(ctx, markSubscriptionPastDue, id)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Plan,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.Status,
+		&i.CurrentPeriodStart,
+		&i.CurrentPeriodEnd,
+		&i.CancelAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
 const markWebhookEventProcessed = `-- name: MarkWebhookEventProcessed :exec
 UPDATE payment_webhook_events
 SET processed_at = now()
@@ -1003,6 +1142,81 @@ RETURNING id, user_id, plan, provider, provider_ref, status, current_period_star
 // the period ends (BUG-002).
 func (q *Queries) ReactivateSubscription(ctx context.Context, userID pgtype.UUID) (Subscription, error) {
 	row := q.db.QueryRow(ctx, reactivateSubscription, userID)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Plan,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.Status,
+		&i.CurrentPeriodStart,
+		&i.CurrentPeriodEnd,
+		&i.CancelAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
+const renewSubscriptionPeriod = `-- name: RenewSubscriptionPeriod :one
+UPDATE subscriptions
+SET status = 'active', current_period_start = $1,
+    current_period_end = $2, cancel_at_period_end = false,
+    updated_at = now()
+WHERE id = $3
+RETURNING id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
+`
+
+type RenewSubscriptionPeriodParams struct {
+	CurrentPeriodStart pgtype.Timestamptz `json:"current_period_start"`
+	CurrentPeriodEnd   pgtype.Timestamptz `json:"current_period_end"`
+	ID                 pgtype.UUID        `json:"id"`
+}
+
+// Extends the billing period on a provider-confirmed renewal (JEOS §17).
+// Also clears past_due so a recovered payment restores 'active'.
+func (q *Queries) RenewSubscriptionPeriod(ctx context.Context, arg RenewSubscriptionPeriodParams) (Subscription, error) {
+	row := q.db.QueryRow(ctx, renewSubscriptionPeriod, arg.CurrentPeriodStart, arg.CurrentPeriodEnd, arg.ID)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Plan,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.Status,
+		&i.CurrentPeriodStart,
+		&i.CurrentPeriodEnd,
+		&i.CancelAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
+const setSubscriptionCancelAtPeriodEnd = `-- name: SetSubscriptionCancelAtPeriodEnd :one
+UPDATE subscriptions
+SET cancel_at_period_end = $1, updated_at = now()
+WHERE id = $2
+RETURNING id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
+`
+
+type SetSubscriptionCancelAtPeriodEndParams struct {
+	CancelAtPeriodEnd bool        `json:"cancel_at_period_end"`
+	ID                pgtype.UUID `json:"id"`
+}
+
+// Syncs the provider-side pending-cancel flag from a webhook
+// (customer.subscription.updated / subscription.not_renew).
+func (q *Queries) SetSubscriptionCancelAtPeriodEnd(ctx context.Context, arg SetSubscriptionCancelAtPeriodEndParams) (Subscription, error) {
+	row := q.db.QueryRow(ctx, setSubscriptionCancelAtPeriodEnd, arg.CancelAtPeriodEnd, arg.ID)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
@@ -1120,6 +1334,52 @@ func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStat
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.IdempotencyKey,
+	)
+	return i, err
+}
+
+const updateSubscriptionPeriodBounds = `-- name: UpdateSubscriptionPeriodBounds :one
+UPDATE subscriptions
+SET current_period_start = $1,
+    current_period_end = $2,
+    cancel_at_period_end = $3,
+    updated_at = now()
+WHERE id = $4
+RETURNING id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
+`
+
+type UpdateSubscriptionPeriodBoundsParams struct {
+	CurrentPeriodStart pgtype.Timestamptz `json:"current_period_start"`
+	CurrentPeriodEnd   pgtype.Timestamptz `json:"current_period_end"`
+	CancelAtPeriodEnd  bool               `json:"cancel_at_period_end"`
+	ID                 pgtype.UUID        `json:"id"`
+}
+
+// Syncs period bounds + cancel flag from a provider webhook without
+// touching status (customer.subscription.updated).
+func (q *Queries) UpdateSubscriptionPeriodBounds(ctx context.Context, arg UpdateSubscriptionPeriodBoundsParams) (Subscription, error) {
+	row := q.db.QueryRow(ctx, updateSubscriptionPeriodBounds,
+		arg.CurrentPeriodStart,
+		arg.CurrentPeriodEnd,
+		arg.CancelAtPeriodEnd,
+		arg.ID,
+	)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Plan,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.Status,
+		&i.CurrentPeriodStart,
+		&i.CurrentPeriodEnd,
+		&i.CancelAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProviderSubID,
+		&i.CancelAtPeriodEnd,
+		&i.CancelledAt,
 	)
 	return i, err
 }

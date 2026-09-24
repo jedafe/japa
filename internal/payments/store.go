@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -310,6 +311,98 @@ func (s *Store) reactivateSubscription(ctx context.Context, userID pgtype.UUID) 
 	}
 
 	return row, nil
+}
+
+// ---------------------------------------------------------------------------
+// Recurring-billing lifecycle (JEOS §17, spec 2026-09-24-recurring-pro-billing)
+// ---------------------------------------------------------------------------
+
+func (s *Store) getSubscriptionByProviderSubID(ctx context.Context, subID string) (gen.Subscription, error) {
+	row, err := s.read.GetSubscriptionByProviderSubID(ctx, &subID)
+	if err != nil {
+		return gen.Subscription{}, fmt.Errorf("getting subscription by provider_sub_id: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) renewSubscriptionPeriod(ctx context.Context, id pgtype.UUID, start, end time.Time) (gen.Subscription, error) {
+	row, err := s.write.RenewSubscriptionPeriod(ctx, gen.RenewSubscriptionPeriodParams{
+		ID:                 id,
+		CurrentPeriodStart: pgtype.Timestamptz{Time: start, Valid: true},
+		CurrentPeriodEnd:   pgtype.Timestamptz{Time: end, Valid: true},
+	})
+	if err != nil {
+		return gen.Subscription{}, fmt.Errorf("renewing subscription period: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) markSubscriptionPastDue(ctx context.Context, id pgtype.UUID) (gen.Subscription, error) {
+	row, err := s.write.MarkSubscriptionPastDue(ctx, id)
+	if err != nil {
+		return gen.Subscription{}, fmt.Errorf("marking subscription past_due: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) setSubscriptionCancelAtPeriodEnd(ctx context.Context, id pgtype.UUID, flag bool) error {
+	_, err := s.write.SetSubscriptionCancelAtPeriodEnd(ctx, gen.SetSubscriptionCancelAtPeriodEndParams{
+		ID:                id,
+		CancelAtPeriodEnd: flag,
+	})
+	if err != nil {
+		return fmt.Errorf("setting cancel_at_period_end: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) updateSubscriptionPeriodBounds(ctx context.Context, id pgtype.UUID, start, end time.Time, cancelAtEnd bool) error {
+	_, err := s.write.UpdateSubscriptionPeriodBounds(ctx, gen.UpdateSubscriptionPeriodBoundsParams{
+		ID:                 id,
+		CurrentPeriodStart: pgtype.Timestamptz{Time: start, Valid: !start.IsZero()},
+		CurrentPeriodEnd:   pgtype.Timestamptz{Time: end, Valid: !end.IsZero()},
+		CancelAtPeriodEnd:  cancelAtEnd,
+	})
+	if err != nil {
+		return fmt.Errorf("updating subscription bounds: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) expireSubscription(ctx context.Context, id pgtype.UUID) (gen.Subscription, error) {
+	row, err := s.write.ExpireSubscription(ctx, id)
+	if err != nil {
+		return gen.Subscription{}, fmt.Errorf("expiring subscription: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) listSubscriptionsDueForExpiry(ctx context.Context, graceCutoff time.Time, limit int32) ([]gen.Subscription, error) {
+	rows, err := s.read.ListSubscriptionsDueForExpiry(ctx, gen.ListSubscriptionsDueForExpiryParams{
+		GraceCutoff: pgtype.Timestamptz{Time: graceCutoff, Valid: true},
+		PageLimit:   limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing subscriptions due for expiry: %w", err)
+	}
+	return rows, nil
+}
+
+// getUserEmail resolves a subscriber's email for provider checkout calls.
+func (s *Store) getUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
+	return s.read.GetUserEmail(ctx, userID)
+}
+
+// getUserIDByEmail resolves the owner for provider webhooks that carry the
+// customer email rather than our metadata (Paystack subscription.create).
+func (s *Store) getUserIDByEmail(ctx context.Context, email string) (pgtype.UUID, error) {
+	return s.read.GetUserIDByEmail(ctx, email)
+}
+
+// getSubscriptionPlanBySlug resolves plan amounts/currency for checkout
+// (subscription_plans is the pricing source of truth — Rule 3).
+func (s *Store) getSubscriptionPlanBySlug(ctx context.Context, slug string) (gen.SubscriptionPlan, error) {
+	return s.read.GetSubscriptionPlanBySlug(ctx, slug)
 }
 
 // ---------------------------------------------------------------------------
