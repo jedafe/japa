@@ -25,6 +25,8 @@ export interface ApiOk<T> {
 	can_solve?: boolean;
 	/** Optional capability flag emitted by forum thread detail (can_edit). */
 	can_edit?: boolean;
+	/** Optional scope discriminator (e.g. /wiki/categories: 'geo' | 'university'). */
+	scope?: string;
 	/** Optional capability flag emitted by forum thread detail (can_delete). */
 	can_delete?: boolean;
 	/** Optional moderator flag for edit/delete any replies. */
@@ -1619,6 +1621,41 @@ export interface UniversityCompare {
 	fields: Record<string, unknown>;
 }
 
+/**
+ * Institutional course offering (Section 39) —
+ * GET /universities/{slug}/courses[/{offeringSlug}]. A degree program a
+ * university offers, joined with its canonical catalog course and the
+ * university space. Distinct from CatalogTrack (Japa University creator
+ * marketplace tracks).
+ */
+export interface CourseOffering {
+	id: string;
+	course_id: string;
+	university_id: string;
+	slug: string;
+	tuition: number | null;
+	currency: string | null;
+	duration_years: number | null;
+	study_mode: string | null;
+	intake_months: string[] | null;
+	entry_requirements: string | null;
+	accreditation: string | null;
+	is_published: boolean;
+	created_at: string;
+	updated_at: string;
+	course: {
+		title: string;
+		slug: string;
+		description: string | null;
+		degree_type: string | null;
+		department: string | null;
+		field_of_study: string | null;
+		language: string;
+		default_duration_years: number | null;
+	};
+	university: { name: string; slug: string };
+}
+
 /* ------------------------------------------------------------------ *
  * Certificates — Section 17 (GET /certificates/{id})
  * ------------------------------------------------------------------ */
@@ -2650,8 +2687,8 @@ export interface JobListing {
 	summary: string;
 	field_values: Record<string, string>;
 	published_at: string;
-	org_id?: string;
-	source?: SourceAttribution;
+	organization_id?: string;
+	source?: SourceAttribution | null;
 }
 
 export interface JobDetail {
@@ -2662,8 +2699,10 @@ export interface JobDetail {
 	body: string;
 	field_values: Record<string, string>;
 	published_at: string;
-	org_id?: string;
-	source?: SourceAttribution;
+	organization_id?: string;
+	source?: SourceAttribution | null;
+	/** Authenticated viewer's own application, or null. */
+	my_application?: { id: string; status: string; applied_at?: string } | null;
 }
 
 export interface JobApplication {
@@ -2678,6 +2717,8 @@ export interface JobApplication {
 	employer_notes?: string;
 	applied_at: string;
 	status_updated_at?: string;
+	/** Linked form_submissions.field_values (resume_url, cover_letter, …) — employer view only. */
+	submission?: Record<string, unknown>;
 }
 
 // --- Section 64: Gamification ---
@@ -2934,6 +2975,13 @@ export type WikiCategory =
 	| 'banking'
 	| 'community'
 	| 'housing'
+	| 'admissions'
+	| 'programs'
+	| 'tuition_fees'
+	| 'scholarships'
+	| 'accommodation'
+	| 'campus_life'
+	| 'careers'
 	| 'other';
 
 export interface WikiPageIndex {
@@ -2955,7 +3003,7 @@ export interface WikiDestination {
 	name: string;
 	geo_code?: string;
 	region?: string;
-	level: 'country' | 'state' | 'city';
+	level: 'country' | 'state' | 'city' | 'university';
 	page_count: number;
 }
 

@@ -73,7 +73,7 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 		return nil, fmt.Errorf("%w: university_id filter is required for course search", errpkg.ErrRequired)
 	}
 
-	offerings, err := r.svc.SearchOfferings(ctx, universityID, query, limit, offset)
+	offerings, err := r.svc.SearchOfferings(ctx, universityID, query, "", limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching course offerings: %w", err)
 	}
@@ -86,10 +86,15 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 	return out, nil
 }
 
-// Count is not yet implemented for course offerings; it returns -1 so the
-// frontend falls back to the extra-item heuristic.
-func (r *courseResolver) Count(context.Context, string, map[string]any, pgtype.UUID) (int64, error) {
-	return -1, nil
+// Count returns the total number of published course offerings matching the
+// query, scoped to the university_id filter (required, same as Search).
+func (r *courseResolver) Count(ctx context.Context, query string, filters map[string]any) (int64, error) {
+	universityID := parseUUIDFilter(filters, "university_id")
+	if !universityID.Valid {
+		return -1, fmt.Errorf("%w: university_id filter is required for course count", errpkg.ErrRequired)
+	}
+
+	return r.svc.CountOfferingsByUniversity(ctx, universityID, query, "")
 }
 
 func pgNumericToFloat64(n pgtype.Numeric) float64 {

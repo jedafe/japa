@@ -10,9 +10,8 @@
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
 	import type { PageData } from './$types';
-	import type { Review, CatalogTrack } from '$lib/types';
+	import type { Review, CourseOffering, WikiPageIndex } from '$lib/types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { universityUrl } from '$lib/appOrigins';
 
 	let { data }: { data: PageData } = $props();
 
@@ -25,7 +24,12 @@
 	const reviewAggregate = $derived(data.reviewAggregate);
 	const members = $derived(data.members ?? []);
 	const forums = $derived(data.forums ?? []);
-	const courses = $derived((data.courses ?? []) as CatalogTrack[]);
+	// §39 — institutional degree offerings (Programs tab).
+	const programs = $derived((data.programs ?? []) as CourseOffering[]);
+	// §80 amendment — university spaces may carry community wiki pages,
+	// gated by the wiki.enabled feature flag.
+	const wikiEnabled = $derived(!!data.wikiEnabled);
+	const wikiPages = $derived<WikiPageIndex[]>(data.wikiPages ?? []);
 	const currentUser = $derived(data.user);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
 
@@ -228,11 +232,15 @@
 		{ value: 'about', label: t('university.tab_about', 'Overview') },
 		{ value: 'posts', label: t('university.tab_posts', 'Posts') },
 		{ value: 'forums', label: t('university.tab_forums', 'Forums') },
-		{ value: 'courses', label: t('university.tab_courses', 'Courses') },
+		{ value: 'programs', label: t('university.tab_programs', 'Programs') },
 		{ value: 'members', label: t('university.tab_members', 'Members') },
 		{ value: 'reviews', label: t('university.tab_reviews', 'Reviews') },
 		{ value: 'compare', label: t('university.tab_compare', 'Compare') }
 	];
+
+	function formatWikiCategory(category: string): string {
+		return category.replace(/_/g, ' ');
+	}
 </script>
 
 <svelte:head>
@@ -365,6 +373,18 @@
 				<MessageSquare size={15} />
 				{t('university.discussions', 'View discussions')}
 			</a>
+			{#if wikiEnabled}
+				<!-- Wiki button (§80 amendment — University Spaces), wired like the
+				     destination-space wiki button on /spaces/[slug]. -->
+				<a
+					href="/wiki/{university.slug}"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					data-sveltekit-preload-data="hover"
+				>
+					<BookOpen size={15} />
+					{t('space.wiki', 'Wiki')}
+				</a>
+			{/if}
 			<SpaceJoinButton
 				entityId={university.id}
 				entitySlug={university.slug}
@@ -499,6 +519,40 @@
 					</div>
 				{/if}
 			</section>
+
+			{#if wikiEnabled}
+				<!-- Community Wiki (§80 amendment — University Spaces) — same
+				     wiring as the destination-space wiki section on /spaces/[slug]. -->
+				<div class="mt-4 border-t border-[var(--color-border)] pt-4">
+					<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.community_wiki', 'Community Wiki')}</h2>
+					{#if wikiPages.length > 0}
+						<ul class="mb-3 space-y-2">
+							{#each wikiPages as wikiPage (wikiPage.id)}
+								<li>
+									<a
+										href="/wiki/{encodeURIComponent(university.slug)}/{encodeURIComponent(wikiPage.slug)}"
+										class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface)]"
+										data-sveltekit-preload-data="hover"
+									>
+										<span class="font-medium text-[var(--color-text)]">{wikiPage.title}</span>
+										<span class="text-xs uppercase tracking-wide text-[var(--color-muted)]">{formatWikiCategory(wikiPage.category)}</span>
+									</a>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="mb-3 text-sm text-[var(--color-text-subtle)]">{t('space.no_wiki_pages', 'No community wiki pages yet.')}</p>
+					{/if}
+					<a
+						href="/wiki/{encodeURIComponent(university.slug)}"
+						class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+						data-sveltekit-preload-data="hover"
+					>
+						{t('space.view_wiki', 'View wiki')}
+						<span aria-hidden="true">→</span>
+					</a>
+				</div>
+			{/if}
 		{:else if activeTab === 'posts'}
 			<!-- Posts tab -->
 			{#if posts.length === 0}
@@ -541,43 +595,39 @@
 					{/each}
 				</div>
 			{/if}
-		{:else if activeTab === 'courses'}
-			<!-- Courses tab — linked tracks from the Japa University marketplace (Section 39 / ADR-063). -->
-			{#if courses.length === 0}
+		{:else if activeTab === 'programs'}
+			<!-- Programs tab — institutional degree offerings (Section 39
+			     university_course_offerings). Distinct from the Courses tab,
+			     which lists Japa University creator tracks. -->
+			{#if programs.length === 0}
 				<div class="mt-3">
-					<EmptyState icon={BookOpen} title={t('university.no_courses', 'No linked courses yet')} body={t('university.no_courses_hint', 'Browse the marketplace to find tracks for this university.')} />
+					<EmptyState icon={GraduationCap} title={t('university.no_programs', 'No programs listed yet')} body={t('university.no_programs_hint', 'Degree programs offered by this university will appear here.')} />
 				</div>
 			{:else}
-				<div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-					{#each courses as course (course.id)}
+				<div class="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					{#each programs as offering (offering.id)}
 						<a
-							href={universityUrl(`/tracks/${course.slug}`)}
-							class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:border-[var(--color-primary)]"
+							href="/universities/{university.slug}/courses/{offering.slug}"
+							class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
-							{#if course.thumbnail_url}
-								<img src={course.thumbnail_url} alt={course.title} class="h-32 w-full object-cover" />
-							{/if}
-							<div class="p-4">
-								<p class="truncate text-sm font-medium text-[var(--color-text)]">{course.title}</p>
-								<div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
-									{#if course.level}
-										<span class="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-semibold uppercase">{course.level}</span>
-									{/if}
-									{#if course.instructor_name}
-										<span>{course.instructor_name}</span>
-									{/if}
-									{#if course.avg_rating}
-										<span class="flex items-center gap-0.5">
-											<Star size={12} class="text-[var(--color-warning)]" />
-											{Number(course.avg_rating).toFixed(1)}
-										</span>
-									{/if}
-									{#if course.total_enrolled}
-										<span>{course.total_enrolled} {t('learn.enrolled', 'enrolled')}</span>
-									{/if}
-								</div>
-								{#if course.description}
-									<p class="mt-2 line-clamp-2 text-xs text-[var(--color-text-subtle)]">{course.description}</p>
+							<div class="flex items-start justify-between gap-3">
+								<p class="text-sm font-medium text-[var(--color-text)]">{offering.course?.title}</p>
+								{#if offering.course?.degree_type}
+									<span class="shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--color-muted)]">{offering.course.degree_type}</span>
+								{/if}
+							</div>
+							<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
+								{#if offering.tuition != null}
+									<span class="font-medium text-[var(--color-text)]">{offering.currency ?? ''} {offering.tuition}</span>
+								{/if}
+								{#if offering.duration_years}
+									<span>{offering.duration_years} {t('university.years', 'yrs')}</span>
+								{/if}
+								{#if offering.study_mode}
+									<span>{offering.study_mode}</span>
+								{/if}
+								{#if offering.intake_months?.length}
+									<span>{t('university.intakes', 'Intakes')}: {offering.intake_months.join(', ')}</span>
 								{/if}
 							</div>
 						</a>

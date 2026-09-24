@@ -28,12 +28,16 @@ export const load: PageServerLoad = async (event) => {
 	const q = event.url.searchParams.get('q');
 	const country = event.url.searchParams.get('country');
 	const jobType = event.url.searchParams.get('job_type');
-	const remote = event.url.searchParams.get('remote');
+	const remote = event.url.searchParams.get('remote') ?? event.url.searchParams.get('location_type');
+	const visaSponsorship = event.url.searchParams.get('visa_sponsorship');
+	const sort = event.url.searchParams.get('sort');
 	const page = event.url.searchParams.get('page') ?? '1';
 	if (q) params.set('q', q);
 	if (country) params.set('country', country);
 	if (jobType) params.set('job_type', jobType);
 	if (remote) params.set('remote', remote);
+	if (visaSponsorship) params.set('visa_sponsorship', visaSponsorship);
+	if (sort) params.set('sort', sort);
 	params.set('page', page);
 	params.set('limit', String(PAGE_SIZE));
 

@@ -82,6 +82,8 @@
 				{ path: "/organisations", label: t("nav.organisations", "Organisations"), icon: Building, permission: "admin.moderation" },
 			{ path: "/organisations/claims", label: t("nav.organisation_claims", "Ownership Claims"), icon: FileText, permission: "admin.moderation" },
 				{ path: "/universities", label: t("nav.universities", "Universities"), icon: GraduationCap, permission: "admin.settings" },
+				{ path: "/universities/course-catalog", label: t("nav.course_catalog", "Course Catalog"), icon: BookOpen, permission: "universities.course_catalog.list" },
+				{ path: "/universities/course-offerings", label: t("nav.course_offerings", "Course Offerings"), icon: GraduationCap, permission: "universities.course_offering.list" },
 				{ path: "/users/groups", label: t("nav.users_groups", "Groups"), icon: Users2, permission: "admin.users.view" }
 			]
 		},

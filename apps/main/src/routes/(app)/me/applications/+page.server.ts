@@ -16,12 +16,19 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
+	const page = event.url.searchParams.get('page') ?? '1';
 	let applications: JobApplication[] = [];
+	let meta: { total?: number; page?: number; limit?: number; total_pages?: number } | undefined;
 	try {
-		applications = (await apiList<JobApplication>(ctx, '/me/jobs/applications')).items;
+		const res = await apiList<JobApplication>(
+			ctx,
+			`/me/jobs/applications?page=${encodeURIComponent(page)}&limit=20`
+		);
+		applications = res.items;
+		meta = res.meta;
 	} catch {
 		applications = [];
 	}
 
-	return { applications };
+	return { applications, meta, currentPage: Number(page) || 1 };
 };

@@ -275,9 +275,21 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// endpoint itself performs the refresh, and running it here first would
 	// rotate the refresh token an extra time and waste a backend round-trip.
 	// Ref: japa-bugs-hunters.md §5.2 (CSRF) — audit finding C1.
-	if (event.locals.token && !building && event.url.pathname !== '/api/auth/refresh') {
-		const { ok, shouldRefresh } = await resolveSession(event);
-		if (!ok && shouldRefresh && event.cookies.get('jc_refresh')) {
+	if (!building && event.url.pathname !== '/api/auth/refresh') {
+		if (event.locals.token) {
+			const { ok, shouldRefresh } = await resolveSession(event);
+			if (!ok && shouldRefresh && event.cookies.get('jc_refresh')) {
+				const refreshed = await tryRefreshSession(event);
+				if (refreshed) {
+					await resolveSession(event);
+				}
+			}
+		} else if (event.cookies.get('jc_refresh')) {
+			// jc_token's cookie maxAge equals the JWT TTL, so on natural expiry the
+			// browser drops the cookie entirely and locals.token is null. Without
+			// this branch the request renders as a guest even though jc_refresh is
+			// still valid — silently disabling every authed SSR surface (e.g. the
+			// org Manage controls) until client-side JS refreshes the session.
 			const refreshed = await tryRefreshSession(event);
 			if (refreshed) {
 				await resolveSession(event);

@@ -205,10 +205,11 @@
 		const pathParts = page.url.pathname.split('/').filter(Boolean);
 
 		if (source === 'org_owner') {
-			// Only resolve on the actual org profile route. Reserved static
+			// Only resolve on org-scoped routes (/org/[slug] and its nested
+			// pages such as /org/[slug]/jobs/[jobId]). Reserved static
 			// segments under /org (e.g. /org/new, /org/invite/[token]) are not
 			// org slugs — treating them as such causes 404 fetch noise.
-			if (!page.route.id?.endsWith('/org/[slug]')) return null;
+			if (!page.route.id?.includes('/org/[slug]')) return null;
 			const orgSlug = pathParts[1];
 			if (!orgSlug) return null;
 			const pageData = page.data as Record<string, unknown>;

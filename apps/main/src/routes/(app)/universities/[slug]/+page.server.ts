@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError, API_BASE } from '$lib/server/api';
 import { buildApiUrl } from '@japaconnect/api-url';
-import type { UniversityDetail, ProfilePost, SpaceMember, Review, ReviewAggregate, CatalogTrack } from '$lib/types';
+import type { UniversityDetail, ProfilePost, SpaceMember, Review, ReviewAggregate, CourseOffering, WikiPageIndex } from '$lib/types';
 
 /**
  * University detail at /universities/[slug] — public, SSR, indexable.
@@ -59,7 +59,7 @@ export const load: PageServerLoad = async (event) => {
 	// Reviews use the canonical catalog routes (Section 29):
 	// GET /reviews/{entity_type}/{entity_id} and .../aggregate.
 	// Space content and membership are slug-routed, not UUID-routed.
-	const [spaceContent, reviews, reviewAggregate, members, courses] = await Promise.all([
+	const [spaceContent, reviews, reviewAggregate, members, programs] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/spaces/${university.slug}/content?page_size=10`)
 			.then((r) => r.items)
 			.catch(() => []),
@@ -72,7 +72,8 @@ export const load: PageServerLoad = async (event) => {
 		apiList<SpaceMember>(ctx, `/spaces/${university.slug}/members?page_size=12`)
 			.then((r) => r.items)
 			.catch(() => []),
-		apiList<CatalogTrack>(ctx, `/learn/university/catalog?space_id=${university.id}&limit=10`)
+		// §39 — institutional degree offerings (Programs tab).
+		apiList<CourseOffering>(ctx, `/universities/${university.slug}/courses?limit=20`)
 			.then((r) => r.items)
 			.catch(() => [])
 	]);
@@ -83,5 +84,18 @@ export const load: PageServerLoad = async (event) => {
 	const posts = spaceContent;
 	const forums = spaceContent.filter((c) => c.content_type === 'forum_thread');
 
-	return { university, posts, reviews, reviewAggregate, members, forums, courses, compareHref };
+	// §80 amendment — university spaces may carry community wiki pages.
+	// Gated by the wiki.enabled feature flag; a 404/empty index just means the
+	// space has no wiki pages yet.
+	const parent = await event.parent();
+	const features = (parent?.features as Record<string, boolean> | undefined) ?? {};
+	const wikiEnabled = !!features['wiki.enabled'];
+	let wikiPages: WikiPageIndex[] = [];
+	if (wikiEnabled) {
+		wikiPages = await apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
+			.then((r) => r.items)
+			.catch(() => []);
+	}
+
+	return { university, posts, reviews, reviewAggregate, members, forums, programs, wikiEnabled, wikiPages, compareHref };
 };

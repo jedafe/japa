@@ -6,30 +6,22 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { BookOpen, Lock, Star, ArrowLeft, Globe, Plus } from 'lucide-svelte';
+	import { BookOpen, Lock, Star, ArrowLeft, Globe, GraduationCap, Plus } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { WikiCategory, WikiPageIndex, GeoCountry } from '$lib/types';
+	import type { WikiCategory, WikiPageIndex, GeoCountry, WikiDestination } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	// BUG-018: fetch the canonical category list from the API (Rule 16)
-	// instead of hardcoding it. Falls back to the page-derived categories
-	// if the API call fails.
+	// The canonical category list is scoped to the space type server-side:
+	// university spaces get the university set (§80 amendment). Falls back to
+	// the page-derived categories if the list is empty.
 	type ApiCategory = { slug: string; label_key: string; label: string };
-	let apiCategories = $state<ApiCategory[]>([]);
-
-	$effect(() => {
-		(async () => {
-			try {
-				const res = await api.get<{ data?: ApiCategory[] }>(`/wiki/categories`);
-				apiCategories = res.data?.data ?? [];
-			} catch {
-				/* keep empty — fallback below */
-			}
-		})();
-	});
+	// svelte-ignore state_referenced_locally
+	const apiCategories: ApiCategory[] = data.apiCategories ?? [];
+	// svelte-ignore state_referenced_locally
+	const isUniversityWiki = data.wikiScope === 'university';
 
 	// Derive the ordered category list from the API response. If the API
 	// hasn't loaded yet, derive from the loaded pages (data-driven fallback).
@@ -66,6 +58,8 @@
 	let destLoading = $state(false);
 
 	$effect(() => {
+		// University wikis use a university search instead — skip the geo load.
+		if (isUniversityWiki) return;
 		// Load country-level spaces for the destination selector.
 		(async () => {
 			destLoading = true;
@@ -79,6 +73,24 @@
 			}
 		})();
 	});
+
+	// University selector: server-side search — the set is ~10k, too large
+	// for a client-side list. Requires a query.
+	async function searchUniversities(q: string): Promise<AutocompleteItem[]> {
+		const query = q.trim();
+		if (!query) return [];
+		try {
+			const params = new URLSearchParams({ level: 'university', has_wiki: 'false', q: query });
+			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${params.toString()}`);
+			return (res.data ?? []).map((d) => ({
+				id: d.slug,
+				label: d.name,
+				sublabel: d.geo_code ?? ''
+			}));
+		} catch {
+			return [];
+		}
+	}
 
 	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
 		const query = q.toLowerCase().trim();
@@ -151,29 +163,47 @@
 		</h1>
 	</div>
 
-	<!-- Geo-aware destination selector (first input per geo-aware tool pattern) -->
+	<!-- Geo destination selector, or university search for university wikis -->
 	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<label class="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-			<Globe size={13} /> {t('wiki.destination_label', 'Destination')}
-		</label>
-		{#if destLoading}
-			<div class="w-full max-w-sm rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-muted)]">
-				{t('wiki.destination_loading', 'Loading destinations…')}
-			</div>
-		{:else}
+		{#if isUniversityWiki}
+			<label class="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+				<GraduationCap size={13} /> {t('wiki.universities_label', 'Universities')}
+			</label>
 			<div class="w-full max-w-sm">
 				<Autocomplete
-					placeholder={t('wiki.destination_label', 'Destination')}
+					placeholder={t('wiki.university_search_hint', 'Search a university…')}
 					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={fetchDestinations}
-					initialFetcher={fetchDestinationsInitial}
+					fetcher={searchUniversities}
 					selectedId={data.spaceSlug || null}
-					selectedLabel={selectedDestLabel}
+					selectedLabel={spaceName}
 					onSelect={(item) => {
 						if (item.id && item.id !== data.spaceSlug) goto(`/wiki/${encodeURIComponent(item.id)}`);
 					}}
 				/>
 			</div>
+		{:else}
+			<label class="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+				<Globe size={13} /> {t('wiki.destination_label', 'Destination')}
+			</label>
+			{#if destLoading}
+				<div class="w-full max-w-sm rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-muted)]">
+					{t('wiki.destination_loading', 'Loading destinations…')}
+				</div>
+			{:else}
+				<div class="w-full max-w-sm">
+					<Autocomplete
+						placeholder={t('wiki.destination_label', 'Destination')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchDestinations}
+						initialFetcher={fetchDestinationsInitial}
+						selectedId={data.spaceSlug || null}
+						selectedLabel={selectedDestLabel}
+						onSelect={(item) => {
+							if (item.id && item.id !== data.spaceSlug) goto(`/wiki/${encodeURIComponent(item.id)}`);
+						}}
+					/>
+				</div>
+			{/if}
 		{/if}
 	</div>
 

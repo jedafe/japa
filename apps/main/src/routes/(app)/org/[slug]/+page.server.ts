@@ -1,7 +1,11 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
-import type { PublicOrganization, OrgMember, ProfilePost, OrgMedia, ComparisonListItem } from '$lib/types';
+import type { PublicOrganization, OrgMember, ProfilePost, OrgMedia, ComparisonListItem, JobListing, ComposerOrganization } from '$lib/types';
+
+// Job editors = owner/admin/editor members — the same roles the
+// GET/PATCH /org/{id}/jobs endpoints enforce (JOBS-012).
+const JOB_EDITOR_ROLES = new Set(['owner', 'admin', 'editor']);
 
 /**
  * Public organization profile at /org/[slug] — SSR, indexable.
@@ -63,5 +67,34 @@ export const load: PageServerLoad = async (event) => {
 		!!event.locals.user &&
 		members.some((m) => m.user.id === event.locals.user!.id && (m.role === 'owner' || m.role === 'admin'));
 
-	return { org, canManage, members, posts, media, initiallyFollowing: isFollowing, jsonLd, comparisons };
+	// Section 63 — job editors (owner/admin/editor) get a Jobs tab listing
+	// the org's listings via GET /org/{id}/jobs. The caller's membership
+	// comes from /me/organizations (authoritative for member_role); the
+	// public members list is display-only and may not include the viewer.
+	const myMembership = event.locals.user
+		? await apiList<ComposerOrganization>(ctx, '/me/organizations')
+				.then((r) => r.items.find((o) => o.id === org.id) ?? null)
+				.catch(() => null)
+		: null;
+	const canManageJobs = !!myMembership && JOB_EDITOR_ROLES.has(myMembership.member_role);
+	const isJobAdmin = !!myMembership && (myMembership.member_role === 'owner' || myMembership.member_role === 'admin');
+	const orgJobs = canManageJobs
+		? await apiList<JobListing>(ctx, `/org/${org.id}/jobs?limit=50`)
+				.then((r) => r.items)
+				.catch(() => [])
+		: [];
+
+	return {
+		org,
+		canManage,
+		canManageJobs,
+		isJobAdmin,
+		orgJobs,
+		members,
+		posts,
+		media,
+		initiallyFollowing: isFollowing,
+		jsonLd,
+		comparisons
+	};
 };

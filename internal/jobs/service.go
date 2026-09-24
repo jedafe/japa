@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
@@ -70,6 +71,10 @@ var ErrDuplicateApplication = errors.New("jobs: already applied to this job")
 // organization with a job-editor-or-above role.
 var ErrNotOrgMember = errors.New("jobs: not an organization member")
 
+// ErrDuplicateContent is returned when a job listing's content_hash collides
+// with an existing content row (Rule 12 → 409 duplicate_content).
+var ErrDuplicateContent = errors.New("jobs: duplicate content")
+
 // JobFilters holds the server-side filter parameters for the job finder.
 type JobFilters struct {
 	Country         string
@@ -94,29 +99,45 @@ type SourceAttribution struct {
 }
 
 // JobResult is a single job listing in the finder results.
+// Source is a pointer so listings without intel provenance serialize
+// `"source": null` instead of an empty attribution object (JOBS-016).
 type JobResult struct {
-	ID          string            `json:"id"`
-	Title       string            `json:"title"`
-	Slug        string            `json:"slug"`
-	Summary     string            `json:"summary"`
-	FieldValues map[string]string `json:"field_values"`
-	PublishedAt string            `json:"published_at"`
-	Source      SourceAttribution `json:"source"`
+	ID          string             `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	Summary     string             `json:"summary"`
+	FieldValues map[string]string  `json:"field_values"`
+	PublishedAt string             `json:"published_at"`
+	Source      *SourceAttribution `json:"source"`
 
 	intelRecordID pgtype.UUID
 }
 
 // JobDetail is a single job listing with all its custom field values.
+// Source is a pointer so listings without intel provenance serialize
+// `"source": null` instead of an empty attribution object (JOBS-016).
 type JobDetail struct {
-	ID             string            `json:"id"`
-	Title          string            `json:"title"`
-	Slug           string            `json:"slug"`
-	Summary        string            `json:"summary"`
-	Body           string            `json:"body"`
-	FieldValues    map[string]string `json:"field_values"`
-	PublishedAt    string            `json:"published_at"`
-	OrganizationID string            `json:"organization_id,omitempty"`
-	Source         SourceAttribution `json:"source"`
+	ID             string             `json:"id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Summary        string             `json:"summary"`
+	Body           string             `json:"body"`
+	FieldValues    map[string]string  `json:"field_values"`
+	PublishedAt    string             `json:"published_at"`
+	OrganizationID string             `json:"organization_id,omitempty"`
+	Source         *SourceAttribution `json:"source"`
+	// MyApplication is the authenticated viewer's own application to this
+	// listing, or null when the viewer is a guest or has not applied. Lets
+	// the detail page render an "Applied" state instead of the form.
+	MyApplication *ViewerApplication `json:"my_application"`
+}
+
+// ViewerApplication is the caller's own job_applications row on a detail
+// response — id, status, and applied_at only.
+type ViewerApplication struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	AppliedAt string `json:"applied_at"`
 }
 
 // UpdateJobListingInput is the request body for the public PATCH
@@ -159,6 +180,10 @@ type ApplicationResult struct {
 	EmployerNotes     *string `json:"employer_notes,omitempty"`
 	AppliedAt         string  `json:"applied_at"`
 	StatusUpdatedAt   string  `json:"status_updated_at,omitempty"`
+	// Submission carries the linked form_submissions.field_values bag
+	// (e.g. resume_url, cover_letter) for the employer view; null when the
+	// application has no linked submission.
+	Submission map[string]any `json:"submission,omitempty"`
 }
 
 // Service holds the business logic for the Jobs Board.
@@ -405,7 +430,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 	// aggregation joins custom_fields to resolve the key (EAV schema).
 	dataSQL := fmt.Sprintf(`
 		SELECT
-			c.id, c.title, c.slug, c.intel_record_id,
+			c.id, c.title, c.slug, c.intel_record_id, LEFT(c.body, 300),
 			COALESCE(
 				(SELECT json_object_agg(cf.key,
 					CASE
@@ -458,11 +483,12 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			title         string
 			slug          string
 			intelRecordID pgtype.UUID
+			body          *string
 			fieldValues   []byte
 			publishedAt   pgtype.Timestamptz
 		)
 
-		if err := rows.Scan(&id, &title, &slug, &intelRecordID, &fieldValues, &publishedAt); err != nil {
+		if err := rows.Scan(&id, &title, &slug, &intelRecordID, &body, &fieldValues, &publishedAt); err != nil {
 			return nil, 0, fmt.Errorf("jobs: find: scan: %w", err)
 		}
 
@@ -476,11 +502,16 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			publishedStr = publishedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 		}
 
+		bodyStr := ""
+		if body != nil {
+			bodyStr = *body
+		}
+
 		results = append(results, JobResult{
 			ID:            id.String(),
 			Title:         title,
 			Slug:          slug,
-			Summary:       "",
+			Summary:       deriveSummary(bodyStr),
 			FieldValues:   fvMap,
 			PublishedAt:   publishedStr,
 			intelRecordID: intelRecordID,
@@ -502,7 +533,8 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 		if sources, err := s.store.MapSourcesByRecordIDs(ctx, recordIDs); err == nil {
 			for i := range results {
 				if src, ok := sources[results[i].intelRecordID.String()]; ok {
-					results[i].Source = sourceAttributionFromRow(src)
+					attr := sourceAttributionFromRow(src)
+					results[i].Source = &attr
 				}
 			}
 		} else {
@@ -593,7 +625,8 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 	if intelRecordID.Valid {
 		if sources, err := s.store.MapSourcesByRecordIDs(ctx, []pgtype.UUID{intelRecordID}); err == nil {
 			if src, ok := sources[intelRecordID.String()]; ok {
-				detail.Source = sourceAttributionFromRow(src)
+				attr := sourceAttributionFromRow(src)
+				detail.Source = &attr
 			}
 		}
 	}
@@ -712,8 +745,14 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 	}
 
 	// Rule 12: compute content_hash before every contents insert so the
-	// unique index idx_contents_platform_content_hash rejects duplicates.
-	contentHash := content.ComputeContentHash(body)
+	// unique index idx_contents_tenant_content_hash rejects duplicates.
+	// Skip hashing for empty bodies — NULL content_hash doesn't collide
+	// (the index has WHERE content_hash IS NOT NULL).
+	var contentHash *string
+	if strings.TrimSpace(body) != "" {
+		h := content.ComputeContentHash(body)
+		contentHash = &h
+	}
 
 	// body is NOT NULL DEFAULT '' — pass the value directly (empty string is
 	// valid; NULLIF would turn "" into NULL and violate the NOT NULL
@@ -726,6 +765,10 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 		RETURNING id`,
 		orgID, authorID, title, slug, body, contentHash).Scan(&contentID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return JobDetail{}, ErrDuplicateContent
+		}
 		return JobDetail{}, fmt.Errorf("jobs: create listing: insert content: %w", err)
 	}
 
@@ -884,7 +927,13 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 		}
 	}
 
-	contentHash := content.ComputeContentHash(body)
+	// Rule 12 — recompute content_hash on update; NULL for empty bodies so
+	// the partial unique index doesn't collide (see CreateJobListing).
+	var contentHash *string
+	if strings.TrimSpace(body) != "" {
+		h := content.ComputeContentHash(body)
+		contentHash = &h
+	}
 
 	setParts := []string{"updated_at = now()", "title = $2", "slug = $3", "body = $4", "content_hash = $5"}
 	args := []any{jobID, title, slug, body, contentHash}
@@ -911,6 +960,10 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 
 	cmd, err := s.store.pool.Writer.Exec(ctx, query, args...)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return JobDetail{}, ErrDuplicateContent
+		}
 		return JobDetail{}, fmt.Errorf("jobs: update listing: update content: %w", err)
 	}
 
@@ -1108,6 +1161,21 @@ func (s *Service) ApplyToJob(ctx context.Context, jobID, applicantID pgtype.UUID
 	return app, nil
 }
 
+// ViewerApplicationForJob returns the viewer's own application for a job,
+// or nil when none exists. Used by HandleJobDetail to render the applied
+// state for returning applicants (JOBS apply flow).
+func (s *Service) ViewerApplicationForJob(ctx context.Context, jobID, applicantID pgtype.UUID) *ViewerApplication {
+	app, err := s.findExistingApplication(ctx, jobID, applicantID)
+	if err != nil {
+		return nil
+	}
+	v := &ViewerApplication{ID: app.ID.String(), Status: app.Status}
+	if app.AppliedAt.Valid {
+		v.AppliedAt = app.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+	return v
+}
+
 // findExistingApplication looks up an existing application for the user+job.
 func (s *Service) findExistingApplication(ctx context.Context, jobID, applicantID pgtype.UUID) (gen.JobApplication, error) {
 	query := `
@@ -1265,9 +1333,9 @@ func (s *Service) AdminListApplications(ctx context.Context, status string, page
 }
 
 // AdminListJobs returns all job_listing contents for a platform, with
-// pagination and optional status filter. This is the admin "all listings"
+// pagination and optional status/q filters. This is the admin "all listings"
 // view per Section 63: GET /admin/jobs — all listings (admin).
-func (s *Service) AdminListJobs(ctx context.Context, status string, page, limit int) ([]AdminJobListing, int64, error) {
+func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, limit int) ([]AdminJobListing, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1284,11 +1352,19 @@ func (s *Service) AdminListJobs(ctx context.Context, status string, page, limit 
 	whereClause := "c.content_type = 'job_listing' AND c.deleted_at IS NULL"
 	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if status != "" {
 		whereClause += fmt.Sprintf(" AND c.status = $%d", argIdx)
 
 		args = append(args, status)
+		argIdx++
+	}
+
+	// Admin DataTable search box sends ?q= — filter on title (JOBS-017).
+	if q != "" {
+		whereClause += fmt.Sprintf(" AND c.title ILIKE $%d", argIdx)
+
+		args = append(args, "%"+q+"%")
 		argIdx++
 	}
 
@@ -1546,9 +1622,15 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 	if body != nil {
 		setParts = append(setParts, fmt.Sprintf("body = $%d", argIdx))
 		args = append(args, *body)
-		// Rule 12: recompute content_hash when body changes.
+		argIdx++
+		// Rule 12: recompute content_hash when body changes; NULL for empty
+		// bodies — the unique index is partial (WHERE content_hash IS NOT NULL).
 		setParts = append(setParts, fmt.Sprintf("content_hash = $%d", argIdx))
-		args = append(args, content.ComputeContentHash(*body))
+		if strings.TrimSpace(*body) == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, content.ComputeContentHash(*body))
+		}
 		argIdx++
 	}
 
@@ -1565,6 +1647,10 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 
 	_, err := s.store.pool.Writer.Exec(ctx, query, args...)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrDuplicateContent
+		}
 		return fmt.Errorf("jobs: admin update: update content: %w", err)
 	}
 
@@ -1614,6 +1700,20 @@ func applicationResultFromUserRow(row gen.ListUserJobApplicationsRow) Applicatio
 	return r
 }
 
+// decodeSubmissionFields unmarshals a form_submissions.field_values JSONB
+// blob into a map for the API response. Returns nil for absent or
+// unparseable values so the field serializes as omitted.
+func decodeSubmissionFields(raw []byte) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
 // applicationResultFromJobRow converts a ListJobApplicationsByJobRow to an
 // ApplicationResult.
 func applicationResultFromJobRow(row gen.ListJobApplicationsByJobRow) ApplicationResult {
@@ -1625,6 +1725,7 @@ func applicationResultFromJobRow(row gen.ListJobApplicationsByJobRow) Applicatio
 		ApplicantEmail:    row.ApplicantEmail,
 		Status:            row.Status,
 		EmployerNotes:     row.EmployerNotes,
+		Submission:        decodeSubmissionFields(row.SubmissionFields),
 	}
 	if row.AppliedAt.Valid {
 		r.AppliedAt = row.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")

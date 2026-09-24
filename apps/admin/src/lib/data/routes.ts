@@ -155,6 +155,8 @@ const adminRoutes: string[] = [
 	'/tickets',
 	'/travel',
 	'/universities',
+	'/universities/course-catalog',
+	'/universities/course-offerings',
 	'/university',
 	'/university/categories',
 	'/university/instructors',

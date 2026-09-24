@@ -55,7 +55,7 @@ export const load: PageServerLoad = async (event) => {
 			: [];
 
 	const canEdit =
-		job.org_id && organizations.some((o) => o.id === job.org_id);
+		job.organization_id && organizations.some((o) => o.id === job.organization_id);
 	if (!canEdit) {
 		throw error(403, { code: 'not_owner', message: 'You can only edit jobs for organizations you help manage' });
 	}

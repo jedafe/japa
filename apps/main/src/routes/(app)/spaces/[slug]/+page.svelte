@@ -35,8 +35,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const authed = $derived(!!page.data.user);
 	const wikiEnabled = $derived(!!data.wikiEnabled);
 	const wikiPages = $derived<WikiPageIndex[]>(data.wikiPages ?? []);
-	const isDestinationWiki = $derived(['country', 'state', 'city'].includes(space.level));
 	const isUniversity = $derived(data.isUniversity ?? false);
+	// University spaces are typed via space_types.slug = 'university' (most
+	// carry level = 'custom'), so include isUniversity alongside the level set.
+	const isDestinationWiki = $derived(['country', 'state', 'city', 'university'].includes(space.level) || isUniversity);
 	const reviews = $derived<SpaceReview[]>(data.reviews ?? []);
 
 	function formatWikiCategory(category: string): string {
