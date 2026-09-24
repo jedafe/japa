@@ -4670,7 +4670,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/public/feeds/tag/{tag}", publicAPIHandlers.GetTagFeed)
 				r.With(publicapi.RequireScope("api.read.content")).
 					Get("/public/feeds/space/{slug}", publicAPIHandlers.GetSpaceFeed)
-				r.With(publicapi.RequireScope("api.read.content")).
+				// feeds/popular also serves anonymous callers (extension
+				// new-tab before connect) — OptionalScope allows name=popular
+				// through without a key; IP-based loose rate limit applies
+				// since the per-key limiter only covers keyed requests.
+				r.With(mw.RateLimit(vkClient.Redis(), "loose"), publicapi.OptionalScope("api.read.content", "popular")).
 					Get("/public/feeds/{name}", publicAPIHandlers.GetExploreFeed)
 				r.With(publicapi.RequireScope("api.read.me")).
 					Get("/public/me/feed", publicAPIHandlers.GetMyFeed)
