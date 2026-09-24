@@ -114,7 +114,8 @@ const (
 
 	// ---- Destination Wiki (§80, ADR-088) ----.
 
-	TypeWikiSeedStubPages = "wiki:seed_stub_pages"
+	TypeWikiSeedStubPages   = "wiki:seed_stub_pages"
+	TypeWikiFieldsPropagate = "wiki:fields_propagate"
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
@@ -242,6 +243,7 @@ var handlerRegistry = []struct {
 	{TypeContentScanAffiliateLinks, HandleContentScanAffiliateLinks},
 	{TypeRedirectRecordHit, HandleRedirectRecordHit},
 	{TypeWikiSeedStubPages, HandleWikiSeedStubPages},
+	{TypeWikiFieldsPropagate, HandleWikiFieldsPropagate},
 	// Periodic sweep handlers
 	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},
 	{TypeGdprRetentionSweep, HandleGdprRetentionSweep},
