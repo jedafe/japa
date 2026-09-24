@@ -2,6 +2,7 @@ package feed
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -370,5 +371,34 @@ func TestComputeVelocityScoreDecay(t *testing.T) {
 
 	if recent <= old {
 		t.Errorf("recent velocity (%f) should be > old velocity (%f)", recent, old)
+	}
+}
+
+func TestCleanExcerpt(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("word ", 120)
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"empty", "", ""},
+		{"whitespace", "   \n\t  ", ""},
+		{"plain text", "Visa bulletin for October.", "Visa bulletin for October."},
+		{"html", `<p>Gangnam <strong>Style</strong> broke the internet.</p>`, "Gangnam Style broke the internet."},
+		{"nested html", `<div><p>First</p><p>Second</p></div>`, "First Second"},
+		{"markdown", "# Title\n\nSome **bold** body text.", "Title Some bold body text."},
+		{"truncated prosemirror fragment", `{"type": "doc", "content": [{"type": "paragraph", "cont`, ""},
+		{"complete prosemirror doc", `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello world"}]}]}`, "Hello world"},
+		{"truncated html tail", `<p>Hello world this is a long excerpt that got cut mid-tag <st`, "Hello world this is a long excerpt that got cut mid-tag"},
+		{"long text", long, strings.TrimSpace(long)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := CleanExcerpt(tc.input); got != tc.want {
+				t.Errorf("CleanExcerpt(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
 	}
 }

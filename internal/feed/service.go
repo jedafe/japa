@@ -15,10 +15,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/rag"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 )
+
+// CleanExcerpt normalizes the SQL excerpt column — LEFT(body_html-or-body,
+// 400) — to plain text for feed cards: residual HTML tags and markdown
+// markers are stripped. Exported for other surfaces that render the same
+// excerpt columns (e.g. publicapi tag feeds).
+func CleanExcerpt(raw string) string {
+	raw = strings.TrimSpace(raw)
+	// A ProseMirror body that reaches here (body_html empty) is a
+	// LEFT(...,400) fragment — invalid JSON that cannot be parsed, only
+	// mangle-stripped into "type doc content" noise. Drop it. A complete
+	// tiny doc is still valid JSON and extracts normally.
+	if strings.HasPrefix(raw, "{") && !json.Valid([]byte(raw)) {
+		return ""
+	}
+	return rag.ExtractPlainText(raw)
+}
 
 // FeedItem represents a single item in a feed response, normalized across
 // all feed types (explore, primary, space, profile) for the daily card.
@@ -617,7 +634,7 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 			authorName = *r.AuthorUsername
 		}
 
-		excerpt := strings.TrimSpace(r.Excerpt)
+		excerpt := CleanExcerpt(r.Excerpt)
 
 		items[i] = FeedItem{
 			ID:                 uuidToString(r.ID),
@@ -807,7 +824,7 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            r.Excerpt,
+			Excerpt:            CleanExcerpt(r.Excerpt),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -850,7 +867,7 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            r.Excerpt,
+			Excerpt:            CleanExcerpt(r.Excerpt),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -893,7 +910,7 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            r.Excerpt,
+			Excerpt:            CleanExcerpt(r.Excerpt),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -936,7 +953,7 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          derefInt32(r.VoteScore),
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            r.Excerpt,
+			Excerpt:            CleanExcerpt(r.Excerpt),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -979,7 +996,7 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            r.Excerpt,
+			Excerpt:            CleanExcerpt(r.Excerpt),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
@@ -1022,7 +1039,7 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            r.Excerpt,
+			Excerpt:            CleanExcerpt(r.Excerpt),
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
