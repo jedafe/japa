@@ -231,12 +231,16 @@ func EntityClassFromType(entityType string) string {
 	return entityType
 }
 
+// entityTypeSpace is the custom_field_values entity_type under which all
+// space-backed entities store their values (§06).
+const entityTypeSpace = "space"
+
 // ValueEntityType normalizes an entity type to the custom_field_values
 // entity_type convention (§06): space-backed types all store under 'space'.
 func ValueEntityType(entityType string) string {
 	switch entityType {
-	case "space", "university", "country", "state", "city":
-		return "space"
+	case entityTypeSpace, "university", "country", "state", "city":
+		return entityTypeSpace
 	default:
 		return entityType
 	}
