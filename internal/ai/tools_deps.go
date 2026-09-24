@@ -642,6 +642,12 @@ type ToolDeps struct {
 	// Section 104 — AI Content Campaigns.
 	PersonaProvisioner PersonaProvisioner // nil → personas.create returns "not configured"
 	Campaign           CampaignService    // nil → content.campaign.create returns "not configured"
+
+	// Persona voice + catalog read tools (§68, ADR-114). Surfaced on the
+	// agent catalog and the MCP bridge (§119) so callers can discover the
+	// shared voice/tone catalog and pick a persona before drafting content.
+	PersonaVoices  PersonaVoicesService  // nil → persona_voices.* tools return "not configured"
+	PersonaCatalog PersonaCatalogService // nil → personas.list/read return "not configured"
 }
 
 // ---------------------------------------------------------------------------
@@ -711,6 +717,58 @@ type CampaignItemSummary struct {
 // content.campaign.create agent tool.
 type CampaignService interface {
 	CreateCampaign(ctx context.Context, userID pgtype.UUID, in CampaignCreateInput) (CampaignCreateResult, error)
+}
+
+// ---------------------------------------------------------------------------
+// Persona voice + catalog read tools (§68, ADR-114)
+// ---------------------------------------------------------------------------
+
+// PersonaVoiceItem mirrors personas.PersonaVoice — a shared voice/tone
+// catalog record. Defined here so the ai package does not import
+// internal/personas; the wiring layer adapts.
+type PersonaVoiceItem struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+	VoicePrompt string `json:"voice_prompt,omitempty"`
+	IsSystem    bool   `json:"is_system"`
+	CreatedBy   string `json:"created_by"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+// PersonaVoicesService is the subset of internal/personas.Service the
+// persona_voices.* agent tools call.
+type PersonaVoicesService interface {
+	ListPersonaVoices(ctx context.Context, limit, offset int32) ([]PersonaVoiceItem, int64, error)
+	GetPersonaVoice(ctx context.Context, id pgtype.UUID) (PersonaVoiceItem, error)
+	GetPersonaVoiceBySlug(ctx context.Context, slug string) (PersonaVoiceItem, error)
+}
+
+// AgentPersonaItem mirrors personas.PersonaListItem / PersonaDetail — the
+// subset the personas.list / personas.read agent tools surface. VoicePrompt
+// holds the resolved prompt (persona override wins over the shared voice).
+type AgentPersonaItem struct {
+	ID              string          `json:"id"`
+	ProfileName     string          `json:"profile_name"`
+	BackingUsername string          `json:"backing_username"`
+	DisclosureMode  string          `json:"disclosure_mode"`
+	AutonomyMode    string          `json:"autonomy_mode"`
+	VoiceID         string          `json:"voice_id,omitempty"`
+	VoiceName       *string         `json:"voice_name,omitempty"`
+	VoicePrompt     *string         `json:"voice_prompt,omitempty"`
+	ActivityPolicy  json.RawMessage `json:"activity_policy,omitempty"`
+	Status          string          `json:"status"`
+	CreatedAt       string          `json:"created_at"`
+	TotalActions    int64           `json:"total_actions,omitempty"`
+}
+
+// PersonaCatalogService is the subset of internal/personas.Service the
+// personas.list / personas.read agent tools call.
+type PersonaCatalogService interface {
+	ListPersonas(ctx context.Context, status, q, sort, dir string, limit, offset int32) ([]AgentPersonaItem, int64, error)
+	GetPersona(ctx context.Context, id pgtype.UUID) (AgentPersonaItem, error)
 }
 
 // ToolsRegistryService is the subset of the per-tool services the
@@ -828,6 +886,19 @@ type AgentDataReader interface {
 	CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) (any, error)
 	GetUniversity(ctx context.Context, slug string) (any, error)
 	GetDestinationBrief(ctx context.Context, slug string, include []string) (any, error)
+
+	// Phase 2 — feeds, scam alerts, semantic search.
+	// Ref: docs/superpowers/specs/2026-09-24-agent-data-api-phase2-design.md
+	// TagFeed and SpaceFeed sit on the interface because the feeds.explore
+	// tool routes to them via its tag/space_slug args — there are no
+	// separate tag-feed or space-feed tools.
+	ExploreFeed(ctx context.Context, name, sort string, limit, offset int32) (any, error)
+	TagFeed(ctx context.Context, tagSlug, cursor string, limit int32) (any, error)
+	SpaceFeed(ctx context.Context, viewerID pgtype.UUID, slug, sort string, limit, offset int32) (any, error)
+	MyFeed(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) (any, error)
+	ListScamAlerts(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) (any, int64, error)
+	GetScamAlert(ctx context.Context, id pgtype.UUID) (any, error)
+	SemanticSearch(ctx context.Context, query, lang, spaceSlug string, limit int32) (any, error)
 }
 
 // NewToolDeps creates an empty ToolDeps. Fields are set directly or via the
@@ -966,6 +1037,20 @@ func (d *ToolDeps) WithPersonaProvisioner(p PersonaProvisioner) *ToolDeps {
 // content.campaign.create agent tool.
 func (d *ToolDeps) WithCampaign(c CampaignService) *ToolDeps {
 	d.Campaign = c
+	return d
+}
+
+// WithPersonaVoices injects the shared persona voice catalog reader
+// (ADR-114) used by the persona_voices.* agent tools.
+func (d *ToolDeps) WithPersonaVoices(s PersonaVoicesService) *ToolDeps {
+	d.PersonaVoices = s
+	return d
+}
+
+// WithPersonaCatalog injects the persona catalog reader (§68) used by the
+// personas.list / personas.read agent tools.
+func (d *ToolDeps) WithPersonaCatalog(s PersonaCatalogService) *ToolDeps {
+	d.PersonaCatalog = s
 	return d
 }
 

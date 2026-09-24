@@ -2315,6 +2315,119 @@ func (a *agentGuideCategoriesAdapter) ListGuideCategories(ctx context.Context) (
 }
 
 // ---------------------------------------------------------------------------
+// Persona voice + catalog read tools (§68, ADR-114)
+// ---------------------------------------------------------------------------
+
+// agentPersonaVoicesAdapter adapts personas.Service to the
+// ai.PersonaVoicesService interface, translating personas.PersonaVoice into
+// the ai-package mirror type so the ai package does not import
+// internal/personas.
+type agentPersonaVoicesAdapter struct {
+	svc *personas.Service
+}
+
+func (a *agentPersonaVoicesAdapter) ListPersonaVoices(ctx context.Context, limit, offset int32) ([]ai.PersonaVoiceItem, int64, error) {
+	voices, total, err := a.svc.ListPersonaVoices(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	out := make([]ai.PersonaVoiceItem, 0, len(voices))
+	for _, v := range voices {
+		out = append(out, personaVoiceToAI(v))
+	}
+
+	return out, total, nil
+}
+
+func (a *agentPersonaVoicesAdapter) GetPersonaVoice(ctx context.Context, id pgtype.UUID) (ai.PersonaVoiceItem, error) {
+	v, err := a.svc.GetPersonaVoice(ctx, id)
+	if err != nil {
+		return ai.PersonaVoiceItem{}, err
+	}
+
+	return personaVoiceToAI(v), nil
+}
+
+func (a *agentPersonaVoicesAdapter) GetPersonaVoiceBySlug(ctx context.Context, slug string) (ai.PersonaVoiceItem, error) {
+	v, err := a.svc.GetPersonaVoiceBySlug(ctx, slug)
+	if err != nil {
+		return ai.PersonaVoiceItem{}, err
+	}
+
+	return personaVoiceToAI(v), nil
+}
+
+func personaVoiceToAI(v personas.PersonaVoice) ai.PersonaVoiceItem {
+	return ai.PersonaVoiceItem{
+		ID:          v.ID,
+		Name:        v.Name,
+		Slug:        v.Slug,
+		Description: v.Description,
+		VoicePrompt: v.VoicePrompt,
+		IsSystem:    v.IsSystem,
+		CreatedBy:   v.CreatedBy,
+		CreatedAt:   v.CreatedAt,
+		UpdatedAt:   v.UpdatedAt,
+	}
+}
+
+// agentPersonaCatalogAdapter adapts personas.Service to the
+// ai.PersonaCatalogService interface for the personas.list / personas.read
+// agent tools.
+type agentPersonaCatalogAdapter struct {
+	svc *personas.Service
+}
+
+func (a *agentPersonaCatalogAdapter) ListPersonas(ctx context.Context, status, q, sort, dir string, limit, offset int32) ([]ai.AgentPersonaItem, int64, error) {
+	items, total, err := a.svc.ListPersonas(ctx, status, q, sort, dir, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	out := make([]ai.AgentPersonaItem, 0, len(items))
+	for _, p := range items {
+		out = append(out, ai.AgentPersonaItem{
+			ID:              p.ID,
+			ProfileName:     p.ProfileName,
+			BackingUsername: p.BackingUsername,
+			DisclosureMode:  p.DisclosureMode,
+			AutonomyMode:    p.AutonomyMode,
+			VoiceID:         p.VoiceID,
+			VoiceName:       p.VoiceName,
+			VoicePrompt:     p.VoicePrompt,
+			ActivityPolicy:  p.ActivityPolicy,
+			Status:          p.Status,
+			CreatedAt:       p.CreatedAt,
+			TotalActions:    p.TotalActions,
+		})
+	}
+
+	return out, total, nil
+}
+
+func (a *agentPersonaCatalogAdapter) GetPersona(ctx context.Context, id pgtype.UUID) (ai.AgentPersonaItem, error) {
+	d, err := a.svc.GetPersona(ctx, id)
+	if err != nil {
+		return ai.AgentPersonaItem{}, err
+	}
+
+	return ai.AgentPersonaItem{
+		ID:              d.ID,
+		ProfileName:     d.ProfileName,
+		BackingUsername: d.BackingUsername,
+		DisclosureMode:  d.DisclosureMode,
+		AutonomyMode:    d.AutonomyMode,
+		VoiceID:         d.VoiceID,
+		VoiceName:       d.VoiceName,
+		VoicePrompt:     d.VoicePrompt,
+		ActivityPolicy:  d.ActivityPolicy,
+		Status:          d.Status,
+		CreatedAt:       d.CreatedAt,
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
 // Agent data tools (spec 2026-09-23-agent-data-api)
 // ---------------------------------------------------------------------------
 
@@ -2343,4 +2456,40 @@ func (a *agentDataAdapter) GetUniversity(ctx context.Context, slug string) (any,
 
 func (a *agentDataAdapter) GetDestinationBrief(ctx context.Context, slug string, include []string) (any, error) {
 	return a.svc.GetDestinationBrief(ctx, slug, include)
+}
+
+// --- Agent data API Phase 2 (spec 2026-09-24-agent-data-api-phase2) ---
+
+func (a *agentDataAdapter) ExploreFeed(ctx context.Context, name, sort string, limit, offset int32) (any, error) {
+	return a.svc.ExploreFeed(ctx, name, sort, limit, offset)
+}
+
+// TagFeed bundles the item page and its opaque next_cursor into a single
+// payload — the interface returns one any value, so the cursor rides inside.
+func (a *agentDataAdapter) TagFeed(ctx context.Context, tagSlug, cursor string, limit int32) (any, error) {
+	items, nextCursor, err := a.svc.TagFeed(ctx, tagSlug, cursor, limit)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"items": items, "next_cursor": nextCursor}, nil
+}
+
+func (a *agentDataAdapter) SpaceFeed(ctx context.Context, viewerID pgtype.UUID, slug, sort string, limit, offset int32) (any, error) {
+	return a.svc.SpaceFeed(ctx, viewerID, slug, sort, limit, offset)
+}
+
+func (a *agentDataAdapter) MyFeed(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) (any, error) {
+	return a.svc.MyFeed(ctx, userID, sort, limit, offset)
+}
+
+func (a *agentDataAdapter) ListScamAlerts(ctx context.Context, destSpaceID pgtype.UUID, scamType string, limit, offset int32) (any, int64, error) {
+	return a.svc.ListScamAlerts(ctx, destSpaceID, scamType, limit, offset)
+}
+
+func (a *agentDataAdapter) GetScamAlert(ctx context.Context, id pgtype.UUID) (any, error) {
+	return a.svc.GetScamAlert(ctx, id)
+}
+
+func (a *agentDataAdapter) SemanticSearch(ctx context.Context, query, lang, spaceSlug string, limit int32) (any, error) {
+	return a.svc.SemanticSearch(ctx, query, lang, spaceSlug, limit)
 }

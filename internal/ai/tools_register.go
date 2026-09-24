@@ -230,6 +230,15 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("personas.create", PersonasCreateHandler(deps))
 	registry.RegisterHandler("content.campaign.create", ContentCampaignCreateHandler(deps))
 
+	// --- Persona voice + catalog read tools (§68, ADR-114) ---
+	// Read-only discovery tools — persona_voices and ai_personas are admin
+	// config, not user data, so no privacy targets are registered. The
+	// catalog RBAC gate enforces persona.view (migration 000722).
+	registry.RegisterHandler("persona_voices.list", PersonaVoicesListHandler(deps))
+	registry.RegisterHandler("persona_voices.read", PersonaVoicesReadHandler(deps))
+	registry.RegisterHandler("personas.list", PersonasListHandler(deps))
+	registry.RegisterHandler("personas.read", PersonasReadHandler(deps))
+
 	// --- Agent data tools (spec 2026-09-23-agent-data-api) ---
 	// Read-only moat reads via the publicapi facade — the registered names
 	// match the MCP apiKeyToolGates allowlist exactly.
@@ -238,4 +247,14 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("visa.compare", VisaCompareHandler(deps))
 	registry.RegisterHandler("university.get", UniversityGetHandler(deps))
 	registry.RegisterHandler("destination.brief", DestinationBriefHandler(deps))
+
+	// --- Agent data tools Phase 2 (spec 2026-09-24-agent-data-api-phase2) ---
+	// feeds.explore routes internally to the explore/tag/space feed reads;
+	// feeds.for_you is caller-scoped. The registered names match the MCP
+	// apiKeyToolGates allowlist exactly.
+	registry.RegisterHandler("feeds.explore", FeedsExploreHandler(deps))
+	registry.RegisterHandler("feeds.for_you", FeedsForYouHandler(deps))
+	registry.RegisterHandler("scam.list", ScamListHandler(deps))
+	registry.RegisterHandler("scam.get", ScamGetHandler(deps))
+	registry.RegisterHandler("search.semantic", SemanticSearchHandler(deps))
 }
