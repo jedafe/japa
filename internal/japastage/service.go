@@ -65,7 +65,9 @@ type PublicProfileDTO struct {
 // is a pointer so omitted (`null`/absent) means "leave unchanged" while an
 // explicit `false` clears visibility (§87 japa_stage_is_public toggle).
 // Stage may be omitted when only the intent is being set (ADR-122); Intent
-// may be omitted to leave the journey class unchanged.
+// may be omitted to leave the journey class unchanged. A submitted stage
+// must belong to the effective intent's applicable set (ADR-122
+// class-scoped terminals).
 type UpdateStageInput struct {
 	Stage       string `json:"stage"`
 	Intent      string `json:"intent"`
@@ -73,10 +75,11 @@ type UpdateStageInput struct {
 	IsPublic    *bool  `json:"is_public"`
 }
 
-// ErrInvalidStageForIntent is returned when a non-relocation intent is
-// paired with a japa_stage (ADR-122 intent×stage rule). The HTTP layer maps
-// it to a 400 invalid_stage_for_intent response.
-var ErrInvalidStageForIntent = errors.New("japastage: stage is not valid for a non-relocation intent")
+// ErrInvalidStageForIntent is returned when a japa_stage is outside the
+// effective intent's applicable set (ADR-122 intent×stage rule — e.g.
+// settled on a visit intent, or returned on a work intent). The HTTP layer
+// maps it to a 400 invalid_stage_for_intent response.
+var ErrInvalidStageForIntent = errors.New("japastage: stage is not valid for the given intent")
 
 // Notifier is the interface used to dispatch japa-stage recommendation
 // notifications. Satisfied by *notifications.Service; declared here to
@@ -133,10 +136,13 @@ func (s *Service) Enabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "japa_stage.enabled", false)
 }
 
-// Option is a single selectable value exposed by the option endpoint.
+// Option is a single selectable value exposed by the option endpoints.
+// Intents lists the journey classes a stage applies to (ADR-122) and is
+// only populated on stage options — empty for intent options.
 type Option struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+	Value   string   `json:"value"`
+	Label   string   `json:"label"`
+	Intents []string `json:"intents,omitempty"`
 }
 
 var stageLabels = map[string]string{
@@ -147,13 +153,40 @@ var stageLabels = map[string]string{
 	"approved":    "Approved",
 	"relocated":   "Relocated",
 	"settled":     "Settled",
+	"traveled":    "Traveled",
+	"returned":    "Returned",
 }
 
-// Stages returns the canonical japa stage option list (Rule 16).
-func (s *Service) Stages() []Option {
-	out := make([]Option, 0, len(validStages))
-	for _, v := range validStages {
-		out = append(out, Option{Value: v, Label: stageLabels[v]})
+var relocationIntentList = []string{"relocation", "study", "work", "family"}
+var tripIntentList = []string{"visit", "business"}
+
+// stageIntents maps each stage to the journey classes it applies to —
+// shared-arc stages list all six intents, terminal stages list only their
+// class (ADR-122).
+var stageIntents = map[string][]string{
+	"considering": validIntents,
+	"planning":    validIntents,
+	"preparing":   validIntents,
+	"applied":     validIntents,
+	"approved":    validIntents,
+	"relocated":   relocationIntentList,
+	"settled":     relocationIntentList,
+	"traveled":    tripIntentList,
+	"returned":    tripIntentList,
+}
+
+// Stages returns the canonical japa stage option list (Rule 16). Each
+// option carries the journey classes it applies to. A non-empty intent
+// filters the list to that class's applicable stages.
+func (s *Service) Stages(intent string) []Option {
+	values := validStages
+	if intent != "" {
+		values = StagesForIntent(intent)
+	}
+
+	out := make([]Option, 0, len(values))
+	for _, v := range values {
+		out = append(out, Option{Value: v, Label: stageLabels[v], Intents: stageIntents[v]})
 	}
 
 	return out
@@ -163,7 +196,7 @@ var intentLabels = map[string]string{
 	"relocation": "Relocation",
 	"study":      "Study abroad",
 	"work":       "Work",
-	"family":     "Family",
+	"family":     "Family route",
 	"visit":      "Visit / tourism",
 	"business":   "Business",
 }
@@ -216,11 +249,11 @@ func (s *Service) GetByUsername(ctx context.Context, username string) (PublicPro
 // UpdateOwn updates the authenticated user's own japa stage, intent,
 // destination space, and (when IsPublic is non-nil) visibility. Stage and
 // intent are independently optional: a stage-only PATCH leaves the intent
-// unchanged, an intent-only PATCH leaves the stage unchanged — except that
-// switching to a non-relocation intent (visit/business) clears the stage
-// (ADR-122 intent×stage rule). On success the caller should fire the
-// japa_stage:recommend Asynq task (Rule 8 — fire-and-forget) so the worker
-// can dispatch recommendations.
+// unchanged, an intent-only PATCH leaves the stage unchanged — unless the
+// new intent class makes the stored stage incompatible, in which case it
+// clears (ADR-122 class-scoped stages). On success the caller should fire
+// the japa_stage:recommend Asynq task (Rule 8 — fire-and-forget) so the
+// worker can dispatch recommendations.
 func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input UpdateStageInput) (ProfileDTO, error) {
 	if input.Stage != "" && !ValidStage(input.Stage) {
 		return ProfileDTO{}, fmt.Errorf("invalid stage %q; must be one of: %s", input.Stage, JoinStages())
@@ -237,10 +270,13 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 	// Resolve the effective intent: the submitted value wins, otherwise the
 	// stored one applies. Needed to validate a submitted stage against the
 	// intent×stage rule even when the member did not resend the intent.
-	var currentIntent string
+	var currentIntent, currentStage string
 	if cur, err := s.store.GetUserProfile(ctx, userID); err == nil {
 		if cur.JapaIntent != nil {
 			currentIntent = *cur.JapaIntent
+		}
+		if cur.JapaStage != nil {
+			currentStage = *cur.JapaStage
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return ProfileDTO{}, fmt.Errorf("japastage: read current profile: %w", err)
@@ -254,14 +290,14 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 	var stageParam *string
 	switch {
 	case input.Stage != "":
-		if effectiveIntent != "" && !IsRelocationIntent(effectiveIntent) {
+		if !ValidStageForIntent(input.Stage, effectiveIntent) {
 			return ProfileDTO{}, ErrInvalidStageForIntent
 		}
 		stageParam = &input.Stage
-	case input.Intent != "" && !IsRelocationIntent(input.Intent):
-		// Moving to a non-relocation class drops the relocation stage —
-		// the CHECK forbids visit/business + stage, and a cleared stage
-		// keeps the history self-describing.
+	case input.Intent != "" && currentStage != "" && !ValidStageForIntent(currentStage, effectiveIntent):
+		// The class switch makes the stored stage incompatible (e.g.
+		// relocated → visit) — clear it; the history entry records the
+		// transition and shared-arc stages are preserved.
 		clear := ""
 		stageParam = &clear
 	}
@@ -342,7 +378,10 @@ func (s *Service) RecommendForStage(ctx context.Context, userID pgtype.UUID, sta
 	}
 
 	// (3) Readiness Assessment prompt (stage=planning, no completed result).
-	if stage == "planning" && s.assess != nil {
+	// Relocation-class only — the assessment measures relocation readiness,
+	// so visit/business members are not prompted (ADR-122). An empty intent
+	// preserves legacy behavior for payloads that predate the intent field.
+	if stage == "planning" && (intent == "" || IsRelocationIntent(intent)) && s.assess != nil {
 		count, err := s.assess.CountUserAssessmentResults(ctx, userID)
 		if err != nil {
 			slog.Warn("japastage: assessment count failed", "error", err)
@@ -354,14 +393,15 @@ func (s *Service) RecommendForStage(ctx context.Context, userID pgtype.UUID, sta
 		}
 	}
 
-	// (4) Achievement Feed prompt (stage=relocated or settled, §89 enabled).
-	// Ref: §87 Integration — "stage advance to relocated or settled triggers
-	// an opt-in prompt to post to the achievement feed."
-	if (stage == "relocated" || stage == "settled") && s.notifier != nil &&
+	// (4) Achievement Feed prompt (stage=relocated, settled, or traveled —
+	// the arrival milestone of each class; §89 enabled).
+	// Ref: §87 Integration — "stage advance to relocated, settled, or
+	// traveled triggers an opt-in prompt to post to the achievement feed."
+	if (stage == "relocated" || stage == "settled" || stage == "traveled") && s.notifier != nil &&
 		s.settings.GetBoolOr(ctx, "achievement.enabled", false) {
 		zero := pgtype.UUID{}
 		title := "Share your milestone in the Achievement Feed"
-		body := "You've reached a major relocation milestone. Share your win with the community to inspire others on the same journey."
+		body := "You've reached a major journey milestone. Share your win with the community to inspire others on the same journey."
 
 		if err := s.notifier.CreateNotification(ctx, userID, "japa_stage.achievement_prompt", "system", zero, "japa_stage", userID, title, body, "/achievements/new"); err != nil {
 			slog.Warn("japastage: achievement prompt notification failed", "error", err)

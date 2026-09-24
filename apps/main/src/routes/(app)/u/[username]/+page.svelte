@@ -4,6 +4,7 @@
 	import { untrack } from 'svelte';
 	import { invalidate } from '$app/navigation';
 	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin } from 'lucide-svelte';
+	import { DropdownMenu } from 'bits-ui';
 	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
@@ -11,7 +12,9 @@
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
 	import VideoGrid from '$lib/components/profile/VideoGrid.svelte';
-	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SelectField, SearchInput } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SearchInput } from '$lib/components/ui';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { UrlTab } from '$lib/components/ui';
 	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
@@ -288,6 +291,23 @@
 		{ value: '100', label: '100' }
 	];
 
+	// Tab dropdowns use the shared Autocomplete component — the option lists are
+	// static, so the fetcher just filters them locally.
+	function toAutocompleteItems(options: FilterOption[]): AutocompleteItem[] {
+		return options.map((o) => ({ id: o.value, label: o.label }));
+	}
+
+	function staticFilterFetcher(items: AutocompleteItem[]) {
+		return (query: string) => {
+			const needle = query.trim().toLowerCase();
+			return Promise.resolve(
+				needle ? items.filter((i) => i.label.toLowerCase().includes(needle)) : items
+			);
+		};
+	}
+
+	const pageSizeItems = toAutocompleteItems(pageSizeOptions);
+
 	// Per-tab contextual filter option lists, derived from the loaded data.
 	const postsFilterOptions = $derived<FilterOption[]>([
 		{ value: 'all', label: t('profile.filter.all_types', 'All types') },
@@ -440,42 +460,37 @@
 			{initiallyFollowing}
 			onChange={() => invalidate(`/api/v1/users/${user.username}`)}
 		/>
-		{#if isAuthenticated}
-			<button
-				type="button"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {isBlocked
-					? 'border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10'
-					: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)]'}"
-				disabled={blockPending}
-				onclick={toggleBlock}
-				aria-label={isBlocked ? t('profile.unblock_user', 'Unblock user') : t('profile.block_user', 'Block user')}
-			>
-				<Ban class="h-4 w-4" />
-				{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
-			</button>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {isMuted
-					? 'border-[var(--color-warning)] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10'
-					: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-border-strong)]'}"
+	{/if}
+	{#snippet menuItems()}
+		{#if isAuthenticated && !isOwnProfile}
+			<DropdownMenu.Item
 				disabled={mutePending}
-				onclick={toggleMute}
+				onSelect={toggleMute}
+				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
 				aria-label={isMuted ? t('profile.unmute_user', 'Unmute user') : t('profile.mute_user', 'Mute user')}
 			>
 				<VolumeX class="h-4 w-4" />
 				{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
-			</button>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
-				onclick={() => (reportOpen = true)}
+			</DropdownMenu.Item>
+			<DropdownMenu.Item
+				disabled={blockPending}
+				onSelect={toggleBlock}
+				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-danger)] transition hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+				aria-label={isBlocked ? t('profile.unblock_user', 'Unblock user') : t('profile.block_user', 'Block user')}
+			>
+				<Ban class="h-4 w-4" />
+				{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
+			</DropdownMenu.Item>
+			<DropdownMenu.Item
+				onSelect={() => (reportOpen = true)}
+				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
 				aria-label={t('profile.report_user', 'Report user')}
 			>
 				<Flag class="h-4 w-4" />
 				{t('profile.report', 'Report')}
-			</button>
+			</DropdownMenu.Item>
 		{/if}
-	{/if}
+	{/snippet}
 </ProfileHeader>
 
 <ReportDialog bind:open={reportOpen} entityType="user" entityId={user.id} entityName={user.display_name ?? user.username} />
@@ -505,17 +520,27 @@ profile is private, or no stage is set. -->
 <UrlTabs {tabs} bind:value={activeTab} />
 
 <div class="mx-auto w-full max-w-full">
-	{#snippet toolbar(options: FilterOption[])}
+	{#snippet toolbar(options: FilterOption[], count: number)}
+		<!-- Search + filter are only useful past one default page of items. -->
+		{#if count > 10}
+		{@const items = toAutocompleteItems(options)}
 		<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
 			<div class="w-full sm:w-56">
-				<SelectField
-					options={options}
-					value={filterVal}
-					onValueChange={(v) => {
-						filterVal = v;
+				<Autocomplete
+					placeholder={t('profile.filter.label', 'Filter')}
+					emptyMessage={t('profile.empty.no_results', 'No results')}
+					fetcher={staticFilterFetcher(items)}
+					initialFetcher={() => Promise.resolve(items)}
+					selectedId={filterVal}
+					selectedLabel={options.find((o) => o.value === filterVal)?.label}
+					onSelect={(item) => {
+						filterVal = item.id;
 						currentPage = 1;
 					}}
-					placeholder={t('profile.filter.label', 'Filter')}
+					onClear={() => {
+						filterVal = 'all';
+						currentPage = 1;
+					}}
 				/>
 			</div>
 			<div class="w-full sm:w-64">
@@ -530,22 +555,31 @@ profile is private, or no stage is set. -->
 				/>
 			</div>
 		</div>
+		{/if}
 	{/snippet}
 
 	{#snippet pager(v: PagerView)}
-		{#if v.total > 0}
+		{#if v.total > 10}
 			<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
 				<div class="flex items-center gap-2">
-					<SelectField
-						options={pageSizeOptions}
-						value={String(pageSize)}
-						onValueChange={(val) => {
-							pageSize = Number(val);
-							currentPage = 1;
-						}}
-						placeholder={t('profile.pager.page_size', 'Per page')}
-						class="w-16"
-					/>
+					<div class="w-24 shrink-0">
+						<Autocomplete
+							placeholder={t('profile.pager.page_size', 'Per page')}
+							emptyMessage={t('profile.empty.no_results', 'No results')}
+							fetcher={staticFilterFetcher(pageSizeItems)}
+							initialFetcher={() => Promise.resolve(pageSizeItems)}
+							selectedId={String(pageSize)}
+							selectedLabel={String(pageSize)}
+							onSelect={(item) => {
+								pageSize = Number(item.id);
+								currentPage = 1;
+							}}
+							onClear={() => {
+								pageSize = 10;
+								currentPage = 1;
+							}}
+						/>
+					</div>
 					<span class="text-xs text-[var(--color-muted)]">
 						{t('profile.pager.showing', 'Showing {start}–{end} of {total}')
 							.replace('{start}', String((currentPage - 1) * pageSize + 1))
@@ -560,7 +594,7 @@ profile is private, or no stage is set. -->
 
 	<div class="p-3">
 		{#if activeTab === 'posts'}
-			{@render toolbar(postsFilterOptions)}
+			{@render toolbar(postsFilterOptions, data.posts.length)}
 			{#if data.posts.length === 0}
 				<EmptyState icon={FileText} title={t('profile.posts_empty', 'No posts yet')} />
 			{:else if postsView.total === 0}
@@ -620,7 +654,7 @@ profile is private, or no stage is set. -->
 				</dl>
 			</section>
 		{:else if activeTab === 'replies'}
-			{@render toolbar(repliesFilterOptions)}
+			{@render toolbar(repliesFilterOptions, data.replies.length)}
 			{#if data.replies.length === 0}
 				<EmptyState icon={MessageSquare} title={t('profile.replies_empty', 'No replies yet')} />
 			{:else if repliesView.total === 0}
@@ -639,7 +673,7 @@ profile is private, or no stage is set. -->
 				{@render pager(repliesView)}
 			{/if}
 		{:else if activeTab === 'media'}
-			{@render toolbar(mediaFilterOptions)}
+			{@render toolbar(mediaFilterOptions, data.media.length)}
 			{#if data.media.length === 0}
 				<EmptyState icon={Image} title={t('profile.media_empty', 'No media yet')} />
 			{:else if mediaView.total === 0}
@@ -714,7 +748,7 @@ profile is private, or no stage is set. -->
 				{/if}
 			{/if}
 		{:else if activeTab === 'likes'}
-			{@render toolbar(likesFilterOptions)}
+			{@render toolbar(likesFilterOptions, data.likes.length)}
 			{#if data.likes.length === 0}
 				<EmptyState icon={Heart} title={t('profile.likes_empty', 'No liked posts yet')} />
 			{:else if likesView.total === 0}
@@ -767,7 +801,7 @@ profile is private, or no stage is set. -->
 			{@const list = isFollowers ? data.followers : data.following}
 			{@const tabView = isFollowers ? followersView : followingView}
 			{@const emptyTitle = isFollowers ? t('profile.followers_empty', 'No followers yet') : t('profile.following_empty', 'Not following anyone yet')}
-			{@render toolbar(isFollowers ? followersFilterOptions : followingFilterOptions)}
+			{@render toolbar(isFollowers ? followersFilterOptions : followingFilterOptions, list.length)}
 			{#if list.length === 0}
 				<EmptyState icon={Users} title={emptyTitle} />
 			{:else if tabView.total === 0}

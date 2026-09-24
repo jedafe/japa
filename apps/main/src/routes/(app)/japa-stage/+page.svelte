@@ -14,13 +14,12 @@
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 	import { Compass, Users } from 'lucide-svelte';
 	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import { japaStageColors, japaStageLabel, japaStageOptions, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
+	import { japaStageColors, japaStageLabel, japaStageOptions, japaStagesForIntent, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
 	import type { JapaStage, JapaIntent, MemberStage } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const stageOpts = $derived(japaStageOptions(t, data.stages));
 	const intentOpts = $derived(japaIntentOptions(t, data.intents));
 
 	// Local filter state, seeded from SSR-passed filters.
@@ -71,6 +70,12 @@
 	);
 
 	const hasFilters = $derived(!!data.filters.dest || !!data.filters.intent);
+
+	// Stage tabs narrow to the selected journey class — a stage outside the
+	// class's applicable set can never match (ADR-122 class-scoped terminals).
+	const stageOpts = $derived(
+		japaStageOptions(t, japaStagesForIntent(data.stages, (data.filters.intent || intentFilter) as JapaIntent | ''))
+	);
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'all', label: t('japa_stage.all_stages', 'All stages') },
@@ -236,26 +241,28 @@
 				</span>
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-semibold text-[var(--color-text)]">@{m.username}</p>
-				{#if m.stage}
-				<span
-					class="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
-					style={`background-color: ${japaStageColors[m.stage as JapaStage]}1a; color: ${japaStageColors[m.stage as JapaStage]};`}
-				>
-					<span
-						class="inline-block h-1.5 w-1.5 rounded-full"
-						style={`background-color: ${japaStageColors[m.stage as JapaStage]};`}
-					></span>
-					{japaStageLabel(t, m.stage as JapaStage)}
-				</span>
-				{:else if m.intent}
-				<!-- Non-relocation intents carry no stage (ADR-122) — show the intent badge instead -->
-				<span
-					class="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
-					style="background-color: var(--color-surface-subtle); color: var(--color-text-subtle);"
-				>
-					{japaIntentLabel(t, m.intent as JapaIntent)}
-				</span>
-				{/if}
+					<div class="mt-1 flex flex-wrap items-center gap-1.5">
+					{#if m.stage}
+						<span
+							class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
+							style={`background-color: ${japaStageColors[m.stage as JapaStage]}1a; color: ${japaStageColors[m.stage as JapaStage]};`}
+						>
+							<span
+								class="inline-block h-1.5 w-1.5 rounded-full"
+								style={`background-color: ${japaStageColors[m.stage as JapaStage]};`}
+							></span>
+							{japaStageLabel(t, m.stage as JapaStage)}
+						</span>
+					{/if}
+					{#if m.intent}
+						<span
+							class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
+							style="background-color: var(--color-surface-subtle); color: var(--color-text-subtle);"
+						>
+							{japaIntentLabel(t, m.intent as JapaIntent)}
+						</span>
+					{/if}
+				</div>
 				<div class="mt-1.5 flex flex-col gap-0.5 text-xs text-[var(--color-text-subtle)]">
 					{#if m.destination_space_name}
 						<span>{t('japa_stage.dest', 'Destination')}: {m.destination_space_name}</span>

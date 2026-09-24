@@ -2,7 +2,10 @@
 	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
-	import { BadgeCheck, Calendar, MessageSquare } from 'lucide-svelte';
+	import { BadgeCheck, Calendar, MessageSquare, MoreVertical, Pencil } from 'lucide-svelte';
+	import { DropdownMenu } from 'bits-ui';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import type { PublicUser } from '$lib/types';
 	import FollowListModal, { type FollowListItem } from '$lib/components/profile/FollowListModal.svelte';
 
@@ -12,8 +15,10 @@
 		followers?: FollowListItem[];
 		following?: FollowListItem[];
 		children?: Snippet;
+		/** Items rendered inside the cover overflow menu (other profiles). */
+		menuItems?: Snippet;
 	}
-	let { user, isOwnProfile = false, followers = [], following = [], children }: Props = $props();
+	let { user, isOwnProfile = false, followers = [], following = [], children, menuItems }: Props = $props();
 
 	let followersModalOpen = $state(false);
 	let followingModalOpen = $state(false);
@@ -29,13 +34,50 @@
 
 <header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
 	<!-- Cover image — falls back to a gradient when cover_url is absent -->
-	{#if user.cover_url}
-		<div class="h-32 overflow-hidden sm:h-40">
-			<img src={user.cover_url} alt="" class="h-full w-full object-cover" />
-		</div>
-	{:else}
-		<div class="h-32 bg-gradient-to-br from-[var(--color-primary)]/15 to-[var(--color-surface-subtle)] sm:h-40"></div>
-	{/if}
+	<div class="relative">
+		{#if user.cover_url}
+			<div class="h-32 overflow-hidden sm:h-40">
+				<img src={user.cover_url} alt="" class="h-full w-full object-cover" />
+			</div>
+		{:else}
+			<div class="h-32 bg-gradient-to-br from-[var(--color-primary)]/15 to-[var(--color-surface-subtle)] sm:h-40"></div>
+		{/if}
+
+		<!-- Overflow actions pinned to the cover's top-right corner; the header
+		     row keeps only primary actions (e.g. Follow) as buttons. -->
+		{#if isOwnProfile || (menuItems && page.data.isAuthed)}
+			<div class="absolute right-3 top-3 z-10">
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						type="button"
+						class="grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+						aria-label={t('common.actions', 'Actions')}
+					>
+						<MoreVertical size={16} />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Portal>
+						<DropdownMenu.Content
+							align="end"
+							sideOffset={8}
+							class="z-50 min-w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+						>
+							{#if isOwnProfile}
+								<DropdownMenu.Item
+									onSelect={() => goto('/settings/profile')}
+									class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
+								>
+									<Pencil size={16} />
+									{t('profile.edit_profile', 'Edit profile')}
+								</DropdownMenu.Item>
+							{:else if menuItems}
+								{@render menuItems()}
+							{/if}
+						</DropdownMenu.Content>
+					</DropdownMenu.Portal>
+				</DropdownMenu.Root>
+			</div>
+		{/if}
+	</div>
 
 	<div class="px-4 pb-4">
 		<div class="-mt-12 flex flex-col gap-3 sm:-mt-16 sm:flex-row sm:items-end sm:gap-4">
@@ -63,14 +105,7 @@
 				<p class="text-sm text-[var(--color-muted)]">@{user.username}</p>
 			</div>
 
-			{#if isOwnProfile}
-				<a
-					href="/settings/profile"
-					class="shrink-0 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-				>
-					{t('profile.edit_profile', 'Edit profile')}
-				</a>
-			{:else if children}
+			{#if children}
 				{@render children()}
 			{/if}
 		</div>
@@ -80,9 +115,16 @@
 		{/if}
 
 		<div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
+			<span class="flex items-center gap-1"><Calendar size={14} /> {t('profile.joined', 'Joined')} {joinDate}</span>
+			<a
+				href="/forum?author_id={user.id}"
+				class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
+			>
+				<MessageSquare size={14} /> {t('profile.forum_posts', 'Forum posts')}
+			</a>
 			<button
 				type="button"
-				class="transition-colors hover:text-[var(--color-text)]"
+				class="ml-auto transition-colors hover:text-[var(--color-text)]"
 				onclick={() => (followersModalOpen = true)}
 			>
 				{(user.follower_count === 1 ? t('profile.followers_one', '{n} follower') : t('profile.followers', '{n} followers')).replace('{n}', String(user.follower_count))}
@@ -94,13 +136,6 @@
 			>
 				{(user.following_count === 1 ? t('profile.following_one', '{n} following') : t('profile.following', '{n} following')).replace('{n}', String(user.following_count))}
 			</button>
-			<span class="flex items-center gap-1"><Calendar size={14} /> {t('profile.joined', 'Joined')} {joinDate}</span>
-			<a
-				href="/forum?author_id={user.id}"
-				class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
-			>
-				<MessageSquare size={14} /> {t('profile.forum_posts', 'Forum posts')}
-			</a>
 		</div>
 	</div>
 </header>

@@ -342,6 +342,10 @@ func ValidStage(stage string) bool {
 	return false
 }
 
+// validStages is the canonical nine-stage vocabulary (ADR-122 amendment):
+// a shared five-stage visa arc plus two class-scoped terminal pairs.
+// Ordering is canonical progression order — the filtered per-class subsets
+// preserve it.
 var validStages = []string{
 	"considering",
 	"planning",
@@ -350,6 +354,45 @@ var validStages = []string{
 	"approved",
 	"relocated",
 	"settled",
+	"traveled",
+	"returned",
+}
+
+// relocationStages and tripStages are the class-scoped stage sets enforced
+// by user_profiles_intent_stage_chk (ADR-122). The shared arc is identical;
+// only the terminal pair differs per journey class.
+var relocationStages = []string{
+	"considering", "planning", "preparing", "applied", "approved",
+	"relocated", "settled",
+}
+
+var tripStages = []string{
+	"considering", "planning", "preparing", "applied", "approved",
+	"traveled", "returned",
+}
+
+// StagesForIntent returns the stage values applicable to a journey class,
+// in progression order. An empty or unrecognized intent resolves to the
+// relocation class — NULL intent is the legacy undeclared state and every
+// pre-ADR-122 stage was relocation-class.
+func StagesForIntent(intent string) []string {
+	if intent == "visit" || intent == "business" {
+		return tripStages
+	}
+
+	return relocationStages
+}
+
+// ValidStageForIntent reports whether stage is within the intent's
+// applicable set — the service-layer mirror of user_profiles_intent_stage_chk.
+func ValidStageForIntent(stage, intent string) bool {
+	for _, s := range StagesForIntent(intent) {
+		if s == stage {
+			return true
+		}
+	}
+
+	return false
 }
 
 // JoinStages returns the valid stages as a comma-separated string, useful
@@ -380,8 +423,8 @@ var validIntents = []string{
 }
 
 // IsRelocationIntent reports whether the intent belongs to the relocation
-// journey class — the only class that may carry a japa_stage (ADR-122
-// composite CHECK user_profiles_intent_stage_chk).
+// journey class — the class whose terminal stages are relocated/settled
+// (ADR-122 composite CHECK user_profiles_intent_stage_chk).
 func IsRelocationIntent(intent string) bool {
 	switch intent {
 	case "relocation", "study", "work", "family":

@@ -3269,9 +3269,11 @@ export type JapaStage =
 	| 'applied'
 	| 'approved'
 	| 'relocated'
-	| 'settled';
+	| 'settled'
+	| 'traveled'
+	| 'returned';
 
-/** ADR-122: journey class — only relocation-class intents carry a stage. */
+/** ADR-122: journey class — class-scoped terminal stages apply per intent. */
 export type JapaIntent =
 	| 'relocation'
 	| 'study'
@@ -3281,6 +3283,14 @@ export type JapaIntent =
 	| 'business';
 
 export const RELOCATION_INTENTS: readonly JapaIntent[] = ['relocation', 'study', 'work', 'family'];
+export const TRIP_INTENTS: readonly JapaIntent[] = ['visit', 'business'];
+
+/** GET /japa-stage/stages item — `intents` lists the classes the stage applies to (ADR-122). */
+export interface JapaStageOption {
+	value: JapaStage;
+	label?: string;
+	intents?: JapaIntent[];
+}
 
 /** GET /me/japa-stage — the caller's own stage profile. */
 export interface MyJapaStage {
