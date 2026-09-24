@@ -242,19 +242,45 @@ var wikiCategories = []WikiCategoryDef{
 	{Slug: "other", LabelKey: "wiki.category_other", Label: "Other"},
 }
 
+// wikiUniversityCategories is the canonical category list for university
+// spaces (§80 amendment). Geo categories are relocation topics and do not
+// apply to institutions.
+var wikiUniversityCategories = []WikiCategoryDef{
+	{Slug: "overview", LabelKey: "wiki.category_overview", Label: "Overview"},
+	{Slug: "admissions", LabelKey: "wiki.category_admissions", Label: "Admissions"},
+	{Slug: "programs", LabelKey: "wiki.category_programs", Label: "Programs"},
+	{Slug: "tuition_fees", LabelKey: "wiki.category_tuition_fees", Label: "Tuition & Fees"},
+	{Slug: "scholarships", LabelKey: "wiki.category_scholarships", Label: "Scholarships"},
+	{Slug: "accommodation", LabelKey: "wiki.category_accommodation", Label: "Accommodation"},
+	{Slug: "campus_life", LabelKey: "wiki.category_campus_life", Label: "Campus Life"},
+	{Slug: "careers", LabelKey: "wiki.category_careers", Label: "Careers"},
+	{Slug: "other", LabelKey: "wiki.category_other", Label: "Other"},
+}
+
 // HandleGetCategories handles GET /wiki/categories — returns the canonical
 // list of wiki page categories. This allows the frontend to derive the
-// category list from the API rather than hardcoding it (Rule 16).
+// category list from the API rather than hardcoding it (Rule 16). When
+// ?space={slug} is a university space the university set is returned and the
+// envelope carries scope=university (scope=geo otherwise).
 func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": wikiCategories})
+	scope := "geo"
+	cats := wikiCategories
+	if spaceSlug := strings.TrimSpace(r.URL.Query().Get("space")); spaceSlug != "" {
+		if isUni, err := h.service.IsUniversitySpace(r.Context(), spaceSlug); err == nil && isUni {
+			scope = "university"
+			cats = wikiUniversityCategories
+		}
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats, "scope": scope})
 }
 
 // HandleGetDestinations handles GET /wiki/destinations — returns active
-// destination spaces (country/state/city). Optional query params:
+// destination spaces (country/state/city/university). Optional query params:
 //
-//	?level=        country|state|city
+//	?level=        country|state|city|university
 //	?parent=       parent space slug (returns its direct children)
 //	?region=       continent/region value (e.g. Africa, Europe) — filters country-level spaces
+//	?q=            case-insensitive name search
 //	?has_wiki=     true (default) or false — when true, only spaces with at
 //	               least one active wiki page are returned.
 func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request) {
@@ -263,10 +289,11 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 	level := strings.ToLower(q.Get("level"))
 	parentSlug := strings.ToLower(q.Get("parent"))
 	region := q.Get("region")
+	search := strings.TrimSpace(q.Get("q"))
 
 	hasWiki := q.Get("has_wiki") != "false"
 
-	dests, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, hasWiki)
+	dests, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, search, hasWiki)
 	if err != nil {
 		slog.Error("wiki: destinations failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "destinations_failed", "Failed to get wiki destinations")
