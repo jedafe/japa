@@ -10,7 +10,6 @@
 	import JobGeoFields from '$lib/components/jobs/JobGeoFields.svelte';
 	import type { JobDetail } from '$lib/types';
 	import type { PageData } from './$types';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -136,19 +135,18 @@
 				/>
 			</div>
 
-			<AiBodyField
-				id="job-body"
-				label={t('jobs.body', 'Description')}
-				contentType="job"
-				title={titleVal}
-				body={bodyVal}
-				onBody={(v) => (bodyVal = v)}
-				onTitle={(v) => (titleVal = v)}
-				user={data.user}
-				features={data.features ?? {}}
-				placeholder={t('jobs.body_placeholder', 'Describe the role, responsibilities, and requirements…')}
-				rows={5}
-			/>
+			<div class="space-y-2">
+				<label for="job-body" class="text-sm font-medium text-[var(--color-text)]">
+					{t('jobs.body', 'Description')}
+				</label>
+				<textarea
+					id="job-body"
+					rows="5"
+					bind:value={bodyVal}
+					placeholder={t('jobs.body_placeholder', 'Describe the role, responsibilities, and requirements…')}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+				></textarea>
+			</div>
 
 			<div class="space-y-2">
 				<label for="job-org" class="text-sm font-medium text-[var(--color-text)]">
