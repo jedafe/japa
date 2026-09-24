@@ -269,3 +269,14 @@ FROM custom_field_permissions cfp
 JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
 WHERE ugm.user_id = @user_id
  AND cfp.can_view = true;
+
+-- name: ListEditableFieldIDsForUser :many
+-- Returns the field_ids the given user is allowed to edit — the batched
+-- counterpart of CheckFieldPermissionForUser's can_edit arm, used by the
+-- §80 wiki entity-fields schema and set_value validation to avoid one
+-- query per field (Section 06 field-level RBAC).
+SELECT DISTINCT cfp.field_id
+FROM custom_field_permissions cfp
+JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
+WHERE ugm.user_id = @user_id
+ AND cfp.can_edit = true;

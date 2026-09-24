@@ -4449,6 +4449,7 @@ type WikiRevision struct {
 	Ops              []byte             `json:"ops"`
 	TargetEntityType *string            `json:"target_entity_type"`
 	TargetEntityID   pgtype.UUID        `json:"target_entity_id"`
+	ApplyError       *string            `json:"apply_error"`
 }
 
 type WsTicket struct {

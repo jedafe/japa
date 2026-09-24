@@ -52,13 +52,14 @@ var ErrOpNotPermitted = errors.New("wiki: field op not permitted")
 var ErrEntityNotResolvable = errors.New("wiki: entity not resolvable")
 
 // fieldReadStore is the narrow read-side interface the wiki service needs
-// from customfields.Service: submit-time field lookups + per-field RBAC, and
-// the group/assignment/value reads behind GetEntityFields. Writes during ops
-// application go through gen.New(tx) inside applyOps — the pool-bound
-// service cannot join the caller's transaction, so no write methods belong
-// here.
+// from customfields.Service: submit-time field lookups + batched per-field
+// RBAC, and the group/assignment/value reads behind GetEntityFields. Writes
+// during ops application go through gen.New(tx) inside applyOps — the
+// pool-bound service cannot join the caller's transaction, so no write
+// methods belong here.
 type fieldReadStore interface {
-	CheckFieldPermissionForUser(ctx context.Context, fieldID, userID pgtype.UUID) (canView, canEdit bool, err error)
+	ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error)
+	ListEditableFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error)
 	GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error)
 	ListAssignmentsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroupAssignment, error)
 	ListFieldValuesWithDefsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error)
@@ -134,19 +135,34 @@ type EntityFieldsDTO struct {
 // Submit / suggest
 // ---------------------------------------------------------------------------
 
-// SubmitFieldOps validates and stores a fields revision for the given entity
-// (§6 submit step). pageID may be an invalid pgtype.UUID — page-less ops
-// revisions record NULL wiki_page_id. When canManage is true (the caller
-// verified the submitter holds wiki.fields.manage) the revision is approved
-// and its ops applied immediately in one transaction; the approved row is
-// kept for audit. Returns the revision ID and whether it was auto-approved.
-func (s *Service) SubmitFieldOps(ctx context.Context, userID, pageID pgtype.UUID, entityType string, entityID pgtype.UUID, ops []FieldOp, summary string, canManage bool) (revID string, autoApproved bool, err error) {
+// SubmitFieldOps validates and stores a structured-edit revision for the
+// given entity (§6 submit step). pageID may be an invalid pgtype.UUID —
+// page-less ops revisions record NULL wiki_page_id. body carries optional
+// TipTap prose: when non-empty the revision is kind='mixed' — one revision
+// carrying prose and ops together, approved atomically (prose goes live via
+// GetApprovedRevision's kind IN ('content','mixed') filter and ops apply in
+// the same transaction). When canManage is true (the caller verified the
+// submitter holds wiki.fields.manage) the revision is approved and its ops
+// applied immediately in one transaction; the approved row is kept for
+// audit. Returns the revision ID and whether it was auto-approved.
+func (s *Service) SubmitFieldOps(ctx context.Context, userID, pageID pgtype.UUID, entityType string, entityID pgtype.UUID, body []byte, ops []FieldOp, summary string, canManage bool) (revID string, autoApproved bool, err error) {
 	if len(ops) == 0 {
 		return "", false, errors.New("wiki: submit fields: at least one op is required")
 	}
 
 	if err := ValidateOps(ops, s.maxOpsPerRevision(ctx)); err != nil {
 		return "", false, fmt.Errorf("wiki: submit fields: %w", err)
+	}
+
+	// Mixed revisions carry prose — run it through the same
+	// sanitize/normalize pass as the content-only path (BUG-020).
+	if len(body) > 0 {
+		normalized, nerr := normalizeWikiContent(body)
+		if nerr != nil {
+			return "", false, fmt.Errorf("wiki: submit fields: invalid content: %w", nerr)
+		}
+
+		body = normalized
 	}
 
 	targetType, targetID, err := resolveOpsTarget(entityType, entityID, ops)
@@ -200,7 +216,7 @@ func (s *Service) SubmitFieldOps(ctx context.Context, userID, pageID pgtype.UUID
 		targetPtr = &targetType
 	}
 
-	revUUID, err := s.store.SubmitRevision(ctx, pageID, userID, DeriveKind(false, ops), nil, opsJSON, summary, targetPtr, targetID)
+	revUUID, err := s.store.SubmitRevision(ctx, pageID, userID, DeriveKind(len(body) > 0, ops), body, opsJSON, summary, targetPtr, targetID)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateContent) {
 			return "", false, ErrDuplicateContent
@@ -260,7 +276,7 @@ func (s *Service) SuggestFields(ctx context.Context, userID pgtype.UUID, entityT
 		}
 	}
 
-	return s.SubmitFieldOps(ctx, userID, pageID, entityType, entityID, ops, summary, canManage)
+	return s.SubmitFieldOps(ctx, userID, pageID, entityType, entityID, nil, ops, summary, canManage)
 }
 
 // ---------------------------------------------------------------------------
@@ -312,6 +328,34 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	// the schema reports their fields as editable/visible too (§10).
 	canManage := s.perms != nil && s.perms.HasPermission(ctx, userID, PermFieldsManage)
 
+	// Batched field-level RBAC (§06): two set lookups instead of one
+	// permission query per field. Both fail closed — a lookup error yields
+	// empty sets, keeping every field non-visible/non-editable rather than
+	// leaking values on a public route.
+	var visibleSet, editableSet map[string]bool
+
+	if !canManage {
+		if ids, perr := s.fields.ListVisibleFieldIDsForUser(ctx, userID); perr != nil {
+			slog.Warn("wiki: entity fields: visible-perm lookup failed",
+				"user_id", userID.String(), "error", perr)
+		} else {
+			visibleSet = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				visibleSet[id.String()] = true
+			}
+		}
+
+		if ids, perr := s.fields.ListEditableFieldIDsForUser(ctx, userID); perr != nil {
+			slog.Warn("wiki: entity fields: editable-perm lookup failed",
+				"user_id", userID.String(), "error", perr)
+		} else {
+			editableSet = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				editableSet[id.String()] = true
+			}
+		}
+	}
+
 	groups := make([]EntityFieldGroupDTO, 0, len(assignments))
 
 	for _, a := range assignments {
@@ -343,15 +387,8 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 				dto.Value = cfvValueJSON(v)
 			}
 
-			canView, canEdit, perr := s.fields.CheckFieldPermissionForUser(ctx, f.ID, userID)
-			if perr != nil {
-				// Fail-closed on the flags but don't blank the whole schema.
-				slog.Warn("wiki: entity fields: permission check failed",
-					"field_id", f.ID.String(), "user_id", userID.String(), "error", perr)
-			}
-
-			dto.Visible = canView || canManage
-			dto.CanEdit = canEdit || canManage
+			dto.Visible = visibleSet[f.ID.String()] || canManage
+			dto.CanEdit = editableSet[f.ID.String()] || canManage
 
 			if !dto.Visible {
 				// A field the caller cannot view must not leak its stored
@@ -399,27 +436,29 @@ func (s *Service) StructuredEditsEnabled(ctx context.Context) bool {
 
 // GetPageEntityTarget resolves a wiki page (by space slug + page slug) to
 // the IDs an entity-targeted ops submission needs: the page ID the revision
-// attaches to and the host space ID the ops apply to (§80). Returns
+// attaches to, the host space ID the ops apply to, and whether the page is
+// locked to mod-only edits (§80 — ops submissions on a locked page are
+// rejected with the same rule as prose submissions). Returns
 // ErrSpaceNotFound for unknown spaces and pgx.ErrNoRows for unknown pages.
-func (s *Service) GetPageEntityTarget(ctx context.Context, spaceSlug, pageSlug string) (pageID, spaceID pgtype.UUID, err error) {
+func (s *Service) GetPageEntityTarget(ctx context.Context, spaceSlug, pageSlug string) (pageID, spaceID pgtype.UUID, locked bool, err error) {
 	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return pgtype.UUID{}, pgtype.UUID{}, ErrSpaceNotFound
+			return pgtype.UUID{}, pgtype.UUID{}, false, ErrSpaceNotFound
 		}
 
-		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: entity target: resolve space: %w", err)
+		return pgtype.UUID{}, pgtype.UUID{}, false, fmt.Errorf("wiki: entity target: resolve space: %w", err)
 	}
 
 	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return pgtype.UUID{}, pgtype.UUID{}, pgx.ErrNoRows
+			return pgtype.UUID{}, pgtype.UUID{}, false, pgx.ErrNoRows
 		}
 
-		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: entity target: get page: %w", err)
+		return pgtype.UUID{}, pgtype.UUID{}, false, fmt.Errorf("wiki: entity target: get page: %w", err)
 	}
 
-	return page.ID, page.SpaceID, nil
+	return page.ID, page.SpaceID, page.IsLocked, nil
 }
 
 // GetRevision returns a single revision by ID — used by the revision-keyed
@@ -541,6 +580,17 @@ func (s *Service) approveOpsRevision(ctx context.Context, revID, reviewerID pgty
 	}
 
 	if err := s.applyOps(ctx, tx, ops); err != nil {
+		// Roll back explicitly BEFORE recording the failure — the tx holds a
+		// row lock on this revision (ApproveRevisionTx already UPDATEd it),
+		// so SetApplyError's separate-pool write would deadlock waiting for
+		// that lock. Then persist the reason so reviewers see why the
+		// revision cannot be approved instead of a bare pending row (§80).
+		_ = tx.Rollback(ctx)
+
+		if serr := s.store.SetApplyError(ctx, revID, err.Error()); serr != nil {
+			slog.Warn("wiki: record apply error failed", "revision_id", revID.String(), "error", serr)
+		}
+
 		return fmt.Errorf("wiki: approve ops: %w", err)
 	}
 
@@ -698,6 +748,24 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 		return errors.New("wiki: custom fields service not configured")
 	}
 
+	// One batched editable-set lookup covers every set_value op — avoids a
+	// permission query per field (§06; mirrors GetEntityFields). Errors fail
+	// closed: the submit is rejected rather than letting an unchecked value
+	// into the queue.
+	var editableSet map[string]bool
+
+	if !canManage {
+		ids, err := s.fields.ListEditableFieldIDsForUser(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("wiki: submit fields: list editable fields: %w", err)
+		}
+
+		editableSet = make(map[string]bool, len(ids))
+		for _, id := range ids {
+			editableSet[id.String()] = true
+		}
+	}
+
 	for i, op := range ops {
 		if op.Op != OpSetValue || proposed[op.FieldKey] {
 			continue
@@ -729,12 +797,7 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 			continue
 		}
 
-		_, canEdit, err := s.fields.CheckFieldPermissionForUser(ctx, field.ID, userID)
-		if err != nil {
-			return fmt.Errorf("wiki: submit fields: ops[%d] check field permission: %w", i, err)
-		}
-
-		if !canEdit {
+		if !editableSet[field.ID.String()] {
 			return fmt.Errorf("%w: ops[%d] field %q is not editable by your user group", ErrOpNotPermitted, i, op.FieldKey)
 		}
 	}

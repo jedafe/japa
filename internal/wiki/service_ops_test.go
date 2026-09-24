@@ -21,10 +21,13 @@ import (
 // ---------------------------------------------------------------------------
 
 // fakeFieldReader is a fieldReadStore stub. Field lookups hit fieldsByKey;
-// per-field permissions come from perms keyed by field ID string.
+// per-field permissions come from perms keyed by field ID string —
+// [canView, canEdit] — surfaced through the batched list methods the
+// service actually calls.
 type fakeFieldReader struct {
 	fieldsByKey map[string]gen.GetCustomFieldByKeyRow
 	perms       map[string][2]bool // fieldID.String() → [canView, canEdit]
+	permErr     error             // injected failure for the batch lookups
 	assignments []gen.CustomFieldGroupAssignment
 	groups      map[string]gen.CustomFieldGroup
 	groupFields map[string][]gen.ListCustomFieldsByGroupRow
@@ -32,12 +35,42 @@ type fakeFieldReader struct {
 	byKeyCalls  []string
 }
 
-func (f *fakeFieldReader) CheckFieldPermissionForUser(_ context.Context, fieldID, _ pgtype.UUID) (bool, bool, error) {
-	if p, ok := f.perms[fieldID.String()]; ok {
-		return p[0], p[1], nil
+func (f *fakeFieldReader) permSet(wantEdit bool) []pgtype.UUID {
+	out := make([]pgtype.UUID, 0, len(f.perms))
+
+	for idStr, p := range f.perms {
+		allowed := p[0]
+		if wantEdit {
+			allowed = p[1]
+		}
+
+		if !allowed {
+			continue
+		}
+
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err == nil {
+			out = append(out, id)
+		}
 	}
 
-	return false, false, nil
+	return out
+}
+
+func (f *fakeFieldReader) ListVisibleFieldIDsForUser(_ context.Context, _ pgtype.UUID) ([]pgtype.UUID, error) {
+	if f.permErr != nil {
+		return nil, f.permErr
+	}
+
+	return f.permSet(false), nil
+}
+
+func (f *fakeFieldReader) ListEditableFieldIDsForUser(_ context.Context, _ pgtype.UUID) ([]pgtype.UUID, error) {
+	if f.permErr != nil {
+		return nil, f.permErr
+	}
+
+	return f.permSet(true), nil
 }
 
 func (f *fakeFieldReader) GetCustomFieldByKey(_ context.Context, key string) (gen.GetCustomFieldByKeyRow, error) {
@@ -150,7 +183,7 @@ func TestSubmitFieldOps_RejectsWhenCanEditFalse(t *testing.T) {
 	}}
 
 	_, _, err := svc.SubmitFieldOps(t.Context(), mustUUID(t, "00000000-0000-0000-0000-0000000000c1"),
-		pgtype.UUID{}, "university", entityID, ops, "", false)
+		pgtype.UUID{}, "university", entityID, nil, ops, "", false)
 	if !errors.Is(err, ErrOpNotPermitted) {
 		t.Fatalf("expected ErrOpNotPermitted, got %v", err)
 	}
@@ -233,7 +266,7 @@ func TestSubmitFieldOps_PerOpPermissionMapping(t *testing.T) {
 				return
 			}
 
-			_, _, err := svc.SubmitFieldOps(t.Context(), userID, pgtype.UUID{}, "university", entityID, []FieldOp{tc.op}, "", false)
+			_, _, err := svc.SubmitFieldOps(t.Context(), userID, pgtype.UUID{}, "university", entityID, nil, []FieldOp{tc.op}, "", false)
 			if !errors.Is(err, ErrOpNotPermitted) {
 				t.Fatalf("expected ErrOpNotPermitted, got %v", err)
 			}
@@ -294,7 +327,7 @@ func TestSubmitFieldOps_MaxOpsBound(t *testing.T) {
 	}
 
 	_, _, err := svc.SubmitFieldOps(t.Context(), mustUUID(t, "00000000-0000-0000-0000-0000000000c1"),
-		pgtype.UUID{}, "", pgtype.UUID{}, ops, "", true)
+		pgtype.UUID{}, "", pgtype.UUID{}, nil, ops, "", true)
 	if err == nil || !strings.Contains(err.Error(), "exceeds maximum") {
 		t.Fatalf("expected ops bound error, got %v", err)
 	}
@@ -459,7 +492,7 @@ func TestSubmitFieldOps_ManageTierAutoApproves(t *testing.T) {
 		Value:      json.RawMessage(`12000`),
 	}}
 
-	revID, autoApproved, err := svc.SubmitFieldOps(ctx, fx.userID, pgtype.UUID{}, "university", fx.spaceID, ops, "set tuition", true)
+	revID, autoApproved, err := svc.SubmitFieldOps(ctx, fx.userID, pgtype.UUID{}, "university", fx.spaceID, nil, ops, "set tuition", true)
 	if err != nil {
 		t.Fatalf("SubmitFieldOps: %v", err)
 	}
@@ -840,5 +873,265 @@ func TestGetEntityFields(t *testing.T) {
 
 	if !f.CanEdit || !f.Visible {
 		t.Fatalf("manage-tier user should see field editable+visible: %#v", f)
+	}
+}
+
+// TestGetEntityFields_BatchedFieldPerms covers the §06 field-level RBAC path
+// for a non-manage user: visibility and editability come from the batched
+// ListVisible/ListEditable lookups (not per-field queries), a view-only
+// field reports can_edit=false, and an invisible field's stored value is
+// withheld while the schema entry remains.
+func TestGetEntityFields_BatchedFieldPerms(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+
+	spaceTypeID, err := store.GetSpaceTypeID(ctx, fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetSpaceTypeID: %v", err)
+	}
+
+	groupID := mustUUID(t, genUUID(t, ctx, database))
+	entityClass := "space_type:" + spaceTypeID.String()
+
+	fieldA := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "a", Label: "A", FieldType: customfields.FieldTypeText}
+	fieldB := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "b", Label: "B", FieldType: customfields.FieldTypeText}
+	fieldC := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "c", Label: "C", FieldType: customfields.FieldTypeText}
+
+	hidden := "secret"
+	fake := &fakeFieldReader{
+		assignments: []gen.CustomFieldGroupAssignment{{GroupID: groupID, EntityClass: entityClass}},
+		groups:      map[string]gen.CustomFieldGroup{groupID.String(): {ID: groupID, Slug: "g", Name: "G"}},
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{groupID.String(): {fieldA, fieldB, fieldC}},
+		values: []gen.ListCustomFieldValuesWithDefsByEntityRow{
+			{FieldID: fieldC.ID, FieldType: customfields.FieldTypeText, ValueText: &hidden},
+		},
+		perms: map[string][2]bool{
+			fieldA.ID.String(): {true, true},
+			fieldB.ID.String(): {true, false},
+			// fieldC has no permission rows → invisible and uneditable.
+		},
+	}
+
+	svc := NewService(store, nil)
+	svc.SetCustomFields(fake)
+	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{}}) // no manage tier
+
+	dto, err := svc.GetEntityFields(ctx, fx.userID, "university", fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetEntityFields: %v", err)
+	}
+
+	if len(dto.Groups) != 1 || len(dto.Groups[0].Fields) != 3 {
+		t.Fatalf("expected 1 group with 3 fields, got %#v", dto.Groups)
+	}
+
+	byKey := make(map[string]EntityFieldDTO, 3)
+	for _, f := range dto.Groups[0].Fields {
+		byKey[f.Key] = f
+	}
+
+	if !byKey["a"].Visible || !byKey["a"].CanEdit {
+		t.Fatalf("field a should be visible+editable: %#v", byKey["a"])
+	}
+
+	if !byKey["b"].Visible || byKey["b"].CanEdit {
+		t.Fatalf("field b should be view-only: %#v", byKey["b"])
+	}
+
+	if byKey["c"].Visible || byKey["c"].CanEdit {
+		t.Fatalf("field c should be invisible+uneditable: %#v", byKey["c"])
+	}
+
+	if byKey["c"].Value != nil {
+		t.Fatalf("invisible field must not leak its value, got %s", byKey["c"].Value)
+	}
+}
+
+// TestGetEntityFields_PermLookupFailsClosed covers the degraded path: when
+// the batched permission lookups error, every field reports
+// visible=false/can_edit=false and stored values are withheld rather than
+// leaked on the public route.
+func TestGetEntityFields_PermLookupFailsClosed(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+
+	spaceTypeID, err := store.GetSpaceTypeID(ctx, fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetSpaceTypeID: %v", err)
+	}
+
+	groupID := mustUUID(t, genUUID(t, ctx, database))
+	fieldID := mustUUID(t, genUUID(t, ctx, database))
+
+	val := "v"
+	fake := &fakeFieldReader{
+		permErr:     errors.New("perm store down"),
+		assignments: []gen.CustomFieldGroupAssignment{{GroupID: groupID, EntityClass: "space_type:" + spaceTypeID.String()}},
+		groups:      map[string]gen.CustomFieldGroup{groupID.String(): {ID: groupID, Slug: "g", Name: "G"}},
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{groupID.String(): {
+			{ID: fieldID, Key: "k", Label: "K", FieldType: customfields.FieldTypeText},
+		}},
+		values: []gen.ListCustomFieldValuesWithDefsByEntityRow{
+			{FieldID: fieldID, FieldType: customfields.FieldTypeText, ValueText: &val},
+		},
+	}
+
+	svc := NewService(store, nil)
+	svc.SetCustomFields(fake)
+	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{}})
+
+	dto, err := svc.GetEntityFields(ctx, fx.userID, "university", fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetEntityFields: %v", err)
+	}
+
+	f := dto.Groups[0].Fields[0]
+	if f.Visible || f.CanEdit || f.Value != nil {
+		t.Fatalf("perm lookup failure must fail closed: %#v", f)
+	}
+}
+
+// TestSubmitFieldOps_MixedRevision covers the §80 mixed kind: a submission
+// carrying prose AND ops stores one revision with kind='mixed', and approval
+// applies the ops transactionally while the prose becomes the page's current
+// content — no separate queue entries.
+func TestSubmitFieldOps_MixedRevision(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
+
+	body := []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"new prose"}]}]}`)
+
+	svc := NewService(store, nil)
+	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsEdit: true}})
+	svc.SetCustomFields(&fakeFieldReader{
+		fieldsByKey: map[string]gen.GetCustomFieldByKeyRow{
+			ff.key: {ID: ff.fieldID, Key: ff.key, FieldType: customfields.FieldTypeText},
+		},
+		perms: map[string][2]bool{ff.fieldID.String(): {true, true}},
+	})
+
+	ops := []FieldOp{{
+		Op:         OpSetValue,
+		EntityType: "university",
+		EntityID:   fx.spaceID.String(),
+		FieldKey:   ff.key,
+		Value:      json.RawMessage(`"mixed value"`),
+	}}
+
+	revID, autoApproved, err := svc.SubmitFieldOps(ctx, fx.userID, fx.pageID, "", pgtype.UUID{}, body, ops, "prose + fields", false)
+	if err != nil {
+		t.Fatalf("SubmitFieldOps: %v", err)
+	}
+
+	if autoApproved {
+		t.Fatal("non-manage mixed submission must stay pending")
+	}
+
+	rev, err := store.GetRevision(ctx, mustUUID(t, revID))
+	if err != nil {
+		t.Fatalf("GetRevision: %v", err)
+	}
+
+	if rev.Kind != "mixed" {
+		t.Fatalf("expected kind=mixed, got %q", rev.Kind)
+	}
+
+	if !strings.Contains(string(rev.Content), "new prose") {
+		t.Fatalf("mixed revision lost its prose: %s", rev.Content)
+	}
+
+	// Approve: ops apply and the prose becomes the page's current content.
+	if err := svc.ApproveRevisionByID(ctx, mustUUID(t, revID), fx.userID, "ok"); err != nil {
+		t.Fatalf("ApproveRevisionByID: %v", err)
+	}
+
+	approved, err := store.GetApprovedRevision(ctx, fx.pageID)
+	if err != nil {
+		t.Fatalf("GetApprovedRevision: %v", err)
+	}
+
+	if !strings.Contains(string(approved.Content), "new prose") {
+		t.Fatalf("approved mixed revision prose missing: %s", approved.Content)
+	}
+
+	var text string
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT value_text FROM custom_field_values WHERE field_id = $1 AND entity_type = 'space' AND entity_id = $2`,
+		ff.fieldID, fx.spaceID).Scan(&text); err != nil {
+		t.Fatalf("expected cfv row after mixed approve: %v", err)
+	}
+
+	if text != "mixed value" {
+		t.Fatalf("cfv value_text: got %q", text)
+	}
+}
+
+// TestApproveRevisionByID_ApplyFailureRecordsApplyError covers the §80
+// failure surface: when an op cannot be applied at approve time (its field
+// was deleted between submit and approve), the transaction rolls back, the
+// revision stays pending, and apply_error records the reason for reviewers.
+// A later successful approve clears the recorded error.
+func TestApproveRevisionByID_ApplyFailureRecordsApplyError(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
+
+	targetType := "university"
+	opsJSON := []byte(`[{"op":"set_value","entity_type":"university","entity_id":"` + fx.spaceID.String() +
+		`","field_key":"` + ff.key + `","value":"x"}]`)
+
+	revID, err := store.SubmitRevision(ctx, pgtype.UUID{}, fx.userID, "fields", nil, opsJSON, "set", &targetType, fx.spaceID)
+	if err != nil {
+		t.Fatalf("SubmitRevision: %v", err)
+	}
+
+	// Delete the field after submit so applyOps fails at approve time.
+	if _, err := database.Writer.Exec(ctx, `DELETE FROM custom_fields WHERE id = $1`, ff.fieldID); err != nil {
+		t.Fatalf("delete field: %v", err)
+	}
+
+	svc := NewService(store, nil)
+
+	if err := svc.ApproveRevisionByID(ctx, revID, fx.userID, ""); err == nil {
+		t.Fatal("expected approve to fail when the target field is gone")
+	}
+
+	rev, err := store.GetRevision(ctx, revID)
+	if err != nil {
+		t.Fatalf("GetRevision: %v", err)
+	}
+
+	if rev.Status != "pending" {
+		t.Fatalf("revision must stay pending after apply failure, got %q", rev.Status)
+	}
+
+	if rev.ApplyError == nil || *rev.ApplyError == "" {
+		t.Fatal("apply_error must record the failure reason")
+	}
+
+	// Restore the field and re-approve — the recorded error clears on success.
+	if _, err := database.Writer.Exec(ctx,
+		`INSERT INTO custom_fields (id, group_id, label, key, field_type, is_system, show_in_frontend)
+		 VALUES ($1, $2, $3, $4, 'text', false, true)`,
+		ff.fieldID, ff.groupID, "Restored", ff.key); err != nil {
+		t.Fatalf("restore field: %v", err)
+	}
+
+	if err := svc.ApproveRevisionByID(ctx, revID, fx.userID, "retry"); err != nil {
+		t.Fatalf("retry approve after field restore: %v", err)
+	}
+
+	rev, err = store.GetRevision(ctx, revID)
+	if err != nil {
+		t.Fatalf("GetRevision: %v", err)
+	}
+
+	if rev.ApplyError != nil {
+		t.Fatalf("apply_error must clear on successful approve, got %q", *rev.ApplyError)
 	}
 }

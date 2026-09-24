@@ -466,9 +466,60 @@ func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 	return ids, nil
 }
 
-// InvalidateFieldPermissionCache clears the cached visible field IDs for a
-// user. Must be called after SetFieldPermission or user_group membership
-// changes (BUG-015/BUG-016).
+// ListEditableFieldIDsForUser returns the set of field IDs the user is
+// allowed to edit per field-level RBAC (Section 06) — the batched
+// counterpart of CheckFieldPermissionForUser's can_edit arm, used by the
+// §80 wiki entity-fields schema and set_value validation to avoid one
+// permission query per field. Results are cached in Valkey under
+// jc:field_perm_edit:{user_id} with a 5-minute TTL, matching
+// ListVisibleFieldIDsForUser. When the cache is unavailable or not
+// configured, the DB is queried directly.
+func (s *Service) ListEditableFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	if s.cache != nil {
+		key := valkey.MustKey("field_perm_edit:%s", userID.String())
+		if cached, err := s.cache.Get(ctx, key).Bytes(); err == nil && len(cached) > 0 {
+			var ids []string
+			if json.Unmarshal(cached, &ids) == nil && len(ids) > 0 {
+				result := make([]pgtype.UUID, 0, len(ids))
+
+				for _, idStr := range ids {
+					var id pgtype.UUID
+					if err := id.Scan(idStr); err == nil {
+						result = append(result, id)
+					}
+				}
+
+				if len(result) > 0 {
+					return result, nil
+				}
+			}
+		}
+	}
+
+	ids, err := s.read.ListEditableFieldIDsForUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing editable field ids: %w", err)
+	}
+
+	if s.cache != nil && len(ids) > 0 {
+		key := valkey.MustKey("field_perm_edit:%s", userID.String())
+
+		idStrs := make([]string, 0, len(ids))
+		for _, id := range ids {
+			idStrs = append(idStrs, id.String())
+		}
+
+		if data, err := json.Marshal(idStrs); err == nil {
+			s.cache.Set(ctx, key, data, 5*time.Minute)
+		}
+	}
+
+	return ids, nil
+}
+
+// InvalidateFieldPermissionCache clears the cached visible and editable
+// field IDs for a user. Must be called after SetFieldPermission or
+// user_group membership changes (BUG-015/BUG-016).
 func (s *Service) InvalidateFieldPermissionCache(ctx context.Context, userID pgtype.UUID) {
 	if s.cache == nil {
 		return
@@ -476,6 +527,9 @@ func (s *Service) InvalidateFieldPermissionCache(ctx context.Context, userID pgt
 
 	key := valkey.MustKey("field_perm:%s", userID.String())
 	s.cache.Del(ctx, key)
+
+	editKey := valkey.MustKey("field_perm_edit:%s", userID.String())
+	s.cache.Del(ctx, editKey)
 }
 
 // InvalidateFieldPermissionCacheForGroup clears the cached visible field IDs

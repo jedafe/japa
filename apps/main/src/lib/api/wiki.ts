@@ -70,6 +70,8 @@ export interface WikiEntityRevision {
 	created_at: string;
 	target_entity_type?: string;
 	target_entity_id?: string;
+	/** Last ops-application failure on a pending fields/mixed revision (§80). */
+	apply_error?: string;
 }
 
 export interface EntityRevisionsPage {
