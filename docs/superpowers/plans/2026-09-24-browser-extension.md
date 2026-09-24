@@ -27,21 +27,50 @@ extension; **extension app** (`apps/extension`, WXT) consumes it.
 - Intel radar (`internal/intelligence/handlers/radar.go`) aggregates
   promoted items across ~6 domain tables with `country_space_id`/
   `destination_space_id` keyset queries (`ListIntelJobsBySpaces` etc.).
-  For the digest's small "latest N" need, reusing ONE high-signal domain
-  table beats re-implementing the polymorphic merge: **visa_routes**
-  (`destination_space_id`, `updated_at`) plus **intel_jobs**
-  (`country_space_id`) — merge by recency. Both have `*BySpaces` queries.
-- `destination_country` lives in profile custom fields; resolution seam:
-  user → `custom_field_values` (key `destination_country`) → ISO code →
-  `spaces.Service.GetSpaceByGeoCode` (`internal/spaces/store.go:477`).
-  Verify the exact cfv query at implementation (ai_agent.sql:135 pattern).
-- `publicapi.Service` already has `moat.Spaces` (has `GetSpaceByGeoCode`? —
-  the moat reader iface wraps `GetPublicSpaceBySlug`; confirm whether
-  `GetSpaceByGeoCode` is exposed or needs adding to the moat readers iface).
+  For the digest's small "latest N" need, reusing two high-signal domain
+  tables beats re-implementing the polymorphic merge: **visa_routes**
+  (`destination_space_id`) plus **intel_jobs** (`country_space_id`) —
+  merged by `created_at` desc (the queries' ORDER BY).
+- `destination_country` resolution is **already built**:
+  `gen.GetUserGeoProfileFields` (`db/queries/university.sql:684`,
+  ADR-064a) returns it by `user_id` in one round-trip via
+  `user_profiles → custom_field_values → custom_fields`. `publicapi.
+  Service` already holds `s.queries *gen.Queries` (service.go:332) —
+  call it directly. NO new cfv query.
+- `GetSpaceByGeoCode` (`spaces.sql:643`) does NOT enforce the public
+  guard — only `deleted_at IS NULL` + `level='country'`. The moat
+  `SpaceReader` contract puts the guard in SQL (`GetPublicSpaceBySlug`
+  enforces `visibility='public' AND status='active'`). Using the raw
+  geo-code query could leak an archived/non-public country space into
+  digests → add `GetPublicSpaceByGeoCode` to `spaces.sql` (same SELECT
+  shape, plus `visibility='public' AND status='active'`), regen sqlc,
+  extend `SpaceReader`.
+- `visitor.Resolver.resolve` takes `*http.Request` — unusable from the
+  API-key path. `MyFeed` already passes a nil VisitorContext to
+  `GetForYouFeed` (geo personalization skipped); the digest does the
+  same for `for_you` — consistent with existing behavior. No visitor-
+  resolver coupling.
 - Feed/scam readers from Phase 2 (`FeedReader`, `SafetyReader`) are the
   reuse seams for for_you/community/scam sections.
 - Scope catalog is `internal/publicapi/scopes/scopes.go` — add
-  `api.read.digest` there + JEOS scope catalog.
+  `api.read.digest` there + JEOS scope catalog (§47).
+- Digest cache key is `jc:api_digest:{viewer_hash}` — NOT the
+  `SemanticSearcher.ScopeHash` output. The digest reads no
+  member-scoped data, so viewerID alone is the correct cache
+  identity; destination/profile changes self-heal via the short TTL.
+- The scam-alerts section must honor `scam_alert.enabled` — the route
+  gate doesn't apply inside the aggregate; call
+  `SafetyReader.Enabled(ctx)` and omit the section when disabled.
+- `ListVisaRoutesBySpaces`/`ListIntelJobsBySpaces` take nullable
+  keyset params (`Column1`=spaceIDs, `Column2`=ts, `ID`, `Limit`) —
+  pass NULL cursor for latest-N (radar.go:505-517 pattern). ORDER BY
+  is `created_at` DESC (merge order), not `updated_at`. visa_routes
+  requires `intel_record_id IS NOT NULL` — promoted rows only, which
+  is the correct corpus. Radar does no status post-filtering, so
+  behavior matches. The adapter wraps `*gen.Queries` directly — no
+  new queries needed.
+- OpenAPI is **hand-maintained** (`docs/openapi/api.yaml`, no gen
+  target in the Makefile) — hand-edit it.
 
 ---
 
@@ -79,20 +108,27 @@ New service method + handlers in `internal/publicapi`:
 
 - `Service.CreateExtensionToken(ctx, userID, installID)` → wraps
   `CreateAPIKey` with:
-  - `Name`: `extension:{install_id}` (validate installID is UUID-shaped)
+  - `Name`: `extension:{install_id}` when installID is present
+    (validate UUID-shaped); `extension:{short-uuid}` generated
+    server-side when absent — the settings page cannot know the
+    extension-generated install ID, so the field is OPTIONAL.
   - `Scopes`: `{api.read.digest, api.read.content, api.read.me,
     api.read.safety}`
-  - `RateLimitTier`: `standard`
+  - `RateLimitTier`: `standard`; `ExpiresAt`: nil (V1 no expiry —
+    revocation is manual)
   - Same `api.keys.max_per_user` cap (inherited from CreateAPIKey).
-- `Service.ListExtensionTokens(ctx, userID)` → `ListAPIKeys`-style read
-  filtered to `name LIKE 'extension:%'`. Check `ListAPIKeys` for the
-  existing list query — reuse it and filter in SQL or in Go.
+- `Service.ListExtensionTokens(ctx, userID)` → `ListAPIKeys` output
+  filtered in Go to `name` prefix `extension:`
+  (`ListAPIKeysByUser` returns the name column).
+- NO separate revoke route — extension tokens are plain `api_keys`
+  rows; `DELETE /me/api-keys/{id}` already covers revocation.
 - Handlers: `CreateExtensionToken` (201 `{key, key_id, prefix}`),
   `ListExtensionTokens` (200 `{data:[…]}`) — same
-  `requireUser`/`handleServiceError` patterns as `CreateKey`.
+  `requireUser`/`handleServiceError` patterns as `CreateKey`
+  (handlers.go:110-150).
 - Routes in `internal/server/server.go` next to `/me/api-keys` (same
-  middleware chain: `RequireAuth` + `rbac.RequirePermission
-  ("api.keys.self_manage")`).
+  middleware chain: `auth.RequireAuth` + `rbac.RequirePermission
+  ("api.keys.self_manage")` — server.go:4538-4549).
 
 **Commit:** `feat(publicapi): extension token mint + list`
 
@@ -102,41 +138,49 @@ New service method + handlers in `internal/publicapi`:
 
 - New scope `api.read.digest` in `scopes.ScopeCatalog` (Task 1 catalogs
   it first).
+- New sqlc query `GetPublicSpaceByGeoCode` in `db/queries/spaces.sql`
+  — same SELECT column list as `GetPublicSpaceBySlug`, `WHERE
+  geo_code = $1 AND level='country' AND visibility='public' AND
+  status='active' AND deleted_at IS NULL`. Regen via `make sqlc-gen`;
+  add `GetPublicSpaceByGeoCode` to the `SpaceReader` iface (moat.go:79)
+  and to the spaces-side adapter + test stubs.
 - New reader iface `IntelReader` in `internal/publicapi/phase2.go`
   (alongside `FeedReader`/`SafetyReader`):
   `ListRecentForSpace(ctx, spaceID, limit) ([]IntelDigestItem, error)` —
-  implement in a wiring-layer adapter (server.go) backed by the intel
-  domain queries: `ListVisaRoutesBySpaces` + `ListIntelJobsBySpaces`,
-  merged by `updated_at` desc, capped at limit. `IntelDigestItem` DTO:
-  `{id, kind("visa_route"|"job"), title, summary, updated_at}` — curated
-  fields only.
+  adapter in server.go wrapping `*gen.Queries` directly:
+  `ListVisaRoutesBySpaces` + `ListIntelJobsBySpaces` with NULL keyset
+  cursors, merged by `created_at` desc, capped at limit.
+  `IntelDigestItem` DTO: `{id, kind("visa_route"|"job"), title,
+  summary, created_at}` — curated fields only.
 - Destination resolution in `Service.Digest`:
-  1. `custom_field_values` for key `destination_country` on the key
-     owner's user → ISO code. (Add/verify a `GetUserFieldValueByKey`
-     query — the cfv lookup pattern at `db/queries/ai_agent.sql:135`
-     shows the join shape; put the new query in `custom_fields.sql`,
-     regen via `make sqlc-gen`.)
-  2. `spaces.Service.GetSpaceByGeoCode` → country space. Wire it through
-     the existing moat `Spaces` reader iface (add `GetSpaceByGeoCode`
-     if absent) — NO new publicapi→spaces import.
-  3. Missing/invalid → `destination: null`.
+  1. `s.queries.GetUserGeoProfileFields(ctx, userID)` →
+     `DestinationCountry` ISO code (already exists — do NOT write a
+     new cfv query).
+  2. `s.moat.Spaces.GetPublicSpaceByGeoCode(code)` → public+active
+     country space only.
+  3. Empty code / pgx.ErrNoRows → `destination: null`.
 - `Service.Digest(ctx, viewerID)`:
-  - `for_you`: `FeedReader.GetForYouFeed`-equivalent (top
-    `section_limit`)
-  - `community.popular`: `FeedReader` explore popular
-  - `destination.scam_alerts`: `SafetyReader.ListByOffset` (top 3,
-    confirmed-only already in SQL)
-  - `destination.intel`: `IntelReader` (top 3)
-  - Cache: `jc:api_digest:{scopeHash}` — reuse the same scope-hash
-    input as `api_semantic` (viewer + member-space IDs + privileged) —
-    call it via the injected `SemanticSearcher.ScopeHash` or factor the
-    hash into a shared helper (`ScopeHasher` iface both use).
-  - TTL: `api.digest.cache_ttl_seconds` default 120.
-- Handler `GetDigest` in `handlers_feeds.go`-adjacent file (new
-  `handlers_digest.go` if it grows); route under the public API group:
-  `RequireScope("api.read.digest")`.
-- Tests (mirror `handlers_feeds_test.go` stubs): full digest happy path,
-  destination null path, cache hit path, section caps, scope rejection.
+  - `for_you`: `FeedReader.GetForYouFeed(ctx, viewerID, sort, limit,
+    0, nil)` — nil VisitorContext, matching `MyFeed` exactly.
+  - `community.popular`: `FeedReader.GetFeed` explore-popular path
+    (same call `ExploreFeed` makes internally).
+  - `destination.scam_alerts`: `SafetyReader.ListByOffset` top 3 —
+    ONLY when `SafetyReader.Enabled(ctx)` (honors
+    `scam_alert.enabled` inside the aggregate; the route-level
+    `features.Gate` does not apply here).
+  - `destination.intel`: `IntelReader` top 3.
+  - Partial failure policy: a failing section degrades to `null`/
+    empty with the rest intact (log the error); only a feed-reader
+    outage fails the whole request — decide per-section, document in
+    the handler comment.
+  - Cache: `jc:api_digest:{sha256(viewer_uuid)}` — viewer identity
+    only, NOT `SemanticSearcher.ScopeHash` (digest reads no
+    member-scoped data). TTL `api.digest.cache_ttl_seconds` (120).
+- Handler `GetDigest` in new `handlers_digest.go`; route under the
+  public API group: `RequireScope("api.read.digest")`.
+- Tests (mirror `handlers_feeds_test.go` stubs): full digest happy
+  path, destination null path, scam-disabled path, cache hit,
+  section caps, scope rejection, per-section partial failure.
 
 **Commit:** `feat(publicapi): GET /public/me/digest aggregate endpoint`
 
@@ -144,21 +188,26 @@ New service method + handlers in `internal/publicapi`:
 
 ## Task 4 — Anonymous `feeds/popular`
 
-- Move `feeds/{name}` registration out of the `RequireScope` group into
-  a variant: `OptionalScope("api.read.content")` — new middleware
-  sibling of `RequireScope` that lets `keyCtx == nil` through but still
-  enforces scope when a key IS present (a key lacking the scope still
-  403s — fail closed for authed callers).
-- Wrap the route in `mw.RateLimit(rdb, "loose")` for the anonymous
-  path — keyed requests additionally carry the per-key limiter already.
-- Decide whether anonymous applies to ALL feed names or only `popular`:
-  spec recommends popular only — implement by name check in the
-  optional-scope handler path (`name=="popular" && keyCtx==nil` → allow;
-  other names still require key). Simplest correct version: an
-  `AnonymousOptional` wrapper that requires `name=="popular"` for
-  unauthenticated pass-through.
+- Replace `RequireScope("api.read.content")` on `feeds/{name}` with a
+  new sibling middleware `OptionalScope(scope, anonNames ...string)`
+  in `internal/publicapi/middleware.go`. `r.With` middleware runs
+  post-routing so `chi.URLParam(r, "name")` is available. Exact
+  contract:
+  - `keyCtx == nil` AND `name` ∈ anonNames → pass through
+  - `keyCtx == nil` AND `name` ∉ anonNames → 401 `api_key_required`
+  - `keyCtx != nil` → enforce `HasScope` exactly like `RequireScope`
+    (key without the scope still 403s)
+- Register with `anonNames = {"popular"}` — `latest`/`rising` stay
+  key-required (ExploreFeed's name set is `popular|latest|rising`,
+  phase2.go:177-179).
+- Wrap the route in `mw.RateLimit(vkClient.Redis(), "loose")` —
+  IP-based (300/min) for anonymous; keyed requests additionally
+  carry the existing per-key sliding-window limiter.
+- `feeds/tag/{tag}` and `feeds/space/{slug}` stay fully scoped —
+  they're separate literal routes, no chi conflict with `{name}`.
 - Test: no key + popular → 200; no key + latest → 401; key without
-  scope → 403; valid key → 200.
+  `api.read.content` → 403; valid key → 200; `feeds/tag` unkeyed
+  → 401.
 
 **Commit:** `feat(publicapi): anonymous access to feeds/popular`
 
@@ -189,12 +238,12 @@ apps/extension/
   vs connected branch (digest). Stale-while-revalidate from
   `chrome.storage.local` cache keyed `digest` + `fetched_at`.
 - `connect` (options page or in-page modal): install ID generated once
-  (`crypto.randomUUID`, persisted), instructions + link to
-  `{site}/settings/developer` (the settings page needs the
-  "Connect browser extension" button — **main-app frontend task**:
-  small addition to the existing API-keys settings section in
-  `apps/main`, calling the new token endpoints; include a copyable
-  key display + paste field in the extension).
+  (`crypto.randomUUID`, persisted), instructions + link to the
+  settings page. **Main-app frontend task:** add a "Connect browser
+  extension" affordance to `apps/main/src/lib/components/hub/settings/
+  sections/ApiKeysSection.svelte` (exists — the natural home) that
+  calls `POST /me/extension-tokens` and shows the key once; the
+  extension provides the paste field.
 - Manifest (wxt.config): `chrome_url_overrides.newtab`,
   `permissions: ["storage"]`, `host_permissions` for the API origin.
   `browser_specific_settings.gecko.id` set for future Firefox.
@@ -210,9 +259,9 @@ main-app settings-page commit for the connect button)
 
 ## Task 6 — OpenAPI + final verification
 
-- Add `/public/me/digest` to the OpenAPI spec + regen catalog
-  (`make` target used for OpenAPI — check Task 5 of the phase-2 plan's
-  regen script name).
+- Hand-edit `docs/openapi/api.yaml` — it is maintained by hand, there
+  is no gen target. Add `/public/me/digest` (+ the anonymous note on
+  `/public/feeds/{name}` and the two `/me/extension-tokens` routes).
 - Full build/vet/tests: `go build ./...`, `go vet ./internal/...`,
   `go test ./internal/publicapi/... ./internal/server/...`.
 - Live smoke on `:8081`: mint token (needs a JWT session — can stub via
@@ -224,20 +273,15 @@ main-app settings-page commit for the connect button)
 
 ## Risks / watch-outs
 
-- **cfv query**: `custom_field_values` schema must be verified before
-  writing `GetUserFieldValueByKey` — check the table's actual columns
-  (entity_type/entity_id polymorphic? user_id direct?) in migration
-  DDL, not by inference.
-- **Intel domain merge**: `ListVisaRoutesBySpaces`/`ListIntelJobsBySpaces`
-  are keyset-paginated radar queries with many params — if they're
-  awkward to reuse, write a dedicated small `ListIntelDigestForSpace`
-  query per domain in `intelligence_domains.sql` (two UNION-able
-  selects) rather than fighting the radar cursor params.
+- **`GetPublicSpaceByGeoCode` is a new sqlc query** — do not reuse raw
+  `GetSpaceByGeoCode` (no public guard); a non-public/archived country
+  space would otherwise leak into digests.
 - **`api.read.*` covers digest** — correct per scope semantics; the
   spec doc must be amended (Task 1 step 6) so it doesn't claim
   exclusivity.
-- **`apps/extension` is a new workspace** — check root `package.json`
-  workspaces / bunfig so the app registers correctly; don't disturb the
-  other apps' lockfile entries.
+- **`apps/extension` registers automatically** — root `package.json`
+  workspaces glob is `apps/*`; don't disturb the other apps' lockfile
+  entries. `apps/main` connect UI lives in
+  `ApiKeysSection.svelte` (exists).
 - **Unrelated worktree changes remain unstaged** (japastage, apps/main
   modifications, `.jeos` dirty files) — stage only task files.

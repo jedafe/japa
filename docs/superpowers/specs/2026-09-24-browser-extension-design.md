@@ -284,7 +284,11 @@ the permission prompt at install stays minimal.
 3. Destination override in extension settings (user picks a different
    destination than their profile) — V1: no, profile field is canonical;
    revisit after launch.
-4. Intel radar read seam — is there already a service method returning
+4. ~~Intel radar read seam~~ — resolved during plan-writing: the digest
+   uses `ListVisaRoutesBySpaces` + `ListIntelJobsBySpaces` (nullable
+   keyset cursors, `created_at` desc) behind a narrow `IntelReader`
+   iface, rather than reimplementing the radar's polymorphic merge.
+   Original question for reference: is there already a service method returning
    per-space intel items, or does the radar feed need a small list query
    added? (Implementation plan must verify.)
 
