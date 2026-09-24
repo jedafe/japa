@@ -3,8 +3,16 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Users, Search, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton, SearchInput, DirectoryCard, type SearchSuggestion } from '$lib/components/ui';
+	import { Users, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import {
+		EmptyState,
+		ListPageBar,
+		SearchInput,
+		UrlTabs,
+		type SearchSuggestion,
+		type UrlTab
+	} from '$lib/components/ui';
+	import UserCard from '$lib/components/profile/UserCard.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -30,9 +38,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let selectedProfileType = $state(untrack(() => data.profileType));
 	const searchPlaceholder = $derived(t('users.search_placeholder', 'Search people…'));
 
+	$effect(() => {
+		query = data.q;
+		selectedProfileType = data.profileType;
+	});
+
 	// User-account profile_type enum — fixed backend constraint per §unified-tiers.
 	// These are the user-account tiers (regular / pro / business).
-	const profileTypes = $derived([
+	const profileTypeTabs = $derived<UrlTab[]>([
 		{ value: '', label: t('users.profile_type_all', 'All') },
 		{ value: 'regular', label: t('users.profile_type_regular', 'Regular') },
 		{ value: 'pro', label: t('users.profile_type_pro', 'Pro') },
@@ -53,7 +66,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (query.trim()) params.set('q', query.trim());
 		if (selectedProfileType) params.set('profile_type', selectedProfileType);
 		const qs = params.toString();
-		goto(qs ? `/users?${qs}` : '/users');
+		goto(qs ? `/users?${qs}` : '/users', { keepFocus: true });
 	}
 
 	async function userSearchFetcher(q: string): Promise<SearchSuggestion[]> {
@@ -85,7 +98,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header + search + filters -->
+	<!-- Header -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Users size={20} /> {t('users.heading', 'People')}
@@ -93,35 +106,34 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
 			{t('users.subtitle', 'Follow people to see their posts in your feed.')}
 		</p>
-
-		<form class="mt-3" action="/users" method="get" role="search">
-			<SearchInput
-				bind:value={query}
-				placeholder={searchPlaceholder}
-				ariaLabel={t('users.heading', 'People')}
-				fetcher={userSearchFetcher}
-			/>
-			<!-- Hidden fields to preserve filters on submit -->
-			{#if selectedProfileType}
-				<input type="hidden" name="profile_type" value={selectedProfileType} />
-			{/if}
-		</form>
-
-		<!-- Profile type filter chips -->
-		<div class="mt-3 flex flex-wrap gap-2">
-			{#each profileTypes as pt (pt.value)}
-				<button
-					type="button"
-					onclick={() => { selectedProfileType = pt.value; onFilterChange(); }}
-					class="rounded-full border px-3 py-1 text-xs transition-colors {selectedProfileType === pt.value
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
-				>
-					{pt.label}
-				</button>
-			{/each}
-		</div>
 	</div>
+
+	<!-- Profile type tabs + search — same bar pattern as /sources -->
+	<ListPageBar>
+		<UrlTabs
+			tabs={profileTypeTabs}
+			value={selectedProfileType}
+			onValueChange={(v) => {
+				selectedProfileType = v;
+				onFilterChange();
+			}}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			<form action="/users" method="get" role="search" class="w-36 sm:w-56">
+				<SearchInput
+					bind:value={query}
+					placeholder={searchPlaceholder}
+					ariaLabel={t('users.heading', 'People')}
+					fetcher={userSearchFetcher}
+				/>
+				<!-- Hidden field to preserve the active tab on submit -->
+				{#if selectedProfileType}
+					<input type="hidden" name="profile_type" value={selectedProfileType} />
+				{/if}
+			</form>
+		{/snippet}
+	</ListPageBar>
 
 	<div class="p-4">
 		{#if data.forbidden}
@@ -141,30 +153,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
 				{data.total} {data.total === 1 ? t('users.results_one', 'person') : t('users.results', 'people')}
 			</p>
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid gap-3 sm:grid-cols-2">
 				{#each data.users as user (user.id)}
-					<DirectoryCard
-						href="/u/{user.username}"
-						title={user.display_name ?? user.username}
-						subtitle="@{user.username}"
-						description={user.bio}
-						imageUrl={user.avatar_url}
-						fallback={(user.display_name ?? user.username).charAt(0).toUpperCase()}
-						hueSeed={user.id}
-						round
-						verified={user.profile_type === 'business' || user.profile_type === 'pro'}
-						meta={[{ icon: Users, text: (user.follower_count === 1 ? t('profile.followers_one', '{n} follower') : t('profile.followers', '{n} followers')).replace('{n}', String(user.follower_count)) }]}
-						entityType="user"
-						entityId={user.id}
-						entitySlug={user.username}
-						entityCount={user.follower_count}
-					>
-						{#snippet actions()}
-							{#if page.data.user && page.data.user.id !== user.id}
-								<FollowButton entityType="user" entityId={user.id} compact />
-							{/if}
-						{/snippet}
-					</DirectoryCard>
+					<UserCard {user} />
 				{/each}
 			</div>
 

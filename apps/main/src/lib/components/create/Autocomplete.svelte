@@ -478,7 +478,6 @@
 		gap: 4px;
 		padding: 2px 6px;
 		border-radius: 9999px;
-		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 		color: var(--color-primary);
 		font-size: 0.875rem;
 		font-weight: 500;

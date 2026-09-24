@@ -2,7 +2,7 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { redirect } from '@sveltejs/kit';
-import type { MyJapaStage, JapaStage, JapaIntent, GeoCountry } from '$lib/types';
+import type { MyJapaStage, JapaStageOption, JapaIntent, GeoCountry } from '$lib/types';
 
 /**
  * My Japa Stage at /japa-stage/me. Auth-gated: redirects to login when not
@@ -30,10 +30,10 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	let stages: JapaStage[] = [];
+	let stages: JapaStageOption[] = [];
 	try {
-		const list = await apiGet<{ value: string; label: string }[]>(ctx, '/japa-stage/stages');
-		stages = (list ?? []).map((o) => o.value as JapaStage);
+		const list = await apiGet<{ value: string; label: string; intents?: JapaIntent[] }[]>(ctx, '/japa-stage/stages');
+		stages = (list ?? []).map((o) => ({ value: o.value, intents: o.intents }) as JapaStageOption);
 	} catch {
 		stages = [];
 	}

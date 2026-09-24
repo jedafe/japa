@@ -146,8 +146,9 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
 		<Dialog.Content
-			class="z-50 flex max-h-[80vh] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
+			class="fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
 		>
 			<div class="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
 				<Dialog.Title class="text-base font-medium text-[var(--color-text)]">

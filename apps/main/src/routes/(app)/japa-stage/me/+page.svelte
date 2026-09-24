@@ -11,25 +11,32 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 	import { ArrowLeft, Compass, Save } from 'lucide-svelte';
-	import { japaStageColors, japaStageLabel, japaStageOptions, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
+	import { japaStageColors, japaStageLabel, japaStageOptions, japaStagesForIntent, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
 	import type { JapaStage, JapaIntent, MyJapaStage } from '$lib/types';
-	import { RELOCATION_INTENTS } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const stageOpts = $derived(japaStageOptions(t, data.stages));
 	const intentOpts = $derived(japaIntentOptions(t, data.intents));
-
-	function stageIndex(s: JapaStage): number {
-		return data.stages.indexOf(s);
-	}
 
 	// Form state, seeded from the SSR-loaded stage.
 	let intent = $state<JapaIntent>(untrack(() => (data.myStage?.intent as JapaIntent) ?? 'relocation'));
-	let stage = $state<JapaStage>(untrack(() => (data.myStage?.stage as JapaStage) ?? (data.stages[0] ?? 'considering')));
+	let stage = $state<JapaStage | ''>(untrack(() => (data.myStage?.stage as JapaStage) ?? ''));
 	let destCountry = $state<string>(untrack(() => data.myStage?.destination_space_id ?? ''));
 	let isPublic = $state<boolean>(untrack(() => data.myStage?.is_public ?? false));
+
+	// Stages applicable to the selected journey class — shared arc plus the
+	// class's terminal pair (ADR-122).
+	const applicableStages = $derived(japaStagesForIntent(data.stages, intent));
+	const stageOpts = $derived(japaStageOptions(t, applicableStages));
+
+	function stageIndex(s: JapaStage): number {
+		return applicableStages.findIndex((o) => o.value === s);
+	}
+
+	function stageAllowed(s: JapaStage): boolean {
+		return applicableStages.some((o) => o.value === s);
+	}
 
 	let loading = $state(false);
 	let saved = $state(false);
@@ -40,17 +47,22 @@
 		const ms = data.myStage;
 		if (ms) {
 			intent = (ms.intent as JapaIntent) ?? 'relocation';
-			stage = (ms.stage as JapaStage) ?? (data.stages[0] ?? 'considering');
+			stage = (ms.stage as JapaStage) ?? '';
 			destCountry = ms.destination_space_id ?? '';
 			isPublic = ms.is_public ?? false;
 		}
 	});
 
-	// Non-relocation intents (visit/business) carry no stage (ADR-122).
-	const isRelocation = $derived(RELOCATION_INTENTS.includes(intent));
+	// Switching journey class: drop a selected stage that the new class does
+	// not allow (e.g. relocated → visit). Shared-arc stages carry over.
+	$effect(() => {
+		if (stage && !stageAllowed(stage)) {
+			stage = '';
+		}
+	});
 
 	const currentStage = $derived((data.myStage?.stage as JapaStage) ?? stage);
-	const currentIndex = $derived(stageIndex(currentStage));
+	const currentIndex = $derived(currentStage ? stageIndex(currentStage) : -1);
 
 	const historyEntries = $derived(
 		(data.myStage?.history as Array<{ intent?: string; stage?: JapaStage; dest_space_id?: string; set_at: string }> | undefined) ?? []
@@ -72,9 +84,10 @@
 		try {
 			const res = await api.patch<MyJapaStage>('/me/japa-stage', {
 				intent,
-				// Non-relocation intents carry no stage — omit it so the
-				// backend clears any stored stage (ADR-122).
-				...(isRelocation ? { stage } : {}),
+				// An unset stage is omitted — the backend keeps any stored
+				// stage that remains valid for the new intent, or clears an
+				// incompatible one on a class switch (ADR-122).
+				...(stage ? { stage } : {}),
 				destination_space_id: destCountry || null,
 				is_public: isPublic
 			});
@@ -150,8 +163,8 @@
 		/>
 	{/if}
 
-	<!-- Visual stepper showing current stage position (relocation intents only) -->
-	{#if isRelocation}
+	<!-- Visual stepper showing current stage position within the selected journey class -->
+	{#if stageOpts.length > 0}
 	<div class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<p class="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
 			{t('japa_stage.progression', 'Stage progression')}
@@ -196,18 +209,19 @@
 			</select>
 		</div>
 
-		{#if isRelocation}
 		<div class="flex flex-col gap-1.5">
 			<label for="stage" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.current_stage', 'Current stage')}
 			</label>
 			<select id="stage" bind:value={stage} class={inputClass}>
+				{#if !stage}
+					<option value="">{t('japa_stage.stage_unset', 'Not set yet')}</option>
+				{/if}
 				{#each stageOpts as opt (opt.value)}
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
 		</div>
-		{/if}
 
 		<div class="flex flex-col gap-1.5">
 			<label for="dest" class="text-sm font-medium text-[var(--color-text)]">

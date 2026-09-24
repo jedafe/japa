@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/jedafe/japa/internal/httpx"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
+	"github.com/jedafe/japa/internal/httpx"
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -151,7 +151,9 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleStages handles GET /japa-stage/stages — returns the canonical stage
-// option list (Rule 16).
+// option list (Rule 16). Each option carries an `intents` array listing the
+// journey classes it applies to; ?intent= filters to one class's stages
+// (ADR-122 class-scoped terminals).
 func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
@@ -159,7 +161,13 @@ func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stages := h.service.Stages()
+	intent := r.URL.Query().Get("intent")
+	if intent != "" && !ValidIntent(intent) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_intent", "Invalid intent; must be one of: "+JoinIntents())
+		return
+	}
+
+	stages := h.service.Stages(intent)
 	h.resolveLiterals(r, &stages)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stages})
@@ -234,6 +242,13 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	intent := r.URL.Query().Get("intent")
 	if intent != "" && !ValidIntent(intent) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_intent", "Invalid intent; must be one of: "+JoinIntents())
+		return
+	}
+
+	// A cross-class pair can never match a row (ADR-122 class-scoped
+	// terminals) — reject rather than silently returning an empty page.
+	if stage != "" && intent != "" && !ValidStageForIntent(stage, intent) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage_for_intent", "That stage does not apply to the selected journey type")
 		return
 	}
 
@@ -342,8 +357,8 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Stage != "" && input.Intent != "" && !IsRelocationIntent(input.Intent) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage_for_intent", "A stage cannot be set for a non-relocation intent")
+	if input.Stage != "" && input.Intent != "" && !ValidStageForIntent(input.Stage, input.Intent) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage_for_intent", "That stage does not apply to the selected journey type")
 		return
 	}
 
@@ -355,7 +370,7 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if errors.Is(err, ErrInvalidStageForIntent) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage_for_intent", "A stage cannot be set for a non-relocation intent")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage_for_intent", "That stage does not apply to the selected journey type")
 			return
 		}
 

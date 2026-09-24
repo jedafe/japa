@@ -15,6 +15,7 @@ import type {
 	MutualAidCategory,
 	ServiceCategory,
 	JapaStage,
+	JapaStageOption,
 	JapaIntent,
 	CalendarCategory,
 	TrendingWindow
@@ -107,7 +108,10 @@ export const japaStageColors: Record<JapaStage, string> = {
 	applied: 'var(--stage-applied)',
 	approved: 'var(--stage-approved)',
 	relocated: 'var(--stage-relocated)',
-	settled: 'var(--color-primary)'
+	settled: 'var(--color-primary)',
+	// ADR-122: trip-class terminals mirror the relocation terminal palette.
+	traveled: 'var(--stage-relocated)',
+	returned: 'var(--color-primary)'
 };
 
 export function japaStageLabel(t: Translator, value: JapaStage): string {
@@ -116,9 +120,18 @@ export function japaStageLabel(t: Translator, value: JapaStage): string {
 
 export function japaStageOptions(
 	t: Translator,
-	stages: JapaStage[] = []
+	stages: JapaStageOption[] = []
 ): { value: JapaStage; label: string }[] {
-	return stages.map((value) => ({ value, label: japaStageLabel(t, value) }));
+	return stages.map((s) => ({ value: s.value, label: japaStageLabel(t, s.value) }));
+}
+
+/** Stages applicable to a journey class (ADR-122 class-scoped terminals). */
+export function japaStagesForIntent(
+	stages: JapaStageOption[],
+	intent: JapaIntent | ''
+): JapaStageOption[] {
+	if (!intent) return stages;
+	return stages.filter((s) => !s.intents || s.intents.includes(intent));
 }
 
 // --- Japa intent (ADR-122) ---
