@@ -1,0 +1,844 @@
+package wiki
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/comparison/resolver"
+	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// ---------------------------------------------------------------------------
+// Fakes for the service's injected collaborators
+// ---------------------------------------------------------------------------
+
+// fakeFieldReader is a fieldReadStore stub. Field lookups hit fieldsByKey;
+// per-field permissions come from perms keyed by field ID string.
+type fakeFieldReader struct {
+	fieldsByKey map[string]gen.GetCustomFieldByKeyRow
+	perms       map[string][2]bool // fieldID.String() → [canView, canEdit]
+	assignments []gen.CustomFieldGroupAssignment
+	groups      map[string]gen.CustomFieldGroup
+	groupFields map[string][]gen.ListCustomFieldsByGroupRow
+	values      []gen.ListCustomFieldValuesWithDefsByEntityRow
+	byKeyCalls  []string
+}
+
+func (f *fakeFieldReader) CheckFieldPermissionForUser(_ context.Context, fieldID, _ pgtype.UUID) (bool, bool, error) {
+	if p, ok := f.perms[fieldID.String()]; ok {
+		return p[0], p[1], nil
+	}
+
+	return false, false, nil
+}
+
+func (f *fakeFieldReader) GetCustomFieldByKey(_ context.Context, key string) (gen.GetCustomFieldByKeyRow, error) {
+	f.byKeyCalls = append(f.byKeyCalls, key)
+
+	if row, ok := f.fieldsByKey[key]; ok {
+		return row, nil
+	}
+
+	return gen.GetCustomFieldByKeyRow{}, pgx.ErrNoRows
+}
+
+func (f *fakeFieldReader) ListAssignmentsByEntityClass(_ context.Context, _ string) ([]gen.CustomFieldGroupAssignment, error) {
+	return f.assignments, nil
+}
+
+func (f *fakeFieldReader) ListFieldValuesWithDefsByEntity(_ context.Context, _ string, _ pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error) {
+	return f.values, nil
+}
+
+func (f *fakeFieldReader) GetFieldGroup(_ context.Context, id pgtype.UUID) (gen.CustomFieldGroup, error) {
+	if g, ok := f.groups[id.String()]; ok {
+		return g, nil
+	}
+
+	return gen.CustomFieldGroup{}, pgx.ErrNoRows
+}
+
+func (f *fakeFieldReader) ListFieldsByGroup(_ context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
+	return f.groupFields[groupID.String()], nil
+}
+
+// fakePermChecker stubs the RBAC resolver; granted maps node → allowed.
+type fakePermChecker struct{ granted map[string]bool }
+
+func (f fakePermChecker) HasPermission(_ context.Context, _ pgtype.UUID, key string) bool {
+	return f.granted[key]
+}
+
+// fakeEntityResolver stubs the JCE item_ref resolver registry.
+type fakeEntityResolver struct {
+	item   resolver.ResolvedItem
+	err    error
+	gotRef map[string]any
+}
+
+func (f *fakeEntityResolver) Resolve(_ context.Context, ref map[string]any) (resolver.ResolvedItem, error) {
+	f.gotRef = ref
+
+	return f.item, f.err
+}
+
+// fakeEnqueuer records Asynq enqueues.
+type fakeEnqueuer struct {
+	calls []enqueuedTask
+	err   error
+}
+
+type enqueuedTask struct {
+	taskType string
+	payload  []byte
+}
+
+func (f *fakeEnqueuer) Enqueue(taskType string, payload []byte, _ ...interface{}) error {
+	f.calls = append(f.calls, enqueuedTask{taskType: taskType, payload: payload})
+
+	return f.err
+}
+
+// fakeBuster records BustCachesForItemRef calls.
+type fakeBuster struct {
+	calls [][2]string
+	err   error
+}
+
+func (f *fakeBuster) BustCachesForItemRef(_ context.Context, entityType, entityID string) error {
+	f.calls = append(f.calls, [2]string{entityType, entityID})
+
+	return f.err
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests — rejection paths that never reach the store (s.store is nil)
+// ---------------------------------------------------------------------------
+
+// TestSubmitFieldOps_RejectsWhenCanEditFalse: a set_value on an existing
+// field whose custom_field_permissions deny can_edit to the submitter is
+// rejected before a revision row is created (§6 submit validation).
+func TestSubmitFieldOps_RejectsWhenCanEditFalse(t *testing.T) {
+	t.Parallel()
+
+	fieldID := mustUUID(t, "00000000-0000-0000-0000-0000000000a2")
+	entityID := mustUUID(t, "00000000-0000-0000-0000-0000000000bb")
+
+	svc := NewService(nil, nil)
+	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsEdit: true}})
+	svc.SetCustomFields(&fakeFieldReader{
+		fieldsByKey: map[string]gen.GetCustomFieldByKeyRow{
+			"tuition_ug": {ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber},
+		},
+		perms: map[string][2]bool{fieldID.String(): {true, false}}, // can_view yes, can_edit no
+	})
+
+	ops := []FieldOp{{
+		Op:         OpSetValue,
+		EntityType: "university",
+		EntityID:   entityID.String(),
+		FieldKey:   "tuition_ug",
+		Value:      json.RawMessage(`12000`),
+	}}
+
+	_, _, err := svc.SubmitFieldOps(t.Context(), mustUUID(t, "00000000-0000-0000-0000-0000000000c1"),
+		pgtype.UUID{}, "university", entityID, ops, "", false)
+	if !errors.Is(err, ErrOpNotPermitted) {
+		t.Fatalf("expected ErrOpNotPermitted, got %v", err)
+	}
+}
+
+// TestSubmitFieldOps_PerOpPermissionMapping: each op kind is gated by its
+// wiki.fields.* node — a submission containing an op the submitter lacks is
+// rejected even when other ops are permitted (§10).
+func TestSubmitFieldOps_PerOpPermissionMapping(t *testing.T) {
+	t.Parallel()
+
+	userID := mustUUID(t, "00000000-0000-0000-0000-0000000000c1")
+	entityID := mustUUID(t, "00000000-0000-0000-0000-0000000000bb")
+
+	cases := []struct {
+		name      string
+		op        FieldOp
+		grants    map[string]bool
+		canManage bool
+		wantErr   bool
+	}{
+		{
+			name: "set_value needs fields.edit",
+			op: FieldOp{
+				Op: OpSetValue, EntityType: "university", EntityID: entityID.String(),
+				FieldKey: "k", Value: json.RawMessage(`"v"`),
+			},
+			grants:  map[string]bool{PermFieldsPropose: true},
+			wantErr: true,
+		},
+		{
+			name: "propose_field needs fields.propose",
+			op: FieldOp{
+				Op: OpProposeField, GroupSlug: "g",
+				Field: &FieldDefInput{Key: "k", Label: "K", FieldType: customfields.FieldTypeText},
+			},
+			grants:  map[string]bool{PermFieldsEdit: true},
+			wantErr: true,
+		},
+		{
+			name: "upsert_field needs fields.manage",
+			op: FieldOp{
+				Op: OpUpsertField, GroupSlug: "g",
+				Field: &FieldDefInput{Key: "k", Label: "K", FieldType: customfields.FieldTypeText},
+			},
+			grants:  map[string]bool{PermFieldsEdit: true, PermFieldsPropose: true},
+			wantErr: true,
+		},
+		{
+			name:    "assign_group needs fields.manage",
+			op:      FieldOp{Op: OpAssignGroup, GroupSlug: "g", EntityClass: "organization"},
+			grants:  map[string]bool{PermFieldsEdit: true, PermFieldsPropose: true},
+			wantErr: true,
+		},
+		{
+			name:      "manage-tier submission skips per-op checks",
+			op:        FieldOp{Op: OpAssignGroup, GroupSlug: "g", EntityClass: "organization"},
+			grants:    nil, // no nodes granted — canManage covers everything
+			canManage: true,
+			wantErr:   false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := NewService(nil, nil)
+			svc.SetPermissionChecker(fakePermChecker{granted: tc.grants})
+
+			if !tc.wantErr {
+				// The store is nil, so the full submit path can't run without
+				// a DB — assert the gate itself passes for the manage tier.
+				// The end-to-end manage path runs against the real store in
+				// TestSubmitFieldOps_ManageTierAutoApproves below.
+				if err := svc.checkOpsPermissions(t.Context(), userID, []FieldOp{tc.op}, tc.canManage); err != nil {
+					t.Fatalf("manage tier should skip per-op checks: %v", err)
+				}
+
+				return
+			}
+
+			_, _, err := svc.SubmitFieldOps(t.Context(), userID, pgtype.UUID{}, "university", entityID, []FieldOp{tc.op}, "", false)
+			if !errors.Is(err, ErrOpNotPermitted) {
+				t.Fatalf("expected ErrOpNotPermitted, got %v", err)
+			}
+		})
+	}
+}
+
+// TestSubmitFieldOps_SetValueOnProposedKeySkipsLookup: a set_value whose
+// field_key is created by an earlier propose op in the same array skips the
+// field-existence and can_edit checks (§6 — new fields have no permission
+// rows yet).
+func TestSubmitFieldOps_SetValueOnProposedKeySkipsLookup(t *testing.T) {
+	t.Parallel()
+
+	entityID := mustUUID(t, "00000000-0000-0000-0000-0000000000bb")
+	fields := &fakeFieldReader{} // GetCustomFieldByKey always ErrNoRows
+
+	svc := NewService(nil, nil)
+	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{
+		PermFieldsEdit: true, PermFieldsPropose: true,
+	}})
+	svc.SetCustomFields(fields)
+
+	ops := []FieldOp{
+		{
+			Op: OpProposeField, GroupSlug: "g", EntityType: "university",
+			Field: &FieldDefInput{Key: "visa_success_rate", Label: "Visa Success Rate", FieldType: customfields.FieldTypePercentage},
+		},
+		{
+			Op: OpSetValue, EntityType: "university", EntityID: entityID.String(),
+			FieldKey: "visa_success_rate", Value: json.RawMessage(`0.82`),
+		},
+	}
+
+	// checkSetValueFields must pass without ever consulting the field store
+	// for the proposed key.
+	if err := svc.checkSetValueFields(t.Context(), mustUUID(t, "00000000-0000-0000-0000-0000000000c1"), ops, false); err != nil {
+		t.Fatalf("set_value on proposed key should validate: %v", err)
+	}
+
+	for _, k := range fields.byKeyCalls {
+		if k == "visa_success_rate" {
+			t.Fatal("proposed field key must not hit GetCustomFieldByKey")
+		}
+	}
+}
+
+// TestSubmitFieldOps_MaxOpsBound: submissions over
+// wiki.suggest.max_ops_per_revision are rejected structurally.
+func TestSubmitFieldOps_MaxOpsBound(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil) // nil settings → default 50
+
+	ops := make([]FieldOp, 51)
+	for i := range ops {
+		ops[i] = FieldOp{Op: OpAssignGroup, GroupSlug: "g", EntityClass: "organization"}
+	}
+
+	_, _, err := svc.SubmitFieldOps(t.Context(), mustUUID(t, "00000000-0000-0000-0000-0000000000c1"),
+		pgtype.UUID{}, "", pgtype.UUID{}, ops, "", true)
+	if err == nil || !strings.Contains(err.Error(), "exceeds maximum") {
+		t.Fatalf("expected ops bound error, got %v", err)
+	}
+}
+
+// TestSuggestFields_ResolverFailure: an unresolvable entity rejects the
+// submission before any revision work.
+func TestSuggestFields_ResolverFailure(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil)
+	svc.SetEntityResolver(&fakeEntityResolver{err: errors.New("university item not found")})
+
+	entityID := mustUUID(t, "00000000-0000-0000-0000-0000000000bb")
+
+	_, _, err := svc.SuggestFields(t.Context(), mustUUID(t, "00000000-0000-0000-0000-0000000000c1"),
+		"university", entityID, []FieldOp{{Op: OpAssignGroup, GroupSlug: "g", EntityClass: "organization"}}, "", true)
+	if !errors.Is(err, ErrEntityNotResolvable) {
+		t.Fatalf("expected ErrEntityNotResolvable, got %v", err)
+	}
+}
+
+// TestEntityClassFor covers the §8.1 entity_type → entity_class mapping.
+func TestEntityClassFor(t *testing.T) {
+	t.Parallel()
+
+	spaceTypeID := mustUUID(t, "00000000-0000-0000-0000-0000000000d1")
+
+	cases := []struct {
+		entityType  string
+		spaceTypeID pgtype.UUID
+		want        string
+	}{
+		{"university", spaceTypeID, "space_type:" + spaceTypeID.String()},
+		{"space", spaceTypeID, "space_type:" + spaceTypeID.String()},
+		{"country", pgtype.UUID{}, "space_type"},
+		{"organization", pgtype.UUID{}, "organization"},
+		{"bank", pgtype.UUID{}, "organization"},
+		{"content", pgtype.UUID{}, "content_type"},
+		{"content:guide", pgtype.UUID{}, "content_type:guide"},
+		{"guide_category:visa", pgtype.UUID{}, "content_type:guide:visa"},
+		{"visa_route", pgtype.UUID{}, "jce_entity:visa_route"},
+		{"scholarship", pgtype.UUID{}, "jce_entity:scholarship"},
+	}
+
+	for _, tc := range cases {
+		if got := entityClassFor(tc.entityType, tc.spaceTypeID); got != tc.want {
+			t.Fatalf("entityClassFor(%q) = %q, want %q", tc.entityType, got, tc.want)
+		}
+	}
+}
+
+// TestValueWithinOptions covers select/multiselect membership validation.
+func TestValueWithinOptions(t *testing.T) {
+	t.Parallel()
+
+	options := json.RawMessage(`[{"value":"fall","label":"Fall"},{"value":"spring","label":"Spring"}]`)
+	sel := gen.GetCustomFieldByKeyRow{Key: "intake", FieldType: customfields.FieldTypeSelect, Options: options}
+	multi := gen.GetCustomFieldByKeyRow{Key: "intakes", FieldType: customfields.FieldTypeMultiselect, Options: options}
+	text := gen.GetCustomFieldByKeyRow{Key: "name", FieldType: customfields.FieldTypeText}
+
+	if err := valueWithinOptions(sel, json.RawMessage(`"fall"`)); err != nil {
+		t.Fatalf("valid select option rejected: %v", err)
+	}
+
+	if err := valueWithinOptions(sel, json.RawMessage(`"winter"`)); err == nil {
+		t.Fatal("invalid select option accepted")
+	}
+
+	if err := valueWithinOptions(multi, json.RawMessage(`["fall","spring"]`)); err != nil {
+		t.Fatalf("valid multiselect rejected: %v", err)
+	}
+
+	if err := valueWithinOptions(multi, json.RawMessage(`["fall","winter"]`)); err == nil {
+		t.Fatal("multiselect with invalid member accepted")
+	}
+
+	if err := valueWithinOptions(text, json.RawMessage(`"anything"`)); err != nil {
+		t.Fatalf("non-select field should skip options check: %v", err)
+	}
+
+	// Fields with no options configured impose no membership constraint.
+	noOpts := gen.GetCustomFieldByKeyRow{Key: "s", FieldType: customfields.FieldTypeSelect}
+	if err := valueWithinOptions(noOpts, json.RawMessage(`"whatever"`)); err != nil {
+		t.Fatalf("options-less select should pass: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests — need JC_DATABASE_URL (same pattern as store_ops_test.go)
+// ---------------------------------------------------------------------------
+
+// fieldFixture seeds a custom field group (and optionally one field) for the
+// ops integration tests, with cascade cleanup via the group row.
+type fieldFixture struct {
+	groupID pgtype.UUID
+	fieldID pgtype.UUID
+	slug    string
+	key     string
+}
+
+func seedFieldFixture(t *testing.T, ctx context.Context, database *db.DB, withField bool, fieldType string) fieldFixture {
+	t.Helper()
+
+	uniq := strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:12]
+
+	var fx fieldFixture
+	fx.slug = "wop_" + uniq
+	fx.key = "wop_" + uniq
+
+	var gid string
+	if err := database.Writer.QueryRow(ctx,
+		`INSERT INTO custom_field_groups (name, slug, is_system) VALUES ($1, $2, false) RETURNING id`,
+		"Wiki Ops Test "+uniq, fx.slug).Scan(&gid); err != nil {
+		t.Fatalf("seed field group: %v", err)
+	}
+
+	fx.groupID = mustUUID(t, gid)
+
+	if withField {
+		var fid string
+		if err := database.Writer.QueryRow(ctx,
+			`INSERT INTO custom_fields (group_id, label, key, field_type, is_system, show_in_frontend)
+			 VALUES ($1, $2, $3, $4, false, true) RETURNING id`,
+			fx.groupID, "Test Field "+uniq, fx.key, fieldType).Scan(&fid); err != nil {
+			t.Fatalf("seed field: %v", err)
+		}
+
+		fx.fieldID = mustUUID(t, fid)
+	}
+
+	t.Cleanup(func() {
+		database.Writer.Exec(ctx, `DELETE FROM custom_field_groups WHERE id = $1`, fx.groupID)
+	})
+
+	return fx
+}
+
+// TestSubmitFieldOps_ManageTierAutoApproves covers the §6 step-2 manage-tier
+// path: revision row kept, status flipped to approved, ops applied inside the
+// same transaction (cfv row written under normalized entity_type 'space'),
+// and wiki:fields_propagate enqueued after commit.
+func TestSubmitFieldOps_ManageTierAutoApproves(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeNumber)
+
+	enq := &fakeEnqueuer{}
+	buster := &fakeBuster{}
+
+	svc := NewService(store, nil)
+	svc.SetCustomFields(customfields.NewService(database))
+	svc.SetEnqueuer(enq)
+	svc.SetJCECacheBuster(buster)
+
+	ops := []FieldOp{{
+		Op:         OpSetValue,
+		EntityType: "university",
+		EntityID:   fx.spaceID.String(),
+		FieldKey:   ff.key,
+		Value:      json.RawMessage(`12000`),
+	}}
+
+	revID, autoApproved, err := svc.SubmitFieldOps(ctx, fx.userID, pgtype.UUID{}, "university", fx.spaceID, ops, "set tuition", true)
+	if err != nil {
+		t.Fatalf("SubmitFieldOps: %v", err)
+	}
+
+	if !autoApproved {
+		t.Fatal("expected autoApproved=true for manage tier")
+	}
+
+	rev, err := store.GetRevision(ctx, mustUUID(t, revID))
+	if err != nil {
+		t.Fatalf("GetRevision: %v", err)
+	}
+
+	if rev.Status != "approved" || rev.Kind != "fields" {
+		t.Fatalf("expected approved fields revision, got status=%q kind=%q", rev.Status, rev.Kind)
+	}
+
+	// cfv row: entity_type normalized 'university' → 'space' (§5).
+	var value float64
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT value_number::float8 FROM custom_field_values WHERE field_id = $1 AND entity_type = 'space' AND entity_id = $2`,
+		ff.fieldID, fx.spaceID).Scan(&value); err != nil {
+		t.Fatalf("expected cfv row after auto-approve: %v", err)
+	}
+
+	if value != 12000 {
+		t.Fatalf("cfv value: got %v want 12000", value)
+	}
+
+	// Propagation went through the enqueuer, not the direct buster.
+	if len(enq.calls) != 1 || enq.calls[0].taskType != TaskFieldsPropagate {
+		t.Fatalf("expected one %s enqueue, got %#v", TaskFieldsPropagate, enq.calls)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(enq.calls[0].payload, &payload); err != nil {
+		t.Fatalf("propagate payload not JSON: %v", err)
+	}
+
+	if payload["entity_type"] != "university" || payload["entity_id"] != fx.spaceID.String() {
+		t.Fatalf("propagate payload: %#v", payload)
+	}
+
+	if len(buster.calls) != 0 {
+		t.Fatalf("buster must not run when enqueue succeeds: %#v", buster.calls)
+	}
+}
+
+// TestSuggestFields_Pageless covers POST /wiki/suggest for an entity with no
+// wiki page: the revision is page-less (NULL wiki_page_id) but still carries
+// the entity target.
+func TestSuggestFields_Pageless(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+
+	fieldID := mustUUID(t, "00000000-0000-0000-0000-0000000000a2")
+
+	svc := NewService(store, nil)
+	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsEdit: true}})
+	svc.SetCustomFields(&fakeFieldReader{
+		fieldsByKey: map[string]gen.GetCustomFieldByKeyRow{
+			"tuition_ug": {ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber},
+		},
+		perms: map[string][2]bool{fieldID.String(): {true, true}},
+	})
+	// Resolver returns an item with no geo_space_id → no host page.
+	svc.SetEntityResolver(&fakeEntityResolver{item: resolver.ResolvedItem{
+		Type:  "visa_route",
+		ID:    fx.target.String(),
+		Title: "Test route",
+	}})
+
+	ops := []FieldOp{{
+		Op:         OpSetValue,
+		EntityType: "visa_route",
+		EntityID:   fx.target.String(),
+		FieldKey:   "tuition_ug",
+		Value:      json.RawMessage(`55`),
+	}}
+
+	revID, autoApproved, err := svc.SuggestFields(ctx, fx.userID, "visa_route", fx.target, ops, "update fee", false)
+	if err != nil {
+		t.Fatalf("SuggestFields: %v", err)
+	}
+
+	if autoApproved {
+		t.Fatal("non-manage submission must stay pending")
+	}
+
+	rev, err := store.GetRevision(ctx, mustUUID(t, revID))
+	if err != nil {
+		t.Fatalf("GetRevision: %v", err)
+	}
+
+	if rev.WikiPageID.Valid {
+		t.Fatalf("expected page-less revision, got wiki_page_id %s", rev.WikiPageID.String())
+	}
+
+	if rev.TargetEntityType == nil || *rev.TargetEntityType != "visa_route" {
+		t.Fatalf("target_entity_type: %v", rev.TargetEntityType)
+	}
+
+	if rev.TargetEntityID.String() != fx.target.String() {
+		t.Fatalf("target_entity_id: %s want %s", rev.TargetEntityID.String(), fx.target.String())
+	}
+
+	if rev.Status != "pending" || rev.Kind != "fields" {
+		t.Fatalf("expected pending fields revision, got %s/%s", rev.Status, rev.Kind)
+	}
+}
+
+// TestSuggestFields_AttachesHostPage: when the resolved item carries
+// geo_space_id, the revision attaches to that space's overview page.
+func TestSuggestFields_AttachesHostPage(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database) // seeds an 'overview' page on fx.spaceID
+
+	svc := NewService(store, nil)
+	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsPropose: true}})
+	svc.SetCustomFields(&fakeFieldReader{})
+	svc.SetEntityResolver(&fakeEntityResolver{item: resolver.ResolvedItem{
+		Type:     "university",
+		ID:       fx.spaceID.String(),
+		Metadata: map[string]any{"geo_space_id": fx.spaceID.String()},
+	}})
+
+	ops := []FieldOp{{
+		Op: OpProposeField, GroupSlug: "g", EntityType: "university",
+		Field: &FieldDefInput{Key: "k", Label: "K", FieldType: customfields.FieldTypeText},
+	}}
+
+	revID, _, err := svc.SuggestFields(ctx, fx.userID, "university", fx.spaceID, ops, "propose field", false)
+	if err != nil {
+		t.Fatalf("SuggestFields: %v", err)
+	}
+
+	rev, err := store.GetRevision(ctx, mustUUID(t, revID))
+	if err != nil {
+		t.Fatalf("GetRevision: %v", err)
+	}
+
+	if !rev.WikiPageID.Valid || rev.WikiPageID != fx.pageID {
+		t.Fatalf("expected host page %s, got %s", fx.pageID, rev.WikiPageID)
+	}
+}
+
+// TestApproveRevisionByID_AppliesOpsAndEnqueues covers the reviewer path for
+// a pending fields revision: ops apply inside the approve transaction and
+// propagation fires after commit.
+func TestApproveRevisionByID_AppliesOpsAndEnqueues(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
+
+	targetType := "university"
+	opsJSON := []byte(`[{"op":"set_value","entity_type":"university","entity_id":"` + fx.spaceID.String() +
+		`","field_key":"` + ff.key + `","value":"fall intake"}]`)
+
+	revID, err := store.SubmitRevision(ctx, pgtype.UUID{}, fx.userID, "fields", nil, opsJSON, "set intake", &targetType, fx.spaceID)
+	if err != nil {
+		t.Fatalf("SubmitRevision: %v", err)
+	}
+
+	enq := &fakeEnqueuer{}
+	buster := &fakeBuster{}
+
+	svc := NewService(store, nil)
+	svc.SetEnqueuer(enq)
+	svc.SetJCECacheBuster(buster)
+
+	if err := svc.ApproveRevisionByID(ctx, revID, fx.userID, "looks good"); err != nil {
+		t.Fatalf("ApproveRevisionByID: %v", err)
+	}
+
+	// Ops applied: cfv row written under normalized 'space' entity type.
+	var text string
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT value_text FROM custom_field_values WHERE field_id = $1 AND entity_type = 'space' AND entity_id = $2`,
+		ff.fieldID, fx.spaceID).Scan(&text); err != nil {
+		t.Fatalf("expected cfv row after approve: %v", err)
+	}
+
+	if text != "fall intake" {
+		t.Fatalf("cfv value_text: got %q", text)
+	}
+
+	if len(enq.calls) != 1 || enq.calls[0].taskType != TaskFieldsPropagate {
+		t.Fatalf("expected one %s enqueue, got %#v", TaskFieldsPropagate, enq.calls)
+	}
+
+	if len(buster.calls) != 0 {
+		t.Fatalf("direct bust must not run when enqueued: %#v", buster.calls)
+	}
+
+	// Approving again fails — revision is no longer pending.
+	if err := svc.ApproveRevisionByID(ctx, revID, fx.userID, ""); err == nil {
+		t.Fatal("expected error re-approving a non-pending revision")
+	}
+}
+
+// TestApproveRevisionByID_DirectBustFallback: when no Asynq enqueuer is
+// wired, propagation falls back to a synchronous cache bust so correctness
+// never depends on worker wiring order.
+func TestApproveRevisionByID_DirectBustFallback(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
+
+	targetType := "university"
+	opsJSON := []byte(`[{"op":"set_value","entity_type":"university","entity_id":"` + fx.spaceID.String() +
+		`","field_key":"` + ff.key + `","value":"direct"}]`)
+
+	revID, err := store.SubmitRevision(ctx, pgtype.UUID{}, fx.userID, "fields", nil, opsJSON, "set", &targetType, fx.spaceID)
+	if err != nil {
+		t.Fatalf("SubmitRevision: %v", err)
+	}
+
+	buster := &fakeBuster{}
+
+	svc := NewService(store, nil) // no enqueuer
+	svc.SetJCECacheBuster(buster)
+
+	if err := svc.ApproveRevisionByID(ctx, revID, fx.userID, ""); err != nil {
+		t.Fatalf("ApproveRevisionByID: %v", err)
+	}
+
+	if len(buster.calls) != 1 || buster.calls[0] != [2]string{"university", fx.spaceID.String()} {
+		t.Fatalf("expected direct bust for university %s, got %#v", fx.spaceID.String(), buster.calls)
+	}
+}
+
+// TestApproveRevisionByID_SchemaOpsDoNotPropagate: propose/assign-only
+// revisions apply but never enqueue wiki:fields_propagate — only
+// value-affecting ops propagate (§6 step 4).
+func TestApproveRevisionByID_SchemaOpsDoNotPropagate(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+
+	targetType := "visa_route"
+	groupSlug := "wop_" + strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:12]
+	opsJSON := []byte(`[{"op":"propose_group","entity_class":"jce_entity:visa_route","group":{"slug":"` +
+		groupSlug + `","name":"Visa Outcomes","fields":[{"key":"wop_rate","label":"Rate","field_type":"percentage"}]}}]`)
+
+	revID, err := store.SubmitRevision(ctx, pgtype.UUID{}, fx.userID, "fields", nil, opsJSON, "new group", &targetType, fx.target)
+	if err != nil {
+		t.Fatalf("SubmitRevision: %v", err)
+	}
+
+	t.Cleanup(func() {
+		database.Writer.Exec(ctx, `DELETE FROM custom_field_groups WHERE slug = $1`, groupSlug)
+	})
+
+	enq := &fakeEnqueuer{}
+	buster := &fakeBuster{}
+
+	svc := NewService(store, nil)
+	svc.SetEnqueuer(enq)
+	svc.SetJCECacheBuster(buster)
+
+	if err := svc.ApproveRevisionByID(ctx, revID, fx.userID, ""); err != nil {
+		t.Fatalf("ApproveRevisionByID: %v", err)
+	}
+
+	// The group + field + assignment landed.
+	var gid string
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT id FROM custom_field_groups WHERE slug = $1`, groupSlug).Scan(&gid); err != nil {
+		t.Fatalf("proposed group not created: %v", err)
+	}
+
+	var assigned bool
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM custom_field_group_assignments WHERE group_id = $1 AND entity_class = 'jce_entity:visa_route')`,
+		mustUUID(t, gid)).Scan(&assigned); err != nil || !assigned {
+		t.Fatalf("group assignment missing: assigned=%v err=%v", assigned, err)
+	}
+
+	if len(enq.calls) != 0 || len(buster.calls) != 0 {
+		t.Fatalf("schema-only ops must not propagate: enq=%#v bust=%#v", enq.calls, buster.calls)
+	}
+}
+
+// TestApproveRevisionByID_ContentRevision: plain content revisions approve
+// through the same revision-keyed path without touching the ops machinery.
+func TestApproveRevisionByID_ContentRevision(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+
+	revID, err := store.SubmitRevision(ctx, fx.pageID, fx.userID, "content",
+		[]byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`),
+		nil, "content edit", nil, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("SubmitRevision: %v", err)
+	}
+
+	enq := &fakeEnqueuer{}
+	svc := NewService(store, nil)
+	svc.SetEnqueuer(enq)
+
+	if err := svc.ApproveRevisionByID(ctx, revID, fx.userID, ""); err != nil {
+		t.Fatalf("ApproveRevisionByID content: %v", err)
+	}
+
+	rev, err := store.GetRevision(ctx, revID)
+	if err != nil {
+		t.Fatalf("GetRevision: %v", err)
+	}
+
+	if rev.Status != "approved" {
+		t.Fatalf("expected approved, got %s", rev.Status)
+	}
+
+	if len(enq.calls) != 0 {
+		t.Fatalf("content approval must not enqueue propagation: %#v", enq.calls)
+	}
+}
+
+// TestGetEntityFields covers the §7 schema read: group assignments resolve
+// via entity_class, stored values hydrate the fields, and manage-tier users
+// see fields as editable.
+func TestGetEntityFields(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
+
+	spaceTypeID, err := store.GetSpaceTypeID(ctx, fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetSpaceTypeID: %v", err)
+	}
+
+	// Assign the group to this space's type class and store a value.
+	if _, err := database.Writer.Exec(ctx,
+		`INSERT INTO custom_field_group_assignments (group_id, entity_class, entity_id, position)
+		 VALUES ($1, $2, NULL, 0)`, ff.groupID, "space_type:"+spaceTypeID.String()); err != nil {
+		t.Fatalf("seed assignment: %v", err)
+	}
+
+	if _, err := database.Writer.Exec(ctx,
+		`INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_text)
+		 VALUES ($1, 'space', $2, 'fall intake')`, ff.fieldID, fx.spaceID); err != nil {
+		t.Fatalf("seed cfv: %v", err)
+	}
+
+	svc := NewService(store, nil)
+	svc.SetCustomFields(customfields.NewService(database))
+	// Manage-tier user → fields reported editable despite no permission rows.
+	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsManage: true}})
+
+	dto, err := svc.GetEntityFields(ctx, fx.userID, "university", fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetEntityFields: %v", err)
+	}
+
+	if len(dto.Groups) != 1 {
+		t.Fatalf("expected 1 group, got %#v", dto.Groups)
+	}
+
+	g := dto.Groups[0]
+	if g.ID != ff.groupID.String() || g.Slug != ff.slug {
+		t.Fatalf("group identity wrong: %#v", g)
+	}
+
+	if len(g.Fields) != 1 || g.Fields[0].Key != ff.key {
+		t.Fatalf("fields wrong: %#v", g.Fields)
+	}
+
+	f := g.Fields[0]
+	if string(f.Value) != `"fall intake"` {
+		t.Fatalf("field value: got %s want %q", f.Value, `"fall intake"`)
+	}
+
+	if !f.CanEdit || !f.Visible {
+		t.Fatalf("manage-tier user should see field editable+visible: %#v", f)
+	}
+}

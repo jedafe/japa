@@ -668,6 +668,13 @@ WHERE wr.id = $1
 	return r, nil
 }
 
+// BeginTx opens a writer-pool transaction for multi-statement wiki writes —
+// used by the service's ops-approval path where the revision status flip and
+// the field-ops application must commit or roll back atomically (§80).
+func (s *Store) BeginTx(ctx context.Context) (pgx.Tx, error) {
+	return s.pool.Writer.Begin(ctx)
+}
+
 // ApproveRevisionByID marks a revision as approved by revision ID alone —
 // used by the revision-keyed review routes where the caller may not know the
 // host page (page-less ops revisions have NULL wiki_page_id, §80). Returns
@@ -681,6 +688,25 @@ func (s *Store) ApproveRevisionByID(ctx context.Context, revID, reviewerID pgtyp
 	}
 	defer tx.Rollback(ctx)
 
+	r, err := s.ApproveRevisionTx(ctx, tx, revID, reviewerID, reviewNotes)
+	if err != nil {
+		return WikiRevision{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return WikiRevision{}, fmt.Errorf("wiki: approve: commit: %w", err)
+	}
+
+	return r, nil
+}
+
+// ApproveRevisionTx is the transaction-scoped core of ApproveRevisionByID.
+// Callers supplying their own transaction (e.g. the service's
+// approve+applyOps path in service_fields.go) share one atomic commit between
+// the status flip and the field mutations. Marks the revision approved (it
+// must be pending), stamps the reviewer, bumps the host page's updated_at
+// when the revision is page-bound, and returns the updated row.
+func (s *Store) ApproveRevisionTx(ctx context.Context, tx pgx.Tx, revID, reviewerID pgtype.UUID, reviewNotes string) (WikiRevision, error) {
 	var notesPtr *string
 	if reviewNotes != "" {
 		notesPtr = &reviewNotes
@@ -688,7 +714,7 @@ func (s *Store) ApproveRevisionByID(ctx context.Context, revID, reviewerID pgtyp
 
 	var r WikiRevision
 
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 UPDATE wiki_revisions
 SET status = 'approved', reviewed_by = $2, reviewed_at = now(),
     hitl_reviewed_by = $2, hitl_reviewed_at = now(), hitl_review_notes = $3
@@ -721,10 +747,6 @@ UPDATE wiki_pages SET updated_at = now() WHERE id = $1
 `, r.WikiPageID); err != nil {
 			return WikiRevision{}, fmt.Errorf("wiki: approve: update page: %w", err)
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return WikiRevision{}, fmt.Errorf("wiki: approve: commit: %w", err)
 	}
 
 	return r, nil
