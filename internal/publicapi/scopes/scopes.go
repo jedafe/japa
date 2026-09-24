@@ -84,6 +84,16 @@ var ScopeCatalog = []ScopeOption{
 		Description: "Read aggregate destination briefs (premium endpoint)",
 	},
 	{
+		Value:       "api.read.safety",
+		Label:       "Read Scam Alerts",
+		Description: "Read confirmed scam reports and the scam alert schema",
+	},
+	{
+		Value:       "api.read.search",
+		Label:       "Semantic Search",
+		Description: "Semantic (embedding) search over indexed content and spaces (premium endpoint)",
+	},
+	{
 		Value:       "agent.use",
 		Label:       "Use Agent Tools",
 		Description: "Call MCP agent tools via /api/v1/mcp (read-only tool set for API keys)",

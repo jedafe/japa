@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -323,6 +324,12 @@ type Service struct {
 	moat           *MoatReaders
 	cache          valkeycompat.Cmdable
 	settingsReader rateLimitSettingsReader
+	// Phase 2 agent-data readers (feeds, scam alerts, semantic search) and
+	// the sqlc queries used for tag-feed cursors and search hit resolution.
+	feedReader       FeedReader
+	safetyReader     SafetyReader
+	semanticSearcher SemanticSearcher
+	queries          *gen.Queries
 }
 
 // NewService creates a Service with the given store.

@@ -58,6 +58,12 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // SetEmbedder injects the embedding generator (AI gateway adapter).
 func (s *Service) SetEmbedder(e EmbeddingGenerator) { s.embedder = e }
 
+// EmbedderConfigured reports whether an embedding provider is wired.
+// The public semantic-search endpoint uses this to answer 503 honestly —
+// Retrieve returns nil, nil without an embedder and cannot be distinguished
+// from a legitimately empty result set.
+func (s *Service) EmbedderConfigured() bool { return s.embedder != nil }
+
 // SetEnqueuer injects the Asynq task enqueuer for re-index jobs.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
