@@ -1137,6 +1137,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// University course catalog/offerings for the JCE course resolver.
 	universityCourseStore := university_courses.NewStore(database)
 	universityCourseService := university_courses.NewService(universityCourseStore)
+	universityCourseHandlers := university_courses.NewHandlers(universityCourseService, spaceService)
 
 	universityService.SetMediaUploader(mediaService)
 	universityService.SetSpaceLogoUpdater(spaceService)
@@ -3451,6 +3452,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Section 39 line 152: comparison matrix link redirects to the
 			// /compare/universities picker with this university pre-selected.
 			r.Get("/universities/{slug}/compare", universitiesHandlers.CompareUniversities)
+			// Section 39: institutional course offerings — Programs tab + the
+			// public offering detail page at /universities/{slug}/courses/{offeringSlug}.
+			r.Get("/universities/{slug}/courses", universityCourseHandlers.ListUniversityCourses)
+			r.Get("/universities/{slug}/courses/{offeringSlug}", universityCourseHandlers.GetUniversityCourse)
 
 			// University admin CRUD (P5.6 — Task 11, catalog paths)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
@@ -3472,6 +3477,33 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/universities/{id}/status", universitiesHandlers.UpdateUniversityStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Post("/admin/universities/bulk-import", universitiesHandlers.BulkImportUniversities)
+
+			// University course catalog + offerings admin CRUD (Section 39).
+			// Distinct from /admin/university/* (Japa University creator tracks,
+			// ADR-063): these manage institutional degree programs and are
+			// gated by the universities.course_catalog/offering.* nodes.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.list")).
+				Get("/admin/course-catalog", universityCourseHandlers.AdminListCatalog)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.create")).
+				Post("/admin/course-catalog", universityCourseHandlers.AdminCreateCatalog)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.view")).
+				Get("/admin/course-catalog/{id}", universityCourseHandlers.AdminGetCatalog)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.update")).
+				Patch("/admin/course-catalog/{id}", universityCourseHandlers.AdminUpdateCatalog)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.delete")).
+				Delete("/admin/course-catalog/{id}", universityCourseHandlers.AdminDeleteCatalog)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.list")).
+				Get("/admin/course-offerings", universityCourseHandlers.AdminListOfferings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.create")).
+				Post("/admin/course-offerings", universityCourseHandlers.AdminCreateOffering)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.update")).
+				Post("/admin/course-offerings/bulk", universityCourseHandlers.AdminBulkOfferings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.view")).
+				Get("/admin/course-offerings/{id}", universityCourseHandlers.AdminGetOffering)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.update")).
+				Patch("/admin/course-offerings/{id}", universityCourseHandlers.AdminUpdateOffering)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.delete")).
+				Delete("/admin/course-offerings/{id}", universityCourseHandlers.AdminDeleteOffering)
 
 			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
 			wsHub := websocket.NewHub()
@@ -4519,6 +4551,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/me/api-keys/{id}/ip-allowlist", publicAPIHandlers.AddAllowedIP)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
 				Delete("/me/api-keys/{id}/ip-allowlist/{ipId}", publicAPIHandlers.RemoveAllowedIP)
+
+			// Browser-extension tokens (Section 47 v1.3) — narrow-scoped keys
+			// minted for apps/extension; revocation reuses DELETE /me/api-keys/{id}.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+				Get("/me/extension-tokens", publicAPIHandlers.ListExtensionTokens)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+				Post("/me/extension-tokens", publicAPIHandlers.CreateExtensionToken)
 
 			// Public API resource endpoints (Section 47 — api.japaconnect.com).
 			// Gated by API key auth via X-API-Key header. These are read-only

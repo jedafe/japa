@@ -70,6 +70,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Semantic search is unavailable")
 	case errors.Is(err, ErrMissingQuery):
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "q query parameter is required")
+	case errors.Is(err, ErrInvalidInstallID):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_install_id", "install_id must be a UUID")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -142,6 +144,53 @@ func (h *Handlers) CreateKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.Service.CreateAPIKey(r.Context(), user.UserID, input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": resp})
+}
+
+// ListExtensionTokens returns the authenticated user's extension-scoped
+// API keys (name prefix "extension:").
+// GET /api/v1/me/extension-tokens.
+func (h *Handlers) ListExtensionTokens(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	keys, err := h.Service.ListExtensionTokens(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": keys})
+}
+
+// CreateExtensionToken mints a narrow-scoped API key for the browser
+// extension and returns the full secret once.
+// POST /api/v1/me/extension-tokens. Body: {"install_id": "<uuid>"?}.
+func (h *Handlers) CreateExtensionToken(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		InstallID string `json:"install_id"`
+	}
+	// Empty body is valid — install_id is optional.
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+			return
+		}
+	}
+
+	resp, err := h.Service.CreateExtensionToken(r.Context(), user.UserID, input.InstallID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
