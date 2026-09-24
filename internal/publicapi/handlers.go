@@ -3,6 +3,7 @@ package publicapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -182,12 +183,12 @@ func (h *Handlers) CreateExtensionToken(w http.ResponseWriter, r *http.Request) 
 	var input struct {
 		InstallID string `json:"install_id"`
 	}
-	// Empty body is valid — install_id is optional.
-	if r.Body != nil && r.ContentLength != 0 {
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
-			return
-		}
+	// Empty body is valid — install_id is optional. ContentLength is -1 for
+	// chunked/unknown-length bodies, so an absent body can still reach the
+	// decoder; io.EOF means "no JSON sent", not malformed JSON.
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
 	}
 
 	resp, err := h.Service.CreateExtensionToken(r.Context(), user.UserID, input.InstallID)

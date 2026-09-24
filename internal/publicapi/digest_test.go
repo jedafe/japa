@@ -20,14 +20,14 @@ import (
 
 // stubIntelReader satisfies IntelReader for digest tests.
 type stubIntelReader struct {
-	listFn func(ctx context.Context, spaceID pgtype.UUID, limit int32) ([]IntelDigestItem, error)
+	listFn func(ctx context.Context, viewerID, spaceID pgtype.UUID, limit int32) ([]IntelDigestItem, error)
 }
 
-func (s stubIntelReader) ListRecentForSpace(ctx context.Context, spaceID pgtype.UUID, limit int32) ([]IntelDigestItem, error) {
+func (s stubIntelReader) ListRecentForSpace(ctx context.Context, viewerID, spaceID pgtype.UUID, limit int32) ([]IntelDigestItem, error) {
 	if s.listFn == nil {
 		return nil, nil
 	}
-	return s.listFn(ctx, spaceID, limit)
+	return s.listFn(ctx, viewerID, spaceID, limit)
 }
 
 // geoFieldsDBTX stubs GetUserGeoProfileFields (QueryRow) with the given
@@ -100,7 +100,7 @@ func TestDigestHappyPath(t *testing.T) {
 		},
 	})
 	svc.SetIntelReader(stubIntelReader{
-		listFn: func(_ context.Context, dest pgtype.UUID, _ int32) ([]IntelDigestItem, error) {
+		listFn: func(_ context.Context, _ pgtype.UUID, dest pgtype.UUID, _ int32) ([]IntelDigestItem, error) {
 			if dest != spaceID {
 				t.Fatalf("intel queried for wrong space: %v", dest)
 			}
@@ -194,7 +194,7 @@ func TestDigestScamDisabled(t *testing.T) {
 	}})
 	svc.SetSafetyReader(stubSafetyReader{disabled: true})
 	svc.SetIntelReader(stubIntelReader{
-		listFn: func(_ context.Context, _ pgtype.UUID, _ int32) ([]IntelDigestItem, error) {
+		listFn: func(_ context.Context, _ pgtype.UUID, _ pgtype.UUID, _ int32) ([]IntelDigestItem, error) {
 			return []IntelDigestItem{{ID: "i1", Kind: "job", Title: "Job"}}, nil
 		},
 	})

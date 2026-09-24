@@ -52,6 +52,7 @@
 	let selectedScopes = $state<string[]>([]);
 	let creating = $state(false);
 	let connecting = $state(false);
+	let installId = $state('');
 	let error = $state<string | null>(null);
 
 	let revealOpen = $state(false);
@@ -113,7 +114,8 @@
 	async function doConnectExtension() {
 		connecting = true;
 		error = null;
-		const res = await createExtensionToken();
+		const install_id = installId.trim();
+		const res = await createExtensionToken(install_id ? { install_id } : undefined);
 		connecting = false;
 		if (res.error) {
 			error = res.error.message;
@@ -288,6 +290,12 @@
 	<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('settings.apikeys.connect_extension')}</p>
 		<p class="mb-3 text-xs text-[var(--color-muted)]">{t('settings.apikeys.connect_extension_hint')}</p>
+		<input
+			type="text"
+			bind:value={installId}
+			placeholder={t('settings.apikeys.install_id')}
+			class="mb-3 w-full max-w-md rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)]"
+		/>
 		<button
 			type="button"
 			disabled={connecting}

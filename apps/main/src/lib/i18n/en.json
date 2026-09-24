@@ -2613,6 +2613,7 @@
 	"settings.apikeys.done": "Done",
 	"settings.apikeys.empty_body": "Create a key to access the API programmatically.",
 	"settings.apikeys.empty_title": "No API keys",
+	"settings.apikeys.install_id": "Install ID (optional — from the extension's settings panel)",
 	"settings.apikeys.loading": "Loading…",
 	"settings.apikeys.name": "Key name",
 	"settings.apikeys.prefix": "Prefix",

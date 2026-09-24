@@ -91,3 +91,34 @@ func TestOptionalScopeKeyed(t *testing.T) {
 		}
 	}
 }
+
+func TestAnonymousRateLimit(t *testing.T) {
+	// The inner limiter must run for anonymous requests but be skipped
+	// entirely for keyed ones — stacking it would cap a keyed caller at
+	// the loose IP limit below its tier.
+	var innerCalls int
+	inner := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			innerCalls++
+			next.ServeHTTP(w, r)
+		})
+	}
+	handler := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }
+
+	r := chi.NewRouter()
+	r.With(AnonymousRateLimit(inner)).Get("/feeds/{name}", handler)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest("GET", "/feeds/popular", nil))
+	if innerCalls != 1 {
+		t.Fatalf("anonymous: inner limiter ran %d times, want 1", innerCalls)
+	}
+
+	r2 := chi.NewRouter()
+	r2.Use(withKey("api.read.content"))
+	r2.With(AnonymousRateLimit(inner)).Get("/feeds/{name}", handler)
+	rec = httptest.NewRecorder()
+	r2.ServeHTTP(rec, httptest.NewRequest("GET", "/feeds/popular", nil))
+	if innerCalls != 1 {
+		t.Fatalf("keyed: inner limiter ran %d times, want still 1", innerCalls)
+	}
+}

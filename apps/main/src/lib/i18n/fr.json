@@ -2538,6 +2538,7 @@
 	"settings.apikeys.done": "Terminé",
 	"settings.apikeys.empty_body": "Créez une clé pour accéder à l'API par programmation.",
 	"settings.apikeys.empty_title": "Aucune clé API",
+	"settings.apikeys.install_id": "ID d'installation (optionnel — dans les paramètres de l'extension)",
 	"settings.apikeys.loading": "Chargement…",
 	"settings.apikeys.name": "Nom de la clé",
 	"settings.apikeys.prefix": "Préfixe",

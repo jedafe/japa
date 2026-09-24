@@ -22,6 +22,8 @@ export function contentHref(item: { slug: string; content_type?: string | null }
 	return `${prefix}/${item.slug}`;
 }
 
+// Single site-origin override for dev/staging builds — also drives the API
+// base (lib/api.ts) and MV3 host_permissions (wxt.config.ts).
 export const SITE_ORIGIN = (import.meta.env.WXT_JC_SITE_URL ?? 'https://japa.to').replace(/\/+$/, '');
 
 export function siteUrl(path: string): string {

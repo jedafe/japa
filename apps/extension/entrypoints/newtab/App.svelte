@@ -146,7 +146,7 @@
 			<h1>Your migration feed, on every new tab</h1>
 			<p>
 				Visa updates, destination intel, scam alerts, and community activity for where you're
-				head­ed — personalized once you connect your JapaConnect account.
+				headed — personalized once you connect your JapaConnect account.
 			</p>
 			<button class="primary" onclick={() => (showSettings = true)}>Connect your account</button>
 		</section>

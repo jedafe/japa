@@ -2408,8 +2408,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIService.SetSafetyReader(scamAlertService)
 	publicAPIService.SetSemanticSearcher(ragService)
 	// Extension digest (Section 47 v1.3): destination intel via the radar's
-	// promoted-domain queries with null keyset cursors (latest-N merge).
-	publicAPIService.SetIntelReader(&intelDigestReader{q: gen.New(database.Reader)})
+	// promoted-domain queries with null keyset cursors (latest-N merge),
+	// honouring the viewer's blocked intel sources like the radar does.
+	publicAPIService.SetIntelReader(&intelDigestReader{
+		q:            gen.New(database.Reader),
+		intelStores:  intelStores,
+		intelSources: intelSourcesService,
+	})
 	publicAPIService.SetQueries(gen.New(database.Reader))
 	mcpServer.SetTierResolver(publicAPIService) // premium MCP tool gates mirror RequireTier
 	// Agent data tools: the moat facade reaches the ai executor's
@@ -4672,9 +4677,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/public/feeds/space/{slug}", publicAPIHandlers.GetSpaceFeed)
 				// feeds/popular also serves anonymous callers (extension
 				// new-tab before connect) — OptionalScope allows name=popular
-				// through without a key; IP-based loose rate limit applies
-				// since the per-key limiter only covers keyed requests.
-				r.With(mw.RateLimit(vkClient.Redis(), "loose"), publicapi.OptionalScope("api.read.content", "popular")).
+				// through without a key. The loose IP limiter applies to
+				// anonymous requests only; keyed callers keep their per-key
+				// tier limiter (the two must not stack).
+				r.With(publicapi.AnonymousRateLimit(mw.RateLimit(vkClient.Redis(), "loose")), publicapi.OptionalScope("api.read.content", "popular")).
 					Get("/public/feeds/{name}", publicAPIHandlers.GetExploreFeed)
 				r.With(publicapi.RequireScope("api.read.me")).
 					Get("/public/me/feed", publicAPIHandlers.GetMyFeed)

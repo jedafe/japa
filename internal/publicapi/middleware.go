@@ -127,6 +127,24 @@ func OptionalScope(scope string, anonNames ...string) func(http.Handler) http.Ha
 	}
 }
 
+// AnonymousRateLimit applies inner only to requests without a validated
+// API key. The feeds/{name} route uses it so anonymous callers get the
+// loose IP-based limit while keyed callers keep only their per-key tier
+// limiter — the two must not stack (a shared-NAT keyed caller would be
+// capped below its tier).
+func AnonymousRateLimit(inner func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		limited := inner(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if APIKeyFromContext(r.Context()) == nil {
+				limited.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // HasScope checks if a scope list includes the given scope or a wildcard match.
 func HasScope(scopes []string, required string) bool {
 	for _, s := range scopes {
