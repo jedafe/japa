@@ -75,18 +75,27 @@ type WikiDestinationDTO struct {
 	PageCount int64  `json:"page_count"`
 }
 
-// WikiRevisionDTO is the API response shape for a revision.
+// WikiRevisionDTO is the API response shape for a revision. The §80 community
+// field ops columns (kind/ops/target_*) are included so the admin review
+// queue can render a field-level diff and the entity revision history can
+// show structured edits.
 // //nolint:revive // exported: stutter naming is intentional
 type WikiRevisionDTO struct {
 	ID          string          `json:"id"`
 	Status      string          `json:"status"`
+	Kind        string          `json:"kind"`
 	Content     json.RawMessage `json:"content,omitempty"`
+	Ops         json.RawMessage `json:"ops,omitempty"`
 	Summary     string          `json:"summary,omitempty"`
 	AiGenerated bool            `json:"ai_generated"`
-	SubmittedBy string          `json:"submitted_by,omitempty"`
-	ReviewedBy  string          `json:"reviewed_by,omitempty"`
-	ReviewedAt  string          `json:"reviewed_at,omitempty"`
-	CreatedAt   string          `json:"created_at"`
+
+	TargetEntityType string `json:"target_entity_type,omitempty"`
+	TargetEntityID   string `json:"target_entity_id,omitempty"`
+
+	SubmittedBy string `json:"submitted_by,omitempty"`
+	ReviewedBy  string `json:"reviewed_by,omitempty"`
+	ReviewedAt  string `json:"reviewed_at,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // SubmitRevisionInput is the request body for POST /wiki/:space_slug/:page_slug/revisions.
@@ -157,6 +166,13 @@ type Service struct {
 	vk         valkeycompat.Cmdable
 	checker    FeatureChecker
 	dispatcher AIDispatcher
+
+	// §80 community field ops collaborators (see service_fields.go):
+	fields         fieldReadStore    // submit-time custom-field reads
+	entityResolver entityResolver    // JCE item_ref resolver registry
+	jceBuster      jceCacheBuster    // JCE comparison cache invalidation
+	enqueuer       TaskEnqueuer      // Asynq enqueue for wiki:fields_propagate
+	perms          permissionChecker // per-op RBAC node checks
 }
 
 // NewService creates a wiki service.
@@ -175,6 +191,32 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // SetDispatcher injects the AI Gateway dispatcher for draft generation.
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
+
+// SetCustomFields injects the custom-fields read store used for submit-time
+// ops validation (field existence, can_edit) and the entity fields schema
+// read (§80 Community Field Ops). Implemented by *customfields.Service.
+func (s *Service) SetCustomFields(cfs fieldReadStore) { s.fields = cfs }
+
+// SetEntityResolver injects the JCE item_ref resolver registry used by
+// SuggestFields to verify the target entity exists and to find its host wiki
+// page via the resolved item's geo_space_id metadata. Satisfied by
+// *resolver.Registry (wired in server.go).
+func (s *Service) SetEntityResolver(r entityResolver) { s.entityResolver = r }
+
+// SetJCECacheBuster injects the comparison cache buster invoked after an ops
+// revision is approved — either directly (when no Asynq enqueuer is wired) or
+// from the wiki:fields_propagate task via PropagateFields. Implemented by
+// *comparison.Service.
+func (s *Service) SetJCECacheBuster(b jceCacheBuster) { s.jceBuster = b }
+
+// SetEnqueuer injects the Asynq task enqueuer used to fire-and-forget
+// wiki:fields_propagate after an ops revision is approved (Rule 8).
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetPermissionChecker injects the RBAC resolver used for the per-op grant
+// map in SubmitFieldOps (wiki.fields.edit/propose/manage, §10). Shares the
+// permissionChecker shape the wiki Handlers already use.
+func (s *Service) SetPermissionChecker(pc permissionChecker) { s.perms = pc }
 
 // Enabled checks whether the wiki feature is enabled for the given platform.
 // Delegates to the features.Checker (feature_flags table) when available,
@@ -450,8 +492,8 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 		}()
 	}
 
-	// Content-only submission for now — Task 6 wires real kind/ops/target
-	// values when field ops land in SubmitRevisionInput.
+	// Content-only path — structured field ops submitted alongside prose are
+	// routed through SubmitFieldOps (§80 community field ops).
 	revID, err := s.store.SubmitRevision(ctx, page.ID, userID, "content", input.Content, nil, input.Summary, nil, pgtype.UUID{})
 	if err != nil {
 		if errors.Is(err, ErrDuplicateContent) {
@@ -653,11 +695,24 @@ func revisionToDTO(r WikiRevision) WikiRevisionDTO {
 	dto := WikiRevisionDTO{
 		ID:          r.ID.String(),
 		Status:      r.Status,
+		Kind:        r.Kind,
 		AiGenerated: r.AiGenerated,
 		CreatedAt:   formatTs(r.CreatedAt),
 	}
 	if len(r.Content) > 0 {
 		dto.Content = json.RawMessage(r.Content)
+	}
+
+	if len(r.Ops) > 0 {
+		dto.Ops = json.RawMessage(r.Ops)
+	}
+
+	if r.TargetEntityType != nil {
+		dto.TargetEntityType = *r.TargetEntityType
+	}
+
+	if r.TargetEntityID.Valid {
+		dto.TargetEntityID = r.TargetEntityID.String()
 	}
 
 	if r.Summary != nil {
