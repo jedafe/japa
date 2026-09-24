@@ -98,25 +98,30 @@ WHERE id = @id AND content_id = @content_id AND deleted_at IS NULL;
 -- =====================
 
 -- name: CreateComparisonDimension :one
-INSERT INTO comparison_dimensions (content_id, type_id, label, dimension_type, position) VALUES (@content_id, sqlc.narg(type_id), @label, @dimension_type, @position)
-RETURNING id, content_id, type_id, label, dimension_type, position, created_at, deleted_at;
+INSERT INTO comparison_dimensions (content_id, type_id, label, dimension_type, position, source_field_id) VALUES (@content_id, sqlc.narg(type_id), @label, @dimension_type, @position, sqlc.narg(source_field_id))
+RETURNING id, content_id, type_id, label, dimension_type, position, source_field_id, created_at, deleted_at;
 
 -- name: ListComparisonDimensionsByContent :many
-SELECT id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
-FROM comparison_dimensions
-WHERE content_id = @content_id AND deleted_at IS NULL
-ORDER BY position ASC, created_at ASC;
+-- LEFT JOINs custom_fields so the matrix assembler gets the source field key
+-- without a second lookup (§30 Sub-spec 5 entity-field hydration).
+SELECT d.id, d.content_id, d.type_id, d.label, d.dimension_type, d.position,
+ d.source_field_id, cf.key AS source_field_key, d.created_at, d.deleted_at
+FROM comparison_dimensions d
+LEFT JOIN custom_fields cf ON cf.id = d.source_field_id
+WHERE d.content_id = @content_id AND d.deleted_at IS NULL
+ORDER BY d.position ASC, d.created_at ASC;
 
 -- name: GetComparisonDimensionByID :one
-SELECT id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
+SELECT id, content_id, type_id, label, dimension_type, position, source_field_id, created_at, deleted_at
 FROM comparison_dimensions
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: UpdateComparisonDimension :one
 UPDATE comparison_dimensions
-SET label = @label, dimension_type = @dimension_type, position = @position
+SET label = @label, dimension_type = @dimension_type, position = @position,
+ source_field_id = sqlc.narg(source_field_id)
 WHERE id = @id AND deleted_at IS NULL
-RETURNING id, content_id, type_id, label, dimension_type, position, created_at, deleted_at;
+RETURNING id, content_id, type_id, label, dimension_type, position, source_field_id, created_at, deleted_at;
 
 -- name: DeleteComparisonDimension :exec
 UPDATE comparison_dimensions SET deleted_at = now()
@@ -417,3 +422,15 @@ WHERE c.content_type = 'comparison'
  )
 ORDER BY c.title ASC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================
+-- item_ref propagation lookup (§30 Sub-spec 5)
+-- =====================
+
+-- name: ListComparisonContentIDsByItemRef :many
+-- Finds comparison contents containing an item whose item_ref matches
+-- {type, id} exactly (§30 Sub-spec 5 propagation).
+SELECT DISTINCT content_id
+FROM comparison_items
+WHERE deleted_at IS NULL
+  AND item_ref @> jsonb_build_object('type', @entity_type::text, 'id', @entity_id::text);

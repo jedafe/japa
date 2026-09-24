@@ -790,6 +790,7 @@ type ComparisonDimension struct {
 	TypeID        pgtype.UUID        `json:"type_id"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 	Slug          *string            `json:"slug"`
+	SourceFieldID pgtype.UUID        `json:"source_field_id"`
 }
 
 type ComparisonItem struct {
@@ -4423,25 +4424,30 @@ type WikiPage struct {
 	FreshnessScore     int32              `json:"freshness_score"`
 	OverrideSource     string             `json:"override_source"`
 	EditorialOverrides []byte             `json:"editorial_overrides"`
+	DataEntityType     *string            `json:"data_entity_type"`
 }
 
 type WikiRevision struct {
-	ID              pgtype.UUID        `json:"id"`
-	WikiPageID      pgtype.UUID        `json:"wiki_page_id"`
-	Content         []byte             `json:"content"`
-	Summary         *string            `json:"summary"`
-	Status          string             `json:"status"`
-	SubmittedBy     pgtype.UUID        `json:"submitted_by"`
-	ReviewedBy      pgtype.UUID        `json:"reviewed_by"`
-	ReviewedAt      pgtype.Timestamptz `json:"reviewed_at"`
-	AiGenerated     bool               `json:"ai_generated"`
-	AiModel         *string            `json:"ai_model"`
-	AiPromptHash    *string            `json:"ai_prompt_hash"`
-	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
-	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
-	HitlReviewNotes *string            `json:"hitl_review_notes"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	ContentHash     *string            `json:"content_hash"`
+	ID               pgtype.UUID        `json:"id"`
+	WikiPageID       pgtype.UUID        `json:"wiki_page_id"`
+	Content          []byte             `json:"content"`
+	Summary          *string            `json:"summary"`
+	Status           string             `json:"status"`
+	SubmittedBy      pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	AiGenerated      bool               `json:"ai_generated"`
+	AiModel          *string            `json:"ai_model"`
+	AiPromptHash     *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy   pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt   pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes  *string            `json:"hitl_review_notes"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ContentHash      *string            `json:"content_hash"`
+	Kind             string             `json:"kind"`
+	Ops              []byte             `json:"ops"`
+	TargetEntityType *string            `json:"target_entity_type"`
+	TargetEntityID   pgtype.UUID        `json:"target_entity_id"`
 }
 
 type WsTicket struct {
