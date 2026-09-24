@@ -183,3 +183,200 @@ func DestinationBriefHandler(deps *ToolDeps) ToolHandler {
 		return successToolResult(map[string]any{"brief": brief}), nil
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2 — feeds, scam alerts, semantic search
+// Ref: docs/superpowers/specs/2026-09-24-agent-data-api-phase2-design.md
+// ---------------------------------------------------------------------------
+
+type feedsExploreArgs struct {
+	Name      string `json:"name,omitempty"`
+	SpaceSlug string `json:"space_slug,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+	Sort      string `json:"sort,omitempty"`
+	Limit     int32  `json:"limit,omitempty"`
+	Offset    int32  `json:"offset,omitempty"`
+	Cursor    string `json:"cursor,omitempty"`
+}
+
+// FeedsExploreHandler implements the feeds.explore agent tool — the anonymous
+// explore feeds plus the tag and space variants, same read path as
+// GET /public/feeds/*. Variant selection: tag → tag feed (cursor-paginated),
+// space_slug → space feed (resolved as the calling user so member-only items
+// match the web feed), otherwise the named explore feed.
+func FeedsExploreHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.AgentData == nil {
+			return errorToolResult("feeds_explore_unavailable", "feeds are not configured"), nil
+		}
+		var a feedsExploreArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		if a.Limit <= 0 || a.Limit > 50 {
+			a.Limit = 20
+		}
+		if a.Offset < 0 {
+			a.Offset = 0
+		}
+		tag := strings.TrimSpace(a.Tag)
+		slug := strings.TrimSpace(a.SpaceSlug)
+		sort := strings.TrimSpace(a.Sort)
+		switch {
+		case tag != "":
+			feed, err := deps.AgentData.TagFeed(ctx, tag, strings.TrimSpace(a.Cursor), a.Limit)
+			if err != nil {
+				return errorToolResult("feeds_explore_failed", err.Error()), nil
+			}
+			return successToolResult(map[string]any{"feed": feed}), nil
+		case slug != "":
+			feed, err := deps.AgentData.SpaceFeed(ctx, userID, slug, sort, a.Limit, a.Offset)
+			if err != nil {
+				return errorToolResult("feeds_explore_failed", err.Error()), nil
+			}
+			return successToolResult(map[string]any{"feed": feed}), nil
+		default:
+			name := strings.TrimSpace(a.Name)
+			if name == "" {
+				name = "popular"
+			}
+			feed, err := deps.AgentData.ExploreFeed(ctx, name, sort, a.Limit, a.Offset)
+			if err != nil {
+				return errorToolResult("feeds_explore_failed", err.Error()), nil
+			}
+			return successToolResult(map[string]any{"feed": feed}), nil
+		}
+	}
+}
+
+type feedsForYouArgs struct {
+	Sort   string `json:"sort,omitempty"`
+	Limit  int32  `json:"limit,omitempty"`
+	Offset int32  `json:"offset,omitempty"`
+}
+
+// FeedsForYouHandler implements the feeds.for_you agent tool — the calling
+// user's ranked for-you feed, same read path as GET /public/me/feed. The
+// caller identity is the tool-call userID (session user or API-key owner).
+func FeedsForYouHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.AgentData == nil {
+			return errorToolResult("feeds_for_you_unavailable", "feeds are not configured"), nil
+		}
+		if !userID.Valid {
+			return errorToolResult("unauthenticated", "feeds.for_you requires an authenticated caller"), nil
+		}
+		var a feedsForYouArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		if a.Limit <= 0 || a.Limit > 50 {
+			a.Limit = 20
+		}
+		if a.Offset < 0 {
+			a.Offset = 0
+		}
+		feed, err := deps.AgentData.MyFeed(ctx, userID, strings.TrimSpace(a.Sort), a.Limit, a.Offset)
+		if err != nil {
+			return errorToolResult("feeds_for_you_failed", err.Error()), nil
+		}
+		return successToolResult(map[string]any{"feed": feed}), nil
+	}
+}
+
+type scamListArgs struct {
+	DestSpaceID string `json:"destination_space_id,omitempty"`
+	ScamType    string `json:"scam_type,omitempty"`
+	Limit       int32  `json:"limit,omitempty"`
+	Offset      int32  `json:"offset,omitempty"`
+}
+
+// ScamListHandler implements the scam.list agent tool — confirmed scam
+// reports, same read path as GET /public/scam-alerts.
+func ScamListHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.AgentData == nil {
+			return errorToolResult("scam_list_unavailable", "scam alerts are not configured"), nil
+		}
+		var a scamListArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		if a.Limit <= 0 || a.Limit > 50 {
+			a.Limit = 20
+		}
+		if a.Offset < 0 {
+			a.Offset = 0
+		}
+		var dest pgtype.UUID
+		if a.DestSpaceID != "" {
+			if err := dest.Scan(strings.TrimSpace(a.DestSpaceID)); err != nil {
+				return errorToolResult("invalid_arguments", "invalid destination_space_id"), nil
+			}
+		}
+		alerts, total, err := deps.AgentData.ListScamAlerts(ctx, dest, strings.TrimSpace(a.ScamType), a.Limit, a.Offset)
+		if err != nil {
+			return errorToolResult("scam_list_failed", err.Error()), nil
+		}
+		return successToolResult(map[string]any{"alerts": alerts, "total": total}), nil
+	}
+}
+
+type scamGetArgs struct {
+	ID string `json:"id"`
+}
+
+// ScamGetHandler implements the scam.get agent tool — a single confirmed
+// scam report by ID, same read path as GET /public/scam-alerts/{id}.
+func ScamGetHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.AgentData == nil {
+			return errorToolResult("scam_get_unavailable", "scam alerts are not configured"), nil
+		}
+		var a scamGetArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		id, err := scanUUID(strings.TrimSpace(a.ID))
+		if err != nil {
+			return errorToolResult("invalid_alert_id", "id is required and must be a valid UUID"), nil
+		}
+		alert, err := deps.AgentData.GetScamAlert(ctx, id)
+		if err != nil {
+			return errorToolResult("scam_get_failed", err.Error()), nil
+		}
+		return successToolResult(map[string]any{"alert": alert}), nil
+	}
+}
+
+type semanticSearchArgs struct {
+	Query string `json:"query"`
+	Lang  string `json:"lang,omitempty"`
+	Space string `json:"space,omitempty"`
+	Limit int32  `json:"limit,omitempty"`
+}
+
+// SemanticSearchHandler implements the search.semantic agent tool — pgvector
+// retrieval over indexed entities, same read path (and Valkey result cache)
+// as GET /public/search/semantic. Premium: the MCP gate enforces the pro
+// tier, mirroring RequireTier on the REST route.
+func SemanticSearchHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.AgentData == nil {
+			return errorToolResult("search_semantic_unavailable", "semantic search is not configured"), nil
+		}
+		var a semanticSearchArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		query := strings.TrimSpace(a.Query)
+		if query == "" {
+			return errorToolResult("missing_query", "query is required"), nil
+		}
+		result, err := deps.AgentData.SemanticSearch(ctx, query, strings.TrimSpace(a.Lang), strings.TrimSpace(a.Space), a.Limit)
+		if err != nil {
+			return errorToolResult("search_semantic_failed", err.Error()), nil
+		}
+		return successToolResult(map[string]any{"result": result}), nil
+	}
+}

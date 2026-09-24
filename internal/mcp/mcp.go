@@ -84,6 +84,21 @@ var apiKeyToolGates = map[string]toolGate{
 	"visa.compare":       {scope: "api.read.visa", minTier: "pro"},
 	"university.get":     {scope: "api.read.education"},
 	"destination.brief":  {scope: "api.read.brief", minTier: "pro"},
+	// Agent data API Phase 2 (spec 2026-09-24-agent-data-api-phase2) —
+	// feeds, scam alerts, semantic search. Scopes mirror the REST routes;
+	// search.semantic is premium like its RequireTier("pro") REST gate.
+	"feeds.explore":   {scope: "api.read.content"},
+	"feeds.for_you":   {scope: "api.read.me"},
+	"scam.list":       {scope: "api.read.safety"},
+	"scam.get":        {scope: "api.read.safety"},
+	"search.semantic": {scope: "api.read.search", minTier: "pro"},
+	// Persona catalog tools are agent infrastructure, not public REST
+	// data, so they gate on agent.use itself. The RBAC persona.view
+	// filter in CatalogForUser still applies to the key's owner.
+	"persona_voices.list": {scope: agentUsePermission},
+	"persona_voices.read": {scope: agentUsePermission},
+	"personas.list":       {scope: agentUsePermission},
+	"personas.read":       {scope: agentUsePermission},
 }
 
 // SessionStore is the subset of gen.Queries the MCP server needs to create

@@ -464,6 +464,7 @@ func TestAPIKeyCallerGetsReadOnlyCatalog(t *testing.T) {
 	deps.registry.RegisterConfig("content.create", ai.ToolConfig{FunctionName: "content.create"}, "", pgtype.UUID{})
 	deps.registry.RegisterConfig("content.read", ai.ToolConfig{FunctionName: "content.read"}, "", pgtype.UUID{})
 	deps.registry.RegisterConfig("destination.brief", ai.ToolConfig{FunctionName: "destination.brief"}, "", pgtype.UUID{})
+	deps.registry.RegisterConfig("persona_voices.list", ai.ToolConfig{FunctionName: "persona_voices.list"}, "", pgtype.UUID{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp",
 		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
@@ -492,6 +493,169 @@ func TestAPIKeyCallerGetsReadOnlyCatalog(t *testing.T) {
 	}
 	if !seen["content.read"] {
 		t.Fatal("expected content.read to remain visible")
+	}
+	if !seen["persona_voices.list"] {
+		t.Fatal("expected persona_voices.list to remain visible to agent.use-scoped key")
+	}
+}
+
+// stubTierResolver is a stub publicapi.TierResolver for premium-gate tests.
+type stubTierResolver struct{ tier string }
+
+func (s stubTierResolver) ResolveUserTier(_ context.Context, _ pgtype.UUID) (string, error) {
+	return s.tier, nil
+}
+
+// apiKeyCtx marks ctx as an API-key caller carrying the given scopes.
+func apiKeyCtx(ctx context.Context, scopes ...string) context.Context {
+	ctx = context.WithValue(ctx, apiKeyCallerKey, true)
+	return publicapi.WithAPIKeyContext(ctx, &publicapi.APIKeyContext{
+		UserID: testUserID, Scopes: scopes,
+	})
+}
+
+func registerPhase2Tools(deps *testDeps) {
+	for _, name := range []string{"feeds.explore", "feeds.for_you", "scam.list", "scam.get", "search.semantic"} {
+		deps.registry.RegisterConfig(name, ai.ToolConfig{FunctionName: name}, "", pgtype.UUID{})
+	}
+}
+
+// Phase 2 (spec 2026-09-24-agent-data-api-phase2): the five new tools appear
+// in an API-key caller's catalog only when the key carries the tool's scope.
+func TestPhase2ToolGateScopeFiltering(t *testing.T) {
+	srv, deps := newTestMCP(t)
+	registerPhase2Tools(deps)
+
+	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "api.read.content")
+
+	status, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/list",
+		"params": {}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %v", status, out)
+	}
+
+	tools := out["result"].(map[string]any)["tools"].([]any)
+	seen := map[string]bool{}
+	for _, tool := range tools {
+		seen[tool.(map[string]any)["name"].(string)] = true
+	}
+
+	if !seen["feeds.explore"] {
+		t.Fatal("expected feeds.explore visible to api.read.content key")
+	}
+	for _, name := range []string{"feeds.for_you", "scam.list", "scam.get", "search.semantic"} {
+		if seen[name] {
+			t.Fatalf("tool %s leaked to under-scoped key", name)
+		}
+	}
+}
+
+// tools/call on a tool whose scope the key lacks is denied before execution.
+func TestPhase2ToolGateScopeDenial(t *testing.T) {
+	srv, deps := newTestMCP(t)
+	registerPhase2Tools(deps)
+
+	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "api.read.content")
+
+	_, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/call",
+		"params": {"name": "scam.list", "arguments": {}}
+	}`)
+
+	errObj := out["error"].(map[string]any)
+	if int(errObj["code"].(float64)) != -32602 {
+		t.Fatalf("expected -32602, got %v", errObj["code"])
+	}
+	data, _ := errObj["data"].(string)
+	if !strings.Contains(data, "api.read.safety") {
+		t.Fatalf("expected scope denial naming api.read.safety, got %q", data)
+	}
+}
+
+// search.semantic is premium: an API key carrying api.read.search still hits
+// the minTier gate when the owner resolves to regular.
+func TestPhase2SemanticTierDenialAPIKey(t *testing.T) {
+	srv, deps := newTestMCP(t)
+	registerPhase2Tools(deps)
+	srv.SetTierResolver(stubTierResolver{tier: "regular"})
+
+	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "api.read.search")
+
+	_, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/call",
+		"params": {"name": "search.semantic", "arguments": {"query": "visa"}}
+	}`)
+
+	errObj := out["error"].(map[string]any)
+	if int(errObj["code"].(float64)) != -32602 {
+		t.Fatalf("expected -32602, got %v", errObj["code"])
+	}
+	data, _ := errObj["data"].(string)
+	if !strings.Contains(data, "pro") {
+		t.Fatalf("expected tier denial naming pro, got %q", data)
+	}
+}
+
+// The minTier gate applies to JWT callers too — a regular-tier session user
+// cannot reach search.semantic even though API-key scope checks don't apply.
+func TestPhase2SemanticTierDenialJWT(t *testing.T) {
+	srv, deps := newTestMCP(t)
+	registerPhase2Tools(deps)
+	srv.SetTierResolver(stubTierResolver{tier: "regular"})
+
+	ctx := withUser(t.Context(), testUserID)
+
+	_, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/call",
+		"params": {"name": "search.semantic", "arguments": {"query": "visa"}}
+	}`)
+
+	errObj := out["error"].(map[string]any)
+	if int(errObj["code"].(float64)) != -32602 {
+		t.Fatalf("expected -32602, got %v", errObj["code"])
+	}
+	data, _ := errObj["data"].(string)
+	if !strings.Contains(data, "pro") {
+		t.Fatalf("expected tier denial naming pro, got %q", data)
+	}
+}
+
+// A pro-tier JWT caller passes the gate — the call reaches the executor
+// (which then fails only because no handler is registered in the test rig).
+func TestPhase2SemanticTierAllowed(t *testing.T) {
+	srv, deps := newTestMCP(t)
+	registerPhase2Tools(deps)
+	srv.SetTierResolver(stubTierResolver{tier: "pro"})
+	deps.registry.RegisterHandler("search.semantic", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ai.ToolResult, error) {
+		return &ai.ToolResult{Status: ai.ToolCallStatusSuccess, Content: `{"result":{"data":[]}}`}, nil
+	})
+
+	ctx := withUser(t.Context(), testUserID)
+
+	_, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/call",
+		"params": {"name": "search.semantic", "arguments": {"query": "visa"}}
+	}`)
+
+	if out["error"] != nil {
+		t.Fatalf("expected tool call to pass the gate, got %v", out["error"])
+	}
+	res := out["result"].(map[string]any)
+	if res["isError"] == true {
+		t.Fatalf("expected successful result, got %v", res)
 	}
 }
 
