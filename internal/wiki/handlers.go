@@ -76,7 +76,7 @@ type permissionChecker interface {
 // approved revision content into content_embeddings (B8, §69/ADR-069).
 // Implemented by rag.Service; nil disables RAG indexing (graceful degradation).
 type ragIndexer interface {
-	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error
 }
 
 // SetPointsChecker injects the points service for reputation checks on
@@ -623,7 +623,8 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 
 		go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 			ctx := context.Background()
-			if err := h.rag.IndexEntity(ctx, "wiki_page", pageID, string(content), language); err != nil {
+			// Wiki pages are a public corpus — no scoped visibility (§69).
+			if err := h.rag.IndexEntity(ctx, "wiki_page", pageID, "public", pgtype.UUID{}, pgtype.UUID{}, string(content), language); err != nil {
 				slog.Warn("wiki: RAG index failed on approval",
 					"page_id", pageID.String(), "error", err)
 			}

@@ -7976,8 +7976,8 @@ type assessmentRAGRetriever struct {
 	svc *rag.Service
 }
 
-func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]assessment.RAGChunk, error) {
-	chunks, err := r.svc.Retrieve(ctx, query, language, geoSpaceID)
+func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]assessment.RAGChunk, error) {
+	chunks, err := r.svc.Retrieve(ctx, query, language, geoSpaceID, viewerID)
 	if err != nil {
 		return nil, err
 	}

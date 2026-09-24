@@ -14,13 +14,19 @@
 -- =====================================================================
 
 -- name: UpsertContentEmbedding :one
-INSERT INTO content_embeddings (entity_type, entity_id, chunk_index, chunk_text, embedding, language) VALUES (@entity_type, @entity_id, @chunk_index, @chunk_text, @embedding, @language)
+-- Scoped retrieval (§69 amendment): every chunk row carries the entity's
+-- visibility/space_id/author_id so SearchContentEmbeddings can filter by
+-- the caller's view without joins. Re-index refreshes scope metadata too.
+INSERT INTO content_embeddings (entity_type, entity_id, chunk_index, chunk_text, embedding, language, visibility, space_id, author_id) VALUES (@entity_type, @entity_id, @chunk_index, @chunk_text, @embedding, @language, @visibility, @space_id, @author_id)
 
 ON CONFLICT (entity_type, entity_id, chunk_index)
 DO UPDATE SET
  chunk_text = EXCLUDED.chunk_text,
  embedding = EXCLUDED.embedding,
  language = EXCLUDED.language,
+ visibility = EXCLUDED.visibility,
+ space_id = EXCLUDED.space_id,
+ author_id = EXCLUDED.author_id,
  created_at = now()
 RETURNING *;
 
@@ -117,6 +123,19 @@ WHERE (@language::text = '' OR ce.language = @language)
  )
  ELSE true
  END
+ -- Scoped retrieval (§69 amendment): the caller sees public rows, their own
+ -- rows, members rows when authenticated, private rows when privileged, and
+ -- private space/forum_thread rows for approved member spaces. Mirrors the
+ -- content.visibility contract used by ListContents.
+ AND (
+ ce.visibility = 'public'
+ OR ce.author_id = @viewer_id
+ OR (ce.visibility = 'members' AND @viewer_id::uuid IS NOT NULL)
+ OR (ce.visibility = 'private' AND @can_see_private::boolean)
+ OR (ce.entity_type IN ('space','forum_thread')
+ AND ce.visibility = 'private'
+ AND ce.space_id = ANY(@member_space_ids::uuid[]))
+ )
 ORDER BY ce.embedding <=> @query_embedding
 LIMIT @top_k;
 
@@ -160,6 +179,14 @@ WHERE (@language::text = '' OR ce.language = @language)
  OR c.geo_space_id = sqlc.narg(geo_space_id)
  OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = sqlc.narg(geo_space_id))
  )
+ -- Scoped retrieval (§69 amendment): content-only clause — content
+ -- visibility is self-contained (no space_membership join for content).
+ AND (
+ ce.visibility = 'public'
+ OR ce.author_id = @viewer_id
+ OR (ce.visibility = 'members' AND @viewer_id::uuid IS NOT NULL)
+ OR (ce.visibility = 'private' AND @can_see_private::boolean)
+ )
 ORDER BY ce.embedding <=> @query_embedding
 LIMIT @top_k;
 
@@ -201,7 +228,9 @@ WHERE entity_type = @entity_type AND entity_id = @entity_id;
 -- =====================================================================
 
 -- name: ListPublishedContentIDsForReindex :many
-SELECT id FROM contents
+-- Scoped retrieval (§69 amendment): returns scope metadata so re-index
+-- writes correct visibility/space_id/author_id on each chunk row.
+SELECT id, visibility, space_id, author_id FROM contents
 WHERE status = 'published'
  AND deleted_at IS NULL
 ORDER BY created_at DESC
@@ -213,9 +242,14 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================================================================
 
 -- name: ListForumThreadIDsForReindex :many
-SELECT id FROM forum_threads
-WHERE deleted_at IS NULL
-ORDER BY created_at DESC
+-- Scoped retrieval: threads inherit their parent space's visibility.
+-- Threads with no space (space deleted, SET NULL) fail closed to private.
+SELECT ft.id, COALESCE(sp.visibility, 'private') AS visibility,
+ ft.space_id, ft.author_user_id
+FROM forum_threads ft
+LEFT JOIN spaces sp ON sp.id = ft.space_id
+WHERE ft.deleted_at IS NULL
+ORDER BY ft.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- =====================================================================
@@ -224,7 +258,8 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================================================================
 
 -- name: ListSpaceIDsForReindex :many
-SELECT id FROM spaces
+-- Scoped retrieval: returns each space's visibility for scope metadata.
+SELECT id, visibility FROM spaces
 WHERE status = 'active'
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -241,3 +276,41 @@ SELECT id FROM learning_tracks
 WHERE is_published = true
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================================================================
+-- Scoped retrieval (§69 amendment) — viewer scope + scope maintenance.
+-- =====================================================================
+
+-- name: ListMemberSpaceIDs :many
+-- Approved memberships only — mirrors CheckSpaceMembership
+-- (spaces.sql.go: status = 'approved'). Pending members gain no scope.
+SELECT space_id FROM space_members
+WHERE user_id = @user_id AND status = 'approved';
+
+-- name: UpdateEmbeddingScope :exec
+-- Refresh scope metadata for one entity's chunks (visibility/status
+-- transitions, thread space reassignment).
+UPDATE content_embeddings
+SET visibility = @visibility, space_id = @space_id, author_id = @author_id
+WHERE entity_type = @entity_type AND entity_id = @entity_id;
+
+-- name: UpdateThreadEmbeddingsBySpace :exec
+-- Bulk scope refresh for all forum_thread rows in a space — used when the
+-- space's visibility flips (threads inherit space visibility).
+UPDATE content_embeddings
+SET visibility = @visibility
+WHERE entity_type = 'forum_thread' AND space_id = @space_id;
+
+-- name: GetContentEmbeddingMeta :one
+-- Scope metadata + source text for the content embed worker task.
+SELECT title, body, status, visibility, space_id, author_id
+FROM contents
+WHERE id = @id AND deleted_at IS NULL;
+
+-- name: OrphanThreadEmbeddingsBySpace :exec
+-- Space deletion: threads survive via ON DELETE SET NULL, but their
+-- embedding rows must be orphaned BEFORE the delete commits (the FK makes
+-- them unmatchable afterward). Fail closed to private + clear space_id.
+UPDATE content_embeddings
+SET visibility = 'private', space_id = NULL
+WHERE entity_type = 'forum_thread' AND space_id = @space_id;

@@ -59,8 +59,11 @@ type SafetyReader interface {
 }
 
 // SemanticSearcher is the subset of rag.Service the public API needs.
+// Retrieve is caller-scoped (§69 scoped-retrieval amendment); ScopeHash
+// digests the viewer's scope so the result cache never crosses viewers.
 type SemanticSearcher interface {
-	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]rag.RetrievedChunk, error)
+	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]rag.RetrievedChunk, error)
+	ScopeHash(ctx context.Context, viewerID pgtype.UUID) string
 	EmbedderConfigured() bool
 }
 
@@ -363,7 +366,7 @@ func (s *Service) ScamAlertSchema() scamalert.SchemaOptions {
 // SemanticSearch serves GET /public/search/semantic (premium). Results are
 // cached in Valkey under jc:api_semantic:{sha256(query)}:{lang}:{spaceSlug}
 // with the api.semantic_search.cache_ttl_seconds TTL (default 300).
-func (s *Service) SemanticSearch(ctx context.Context, query, lang, spaceSlug string, limit int32) (*SemanticSearchResult, error) {
+func (s *Service) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, query, lang, spaceSlug string, limit int32) (*SemanticSearchResult, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, ErrMissingQuery
@@ -398,7 +401,10 @@ func (s *Service) SemanticSearch(ctx context.Context, query, lang, spaceSlug str
 		geoSpaceID = &space.ID
 	}
 
-	cacheKey := valkey.MustKey("api_semantic:%s:%s:%s", semanticQueryHash(query), lang, spaceSlug)
+	// The cache key folds in the caller's scope hash — scoped results must
+	// never cross viewers (§69 scoped-retrieval amendment).
+	cacheKey := valkey.MustKey("api_semantic:%s:%s:%s:%s", semanticQueryHash(query), lang, spaceSlug,
+		s.semanticSearcher.ScopeHash(ctx, viewerID))
 	if s.cache != nil {
 		if raw, err := s.cache.Get(ctx, cacheKey).Bytes(); err == nil {
 			var cached SemanticSearchResult
@@ -410,7 +416,7 @@ func (s *Service) SemanticSearch(ctx context.Context, query, lang, spaceSlug str
 		}
 	}
 
-	chunks, err := s.semanticSearcher.Retrieve(ctx, query, lang, geoSpaceID)
+	chunks, err := s.semanticSearcher.Retrieve(ctx, query, lang, geoSpaceID, viewerID)
 	if err != nil {
 		return nil, err
 	}
@@ -454,12 +460,11 @@ func sliceSemanticHits(result *SemanticSearchResult, limit int32) {
 	}
 }
 
-// semanticHit maps a retrieved chunk to the public DTO. The embedding index
-// is not visibility-scoped — ListSpaceIDsForReindex embeds every active
-// space and the content reindex embeds every published row regardless of
-// visibility — so hits are only surfaced when the entity can be verified
-// public. The second return value is false for hits that must be dropped
-// (unverifiable or non-public entity); snippet text never escapes for them.
+// semanticHit maps a retrieved chunk to the public DTO. Retrieval is
+// caller-scoped (§69 scoped-retrieval amendment), so hits are authorized
+// by the query itself — this resolver attaches title/href and drops hits
+// whose entity can no longer be resolved (deleted or inactive), which is
+// the remaining way a stale embedding row could leak.
 func (s *Service) semanticHit(ctx context.Context, c rag.RetrievedChunk) (PublicSemanticHit, bool) {
 	hit := PublicSemanticHit{
 		EntityType:  c.EntityType,
@@ -481,16 +486,25 @@ func (s *Service) semanticHit(ctx context.Context, c rag.RetrievedChunk) (Public
 		}
 		if c.EntityType == "space" {
 			space, err := s.queries.GetSpaceByID(ctx, entityID)
-			if err != nil || space.Visibility != "public" || space.Status != "active" {
+			if err != nil || space.Status != "active" {
 				return hit, false
 			}
 			title := space.Name
 			hit.Title = &title
 			href := "/space/" + space.Slug
 			hit.Href = &href
-		} else {
-			row, err := s.queries.GetPublishedContentByID(ctx, entityID)
+		} else if c.EntityType == "forum_thread" {
+			thread, err := s.queries.GetForumThreadByID(ctx, entityID)
 			if err != nil {
+				return hit, false
+			}
+			title := thread.Title
+			hit.Title = &title
+			href := "/forum/" + thread.Slug
+			hit.Href = &href
+		} else {
+			row, err := s.queries.GetContentByID(ctx, entityID)
+			if err != nil || row.Status != "published" {
 				return hit, false
 			}
 			title := row.Title

@@ -60,6 +60,30 @@ type Chunk struct {
 	Vector []float32
 }
 
+// EntityRef carries an indexable entity's identity and visibility scope
+// metadata (§69 scoped-retrieval amendment). Every chunk row stores these
+// denormalized values so retrieval filters without joins.
+type EntityRef struct {
+	Type       string
+	ID         pgtype.UUID
+	Visibility string       // 'public' | 'members' | 'private'
+	SpaceID    pgtype.UUID  // community space for space/thread entities
+	AuthorID   pgtype.UUID  // content author / thread author
+}
+
+// RetrievalScope describes what the viewer may retrieve — mirrors
+// internal/content/visibility.VisibilityFilter plus space membership:
+//   - public rows for everyone
+//   - members rows for any authenticated viewer (ViewerID valid)
+//   - the viewer's own rows always
+//   - private rows only when CanSeePrivate (privileged callers)
+//   - private space/forum_thread rows for approved member spaces
+type RetrievalScope struct {
+	ViewerID       pgtype.UUID
+	CanSeePrivate  bool
+	MemberSpaceIDs []pgtype.UUID
+}
+
 // RetrievedChunk is a search result from the HNSW cosine query.
 type RetrievedChunk struct {
 	EntityID    string
@@ -87,17 +111,21 @@ func NewStore(database *db.DB) *Store {
 
 // UpsertChunk inserts or replaces a single chunk embedding (ADR-069: UPSERT,
 // never raw INSERT — re-indexing replaces chunks, never duplicates).
-func (s *Store) UpsertChunk(ctx context.Context, entityType string, entityID pgtype.UUID, chunk Chunk, language string) error {
+// Re-indexing also refreshes the entity's scope metadata.
+func (s *Store) UpsertChunk(ctx context.Context, ref EntityRef, chunk Chunk, language string) error {
 	vec := pgvector.NewVector(chunk.Vector)
 
 	_, err := s.queries.UpsertContentEmbedding(ctx, gen.UpsertContentEmbeddingParams{
 
-		EntityType: entityType,
-		EntityID:   entityID,
+		EntityType: ref.Type,
+		EntityID:   ref.ID,
 		ChunkIndex: int32(chunk.Index), // #nosec G115 -- chunk index, bounded by chunking logic
 		ChunkText:  chunk.Text,
 		Embedding:  &vec,
 		Language:   language,
+		Visibility: ref.Visibility,
+		SpaceID:    ref.SpaceID,
+		AuthorID:   ref.AuthorID,
 	})
 	if err != nil {
 		return fmt.Errorf("rag: upsert chunk %d: %w", chunk.Index, err)
@@ -145,15 +173,20 @@ func (s *Store) CountEntityChunks(ctx context.Context, entityType string, entity
 	})
 }
 
-// PublishedContentID is a single published content ID for re-index batching.
-type PublishedContentID struct {
-	ID pgtype.UUID
+// ReindexRef is a single entity's scope metadata for re-index batching —
+// the corpus stays complete; visibility is enforced at retrieval, so every
+// re-index writes correct scope columns (§69 amendment).
+type ReindexRef struct {
+	ID         pgtype.UUID
+	Visibility string
+	SpaceID    pgtype.UUID
+	AuthorID   pgtype.UUID
 }
 
-// ListPublishedContentIDs returns a batch of published content IDs for
+// ListPublishedContentIDs returns a batch of published content refs for
 // full corpus re-indexing. Uses offset pagination to avoid loading all IDs
 // into memory at once.
-func (s *Store) ListPublishedContentIDs(ctx context.Context, limit, offset int32) ([]PublishedContentID, error) {
+func (s *Store) ListPublishedContentIDs(ctx context.Context, limit, offset int32) ([]ReindexRef, error) {
 	rows, err := s.queries.ListPublishedContentIDsForReindex(ctx, gen.ListPublishedContentIDsForReindexParams{
 
 		PageLimit:  limit,
@@ -163,19 +196,23 @@ func (s *Store) ListPublishedContentIDs(ctx context.Context, limit, offset int32
 		return nil, fmt.Errorf("rag: list published content IDs: %w", err)
 	}
 
-	results := make([]PublishedContentID, 0, len(rows))
+	results := make([]ReindexRef, 0, len(rows))
 	for _, row := range rows {
-		results = append(results, PublishedContentID{
-			ID: row,
+		results = append(results, ReindexRef{
+			ID:         row.ID,
+			Visibility: row.Visibility,
+			SpaceID:    row.SpaceID,
+			AuthorID:   row.AuthorID,
 		})
 	}
 
 	return results, nil
 }
 
-// ListForumThreadIDs returns a batch of non-deleted forum thread IDs for
+// ListForumThreadIDs returns a batch of non-deleted forum thread refs for
 // full corpus re-indexing (ADR-069 §2: forum threads are part of the corpus).
-func (s *Store) ListForumThreadIDs(ctx context.Context, limit, offset int32) ([]PublishedContentID, error) {
+// Threads inherit their parent space's visibility.
+func (s *Store) ListForumThreadIDs(ctx context.Context, limit, offset int32) ([]ReindexRef, error) {
 	rows, err := s.queries.ListForumThreadIDsForReindex(ctx, gen.ListForumThreadIDsForReindexParams{
 
 		PageLimit:  limit,
@@ -185,19 +222,22 @@ func (s *Store) ListForumThreadIDs(ctx context.Context, limit, offset int32) ([]
 		return nil, fmt.Errorf("rag: list forum thread IDs: %w", err)
 	}
 
-	results := make([]PublishedContentID, 0, len(rows))
+	results := make([]ReindexRef, 0, len(rows))
 	for _, row := range rows {
-		results = append(results, PublishedContentID{
-			ID: row,
+		results = append(results, ReindexRef{
+			ID:         row.ID,
+			Visibility: row.Visibility,
+			SpaceID:    row.SpaceID,
+			AuthorID:   row.AuthorUserID,
 		})
 	}
 
 	return results, nil
 }
 
-// ListSpaceIDs returns a batch of active space IDs for full corpus
+// ListSpaceIDs returns a batch of active space refs for full corpus
 // re-indexing (ADR-069 §2: spaces are part of the corpus).
-func (s *Store) ListSpaceIDs(ctx context.Context, limit, offset int32) ([]PublishedContentID, error) {
+func (s *Store) ListSpaceIDs(ctx context.Context, limit, offset int32) ([]ReindexRef, error) {
 	rows, err := s.queries.ListSpaceIDsForReindex(ctx, gen.ListSpaceIDsForReindexParams{
 
 		PageLimit:  limit,
@@ -207,10 +247,11 @@ func (s *Store) ListSpaceIDs(ctx context.Context, limit, offset int32) ([]Publis
 		return nil, fmt.Errorf("rag: list space IDs: %w", err)
 	}
 
-	results := make([]PublishedContentID, 0, len(rows))
+	results := make([]ReindexRef, 0, len(rows))
 	for _, row := range rows {
-		results = append(results, PublishedContentID{
-			ID: row,
+		results = append(results, ReindexRef{
+			ID:         row.ID,
+			Visibility: row.Visibility,
 		})
 	}
 
@@ -219,7 +260,7 @@ func (s *Store) ListSpaceIDs(ctx context.Context, limit, offset int32) ([]Publis
 
 // ListLearningTrackIDs returns a batch of published learning track IDs for
 // full corpus re-indexing (ADR-069 §2: learning tracks are part of the corpus).
-func (s *Store) ListLearningTrackIDs(ctx context.Context, limit, offset int32) ([]PublishedContentID, error) {
+func (s *Store) ListLearningTrackIDs(ctx context.Context, limit, offset int32) ([]pgtype.UUID, error) {
 	rows, err := s.queries.ListLearningTrackIDsForReindex(ctx, gen.ListLearningTrackIDsForReindexParams{
 
 		PageLimit:  limit,
@@ -229,26 +270,23 @@ func (s *Store) ListLearningTrackIDs(ctx context.Context, limit, offset int32) (
 		return nil, fmt.Errorf("rag: list learning track IDs: %w", err)
 	}
 
-	results := make([]PublishedContentID, 0, len(rows))
-	for _, row := range rows {
-		results = append(results, PublishedContentID{
-			ID: row,
-		})
-	}
-
-	return results, nil
+	return rows, nil
 }
 
 // Search performs HNSW cosine similarity retrieval against content_embeddings.
-// language may be empty to skip the language filter.
-func (s *Store) Search(ctx context.Context, queryVector []float32, language string, topK int32) ([]RetrievedChunk, error) {
+// language may be empty to skip the language filter. The scope restricts
+// results to what the viewer may see (§69 scoped-retrieval amendment).
+func (s *Store) Search(ctx context.Context, queryVector []float32, language string, topK int32, scope RetrievalScope) ([]RetrievedChunk, error) {
 	vec := pgvector.NewVector(queryVector)
 
 	rows, err := s.queries.SearchContentEmbeddings(ctx, gen.SearchContentEmbeddingsParams{
 		QueryEmbedding: &vec,
 
-		Language: language,
-		TopK:     topK,
+		Language:       language,
+		ViewerID:       scope.ViewerID,
+		CanSeePrivate:  scope.CanSeePrivate,
+		MemberSpaceIds: scope.MemberSpaceIDs,
+		TopK:           topK,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rag: search: %w", err)
@@ -285,15 +323,17 @@ func (s *Store) Search(ctx context.Context, queryVector []float32, language stri
 // are excluded when a geo scope is supplied. geoSpaceID must be non-nil
 // and valid — callers dispatch to Search (unfiltered) when no geo scope
 // is resolved. language may be empty to skip the language filter.
-func (s *Store) SearchGeoFiltered(ctx context.Context, queryVector []float32, language string, topK int32, geoSpaceID pgtype.UUID) ([]RetrievedChunk, error) {
+func (s *Store) SearchGeoFiltered(ctx context.Context, queryVector []float32, language string, topK int32, geoSpaceID pgtype.UUID, scope RetrievalScope) ([]RetrievedChunk, error) {
 	vec := pgvector.NewVector(queryVector)
 
 	rows, err := s.queries.SearchContentEmbeddingsGeoFiltered(ctx, gen.SearchContentEmbeddingsGeoFilteredParams{
 		QueryEmbedding: &vec,
 
-		Language:   language,
-		TopK:       topK,
-		GeoSpaceID: geoSpaceID,
+		Language:      language,
+		TopK:          topK,
+		GeoSpaceID:    geoSpaceID,
+		ViewerID:      scope.ViewerID,
+		CanSeePrivate: scope.CanSeePrivate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rag: search geo-filtered: %w", err)
@@ -312,6 +352,71 @@ func (s *Store) SearchGeoFiltered(ctx context.Context, queryVector []float32, la
 	}
 
 	return results, nil
+}
+
+// ListMemberSpaceIDs returns the viewer's approved space memberships —
+// the scope's space-membership clause requires status='approved'
+// (mirrors CheckSpaceMembership).
+func (s *Store) ListMemberSpaceIDs(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	return s.queries.ListMemberSpaceIDs(ctx, userID)
+}
+
+// UpdateEntityScope refreshes scope metadata on an entity's chunk rows —
+// used on visibility/status transitions that keep the entity indexable.
+func (s *Store) UpdateEntityScope(ctx context.Context, ref EntityRef) error {
+	return s.queries.UpdateEmbeddingScope(ctx, gen.UpdateEmbeddingScopeParams{
+		Visibility: ref.Visibility,
+		SpaceID:    ref.SpaceID,
+		AuthorID:   ref.AuthorID,
+		EntityType: ref.Type,
+		EntityID:   ref.ID,
+	})
+}
+
+// OrphanThreadScopesBySpace fail-closes forum_thread chunk rows whose parent
+// space is about to be deleted (threads survive via ON DELETE SET NULL —
+// §69 amendment). Must run BEFORE the space delete commits: the FK nulls
+// thread.space_id, after which these rows are unmatchable by space.
+func (s *Store) OrphanThreadScopesBySpace(ctx context.Context, spaceID pgtype.UUID) error {
+	return s.queries.OrphanThreadEmbeddingsBySpace(ctx, spaceID)
+}
+
+// UpdateThreadScopesBySpace bulk-updates all forum_thread chunk rows in a
+// space — threads inherit the space's visibility, so a space visibility
+// flip reconciles every thread row.
+func (s *Store) UpdateThreadScopesBySpace(ctx context.Context, spaceID pgtype.UUID, visibility string) error {
+	return s.queries.UpdateThreadEmbeddingsBySpace(ctx, gen.UpdateThreadEmbeddingsBySpaceParams{
+		Visibility: visibility,
+		SpaceID:    spaceID,
+	})
+}
+
+// ContentEmbeddingMeta is the scope metadata + source text the content
+// embed task needs to build an EntityRef.
+type ContentEmbeddingMeta struct {
+	Title      string
+	Body       string
+	Status     string
+	Visibility string
+	SpaceID    pgtype.UUID
+	AuthorID   pgtype.UUID
+}
+
+// GetContentEmbeddingMeta loads scope metadata for a content entity.
+func (s *Store) GetContentEmbeddingMeta(ctx context.Context, contentID pgtype.UUID) (ContentEmbeddingMeta, error) {
+	row, err := s.queries.GetContentEmbeddingMeta(ctx, contentID)
+	if err != nil {
+		return ContentEmbeddingMeta{}, err
+	}
+
+	return ContentEmbeddingMeta{
+		Title:      row.Title,
+		Body:       row.Body,
+		Status:     row.Status,
+		Visibility: row.Visibility,
+		SpaceID:    row.SpaceID,
+		AuthorID:   row.AuthorID,
+	}, nil
 }
 
 // IndexStats holds aggregate statistics about the embedding index.

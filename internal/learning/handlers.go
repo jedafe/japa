@@ -40,7 +40,7 @@ type JSONLDResolver interface {
 // index track content into content_embeddings (§69/ADR-069). Implemented
 // by rag.Service; nil disables RAG indexing (graceful degradation).
 type RAGEntityIndexer interface {
-	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error
 	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 }
 
@@ -142,7 +142,8 @@ func (h *Handlers) indexTrackRAG(ctx context.Context, trackID pgtype.UUID, title
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.IndexEntity(bgCtx, "learning_track", trackID, text, language); err != nil {
+		// Learning tracks are a public corpus — no scoped visibility (§69).
+		if err := h.ragIndexer.IndexEntity(bgCtx, "learning_track", trackID, "public", pgtype.UUID{}, pgtype.UUID{}, text, language); err != nil {
 			slog.Warn("learning: RAG index failed for track", "track_id", trackID.String(), "error", err)
 		}
 	}()

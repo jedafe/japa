@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -38,7 +39,7 @@ func TestPreSearch_FullClassification(t *testing.T) {
 
 	ps := NewPreSearcher(deps)
 
-	result, err := ps.PreSearch(t.Context(), "scholarships", nil)
+	result, err := ps.PreSearch(t.Context(), "scholarships", nil, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestPreSearch_PartialClassification(t *testing.T) {
 
 	ps := NewPreSearcher(deps)
 
-	result, err := ps.PreSearch(t.Context(), "query", nil)
+	result, err := ps.PreSearch(t.Context(), "query", nil, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestPreSearch_NoneClassification(t *testing.T) {
 
 	ps := NewPreSearcher(deps)
 
-	result, err := ps.PreSearch(t.Context(), "query", nil)
+	result, err := ps.PreSearch(t.Context(), "query", nil, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestPreSearch_CustomThreshold(t *testing.T) {
 
 	ps := NewPreSearcher(deps)
 
-	result, err := ps.PreSearch(t.Context(), "query", nil)
+	result, err := ps.PreSearch(t.Context(), "query", nil, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestPreSearch_PrivacyFiltersExemptContent(t *testing.T) {
 
 	ps := NewPreSearcher(deps)
 
-	result, err := ps.PreSearch(t.Context(), "query", nil)
+	result, err := ps.PreSearch(t.Context(), "query", nil, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,7 +205,7 @@ func TestPreSearch_NoPrivacyChecker(t *testing.T) {
 
 	ps := NewPreSearcher(deps)
 
-	result, err := ps.PreSearch(t.Context(), "query", nil)
+	result, err := ps.PreSearch(t.Context(), "query", nil, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -243,7 +244,7 @@ func TestPreSearch_GeoScopedSearch(t *testing.T) {
 
 	ps := NewPreSearcher(deps)
 
-	result, err := ps.PreSearch(t.Context(), "query", &geoID)
+	result, err := ps.PreSearch(t.Context(), "query", &geoID, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -266,7 +267,7 @@ func TestPreSearch_NilDeps(t *testing.T) {
 
 	ps := NewPreSearcher(nil)
 
-	result, err := ps.PreSearch(t.Context(), "query", nil)
+	result, err := ps.PreSearch(t.Context(), "query", nil, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -281,7 +282,7 @@ func TestPreSearch_EmptyPrompt(t *testing.T) {
 
 	ps := NewPreSearcher(&ToolDeps{})
 
-	_, err := ps.PreSearch(t.Context(), "", nil)
+	_, err := ps.PreSearch(t.Context(), "", nil, pgtype.UUID{})
 	if err == nil {
 		t.Fatal("expected error for empty prompt, got nil")
 	}
@@ -302,7 +303,7 @@ func TestPreSearch_RAGFailureNonFatal(t *testing.T) {
 
 	ps := NewPreSearcher(deps)
 
-	result, err := ps.PreSearch(t.Context(), "query", nil)
+	result, err := ps.PreSearch(t.Context(), "query", nil, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

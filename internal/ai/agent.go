@@ -291,7 +291,7 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUI
 	if h.presearch != nil {
 		var err error
 
-		preSearchResult, err = h.presearch.PreSearch(ctx, prompt, geoSpaceID)
+		preSearchResult, err = h.presearch.PreSearch(ctx, prompt, geoSpaceID, userID)
 		if err != nil {
 			slog.Warn("ai: pre-search failed, proceeding without it", "error", err)
 

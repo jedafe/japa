@@ -1087,7 +1087,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 			}
 		}
 
-		ps, psErr := h.preSearch.PreSearch(r.Context(), query, geoSpaceID)
+		ps, psErr := h.preSearch.PreSearch(r.Context(), query, geoSpaceID, user.UserID)
 		if psErr != nil {
 			slog.Warn("ai: comparison pre-search failed (non-fatal)", "error", psErr)
 		} else {

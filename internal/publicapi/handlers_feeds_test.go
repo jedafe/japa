@@ -96,17 +96,21 @@ func (s stubSafetyReader) ListByOffset(ctx context.Context, destSpaceID pgtype.U
 }
 
 type stubSemanticSearcher struct {
-	retrieveFn func(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]rag.RetrievedChunk, error)
+	retrieveFn func(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]rag.RetrievedChunk, error)
 	embedder   bool
 }
 
 func (s stubSemanticSearcher) EmbedderConfigured() bool { return s.embedder }
 
-func (s stubSemanticSearcher) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]rag.RetrievedChunk, error) {
+func (s stubSemanticSearcher) ScopeHash(ctx context.Context, viewerID pgtype.UUID) string {
+	return viewerID.String()
+}
+
+func (s stubSemanticSearcher) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]rag.RetrievedChunk, error) {
 	if s.retrieveFn == nil {
 		return nil, nil
 	}
-	return s.retrieveFn(ctx, query, language, geoSpaceID)
+	return s.retrieveFn(ctx, query, language, geoSpaceID, viewerID)
 }
 
 // stubSettingsReader satisfies rateLimitSettingsReader (GetIntOr) and the
@@ -794,7 +798,7 @@ func TestSemanticSearchMapsResults(t *testing.T) {
 	svc := NewService(nil)
 	svc.SetSemanticSearcher(stubSemanticSearcher{
 		embedder: true,
-		retrieveFn: func(_ context.Context, _, language string, _ *pgtype.UUID) ([]rag.RetrievedChunk, error) {
+		retrieveFn: func(_ context.Context, _, language string, _ *pgtype.UUID, _ pgtype.UUID) ([]rag.RetrievedChunk, error) {
 			gotLang = language
 			// wiki_page hits are public-corpus — they surface without a
 			// per-entity visibility resolver.
@@ -823,19 +827,27 @@ func TestSemanticSearchMapsResults(t *testing.T) {
 	}
 }
 
-// TestSemanticSearchDropsNonPublicHits verifies the verified-public filter:
-// space hits whose entity is private/inactive are dropped entirely (the
-// embedding index covers all active spaces regardless of visibility), and
-// content hits that don't resolve via GetPublishedContentByID are dropped.
-func TestSemanticSearchDropsNonPublicHits(t *testing.T) {
+// TestSemanticSearchDropsUnresolvableHits verifies the scoped-retrieval hit
+// contract (§69 amendment): retrieval already filtered by viewer scope, so
+// the resolver drops only entities that no longer resolve — deleted/inactive
+// spaces, unpublished/deleted content, missing threads. A private-space hit
+// that Retrieve returned is legitimate (the viewer is an approved member)
+// and must be kept.
+func TestSemanticSearchDropsUnresolvableHits(t *testing.T) {
 	spaceID := pgtype.UUID{Bytes: [16]byte{7}, Valid: true}
+	threadID := pgtype.UUID{Bytes: [16]byte{8}, Valid: true}
 	svc := NewService(nil)
 	svc.SetSemanticSearcher(stubSemanticSearcher{
 		embedder: true,
-		retrieveFn: func(_ context.Context, _ string, _ string, _ *pgtype.UUID) ([]rag.RetrievedChunk, error) {
+		retrieveFn: func(_ context.Context, _ string, _ string, _ *pgtype.UUID, _ pgtype.UUID) ([]rag.RetrievedChunk, error) {
 			return []rag.RetrievedChunk{
-				{EntityType: "space", EntityID: spaceID.String(), ChunkText: "private space snippet", Similarity: 0.9},
+				// Member-visible space hit — kept: scoped retrieval already
+				// authorized it for this viewer.
+				{EntityType: "space", EntityID: spaceID.String(), ChunkText: "member space snippet", Similarity: 0.9},
+				// Content that no longer resolves → dropped.
 				{EntityType: "content", EntityID: pgtype.UUID{Bytes: [16]byte{9}, Valid: true}.String(), ChunkText: "unpublished snippet", Similarity: 0.8},
+				// Deleted thread → dropped.
+				{EntityType: "forum_thread", EntityID: threadID.String(), ChunkText: "dead thread snippet", Similarity: 0.75},
 				{EntityType: "wiki_page", EntityID: "e3", ChunkText: "public wiki snippet", Similarity: 0.7},
 			}, nil
 		},
@@ -844,12 +856,13 @@ func TestSemanticSearchDropsNonPublicHits(t *testing.T) {
 		queryRowFn: func(sql string, _ ...any) pgx.Row {
 			switch {
 			case strings.Contains(sql, "FROM spaces"):
-				// Space resolves but is members-only → must be dropped.
-				vals := spaceByIDVals(spaceID, "private-space")
-				vals[14] = "private"
+				// Space resolves and is active — visibility is irrelevant
+				// here (retrieval scoped it); hit is kept.
+				vals := spaceByIDVals(spaceID, "member-space")
+				vals[14] = "members"
 				return rowOf(vals)
 			default:
-				// GetPublishedContentByID misses → not published/public.
+				// Content + thread lookups miss → both dropped.
 				return errRow(pgx.ErrNoRows)
 			}
 		},
@@ -863,11 +876,13 @@ func TestSemanticSearchDropsNonPublicHits(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if strings.Contains(body, "private space snippet") || strings.Contains(body, "unpublished snippet") {
-		t.Fatalf("non-public entity snippets leaked; body: %s", body)
+	if strings.Contains(body, "unpublished snippet") || strings.Contains(body, "dead thread snippet") {
+		t.Fatalf("unresolvable entity snippets leaked; body: %s", body)
 	}
-	if !strings.Contains(body, "public wiki snippet") {
-		t.Fatalf("public-corpus hit missing; body: %s", body)
+	for _, want := range []string{"member space snippet", "member-space", "public wiki snippet"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q; body: %s", want, body)
+		}
 	}
 }
 

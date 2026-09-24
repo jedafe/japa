@@ -89,7 +89,7 @@ type ragCapture struct {
 	chunks []RAGChunk
 }
 
-func (r *ragCapture) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
+func (r *ragCapture) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]RAGChunk, error) {
 	r.geo = geoSpaceID
 	return r.chunks, nil
 }

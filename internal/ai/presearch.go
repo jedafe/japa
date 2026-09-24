@@ -155,7 +155,10 @@ func NewPreSearcher(deps *ToolDeps) *PreSearcher {
 // geoSpaceID is optional — when nil, both searches run platform-wide. When
 // provided, the content search is scoped to the space and RAG retrieval is
 // geo-filtered (§103 Geo-Filtered RAG amendment to §69).
-func (p *PreSearcher) PreSearch(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID) (*PreSearchResult, error) {
+//
+// viewerID scopes both searches to what the caller may see (§69
+// scoped-retrieval amendment): a zero viewer retrieves public content only.
+func (p *PreSearcher) PreSearch(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) (*PreSearchResult, error) {
 	if p == nil {
 		return &PreSearchResult{Level: PreSearchNone}, nil
 	}
@@ -168,13 +171,13 @@ func (p *PreSearcher) PreSearch(ctx context.Context, prompt string, geoSpaceID *
 
 	// --- Content search (§13 / §54 full-text) ---
 	if p.content != nil {
-		items := p.searchContent(ctx, prompt, geoSpaceID)
+		items := p.searchContent(ctx, prompt, geoSpaceID, viewerID)
 		result.Content = items
 	}
 
-	// --- RAG retrieval (§69, geo-filtered) ---
+	// --- RAG retrieval (§69, geo-filtered, viewer-scoped) ---
 	if p.rag != nil {
-		chunks, err := p.rag.Retrieve(ctx, prompt, "", geoSpaceID)
+		chunks, err := p.rag.Retrieve(ctx, prompt, "", geoSpaceID, viewerID)
 		if err != nil {
 			// RAG failure is non-fatal — pre-search can proceed with
 			// content results alone. Log and continue.
@@ -196,9 +199,14 @@ func (p *PreSearcher) PreSearch(ctx context.Context, prompt string, geoSpaceID *
 
 // searchContent runs the content search and filters exempt rows. When
 // geoSpaceID is provided the search is space-scoped; otherwise it is
-// platform-wide.
-func (p *PreSearcher) searchContent(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID) []PreSearchContentItem {
-	filter := visibility.InternalVisibilityFilter(pgtype.UUID{})
+// platform-wide. The visibility filter is built from the caller — the
+// previous InternalVisibilityFilter bypass saw private content for every
+// user (§69 scoped-retrieval amendment).
+func (p *PreSearcher) searchContent(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) []PreSearchContentItem {
+	filter := visibility.VisibilityFilter{
+		RequesterID:   viewerID,
+		CanSeeMembers: viewerID.Valid,
+	}
 	if geoSpaceID != nil && geoSpaceID.Valid {
 		rows, err := p.content.SearchContentsBySpace(ctx, *geoSpaceID, prompt, preSearchLimit, 0, filter)
 		if err != nil {
