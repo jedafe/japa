@@ -149,6 +149,38 @@ button.danger {
 	gap: 12px;
 }
 
+.card-wrap {
+	position: relative;
+	display: flex;
+}
+.card-wrap > a.card {
+	flex: 1;
+}
+.card-save {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	display: inline-flex;
+	padding: 5px;
+	border-radius: 6px;
+	color: var(--text-dim);
+	opacity: 0.55;
+	transition:
+		opacity 0.15s ease,
+		color 0.15s ease,
+		background-color 0.15s ease;
+}
+.card-wrap:hover .card-save,
+.card-save:focus-visible {
+	opacity: 1;
+}
+.card-save:hover,
+.card-save:focus-visible {
+	color: var(--accent);
+	background: var(--bg);
+	outline: none;
+}
+
 a.card {
 	display: flex;
 	flex-direction: column;
