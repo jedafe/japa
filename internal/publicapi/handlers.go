@@ -13,14 +13,18 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/webhooks"
 )
 
 const defaultPageSize int32 = 20
 
 // Handlers holds dependencies for Public API HTTP handlers.
 type Handlers struct {
-	Service *Service
-	Queries *gen.Queries
+	Service   *Service
+	Queries   *gen.Queries
+	bookmarks BookmarkService
+	drafts    ContentDraftService
+	webhooks  WebhookSubscriptionService
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -73,6 +77,12 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "q query parameter is required")
 	case errors.Is(err, ErrInvalidInstallID):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_install_id", "install_id must be a UUID")
+	case errors.Is(err, ErrScopeRequiresAdmin):
+		errpkg.WriteError(w, http.StatusForbidden, "scope_requires_admin", "One or more requested scopes require admin approval")
+	case errors.Is(err, ErrWebhookLimitReached):
+		errpkg.WriteError(w, http.StatusForbidden, "webhook_limit_reached", "Maximum webhook subscriptions reached for this key owner")
+	case errors.Is(err, webhooks.ErrChallengeFailed):
+		errpkg.WriteError(w, http.StatusBadGateway, "verification_failed", "Challenge/response verification failed — the endpoint must echo the challenge token with a 2xx response")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -144,7 +154,25 @@ func (h *Handlers) CreateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.Service.CreateAPIKey(r.Context(), user.UserID, input)
+	// Optional user_id override — admins (api.keys.manage) mint keys on
+	// behalf of another user, e.g. granting a write-scoped key. Non-admin
+	// callers attempting the override are rejected with
+	// scope_requires_admin (same error as admin-only scopes).
+	ownerID := user.UserID
+	if input.UserID != "" {
+		var target pgtype.UUID
+		if err := target.Scan(input.UserID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "user_id must be a UUID")
+			return
+		}
+		if target != user.UserID && !h.Service.CallerCanManageKeys(r.Context(), user.UserID) {
+			errpkg.WriteError(w, http.StatusForbidden, "scope_requires_admin", "Minting a key for another user requires admin approval")
+			return
+		}
+		ownerID = target
+	}
+
+	resp, err := h.Service.CreateAPIKeyForUser(r.Context(), user.UserID, ownerID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return

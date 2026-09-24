@@ -17,9 +17,19 @@ type ScopeOption = scopes.ScopeOption
 // See internal/publicapi/scopes for the definition.
 var ScopeCatalog = scopes.ScopeCatalog
 
-// AvailableScopes returns the scope catalog for the developer portal UI.
-// It is the single source of truth consumed by both /developer/scopes and
-// /control/api-scopes so the two endpoints can never drift apart.
+// AvailableScopes returns the full scope catalog (admin surface).
 func AvailableScopes() []ScopeOption {
 	return scopes.AvailableScopes()
+}
+
+// SelfServiceScopes returns the non-admin subset offered to self-serve
+// key creation (/developer/scopes).
+func SelfServiceScopes() []ScopeOption {
+	return scopes.SelfServiceScopes()
+}
+
+// AnyAdminOnly reports whether any requested scope is an admin-only
+// catalog entry.
+func AnyAdminOnly(requested []string) bool {
+	return scopes.AnyAdminOnly(requested)
 }

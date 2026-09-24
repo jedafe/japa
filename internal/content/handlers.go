@@ -803,9 +803,9 @@ func (h *Handlers) enqueueLinkPreviewsForBody(bodyHTML string, contentID pgtype.
 	}
 }
 
-// enqueueEngagementUpdate enqueues an async engagement count update task.
+// EnqueueEngagementUpdate enqueues an async engagement count update task.
 // Fire-and-forget.
-func (h *Handlers) enqueueEngagementUpdate(entityType string, entityID pgtype.UUID, engagementType string, delta int) {
+func (h *Handlers) EnqueueEngagementUpdate(entityType string, entityID pgtype.UUID, engagementType string, delta int) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -2153,7 +2153,7 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async engagement count update — fire-and-forget.
-	h.enqueueEngagementUpdate("content", id, "view", 1)
+	h.EnqueueEngagementUpdate("content", id, "view", 1)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"recorded": true}})
 }
@@ -2381,7 +2381,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	// A new reaction was created (not an idempotent duplicate) — update the
 	// content_scores.reaction_count so feed cards show an accurate reaction count.
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
-	h.enqueueEngagementUpdate("content", contentID, "reaction", 1)
+	h.EnqueueEngagementUpdate("content", contentID, "reaction", 1)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
 }
@@ -2456,7 +2456,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 
 	// Decrement the reaction_count to keep feed card counts accurate.
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
-	h.enqueueEngagementUpdate("content", contentID, "reaction", -1)
+	h.EnqueueEngagementUpdate("content", contentID, "reaction", -1)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
@@ -2713,7 +2713,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 
 	// Update content_scores.bookmark_count so feed cards show an accurate
 	// bookmark count. Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
-	h.enqueueEngagementUpdate("content", contentID, "bookmark", 1)
+	h.EnqueueEngagementUpdate("content", contentID, "bookmark", 1)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": bm})
 }
@@ -2738,7 +2738,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 
 	// Decrement the bookmark_count to keep feed card counts accurate.
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
-	h.enqueueEngagementUpdate("content", contentID, "bookmark", -1)
+	h.EnqueueEngagementUpdate("content", contentID, "bookmark", -1)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
@@ -3106,7 +3106,7 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async engagement count update — fire-and-forget.
-	h.enqueueEngagementUpdate("content", contentID, "share", 1)
+	h.EnqueueEngagementUpdate("content", contentID, "share", 1)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": share})
 }

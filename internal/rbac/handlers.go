@@ -635,14 +635,22 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
-// ListScopes handles GET /developer/scopes — returns available API scopes.
-// The scope catalog is sourced from the canonical scopes.ScopeCatalog (the
-// leaf package internal/publicapi/scopes — rbac cannot import publicapi
-// itself without creating an import cycle through the moat domain services)
-// so the developer portal only offers scopes that RequireScope actually
-// enforces (Rule 16 — no hardcoded data that can drift from the enforcement
-// layer).
+// ListScopes handles GET /developer/scopes — returns the API scopes a
+// self-serve caller may request on their own keys. Admin-only scopes
+// (api.write.*, *) are withheld — minting them is rejected with
+// scope_requires_admin, so offering them in the portal would be dead UI.
+// The catalog is sourced from the canonical scopes.ScopeCatalog (the leaf
+// package internal/publicapi/scopes — rbac cannot import publicapi itself
+// without creating an import cycle through the moat domain services) so the
+// developer portal only offers scopes that RequireScope actually enforces
+// (Rule 16 — no hardcoded data that can drift from the enforcement layer).
 // // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) ListScopes(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": scopes.SelfServiceScopes()})
+}
+
+// ListAllScopes handles GET /control/api-scopes — the complete catalog,
+// including admin-only scopes, for the control panel's key-scope editor.
+func (h *Handlers) ListAllScopes(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": scopes.AvailableScopes()})
 }

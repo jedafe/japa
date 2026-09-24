@@ -331,6 +331,7 @@ type Service struct {
 	semanticSearcher SemanticSearcher
 	intelReader      IntelReader
 	queries          *gen.Queries
+	adminChecker     adminChecker
 }
 
 // NewService creates a Service with the given store.
@@ -440,14 +441,71 @@ type keyCountSettingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
+// ErrScopeRequiresAdmin is returned by CreateAPIKey when a non-admin caller
+// requests an admin-only scope (api.write.*, *). Mapped to 403
+// scope_requires_admin at the handler.
+var ErrScopeRequiresAdmin = errors.New("scope requires admin grant")
+
+// adminChecker reports whether a user holds an RBAC permission node.
+// *rbac.RBAC satisfies this structurally.
+type adminChecker interface {
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
+}
+
+// SetAdminChecker injects the RBAC resolver used to decide whether the
+// caller may mint admin-only scopes (Phase 3 scope gating). When nil, all
+// admin-only scope requests are rejected — fail closed.
+func (s *Service) SetAdminChecker(c adminChecker) {
+	s.adminChecker = c
+}
+
+// CallerCanManageKeys reports whether the user may administer API keys —
+// the RBAC node that unlocks admin-only scopes and minting keys for other
+// users. Fails closed when no checker is wired.
+func (s *Service) CallerCanManageKeys(ctx context.Context, userID pgtype.UUID) bool {
+	return s.adminChecker != nil && s.adminChecker.HasPermission(ctx, userID, "api.keys.manage")
+}
+
+// GetIntSetting reads a system setting through the wired settings reader
+// (api.webhooks.max_per_key etc.). Returns the fallback when unwired.
+func (s *Service) GetIntSetting(ctx context.Context, key string, fallback int) int {
+	if s.settingsReader == nil {
+		return fallback
+	}
+	return s.settingsReader.GetIntOr(ctx, key, fallback)
+}
+
 // maxKeysPerUser is the compiled-in fallback when no settings reader is wired.
 const maxKeysPerUser = 5
 
-// CreateAPIKey generates a new API key, stores its hash, and returns
-// the full key exactly once. The caller must save it — it cannot be
-// retrieved later. Enforces the api.keys.max_per_user system setting
-// (Section 47 line 218, PUB-006).
+// CreateAPIKey generates a new API key owned by userID, stores its hash,
+// and returns the full key exactly once. The caller must save it — it
+// cannot be retrieved later. Enforces the api.keys.max_per_user system
+// setting (Section 47 line 218, PUB-006). Thin wrapper over
+// CreateAPIKeyForUser.
 func (s *Service) CreateAPIKey(ctx context.Context, userID pgtype.UUID, input CreateAPIKeyInput) (CreateAPIKeyResponse, error) {
+	return s.CreateAPIKeyForUser(ctx, userID, userID, input)
+}
+
+// CreateAPIKeyForUser generates a key owned by ownerID on behalf of
+// callerID. The scope gate and the admin checks run against the CALLER —
+// minting admin-only scopes or minting for another user both require the
+// caller to hold api.keys.manage. Key cap and rate-limit tier are resolved
+// against the OWNER (a granted key is bounded by its owner's tier and key
+// budget, not the admin's).
+func (s *Service) CreateAPIKeyForUser(ctx context.Context, callerID, ownerID pgtype.UUID, input CreateAPIKeyInput) (CreateAPIKeyResponse, error) {
+	callerIsAdmin := s.CallerCanManageKeys(ctx, callerID)
+
+	// Phase 3 scope gating: admin-only scopes (api.write.*, *) can never be
+	// self-minted. Fail closed when no checker is wired.
+	if AnyAdminOnly(input.Scopes) && !callerIsAdmin {
+		return CreateAPIKeyResponse{}, ErrScopeRequiresAdmin
+	}
+	// Minting for another user is itself an admin action.
+	if ownerID != callerID && !callerIsAdmin {
+		return CreateAPIKeyResponse{}, ErrScopeRequiresAdmin
+	}
+
 	// Enforce max keys per user (Section 47: api.keys.max_per_user, default 5).
 	limit := maxKeysPerUser
 	if s.keyCountReader != nil {
@@ -458,7 +516,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID pgtype.UUID, input Cr
 
 	err := s.store.dbPool.QueryRow(ctx, `
 		SELECT count(*) FROM api_keys WHERE user_id = $1 AND status = 'active'
-	`, userID).Scan(&currentCount)
+	`, ownerID).Scan(&currentCount)
 	if err != nil {
 		return CreateAPIKeyResponse{}, fmt.Errorf("count api keys: %w", err)
 	}
@@ -495,10 +553,10 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID pgtype.UUID, input Cr
 
 	// Cap the requested rate limit tier by the key owner's unified user tier.
 	// regular -> basic, pro -> standard, business -> premium.
-	tier = capRateLimitTier(ctx, s.tierResolver, userID, tier)
+	tier = capRateLimitTier(ctx, s.tierResolver, ownerID, tier)
 
 	id, err := s.store.create(ctx, createParams{
-		UserID:        userID,
+		UserID:        ownerID,
 		Name:          input.Name,
 		KeyPrefix:     keyPrefix,
 		KeyHash:       keyHash,

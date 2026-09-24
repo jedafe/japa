@@ -518,7 +518,7 @@ func (q *Queries) ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeli
 
 const listWebhookEndpoints = `-- name: ListWebhookEndpoints :many
 
-SELECT id, name, url, secret, event_types, status, is_active, verified_at, created_by, created_at, updated_at
+SELECT id, name, url, secret, event_types, status, is_active, verified_at, created_by, scope, created_at, updated_at
 FROM webhook_endpoints
 
 ORDER BY created_at DESC
@@ -534,6 +534,7 @@ type ListWebhookEndpointsRow struct {
 	IsActive   bool               `json:"is_active"`
 	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
 	CreatedBy  pgtype.UUID        `json:"created_by"`
+	Scope      string             `json:"scope"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
@@ -558,6 +559,7 @@ func (q *Queries) ListWebhookEndpoints(ctx context.Context) ([]ListWebhookEndpoi
 			&i.IsActive,
 			&i.VerifiedAt,
 			&i.CreatedBy,
+			&i.Scope,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

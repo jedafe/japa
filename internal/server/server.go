@@ -2407,6 +2407,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIService := publicapi.NewService(publicAPIStore)
 	publicAPIService.SetKeyCountReader(settingsService) // api.keys.max_per_user (Rule 3)
 	publicAPIService.SetTierResolver(tierService)       // cap rate limits by user tier
+	publicAPIService.SetAdminChecker(rbacResolver)      // Phase 3: admin-only scope gating
 	// Agent Data API: narrow readers over the moat domain services. The
 	// domain services are injected here — publicapi never re-implements
 	// domain queries (docs/superpowers/specs/2026-09-23-agent-data-api-design.md).
@@ -2472,6 +2473,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// (users.username_cooldown_days) from system_settings instead of a
 	// hardcoded constant (BUG-005, Rule 3).
 	usersService.SetAuthSettings(settingsService)
+	// Phase 3: API-key-scoped bookmark surface — the adapter composes the
+	// users/content bookmark services and the shared engagement enqueuer.
+	publicAPIHandlers.SetBookmarkService(&publicBookmarkAdapter{
+		users:    usersService,
+		content:  contentService,
+		queries:  gen.New(database.Reader),
+		onChange: contentHandlers.EnqueueEngagementUpdate,
+	})
+	// Phase 3: draft-only content creation for api.write.content keys.
+	publicAPIHandlers.SetContentDraftService(&publicDraftAdapter{
+		content: contentService,
+		tags:    tagsService,
+	})
+	// Phase 3: personal webhook subscriptions (scope='user' endpoints).
+	publicAPIHandlers.SetWebhookSubscriptions(&publicWebhookAdapter{svc: webhookService})
 	usersHandlers := users.NewHandlers(usersService, contentService)
 	// Wire the RBAC resolver so GetMyContent can fall back to a
 	// platform-scoped (non-author-scoped) fetch for super-admins and users
@@ -4704,6 +4720,31 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/public/me/feed", publicAPIHandlers.GetMyFeed)
 				r.With(publicapi.RequireScope("api.read.digest")).
 					Get("/public/me/digest", publicAPIHandlers.GetDigest)
+				// Phase 3: key-owner bookmark read/write. Invisible content
+				// returns 404 (never 403) so the endpoints can't probe for
+				// restricted rows.
+				r.With(features.Gate(featureChecker, "feature.bookmarks"), publicapi.RequireScope("api.read.me")).
+					Get("/public/me/bookmarks", publicAPIHandlers.ListMyBookmarks)
+				r.With(features.Gate(featureChecker, "feature.bookmarks"), publicapi.RequireScope("api.write.bookmarks")).
+					Put("/public/me/bookmarks/{content_id}", publicAPIHandlers.PutMyBookmark)
+				r.With(features.Gate(featureChecker, "feature.bookmarks"), publicapi.RequireScope("api.write.bookmarks")).
+					Delete("/public/me/bookmarks/{content_id}", publicAPIHandlers.DeleteMyBookmark)
+				// Phase 3: draft-only content creation. Idempotency-Key is
+				// required so retries never double-create.
+				r.With(publicapi.RequireScope("api.write.content"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/public/content", publicAPIHandlers.CreatePublicDraft)
+				// Phase 3: personal webhook subscriptions — content.published
+				// only, capped by api.webhooks.max_per_key, owner-scoped.
+				r.With(publicapi.RequireScope("api.write.me")).
+					Post("/public/me/webhooks", publicAPIHandlers.CreateMyWebhook)
+				r.With(publicapi.RequireScope("api.read.me")).
+					Get("/public/me/webhooks", publicAPIHandlers.ListMyWebhooks)
+				r.With(publicapi.RequireScope("api.write.me")).
+					Post("/public/me/webhooks/{id}/verify", publicAPIHandlers.VerifyMyWebhook)
+				r.With(publicapi.RequireScope("api.write.me")).
+					Delete("/public/me/webhooks/{id}", publicAPIHandlers.DeleteMyWebhook)
+				r.With(publicapi.RequireScope("api.read.me")).
+					Get("/public/me/webhooks/{id}/deliveries", publicAPIHandlers.ListMyWebhookDeliveries)
 				r.With(publicapi.RequireScope("api.read.content")).
 					Get("/public/content/{id}/markdown", publicAPIHandlers.GetContentMarkdown)
 				r.With(features.Gate(featureChecker, "scam_alert.enabled"), publicapi.RequireScope("api.read.safety")).
@@ -7507,7 +7548,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/cron/schedule-presets", controlHandlers.ListSchedulePresets)
 
 			// API scopes catalog (drives API key scope editor dropdown)
-			r.Get("/api-scopes", rbacHandlers.ListScopes)
+			r.Get("/api-scopes", rbacHandlers.ListAllScopes)
 
 			// Deployments
 			r.Get("/deployments", controlHandlers.ListDeployments)

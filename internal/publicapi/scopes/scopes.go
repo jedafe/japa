@@ -17,6 +17,12 @@ type ScopeOption struct {
 	Value       string `json:"value"`
 	Label       string `json:"label"`
 	Description string `json:"description"`
+	// AdminOnly scopes can only be granted by an admin (control panel or a
+	// caller holding api.keys.manage). They are hidden from the self-serve
+	// /developer/scopes catalog and rejected by CreateAPIKey for non-admin
+	// callers (403 scope_requires_admin) so write access can never be
+	// self-minted. Ref: §47 Phase 3 scope gating.
+	AdminOnly bool `json:"admin_only,omitempty"`
 }
 
 // ScopeCatalog is the canonical, spec-aligned list of API scopes (Section 47).
@@ -56,17 +62,26 @@ var ScopeCatalog = []ScopeOption{
 	{
 		Value:       "api.write.content",
 		Label:       "Write Content",
-		Description: "Create and update content via API key (admin-approved)",
+		Description: "Create draft content via API key (admin-approved)",
+		AdminOnly:   true,
+	},
+	{
+		Value:       "api.write.bookmarks",
+		Label:       "Write Bookmarks",
+		Description: "Add and remove the key owner's bookmarks via API key (admin-approved)",
+		AdminOnly:   true,
 	},
 	{
 		Value:       "api.write.comments",
 		Label:       "Write Comments",
 		Description: "Post comments via API key (admin-approved)",
+		AdminOnly:   true,
 	},
 	{
 		Value:       "api.write.me",
 		Label:       "Write Me",
 		Description: "Update the authenticated user's own profile (admin-approved)",
+		AdminOnly:   true,
 	},
 	{
 		Value:       "api.read.visa",
@@ -112,12 +127,43 @@ var ScopeCatalog = []ScopeOption{
 		Value:       "*",
 		Label:       "All Access",
 		Description: "Wildcard — full access to every scope (admin-approved only)",
+		AdminOnly:   true,
 	},
 }
 
-// AvailableScopes returns the scope catalog for the developer portal UI.
-// It is the single source of truth consumed by both /developer/scopes and
-// /control/api-scopes so the two endpoints can never drift apart.
+// AvailableScopes returns the full scope catalog — the single source of
+// truth consumed by /control/api-scopes (admins need the complete list to
+// grant write scopes).
 func AvailableScopes() []ScopeOption {
 	return ScopeCatalog
+}
+
+// SelfServiceScopes returns the subset of the catalog a non-admin caller may
+// request on their own keys — the list served by /developer/scopes.
+func SelfServiceScopes() []ScopeOption {
+	out := make([]ScopeOption, 0, len(ScopeCatalog))
+	for _, s := range ScopeCatalog {
+		if !s.AdminOnly {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// AnyAdminOnly reports whether any of the requested scope strings is an
+// admin-only catalog entry. Unknown scope strings are not admin-only — they
+// are simply inert (no RequireScope gate will ever match them).
+func AnyAdminOnly(requested []string) bool {
+	admin := make(map[string]struct{})
+	for _, s := range ScopeCatalog {
+		if s.AdminOnly {
+			admin[s.Value] = struct{}{}
+		}
+	}
+	for _, r := range requested {
+		if _, ok := admin[r]; ok {
+			return true
+		}
+	}
+	return false
 }

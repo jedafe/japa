@@ -1,7 +1,7 @@
 -- Outgoing Webhooks — endpoint CRUD + delivery audit rows (Section 12)
 
 -- name: ListWebhookEndpoints :many
-SELECT id, name, url, secret, event_types, status, is_active, verified_at, created_by, created_at, updated_at
+SELECT id, name, url, secret, event_types, status, is_active, verified_at, created_by, scope, created_at, updated_at
 FROM webhook_endpoints
 
 ORDER BY created_at DESC;
