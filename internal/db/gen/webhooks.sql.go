@@ -11,6 +11,77 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countUserWebhookEndpoints = `-- name: CountUserWebhookEndpoints :one
+SELECT count(*) FROM webhook_endpoints
+WHERE scope = 'user' AND created_by = $1
+`
+
+func (q *Queries) CountUserWebhookEndpoints(ctx context.Context, createdBy pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserWebhookEndpoints, createdBy)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createUserWebhookEndpoint = `-- name: CreateUserWebhookEndpoint :one
+
+INSERT INTO webhook_endpoints (name, url, secret, event_types, status, is_active, created_by, scope)
+VALUES ($1, $2, $3, $4, 'pending', false, $5, 'user')
+RETURNING id, name, url, secret, event_types, status, is_active, verified_at, created_by, scope, created_at, updated_at
+`
+
+type CreateUserWebhookEndpointParams struct {
+	Name       string      `json:"name"`
+	Url        string      `json:"url"`
+	Secret     string      `json:"secret"`
+	EventTypes []string    `json:"event_types"`
+	CreatedBy  pgtype.UUID `json:"created_by"`
+}
+
+type CreateUserWebhookEndpointRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	Name       string             `json:"name"`
+	Url        string             `json:"url"`
+	Secret     string             `json:"secret"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
+	IsActive   bool               `json:"is_active"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	Scope      string             `json:"scope"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Phase 3 (spec 2026-09-24-agent-data-api-phase3): personal webhook
+// endpoints owned by an API-key holder (scope='user', owner = created_by).
+// Platform endpoints (scope='platform') keep using the unscoped queries above.
+func (q *Queries) CreateUserWebhookEndpoint(ctx context.Context, arg CreateUserWebhookEndpointParams) (CreateUserWebhookEndpointRow, error) {
+	row := q.db.QueryRow(ctx, createUserWebhookEndpoint,
+		arg.Name,
+		arg.Url,
+		arg.Secret,
+		arg.EventTypes,
+		arg.CreatedBy,
+	)
+	var i CreateUserWebhookEndpointRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Url,
+		&i.Secret,
+		&i.EventTypes,
+		&i.Status,
+		&i.IsActive,
+		&i.VerifiedAt,
+		&i.CreatedBy,
+		&i.Scope,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createWebhookDelivery = `-- name: CreateWebhookDelivery :one
 INSERT INTO webhook_deliveries (endpoint_id, event_id, event_type, payload) VALUES ($1, $2, $3, $4)
 
@@ -93,6 +164,24 @@ func (q *Queries) CreateWebhookEndpoint(ctx context.Context, arg CreateWebhookEn
 	return i, err
 }
 
+const deleteUserWebhookEndpoint = `-- name: DeleteUserWebhookEndpoint :execrows
+DELETE FROM webhook_endpoints
+WHERE id = $1 AND scope = 'user' AND created_by = $2
+`
+
+type DeleteUserWebhookEndpointParams struct {
+	ID        pgtype.UUID `json:"id"`
+	CreatedBy pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) DeleteUserWebhookEndpoint(ctx context.Context, arg DeleteUserWebhookEndpointParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUserWebhookEndpoint, arg.ID, arg.CreatedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteWebhookEndpoint = `-- name: DeleteWebhookEndpoint :execrows
 DELETE FROM webhook_endpoints
 WHERE id = $1
@@ -104,6 +193,52 @@ func (q *Queries) DeleteWebhookEndpoint(ctx context.Context, id pgtype.UUID) (in
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getUserWebhookEndpoint = `-- name: GetUserWebhookEndpoint :one
+SELECT id, name, url, secret, event_types, status, is_active, verified_at, created_by, scope, created_at, updated_at
+FROM webhook_endpoints
+WHERE id = $1 AND scope = 'user' AND created_by = $2
+`
+
+type GetUserWebhookEndpointParams struct {
+	ID        pgtype.UUID `json:"id"`
+	CreatedBy pgtype.UUID `json:"created_by"`
+}
+
+type GetUserWebhookEndpointRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	Name       string             `json:"name"`
+	Url        string             `json:"url"`
+	Secret     string             `json:"secret"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
+	IsActive   bool               `json:"is_active"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	Scope      string             `json:"scope"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetUserWebhookEndpoint(ctx context.Context, arg GetUserWebhookEndpointParams) (GetUserWebhookEndpointRow, error) {
+	row := q.db.QueryRow(ctx, getUserWebhookEndpoint, arg.ID, arg.CreatedBy)
+	var i GetUserWebhookEndpointRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Url,
+		&i.Secret,
+		&i.EventTypes,
+		&i.Status,
+		&i.IsActive,
+		&i.VerifiedAt,
+		&i.CreatedBy,
+		&i.Scope,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getWebhookDelivery = `-- name: GetWebhookDelivery :one
@@ -264,6 +399,55 @@ func (q *Queries) GetWebhookEndpointByID(ctx context.Context, id pgtype.UUID) (G
 		&i.IsActive,
 	)
 	return i, err
+}
+
+const listUserWebhookEndpoints = `-- name: ListUserWebhookEndpoints :many
+SELECT id, name, url, event_types, status, is_active, verified_at, created_at, updated_at
+FROM webhook_endpoints
+WHERE scope = 'user' AND created_by = $1
+ORDER BY created_at DESC
+`
+
+type ListUserWebhookEndpointsRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	Name       string             `json:"name"`
+	Url        string             `json:"url"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
+	IsActive   bool               `json:"is_active"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListUserWebhookEndpoints(ctx context.Context, createdBy pgtype.UUID) ([]ListUserWebhookEndpointsRow, error) {
+	rows, err := q.db.Query(ctx, listUserWebhookEndpoints, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserWebhookEndpointsRow
+	for rows.Next() {
+		var i ListUserWebhookEndpointsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Url,
+			&i.EventTypes,
+			&i.Status,
+			&i.IsActive,
+			&i.VerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listWebhookDeliveries = `-- name: ListWebhookDeliveries :many
@@ -532,6 +716,25 @@ func (q *Queries) UpdateWebhookEndpoint(ctx context.Context, arg UpdateWebhookEn
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const verifyUserWebhookEndpoint = `-- name: VerifyUserWebhookEndpoint :execrows
+UPDATE webhook_endpoints
+SET is_active = true, verified_at = now(), status = 'active', updated_at = now()
+WHERE id = $1 AND scope = 'user' AND created_by = $2
+`
+
+type VerifyUserWebhookEndpointParams struct {
+	ID        pgtype.UUID `json:"id"`
+	CreatedBy pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) VerifyUserWebhookEndpoint(ctx context.Context, arg VerifyUserWebhookEndpointParams) (int64, error) {
+	result, err := q.db.Exec(ctx, verifyUserWebhookEndpoint, arg.ID, arg.CreatedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const verifyWebhookEndpoint = `-- name: VerifyWebhookEndpoint :exec

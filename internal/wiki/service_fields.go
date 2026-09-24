@@ -372,6 +372,81 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	return EntityFieldsDTO{Groups: groups, PendingCount: pending}, nil
 }
 
+// StructuredEditsEnabled reports whether the wiki.structured_edits feature
+// flag is on (§80 Community Field Ops — default false, requires
+// wiki.enabled). Handlers gate ops-bearing submissions on this so the
+// page-scoped revisions endpoint cannot bypass the flag when it is off.
+// Falls back to system_settings when no feature checker is wired, matching
+// Enabled().
+func (s *Service) StructuredEditsEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "wiki.structured_edits")
+	}
+
+	if s.settings == nil {
+		return false
+	}
+
+	return s.settings.GetBoolOr(ctx, "wiki.structured_edits", false)
+}
+
+// GetPageEntityTarget resolves a wiki page (by space slug + page slug) to
+// the IDs an entity-targeted ops submission needs: the page ID the revision
+// attaches to and the host space ID the ops apply to (§80). Returns
+// ErrSpaceNotFound for unknown spaces and pgx.ErrNoRows for unknown pages.
+func (s *Service) GetPageEntityTarget(ctx context.Context, spaceSlug, pageSlug string) (pageID, spaceID pgtype.UUID, err error) {
+	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, pgtype.UUID{}, ErrSpaceNotFound
+		}
+
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: entity target: resolve space: %w", err)
+	}
+
+	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, pgtype.UUID{}, pgx.ErrNoRows
+		}
+
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: entity target: get page: %w", err)
+	}
+
+	return page.ID, page.SpaceID, nil
+}
+
+// GetRevision returns a single revision by ID — used by the revision-keyed
+// admin approve route to fetch content for post-approval RAG indexing (B8).
+func (s *Service) GetRevision(ctx context.Context, revID pgtype.UUID) (WikiRevision, error) {
+	return s.store.GetRevision(ctx, revID)
+}
+
+// AdminListRevisions returns revisions for the admin review queue
+// (GET /admin/wiki/revisions) with optional kind/status filters (§80).
+func (s *Service) AdminListRevisions(ctx context.Context, kind, status string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+
+	offset := (page - 1) * limit
+
+	revs, total, err := s.store.AdminListRevisions(ctx, kind, status, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("wiki: admin list revisions: %w", err)
+	}
+
+	dtos := make([]WikiRevisionDTO, 0, len(revs))
+	for _, r := range revs {
+		dtos = append(dtos, revisionToDTO(r))
+	}
+
+	return dtos, total, nil
+}
+
 // ListEntityRevisions returns the revision history targeting an entity
 // (fields/mixed revisions) for GET /wiki/entities/:type/:id/revisions.
 func (s *Service) ListEntityRevisions(ctx context.Context, entityType string, entityID pgtype.UUID, page, limit int32) ([]WikiRevisionDTO, int64, error) {

@@ -144,13 +144,28 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Related content (Section 14 — GET /content/{id}/related). Best-effort:
-	// a failure degrades to an empty list.
+	// a failure degrades to an empty list. NB: the endpoint reads `page_size`,
+	// not `limit`.
 	let relatedContent: ContentArticle[] = [];
 	try {
-		const relRes = await apiGet<ContentArticle[]>(ctx, `/content/${article.id}/related?limit=4`);
+		const relRes = await apiGet<ContentArticle[]>(ctx, `/content/${article.id}/related?page_size=4`);
 		relatedContent = relRes ?? [];
 	} catch {
 		// related endpoint not available — keep empty
+	}
+
+	// "Recommended Posts" sidebar card — same-type items ranked by the
+	// related endpoint's content_type filter. Best-effort; the card hides
+	// itself when the list is empty.
+	let recommendedContent: ContentArticle[] = [];
+	try {
+		recommendedContent =
+			(await apiGet<ContentArticle[]>(
+				ctx,
+				`/content/${article.id}/related?content_type=${article.content_type}&page_size=5`
+			)) ?? [];
+	} catch {
+		recommendedContent = [];
 	}
 
 	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
@@ -183,6 +198,7 @@ export const load: PageServerLoad = async (event) => {
 		commentsLoadError,
 		seriesPosts,
 		relatedContent,
+		recommendedContent,
 		analytics,
 		jsonLd,
 		deletedUserIds: mergedDeletedUserIds,

@@ -457,6 +457,12 @@ LIMIT $2 OFFSET $3
 // Callers should map this to a 409 duplicate_content API error.
 var ErrDuplicateContent = errors.New("wiki: duplicate content")
 
+// ErrRevisionNotPending is returned when an approve/reject targets a
+// revision that does not exist or is no longer pending. Handlers map it to
+// a 409 conflict (the revision was already reviewed) or 404 when the ID is
+// unknown — the store cannot distinguish the two, so handlers surface 409.
+var ErrRevisionNotPending = errors.New("wiki: revision not found or not pending")
+
 // revisionContentHash computes the dedupe hash for a revision (Rule 12):
 // plain text extracted from the TipTap body plus a NUL-separated ops payload.
 // Appending the ops bytes keeps idx_wiki_revisions_page_hash deduping
@@ -578,7 +584,7 @@ RETURNING content
 `, revID, reviewerID, notesPtr).Scan(&content)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errors.New("wiki: approve: revision not found or not pending")
+			return nil, ErrRevisionNotPending
 		}
 
 		return nil, fmt.Errorf("wiki: approve: update revision: %w", err)
@@ -735,7 +741,7 @@ RETURNING id, wiki_page_id, content, summary,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return WikiRevision{}, errors.New("wiki: approve: revision not found or not pending")
+			return WikiRevision{}, ErrRevisionNotPending
 		}
 
 		return WikiRevision{}, fmt.Errorf("wiki: approve: update revision: %w", err)
@@ -958,8 +964,10 @@ SELECT space_type_id FROM spaces WHERE id = $1
 	return id, nil
 }
 
-// UpdatePage updates wiki page admin-managed fields (lock, feature, active).
-func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, isFeatured, isActive *bool) error {
+// UpdatePage updates wiki page admin-managed fields (lock, feature, active,
+// data entity binding). dataEntityType binds the page to a child entity
+// class (§80 community field ops); an empty string clears it to NULL.
+func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, isFeatured, isActive *bool, dataEntityType *string) error {
 	var (
 		conditions []string
 		args       []any
@@ -981,6 +989,13 @@ func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, is
 	if isActive != nil {
 		conditions = append(conditions, fmt.Sprintf("is_active = $%d", argIdx))
 		args = append(args, *isActive)
+		argIdx++
+	}
+
+	if dataEntityType != nil {
+		// NULLIF clears the binding when the admin sends an empty string.
+		conditions = append(conditions, fmt.Sprintf("data_entity_type = NULLIF($%d, '')", argIdx))
+		args = append(args, *dataEntityType)
 		argIdx++
 	}
 

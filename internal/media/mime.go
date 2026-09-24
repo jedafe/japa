@@ -29,6 +29,9 @@ var mimeAlias = map[string]string{
 	"audio/wave":        "audio/wav",
 	"audio/x-pn-wav":    "audio/wav",
 	"application/x-pdf": "application/pdf",
+	"text/x-markdown":   "text/markdown",
+	"application/x-rtf": "application/rtf",
+	"text/rtf":          "application/rtf",
 }
 
 // ---------------------------------------------------------------------------
@@ -69,8 +72,17 @@ var AllowedMIMETypesByContext = map[UploadContext][]string{
 		"image/png",
 		"image/webp",
 	},
+	// UploadContextDocument permits CV/letter-style attachments (e.g. job
+	// application CVs per §63) alongside PDFs and the image fallbacks used
+	// for scanned documents.
 	UploadContextDocument: {
 		"application/pdf",
+		"application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.oasis.opendocument.text",
+		"application/rtf",
+		"text/plain",
+		"text/markdown",
 		"image/jpeg",
 		"image/png",
 	},
@@ -92,6 +104,32 @@ var ExtensionToMIME = map[string]string{
 	".ogg":  "audio/ogg",
 	".wav":  "audio/wav",
 	".pdf":  "application/pdf",
+	// Document formats (UploadContextDocument — §63 job applications).
+	".doc":      "application/msword",
+	".docx":     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".odt":      "application/vnd.oasis.opendocument.text",
+	".rtf":      "application/rtf",
+	".txt":      "text/plain",
+	".md":       "text/markdown",
+	".markdown": "text/markdown",
+}
+
+// containerCompat maps types reported by http.DetectContentType for
+// container-format files to the declared types they may legitimately hold.
+// Office documents are containers: OOXML files (.docx/.xlsx/.pptx) are ZIP
+// archives, legacy Office files (.doc/.xls/.ppt) are OLE2 compound storage.
+var containerCompat = map[string][]string{
+	"application/zip": {
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		"application/epub+zip",
+	},
+	"application/x-ole-storage": {
+		"application/msword",
+		"application/vnd.ms-excel",
+		"application/vnd.ms-powerpoint",
+	},
 }
 
 // ---------------------------------------------------------------------------
@@ -99,10 +137,15 @@ var ExtensionToMIME = map[string]string{
 // ---------------------------------------------------------------------------
 
 // CanonicalMIMEType normalizes a MIME type through alias mapping and
-// lowercasing. Returns the IANA-registered canonical form when one exists,
-// or the lowercased input otherwise.
+// lowercasing, and strips any parameters (e.g. "; charset=utf-8" as
+// returned by http.DetectContentType for text content). Returns the
+// IANA-registered canonical form when one exists, or the normalized
+// input otherwise.
 func CanonicalMIMEType(mimeType string) string {
 	normalized := strings.ToLower(strings.TrimSpace(mimeType))
+	if i := strings.IndexByte(normalized, ';'); i >= 0 {
+		normalized = strings.TrimSpace(normalized[:i])
+	}
 	if canonical, ok := mimeAlias[normalized]; ok {
 		return canonical
 	}
@@ -141,7 +184,20 @@ func VerifyMIMEType(fileBytes []byte, declaredMimeType string) (detectedType str
 		return detected, true, nil
 	}
 
-	return detected, canonical == declared, nil
+	if canonical == declared {
+		return detected, true, nil
+	}
+
+	// Container formats: DetectContentType only sees the outer container
+	// (zip / OLE2), not the document type inside. Accept when the declared
+	// type is a document known to live in that container.
+	for _, inner := range containerCompat[canonical] {
+		if inner == declared {
+			return detected, true, nil
+		}
+	}
+
+	return detected, false, nil
 }
 
 // ValidateFileType checks whether the detected MIME type is in the allowed

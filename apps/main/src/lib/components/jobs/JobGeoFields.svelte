@@ -115,7 +115,7 @@
 			placeholder={t('jobs.country', 'Country')}
 			emptyMessage={t('common.no_results', 'No results found')}
 			fetcher={countryFetcher}
-			initialFetcher={countryFetcher}
+			initialFetcher={() => countryFetcher('')}
 			selectedId={countryCode || null}
 			selectedLabel={selectedCountryLabel}
 			onSelect={(item) => {
@@ -144,7 +144,7 @@
 				placeholder={t('jobs.state', 'State / Region')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={stateFetcher}
-				initialFetcher={stateFetcher}
+				initialFetcher={() => stateFetcher('')}
 				selectedId={stateId || null}
 				selectedLabel={selectedStateLabel}
 				onSelect={(item) => {
@@ -172,7 +172,7 @@
 					placeholder={t('jobs.city', 'City')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={cityFetcher}
-					initialFetcher={cityFetcher}
+					initialFetcher={() => cityFetcher('')}
 					selectedId={cities.find((c) => c.name === cityName)?.id ?? null}
 					selectedLabel={cityName || null}
 					addActionLabel={t('jobs.city_add', 'Add "{query}"')}

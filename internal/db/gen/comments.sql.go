@@ -289,14 +289,16 @@ WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.id != $2
  AND cs.relevance_embedding IS NOT NULL
+ AND ($3::text = '' OR c.content_type = $3)
 ORDER BY cs.relevance_embedding <=> $1
-LIMIT $3
+LIMIT $4
 `
 
 type GetRelatedContentParams struct {
-	Embedding *pgvector.Vector `json:"embedding"`
-	ExcludeID pgtype.UUID      `json:"exclude_id"`
-	PageLimit int32            `json:"page_limit"`
+	Embedding   *pgvector.Vector `json:"embedding"`
+	ExcludeID   pgtype.UUID      `json:"exclude_id"`
+	ContentType string           `json:"content_type"`
+	PageLimit   int32            `json:"page_limit"`
 }
 
 type GetRelatedContentRow struct {
@@ -334,7 +336,12 @@ type GetRelatedContentRow struct {
 // Related Content (pgvector cosine similarity)
 // =====================
 func (q *Queries) GetRelatedContent(ctx context.Context, arg GetRelatedContentParams) ([]GetRelatedContentRow, error) {
-	rows, err := q.db.Query(ctx, getRelatedContent, arg.Embedding, arg.ExcludeID, arg.PageLimit)
+	rows, err := q.db.Query(ctx, getRelatedContent,
+		arg.Embedding,
+		arg.ExcludeID,
+		arg.ContentType,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

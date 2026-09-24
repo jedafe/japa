@@ -110,12 +110,27 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 	const rightSidebarWidgets = parentData.rightSidebarWidgets ?? [];
 
 	// Related content (Section 14 — GET /content/{id}/related). Best-effort.
+	// NB: the endpoint reads `page_size`, not `limit`.
 	let relatedContent: ContentArticle[] = [];
 	try {
-		const relRes = await apiGet<ContentArticle[]>(ctx, `/content/${article.id}/related?limit=4`);
+		const relRes = await apiGet<ContentArticle[]>(ctx, `/content/${article.id}/related?page_size=4`);
 		relatedContent = relRes ?? [];
 	} catch {
 		// related endpoint not available — keep empty
+	}
+
+	// "Recommended {type}s" sidebar card — same-type items ranked by the
+	// related endpoint's content_type filter. Best-effort; the card hides
+	// itself when the list is empty.
+	let recommendedContent: ContentArticle[] = [];
+	try {
+		recommendedContent =
+			(await apiGet<ContentArticle[]>(
+				ctx,
+				`/content/${article.id}/related?content_type=${article.content_type}&page_size=5`
+			)) ?? [];
+	} catch {
+		recommendedContent = [];
 	}
 
 	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
@@ -159,6 +174,7 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 		commentsLoadError,
 		rightSidebarWidgets,
 		relatedContent,
+		recommendedContent,
 		analytics,
 		seriesPosts,
 		jsonLd,

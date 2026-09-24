@@ -3125,6 +3125,11 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 		limit = 12
 	}
 
+	// Optional content_type filter — the "Recommended {type}s" sidebar card on
+	// content single pages passes the current item's type so recommendations
+	// stay within the same route family.
+	contentType := strings.TrimSpace(r.URL.Query().Get("content_type"))
+
 	// Get the content's embedding from content_scores.
 	score, err := h.Service.GetContentScore(r.Context(), contentID)
 	if err != nil || score.RelevanceEmbedding == nil {
@@ -3132,7 +3137,7 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contents, err := h.Service.GetRelatedContent(r.Context(), contentID, *score.RelevanceEmbedding, limit)
+	contents, err := h.Service.GetRelatedContent(r.Context(), contentID, *score.RelevanceEmbedding, contentType, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return

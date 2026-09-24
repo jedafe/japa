@@ -23,7 +23,7 @@ function apiHeadersPlugin(): Plugin {
 			server.middlewares.use(
 				(req: Connect.IncomingMessage, _res, next: Connect.NextFunction) => {
 					const url = req.url ?? '';
-					if (url.startsWith('/api/v1/') || url.startsWith('/ws')) {
+					if (url.startsWith('/api/v1/') || url.startsWith('/ws') || url.startsWith('/seaweedfs')) {
 						const cookie = req.headers.cookie ?? '';
 						const match = /jc_token=([^;]+)/.exec(cookie);
 						if (match) req.headers.authorization = `Bearer ${match[1]}`;

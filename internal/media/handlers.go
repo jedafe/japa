@@ -288,6 +288,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		Filename string `json:"filename"`
 		MimeType string `json:"mime_type"`
 		FileSize int64  `json:"file_size"`
+		Context  string `json:"context"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -318,11 +319,23 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Upload context selects the allowed MIME set (§34). Defaults to "media";
+	// "document" permits CV-style attachments used by job applications (§63).
+	uploadCtx := UploadContextMedia
+	if input.Context != "" {
+		uploadCtx = UploadContext(input.Context)
+		if MIMETypeForContext(uploadCtx) == nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_upload_context",
+				"Unknown upload context '"+input.Context+"'")
+			return
+		}
+	}
+
 	// MIME type validation: ensure declared type is in the allowed set.
 	// Uses canonical comparison so alias types (image/jpg, image/pjpeg)
 	// are accepted. The actual content inspection via http.DetectContentType
 	// happens at ConfirmUpload time when the file bytes are available.
-	if !IsAllowedMIMETypeForContext(input.MimeType, UploadContextMedia) {
+	if !IsAllowedMIMETypeForContext(input.MimeType, uploadCtx) {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_mime_type",
 			"MIME type '"+input.MimeType+"' is not allowed for media uploads")
 		return

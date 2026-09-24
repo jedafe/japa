@@ -6405,6 +6405,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/wiki/generate", wikiHandlers.HandleGenerate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Get("/admin/wiki", wikiHandlers.HandleAdminList)
+
+				// §80 Community Field Ops — structured entity-field edits.
+				// Nested under wiki.enabled AND wiki.structured_edits (§80:
+				// the flag requires wiki.enabled). Chi literal precedence
+				// resolves /wiki/suggest and /wiki/entities/... ahead of the
+				// {space_slug} wildcard routes.
+				r.With(features.Gate(featureChecker, "wiki.structured_edits")).Group(func(r chi.Router) {
+					// Authenticated: entity-keyed field-ops suggestion. The
+					// per-op wiki.fields.* grant map is enforced in the service.
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).
+						Post("/wiki/suggest", wikiHandlers.HandleSuggestFields)
+					// Public browse (anonymous), matching the wiki page GETs.
+					r.Get("/wiki/entities/{type}/{id}/fields", wikiHandlers.HandleGetEntityFields)
+					r.Get("/wiki/entities/{type}/{id}/revisions", wikiHandlers.HandleGetEntityRevisions)
+					// Admin: revision-keyed review queue (wiki.review permission).
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.review")).
+						Get("/admin/wiki/revisions", wikiHandlers.HandleAdminListRevisions)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.review")).
+						Post("/admin/wiki/revisions/{id}/approve", wikiHandlers.HandleApproveRevisionByID)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.review")).
+						Post("/admin/wiki/revisions/{id}/reject", wikiHandlers.HandleRejectRevisionByID)
+				})
 			})
 
 			// Section 81 — Scam Alert Board (ADR-089)

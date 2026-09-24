@@ -56,6 +56,9 @@ var Registry = []Feature{
 	// from feature.{name} to {domain}.enabled per conventions/feature-flag-naming.md.
 	{Key: "story.enabled", Label: "Community Story Wall", Default: false},
 	{Key: "wiki.enabled", Label: "Destination Wiki", Default: false},
+	// §80 Community Field Ops — structured entity-field edits riding the
+	// wiki revision queue. Requires wiki.enabled (routes nest inside its gate).
+	{Key: "wiki.structured_edits", Label: "Wiki Structured Field Edits", Default: false},
 	{Key: "scam_alert.enabled", Label: "Scam Alert Board", Default: false},
 	{Key: "planning_group.enabled", Label: "Japa Planning Groups", Default: false},
 	{Key: "visa_timeline.enabled", Label: "Visa Timeline Tracker", Default: false},

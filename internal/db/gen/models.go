@@ -4391,6 +4391,7 @@ type WebhookEndpoint struct {
 	IsActive   bool               `json:"is_active"`
 	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
 	CreatedBy  pgtype.UUID        `json:"created_by"`
+	Scope      string             `json:"scope"`
 }
 
 type WidgetConfiguration struct {

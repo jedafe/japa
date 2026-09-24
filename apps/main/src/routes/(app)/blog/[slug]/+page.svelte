@@ -7,6 +7,7 @@
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
+	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
@@ -133,6 +134,8 @@
 			authed={data.authed}
 			currentUserId={data.currentUserId}
 		/>
+		<!-- Same-type recommendations, ranked by embedding similarity. -->
+		<RecommendedContentCard items={data.recommendedContent ?? []} contentType={article.content_type} />
 		<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
 		{#each sidebarWidgets as widget (widget.id)}
 			<SidebarWidgetRenderer
@@ -151,7 +154,7 @@
 	Content single pages render the unified shell's left ad rail (Section 59) instead of a
 	page-owned left reaction rail. The action bar is now a horizontal rail under the body.
 -->
-<div class="mx-auto grid max-w-[65rem] gap-8 py-8 pb-24 lg:pb-8 lg:grid-cols-1 xl:grid-cols-[1fr_20rem]">
+<div class="mx-auto grid max-w-[65rem] gap-8 py-8 pb-24 lg:pb-8 lg:grid-cols-1 xl:grid-cols-[1fr_22rem]">
 	<!-- Center: article -->
 	<article class="min-w-0 max-w-[41rem]">
 		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">

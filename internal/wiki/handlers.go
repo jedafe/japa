@@ -6,10 +6,16 @@
 //	GET    /api/v1/wiki/:space_slug                        — wiki index for space
 //	GET    /api/v1/wiki/:space_slug/:page_slug             — single wiki page
 //	GET    /api/v1/wiki/:space_slug/:page_slug/history     — revision history
-//	POST   /api/v1/wiki/:space_slug/:page_slug/revisions   — submit edit (auth, wiki.edit)
+//	POST   /api/v1/wiki/:space_slug/:page_slug/revisions   — submit edit (auth, wiki.edit; ops[] allowed)
+//	POST   /api/v1/wiki/suggest                            — entity-keyed field ops (auth)
+//	GET    /api/v1/wiki/entities/:type/:id/fields          — editable field schema + values
+//	GET    /api/v1/wiki/entities/:type/:id/revisions       — entity edit history
 //	POST   /api/v1/admin/wiki/:page_id/revisions/:id/approve — approve revision (auth, wiki.review)
 //	POST   /api/v1/admin/wiki/:page_id/revisions/:id/reject  — reject revision (auth, wiki.review)
-//	PATCH  /api/v1/admin/wiki/:page_id                     — lock/unlock, feature (auth, wiki.manage)
+//	GET    /api/v1/admin/wiki/revisions                    — review queue, ?kind=&status= (auth, wiki.review)
+//	POST   /api/v1/admin/wiki/revisions/:id/approve        — revision-keyed approve (auth, wiki.review)
+//	POST   /api/v1/admin/wiki/revisions/:id/reject         — revision-keyed reject (auth, wiki.review)
+//	PATCH  /api/v1/admin/wiki/:page_id                     — lock/unlock, feature, entity bind (auth, wiki.manage)
 //	POST   /api/v1/admin/wiki/generate                     — trigger Content Agent draft (auth, wiki.manage)
 //	GET    /api/v1/admin/wiki                              — admin list (auth, wiki.manage)
 //
@@ -154,6 +160,100 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	}
 
 	return page, limit
+}
+
+// checkReputationGate enforces the wiki.min_reputation_to_edit threshold
+// (B4, §80) for the requesting user. Returns false — with the error already
+// written — when the user is below threshold or the check cannot run
+// (BUG-004: fail closed when the points checker is nil). The action phrase
+// completes the user-facing message "You need more reputation to <action>".
+func (h *Handlers) checkReputationGate(w http.ResponseWriter, r *http.Request, userID pgtype.UUID, action string) bool {
+	threshold := h.service.MinReputationToEdit(r.Context())
+	if threshold <= 0 {
+		return true
+	}
+
+	if h.points == nil {
+		slog.Error("wiki: points checker is nil, cannot enforce reputation gate (fail-closed)")
+		errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_unavailable",
+			"Reputation verification is currently unavailable")
+
+		return false
+	}
+
+	points, err := h.points.GetPointsBalance(r.Context(), userID)
+	if err != nil {
+		slog.Error("wiki: reputation check failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
+			"Failed to verify reputation")
+
+		return false
+	}
+
+	if points < int64(threshold) {
+		errpkg.WriteError(w, http.StatusForbidden, "insufficient_reputation",
+			"You need more reputation to "+action)
+
+		return false
+	}
+
+	return true
+}
+
+// writeFieldOpsError maps SubmitFieldOps/SuggestFields errors to the
+// standard API error envelope (§80 community field ops): permission and
+// resolution failures map to their sentinels, ErrDuplicateContent and
+// ErrEditInProgress conflict, and the wrapped validation errors the service
+// produces ("wiki: submit fields:"/"wiki: suggest:" prefixes) map to 400.
+func writeFieldOpsError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrOpNotPermitted):
+		errpkg.WriteError(w, http.StatusForbidden, "op_not_permitted",
+			"You do not have permission for one or more of these field operations")
+	case errors.Is(err, ErrEntityNotResolvable):
+		errpkg.WriteError(w, http.StatusNotFound, "entity_not_found",
+			"The target entity could not be resolved")
+	case errors.Is(err, ErrDuplicateContent):
+		errpkg.WriteError(w, http.StatusConflict, "duplicate_content",
+			"This submission is identical to an existing revision")
+	case errors.Is(err, ErrEditInProgress):
+		errpkg.WriteError(w, http.StatusConflict, "edit_in_progress",
+			"A wiki edit is already in progress for this page")
+	case strings.HasPrefix(err.Error(), "wiki: submit fields:"),
+		strings.HasPrefix(err.Error(), "wiki: suggest:"):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_ops", err.Error())
+	default:
+		slog.Error("wiki: field ops failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "fields_submit_failed",
+			"Failed to submit field edits")
+	}
+}
+
+// indexApprovedContent fire-and-forget enqueues RAG indexing of approved
+// wiki revision content (B8, §69/ADR-069) so Japabot can retrieve wiki
+// knowledge. Skips when no indexer is wired, there is no prose, or the
+// revision is page-less. Errors are logged, never propagated (Rule 8).
+func (h *Handlers) indexApprovedContent(r *http.Request, pageID pgtype.UUID, content []byte) {
+	if h.rag == nil || len(content) == 0 || !pageID.Valid {
+		return
+	}
+
+	// BUG-002 (rag-audit): resolve the indexing language from
+	// i18n.default_language (§7 i18n) instead of passing an empty string.
+	// Falls back to "en" when settings are not injected or the key is unset.
+	language := "en"
+	if h.settings != nil {
+		language = h.settings.GetStringOr(r.Context(), "i18n.default_language", "en")
+	}
+
+	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+		ctx := context.Background()
+		// Wiki pages are a public corpus — no scoped visibility (§69).
+		if err := h.rag.IndexEntity(ctx, "wiki_page", pageID, "public", pgtype.UUID{}, pgtype.UUID{}, string(content), language); err != nil {
+			slog.Warn("wiki: RAG index failed on approval",
+				"page_id", pageID.String(), "error", err)
+		}
+	}()
 }
 
 // ---------------------------------------------------------------------------
@@ -383,6 +483,78 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleGetEntityFields handles GET /wiki/entities/:type/:id/fields — the
+// editable field schema for an entity (§80 community field ops, spec §8.1):
+// field groups assigned to its entity class, current values, and per-field
+// can_view/can_edit flags for the requesting user. Anonymous callers get the
+// schema with all permission flags false (fail-closed field RBAC, §06).
+func (h *Handlers) HandleGetEntityFields(w http.ResponseWriter, r *http.Request) {
+	entityType := chi.URLParam(r, "type")
+	if entityType == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_type", "Entity type is required")
+		return
+	}
+
+	entityID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var userID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		userID = u.UserID
+	}
+
+	dto, err := h.service.GetEntityFields(r.Context(), userID, entityType, entityID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "entity_not_found", "Entity not found")
+			return
+		}
+
+		slog.Error("wiki: entity fields failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "entity_fields_failed", "Failed to get entity fields")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dto})
+}
+
+// HandleGetEntityRevisions handles GET /wiki/entities/:type/:id/revisions —
+// the revision history (fields/mixed) targeting an entity (§80).
+func (h *Handlers) HandleGetEntityRevisions(w http.ResponseWriter, r *http.Request) {
+	entityType := chi.URLParam(r, "type")
+	if entityType == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_type", "Entity type is required")
+		return
+	}
+
+	entityID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	page, limit := parsePageParams(r)
+
+	revs, total, err := h.service.ListEntityRevisions(r.Context(), entityType, entityID, page, limit)
+	if err != nil {
+		slog.Error("wiki: entity revisions failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "entity_revisions_failed", "Failed to get entity revisions")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": revs,
+		"pagination": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Authenticated handlers (submit revision — auth, wiki.edit)
 // ---------------------------------------------------------------------------
@@ -413,30 +585,9 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	threshold := h.service.MinReputationToEdit(r.Context())
-	if threshold > 0 {
-		if h.points == nil {
-			slog.Error("wiki: points checker is nil, cannot enforce reputation gate (fail-closed)")
-			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_unavailable",
-				"Reputation verification is currently unavailable")
-
-			return
-		}
-
-		points, err := h.points.GetPointsBalance(r.Context(), user.UserID)
-		if err != nil {
-			slog.Error("wiki: reputation check failed", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
-				"Failed to verify reputation")
-
-			return
-		}
-
-		if points < int64(threshold) {
-			errpkg.WriteError(w, http.StatusForbidden, "insufficient_reputation",
-				"You need more reputation to create a wiki page")
-			return
-		}
+	// B4: reputation gate (§80) — wiki.edit is reputation-gated.
+	if !h.checkReputationGate(w, r, user.UserID, "create a wiki page") {
+		return
 	}
 
 	var input CreateWikiPageInput
@@ -521,30 +672,8 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 	// BUG-004: fail closed when the points checker is nil — if the reputation
 	// gate cannot be enforced, the edit must be rejected rather than silently
 	// allowed. This prevents a bypass if SetPointsChecker was never called.
-	threshold := h.service.MinReputationToEdit(r.Context())
-	if threshold > 0 {
-		if h.points == nil {
-			slog.Error("wiki: points checker is nil, cannot enforce reputation gate (fail-closed)")
-			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_unavailable",
-				"Reputation verification is currently unavailable")
-
-			return
-		}
-
-		points, err := h.points.GetPointsBalance(r.Context(), user.UserID)
-		if err != nil {
-			slog.Error("wiki: reputation check failed", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
-				"Failed to verify reputation")
-
-			return
-		}
-
-		if points < int64(threshold) {
-			errpkg.WriteError(w, http.StatusForbidden, "insufficient_reputation",
-				"You need more reputation to edit this wiki page")
-			return
-		}
+	if !h.checkReputationGate(w, r, user.UserID, "edit this wiki page") {
+		return
 	}
 
 	var input SubmitRevisionInput
@@ -553,48 +682,188 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if len(input.Content) == 0 {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_content", "Content is required")
+	if len(input.Content) == 0 && len(input.Ops) == 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_content", "Content or field ops are required")
 		return
 	}
 
-	revID, err := h.service.SubmitRevision(r.Context(), user.UserID, spaceSlug, pageSlug, input)
-	if err != nil {
-		if errors.Is(err, ErrSpaceNotFound) {
-			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+	// §80 community field ops: when the submission carries structured ops,
+	// record them as a separate fields revision targeting the page's host
+	// space. V1 split — SubmitFieldOps stores ops-only revisions
+	// (DeriveKind(false, ops)), so content+ops submissions become two
+	// revisions rather than one 'mixed' row. Ops go first so RBAC and
+	// op-validation failures return before a prose revision is created.
+	var opsRevID string
+
+	var opsAutoApproved bool
+
+	if len(input.Ops) > 0 {
+		if !h.service.StructuredEditsEnabled(r.Context()) {
+			errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
 			return
 		}
 
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+		pageID, spaceID, err := h.service.GetPageEntityTarget(r.Context(), spaceSlug, pageSlug)
+		if err != nil {
+			if errors.Is(err, ErrSpaceNotFound) {
+				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+				return
+			}
+
+			if errors.Is(err, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+				return
+			}
+
+			slog.Error("wiki: resolve field-ops target failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
+
 			return
 		}
 
-		if errors.Is(err, ErrPageLocked) {
-			errpkg.WriteError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
+		canManage := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, PermFieldsManage)
+
+		revID, autoApproved, err := h.service.SubmitFieldOps(r.Context(), user.UserID, pageID, "space", spaceID, input.Ops, input.Summary, canManage)
+		if err != nil {
+			writeFieldOpsError(w, err)
 			return
 		}
 
-		if errors.Is(err, ErrEditInProgress) {
-			errpkg.WriteError(w, http.StatusConflict, "edit_in_progress", "A wiki edit is already in progress for this page")
+		opsRevID, opsAutoApproved = revID, autoApproved
+	}
+
+	var revID string
+
+	if len(input.Content) > 0 {
+		var err error
+
+		revID, err = h.service.SubmitRevision(r.Context(), user.UserID, spaceSlug, pageSlug, input)
+		if err != nil {
+			if errors.Is(err, ErrSpaceNotFound) {
+				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+				return
+			}
+
+			if errors.Is(err, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+				return
+			}
+
+			if errors.Is(err, ErrPageLocked) {
+				errpkg.WriteError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
+				return
+			}
+
+			if errors.Is(err, ErrEditInProgress) {
+				errpkg.WriteError(w, http.StatusConflict, "edit_in_progress", "A wiki edit is already in progress for this page")
+				return
+			}
+
+			if errors.Is(err, ErrDuplicateContent) {
+				errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "This content is identical to an existing revision")
+				return
+			}
+
+			slog.Error("wiki: submit revision failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
+
 			return
 		}
+	}
 
-		if errors.Is(err, ErrDuplicateContent) {
-			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "This content is identical to an existing revision")
-			return
+	data := map[string]any{"status": "pending"}
+	if revID != "" {
+		data["revision_id"] = revID
+	}
+
+	if opsRevID != "" {
+		data["ops_revision_id"] = opsRevID
+		data["ops_auto_approved"] = opsAutoApproved
+
+		if opsAutoApproved && revID == "" {
+			data["status"] = "approved"
 		}
+	}
 
-		slog.Error("wiki: submit revision failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": data})
+}
 
+// SuggestFieldsInput is the request body for POST /wiki/suggest — an
+// entity-keyed structured-edit suggestion (§80 community field ops).
+type SuggestFieldsInput struct {
+	EntityType string    `json:"entity_type"`
+	EntityID   string    `json:"entity_id"`
+	Ops        []FieldOp `json:"ops"`
+	Summary    string    `json:"summary"`
+}
+
+// HandleSuggestFields handles POST /wiki/suggest — submit field ops against
+// an entity that may not have a host wiki page (page-less revisions). Auth
+// required; the per-op wiki.fields.* grant map is enforced in the service
+// (§10). Submissions carrying set_value ops are reputation-gated at the
+// wiki.min_reputation_to_edit threshold (§80: wiki.fields.edit is rep-gated
+// at the same threshold as wiki.edit).
+func (h *Handlers) HandleSuggestFields(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
+	}
+
+	var input SuggestFieldsInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.EntityType == "" || input.EntityID == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "entity_type and entity_id are required")
+		return
+	}
+
+	var entityID pgtype.UUID
+	if err := entityID.Scan(input.EntityID); err != nil || !entityID.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity_id")
+		return
+	}
+
+	if len(input.Ops) == 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_ops", "At least one field operation is required")
+		return
+	}
+
+	// Reputation gate applies only to set_value ops (the wiki.fields.edit
+	// tier); propose/manage ops are gated purely by their RBAC nodes.
+	needsReputation := false
+
+	for _, op := range input.Ops {
+		if op.Op == OpSetValue {
+			needsReputation = true
+			break
+		}
+	}
+
+	if needsReputation && !h.checkReputationGate(w, r, user.UserID, "submit field edits") {
+		return
+	}
+
+	canManage := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, PermFieldsManage)
+
+	revID, autoApproved, err := h.service.SuggestFields(r.Context(), user.UserID, input.EntityType, entityID, input.Ops, input.Summary, canManage)
+	if err != nil {
+		writeFieldOpsError(w, err)
+		return
+	}
+
+	status := "pending"
+	if autoApproved {
+		status = "approved"
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
-			"revision_id": revID,
-			"status":      "pending",
+			"revision_id":   revID,
+			"status":        status,
+			"auto_approved": autoApproved,
 		},
 	})
 }
@@ -630,6 +899,16 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 
 	content, err := h.service.ApproveRevision(r.Context(), revID, pageID, user.UserID, body.Notes)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "revision_not_found", "Revision not found for this page")
+			return
+		}
+
+		if errors.Is(err, ErrRevisionNotPending) {
+			errpkg.WriteError(w, http.StatusConflict, "revision_not_pending", "Revision is not pending review")
+			return
+		}
+
 		slog.Error("wiki: approve failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve revision")
 
@@ -639,24 +918,7 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 	// B8: fire-and-forget RAG indexing of the approved content. The RAG
 	// indexer's IndexEntity calls ExtractPlainText internally, which handles
 	// TipTap JSON. Errors are logged, never propagated (Rule 8).
-	if h.rag != nil && len(content) > 0 {
-		// BUG-002 (rag-audit): resolve the indexing language from
-		// i18n.default_language (§7 i18n) instead of passing an empty string.
-		// Falls back to "en" when settings are not injected or the key is unset.
-		language := "en"
-		if h.settings != nil {
-			language = h.settings.GetStringOr(r.Context(), "i18n.default_language", "en")
-		}
-
-		go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
-			ctx := context.Background()
-			// Wiki pages are a public corpus — no scoped visibility (§69).
-			if err := h.rag.IndexEntity(ctx, "wiki_page", pageID, "public", pgtype.UUID{}, pgtype.UUID{}, string(content), language); err != nil {
-				slog.Warn("wiki: RAG index failed on approval",
-					"page_id", pageID.String(), "error", err)
-			}
-		}()
-	}
+	h.indexApprovedContent(r, pageID, content)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
 }
@@ -697,10 +959,164 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"rejected": true}})
 }
 
+// HandleAdminListRevisions handles GET /admin/wiki/revisions — the review
+// queue filtered by ?kind= (content|fields|mixed) and ?status=
+// (pending|approved|rejected), paginated via ?page=&limit= (§80 community
+// field ops review surface).
+func (h *Handlers) HandleAdminListRevisions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	kind := r.URL.Query().Get("kind")
+	switch kind {
+	case "", "content", "fields", "mixed":
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "kind must be one of content, fields, mixed")
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	switch status {
+	case "", "pending", "approved", "rejected":
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "status must be one of pending, approved, rejected")
+		return
+	}
+
+	page, limit := parsePageParams(r)
+	if limit > 200 {
+		limit = 200
+	}
+
+	revs, total, err := h.service.AdminListRevisions(r.Context(), kind, status, page, limit)
+	if err != nil {
+		slog.Error("wiki: admin list revisions failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list revisions")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": revs,
+		"pagination": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+// HandleApproveRevisionByID handles POST /admin/wiki/revisions/:id/approve —
+// the revision-keyed approve route (§80), canonical for page-less ops
+// revisions whose wiki_page_id is NULL. For fields/mixed revisions the
+// service applies the ops array transactionally with the status flip and
+// enqueues wiki:fields_propagate.
+func (h *Handlers) HandleApproveRevisionByID(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	revID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Notes  string `json:"notes"`
+		Reason string `json:"reason"`
+	}
+
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	notes := body.Notes
+	if notes == "" {
+		notes = body.Reason
+	}
+
+	// Load the revision first so a missing row 404s cleanly and the
+	// content/page context is available for post-approval RAG indexing.
+	rev, err := h.service.GetRevision(r.Context(), revID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "revision_not_found", "Revision not found")
+			return
+		}
+
+		slog.Error("wiki: approve by id: load failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve revision")
+
+		return
+	}
+
+	if err := h.service.ApproveRevisionByID(r.Context(), revID, user.UserID, notes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "revision_not_found", "Revision not found")
+			return
+		}
+
+		if errors.Is(err, ErrRevisionNotPending) {
+			errpkg.WriteError(w, http.StatusConflict, "revision_not_pending", "Revision is not pending review")
+			return
+		}
+
+		slog.Error("wiki: approve by id failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve revision")
+
+		return
+	}
+
+	// B8: index approved prose; fields-only revisions carry no content.
+	if rev.Kind != "fields" {
+		h.indexApprovedContent(r, rev.WikiPageID, rev.Content)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
+}
+
+// HandleRejectRevisionByID handles POST /admin/wiki/revisions/:id/reject —
+// the revision-keyed reject counterpart (§80). Accepts "reason" or "notes"
+// like the page-scoped route.
+func (h *Handlers) HandleRejectRevisionByID(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	revID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Reason string `json:"reason"`
+		Notes  string `json:"notes"`
+	}
+
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	notes := body.Reason
+	if notes == "" {
+		notes = body.Notes
+	}
+
+	if err := h.service.RejectRevisionByID(r.Context(), revID, user.UserID, notes); err != nil {
+		slog.Error("wiki: reject by id failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject revision")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"rejected": true}})
+}
+
 // HandleUpdatePage handles PATCH /admin/wiki/:page_id — lock/unlock, feature,
-// activate. The route middleware checks wiki.manage. When the is_locked field
-// is being toggled, the handler additionally checks wiki.lock (§80 RBAC:
-// wiki.lock is a distinct permission for lock/unlock, B7).
+// activate, and data_entity_type binding (§80: binds the page to a child
+// entity class so field ops target it instead of the host space). The route
+// middleware checks wiki.manage. When the is_locked field is being toggled,
+// the handler additionally checks wiki.lock (§80 RBAC: wiki.lock is a
+// distinct permission for lock/unlock, B7).
 func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {

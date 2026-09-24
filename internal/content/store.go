@@ -2243,16 +2243,18 @@ func (s *Service) ListBookmarks(ctx context.Context, userID pgtype.UUID, limit, 
 
 // GetRelatedContent returns up to limit content items most similar to the given
 // content, ranked by cosine distance on the relevance_embedding vector.
-func (s *Service) GetRelatedContent(ctx context.Context, excludeID pgtype.UUID, embedding pgvector.Vector, limit int32) ([]gen.GetRelatedContentRow, error) {
+// An empty contentType returns related items across all types.
+func (s *Service) GetRelatedContent(ctx context.Context, excludeID pgtype.UUID, embedding pgvector.Vector, contentType string, limit int32) ([]gen.GetRelatedContentRow, error) {
 	if limit <= 0 || limit > 12 {
 		limit = 12
 	}
 
 	contents, err := s.read.GetRelatedContent(ctx, gen.GetRelatedContentParams{
 
-		ExcludeID: excludeID,
-		Embedding: &embedding,
-		PageLimit: limit,
+		ExcludeID:   excludeID,
+		Embedding:   &embedding,
+		ContentType: contentType,
+		PageLimit:   limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting related content: %w", err)

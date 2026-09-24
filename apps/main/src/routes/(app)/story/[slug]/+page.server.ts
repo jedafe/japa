@@ -39,6 +39,7 @@ export const load: PageServerLoad = async (event) => {
 			comments: [] as Comment[],
 			commentsLoadError: false,
 			relatedContent: [] as ContentArticle[],
+			recommendedContent: [] as ContentArticle[],
 			deletedUserIds: null,
 			initiallyFollowing: false,
 			loadError: true
@@ -93,11 +94,26 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Related content (Section 14 — GET /content/{id}/related). Best-effort.
+	// NB: the endpoint reads `page_size`, not `limit`.
 	let relatedContent: ContentArticle[] = [];
 	try {
-		relatedContent = (await apiGet<ContentArticle[]>(ctx, `/content/${story.id}/related?limit=4`)) ?? [];
+		relatedContent = (await apiGet<ContentArticle[]>(ctx, `/content/${story.id}/related?page_size=4`)) ?? [];
 	} catch {
 		relatedContent = [];
+	}
+
+	// "Recommended Stories" sidebar card — same-type items ranked by the
+	// related endpoint's content_type filter. Best-effort; the card hides
+	// itself when the list is empty.
+	let recommendedContent: ContentArticle[] = [];
+	try {
+		recommendedContent =
+			(await apiGet<ContentArticle[]>(
+				ctx,
+				`/content/${story.id}/related?content_type=story&page_size=5`
+			)) ?? [];
+	} catch {
+		recommendedContent = [];
 	}
 
 	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
@@ -133,6 +149,7 @@ export const load: PageServerLoad = async (event) => {
 		comments,
 		commentsLoadError,
 		relatedContent,
+		recommendedContent,
 		analytics,
 		seriesPosts,
 		deletedUserIds: commentDeletedUserIds,
