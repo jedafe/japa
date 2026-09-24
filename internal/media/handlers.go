@@ -364,7 +364,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.service.InitiateUpload(r.Context(), user.UserID, input.Filename, input.MimeType, input.FileSize)
+	result, err := h.service.InitiateUpload(r.Context(), user.UserID, input.Filename, input.MimeType, input.FileSize, uploadCtx)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "upload_error", err.Error())
 		return
@@ -968,7 +968,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		ext = "." + ext
 	}
 
-	storagePath := fmt.Sprintf("%s//%s%s", StoragePathTemp,
+	storagePath := fmt.Sprintf("%s/%s%s", StoragePathTemp,
 
 		uuid.New().String(),
 		ext)

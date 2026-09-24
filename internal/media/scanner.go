@@ -10,7 +10,7 @@ import (
 // ScanProcessor implements worker.MediaScanProcessor. It reads the media
 // record from the database, fetches the file from object storage, sends
 // it to ClamAV, and updates the media status based on the result.
-// // When ClamAV reports a virus, the media item is soft-deleted and the
+// When ClamAV reports a virus, the media item is soft-deleted and the
 // incident is logged. When the scan is clean, the item is confirmed.
 // If ClamAV is unreachable, the scan is logged and the item is confirmed
 // (graceful degradation — missing antivirus should not block uploads).
@@ -41,10 +41,7 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 		return fmt.Errorf("media:scan: invalid media_id %q: %w", mediaID, err)
 	}
 
-	// Fetch media record including for scoped writes.
-	// The Asynq payload only carries media_id, but GetMediaForScan returns
-	// the from the row, which is then threaded into confirm/reject
-	// operations to prevent cross-platform modification.
+	// Fetch the media record — the Asynq payload only carries media_id.
 	m, err := p.svc.getMediaForScan(ctx, mid[:])
 	if err != nil {
 		return fmt.Errorf("media:scan: fetch media %s: %w", mediaID, err)
@@ -91,16 +88,18 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 }
 
 // scanUUID is a helper to scan a UUID string into a byte slice.
-func scanUUID(s string, _ []byte) error {
-	var id [16]byte
+func scanUUID(s string, dst []byte) error {
+	if len(dst) < 16 {
+		return errors.New("scanUUID: destination too small")
+	}
 	// Simple UUID parsing: remove dashes and parse hex.
 	if len(s) == 36 && s[8] == '-' && s[13] == '-' && s[18] == '-' && s[23] == '-' {
 		hex := s[:8] + s[9:13] + s[14:18] + s[19:23] + s[24:]
-		return scanHex(hex, id[:])
+		return scanHex(hex, dst)
 	}
 	// Try as raw hex (no dashes).
 	if len(s) == 32 {
-		return scanHex(s, id[:])
+		return scanHex(s, dst)
 	}
 
 	return fmt.Errorf("invalid UUID format: %s", s)
