@@ -432,7 +432,7 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 				cityRawValues[cityKey] = make(map[string]string)
 			}
 
-			cityRawValues[cityKey][dimKey] = fmt.Sprint(v)
+			cityRawValues[cityKey][dimKey] = cfvDisplayString(v)
 		}
 	}
 
@@ -670,6 +670,35 @@ func anyToFloat(v any) (float64, bool) {
 	}
 
 	return 0, false
+}
+
+// cfvDisplayString renders a display-ready custom-field value as the raw
+// string shown in CityData.Values. Scalars format naturally; structured
+// values (lists/maps) serialise as JSON rather than Go-syntax dumps.
+func cfvDisplayString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(t), 'f', -1, 64)
+	case int:
+		return strconv.Itoa(t)
+	case int32:
+		return strconv.FormatInt(int64(t), 10)
+	case int64:
+		return strconv.FormatInt(t, 10)
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprint(v)
+		}
+
+		return string(b)
+	}
 }
 
 // parseFloatValue parses a numeric cost value from the comparison_values row.

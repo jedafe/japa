@@ -46,7 +46,9 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any) (Re
 			return ResolvedItem{}, false, fmt.Errorf("fetching visa route by id: %w", err)
 		}
 
-		return routeToResolvedItem(route, r.routeFieldValues(ctx, route.ID)), true, nil
+		// GetByID already merges cfv into route.Requirements (§80) — pass nil
+		// so the item builder uses that merged bag without a second cfv read.
+		return routeToResolvedItem(route, nil), true, nil
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
@@ -59,25 +61,10 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any) (Re
 			return ResolvedItem{}, false, fmt.Errorf("fetching visa route by slug: %w", err)
 		}
 
-		return routeToResolvedItem(route, r.routeFieldValues(ctx, route.ID)), true, nil
+		return routeToResolvedItem(route, nil), true, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("visa_route item_ref missing id or slug")
-}
-
-// routeFieldValues fetches the route's community field values from
-// custom_field_values for the field_values overlay (§80).
-func (r *visaRouteResolver) routeFieldValues(ctx context.Context, routeID string) map[string]any {
-	if r.queries == nil {
-		return nil
-	}
-
-	id, err := ParseUUID(routeID)
-	if err != nil {
-		return nil
-	}
-
-	return customfields.EntityFieldValues(ctx, r.queries, "visa_route", id)
 }
 
 func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
@@ -113,7 +100,8 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 		return nil, fmt.Errorf("searching visa routes: %w", err)
 	}
 
-	// One batched cfv read for the page — no per-route queries (§80).
+	// AdminList intentionally returns the stored bag (§80 admin surfaces),
+	// so the resolver does its own batched cfv read for the page.
 	var cfvByRoute map[pgtype.UUID]map[string]any
 
 	if r.queries != nil && len(routes) > 0 {
@@ -284,7 +272,8 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO, req map[string]any) map[str
 func boolPtr(b bool) *bool { return &b }
 
 // visaRequirementsMap normalises a visa-route requirements value (already parsed
-// JSON, a JSON string, or raw bytes) into a map for key-based extraction.
+// JSON, a JSON string, or raw bytes) into a map for key-based extraction. A
+// non-map payload is preserved under "_raw" rather than dropped.
 func visaRequirementsMap(req any) map[string]any {
 	if req == nil {
 		return nil
@@ -308,7 +297,7 @@ func visaRequirementsMap(req any) map[string]any {
 		}
 	}
 
-	return nil
+	return map[string]any{"_raw": req}
 }
 
 // visaNumber extracts a numeric score input from the requirements map.

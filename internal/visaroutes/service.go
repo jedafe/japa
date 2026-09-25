@@ -679,12 +679,15 @@ func (s *Service) mergeRouteFieldValue(ctx context.Context, dto RouteDTO) RouteD
 }
 
 // requirementsWithCFV merges community field values over the requirements
-// object — cfv wins per key. A non-map requirements value is replaced by a
-// fresh map so cfv keys are never silently dropped.
+// object — cfv wins per key. A non-map requirements value (e.g. a JSON array
+// an admin stored) is preserved under "_raw" so the payload is never dropped.
 func requirementsWithCFV(requirements any, cfv map[string]any) any {
 	req, _ := requirements.(map[string]any)
 	if req == nil {
-		req = make(map[string]any, len(cfv))
+		req = make(map[string]any, len(cfv)+1)
+		if requirements != nil {
+			req["_raw"] = requirements
+		}
 	}
 
 	for k, v := range cfv {
