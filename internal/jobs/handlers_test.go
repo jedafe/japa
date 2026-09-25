@@ -215,21 +215,24 @@ func TestDeriveSummary(t *testing.T) {
 }
 
 // TestJobFieldTypes verifies the field-key → storage-column map matches the
-// 17 seeded job_listing_fields (migrations 000475 + 000734). A mismatch would
-// route boolean/number values to value_text and break the visa_sponsorship
-// filter and salary sort (JOBS-007).
+// 20 seeded job_listing_fields (migrations 000475 + 000734 + 000738). A
+// mismatch would route boolean/number values to value_text and break the
+// visa_sponsorship filter and salary sort (JOBS-007).
 func TestJobFieldTypes(t *testing.T) {
 	want := map[string]jobFieldType{
 		"company_name":          fieldTypeText,
 		"company_logo":          fieldTypeURL,
 		"company_website":       fieldTypeURL,
 		"job_type":              fieldTypeText,
+		"job_role":              fieldTypeText,
+		"job_function":          fieldTypeText,
 		"location_type":         fieldTypeText,
 		"country":               fieldTypeText,
 		"city":                  fieldTypeText,
 		"salary_min":            fieldTypeNumber,
 		"salary_max":            fieldTypeNumber,
 		"salary_currency":       fieldTypeText,
+		"salary_period":         fieldTypeText,
 		"experience_level":      fieldTypeText,
 		"skills_required":       fieldTypeText,
 		"application_url":       fieldTypeURL,

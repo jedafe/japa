@@ -1174,19 +1174,22 @@ const (
 	fieldTypeURL jobFieldType = "url"
 )
 
-// jobFieldTypes maps the 17 seeded job_listing_fields keys to their storage
-// column. Must match migrations 000475 + 000734 field_type values.
+// jobFieldTypes maps the 20 seeded job_listing_fields keys to their storage
+// column. Must match migrations 000475 + 000734 + 000738 field_type values.
 var jobFieldTypes = map[string]jobFieldType{
 	"company_name":          fieldTypeText,
 	"company_logo":          fieldTypeURL,
 	"company_website":       fieldTypeURL,
 	"job_type":              fieldTypeText,
+	"job_role":              fieldTypeText,
+	"job_function":          fieldTypeText,
 	"location_type":         fieldTypeText,
 	"country":               fieldTypeText,
 	"city":                  fieldTypeText,
 	"salary_min":            fieldTypeNumber,
 	"salary_max":            fieldTypeNumber,
 	"salary_currency":       fieldTypeText,
+	"salary_period":         fieldTypeText,
 	"experience_level":      fieldTypeText,
 	"skills_required":       fieldTypeText,
 	"application_url":       fieldTypeURL,
