@@ -97,9 +97,11 @@ func IsValidFieldType(ft string) bool {
 }
 
 // ProposableFieldTypes returns the field types community members may propose
-// through §80 field ops — the leaf value-carrying types; structural/media
-// types (group, repeater, reference, images, embeds) are excluded because a
-// text proposal cannot express their configuration.
+// through §80 field ops — the leaf value-carrying types plus the upload and
+// structural types whose options are optional at proposal time (image and
+// media uploads, repeater, group). platform_embed and reference stay
+// excluded: an embed is equivalent to a URL for community purposes, and a
+// reference requires an entity-class binding a text proposal cannot express.
 func ProposableFieldTypes() []string {
 	return []string{
 		FieldTypeText, FieldTypeTextarea, FieldTypeRichText,
@@ -109,6 +111,8 @@ func ProposableFieldTypes() []string {
 		FieldTypeSelect, FieldTypeSuggest, FieldTypeMultiselect,
 		FieldTypeURL, FieldTypeEmail, FieldTypePhone,
 		FieldTypeColor, FieldTypeRating,
+		FieldTypeImageSingle, FieldTypeImageMulti, FieldTypeMedia,
+		FieldTypeRepeater, FieldTypeGroup,
 	}
 }
 
