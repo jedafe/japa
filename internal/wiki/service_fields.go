@@ -297,21 +297,42 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	}
 
 	var spaceTypeID pgtype.UUID
+	var spaceTypeSlug string
 
 	if isSpaceBackedEntityType(entityType) {
 		var err error
 
-		spaceTypeID, err = s.store.GetSpaceTypeID(ctx, entityID)
+		spaceTypeID, spaceTypeSlug, err = s.store.GetSpaceTypeRef(ctx, entityID)
 		if err != nil {
 			return EntityFieldsDTO{}, fmt.Errorf("wiki: entity fields: resolve space type: %w", err)
 		}
 	}
 
-	entityClass := entityClassFor(entityType, spaceTypeID)
+	entityClasses := entityClassesFor(entityType, spaceTypeID, spaceTypeSlug)
 
-	assignments, err := s.fields.ListAssignmentsByEntityClass(ctx, entityClass)
-	if err != nil {
-		return EntityFieldsDTO{}, fmt.Errorf("wiki: entity fields: list assignments: %w", err)
+	// Gather assignments across every applicable class. entity_id NULL marks
+	// a class-wide assignment; a non-NULL entity_id scopes the group to that
+	// entity only (§06). Groups are deduped by id — the same group may be
+	// assigned under more than one class token.
+	var assignments []gen.CustomFieldGroupAssignment
+	seenGroups := make(map[string]bool)
+
+	for _, class := range entityClasses {
+		rows, err := s.fields.ListAssignmentsByEntityClass(ctx, class)
+		if err != nil {
+			return EntityFieldsDTO{}, fmt.Errorf("wiki: entity fields: list assignments for %q: %w", class, err)
+		}
+
+		for _, a := range rows {
+			if a.EntityID.Valid && a.EntityID != entityID {
+				continue
+			}
+			if seenGroups[a.GroupID.String()] {
+				continue
+			}
+			seenGroups[a.GroupID.String()] = true
+			assignments = append(assignments, a)
+		}
 	}
 
 	values, err := s.fields.ListFieldValuesWithDefsByEntity(ctx, customfields.ValueEntityType(entityType), entityID)
@@ -398,6 +419,13 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 			}
 
 			dtos = append(dtos, dto)
+		}
+
+		// A group with no field definitions contributes nothing to the
+		// editable schema — skip it so class-wide placeholders don't render
+		// empty sections on wiki pages.
+		if len(dtos) == 0 {
+			continue
 		}
 
 		groups = append(groups, EntityFieldGroupDTO{
@@ -952,34 +980,43 @@ func isSpaceBackedEntityType(entityType string) bool {
 	return spaceBackedEntityTypes[entityType]
 }
 
-// entityClassFor maps an item_ref entity type to the entity_class token used
-// in custom_field_group_assignments (§8.1):
-//   - space/university/country/state/city → "space_type:{space_type_id}"
-//     (falls back to the class-wide "space_type" when no type is recorded)
-//   - organization/bank                   → "organization"
-//   - content, content:{slug}             → "content_type[:{slug}]"
-//   - guide_category:{slug}               → "content_type:guide:{slug}" (§06)
-//   - table-backed JCE types              → "jce_entity:{type}"
-func entityClassFor(entityType string, spaceTypeID pgtype.UUID) string {
+// entityClassesFor maps an item_ref entity type to the entity_class tokens
+// used in custom_field_group_assignments (§8.1). Space-backed entities match
+// the full seeded convention — per-type slug (space_type:university), per-type
+// id (space_type:{uuid}, used by ops-created assignments), and the class-wide
+// space_type token — so a wiki page surfaces every group associated with its
+// space, not just one spelling of the class:
+//   - space/university/country/state/city → ["space_type:{slug}",
+//     "space_type:{id}", "space_type"]
+//   - organization/bank                   → ["organization"]
+//   - content, content:{slug}             → ["content_type[:{slug}]"]
+//   - guide_category:{slug}               → ["content_type:guide:{slug}"] (§06)
+//   - table-backed JCE types              → ["jce_entity:{type}"]
+//
+// Classes are returned most-specific first; callers dedupe groups by id.
+func entityClassesFor(entityType string, spaceTypeID pgtype.UUID, spaceTypeSlug string) []string {
 	switch {
 	case isSpaceBackedEntityType(entityType):
-		if spaceTypeID.Valid {
-			return "space_type:" + spaceTypeID.String()
+		classes := make([]string, 0, 3)
+		if spaceTypeSlug != "" {
+			classes = append(classes, "space_type:"+spaceTypeSlug)
 		}
-
-		return "space_type"
+		if spaceTypeID.Valid {
+			classes = append(classes, "space_type:"+spaceTypeID.String())
+		}
+		return append(classes, "space_type")
 	case entityType == "organization" || entityType == "bank":
-		return "organization"
+		return []string{"organization"}
 	case entityType == "content":
-		return "content_type"
+		return []string{"content_type"}
 	case strings.HasPrefix(entityType, "content:"):
-		return "content_type:" + entityType[len("content:"):]
+		return []string{"content_type:" + entityType[len("content:"):]}
 	case strings.HasPrefix(entityType, "guide_category:"):
 		// Guide sub-categories already have a documented entity_class
 		// mapping (§06 EntityClassFromType).
-		return customfields.EntityClassFromType(entityType)
+		return []string{customfields.EntityClassFromType(entityType)}
 	default:
-		return "jce_entity:" + entityType
+		return []string{"jce_entity:" + entityType}
 	}
 }
 

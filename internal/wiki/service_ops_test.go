@@ -350,32 +350,42 @@ func TestSuggestFields_ResolverFailure(t *testing.T) {
 	}
 }
 
-// TestEntityClassFor covers the §8.1 entity_type → entity_class mapping.
-func TestEntityClassFor(t *testing.T) {
+// TestEntityClassesFor covers the §8.1 entity_type → entity_class mapping.
+// Space-backed entities resolve the full seeded convention — per-type slug,
+// per-type id, and the class-wide token — while other types map to a single
+// class.
+func TestEntityClassesFor(t *testing.T) {
 	t.Parallel()
 
 	spaceTypeID := mustUUID(t, "00000000-0000-0000-0000-0000000000d1")
 
 	cases := []struct {
-		entityType  string
-		spaceTypeID pgtype.UUID
-		want        string
+		entityType     string
+		spaceTypeID    pgtype.UUID
+		spaceTypeSlug  string
+		want           []string
 	}{
-		{"university", spaceTypeID, "space_type:" + spaceTypeID.String()},
-		{"space", spaceTypeID, "space_type:" + spaceTypeID.String()},
-		{"country", pgtype.UUID{}, "space_type"},
-		{"organization", pgtype.UUID{}, "organization"},
-		{"bank", pgtype.UUID{}, "organization"},
-		{"content", pgtype.UUID{}, "content_type"},
-		{"content:guide", pgtype.UUID{}, "content_type:guide"},
-		{"guide_category:visa", pgtype.UUID{}, "content_type:guide:visa"},
-		{"visa_route", pgtype.UUID{}, "jce_entity:visa_route"},
-		{"scholarship", pgtype.UUID{}, "jce_entity:scholarship"},
+		{"university", spaceTypeID, "university", []string{"space_type:university", "space_type:" + spaceTypeID.String(), "space_type"}},
+		{"space", spaceTypeID, "country", []string{"space_type:country", "space_type:" + spaceTypeID.String(), "space_type"}},
+		{"country", pgtype.UUID{}, "", []string{"space_type"}},
+		{"organization", pgtype.UUID{}, "", []string{"organization"}},
+		{"bank", pgtype.UUID{}, "", []string{"organization"}},
+		{"content", pgtype.UUID{}, "", []string{"content_type"}},
+		{"content:guide", pgtype.UUID{}, "", []string{"content_type:guide"}},
+		{"guide_category:visa", pgtype.UUID{}, "", []string{"content_type:guide:visa"}},
+		{"visa_route", pgtype.UUID{}, "", []string{"jce_entity:visa_route"}},
+		{"scholarship", pgtype.UUID{}, "", []string{"jce_entity:scholarship"}},
 	}
 
 	for _, tc := range cases {
-		if got := entityClassFor(tc.entityType, tc.spaceTypeID); got != tc.want {
-			t.Fatalf("entityClassFor(%q) = %q, want %q", tc.entityType, got, tc.want)
+		got := entityClassesFor(tc.entityType, tc.spaceTypeID, tc.spaceTypeSlug)
+		if len(got) != len(tc.want) {
+			t.Fatalf("entityClassesFor(%q) = %v, want %v", tc.entityType, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("entityClassesFor(%q) = %v, want %v", tc.entityType, got, tc.want)
+			}
 		}
 	}
 }
@@ -825,9 +835,9 @@ func TestGetEntityFields(t *testing.T) {
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
 
-	spaceTypeID, err := store.GetSpaceTypeID(ctx, fx.spaceID)
+	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
-		t.Fatalf("GetSpaceTypeID: %v", err)
+		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
 
 	// Assign the group to this space's type class and store a value.
@@ -853,13 +863,22 @@ func TestGetEntityFields(t *testing.T) {
 		t.Fatalf("GetEntityFields: %v", err)
 	}
 
-	if len(dto.Groups) != 1 {
-		t.Fatalf("expected 1 group, got %#v", dto.Groups)
+	// The seeded DB may resolve additional class-wide groups (space_fields)
+	// or per-type groups — locate the fixture group rather than asserting a
+	// total count.
+	var g EntityFieldGroupDTO
+	found := false
+
+	for _, grp := range dto.Groups {
+		if grp.ID == ff.groupID.String() {
+			g = grp
+			found = true
+			break
+		}
 	}
 
-	g := dto.Groups[0]
-	if g.ID != ff.groupID.String() || g.Slug != ff.slug {
-		t.Fatalf("group identity wrong: %#v", g)
+	if !found || g.Slug != ff.slug {
+		t.Fatalf("fixture group missing from schema: %#v", dto.Groups)
 	}
 
 	if len(g.Fields) != 1 || g.Fields[0].Key != ff.key {
@@ -886,9 +905,9 @@ func TestGetEntityFields_BatchedFieldPerms(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 
-	spaceTypeID, err := store.GetSpaceTypeID(ctx, fx.spaceID)
+	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
-		t.Fatalf("GetSpaceTypeID: %v", err)
+		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
 
 	groupID := mustUUID(t, genUUID(t, ctx, database))
@@ -957,9 +976,9 @@ func TestGetEntityFields_PermLookupFailsClosed(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 
-	spaceTypeID, err := store.GetSpaceTypeID(ctx, fx.spaceID)
+	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
-		t.Fatalf("GetSpaceTypeID: %v", err)
+		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
 
 	groupID := mustUUID(t, genUUID(t, ctx, database))

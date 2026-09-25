@@ -8,6 +8,7 @@
 	import { EmptyState } from '$lib/components/ui';
 	import CustomFieldGroupCmp from '$lib/components/create/panel/CustomFieldGroup.svelte';
 	import JobGeoFields from '$lib/components/jobs/JobGeoFields.svelte';
+	import JobLogoUpload from '$lib/components/jobs/JobLogoUpload.svelte';
 	import type { JobDetail } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -22,16 +23,42 @@
 	let titleVal = $state(untrack(() => job.title));
 	let bodyVal = $state(untrack(() => job.body));
 	let orgId = $state<string>(untrack(() => job.organization_id ?? data.organizations[0]?.id ?? ''));
-	let fieldValues = $state<Record<string, unknown>>(untrack(() => ({ ...job.field_values })));
+	let fieldValues = $state<Record<string, unknown>>(untrack(() => {
+		// field_values arrive as strings; coerce boolean-typed fields so the
+		// checkbox binding (values[key] === true) reflects stored 'true'.
+		const vals: Record<string, unknown> = { ...job.field_values };
+		for (const f of data.fieldGroup?.fields ?? []) {
+			if (f.field_type === 'boolean' && typeof vals[f.key] === 'string') {
+				vals[f.key] = vals[f.key] === 'true';
+			}
+		}
+		return vals;
+	}));
 
-	// country/city are rendered by the geo-space cascade (JobGeoFields), not
-	// the generic custom-field inputs — exclude them here.
-	const nonGeoFields = $derived(
-		data.fieldGroup?.fields.filter((f) => f.key !== 'country' && f.key !== 'city') ?? []
+	// country/city are rendered by the geo-space cascade (JobGeoFields) and
+	// company_logo by the dedicated media upload (JobLogoUpload) — exclude
+	// them from the generic custom-field inputs. company_name/company_website
+	// sit beside the logo on one identity row, and all boolean toggles share
+	// a single row so the form doesn't scatter.
+	const isManagedKey = (k: string) =>
+		k === 'country' || k === 'city' || k === 'company_logo' || k === 'company_name' || k === 'company_website';
+
+	const companyFields = $derived(
+		data.fieldGroup?.fields.filter((f) => f.key === 'company_name' || f.key === 'company_website') ?? []
+	);
+	const boolFields = $derived(
+		data.fieldGroup?.fields.filter((f) => f.field_type === 'boolean') ?? []
+	);
+	const mainFields = $derived(
+		data.fieldGroup?.fields.filter((f) => !isManagedKey(f.key) && f.field_type !== 'boolean') ?? []
 	);
 	const hasGeoFields = $derived(
 		data.fieldGroup?.fields.some((f) => f.key === 'country' || f.key === 'city') ?? false
 	);
+	const hasLogoField = $derived(
+		data.fieldGroup?.fields.some((f) => f.key === 'company_logo') ?? false
+	);
+	const hasCompanyRow = $derived(hasLogoField || companyFields.length > 0);
 
 	function markDirty() {
 		// no-op kept for CustomFieldGroupCmp callback interface
@@ -165,25 +192,52 @@
 				<p class="text-xs text-[var(--color-muted)]">{t('jobs.org_readonly', 'The organization for an existing job cannot be changed.')}</p>
 			</div>
 
-			{#if data.fieldGroup && (nonGeoFields.length > 0 || hasGeoFields)}
-				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-					<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{data.fieldGroup.name}</h2>
-					{#if nonGeoFields.length > 0}
+			{#if data.fieldGroup && (mainFields.length > 0 || hasGeoFields || hasCompanyRow || boolFields.length > 0)}
+				<div class="space-y-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<h2 class="text-sm font-semibold text-[var(--color-text)]">{data.fieldGroup.name}</h2>
+					{#if hasCompanyRow}
+						<div class="flex flex-wrap items-start gap-3">
+							{#if hasLogoField}
+								<JobLogoUpload
+									values={fieldValues}
+									onvalues={(v) => { fieldValues = v; }}
+									onedit={markDirty}
+								/>
+							{/if}
+							{#if companyFields.length > 0}
+								<div class="min-w-0 flex-1">
+									<CustomFieldGroupCmp
+										fields={companyFields}
+										values={fieldValues}
+										onvalues={(v) => { fieldValues = v; }}
+										onedit={markDirty}
+									/>
+								</div>
+							{/if}
+						</div>
+					{/if}
+					{#if mainFields.length > 0}
 						<CustomFieldGroupCmp
-							fields={nonGeoFields}
+							fields={mainFields}
 							values={fieldValues}
 							onvalues={(v) => { fieldValues = v; }}
 							onedit={markDirty}
 						/>
 					{/if}
 					{#if hasGeoFields}
-						<div class:mt-3={nonGeoFields.length > 0}>
-							<JobGeoFields
-								values={fieldValues}
-								onvalues={(v) => { fieldValues = v; }}
-								onedit={markDirty}
-							/>
-						</div>
+						<JobGeoFields
+							values={fieldValues}
+							onvalues={(v) => { fieldValues = v; }}
+							onedit={markDirty}
+						/>
+					{/if}
+					{#if boolFields.length > 0}
+						<CustomFieldGroupCmp
+							fields={boolFields}
+							values={fieldValues}
+							onvalues={(v) => { fieldValues = v; }}
+							onedit={markDirty}
+						/>
 					{/if}
 				</div>
 			{/if}

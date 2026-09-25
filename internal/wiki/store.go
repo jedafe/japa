@@ -981,23 +981,29 @@ LIMIT 1
 	return id, nil
 }
 
-// GetSpaceTypeID returns the space_type_id for a space — needed to resolve
-// entity_class for space-backed field group assignments (§06/§80).
-func (s *Store) GetSpaceTypeID(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error) {
+// GetSpaceTypeRef returns the space_type id and slug for a space — needed to
+// resolve entity_class tokens for space-backed field group assignments
+// (§06/§80): seeded assignments use space_type:{slug} and the class-wide
+// space_type token, while ops-created rows may use space_type:{id}.
+func (s *Store) GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, string, error) {
 	var id pgtype.UUID
+	var slug string
 
 	err := s.pool.Reader.QueryRow(ctx, `
-SELECT space_type_id FROM spaces WHERE id = $1
-`, spaceID).Scan(&id)
+SELECT sp.space_type_id, COALESCE(st.slug, '')
+FROM spaces sp
+LEFT JOIN space_types st ON st.id = sp.space_type_id
+WHERE sp.id = $1
+`, spaceID).Scan(&id, &slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return pgtype.UUID{}, pgx.ErrNoRows
+			return pgtype.UUID{}, "", pgx.ErrNoRows
 		}
 
-		return pgtype.UUID{}, fmt.Errorf("wiki: get space type id: %w", err)
+		return pgtype.UUID{}, "", fmt.Errorf("wiki: get space type ref: %w", err)
 	}
 
-	return id, nil
+	return id, slug, nil
 }
 
 // UpdatePage updates wiki page admin-managed fields (lock, feature, active,

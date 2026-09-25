@@ -138,7 +138,10 @@ export const load: PageServerLoad = async (event) => {
 			// Edit button on published content detail pages works too.
 			// For non-owners (super-admin or `content.edit` RBAC holder), the
 			// backend falls back to a platform-scoped fetch — see GetMyContent.
-			draft = await apiGet<ContentRecord>(ctx, `/me/content/${draftId}`);
+			// ?raw keeps authored {{...}} literals unresolved — the literal
+			// middleware would otherwise rewrite the JSON response and the
+			// next save would persist resolved text over the source.
+			draft = await apiGet<ContentRecord>(ctx, `/me/content/${draftId}?raw`);
 			// When the draft is a comparison, also fetch its items/dimensions
 			// from the JCE endpoint so the ComparisonBuilder can render them.
 			if (draft?.content_type === 'comparison') {

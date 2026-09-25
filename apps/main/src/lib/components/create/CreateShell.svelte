@@ -10,7 +10,7 @@
 	import { classifyError } from '$lib/api/create';
 	import { api } from '$lib/api/client';
 	import { excerpt } from '$lib/utils/seo-score';
-	import { localDateTimeToIso } from '$lib/utils/datetime';
+	import { localDateTimeToIso, isoToLocalDateTime } from '$lib/utils/datetime';
 	import type {
 		ContentRecord,
 		ContentSpace,
@@ -131,7 +131,9 @@
 	let organizationId = $state<string | null>(untrack(() => draft?.organization_id ?? null));
 	let visibility = $state<Visibility>(untrack(() => (draft?.visibility as Visibility) ?? 'public'));
 	let canonicalUrl = $state(untrack(() => draft?.canonical_url ?? ''));
-	let publishAt = $state(untrack(() => draft?.publish_at ?? null));
+	// draft.publish_at is a zoned ISO instant (timestamptz) — convert to the
+	// browser-local "YYYY-MM-DDTHH:mm" the datetime-local input requires.
+	let publishAt = $state<string | null>(untrack(() => isoToLocalDateTime(draft?.publish_at)));
 	let tags = $state<string[]>(untrack(() => draftTags ?? []));
 	let seriesId = $state<string | null>(untrack(() => draftSeriesId ?? null));
 	let fieldValues = $state<Record<string, unknown>>(untrack(() => draft?.field_values ?? {}));
@@ -212,9 +214,19 @@
 	// for the current content type. Prevents guide category field values from
 	// leaking into other content types.
 	const activeFieldKeys = $derived(new Set(allFieldGroups.flatMap((g) => g.fields.map((f) => f.key))));
-	const activeFieldValues = $derived(
-		Object.fromEntries(Object.entries(fieldValues).filter(([k]) => activeFieldKeys.has(k)))
-	);
+	const activeFieldValues = $derived.by(() => {
+		// Keys saved on this draft whose field group hasn't loaded yet (guide
+		// category groups fetch asynchronously on mount) must survive the
+		// filter — stripping them would wipe stored values on the next save
+		// and permanently block publishing on required fields.
+		const draftKeys =
+			draft && draft.content_type === selectedType.value
+				? new Set(Object.keys(draft.field_values ?? {}))
+				: null;
+		return Object.fromEntries(
+			Object.entries(fieldValues).filter(([k]) => activeFieldKeys.has(k) || draftKeys?.has(k))
+		);
+	});
 
 	const isGuide = $derived(selectedType.value === 'guide');
 	const isVideo = $derived(selectedType.value === 'video');
@@ -392,6 +404,10 @@
 	}
 
 	async function publish() {
+		// On an already-scheduled draft, "Publish" means go live now — clear
+		// the restored schedule so the composer calls /publish instead of
+		// re-saving publish_at through /schedule (a no-op-looking resched).
+		if (draft?.status === 'scheduled' && publishAt) publishAt = null;
 		await composer?.flush();
 		await saveSpaces();
 		await composer?.publish();

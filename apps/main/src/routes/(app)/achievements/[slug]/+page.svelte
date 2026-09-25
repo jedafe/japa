@@ -26,6 +26,7 @@
 		MessageCircle,
 		Eye
 	} from 'lucide-svelte';
+	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import type { AchievementMilestoneType } from '$lib/types';
 	import type { IconComponent } from '$lib/components/ui/icons';
 	import type { PageData } from './$types';
@@ -254,4 +255,9 @@
 			</div>
 		{/if}
 	</article>
+
+	<!-- Same-type recommendations, ranked by embedding similarity. -->
+	<div class="mt-4">
+		<RecommendedContentCard items={data.recommendedContent ?? []} contentType="achievement" />
+	</div>
 </div>

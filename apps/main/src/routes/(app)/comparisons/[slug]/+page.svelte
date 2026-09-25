@@ -99,8 +99,6 @@
 			authed={data.authed}
 			currentUserId={data.currentUserId}
 		/>
-		<!-- Same-type recommendations, ranked by embedding similarity. -->
-		<RecommendedContentCard items={data.recommendedContent ?? []} contentType="comparison" />
 		<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
 		{#each sidebarWidgets as widget (widget.id)}
 			<SidebarWidgetRenderer
@@ -309,6 +307,11 @@
 		loadError={data.commentsLoadError}
 		deletedUserIds={deletedUserIds}
 	/>
+
+	<!-- Same-type recommendations, ranked by embedding similarity. -->
+	<div class="mt-8">
+		<RecommendedContentCard items={data.recommendedContent ?? []} contentType="comparison" />
+	</div>
 
 	<div class="mt-6 flex gap-4">
 		<a href="/comparisons" class="text-sm underline" style="color: var(--color-text)">← {t('jce.comparisons.back')}</a>

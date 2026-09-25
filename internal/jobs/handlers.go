@@ -435,6 +435,10 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A listing with identical content already exists")
 			return
 		}
+		if errors.Is(err, ErrInvalidFieldValue) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_value", err.Error())
+			return
+		}
 		slog.Error("jobs: create listing failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_listing_failed", "Failed to create job listing")
 
@@ -493,6 +497,11 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidFieldValue) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_value", err.Error())
 			return
 		}
 
@@ -749,6 +758,10 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 	if err := h.service.AdminUpdateJob(r.Context(), jobID, body.Title, body.Summary, body.Body, body.Status, body.FieldValues); err != nil {
 		if errors.Is(err, ErrDuplicateContent) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A listing with identical content already exists")
+			return
+		}
+		if errors.Is(err, ErrInvalidFieldValue) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_value", err.Error())
 			return
 		}
 		slog.Error("jobs: admin update failed", "error", err)

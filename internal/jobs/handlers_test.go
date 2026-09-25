@@ -8,6 +8,7 @@
 package jobs
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -214,12 +215,14 @@ func TestDeriveSummary(t *testing.T) {
 }
 
 // TestJobFieldTypes verifies the field-key → storage-column map matches the
-// 15 seeded job_listing_fields (migration 000475). A mismatch would route
-// boolean/number values to value_text and break the visa_sponsorship filter
-// and salary sort (JOBS-007).
+// 17 seeded job_listing_fields (migrations 000475 + 000734). A mismatch would
+// route boolean/number values to value_text and break the visa_sponsorship
+// filter and salary sort (JOBS-007).
 func TestJobFieldTypes(t *testing.T) {
 	want := map[string]jobFieldType{
 		"company_name":          fieldTypeText,
+		"company_logo":          fieldTypeURL,
+		"company_website":       fieldTypeURL,
 		"job_type":              fieldTypeText,
 		"location_type":         fieldTypeText,
 		"country":               fieldTypeText,
@@ -229,7 +232,7 @@ func TestJobFieldTypes(t *testing.T) {
 		"salary_currency":       fieldTypeText,
 		"experience_level":      fieldTypeText,
 		"skills_required":       fieldTypeText,
-		"application_url":       fieldTypeText,
+		"application_url":       fieldTypeURL,
 		"application_deadline":  fieldTypeText,
 		"visa_sponsorship":      fieldTypeBoolean,
 		"relocation_assistance": fieldTypeBoolean,
@@ -248,6 +251,62 @@ func TestJobFieldTypes(t *testing.T) {
 
 		if got != ft {
 			t.Errorf("jobFieldTypes[%q] = %q, want %q", key, got, ft)
+		}
+	}
+}
+
+// url-typed fields feed href/window.open sinks on the finder cards and detail
+// page — only absolute http(s) URLs may be stored.
+func TestSanitizeJobFieldURL(t *testing.T) {
+	valid := []string{
+		"https://example.com",
+		"http://example.com/careers?ref=jc",
+		" https://jobs.example.org/apply/123 ",
+	}
+	for _, v := range valid {
+		if _, ok := sanitizeJobFieldURL(v); !ok {
+			t.Errorf("sanitizeJobFieldURL(%q) rejected a valid URL", v)
+		}
+	}
+
+	invalid := []string{
+		"javascript:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"//evil.example.com",
+		"example.com",
+		"ftp://example.com/file",
+		"mailto:hr@example.com",
+		"https://",
+	}
+	for _, v := range invalid {
+		if _, ok := sanitizeJobFieldURL(v); ok {
+			t.Errorf("sanitizeJobFieldURL(%q) accepted an unsafe URL", v)
+		}
+	}
+}
+
+// validateJobFieldValues gates url-typed fields before the contents write;
+// non-url keys and empty values pass through untouched.
+func TestValidateJobFieldValues(t *testing.T) {
+	cases := []struct {
+		name    string
+		values  map[string]string
+		wantErr bool
+	}{
+		{"valid website", map[string]string{"company_website": "https://acme.example"}, false},
+		{"empty url ok", map[string]string{"company_website": ""}, false},
+		{"javascript scheme", map[string]string{"company_website": "javascript:alert(1)"}, true},
+		{"bare domain", map[string]string{"application_url": "acme.example/jobs"}, true},
+		{"non-url key untouched", map[string]string{"company_name": "javascript:still-fine"}, false},
+		{"unknown key untouched", map[string]string{"totally_made_up": "//evil.example.com"}, false},
+	}
+	for _, tc := range cases {
+		err := validateJobFieldValues(tc.values)
+		if tc.wantErr && !errors.Is(err, ErrInvalidFieldValue) {
+			t.Errorf("%s: want ErrInvalidFieldValue, got %v", tc.name, err)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("%s: unexpected error %v", tc.name, err)
 		}
 	}
 }

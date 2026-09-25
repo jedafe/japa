@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // Application status constants — match the CHECK constraint on
@@ -75,6 +77,11 @@ var ErrNotOrgMember = errors.New("jobs: not an organization member")
 // with an existing content row (Rule 12 → 409 duplicate_content).
 var ErrDuplicateContent = errors.New("jobs: duplicate content")
 
+// ErrInvalidFieldValue is returned when a field_values entry fails type
+// validation — e.g. a url-typed field carrying a non-http(s) value. Handlers
+// map it to 400 invalid_field_value (Rule 5).
+var ErrInvalidFieldValue = errors.New("jobs: invalid field value")
+
 // JobFilters holds the server-side filter parameters for the job finder.
 type JobFilters struct {
 	Country         string
@@ -98,6 +105,20 @@ type SourceAttribution struct {
 	TrustLevel int16  `json:"trust_level"`
 }
 
+// JobPoster is the entity that published the listing — the organization (or,
+// failing that, the author user). Finder cards use it for the avatar/name
+// fallback and the hover-card link target when no company_logo/company_name
+// field overrides it.
+type JobPoster struct {
+	Kind       string `json:"kind"` // "organization" | "user"
+	ID         string `json:"id"`
+	Slug       string `json:"slug"` // org slug or username
+	Name       string `json:"name"` // org name or display name
+	LogoURL    string `json:"logo_url,omitempty"`
+	Verified   bool   `json:"verified,omitempty"`
+	WebsiteURL string `json:"website_url,omitempty"`
+}
+
 // JobResult is a single job listing in the finder results.
 // Source is a pointer so listings without intel provenance serialize
 // `"source": null` instead of an empty attribution object (JOBS-016).
@@ -109,6 +130,7 @@ type JobResult struct {
 	FieldValues map[string]string  `json:"field_values"`
 	PublishedAt string             `json:"published_at"`
 	Source      *SourceAttribution `json:"source"`
+	Poster      *JobPoster         `json:"poster"`
 
 	intelRecordID pgtype.UUID
 }
@@ -126,6 +148,7 @@ type JobDetail struct {
 	PublishedAt    string             `json:"published_at"`
 	OrganizationID string             `json:"organization_id,omitempty"`
 	Source         *SourceAttribution `json:"source"`
+	Poster         *JobPoster         `json:"poster"`
 	// MyApplication is the authenticated viewer's own application to this
 	// listing, or null when the viewer is a guest or has not applied. Lets
 	// the detail page render an "Applied" state instead of the form.
@@ -428,6 +451,8 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 
 	// Data query with field value extraction via JSON aggregation. The
 	// aggregation joins custom_fields to resolve the key (EAV schema).
+	// Org/user/media LEFT JOINs resolve the poster block (avatar/name/link
+	// fallback for finder cards) in one round-trip.
 	dataSQL := fmt.Sprintf(`
 		SELECT
 			c.id, c.title, c.slug, c.intel_record_id, LEFT(c.body, 300),
@@ -445,8 +470,15 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 				),
 				'{}'::json
 			) AS field_values,
-			c.published_at
+			c.published_at,
+			c.organization_id, o.slug, o.name, o.verified, o.website_url,
+			om.storage_bucket, om.storage_path,
+			c.author_id, u.username, up.display_name, up.avatar_url
 		FROM contents c
+		LEFT JOIN organizations o ON o.id = c.organization_id
+		LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+		LEFT JOIN users u ON u.id = c.author_id
+		LEFT JOIN user_profiles up ON up.user_id = c.author_id
 		%s
 		%s
 		WHERE %s
@@ -486,9 +518,25 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			body          *string
 			fieldValues   []byte
 			publishedAt   pgtype.Timestamptz
+			orgID         pgtype.UUID
+			orgSlug       *string
+			orgName       *string
+			orgVerified   *bool
+			orgWebsite    *string
+			logoBucket    *string
+			logoPath      *string
+			authorID      pgtype.UUID
+			username      *string
+			displayName   *string
+			avatarURL     *string
 		)
 
-		if err := rows.Scan(&id, &title, &slug, &intelRecordID, &body, &fieldValues, &publishedAt); err != nil {
+		if err := rows.Scan(
+			&id, &title, &slug, &intelRecordID, &body, &fieldValues, &publishedAt,
+			&orgID, &orgSlug, &orgName, &orgVerified, &orgWebsite,
+			&logoBucket, &logoPath,
+			&authorID, &username, &displayName, &avatarURL,
+		); err != nil {
 			return nil, 0, fmt.Errorf("jobs: find: scan: %w", err)
 		}
 
@@ -514,6 +562,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			Summary:       deriveSummary(bodyStr),
 			FieldValues:   fvMap,
 			PublishedAt:   publishedStr,
+			Poster:        jobPosterFromRow(orgID, authorID, orgSlug, orgName, orgVerified, orgWebsite, logoBucket, logoPath, username, displayName, avatarURL),
 			intelRecordID: intelRecordID,
 		})
 	}
@@ -545,6 +594,52 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 	return results, total, nil
 }
 
+// jobPosterFromRow builds the poster block for a listing: the owning
+// organization when set, else the author user. Returns nil when neither
+// resolves (e.g. fully detached intel-ingested rows).
+func jobPosterFromRow(
+	orgID, authorID pgtype.UUID,
+	orgSlug, orgName *string, orgVerified *bool, orgWebsite *string,
+	logoBucket, logoPath *string,
+	username, displayName, avatarURL *string,
+) *JobPoster {
+	if orgID.Valid && orgSlug != nil && orgName != nil {
+		p := &JobPoster{
+			Kind: "organization",
+			ID:   orgID.String(),
+			Slug: *orgSlug,
+			Name: *orgName,
+		}
+		if orgVerified != nil {
+			p.Verified = *orgVerified
+		}
+		if orgWebsite != nil {
+			p.WebsiteURL = *orgWebsite
+		}
+		if logoBucket != nil && logoPath != nil && *logoBucket != "" && *logoPath != "" {
+			p.LogoURL = media.MediaURL(*logoBucket, *logoPath, media.ImageProxyOpts{})
+		}
+		return p
+	}
+	if authorID.Valid && username != nil {
+		name := *username
+		if displayName != nil && *displayName != "" {
+			name = *displayName
+		}
+		p := &JobPoster{
+			Kind: "user",
+			ID:   authorID.String(),
+			Slug: *username,
+			Name: name,
+		}
+		if avatarURL != nil {
+			p.LogoURL = *avatarURL
+		}
+		return p
+	}
+	return nil
+}
+
 // GetJobDetail returns a single job listing with all its custom field values.
 func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, error) {
 	query := `
@@ -564,8 +659,16 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 				),
 				'{}'::json
 			) AS field_values,
-			c.published_at
+			c.published_at,
+			c.author_id,
+			o.slug, o.name, o.verified, o.website_url,
+			om.storage_bucket, om.storage_path,
+			u.username, up.display_name, up.avatar_url
 		FROM contents c
+		LEFT JOIN organizations o ON o.id = c.organization_id
+		LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+		LEFT JOIN users u ON u.id = c.author_id
+		LEFT JOIN user_profiles up ON up.user_id = c.author_id
 		WHERE c.content_type = 'job_listing'
 		  AND c.status = 'published'
 		  AND c.deleted_at IS NULL
@@ -581,10 +684,24 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 		fieldValues   []byte
 		publishedAt   pgtype.Timestamptz
 		orgID         pgtype.UUID
+		authorID      pgtype.UUID
+		orgSlug       *string
+		orgName       *string
+		orgVerified   *bool
+		orgWebsite    *string
+		logoBucket    *string
+		logoPath      *string
+		username      *string
+		displayName   *string
+		avatarURL     *string
 	)
 
 	err := s.store.pool.Reader.QueryRow(ctx, query, slug).Scan(
 		&id, &title, &slugOut, &body, &orgID, &intelRecordID, &fieldValues, &publishedAt,
+		&authorID,
+		&orgSlug, &orgName, &orgVerified, &orgWebsite,
+		&logoBucket, &logoPath,
+		&username, &displayName, &avatarURL,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -621,6 +738,7 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 	if orgID.Valid {
 		detail.OrganizationID = orgID.String()
 	}
+	detail.Poster = jobPosterFromRow(orgID, authorID, orgSlug, orgName, orgVerified, orgWebsite, logoBucket, logoPath, username, displayName, avatarURL)
 
 	if intelRecordID.Valid {
 		if sources, err := s.store.MapSourcesByRecordIDs(ctx, []pgtype.UUID{intelRecordID}); err == nil {
@@ -740,6 +858,10 @@ func (s *Service) ListOrgJobs(ctx context.Context, orgID pgtype.UUID, page, limi
 // CreateJobListing creates a job_listing content row with the given field
 // values and returns the created listing detail.
 func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.UUID, title, slug, summary, body string, fieldValues map[string]string) (JobDetail, error) {
+	if err := validateJobFieldValues(fieldValues); err != nil {
+		return JobDetail{}, err
+	}
+
 	if slug == "" {
 		slug = generateJobSlug(title)
 	}
@@ -892,6 +1014,10 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 		return existing, nil
 	}
 
+	if err := validateJobFieldValues(input.FieldValues); err != nil {
+		return JobDetail{}, err
+	}
+
 	// Fill in any omitted fields with the existing values.
 	title := input.Title
 	if title == "" {
@@ -1042,12 +1168,18 @@ const (
 	fieldTypeText    jobFieldType = "text"
 	fieldTypeNumber  jobFieldType = "number"
 	fieldTypeBoolean jobFieldType = "boolean"
+	// fieldTypeURL stores to value_text like text, but the value must be an
+	// absolute http(s) URL — finder cards and detail pages open these values
+	// as links, so javascript:/data:/scheme-relative junk must never persist.
+	fieldTypeURL jobFieldType = "url"
 )
 
-// jobFieldTypes maps the 15 seeded job_listing_fields keys to their storage
-// column. Must match migration 000475 field_type values.
+// jobFieldTypes maps the 17 seeded job_listing_fields keys to their storage
+// column. Must match migrations 000475 + 000734 field_type values.
 var jobFieldTypes = map[string]jobFieldType{
 	"company_name":          fieldTypeText,
+	"company_logo":          fieldTypeURL,
+	"company_website":       fieldTypeURL,
 	"job_type":              fieldTypeText,
 	"location_type":         fieldTypeText,
 	"country":               fieldTypeText,
@@ -1057,11 +1189,42 @@ var jobFieldTypes = map[string]jobFieldType{
 	"salary_currency":       fieldTypeText,
 	"experience_level":      fieldTypeText,
 	"skills_required":       fieldTypeText,
-	"application_url":       fieldTypeText,
+	"application_url":       fieldTypeURL,
 	"application_deadline":  fieldTypeText, // ISO date stored as value_text
 	"visa_sponsorship":      fieldTypeBoolean,
 	"relocation_assistance": fieldTypeBoolean,
 	"is_featured":           fieldTypeBoolean,
+}
+
+// sanitizeJobFieldURL validates a url-typed field value. Only absolute http(s)
+// URLs with a host are accepted — anything else (javascript:, data:, protocol
+// -relative //host, bare strings) is rejected so cards can safely open the
+// stored value in a new tab.
+func sanitizeJobFieldURL(raw string) (string, bool) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", true // empty = field not provided / cleared, not an error
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", false
+	}
+	return v, true
+}
+
+// validateJobFieldValues checks all url-typed values before any write so a
+// bad URL fails the whole request with a 400 instead of partially writing.
+// Runs before the contents insert/update in every write path.
+func validateJobFieldValues(fieldValues map[string]string) error {
+	for key, value := range fieldValues {
+		if jobFieldTypes[key] != fieldTypeURL {
+			continue
+		}
+		if _, ok := sanitizeJobFieldURL(value); !ok {
+			return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalidFieldValue, key)
+		}
+	}
+	return nil
 }
 
 // upsertJobFieldValue upserts a single custom_field_values row with the
@@ -1078,6 +1241,17 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID
 	if !ok {
 		slog.Warn("jobs: unknown field key, skipping", "field_key", key)
 		return
+	}
+
+	// url fields are pre-validated by validateJobFieldValues in every write
+	// path; sanitize again here so no caller can bypass the scheme check.
+	if ft == fieldTypeURL {
+		v, ok := sanitizeJobFieldURL(value)
+		if !ok {
+			slog.Warn("jobs: invalid url field value, skipping", "field_key", key)
+			return
+		}
+		value = v
 	}
 
 	switch ft {
@@ -1607,6 +1781,10 @@ func (s *Service) ToggleFeature(ctx context.Context, jobID pgtype.UUID) (bool, e
 // content_type='job_listing' in the given platform. The contents table has no
 // summary column (JOBS-004); summary is derived from body at read time.
 func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, summary, body, status *string, fieldValues map[string]string) error {
+	if err := validateJobFieldValues(fieldValues); err != nil {
+		return err
+	}
+
 	// Build the SET clause dynamically based on which fields are provided.
 	// summary is intentionally ignored — no such column (JOBS-004).
 	setParts := []string{"updated_at = now()"}

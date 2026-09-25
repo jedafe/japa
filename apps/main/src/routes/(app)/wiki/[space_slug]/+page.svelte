@@ -6,7 +6,8 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { BookOpen, Lock, Star, ArrowLeft, Globe, GraduationCap, Plus } from 'lucide-svelte';
+	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
+	import { BookOpen, Lock, Star, ArrowLeft, Globe, GraduationCap, Plus, Table2 } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { WikiCategory, WikiPageIndex, GeoCountry, WikiDestination } from '$lib/types';
@@ -46,10 +47,12 @@
 		return t(key, cat.replace(/_/g, ' '));
 	}
 
-	// Resolve the space name from the first page's space_name, or fall back
-	// to the slug. The index endpoint includes a space_name per the WikiPage
-	// DTO; this removes a client-side request to /spaces/{slug} (drift fix).
-	const spaceName = $derived(data.index[0]?.space_name ?? data.spaceSlug);
+	// Resolve the space name from the space detail (authoritative — present
+	// even for spaces with no pages), then the first page's space_name, then
+	// the slug.
+	const spaceName = $derived(
+		data.spaceDetail?.space?.name ?? data.index[0]?.space_name ?? data.spaceSlug
+	);
 
 	// Geo-aware destination selector: load the canonical country list from
 	// /geo/countries (Rule 16 — no hardcoded lists, ADR-005). The selector is
@@ -133,6 +136,14 @@
 	);
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	const canCreate = $derived(data.authed && data.userPermissions?.includes('wiki.edit'));
+
+	// §80 community field ops — the space itself is a community-editable
+	// entity; its field groups render as a data panel on the index, and pages
+	// bound to a child entity class (data_entity_type) carry a data badge.
+	const structuredEditsOn = $derived(
+		wikiEnabled && data.features?.['wiki.structured_edits'] === true
+	);
+	const spaceId = $derived(data.spaceDetail?.space?.id ?? data.index[0]?.space_id ?? '');
 </script>
 
 <svelte:head>
@@ -239,7 +250,17 @@
 								aria-label={page.title}
 								class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)]"
 							>
-								<span class="text-sm font-medium text-[var(--color-text)]">{page.title}</span>
+								<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+									{page.title}
+									{#if structuredEditsOn && page.data_entity_type}
+										<span
+											class="inline-flex items-center gap-1 rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--color-muted)]"
+											title={t('wiki.data_badge_hint', 'Includes community-editable data')}
+										>
+											<Table2 size={10} /> {t('wiki.data_badge', 'Data')}
+										</span>
+									{/if}
+								</span>
 								<span class="text-xs text-[var(--color-muted)]" aria-hidden="true">{categoryLabel(page.category as WikiCategory)}</span>
 							</a>
 						{/each}
@@ -265,6 +286,14 @@
 										{#if page.is_locked}
 											<Lock size={13} class="text-[var(--color-muted)]" />
 										{/if}
+										{#if structuredEditsOn && page.data_entity_type}
+											<span
+												class="inline-flex items-center gap-1 rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--color-muted)]"
+												title={t('wiki.data_badge_hint', 'Includes community-editable data')}
+											>
+												<Table2 size={10} /> {t('wiki.data_badge', 'Data')}
+											</span>
+										{/if}
 									</span>
 									<span class="text-xs text-[var(--color-muted)]" aria-hidden="true">{categoryLabel(page.category as WikiCategory)}</span>
 								</a>
@@ -273,6 +302,14 @@
 					</ul>
 				</section>
 			{/each}
+		{/if}
+
+		{#if structuredEditsOn && spaceId && !data.loadError}
+			<EntityFieldsPanel
+				entityType="space"
+				entityId={spaceId}
+				title={t('wiki.space_data_title', '{name} data', { name: spaceName })}
+			/>
 		{/if}
 	</div>
 </div>

@@ -2,11 +2,12 @@
 -- Renumbered from 000600 (duplicate version prefix). See the .up file.
 -- 000600_remove_wallet_dashboard_rail.down.sql
 -- Restore the wallet dashboard rail item.
+-- De-tenanted form: menu_items.tenant_id and menus.tenant_id were dropped by
+-- 000668, so the tenant column/filters are gone.
 
 BEGIN;
 
 INSERT INTO menu_items (
-    tenant_id,
     menu_id,
     label,
     url,
@@ -20,12 +21,11 @@ INSERT INTO menu_items (
     feature_flag
 )
 SELECT
-    '00000000-0000-0000-0000-000000000001',
     m.id,
     'dashboard.nav.wallet',
     '/dashboard/wallet',
     'wallet',
-    (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM menu_items WHERE menu_id = m.id AND tenant_id = '00000000-0000-0000-0000-000000000001'),
+    (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM menu_items WHERE menu_id = m.id),
     'authenticated',
     '_self',
     false,
@@ -34,7 +34,6 @@ SELECT
     'feature.wallet'
 FROM menus m
 WHERE m.slug = 'dashboard_rail'
-  AND m.tenant_id = '00000000-0000-0000-0000-000000000001'
 ON CONFLICT DO NOTHING;
 
 COMMIT;

@@ -150,7 +150,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"space_slug":        content.SpaceSlug,
 		"space_avatar_url":  mediaURL(content.SpaceAvatarStorageBucket, content.SpaceAvatarStoragePath),
 		"organization":      orgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath),
-		"excerpt":           makeExcerpt(content.BodyHtml, 160),
+		"excerpt":           MakeExcerpt(content.BodyHtml, 160),
 	}
 
 	if len(content.FieldValues) > 0 && json.Valid(content.FieldValues) {

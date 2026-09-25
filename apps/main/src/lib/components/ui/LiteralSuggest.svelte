@@ -15,7 +15,8 @@
 		wrapperClass = 'relative flex-1',
 		disabled = false,
 		rows = undefined as number | undefined,
-		onkeydown = undefined as ((e: KeyboardEvent) => void) | undefined
+		onkeydown = undefined as ((e: KeyboardEvent) => void) | undefined,
+		onvalue = undefined as ((v: string) => void) | undefined
 	}: {
 		value?: string;
 		textarea?: boolean;
@@ -25,6 +26,9 @@
 		disabled?: boolean;
 		rows?: number | undefined;
 		onkeydown?: ((e: KeyboardEvent) => void) | undefined;
+		// Fires after every value change (typing and token picks) so callers
+		// can keep one-way data flow without a two-way bind.
+		onvalue?: ((v: string) => void) | undefined;
 	} = $props();
 
 	let fieldEl: HTMLInputElement | HTMLTextAreaElement | undefined = $state();
@@ -64,6 +68,7 @@
 	}
 
 	function onInput() {
+		onvalue?.(value);
 		const hit = activeQuery();
 		if (!hit) {
 			triggerStart = -1;
@@ -85,6 +90,7 @@
 		const caret = el.selectionStart ?? value.length;
 		const inserted = `{{${key}}}`;
 		value = value.slice(0, start) + inserted + value.slice(caret);
+		onvalue?.(value);
 		triggerStart = -1;
 		items = [];
 

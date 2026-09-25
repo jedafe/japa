@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { LiteralSuggest } from '$lib/components/ui';
 
 	interface Props {
 		title: string;
@@ -10,12 +11,14 @@
 </script>
 
 <div class="title-field">
-	<input
-		type="text"
-		class="title-input"
-		placeholder={t('create.placeholder.title')}
+	<!-- {{ token picker — same literal autocomplete the body editor offers,
+	     for plain-text fields. Inserts raw {{Token}} source; the server
+	     resolves it at the response boundary (§14). -->
+	<LiteralSuggest
 		value={title}
-		oninput={(e) => onTitle(e.currentTarget.value)}
+		onvalue={onTitle}
+		placeholder={t('create.placeholder.title')}
+		class="title-input"
 	/>
 </div>
 
@@ -25,7 +28,8 @@
 		flex-direction: column;
 		gap: 8px;
 	}
-	.title-input {
+	/* The input renders inside LiteralSuggest — :global reaches it. */
+	.title-field :global(.title-input) {
 		width: 100%;
 		padding: 10px 14px;
 		border: 1px solid var(--color-border);
@@ -37,11 +41,11 @@
 		outline: none;
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
-	.title-input::placeholder {
+	.title-field :global(.title-input)::placeholder {
 		color: var(--color-muted);
 		font-weight: 500;
 	}
-	.title-input:focus {
+	.title-field :global(.title-input):focus {
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}

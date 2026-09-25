@@ -2,6 +2,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
 import { error } from '@sveltejs/kit';
 import type { ComposerOrganization, FormEmbed, JobDetail } from '$lib/types';
+import type { ContentArticle } from '$lib/types/content';
 
 const JOB_EDITOR_ROLES = new Set(['owner', 'admin', 'editor']);
 
@@ -55,7 +56,22 @@ export const load: PageServerLoad = async (event) => {
 		applicationFormId = form?.id ?? null;
 	}
 
-	return { job, authed, canEdit, applicationFormId };
+	// "Recommended Jobs" card — same-type items ranked by the related
+	// endpoint's content_type filter. Best-effort; the card hides itself
+	// when the list is empty. NB: the endpoint reads `page_size`, not
+	// `limit`.
+	let recommendedContent: ContentArticle[] = [];
+	try {
+		recommendedContent =
+			(await apiGet<ContentArticle[]>(
+				ctx,
+				`/content/${job.id}/related?content_type=job_listing&page_size=5`
+			)) ?? [];
+	} catch {
+		recommendedContent = [];
+	}
+
+	return { job, authed, canEdit, applicationFormId, recommendedContent };
 };
 
 export const actions: Actions = {

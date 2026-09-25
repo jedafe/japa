@@ -383,6 +383,11 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		// Stored excerpts can carry raw HTML (e.g. imported feed summaries) —
+		// strip tags so cards render plain text, not markup.
+		if strings.ContainsRune(excerpt, '<') {
+			excerpt = content.MakeExcerpt(excerpt, 200)
+		}
 
 		row := map[string]any{
 			"id":                 c.ID,

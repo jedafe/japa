@@ -206,9 +206,9 @@ type PostCard struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
-// makeExcerpt strips HTML tags from bodyHtml, collapses whitespace, and
+// MakeExcerpt strips HTML tags from bodyHtml, collapses whitespace, and
 // truncates to maxLen characters for use as a post preview.
-func makeExcerpt(bodyHtml string, maxLen int) string {
+func MakeExcerpt(bodyHtml string, maxLen int) string {
 	plain := htmlTagPattern.ReplaceAllString(bodyHtml, "")
 	plain = strings.Join(strings.Fields(plain), " ")
 
@@ -235,7 +235,7 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 			ContentType:       c.ContentType,
 			Title:             c.Title,
 			Slug:              c.Slug,
-			Excerpt:           makeExcerpt(c.BodyHtml, 200),
+			Excerpt:           MakeExcerpt(c.BodyHtml, 200),
 			BodyHtml:          c.BodyHtml,
 			AuthorID:          c.AuthorID,
 			AuthorName:        c.AuthorName,
@@ -338,7 +338,7 @@ func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCar
 			ContentType:       c.ContentType,
 			Title:             c.Title,
 			Slug:              c.Slug,
-			Excerpt:           makeExcerpt(c.BodyHtml, 200),
+			Excerpt:           MakeExcerpt(c.BodyHtml, 200),
 			BodyHtml:          c.BodyHtml,
 			AuthorID:          c.AuthorID,
 			AuthorName:        c.AuthorName,

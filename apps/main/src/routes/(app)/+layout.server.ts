@@ -30,15 +30,14 @@ export const load: LayoutServerLoad = async (event) => {
 	const sidebarPath = encodeURIComponent(
 		localePrefix ? event.url.pathname.slice(localePrefix) : event.url.pathname
 	);
-	// ADR-058: /studio, /create, and /video/[slug] render no right sidebar
-	// at all, so their resolve call is skipped. The other Exception #1
-	// singles (blog, content, guide, story, comparisons) hide the shell's
-	// sidebar but render their own in-page <aside> fed by
-	// rightSidebarWidgets — skipping the resolve left those permanently
-	// empty.
+	// ADR-058: /studio and /create render no right sidebar at all, so their
+	// resolve call is skipped. The Exception #1 singles (blog, content,
+	// guide, story, comparisons, video) hide the shell's sidebar but render
+	// their own in-page <aside> fed by rightSidebarWidgets — skipping the
+	// resolve left those permanently empty. (/video/[slug]'s lean
+	// sourceOnly player page has no aside and simply ignores the data.)
 	const rid = event.route.id ?? '';
-	const hideRight =
-		rid.startsWith('/(app)/studio') || rid === '/(app)/create' || rid === '/(app)/video/[slug]';
+	const hideRight = rid.startsWith('/(app)/studio') || rid === '/(app)/create';
 	const hideLeft =
 		rid.startsWith('/(app)/studio') ||
 		rid === '/(app)/create' ||

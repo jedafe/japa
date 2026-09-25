@@ -4,11 +4,12 @@
 -- Revert BUG-001 fix: remove the attestation_guide.enabled feature_flags seed.
 -- Note: this does NOT re-create the stale feature.attestation_guide row —
 -- that row never existed in the first place.
+-- De-tenanted form: feature_flags.tenant_id was dropped by 000668, so the
+-- original tenant filter is gone.
 
 BEGIN;
 
 DELETE FROM feature_flags
-WHERE key = 'attestation_guide.enabled'
-  AND tenant_id = '00000000-0000-0000-0000-000000000001';
+WHERE key = 'attestation_guide.enabled';
 
 COMMIT;

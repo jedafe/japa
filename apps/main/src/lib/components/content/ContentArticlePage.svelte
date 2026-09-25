@@ -188,8 +188,6 @@
 			authed={data.authed}
 			currentUserId={data.currentUserId}
 		/>
-		<!-- Same-type recommendations, ranked by embedding similarity. -->
-		<RecommendedContentCard items={data.recommendedContent ?? []} contentType={article.content_type} />
 		<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
 		{#each sidebarWidgets as widget (widget.id)}
 			<SidebarWidgetRenderer
@@ -389,6 +387,11 @@
 			loadError={data.commentsLoadError}
 			deletedUserIds={deletedUserIds}
 		/>
+
+		<!-- Same-type recommendations, ranked by embedding similarity. -->
+		<div class="mt-8">
+			<RecommendedContentCard items={data.recommendedContent ?? []} contentType={article.content_type} />
+		</div>
 
 		<!-- Related content (Section 14 — GET /content/{id}/related). -->
 		{#if data.relatedContent && data.relatedContent.length > 0}
