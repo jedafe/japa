@@ -3760,7 +3760,7 @@ CREATE TABLE public.menu_items (
 -- Name: COLUMN menu_items.feature_flag; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.menu_items.feature_flag IS 'Optional feature flag key (feature_flags.key). If set, the item is shown only when the flag is enabled for the tenant.';
+COMMENT ON COLUMN public.menu_items.feature_flag IS 'Optional feature flag key (feature_flags.key). If set, the item is shown only when the flag is enabled.';
 
 
 --
@@ -9704,255 +9704,255 @@ ALTER TABLE ONLY public.ws_tickets
 
 
 --
--- Name: activity_events_tenant_id_activity_key_reference_key; Type: INDEX; Schema: public; Owner: -
+-- Name: activity_events_activity_key_reference_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX activity_events_tenant_id_activity_key_reference_key ON public.activity_events USING btree (activity_key, reference);
+CREATE UNIQUE INDEX activity_events_activity_key_reference_key ON public.activity_events USING btree (activity_key, reference);
 
 
 --
--- Name: activity_point_rules_tenant_id_activity_key_key; Type: INDEX; Schema: public; Owner: -
+-- Name: activity_point_rules_activity_key_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX activity_point_rules_tenant_id_activity_key_key ON public.activity_point_rules USING btree (activity_key);
+CREATE UNIQUE INDEX activity_point_rules_activity_key_key ON public.activity_point_rules USING btree (activity_key);
 
 
 --
--- Name: ad_analytics_daily_tenant_id_campaign_id_slot_type_id_date_key; Type: INDEX; Schema: public; Owner: -
+-- Name: ad_analytics_daily_campaign_id_slot_type_id_date_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX ad_analytics_daily_tenant_id_campaign_id_slot_type_id_date_key ON public.ad_analytics_daily USING btree (campaign_id, slot_type_id, date);
+CREATE UNIQUE INDEX ad_analytics_daily_campaign_id_slot_type_id_date_key ON public.ad_analytics_daily USING btree (campaign_id, slot_type_id, date);
 
 
 --
--- Name: ad_networks_tenant_id_provider_key; Type: INDEX; Schema: public; Owner: -
+-- Name: ad_networks_provider_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX ad_networks_tenant_id_provider_key ON public.ad_networks USING btree (provider);
+CREATE UNIQUE INDEX ad_networks_provider_key ON public.ad_networks USING btree (provider);
 
 
 --
--- Name: ad_slot_types_tenant_id_slot_name_key; Type: INDEX; Schema: public; Owner: -
+-- Name: ad_slot_types_slot_name_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX ad_slot_types_tenant_id_slot_name_key ON public.ad_slot_types USING btree (slot_name);
+CREATE UNIQUE INDEX ad_slot_types_slot_name_key ON public.ad_slot_types USING btree (slot_name);
 
 
 --
--- Name: affiliate_providers_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: affiliate_providers_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX affiliate_providers_tenant_id_slug_key ON public.affiliate_providers USING btree (slug);
+CREATE UNIQUE INDEX affiliate_providers_slug_key ON public.affiliate_providers USING btree (slug);
 
 
 --
--- Name: ai_tools_tenant_id_name_key; Type: INDEX; Schema: public; Owner: -
+-- Name: ai_tools_name_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX ai_tools_tenant_id_name_key ON public.ai_tools USING btree (name);
+CREATE UNIQUE INDEX ai_tools_name_key ON public.ai_tools USING btree (name);
 
 
 --
--- Name: arrival_checklist_guides_tenant_id_destination_space_id_vis_key; Type: INDEX; Schema: public; Owner: -
+-- Name: arrival_checklist_guides_destination_space_id_vis_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX arrival_checklist_guides_tenant_id_destination_space_id_vis_key ON public.arrival_checklist_guides USING btree (destination_space_id, visa_category, applicant_type, version);
+CREATE UNIQUE INDEX arrival_checklist_guides_destination_space_id_vis_key ON public.arrival_checklist_guides USING btree (destination_space_id, visa_category, applicant_type, version);
 
 
 --
--- Name: attestation_pathways_tenant_id_document_type_issuing_space__key; Type: INDEX; Schema: public; Owner: -
+-- Name: attestation_pathways_document_type_issuing_space_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX attestation_pathways_tenant_id_document_type_issuing_space__key ON public.attestation_pathways USING btree (document_type, issuing_space_id, destination_space_id);
+CREATE UNIQUE INDEX attestation_pathways_document_type_issuing_space_key ON public.attestation_pathways USING btree (document_type, issuing_space_id, destination_space_id);
 
 
 --
--- Name: badge_definitions_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: badge_definitions_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX badge_definitions_tenant_id_slug_key ON public.badge_definitions USING btree (slug);
+CREATE UNIQUE INDEX badge_definitions_slug_key ON public.badge_definitions USING btree (slug);
 
 
 --
--- Name: blog_series_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: blog_series_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX blog_series_tenant_id_slug_key ON public.blog_series USING btree (slug);
+CREATE UNIQUE INDEX blog_series_slug_key ON public.blog_series USING btree (slug);
 
 
 --
--- Name: challenge_definitions_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: challenge_definitions_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX challenge_definitions_tenant_id_slug_key ON public.challenge_definitions USING btree (slug);
+CREATE UNIQUE INDEX challenge_definitions_slug_key ON public.challenge_definitions USING btree (slug);
 
 
 --
--- Name: checklist_progress_tenant_id_user_id_guide_id_item_key_list_typ; Type: INDEX; Schema: public; Owner: -
+-- Name: checklist_progress_user_id_guide_id_item_key_list_typ; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX checklist_progress_tenant_id_user_id_guide_id_item_key_list_typ ON public.checklist_progress USING btree (user_id, guide_id, item_key, list_type);
+CREATE UNIQUE INDEX checklist_progress_user_id_guide_id_item_key_list_typ ON public.checklist_progress USING btree (user_id, guide_id, item_key, list_type);
 
 
 --
--- Name: community_organisations_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: community_organisations_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX community_organisations_tenant_id_slug_key ON public.community_organisations USING btree (slug);
+CREATE UNIQUE INDEX community_organisations_slug_key ON public.community_organisations USING btree (slug);
 
 
 --
--- Name: comparison_score_factors_tenant_id_comparison_type_id_facto_key; Type: INDEX; Schema: public; Owner: -
+-- Name: comparison_score_factors_comparison_type_id_facto_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX comparison_score_factors_tenant_id_comparison_type_id_facto_key ON public.comparison_score_factors USING btree (comparison_type_id, factor_key);
+CREATE UNIQUE INDEX comparison_score_factors_comparison_type_id_facto_key ON public.comparison_score_factors USING btree (comparison_type_id, factor_key);
 
 
 --
--- Name: comparison_scores_tenant_content_item_factor_profile_key; Type: INDEX; Schema: public; Owner: -
+-- Name: comparison_scores_content_item_factor_profile_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX comparison_scores_tenant_content_item_factor_profile_key ON public.comparison_scores USING btree (content_id, item_id, factor_id, profile_id);
+CREATE UNIQUE INDEX comparison_scores_content_item_factor_profile_key ON public.comparison_scores USING btree (content_id, item_id, factor_id, profile_id);
 
 
 --
--- Name: comparison_type_definitions_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: comparison_type_definitions_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX comparison_type_definitions_tenant_id_slug_key ON public.comparison_type_definitions USING btree (slug);
+CREATE UNIQUE INDEX comparison_type_definitions_slug_key ON public.comparison_type_definitions USING btree (slug);
 
 
 --
--- Name: content_embeddings_tenant_id_entity_type_entity_id_chunk_in_key; Type: INDEX; Schema: public; Owner: -
+-- Name: content_embeddings_entity_type_entity_id_chunk_in_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX content_embeddings_tenant_id_entity_type_entity_id_chunk_in_key ON public.content_embeddings USING btree (entity_type, entity_id, chunk_index);
+CREATE UNIQUE INDEX content_embeddings_entity_type_entity_id_chunk_in_key ON public.content_embeddings USING btree (entity_type, entity_id, chunk_index);
 
 
 --
--- Name: content_featured_tenant_id_content_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: content_featured_content_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX content_featured_tenant_id_content_id_key ON public.content_featured USING btree (content_id);
+CREATE UNIQUE INDEX content_featured_content_id_key ON public.content_featured USING btree (content_id);
 
 
 --
--- Name: content_type_jsonld_templates_tenant_id_content_type_key; Type: INDEX; Schema: public; Owner: -
+-- Name: content_type_jsonld_templates_content_type_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX content_type_jsonld_templates_tenant_id_content_type_key ON public.content_type_jsonld_templates USING btree (content_type);
+CREATE UNIQUE INDEX content_type_jsonld_templates_content_type_key ON public.content_type_jsonld_templates USING btree (content_type);
 
 
 --
--- Name: coupons_tenant_id_code_key; Type: INDEX; Schema: public; Owner: -
+-- Name: coupons_code_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX coupons_tenant_id_code_key ON public.coupons USING btree (code);
+CREATE UNIQUE INDEX coupons_code_key ON public.coupons USING btree (code);
 
 
 --
--- Name: credential_pathways_tenant_id_profession_id_issuing_space_i_key; Type: INDEX; Schema: public; Owner: -
+-- Name: credential_pathways_profession_id_issuing_space_i_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX credential_pathways_tenant_id_profession_id_issuing_space_i_key ON public.credential_pathways USING btree (profession_id, issuing_space_id, destination_space_id);
+CREATE UNIQUE INDEX credential_pathways_profession_id_issuing_space_i_key ON public.credential_pathways USING btree (profession_id, issuing_space_id, destination_space_id);
 
 
 --
--- Name: credit_packs_tenant_id_name_key; Type: INDEX; Schema: public; Owner: -
+-- Name: credit_packs_name_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX credit_packs_tenant_id_name_key ON public.credit_packs USING btree (name);
+CREATE UNIQUE INDEX credit_packs_name_key ON public.credit_packs USING btree (name);
 
 
 --
--- Name: custom_field_entity_types_tenant_id_value_key; Type: INDEX; Schema: public; Owner: -
+-- Name: custom_field_entity_types_value_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX custom_field_entity_types_tenant_id_value_key ON public.custom_field_entity_types USING btree (value);
+CREATE UNIQUE INDEX custom_field_entity_types_value_key ON public.custom_field_entity_types USING btree (value);
 
 
 --
--- Name: custom_field_groups_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: custom_field_groups_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX custom_field_groups_tenant_id_slug_key ON public.custom_field_groups USING btree (slug);
+CREATE UNIQUE INDEX custom_field_groups_slug_key ON public.custom_field_groups USING btree (slug);
 
 
 --
--- Name: custom_field_templates_tenant_id_name_key; Type: INDEX; Schema: public; Owner: -
+-- Name: custom_field_templates_name_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX custom_field_templates_tenant_id_name_key ON public.custom_field_templates USING btree (name);
+CREATE UNIQUE INDEX custom_field_templates_name_key ON public.custom_field_templates USING btree (name);
 
 
 --
--- Name: device_tokens_tenant_id_user_id_device_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: device_tokens_user_id_device_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX device_tokens_tenant_id_user_id_device_id_key ON public.device_tokens USING btree (user_id, device_id);
+CREATE UNIQUE INDEX device_tokens_user_id_device_id_key ON public.device_tokens USING btree (user_id, device_id);
 
 
 --
--- Name: discount_codes_tenant_id_code_key; Type: INDEX; Schema: public; Owner: -
+-- Name: discount_codes_code_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX discount_codes_tenant_id_code_key ON public.discount_codes USING btree (code);
+CREATE UNIQUE INDEX discount_codes_code_key ON public.discount_codes USING btree (code);
 
 
 --
--- Name: dm_conversations_tenant_id_participant_1_id_participant_2_i_key; Type: INDEX; Schema: public; Owner: -
+-- Name: dm_conversations_participant_1_id_participant_2_i_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX dm_conversations_tenant_id_participant_1_id_participant_2_i_key ON public.dm_conversations USING btree (participant_1_id, participant_2_id);
+CREATE UNIQUE INDEX dm_conversations_participant_1_id_participant_2_i_key ON public.dm_conversations USING btree (participant_1_id, participant_2_id);
 
 
 --
--- Name: doc_pages_tenant_id_audience_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: doc_pages_audience_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX doc_pages_tenant_id_audience_slug_key ON public.doc_pages USING btree (audience, slug);
+CREATE UNIQUE INDEX doc_pages_audience_slug_key ON public.doc_pages USING btree (audience, slug);
 
 
 --
--- Name: editor_block_permissions_tenant_id_block_type_user_group_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: editor_block_permissions_block_type_user_group_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX editor_block_permissions_tenant_id_block_type_user_group_id_key ON public.editor_block_permissions USING btree (block_type, user_group_id);
+CREATE UNIQUE INDEX editor_block_permissions_block_type_user_group_id_key ON public.editor_block_permissions USING btree (block_type, user_group_id);
 
 
 --
--- Name: email_templates_tenant_id_type_key; Type: INDEX; Schema: public; Owner: -
+-- Name: email_templates_slug_uniq; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX email_templates_tenant_id_type_key ON public.email_templates USING btree (type);
+CREATE UNIQUE INDEX email_templates_slug_uniq ON public.email_templates USING btree (slug);
 
 
 --
--- Name: email_templates_tenant_slug_uniq; Type: INDEX; Schema: public; Owner: -
+-- Name: email_templates_type_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX email_templates_tenant_slug_uniq ON public.email_templates USING btree (slug);
+CREATE UNIQUE INDEX email_templates_type_key ON public.email_templates USING btree (type);
 
 
 --
--- Name: forms_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: forms_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX forms_tenant_id_slug_key ON public.forms USING btree (slug);
+CREATE UNIQUE INDEX forms_slug_key ON public.forms USING btree (slug);
 
 
 --
--- Name: forum_tags_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: forum_tags_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX forum_tags_tenant_id_slug_key ON public.forum_tags USING btree (slug);
+CREATE UNIQUE INDEX forum_tags_slug_key ON public.forum_tags USING btree (slug);
 
 
 --
--- Name: housing_guides_tenant_id_destination_space_id_city_space_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: housing_guides_destination_space_id_city_space_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX housing_guides_tenant_id_destination_space_id_city_space_id_key ON public.housing_guides USING btree (destination_space_id, city_space_id, accommodation_type);
+CREATE UNIQUE INDEX housing_guides_destination_space_id_city_space_id_key ON public.housing_guides USING btree (destination_space_id, city_space_id, accommodation_type);
 
 
 --
@@ -9963,17 +9963,17 @@ CREATE INDEX idx_account_deletion_user ON public.account_deletion_requests USING
 
 
 --
--- Name: idx_achievement_meta_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_achievement_meta_dest; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_achievement_meta_tenant_dest ON public.achievement_meta USING btree (destination_space_id);
+CREATE INDEX idx_achievement_meta_dest ON public.achievement_meta USING btree (destination_space_id);
 
 
 --
--- Name: idx_achievement_meta_tenant_type; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_achievement_meta_type; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_achievement_meta_tenant_type ON public.achievement_meta USING btree (milestone_type);
+CREATE INDEX idx_achievement_meta_type ON public.achievement_meta USING btree (milestone_type);
 
 
 --
@@ -10124,6 +10124,13 @@ CREATE INDEX idx_ai_agent_tool_calls_tool ON public.ai_agent_tool_calls USING bt
 
 
 --
+-- Name: idx_ai_hitl_reviews; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_hitl_reviews ON public.ai_hitl_reviews USING btree (created_at DESC);
+
+
+--
 -- Name: idx_ai_hitl_reviews_source; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10145,17 +10152,10 @@ CREATE INDEX idx_ai_hitl_reviews_target_table ON public.ai_hitl_reviews USING bt
 
 
 --
--- Name: idx_ai_hitl_reviews_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_ai_personas; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_ai_hitl_reviews_tenant ON public.ai_hitl_reviews USING btree (created_at DESC);
-
-
---
--- Name: idx_ai_personas_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_ai_personas_tenant ON public.ai_personas USING btree (status);
+CREATE INDEX idx_ai_personas ON public.ai_personas USING btree (status);
 
 
 --
@@ -10166,17 +10166,17 @@ CREATE INDEX idx_ai_personas_user ON public.ai_personas USING btree (user_id);
 
 
 --
--- Name: idx_ai_providers_tenant_enabled; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_ai_providers_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_ai_providers_tenant_enabled ON public.ai_providers USING btree (enabled);
+CREATE INDEX idx_ai_providers_enabled ON public.ai_providers USING btree (enabled);
 
 
 --
--- Name: idx_ai_tool_usage_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_ai_tool_usage; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_ai_tool_usage_tenant ON public.ai_tool_usage USING btree (created_at DESC);
+CREATE INDEX idx_ai_tool_usage ON public.ai_tool_usage USING btree (created_at DESC);
 
 
 --
@@ -10187,31 +10187,31 @@ CREATE INDEX idx_ai_tool_usage_tool ON public.ai_tool_usage USING btree (tool_id
 
 
 --
--- Name: idx_ai_tools_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_ai_tools; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_ai_tools_tenant ON public.ai_tools USING btree (category);
-
-
---
--- Name: idx_ai_usage_log_tenant_created; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_ai_usage_log_tenant_created ON public.ai_usage_log USING btree (created_at DESC);
+CREATE INDEX idx_ai_tools ON public.ai_tools USING btree (category);
 
 
 --
--- Name: idx_ai_usage_log_tenant_provider; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_ai_usage_log_created; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_ai_usage_log_tenant_provider ON public.ai_usage_log USING btree (provider, created_at DESC);
+CREATE INDEX idx_ai_usage_log_created ON public.ai_usage_log USING btree (created_at DESC);
 
 
 --
--- Name: idx_ai_usage_log_tenant_task; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_ai_usage_log_provider; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_ai_usage_log_tenant_task ON public.ai_usage_log USING btree (task_type, created_at DESC);
+CREATE INDEX idx_ai_usage_log_provider ON public.ai_usage_log USING btree (provider, created_at DESC);
+
+
+--
+-- Name: idx_ai_usage_log_task; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_usage_log_task ON public.ai_usage_log USING btree (task_type, created_at DESC);
 
 
 --
@@ -10271,10 +10271,10 @@ CREATE INDEX idx_appointment_alerts_deleted_at ON public.appointment_alerts USIN
 
 
 --
--- Name: idx_appointment_alerts_tenant_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_appointment_alerts_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_appointment_alerts_tenant_status ON public.appointment_alerts USING btree (status, embassy_slug);
+CREATE INDEX idx_appointment_alerts_status ON public.appointment_alerts USING btree (status, embassy_slug);
 
 
 --
@@ -10285,10 +10285,10 @@ CREATE INDEX idx_appointment_alerts_user ON public.appointment_alerts USING btre
 
 
 --
--- Name: idx_arrival_checklist_guides_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_arrival_checklist_guides_dest; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_arrival_checklist_guides_tenant_dest ON public.arrival_checklist_guides USING btree (destination_space_id, is_active);
+CREATE INDEX idx_arrival_checklist_guides_dest ON public.arrival_checklist_guides USING btree (destination_space_id, is_active);
 
 
 --
@@ -10299,10 +10299,10 @@ CREATE INDEX idx_arrival_checklist_items_guide ON public.arrival_checklist_items
 
 
 --
--- Name: idx_assessment_results_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_assessment_results; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_assessment_results_tenant ON public.assessment_results USING btree (created_at DESC);
+CREATE INDEX idx_assessment_results ON public.assessment_results USING btree (created_at DESC);
 
 
 --
@@ -10313,17 +10313,17 @@ CREATE INDEX idx_assessment_results_user ON public.assessment_results USING btre
 
 
 --
--- Name: idx_attestation_pathways_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_attestation_pathways_dest; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_attestation_pathways_tenant_dest ON public.attestation_pathways USING btree (destination_space_id, is_active);
+CREATE INDEX idx_attestation_pathways_dest ON public.attestation_pathways USING btree (destination_space_id, is_active);
 
 
 --
--- Name: idx_attestation_pathways_tenant_doc; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_attestation_pathways_doc; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_attestation_pathways_tenant_doc ON public.attestation_pathways USING btree (document_type, is_active);
+CREATE INDEX idx_attestation_pathways_doc ON public.attestation_pathways USING btree (document_type, is_active);
 
 
 --
@@ -10341,6 +10341,13 @@ CREATE INDEX idx_audit_impersonation ON public.audit_logs USING btree (impersona
 
 
 --
+-- Name: idx_audit_logs; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs ON public.audit_logs USING btree (action_type, created_at DESC);
+
+
+--
 -- Name: idx_audit_logs_actor; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10355,17 +10362,10 @@ CREATE INDEX idx_audit_logs_target ON public.audit_logs USING btree (target_type
 
 
 --
--- Name: idx_audit_logs_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_badge_definitions; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_audit_logs_tenant ON public.audit_logs USING btree (action_type, created_at DESC);
-
-
---
--- Name: idx_badge_definitions_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_badge_definitions_tenant ON public.badge_definitions USING btree (is_active, display_order);
+CREATE INDEX idx_badge_definitions ON public.badge_definitions USING btree (is_active, display_order);
 
 
 --
@@ -10467,17 +10467,17 @@ CREATE INDEX idx_bookmarks_user ON public.bookmarks USING btree (user_id);
 
 
 --
--- Name: idx_calendar_entries_tenant_dest_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_calendar_entries_dest_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_calendar_entries_tenant_dest_status ON public.calendar_entries USING btree (destination_space_id, status) WHERE (deleted_at IS NULL);
+CREATE INDEX idx_calendar_entries_dest_status ON public.calendar_entries USING btree (destination_space_id, status) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_calendar_entries_tenant_occurs_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_calendar_entries_occurs_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_calendar_entries_tenant_occurs_status ON public.calendar_entries USING btree (occurs_at, status) WHERE (deleted_at IS NULL);
+CREATE INDEX idx_calendar_entries_occurs_status ON public.calendar_entries USING btree (occurs_at, status) WHERE (deleted_at IS NULL);
 
 
 --
@@ -10523,10 +10523,10 @@ CREATE INDEX idx_cfv_value_text_lower ON public.custom_field_values USING btree 
 
 
 --
--- Name: idx_challenge_definitions_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_challenge_definitions; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_challenge_definitions_tenant ON public.challenge_definitions USING btree (is_active, starts_at DESC);
+CREATE INDEX idx_challenge_definitions ON public.challenge_definitions USING btree (is_active, starts_at DESC);
 
 
 --
@@ -10621,6 +10621,13 @@ CREATE INDEX idx_community_organisations_intel_record ON public.community_organi
 
 
 --
+-- Name: idx_community_orgs_dest_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_community_orgs_dest_status ON public.community_organisations USING btree (destination_space_id, status);
+
+
+--
 -- Name: idx_community_orgs_gist_point; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10635,31 +10642,31 @@ CREATE INDEX idx_community_orgs_lat_lng ON public.community_organisations USING 
 
 
 --
--- Name: idx_community_orgs_tenant_dest_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_community_orgs_origin; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_community_orgs_tenant_dest_status ON public.community_organisations USING btree (destination_space_id, status);
-
-
---
--- Name: idx_community_orgs_tenant_origin; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_community_orgs_tenant_origin ON public.community_organisations USING btree (origin_community, status);
+CREATE INDEX idx_community_orgs_origin ON public.community_organisations USING btree (origin_community, status);
 
 
 --
--- Name: idx_community_orgs_tenant_type; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_community_orgs_type; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_community_orgs_tenant_type ON public.community_organisations USING btree (org_type, status);
+CREATE INDEX idx_community_orgs_type ON public.community_organisations USING btree (org_type, status);
 
 
 --
--- Name: idx_comp_ingestion_jobs_tenant_content; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_comp_ingestion_jobs_content; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_comp_ingestion_jobs_tenant_content ON public.comparison_data_ingestion_jobs USING btree (content_id, created_at DESC);
+CREATE INDEX idx_comp_ingestion_jobs_content ON public.comparison_data_ingestion_jobs USING btree (content_id, created_at DESC);
+
+
+--
+-- Name: idx_comparison_content_metadata_depth; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_comparison_content_metadata_depth ON public.comparison_content_metadata USING btree (depth);
 
 
 --
@@ -10667,13 +10674,6 @@ CREATE INDEX idx_comp_ingestion_jobs_tenant_content ON public.comparison_data_in
 --
 
 CREATE INDEX idx_comparison_content_metadata_promoted_from ON public.comparison_content_metadata USING btree (promoted_from_id) WHERE (promoted_from_id IS NOT NULL);
-
-
---
--- Name: idx_comparison_content_metadata_tenant_depth; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_comparison_content_metadata_tenant_depth ON public.comparison_content_metadata USING btree (depth);
 
 
 --
@@ -10691,17 +10691,17 @@ CREATE INDEX idx_comparison_data_sources_entity ON public.comparison_data_source
 
 
 --
+-- Name: idx_comparison_data_sources_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_comparison_data_sources_name ON public.comparison_data_sources USING btree (source_name);
+
+
+--
 -- Name: idx_comparison_data_sources_source_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_comparison_data_sources_source_id ON public.comparison_data_sources USING btree (source_id) WHERE (source_id IS NOT NULL);
-
-
---
--- Name: idx_comparison_data_sources_tenant_name; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_comparison_data_sources_tenant_name ON public.comparison_data_sources USING btree (source_name);
 
 
 --
@@ -10775,17 +10775,17 @@ CREATE UNIQUE INDEX idx_comparison_profiles_one_default ON public.comparison_pro
 
 
 --
--- Name: idx_comparison_profiles_tenant_templates; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_comparison_profiles_templates; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_comparison_profiles_tenant_templates ON public.comparison_profiles USING btree (is_template) WHERE ((is_template = true) AND (deleted_at IS NULL));
+CREATE INDEX idx_comparison_profiles_templates ON public.comparison_profiles USING btree (is_template) WHERE ((is_template = true) AND (deleted_at IS NULL));
 
 
 --
--- Name: idx_comparison_profiles_tenant_user; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_comparison_profiles_user; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_comparison_profiles_tenant_user ON public.comparison_profiles USING btree (user_id) WHERE ((user_id IS NOT NULL) AND (deleted_at IS NULL));
+CREATE INDEX idx_comparison_profiles_user ON public.comparison_profiles USING btree (user_id) WHERE ((user_id IS NOT NULL) AND (deleted_at IS NULL));
 
 
 --
@@ -10810,10 +10810,10 @@ CREATE INDEX idx_comparison_score_factors_system ON public.comparison_score_fact
 
 
 --
--- Name: idx_comparison_score_factors_tenant_type; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_comparison_score_factors_type; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_comparison_score_factors_tenant_type ON public.comparison_score_factors USING btree (comparison_type_id);
+CREATE INDEX idx_comparison_score_factors_type ON public.comparison_score_factors USING btree (comparison_type_id);
 
 
 --
@@ -10866,10 +10866,10 @@ CREATE INDEX idx_comparison_values_item ON public.comparison_values USING btree 
 
 
 --
--- Name: idx_consent_records_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_consent_records; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_consent_records_tenant ON public.consent_records USING btree (consent_type);
+CREATE INDEX idx_consent_records ON public.consent_records USING btree (consent_type);
 
 
 --
@@ -10894,10 +10894,10 @@ CREATE UNIQUE INDEX idx_content_campaign_items_unique_persona ON public.content_
 
 
 --
--- Name: idx_content_campaigns_tenant_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_content_campaigns_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_content_campaigns_tenant_status ON public.content_campaigns USING btree (status, created_at DESC);
+CREATE INDEX idx_content_campaigns_status ON public.content_campaigns USING btree (status, created_at DESC);
 
 
 --
@@ -10936,10 +10936,10 @@ CREATE INDEX idx_content_featured_order ON public.content_featured USING btree (
 
 
 --
--- Name: idx_content_imports_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_content_imports; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_content_imports_tenant ON public.content_imports USING btree (status, created_at DESC);
+CREATE INDEX idx_content_imports ON public.content_imports USING btree (status, created_at DESC);
 
 
 --
@@ -11041,17 +11041,17 @@ CREATE INDEX idx_content_thread_links_thread ON public.content_thread_links USIN
 
 
 --
--- Name: idx_content_views_tenant_content; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_content_views_content; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_content_views_tenant_content ON public.content_views USING btree (content_id);
+CREATE INDEX idx_content_views_content ON public.content_views USING btree (content_id);
 
 
 --
--- Name: idx_content_views_tenant_space; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_content_views_space; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_content_views_tenant_space ON public.content_views USING btree (space_id);
+CREATE INDEX idx_content_views_space ON public.content_views USING btree (space_id);
 
 
 --
@@ -11066,6 +11066,13 @@ CREATE INDEX idx_contents_author_id ON public.contents USING btree (author_id);
 --
 
 CREATE INDEX idx_contents_auto_hidden ON public.contents USING btree (auto_hidden) WHERE (auto_hidden = true);
+
+
+--
+-- Name: idx_contents_content_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_contents_content_hash ON public.contents USING btree (content_hash) WHERE (content_hash IS NOT NULL);
 
 
 --
@@ -11135,7 +11142,7 @@ CREATE INDEX idx_contents_publish_at ON public.contents USING btree (publish_at)
 -- Name: idx_contents_slug; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_contents_slug ON public.contents USING btree (slug);
+CREATE UNIQUE INDEX idx_contents_slug ON public.contents USING btree (slug);
 
 
 --
@@ -11178,20 +11185,6 @@ CREATE INDEX idx_contents_status ON public.contents USING btree (status);
 --
 
 CREATE INDEX idx_contents_target_country ON public.contents USING btree (target_country) WHERE ((deleted_at IS NULL) AND (status = 'published'::text) AND (visibility = 'public'::text));
-
-
---
--- Name: idx_contents_tenant_content_hash; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_contents_tenant_content_hash ON public.contents USING btree (content_hash) WHERE (content_hash IS NOT NULL);
-
-
---
--- Name: idx_contents_tenant_slug; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_contents_tenant_slug ON public.contents USING btree (slug);
 
 
 --
@@ -11251,6 +11244,13 @@ CREATE INDEX idx_credential_notes_pathway ON public.credential_community_notes U
 
 
 --
+-- Name: idx_credential_pathways_dest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_credential_pathways_dest ON public.credential_pathways USING btree (destination_space_id, is_active);
+
+
+--
 -- Name: idx_credential_pathways_intel_record; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11258,24 +11258,17 @@ CREATE INDEX idx_credential_pathways_intel_record ON public.credential_pathways 
 
 
 --
--- Name: idx_credential_pathways_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_credential_pathways_prof; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_credential_pathways_tenant_dest ON public.credential_pathways USING btree (destination_space_id, is_active);
-
-
---
--- Name: idx_credential_pathways_tenant_prof; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_credential_pathways_tenant_prof ON public.credential_pathways USING btree (profession_id, is_active);
+CREATE INDEX idx_credential_pathways_prof ON public.credential_pathways USING btree (profession_id, is_active);
 
 
 --
--- Name: idx_credit_packs_tenant_active; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_credit_packs_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_credit_packs_tenant_active ON public.credit_packs USING btree (is_active, "position");
+CREATE INDEX idx_credit_packs_active ON public.credit_packs USING btree (is_active, "position");
 
 
 --
@@ -11335,17 +11328,17 @@ CREATE INDEX idx_device_tokens_user ON public.device_tokens USING btree (user_id
 
 
 --
--- Name: idx_digest_editions_tenant_space; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_digest_editions_space; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_digest_editions_tenant_space ON public.digest_editions USING btree (space_id, published_at DESC) WHERE (status = 'published'::text);
+CREATE INDEX idx_digest_editions_space ON public.digest_editions USING btree (space_id, published_at DESC) WHERE (status = 'published'::text);
 
 
 --
--- Name: idx_digest_editions_tenant_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_digest_editions_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_digest_editions_tenant_status ON public.digest_editions USING btree (status, published_at DESC);
+CREATE INDEX idx_digest_editions_status ON public.digest_editions USING btree (status, published_at DESC);
 
 
 --
@@ -11440,17 +11433,17 @@ CREATE INDEX idx_email_verifications_hash ON public.email_verifications USING bt
 
 
 --
--- Name: idx_enrollments_tenant_track; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_enrollments_track; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_enrollments_tenant_track ON public.enrollments USING btree (track_id);
+CREATE INDEX idx_enrollments_track ON public.enrollments USING btree (track_id);
 
 
 --
--- Name: idx_enrollments_tenant_user; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_enrollments_user; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_enrollments_tenant_user ON public.enrollments USING btree (user_id);
+CREATE INDEX idx_enrollments_user ON public.enrollments USING btree (user_id);
 
 
 --
@@ -11650,17 +11643,17 @@ CREATE INDEX idx_fst_form ON public.form_submission_triggers USING btree (form_i
 
 
 --
+-- Name: idx_housing_guides_dest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_housing_guides_dest ON public.housing_guides USING btree (destination_space_id, is_active);
+
+
+--
 -- Name: idx_housing_guides_intel_record; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_housing_guides_intel_record ON public.housing_guides USING btree (intel_record_id) WHERE (intel_record_id IS NOT NULL);
-
-
---
--- Name: idx_housing_guides_tenant_dest; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_housing_guides_tenant_dest ON public.housing_guides USING btree (destination_space_id, is_active);
 
 
 --
@@ -11678,10 +11671,10 @@ CREATE INDEX idx_instructor_payouts_status ON public.instructor_payouts USING bt
 
 
 --
--- Name: idx_instructor_profiles_tenant_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_instructor_profiles_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_instructor_profiles_tenant_status ON public.instructor_profiles USING btree (status);
+CREATE INDEX idx_instructor_profiles_status ON public.instructor_profiles USING btree (status);
 
 
 --
@@ -11713,6 +11706,27 @@ CREATE INDEX idx_intel_inbound_channel ON public.intel_inbound_events USING btre
 
 
 --
+-- Name: idx_intel_jobs_country; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_intel_jobs_country ON public.intel_jobs USING btree (country);
+
+
+--
+-- Name: idx_intel_jobs_deadline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_intel_jobs_deadline ON public.intel_jobs USING btree (deadline) WHERE (deadline IS NOT NULL);
+
+
+--
+-- Name: idx_intel_jobs_job_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_intel_jobs_job_type ON public.intel_jobs USING btree (job_type) WHERE (job_type IS NOT NULL);
+
+
+--
 -- Name: idx_intel_jobs_source_url; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11720,45 +11734,24 @@ CREATE INDEX idx_intel_jobs_source_url ON public.intel_jobs USING btree (source_
 
 
 --
--- Name: idx_intel_jobs_tenant_country; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_jobs_space; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_intel_jobs_tenant_country ON public.intel_jobs USING btree (country);
-
-
---
--- Name: idx_intel_jobs_tenant_deadline; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_intel_jobs_tenant_deadline ON public.intel_jobs USING btree (deadline) WHERE (deadline IS NOT NULL);
+CREATE INDEX idx_intel_jobs_space ON public.intel_jobs USING btree (country_space_id) WHERE (country_space_id IS NOT NULL);
 
 
 --
--- Name: idx_intel_jobs_tenant_job_type; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_raw_docs_hash; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_intel_jobs_tenant_job_type ON public.intel_jobs USING btree (job_type) WHERE (job_type IS NOT NULL);
-
-
---
--- Name: idx_intel_jobs_tenant_space; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_intel_jobs_tenant_space ON public.intel_jobs USING btree (country_space_id) WHERE (country_space_id IS NOT NULL);
+CREATE INDEX idx_intel_raw_docs_hash ON public.intel_raw_documents USING btree (source_id, content_hash);
 
 
 --
--- Name: idx_intel_raw_docs_tenant_hash; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_raw_docs_source; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_intel_raw_docs_tenant_hash ON public.intel_raw_documents USING btree (source_id, content_hash);
-
-
---
--- Name: idx_intel_raw_docs_tenant_source; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_intel_raw_docs_tenant_source ON public.intel_raw_documents USING btree (source_id, retrieved_at DESC);
+CREATE INDEX idx_intel_raw_docs_source ON public.intel_raw_documents USING btree (source_id, retrieved_at DESC);
 
 
 --
@@ -11769,31 +11762,38 @@ CREATE INDEX idx_intel_raw_documents_parent ON public.intel_raw_documents USING 
 
 
 --
--- Name: idx_intel_records_tenant_entity_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_records_entity_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_intel_records_tenant_entity_status ON public.intel_records USING btree (entity_type, status);
-
-
---
--- Name: idx_intel_records_tenant_geo; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_intel_records_tenant_geo ON public.intel_records USING gin (geo_space_ids);
+CREATE INDEX idx_intel_records_entity_status ON public.intel_records USING btree (entity_type, status);
 
 
 --
--- Name: idx_intel_records_tenant_promoted; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_records_geo; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_intel_records_tenant_promoted ON public.intel_records USING btree (promoted_record_id) WHERE (promoted_record_id IS NOT NULL);
+CREATE INDEX idx_intel_records_geo ON public.intel_records USING gin (geo_space_ids);
 
 
 --
--- Name: idx_intel_review_log_tenant_record; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_records_promoted; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_intel_review_log_tenant_record ON public.intel_review_log USING btree (intel_record_id, created_at DESC);
+CREATE INDEX idx_intel_records_promoted ON public.intel_records USING btree (promoted_record_id) WHERE (promoted_record_id IS NOT NULL);
+
+
+--
+-- Name: idx_intel_review_log_record; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_intel_review_log_record ON public.intel_review_log USING btree (intel_record_id, created_at DESC);
+
+
+--
+-- Name: idx_intel_sources_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_intel_sources_category ON public.intel_sources USING btree (category, trust_level);
 
 
 --
@@ -11804,31 +11804,24 @@ CREATE INDEX idx_intel_sources_category_kind ON public.intel_sources USING btree
 
 
 --
--- Name: idx_intel_sources_tenant_category; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_sources_enabled_freq; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_intel_sources_tenant_category ON public.intel_sources USING btree (category, trust_level);
-
-
---
--- Name: idx_intel_sources_tenant_enabled_freq; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_intel_sources_tenant_enabled_freq ON public.intel_sources USING btree (enabled, crawl_frequency_mins) WHERE enabled;
+CREATE INDEX idx_intel_sources_enabled_freq ON public.intel_sources USING btree (enabled, crawl_frequency_mins) WHERE enabled;
 
 
 --
--- Name: idx_intel_sources_tenant_slug; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_sources_slug; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_intel_sources_tenant_slug ON public.intel_sources USING btree (slug) WHERE (slug IS NOT NULL);
+CREATE UNIQUE INDEX idx_intel_sources_slug ON public.intel_sources USING btree (slug) WHERE (slug IS NOT NULL);
 
 
 --
--- Name: idx_intel_sources_tenant_url; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_intel_sources_url; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_intel_sources_tenant_url ON public.intel_sources USING btree (source_url);
+CREATE UNIQUE INDEX idx_intel_sources_url ON public.intel_sources USING btree (source_url);
 
 
 --
@@ -11853,10 +11846,10 @@ CREATE INDEX idx_job_apps_job ON public.job_applications USING btree (job_id, st
 
 
 --
--- Name: idx_job_apps_tenant_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_job_apps_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_job_apps_tenant_status ON public.job_applications USING btree (status);
+CREATE INDEX idx_job_apps_status ON public.job_applications USING btree (status);
 
 
 --
@@ -11881,10 +11874,10 @@ CREATE INDEX idx_language_score_stories_test ON public.language_score_stories US
 
 
 --
--- Name: idx_language_test_req_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_language_test_req_dest; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_language_test_req_tenant_dest ON public.language_test_requirements USING btree (destination_space_id, is_active);
+CREATE INDEX idx_language_test_req_dest ON public.language_test_requirements USING btree (destination_space_id, is_active);
 
 
 --
@@ -11930,10 +11923,17 @@ CREATE INDEX idx_learning_tracks_university ON public.learning_tracks USING btre
 
 
 --
--- Name: idx_lesson_quizzes_tenant_lesson; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_lesson_quizzes_lesson; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_lesson_quizzes_tenant_lesson ON public.lesson_quizzes USING btree (lesson_id);
+CREATE INDEX idx_lesson_quizzes_lesson ON public.lesson_quizzes USING btree (lesson_id);
+
+
+--
+-- Name: idx_media; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_media ON public.media USING btree (created_at DESC) WHERE (deleted_at IS NULL);
 
 
 --
@@ -11941,13 +11941,6 @@ CREATE INDEX idx_lesson_quizzes_tenant_lesson ON public.lesson_quizzes USING btr
 --
 
 CREATE INDEX idx_media_quarantined ON public.media USING btree (quarantined_at DESC) WHERE ((quarantine_reason IS NOT NULL) AND (deleted_at IS NULL));
-
-
---
--- Name: idx_media_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_media_tenant ON public.media USING btree (created_at DESC) WHERE (deleted_at IS NULL);
 
 
 --
@@ -12021,10 +12014,17 @@ CREATE INDEX idx_mentorship_conn_mentor_status ON public.mentorship_connections 
 
 
 --
--- Name: idx_mentorship_conn_tenant_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_mentorship_conn_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_mentorship_conn_tenant_status ON public.mentorship_connections USING btree (status);
+CREATE INDEX idx_mentorship_conn_status ON public.mentorship_connections USING btree (status);
+
+
+--
+-- Name: idx_mentorship_matches; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mentorship_matches ON public.mentorship_matches USING btree (status);
 
 
 --
@@ -12049,13 +12049,6 @@ CREATE INDEX idx_mentorship_matches_program ON public.mentorship_matches USING b
 
 
 --
--- Name: idx_mentorship_matches_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_mentorship_matches_tenant ON public.mentorship_matches USING btree (status);
-
-
---
 -- Name: idx_mentorship_profiles_available; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12077,10 +12070,10 @@ CREATE INDEX idx_mentorship_profiles_user ON public.mentorship_profiles USING bt
 
 
 --
--- Name: idx_mentorship_programs_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_mentorship_programs; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_mentorship_programs_tenant ON public.mentorship_programs USING btree (is_active);
+CREATE INDEX idx_mentorship_programs ON public.mentorship_programs USING btree (is_active);
 
 
 --
@@ -12112,24 +12105,24 @@ CREATE INDEX idx_moderation_appeals_status ON public.moderation_appeals USING bt
 
 
 --
--- Name: idx_monitored_embassies_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_monitored_embassies_dest; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_monitored_embassies_tenant_dest ON public.monitored_embassies USING btree (destination_space_id, is_active);
-
-
---
--- Name: idx_mutual_aid_posts_tenant_expires; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_mutual_aid_posts_tenant_expires ON public.mutual_aid_posts USING btree (expires_at) WHERE ((status = 'active'::text) AND (deleted_at IS NULL));
+CREATE INDEX idx_monitored_embassies_dest ON public.monitored_embassies USING btree (destination_space_id, is_active);
 
 
 --
--- Name: idx_mutual_aid_posts_tenant_status_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_mutual_aid_posts_expires; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_mutual_aid_posts_tenant_status_dest ON public.mutual_aid_posts USING btree (status, destination_space_id) WHERE (deleted_at IS NULL);
+CREATE INDEX idx_mutual_aid_posts_expires ON public.mutual_aid_posts USING btree (expires_at) WHERE ((status = 'active'::text) AND (deleted_at IS NULL));
+
+
+--
+-- Name: idx_mutual_aid_posts_status_dest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mutual_aid_posts_status_dest ON public.mutual_aid_posts USING btree (status, destination_space_id) WHERE (deleted_at IS NULL);
 
 
 --
@@ -12182,10 +12175,10 @@ CREATE UNIQUE INDEX idx_mv_user_engagement_stats_unique ON public.mv_user_engage
 
 
 --
--- Name: idx_newsletter_campaigns_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_newsletter_campaigns; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_newsletter_campaigns_tenant ON public.newsletter_campaigns USING btree (status);
+CREATE INDEX idx_newsletter_campaigns ON public.newsletter_campaigns USING btree (status);
 
 
 --
@@ -12210,17 +12203,17 @@ CREATE INDEX idx_newsletter_sub_user ON public.newsletter_subscribers USING btre
 
 
 --
--- Name: idx_newsletter_subscribers_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_newsletter_subscribers; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_newsletter_subscribers_tenant ON public.newsletter_subscribers USING btree (status);
+CREATE INDEX idx_newsletter_subscribers ON public.newsletter_subscribers USING btree (status);
 
 
 --
--- Name: idx_notification_batch_windows_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_notification_batch_windows; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_notification_batch_windows_tenant ON public.notification_batch_windows USING btree (recipient_id, dispatched, window_close_at);
+CREATE INDEX idx_notification_batch_windows ON public.notification_batch_windows USING btree (recipient_id, dispatched, window_close_at);
 
 
 --
@@ -12259,10 +12252,10 @@ CREATE UNIQUE INDEX idx_oauth_accounts_user_provider_global ON public.oauth_acco
 
 
 --
--- Name: idx_org_claims_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_org_claims; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_org_claims_tenant ON public.ownership_claims USING btree (status, created_at DESC);
+CREATE INDEX idx_org_claims ON public.ownership_claims USING btree (status, created_at DESC);
 
 
 --
@@ -12301,17 +12294,17 @@ CREATE INDEX idx_organizations_source_id ON public.organizations USING btree (so
 
 
 --
+-- Name: idx_orgs; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orgs ON public.organizations USING btree (status, created_at DESC);
+
+
+--
 -- Name: idx_orgs_geo; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_orgs_geo ON public.organizations USING btree (geo_space_id) WHERE (geo_space_id IS NOT NULL);
-
-
---
--- Name: idx_orgs_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_orgs_tenant ON public.organizations USING btree (status, created_at DESC);
 
 
 --
@@ -12434,10 +12427,10 @@ CREATE INDEX idx_pe_synthetic_user ON public.platform_events USING btree (user_i
 
 
 --
--- Name: idx_pe_tenant_type_created; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_pe_type_created; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_pe_tenant_type_created ON public.platform_events USING btree (event_type, created_at DESC);
+CREATE INDEX idx_pe_type_created ON public.platform_events USING btree (event_type, created_at DESC);
 
 
 --
@@ -12462,10 +12455,17 @@ CREATE INDEX idx_planning_group_milestones_group_user ON public.planning_group_m
 
 
 --
--- Name: idx_planning_groups_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_planning_groups_dest; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_planning_groups_tenant_dest ON public.planning_groups USING btree (destination_space_id) WHERE (deleted_at IS NULL);
+CREATE INDEX idx_planning_groups_dest ON public.planning_groups USING btree (destination_space_id) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_platform_data_exports; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_platform_data_exports ON public.platform_data_exports USING btree (created_at DESC);
 
 
 --
@@ -12476,10 +12476,10 @@ CREATE INDEX idx_platform_data_exports_status ON public.platform_data_exports US
 
 
 --
--- Name: idx_platform_data_exports_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_platform_data_imports; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_platform_data_exports_tenant ON public.platform_data_exports USING btree (created_at DESC);
+CREATE INDEX idx_platform_data_imports ON public.platform_data_imports USING btree (created_at DESC);
 
 
 --
@@ -12487,13 +12487,6 @@ CREATE INDEX idx_platform_data_exports_tenant ON public.platform_data_exports US
 --
 
 CREATE INDEX idx_platform_data_imports_status ON public.platform_data_imports USING btree (status);
-
-
---
--- Name: idx_platform_data_imports_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_platform_data_imports_tenant ON public.platform_data_imports USING btree (created_at DESC);
 
 
 --
@@ -12560,6 +12553,13 @@ CREATE INDEX idx_redirects_status ON public.redirects USING btree (is_active);
 
 
 --
+-- Name: idx_referral_codes; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_referral_codes ON public.referral_codes USING btree (user_id);
+
+
+--
 -- Name: idx_referral_codes_code; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12567,10 +12567,10 @@ CREATE INDEX idx_referral_codes_code ON public.referral_codes USING btree (code)
 
 
 --
--- Name: idx_referral_codes_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_referrals; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_referral_codes_tenant ON public.referral_codes USING btree (user_id);
+CREATE INDEX idx_referrals ON public.referrals USING btree (status);
 
 
 --
@@ -12595,13 +12595,6 @@ CREATE INDEX idx_referrals_status ON public.referrals USING btree (status, creat
 
 
 --
--- Name: idx_referrals_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_referrals_tenant ON public.referrals USING btree (status);
-
-
---
 -- Name: idx_refresh_tokens_hash; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12616,10 +12609,10 @@ CREATE INDEX idx_refresh_tokens_user_id ON public.refresh_tokens USING btree (us
 
 
 --
--- Name: idx_remittance_providers_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_remittance_providers; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_remittance_providers_tenant ON public.remittance_providers USING btree (is_active, display_order);
+CREATE INDEX idx_remittance_providers ON public.remittance_providers USING btree (is_active, display_order);
 
 
 --
@@ -12749,17 +12742,17 @@ CREATE INDEX idx_saved_scholarships_user ON public.saved_scholarships USING btre
 
 
 --
--- Name: idx_scam_reports_tenant_dest_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_scam_reports_dest_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_scam_reports_tenant_dest_status ON public.scam_reports USING btree (destination_space_id, status);
+CREATE INDEX idx_scam_reports_dest_status ON public.scam_reports USING btree (destination_space_id, status);
 
 
 --
--- Name: idx_scam_reports_tenant_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_scam_reports_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_scam_reports_tenant_status ON public.scam_reports USING btree (status);
+CREATE INDEX idx_scam_reports_status ON public.scam_reports USING btree (status);
 
 
 --
@@ -12784,6 +12777,27 @@ CREATE INDEX idx_scan_results_unreviewed ON public.content_affiliate_scan_result
 
 
 --
+-- Name: idx_scholarships_country_deadline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scholarships_country_deadline ON public.scholarships USING btree (country, deadline);
+
+
+--
+-- Name: idx_scholarships_eligible; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scholarships_eligible ON public.scholarships USING gin (eligible_countries);
+
+
+--
+-- Name: idx_scholarships_fields; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scholarships_fields ON public.scholarships USING gin (fields_of_study);
+
+
+--
 -- Name: idx_scholarships_guide; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12791,45 +12805,24 @@ CREATE UNIQUE INDEX idx_scholarships_guide ON public.scholarships USING btree (g
 
 
 --
--- Name: idx_scholarships_tenant_country_deadline; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_scholarships_intel; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_scholarships_tenant_country_deadline ON public.scholarships USING btree (country, deadline);
-
-
---
--- Name: idx_scholarships_tenant_eligible; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_scholarships_tenant_eligible ON public.scholarships USING gin (eligible_countries);
+CREATE UNIQUE INDEX idx_scholarships_intel ON public.scholarships USING btree (intel_record_id) WHERE (intel_record_id IS NOT NULL);
 
 
 --
--- Name: idx_scholarships_tenant_fields; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_scholarships_space; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_scholarships_tenant_fields ON public.scholarships USING gin (fields_of_study);
-
-
---
--- Name: idx_scholarships_tenant_intel; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_scholarships_tenant_intel ON public.scholarships USING btree (intel_record_id) WHERE (intel_record_id IS NOT NULL);
+CREATE INDEX idx_scholarships_space ON public.scholarships USING btree (country_space_id);
 
 
 --
--- Name: idx_scholarships_tenant_space; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_scholarships_status_fresh; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_scholarships_tenant_space ON public.scholarships USING btree (country_space_id);
-
-
---
--- Name: idx_scholarships_tenant_status_fresh; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_scholarships_tenant_status_fresh ON public.scholarships USING btree (verification_status, freshness_score);
+CREATE INDEX idx_scholarships_status_fresh ON public.scholarships USING btree (verification_status, freshness_score);
 
 
 --
@@ -12847,31 +12840,31 @@ CREATE INDEX idx_search_analytics_zero ON public.search_analytics USING btree (r
 
 
 --
--- Name: idx_security_scan_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_security_scan; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_security_scan_tenant ON public.security_scan_results USING btree (severity, created_at DESC);
-
-
---
--- Name: idx_service_listing_meta_tenant_dest_cat; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_service_listing_meta_tenant_dest_cat ON public.service_listing_meta USING btree (destination_space_id, service_category);
+CREATE INDEX idx_security_scan ON public.security_scan_results USING btree (severity, created_at DESC);
 
 
 --
--- Name: idx_service_listing_meta_tenant_verified; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_service_listing_meta_dest_cat; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_service_listing_meta_tenant_verified ON public.service_listing_meta USING btree (is_verified) WHERE (is_verified = true);
+CREATE INDEX idx_service_listing_meta_dest_cat ON public.service_listing_meta USING btree (destination_space_id, service_category);
 
 
 --
--- Name: idx_share_platforms_tenant_enabled; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_service_listing_meta_verified; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_share_platforms_tenant_enabled ON public.share_platforms USING btree (enabled);
+CREATE INDEX idx_service_listing_meta_verified ON public.service_listing_meta USING btree (is_verified) WHERE (is_verified = true);
+
+
+--
+-- Name: idx_share_platforms_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_share_platforms_enabled ON public.share_platforms USING btree (enabled);
 
 
 --
@@ -12931,10 +12924,10 @@ CREATE INDEX idx_source_collection_items_collection ON public.source_collection_
 
 
 --
--- Name: idx_source_collections_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_source_collections; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_source_collections_tenant ON public.source_collections USING btree (collection_type);
+CREATE INDEX idx_source_collections ON public.source_collections USING btree (collection_type);
 
 
 --
@@ -13106,24 +13099,17 @@ CREATE INDEX idx_story_meta_content ON public.story_meta USING btree (content_id
 
 
 --
--- Name: idx_story_meta_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_story_meta_dest; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_story_meta_tenant_dest ON public.story_meta USING btree (destination_space_id);
-
-
---
--- Name: idx_story_meta_tenant_origin; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_story_meta_tenant_origin ON public.story_meta USING btree (origin_space_id);
+CREATE INDEX idx_story_meta_dest ON public.story_meta USING btree (destination_space_id);
 
 
 --
--- Name: idx_story_meta_tenant_visa; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_story_meta_origin; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_story_meta_tenant_visa ON public.story_meta USING btree (visa_category) WHERE (visa_category IS NOT NULL);
+CREATE INDEX idx_story_meta_origin ON public.story_meta USING btree (origin_space_id);
 
 
 --
@@ -13131,6 +13117,13 @@ CREATE INDEX idx_story_meta_tenant_visa ON public.story_meta USING btree (visa_c
 --
 
 CREATE INDEX idx_story_meta_verified ON public.story_meta USING btree (verified) WHERE (verified = true);
+
+
+--
+-- Name: idx_story_meta_visa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_story_meta_visa ON public.story_meta USING btree (visa_category) WHERE (visa_category IS NOT NULL);
 
 
 --
@@ -13176,24 +13169,24 @@ CREATE INDEX idx_subscription_plan_tracks_track ON public.subscription_plan_trac
 
 
 --
--- Name: idx_subscription_plans_tenant_slug; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_subscription_plans_slug; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_subscription_plans_tenant_slug ON public.subscription_plans USING btree (slug);
-
-
---
--- Name: idx_subscription_plans_tenant_sort; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_subscription_plans_tenant_sort ON public.subscription_plans USING btree (sort_order);
+CREATE UNIQUE INDEX idx_subscription_plans_slug ON public.subscription_plans USING btree (slug);
 
 
 --
--- Name: idx_subscription_plans_tenant_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_subscription_plans_sort; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_subscription_plans_tenant_status ON public.subscription_plans USING btree (status);
+CREATE INDEX idx_subscription_plans_sort ON public.subscription_plans USING btree (sort_order);
+
+
+--
+-- Name: idx_subscription_plans_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_subscription_plans_status ON public.subscription_plans USING btree (status);
 
 
 --
@@ -13225,13 +13218,6 @@ CREATE UNIQUE INDEX idx_system_settings_key ON public.system_settings USING btre
 
 
 --
--- Name: idx_system_settings_tenant_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_system_settings_tenant_key ON public.system_settings USING btree (key);
-
-
---
 -- Name: idx_tag_moderators_tag; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -13243,6 +13229,13 @@ CREATE INDEX idx_tag_moderators_tag ON public.tag_moderators USING btree (tag_id
 --
 
 CREATE INDEX idx_tag_moderators_user ON public.tag_moderators USING btree (user_id);
+
+
+--
+-- Name: idx_tags; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tags ON public.tags USING btree (follower_count DESC);
 
 
 --
@@ -13260,10 +13253,10 @@ CREATE INDEX idx_tags_slug_trgm ON public.tags USING gin (slug public.gin_trgm_o
 
 
 --
--- Name: idx_tags_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_tax_obligation_guides_dest; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_tags_tenant ON public.tags USING btree (follower_count DESC);
+CREATE INDEX idx_tax_obligation_guides_dest ON public.tax_obligation_guides USING btree (destination_space_id, is_active);
 
 
 --
@@ -13274,24 +13267,17 @@ CREATE INDEX idx_tax_obligation_guides_intel_record ON public.tax_obligation_gui
 
 
 --
--- Name: idx_tax_obligation_guides_tenant_dest; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_template_literals_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_tax_obligation_guides_tenant_dest ON public.tax_obligation_guides USING btree (destination_space_id, is_active);
-
-
---
--- Name: idx_template_literals_tenant_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_template_literals_tenant_active ON public.template_literals USING btree (is_active) WHERE (deleted_at IS NULL);
+CREATE INDEX idx_template_literals_active ON public.template_literals USING btree (is_active) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_template_literals_tenant_key; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_template_literals_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_template_literals_tenant_key ON public.template_literals USING btree (key) WHERE (deleted_at IS NULL);
+CREATE UNIQUE INDEX idx_template_literals_key ON public.template_literals USING btree (key) WHERE (deleted_at IS NULL);
 
 
 --
@@ -13337,24 +13323,24 @@ CREATE INDEX idx_tickets_type ON public.tickets USING btree (type_id, status);
 
 
 --
--- Name: idx_translations_tenant_key; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_translations_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_translations_tenant_key ON public.translations USING btree (key);
-
-
---
--- Name: idx_translations_tenant_locale; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_translations_tenant_locale ON public.translations USING btree (locale);
+CREATE INDEX idx_translations_key ON public.translations USING btree (key);
 
 
 --
--- Name: idx_travel_providers_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_translations_locale; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_travel_providers_tenant ON public.travel_providers USING btree (is_active);
+CREATE INDEX idx_translations_locale ON public.translations USING btree (locale);
+
+
+--
+-- Name: idx_travel_providers; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_travel_providers ON public.travel_providers USING btree (is_active);
 
 
 --
@@ -13369,13 +13355,6 @@ CREATE INDEX idx_trending_snapshots_entity ON public.trending_snapshots USING bt
 --
 
 CREATE INDEX idx_trending_snapshots_expires ON public.trending_snapshots USING btree (expires_at);
-
-
---
--- Name: idx_trending_snapshots_tenant_entity; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_trending_snapshots_tenant_entity ON public.trending_snapshots USING btree (entity_type, entity_id);
 
 
 --
@@ -13421,17 +13400,17 @@ CREATE INDEX idx_uma_violation_type ON public.user_moderation_actions USING btre
 
 
 --
--- Name: idx_university_course_catalog_tenant_slug; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_university_course_catalog_slug; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_university_course_catalog_tenant_slug ON public.university_course_catalog USING btree (slug) WHERE (deleted_at IS NULL);
+CREATE INDEX idx_university_course_catalog_slug ON public.university_course_catalog USING btree (slug) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_university_course_catalog_tenant_title; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_university_course_catalog_title; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_university_course_catalog_tenant_title ON public.university_course_catalog USING btree (title) WHERE (deleted_at IS NULL);
+CREATE INDEX idx_university_course_catalog_title ON public.university_course_catalog USING btree (title) WHERE (deleted_at IS NULL);
 
 
 --
@@ -13456,17 +13435,17 @@ CREATE INDEX idx_unsub_tokens_subscriber ON public.newsletter_unsubscribe_tokens
 
 
 --
+-- Name: idx_uob; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_uob ON public.user_operation_bans USING btree (operation);
+
+
+--
 -- Name: idx_uob_active_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_uob_active_unique ON public.user_operation_bans USING btree (user_id, operation) WHERE (deleted_at IS NULL);
-
-
---
--- Name: idx_uob_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_uob_tenant ON public.user_operation_bans USING btree (operation);
 
 
 --
@@ -13491,10 +13470,10 @@ CREATE INDEX idx_user_blocks_blocked ON public.user_blocks USING btree (blocked_
 
 
 --
--- Name: idx_user_blocks_blocker_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_user_blocks_blocker; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_user_blocks_blocker_tenant ON public.user_blocks USING btree (blocker_id, created_at DESC);
+CREATE INDEX idx_user_blocks_blocker ON public.user_blocks USING btree (blocker_id, created_at DESC);
 
 
 --
@@ -13512,17 +13491,17 @@ CREATE INDEX idx_user_group_memberships_user ON public.user_group_memberships US
 
 
 --
+-- Name: idx_user_moderation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_moderation ON public.user_moderation_actions USING btree (action);
+
+
+--
 -- Name: idx_user_moderation_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_moderation_active ON public.user_moderation_actions USING btree (user_id, action) WHERE (deleted_at IS NULL);
-
-
---
--- Name: idx_user_moderation_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_user_moderation_tenant ON public.user_moderation_actions USING btree (action);
 
 
 --
@@ -13554,10 +13533,10 @@ CREATE UNIQUE INDEX idx_user_preferences_user_id_global ON public.user_preferenc
 
 
 --
--- Name: idx_user_privacy_settings_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_user_privacy_settings; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_user_privacy_settings_tenant ON public.user_privacy_settings USING btree (user_id);
+CREATE INDEX idx_user_privacy_settings ON public.user_privacy_settings USING btree (user_id);
 
 
 --
@@ -13722,6 +13701,13 @@ CREATE INDEX idx_video_sources_source_id ON public.video_sources USING btree (so
 
 
 --
+-- Name: idx_visa_routes_dest_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_visa_routes_dest_active ON public.visa_routes USING btree (destination_space_id, is_active);
+
+
+--
 -- Name: idx_visa_routes_intel_record; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -13729,24 +13715,17 @@ CREATE INDEX idx_visa_routes_intel_record ON public.visa_routes USING btree (int
 
 
 --
--- Name: idx_visa_routes_tenant_dest_active; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_visa_routes_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_visa_routes_tenant_dest_active ON public.visa_routes USING btree (destination_space_id, is_active);
-
-
---
--- Name: idx_visa_routes_tenant_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_visa_routes_tenant_status ON public.visa_routes USING btree (status);
+CREATE INDEX idx_visa_routes_status ON public.visa_routes USING btree (status);
 
 
 --
--- Name: idx_visa_routes_tenant_visa_cat; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_visa_routes_visa_cat; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_visa_routes_tenant_visa_cat ON public.visa_routes USING btree (visa_category);
+CREATE INDEX idx_visa_routes_visa_cat ON public.visa_routes USING btree (visa_category);
 
 
 --
@@ -13771,17 +13750,17 @@ CREATE INDEX idx_wallet_ledger_idempotency ON public.wallet_ledger USING btree (
 
 
 --
--- Name: idx_wallet_ledger_tenant_user; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_wallet_ledger_user; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_wallet_ledger_tenant_user ON public.wallet_ledger USING btree (user_id);
+CREATE INDEX idx_wallet_ledger_user ON public.wallet_ledger USING btree (user_id);
 
 
 --
--- Name: idx_wallet_ledger_tenant_user_source; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_wallet_ledger_user_source; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_wallet_ledger_tenant_user_source ON public.wallet_ledger USING btree (user_id, source);
+CREATE INDEX idx_wallet_ledger_user_source ON public.wallet_ledger USING btree (user_id, source);
 
 
 --
@@ -13792,10 +13771,10 @@ CREATE INDEX idx_wallet_ledger_user_type_created ON public.wallet_ledger USING b
 
 
 --
--- Name: idx_wallet_withdrawal_fee_tiers_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_wallet_withdrawal_fee_tiers; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_wallet_withdrawal_fee_tiers_tenant ON public.wallet_withdrawal_fee_tiers USING btree (is_active, "position");
+CREATE INDEX idx_wallet_withdrawal_fee_tiers ON public.wallet_withdrawal_fee_tiers USING btree (is_active, "position");
 
 
 --
@@ -13848,10 +13827,10 @@ CREATE INDEX idx_webhook_deliveries_pending ON public.webhook_deliveries USING b
 
 
 --
--- Name: idx_webhook_endpoints_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_webhook_endpoints; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_webhook_endpoints_tenant ON public.webhook_endpoints USING btree (status);
+CREATE INDEX idx_webhook_endpoints ON public.webhook_endpoints USING btree (status);
 
 
 --
@@ -13862,17 +13841,17 @@ CREATE INDEX idx_webhook_endpoints_user ON public.webhook_endpoints USING btree 
 
 
 --
--- Name: idx_widget_configurations_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_widget_configurations; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_widget_configurations_tenant ON public.widget_configurations USING btree (is_active);
+CREATE INDEX idx_widget_configurations ON public.widget_configurations USING btree (is_active);
 
 
 --
--- Name: idx_widget_configurations_tenant_name; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_widget_configurations_name; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_widget_configurations_tenant_name ON public.widget_configurations USING btree (name);
+CREATE UNIQUE INDEX idx_widget_configurations_name ON public.widget_configurations USING btree (name);
 
 
 --
@@ -13897,10 +13876,10 @@ CREATE INDEX idx_wiki_pages_intel_record ON public.wiki_pages USING btree (intel
 
 
 --
--- Name: idx_wiki_pages_tenant_space; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_wiki_pages_space; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_wiki_pages_tenant_space ON public.wiki_pages USING btree (space_id);
+CREATE INDEX idx_wiki_pages_space ON public.wiki_pages USING btree (space_id);
 
 
 --
@@ -13918,6 +13897,13 @@ CREATE INDEX idx_wiki_revisions_page_status ON public.wiki_revisions USING btree
 
 
 --
+-- Name: idx_wiki_revisions_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wiki_revisions_status ON public.wiki_revisions USING btree (status, created_at DESC);
+
+
+--
 -- Name: idx_wiki_revisions_status_kind; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -13932,13 +13918,6 @@ CREATE INDEX idx_wiki_revisions_target ON public.wiki_revisions USING btree (tar
 
 
 --
--- Name: idx_wiki_revisions_tenant_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_wiki_revisions_tenant_status ON public.wiki_revisions USING btree (status, created_at DESC);
-
-
---
 -- Name: idx_ws_tickets_user; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -13946,171 +13925,171 @@ CREATE INDEX idx_ws_tickets_user ON public.ws_tickets USING btree (user_id, used
 
 
 --
--- Name: instructor_payouts_tenant_id_instructor_id_period_start_per_key; Type: INDEX; Schema: public; Owner: -
+-- Name: instructor_payouts_instructor_id_period_start_per_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX instructor_payouts_tenant_id_instructor_id_period_start_per_key ON public.instructor_payouts USING btree (instructor_id, period_start, period_end);
-
-
---
--- Name: instructor_profiles_tenant_id_user_id_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX instructor_profiles_tenant_id_user_id_key ON public.instructor_profiles USING btree (user_id);
+CREATE UNIQUE INDEX instructor_payouts_instructor_id_period_start_per_key ON public.instructor_payouts USING btree (instructor_id, period_start, period_end);
 
 
 --
--- Name: intel_jobs_tenant_id_intel_record_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: instructor_profiles_user_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX intel_jobs_tenant_id_intel_record_id_key ON public.intel_jobs USING btree (intel_record_id);
-
-
---
--- Name: intel_records_tenant_source_external_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX intel_records_tenant_source_external_key ON public.intel_records USING btree (source_id, external_key);
+CREATE UNIQUE INDEX instructor_profiles_user_id_key ON public.instructor_profiles USING btree (user_id);
 
 
 --
--- Name: job_applications_tenant_id_job_id_applicant_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: intel_jobs_intel_record_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX job_applications_tenant_id_job_id_applicant_id_key ON public.job_applications USING btree (job_id, applicant_id);
-
-
---
--- Name: language_test_requirements_tenant_id_destination_space_id_v_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX language_test_requirements_tenant_id_destination_space_id_v_key ON public.language_test_requirements USING btree (destination_space_id, visa_category, test_id);
+CREATE UNIQUE INDEX intel_jobs_intel_record_id_key ON public.intel_jobs USING btree (intel_record_id);
 
 
 --
--- Name: learning_lessons_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: intel_records_source_external_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX learning_lessons_tenant_id_slug_key ON public.learning_lessons USING btree (slug);
-
-
---
--- Name: learning_modules_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX learning_modules_tenant_id_slug_key ON public.learning_modules USING btree (slug);
+CREATE UNIQUE INDEX intel_records_source_external_key ON public.intel_records USING btree (source_id, external_key);
 
 
 --
--- Name: learning_tracks_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: job_applications_job_id_applicant_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX learning_tracks_tenant_id_slug_key ON public.learning_tracks USING btree (slug);
-
-
---
--- Name: menus_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX menus_tenant_id_slug_key ON public.menus USING btree (slug);
+CREATE UNIQUE INDEX job_applications_job_id_applicant_id_key ON public.job_applications USING btree (job_id, applicant_id);
 
 
 --
--- Name: monitored_embassies_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: language_test_requirements_destination_space_id_v_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX monitored_embassies_tenant_id_slug_key ON public.monitored_embassies USING btree (slug);
-
-
---
--- Name: newsletter_subscribers_tenant_id_email_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX newsletter_subscribers_tenant_id_email_key ON public.newsletter_subscribers USING btree (email);
+CREATE UNIQUE INDEX language_test_requirements_destination_space_id_v_key ON public.language_test_requirements USING btree (destination_space_id, visa_category, test_id);
 
 
 --
--- Name: onboarding_state_tenant_id_user_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: learning_lessons_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX onboarding_state_tenant_id_user_id_key ON public.onboarding_state USING btree (user_id);
-
-
---
--- Name: onboarding_templates_tenant_id_name_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX onboarding_templates_tenant_id_name_key ON public.onboarding_templates USING btree (name);
+CREATE UNIQUE INDEX learning_lessons_slug_key ON public.learning_lessons USING btree (slug);
 
 
 --
--- Name: organizations_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: learning_modules_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX organizations_tenant_id_slug_key ON public.organizations USING btree (slug);
-
-
---
--- Name: page_builder_pages_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX page_builder_pages_tenant_id_slug_key ON public.page_builder_pages USING btree (slug);
+CREATE UNIQUE INDEX learning_modules_slug_key ON public.learning_modules USING btree (slug);
 
 
 --
--- Name: pagebuilder_blocks_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: learning_tracks_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX pagebuilder_blocks_tenant_id_slug_key ON public.pagebuilder_blocks USING btree (slug);
-
-
---
--- Name: pagebuilder_templates_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX pagebuilder_templates_tenant_id_slug_key ON public.pagebuilder_templates USING btree (slug);
+CREATE UNIQUE INDEX learning_tracks_slug_key ON public.learning_tracks USING btree (slug);
 
 
 --
--- Name: pagebuilder_themes_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: menus_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX pagebuilder_themes_tenant_id_slug_key ON public.pagebuilder_themes USING btree (slug);
-
-
---
--- Name: pages_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX pages_tenant_id_slug_key ON public.pages USING btree (slug);
+CREATE UNIQUE INDEX menus_slug_key ON public.menus USING btree (slug);
 
 
 --
--- Name: payment_webhook_events_tenant_id_provider_event_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: monitored_embassies_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX payment_webhook_events_tenant_id_provider_event_id_key ON public.payment_webhook_events USING btree (provider, event_id);
-
-
---
--- Name: payout_providers_tenant_id_type_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX payout_providers_tenant_id_type_key ON public.payout_providers USING btree (type);
+CREATE UNIQUE INDEX monitored_embassies_slug_key ON public.monitored_embassies USING btree (slug);
 
 
 --
--- Name: persona_voices_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: newsletter_subscribers_email_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX persona_voices_tenant_id_slug_key ON public.persona_voices USING btree (slug);
+CREATE UNIQUE INDEX newsletter_subscribers_email_key ON public.newsletter_subscribers USING btree (email);
 
 
 --
--- Name: redirects_tenant_id_source_path_key; Type: INDEX; Schema: public; Owner: -
+-- Name: onboarding_state_user_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX redirects_tenant_id_source_path_key ON public.redirects USING btree (source_path);
+CREATE UNIQUE INDEX onboarding_state_user_id_key ON public.onboarding_state USING btree (user_id);
+
+
+--
+-- Name: onboarding_templates_name_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX onboarding_templates_name_key ON public.onboarding_templates USING btree (name);
+
+
+--
+-- Name: organizations_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX organizations_slug_key ON public.organizations USING btree (slug);
+
+
+--
+-- Name: page_builder_pages_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX page_builder_pages_slug_key ON public.page_builder_pages USING btree (slug);
+
+
+--
+-- Name: pagebuilder_blocks_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pagebuilder_blocks_slug_key ON public.pagebuilder_blocks USING btree (slug);
+
+
+--
+-- Name: pagebuilder_templates_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pagebuilder_templates_slug_key ON public.pagebuilder_templates USING btree (slug);
+
+
+--
+-- Name: pagebuilder_themes_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pagebuilder_themes_slug_key ON public.pagebuilder_themes USING btree (slug);
+
+
+--
+-- Name: pages_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pages_slug_key ON public.pages USING btree (slug);
+
+
+--
+-- Name: payment_webhook_events_provider_event_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX payment_webhook_events_provider_event_id_key ON public.payment_webhook_events USING btree (provider, event_id);
+
+
+--
+-- Name: payout_providers_type_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX payout_providers_type_key ON public.payout_providers USING btree (type);
+
+
+--
+-- Name: persona_voices_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX persona_voices_slug_key ON public.persona_voices USING btree (slug);
+
+
+--
+-- Name: redirects_source_path_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX redirects_source_path_key ON public.redirects USING btree (source_path);
 
 
 --
@@ -14128,115 +14107,115 @@ CREATE UNIQUE INDEX referrals_referee_id_key ON public.referrals USING btree (re
 
 
 --
--- Name: remittance_providers_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: remittance_providers_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX remittance_providers_tenant_id_slug_key ON public.remittance_providers USING btree (slug);
-
-
---
--- Name: remittance_rate_alerts_tenant_id_user_id_send_currency_rece_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX remittance_rate_alerts_tenant_id_user_id_send_currency_rece_key ON public.remittance_rate_alerts USING btree (user_id, send_currency, receive_currency, direction);
+CREATE UNIQUE INDEX remittance_providers_slug_key ON public.remittance_providers USING btree (slug);
 
 
 --
--- Name: reviews_tenant_id_entity_type_entity_id_reviewer_user_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: remittance_rate_alerts_user_id_send_currency_rece_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX reviews_tenant_id_entity_type_entity_id_reviewer_user_id_key ON public.reviews USING btree (entity_type, entity_id, reviewer_user_id);
-
-
---
--- Name: share_platforms_tenant_id_key_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX share_platforms_tenant_id_key_key ON public.share_platforms USING btree (key);
+CREATE UNIQUE INDEX remittance_rate_alerts_user_id_send_currency_rece_key ON public.remittance_rate_alerts USING btree (user_id, send_currency, receive_currency, direction);
 
 
 --
--- Name: sidebars_tenant_id_app_position_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: reviews_entity_type_entity_id_reviewer_user_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX sidebars_tenant_id_app_position_slug_key ON public.sidebars USING btree (app, "position", slug);
-
-
---
--- Name: source_collections_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX source_collections_tenant_id_slug_key ON public.source_collections USING btree (slug);
+CREATE UNIQUE INDEX reviews_entity_type_entity_id_reviewer_user_id_key ON public.reviews USING btree (entity_type, entity_id, reviewer_user_id);
 
 
 --
--- Name: space_mutes_tenant_id_user_id_space_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: share_platforms_key_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX space_mutes_tenant_id_user_id_space_id_key ON public.space_mutes USING btree (user_id, space_id);
-
-
---
--- Name: story_meta_content_tenant_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX story_meta_content_tenant_key ON public.story_meta USING btree (content_id);
+CREATE UNIQUE INDEX share_platforms_key_key ON public.share_platforms USING btree (key);
 
 
 --
--- Name: tag_moderators_tenant_id_tag_id_user_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: sidebars_app_position_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX tag_moderators_tenant_id_tag_id_user_id_key ON public.tag_moderators USING btree (tag_id, user_id);
-
-
---
--- Name: tags_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX tags_tenant_id_slug_key ON public.tags USING btree (slug);
+CREATE UNIQUE INDEX sidebars_app_position_slug_key ON public.sidebars USING btree (app, "position", slug);
 
 
 --
--- Name: tax_obligation_guides_tenant_id_origin_space_id_destination_key; Type: INDEX; Schema: public; Owner: -
+-- Name: source_collections_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX tax_obligation_guides_tenant_id_origin_space_id_destination_key ON public.tax_obligation_guides USING btree (origin_space_id, destination_space_id, employment_status);
-
-
---
--- Name: tax_treaty_pairs_tenant_id_origin_space_id_destination_spac_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX tax_treaty_pairs_tenant_id_origin_space_id_destination_spac_key ON public.tax_treaty_pairs USING btree (origin_space_id, destination_space_id);
+CREATE UNIQUE INDEX source_collections_slug_key ON public.source_collections USING btree (slug);
 
 
 --
--- Name: ticket_types_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: space_mutes_user_id_space_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX ticket_types_tenant_id_slug_key ON public.ticket_types USING btree (slug);
-
-
---
--- Name: totp_credentials_tenant_id_user_id_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX totp_credentials_tenant_id_user_id_key ON public.totp_credentials USING btree (user_id);
+CREATE UNIQUE INDEX space_mutes_user_id_space_id_key ON public.space_mutes USING btree (user_id, space_id);
 
 
 --
--- Name: translations_tenant_id_locale_key_key; Type: INDEX; Schema: public; Owner: -
+-- Name: story_meta_content_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX translations_tenant_id_locale_key_key ON public.translations USING btree (locale, key);
+CREATE UNIQUE INDEX story_meta_content_key ON public.story_meta USING btree (content_id);
 
 
 --
--- Name: travel_providers_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: tag_moderators_tag_id_user_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX travel_providers_tenant_id_slug_key ON public.travel_providers USING btree (slug);
+CREATE UNIQUE INDEX tag_moderators_tag_id_user_id_key ON public.tag_moderators USING btree (tag_id, user_id);
+
+
+--
+-- Name: tags_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX tags_slug_key ON public.tags USING btree (slug);
+
+
+--
+-- Name: tax_obligation_guides_origin_space_id_destination_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX tax_obligation_guides_origin_space_id_destination_key ON public.tax_obligation_guides USING btree (origin_space_id, destination_space_id, employment_status);
+
+
+--
+-- Name: tax_treaty_pairs_origin_space_id_destination_spac_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX tax_treaty_pairs_origin_space_id_destination_spac_key ON public.tax_treaty_pairs USING btree (origin_space_id, destination_space_id);
+
+
+--
+-- Name: ticket_types_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ticket_types_slug_key ON public.ticket_types USING btree (slug);
+
+
+--
+-- Name: totp_credentials_user_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX totp_credentials_user_id_key ON public.totp_credentials USING btree (user_id);
+
+
+--
+-- Name: translations_locale_key_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX translations_locale_key_key ON public.translations USING btree (locale, key);
+
+
+--
+-- Name: travel_providers_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX travel_providers_slug_key ON public.travel_providers USING btree (slug);
 
 
 --
@@ -14247,80 +14226,80 @@ CREATE UNIQUE INDEX trending_snapshots_entity_window_geo_key ON public.trending_
 
 
 --
--- Name: university_course_catalog_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: university_course_catalog_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX university_course_catalog_tenant_id_slug_key ON public.university_course_catalog USING btree (slug);
-
-
---
--- Name: university_course_offerings_tenant_id_course_id_university__key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX university_course_offerings_tenant_id_course_id_university__key ON public.university_course_offerings USING btree (course_id, university_id);
+CREATE UNIQUE INDEX university_course_catalog_slug_key ON public.university_course_catalog USING btree (slug);
 
 
 --
--- Name: university_course_offerings_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: university_course_offerings_course_id_university_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX university_course_offerings_tenant_id_slug_key ON public.university_course_offerings USING btree (slug);
-
-
---
--- Name: university_track_categories_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX university_track_categories_tenant_id_slug_key ON public.university_track_categories USING btree (slug);
+CREATE UNIQUE INDEX university_course_offerings_course_id_university_key ON public.university_course_offerings USING btree (course_id, university_id);
 
 
 --
--- Name: user_badges_tenant_id_user_id_badge_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: university_course_offerings_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX user_badges_tenant_id_user_id_badge_id_key ON public.user_badges USING btree (user_id, badge_id);
-
-
---
--- Name: user_challenge_progress_tenant_id_user_id_challenge_id_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX user_challenge_progress_tenant_id_user_id_challenge_id_key ON public.user_challenge_progress USING btree (user_id, challenge_id);
+CREATE UNIQUE INDEX university_course_offerings_slug_key ON public.university_course_offerings USING btree (slug);
 
 
 --
--- Name: user_group_memberships_tenant_id_user_id_group_id_key; Type: INDEX; Schema: public; Owner: -
+-- Name: university_track_categories_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX user_group_memberships_tenant_id_user_id_group_id_key ON public.user_group_memberships USING btree (user_id, group_id);
-
-
---
--- Name: user_group_promotions_tenant_id_source_group_id_target_grou_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX user_group_promotions_tenant_id_source_group_id_target_grou_key ON public.user_group_promotions USING btree (source_group_id, target_group_id);
+CREATE UNIQUE INDEX university_track_categories_slug_key ON public.university_track_categories USING btree (slug);
 
 
 --
--- Name: user_groups_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: user_badges_user_id_badge_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX user_groups_tenant_id_slug_key ON public.user_groups USING btree (slug);
-
-
---
--- Name: user_mutes_tenant_id_user_id_muted_user_id_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX user_mutes_tenant_id_user_id_muted_user_id_key ON public.user_mutes USING btree (user_id, muted_user_id);
+CREATE UNIQUE INDEX user_badges_user_id_badge_id_key ON public.user_badges USING btree (user_id, badge_id);
 
 
 --
--- Name: user_roles_tenant_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: user_challenge_progress_user_id_challenge_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX user_roles_tenant_id_slug_key ON public.user_roles USING btree (slug);
+CREATE UNIQUE INDEX user_challenge_progress_user_id_challenge_id_key ON public.user_challenge_progress USING btree (user_id, challenge_id);
+
+
+--
+-- Name: user_group_memberships_user_id_group_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX user_group_memberships_user_id_group_id_key ON public.user_group_memberships USING btree (user_id, group_id);
+
+
+--
+-- Name: user_group_promotions_source_group_id_target_grou_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX user_group_promotions_source_group_id_target_grou_key ON public.user_group_promotions USING btree (source_group_id, target_group_id);
+
+
+--
+-- Name: user_groups_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX user_groups_slug_key ON public.user_groups USING btree (slug);
+
+
+--
+-- Name: user_mutes_user_id_muted_user_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX user_mutes_user_id_muted_user_id_key ON public.user_mutes USING btree (user_id, muted_user_id);
+
+
+--
+-- Name: user_roles_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX user_roles_slug_key ON public.user_roles USING btree (slug);
 
 
 --
@@ -14331,17 +14310,17 @@ CREATE UNIQUE INDEX video_sources_slug_key ON public.video_sources USING btree (
 
 
 --
--- Name: visa_processing_stats_tenant_id_origin_space_id_destination_key; Type: INDEX; Schema: public; Owner: -
+-- Name: visa_processing_stats_origin_space_id_destination_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX visa_processing_stats_tenant_id_origin_space_id_destination_key ON public.visa_processing_stats USING btree (origin_space_id, destination_space_id, visa_category, consulate, period_start);
+CREATE UNIQUE INDEX visa_processing_stats_origin_space_id_destination_key ON public.visa_processing_stats USING btree (origin_space_id, destination_space_id, visa_category, consulate, period_start);
 
 
 --
--- Name: visa_routes_tenant_id_destination_space_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: visa_routes_destination_space_id_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX visa_routes_tenant_id_destination_space_id_slug_key ON public.visa_routes USING btree (destination_space_id, slug);
+CREATE UNIQUE INDEX visa_routes_destination_space_id_slug_key ON public.visa_routes USING btree (destination_space_id, slug);
 
 
 --
@@ -14352,17 +14331,17 @@ CREATE UNIQUE INDEX wallet_settings_singleton ON public.wallet_settings USING bt
 
 
 --
--- Name: wallet_withdrawals_tenant_id_idempotency_key_key; Type: INDEX; Schema: public; Owner: -
+-- Name: wallet_withdrawals_idempotency_key_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX wallet_withdrawals_tenant_id_idempotency_key_key ON public.wallet_withdrawals USING btree (idempotency_key);
+CREATE UNIQUE INDEX wallet_withdrawals_idempotency_key_key ON public.wallet_withdrawals USING btree (idempotency_key);
 
 
 --
--- Name: wiki_pages_tenant_id_space_id_slug_key; Type: INDEX; Schema: public; Owner: -
+-- Name: wiki_pages_space_id_slug_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX wiki_pages_tenant_id_space_id_slug_key ON public.wiki_pages USING btree (space_id, slug);
+CREATE UNIQUE INDEX wiki_pages_space_id_slug_key ON public.wiki_pages USING btree (space_id, slug);
 
 
 --
