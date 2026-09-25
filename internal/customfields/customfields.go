@@ -96,6 +96,22 @@ func IsValidFieldType(ft string) bool {
 	return validFieldTypes[ft]
 }
 
+// ProposableFieldTypes returns the field types community members may propose
+// through §80 field ops — the leaf value-carrying types; structural/media
+// types (group, repeater, reference, images, embeds) are excluded because a
+// text proposal cannot express their configuration.
+func ProposableFieldTypes() []string {
+	return []string{
+		FieldTypeText, FieldTypeTextarea, FieldTypeRichText,
+		FieldTypeNumber, FieldTypeCurrency, FieldTypePercentage,
+		FieldTypeBoolean, FieldTypeDate, FieldTypeDatetime, FieldTypeTime,
+		FieldTypeDuration,
+		FieldTypeSelect, FieldTypeSuggest, FieldTypeMultiselect,
+		FieldTypeURL, FieldTypeEmail, FieldTypePhone,
+		FieldTypeColor, FieldTypeRating,
+	}
+}
+
 // FieldTypeValueColumn maps a field type to the custom_field_values column it
 // expects to write to. Returns the column name and true, or "" and false for
 // unknown types.

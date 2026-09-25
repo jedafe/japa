@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -36,6 +37,7 @@ type WikiPageDTO struct {
 	Category       string  `json:"category"`
 	IsFeatured     bool    `json:"is_featured"`
 	IsLocked       bool    `json:"is_locked"`
+	IsActive       bool    `json:"is_active"`
 	UpdatedAt      string  `json:"updated_at"`
 	SpaceSlug      string  `json:"space_slug,omitempty"`
 	SpaceName      string  `json:"space_name,omitempty"`
@@ -310,7 +312,8 @@ func (s *Service) IsUniversitySpace(ctx context.Context, spaceSlug string) (bool
 
 // GetWikiIndex returns all active wiki pages for a destination space (by space slug).
 func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) ([]WikiPageDTO, error) {
-	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
+	spaceID, level, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSpaceNotFound
 		}
@@ -323,12 +326,37 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) ([]WikiPag
 		return nil, fmt.Errorf("wiki: index: %w", err)
 	}
 
+	// §80: a country space with an empty index hasn't been seeded yet (e.g.
+	// created after wiki.enabled activation) — enqueue the idempotent seed
+	// task rather than leaving the index permanently empty.
+	if len(pages) == 0 && level == "country" {
+		s.enqueueStubSeed(ctx, spaceID)
+	}
+
 	dtos := make([]WikiPageDTO, 0, len(pages))
 	for _, p := range pages {
 		dtos = append(dtos, pageToDTO(p))
 	}
 
 	return dtos, nil
+}
+
+// enqueueStubSeed fire-and-forget enqueues wiki:seed_stub_pages for one
+// space (Rule 8). The task is idempotent, and asynq.Unique dedupes by
+// type+payload for an hour so repeated anonymous views of an unseeded
+// country index can't flood the queue.
+func (s *Service) enqueueStubSeed(ctx context.Context, spaceID pgtype.UUID) {
+	if s.enqueuer == nil || !spaceID.Valid {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"space_id": spaceID.String()})
+	if err != nil {
+		return
+	}
+	if err := s.enqueuer.Enqueue(TaskSeedStubPages, payload, asynq.Unique(time.Hour)); err != nil &&
+		!errors.Is(err, asynq.ErrDuplicateTask) {
+		slog.Warn("wiki: lazy seed_stub_pages enqueue failed", "space_id", spaceID.String(), "error", err)
+	}
 }
 
 // GetWikiIndexByDestSpaceID returns all active wiki pages for a destination space by its ID.
@@ -398,8 +426,11 @@ func (s *Service) GetWikiPage(ctx context.Context, spaceSlug, pageSlug string) (
 	return dto, nil
 }
 
-// GetRevisionHistory returns the revision history for a wiki page.
-func (s *Service) GetRevisionHistory(ctx context.Context, spaceSlug, pageSlug string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
+// GetRevisionHistory returns the revision history for a wiki page. Pending
+// revisions are still listed for transparency, but their bodies (content,
+// ops, summary — all unmoderated user text) are redacted unless the viewer
+// is the submitter or holds wiki.review/wiki.manage (canReview).
+func (s *Service) GetRevisionHistory(ctx context.Context, viewerID pgtype.UUID, canReview bool, spaceSlug, pageSlug string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
 	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, 0, ErrSpaceNotFound
@@ -434,7 +465,16 @@ func (s *Service) GetRevisionHistory(ctx context.Context, spaceSlug, pageSlug st
 
 	dtos := make([]WikiRevisionDTO, 0, len(revs))
 	for _, r := range revs {
-		dtos = append(dtos, revisionToDTO(r))
+		dto := revisionToDTO(r)
+		// Redact unmoderated bodies on pending revisions for viewers who
+		// are neither the submitter nor a reviewer (BUG: public history
+		// previously exposed pending content to anonymous readers).
+		if r.Status == "pending" && !canReview && !(viewerID.Valid && r.SubmittedBy == viewerID) {
+			dto.Content = nil
+			dto.Ops = nil
+			dto.Summary = ""
+		}
+		dtos = append(dtos, dto)
 	}
 
 	return dtos, total, nil
@@ -613,7 +653,7 @@ func (s *Service) UpdatePage(ctx context.Context, pageID pgtype.UUID, input Upda
 
 // AdminListPages returns all wiki pages for admin management (paginated).
 // Each row includes the latest revision metadata for the review queue (B1).
-func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, category, q string, isLocked *bool, page, limit int32) ([]AdminWikiPageDTO, int64, error) {
+func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destSlug, category, q, sort string, isLocked *bool, page, limit int32) ([]AdminWikiPageDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -627,9 +667,11 @@ func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, categ
 	pages, total, err := s.store.AdminListPages(ctx, AdminListPagesFilter{
 
 		SpaceID:  spaceID,
+		DestSlug: destSlug,
 		Category: category,
 		IsLocked: isLocked,
 		Q:        q,
+		Sort:     sort,
 		Limit:    limit,
 		Offset:   offset,
 	})
@@ -717,6 +759,7 @@ func pageToDTO(p WikiPageWithSpace) WikiPageDTO {
 		Category:       p.Category,
 		IsFeatured:     p.IsFeatured,
 		IsLocked:       p.IsLocked,
+		IsActive:       p.IsActive,
 		UpdatedAt:      formatTs(p.UpdatedAt),
 		SpaceSlug:      p.SpaceSlug,
 		SpaceName:      p.SpaceName,
@@ -902,8 +945,8 @@ var defaultStubPages = []stubPageSpec{
 // // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 // //	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 func (s *Service) SeedStubPages(ctx context.Context, spaceID pgtype.UUID) error {
-	if !false || !spaceID.Valid {
-		return errors.New("wiki: seed stub pages: the id and space_id are required")
+	if !spaceID.Valid {
+		return errors.New("wiki: seed stub pages: space_id is required")
 	}
 
 	var createdBy pgtype.UUID // system-created stub pages have no human author
@@ -918,6 +961,40 @@ func (s *Service) SeedStubPages(ctx context.Context, spaceID pgtype.UUID) error 
 	}
 
 	return nil
+}
+
+// EnqueueStubSeedFanOut enqueues one wiki:seed_stub_pages task per active
+// country space — the §80 activation-time background job wired to the
+// wiki.enabled flag transition (features.SetOnFlagEnabled in server.go).
+// Each task is idempotent, so re-activation is harmless. Failures on
+// individual spaces are logged and skipped — one bad space must not abort
+// the rest of the fan-out.
+func (s *Service) EnqueueStubSeedFanOut(ctx context.Context) {
+	if s.enqueuer == nil {
+		slog.Warn("wiki: seed stub fan-out skipped — no Asynq enqueuer wired")
+		return
+	}
+
+	ids, err := s.store.ListCountrySpaceIDs(ctx)
+	if err != nil {
+		slog.Error("wiki: seed stub fan-out: list country spaces failed", "error", err)
+		return
+	}
+
+	for _, id := range ids {
+		payload, err := json.Marshal(map[string]string{"space_id": id.String()})
+		if err != nil {
+			continue
+		}
+		// Unique dedupes a rapid off→on→off→on flag toggle — same payload
+		// per space collapses to one pending task.
+		if err := s.enqueuer.Enqueue(TaskSeedStubPages, payload, asynq.Unique(time.Hour)); err != nil &&
+			!errors.Is(err, asynq.ErrDuplicateTask) {
+			slog.Warn("wiki: seed_stub_pages enqueue failed", "space_id", id.String(), "error", err)
+		}
+	}
+
+	slog.Info("wiki: seed_stub_pages fan-out enqueued", "spaces", len(ids))
 }
 
 // normalizeWikiContent ensures wiki revision content is always stored as a

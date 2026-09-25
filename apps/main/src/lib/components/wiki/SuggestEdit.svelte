@@ -6,11 +6,12 @@
 	// the wiki.structured_edits feature flag is on.
 	import { page } from '$app/state';
 	import { Dialog } from 'bits-ui';
-	import { Pencil, X, Send, Loader2 } from 'lucide-svelte';
+	import { Pencil, X, Send, Loader2, Plus, Trash2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import CustomFieldGroup from '$lib/components/create/panel/CustomFieldGroup.svelte';
 	import {
 		getEntityFields,
+		getFieldTypes,
 		suggestFields,
 		type SuggestFieldsResult,
 		type WikiEntityField,
@@ -60,6 +61,109 @@
 	let errorKey = $state('');
 
 	const pendingCount = $derived(schema?.pending_count ?? 0);
+	// Propose-tier ops UI: the schema reports can_propose (wiki.fields.propose
+	// or manage) and the entity_class token propose_group needs.
+	const canPropose = $derived(schema?.can_propose === true);
+
+	// ── "Propose a new field" form state ─────────────────────────────────
+	let proposeOpen = $state(false);
+	let fieldTypes = $state<Array<{ value: string; label: string }>>([]);
+	let pfLabel = $state('');
+	let pfKey = $state('');
+	let pfKeyTouched = $state(false);
+	let pfType = $state('');
+	let pfGroupSlug = $state('');
+	let pfGroupName = $state('');
+	let pfGroupSlugTouched = $state(false);
+	let pfNewGroupSlug = $state('');
+	let pfError = $state('');
+	// Ops queued by the propose form — submitted alongside set_value ops.
+	let proposedOps = $state<WikiFieldOp[]>([]);
+	let proposedLabels = $state<string[]>([]);
+
+	function slugifyFieldKey(s: string): string {
+		return s
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '_')
+			.replace(/^_+|_+$/g, '');
+	}
+
+	function onPfLabelInput(e: Event) {
+		pfLabel = (e.currentTarget as HTMLInputElement).value;
+		if (!pfKeyTouched) pfKey = slugifyFieldKey(pfLabel);
+	}
+
+	function onPfKeyInput(e: Event) {
+		pfKeyTouched = true;
+		pfKey = slugifyFieldKey((e.currentTarget as HTMLInputElement).value);
+	}
+
+	function onPfGroupNameInput(e: Event) {
+		pfGroupName = (e.currentTarget as HTMLInputElement).value;
+		if (!pfGroupSlugTouched) {
+			pfNewGroupSlug = pfGroupName
+				.toLowerCase()
+				.trim()
+				.replace(/[^a-z0-9]+/g, '-')
+				.replace(/^-+|-+$/g, '');
+		}
+	}
+
+	async function togglePropose() {
+		proposeOpen = !proposeOpen;
+		if (proposeOpen && fieldTypes.length === 0) {
+			fieldTypes = await getFieldTypes();
+			if (fieldTypes.length > 0 && !pfType) pfType = fieldTypes[0].value;
+		}
+	}
+
+	function addProposedField() {
+		pfError = '';
+		const label = pfLabel.trim();
+		const key = pfKey.trim();
+		if (!label || !key) {
+			pfError = 'wiki.missing_fields';
+			return;
+		}
+		if (!pfType) {
+			pfError = 'wiki.missing_fields';
+			return;
+		}
+		const field = { key, label, field_type: pfType };
+		if (pfGroupSlug === '__new__') {
+			const gName = pfGroupName.trim();
+			if (!gName || !pfNewGroupSlug) {
+				pfError = 'wiki.missing_fields';
+				return;
+			}
+			proposedOps = [
+				...proposedOps,
+				{
+					op: 'propose_group',
+					entity_class: schema?.entity_class,
+					group: { slug: pfNewGroupSlug, name: gName, fields: [field] }
+				}
+			];
+			proposedLabels = [...proposedLabels, `${gName} › ${label}`];
+		} else {
+			if (!pfGroupSlug) {
+				pfError = 'wiki.missing_fields';
+				return;
+			}
+			proposedOps = [
+				...proposedOps,
+				{ op: 'propose_field', group_slug: pfGroupSlug, field }
+			];
+			proposedLabels = [...proposedLabels, label];
+		}
+		pfLabel = '';
+		pfKey = '';
+		pfKeyTouched = false;
+		pfGroupName = '';
+		pfNewGroupSlug = '';
+		pfGroupSlugTouched = false;
+	}
 
 	$effect(() => {
 		if (fieldsData !== undefined) {
@@ -83,6 +187,10 @@
 			autoApproved = false;
 			errorKey = '';
 			summary = '';
+			proposedOps = [];
+			proposedLabels = [];
+			proposeOpen = false;
+			pfError = '';
 			if (schema) seedValues(schema);
 			else if (fieldsData === undefined && !loadingFields) void loadSchema();
 		}
@@ -183,7 +291,7 @@
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		errorKey = '';
-		const ops = changedOps();
+		const ops = [...changedOps(), ...proposedOps];
 		if (ops.length === 0) {
 			errorKey = 'wiki.suggest_no_changes';
 			return;
@@ -281,7 +389,7 @@
 								{t('common.retry', 'Try again')}
 							</button>
 						</div>
-					{:else if schema && !hasVisibleFields}
+					{:else if schema && !hasVisibleFields && !canPropose}
 						<p class="py-4 text-sm text-[var(--color-muted)]">
 							{t('wiki.fields_empty', 'No editable fields for this entry.')}
 						</p>
@@ -324,6 +432,148 @@
 									</section>
 								{/if}
 							{/each}
+
+							{#if canPropose}
+								<section class="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] p-3">
+									<button
+										type="button"
+										onclick={togglePropose}
+										class="flex w-full items-center gap-1.5 text-left text-xs font-medium text-[var(--color-text)]"
+									>
+										<Plus size={13} class="text-[var(--color-muted)]" />
+										{t('wiki.propose_field', 'Propose a new field')}
+									</button>
+									{#if proposeOpen}
+										<p class="mt-2 text-xs text-[var(--color-muted)]">
+											{t('wiki.propose_field_hint', "Suggest a field that isn't listed yet.")}
+										</p>
+										<div class="mt-3 space-y-3">
+											<div class="flex flex-col gap-1">
+												<label for="pf-label" class="text-xs font-medium text-[var(--color-text)]">
+													{t('wiki.field_label', 'Field label')}
+												</label>
+												<input
+													id="pf-label"
+													type="text"
+													value={pfLabel}
+													oninput={onPfLabelInput}
+													class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+												/>
+											</div>
+											<div class="flex flex-col gap-1">
+												<label for="pf-key" class="text-xs font-medium text-[var(--color-text)]">
+													{t('wiki.field_key', 'Field key')}
+												</label>
+												<input
+													id="pf-key"
+													type="text"
+													value={pfKey}
+													oninput={onPfKeyInput}
+													class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-mono text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+												/>
+											</div>
+											<div class="flex flex-col gap-1">
+												<label for="pf-type" class="text-xs font-medium text-[var(--color-text)]">
+													{t('wiki.field_type', 'Field type')}
+												</label>
+												<select
+													id="pf-type"
+													bind:value={pfType}
+													class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+												>
+													{#each fieldTypes as ft (ft.value)}
+														<option value={ft.value}>{t(`wiki.field_type_${ft.value}`, ft.label)}</option>
+													{/each}
+												</select>
+											</div>
+											<div class="flex flex-col gap-1">
+												<label for="pf-group" class="text-xs font-medium text-[var(--color-text)]">
+													{t('wiki.field_group', 'Group')}
+												</label>
+												<select
+													id="pf-group"
+													bind:value={pfGroupSlug}
+													class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+												>
+													<option value="" disabled>—</option>
+													{#each schema.groups as g (g.id)}
+														<option value={g.slug}>{g.name}</option>
+													{/each}
+													{#if schema.entity_class}
+														<option value="__new__">{t('wiki.new_group_option', 'New group…')}</option>
+													{/if}
+												</select>
+											</div>
+											{#if pfGroupSlug === '__new__'}
+												<div class="flex flex-col gap-1">
+													<label for="pf-group-name" class="text-xs font-medium text-[var(--color-text)]">
+														{t('wiki.group_name', 'Group name')}
+													</label>
+													<input
+														id="pf-group-name"
+														type="text"
+														value={pfGroupName}
+														oninput={onPfGroupNameInput}
+														class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+													/>
+												</div>
+												<div class="flex flex-col gap-1">
+													<label for="pf-group-slug" class="text-xs font-medium text-[var(--color-text)]">
+														{t('wiki.group_slug', 'Group slug')}
+													</label>
+													<input
+														id="pf-group-slug"
+														type="text"
+														value={pfNewGroupSlug}
+														oninput={(e) => {
+															pfGroupSlugTouched = true;
+															pfNewGroupSlug = e.currentTarget.value
+																.toLowerCase()
+																.replace(/[^a-z0-9]+/g, '-')
+																.replace(/^-+|-+$/g, '');
+														}}
+														class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-mono text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+													/>
+												</div>
+											{/if}
+											{#if pfError}
+												<p class="text-xs text-red-500" role="alert">{t(pfError, pfError)}</p>
+											{/if}
+											<button
+												type="button"
+												onclick={addProposedField}
+												class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+											>
+												<Plus size={13} /> {t('wiki.propose_add', 'Add proposal')}
+											</button>
+										</div>
+									{/if}
+									{#if proposedOps.length > 0}
+										<ul class="mt-3 space-y-1.5">
+											{#each proposedLabels as label, i (i)}
+												<li
+													class="flex items-center justify-between gap-2 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2.5 py-1.5 text-xs text-[var(--color-text)]"
+												>
+													<span class="min-w-0 truncate">
+														{t('wiki.propose_added', 'Proposed: {label}').replace('{label}', label)}
+													</span>
+													<button
+														type="button"
+														onclick={() => {
+															proposedOps = proposedOps.filter((_, j) => j !== i);
+															proposedLabels = proposedLabels.filter((_, j) => j !== i);
+														}}
+														class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-red-500"
+														aria-label={t('wiki.propose_remove', 'Remove')}
+													>
+														<Trash2 size={12} />
+													</button>
+												</li>
+											{/each}
+										</ul>
+									{/if}
+								</section>
+							{/if}
 
 							<div class="flex flex-col gap-1.5">
 								<label for="suggest-summary" class="text-sm font-medium text-[var(--color-text)]">

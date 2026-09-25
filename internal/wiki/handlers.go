@@ -8,6 +8,7 @@
 //	GET    /api/v1/wiki/:space_slug/:page_slug/history     — revision history
 //	POST   /api/v1/wiki/:space_slug/:page_slug/revisions   — submit edit (auth, wiki.edit; ops[] allowed)
 //	POST   /api/v1/wiki/suggest                            — entity-keyed field ops (auth)
+//	GET    /api/v1/wiki/field-types                        — proposable custom-field types
 //	GET    /api/v1/wiki/entities/:type/:id/fields          — editable field schema + values
 //	GET    /api/v1/wiki/entities/:type/:id/revisions       — entity edit history
 //	POST   /api/v1/admin/wiki/:page_id/revisions/:id/approve — approve revision (auth, wiki.review)
@@ -39,6 +40,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/customfields"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 )
@@ -374,6 +376,22 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats, "scope": scope})
 }
 
+// HandleGetFieldTypes handles GET /wiki/field-types — the field types
+// community members may propose through §80 field ops (propose_field /
+// propose_group). Returned as {value, label} so the frontend can override
+// labels via i18n while staying driven by the canonical list.
+func (h *Handlers) HandleGetFieldTypes(w http.ResponseWriter, r *http.Request) {
+	types := customfields.ProposableFieldTypes()
+	out := make([]map[string]string, 0, len(types))
+	for _, ft := range types {
+		out = append(out, map[string]string{
+			"value": ft,
+			"label": strings.ReplaceAll(ft, "_", " "),
+		})
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
+}
+
 // HandleGetDestinations handles GET /wiki/destinations — returns active
 // destination spaces (country/state/city/university). Optional query params:
 //
@@ -453,7 +471,20 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	revs, total, err := h.service.GetRevisionHistory(r.Context(), spaceSlug, pageSlug, page, limit)
+	// Pending revision bodies are unmoderated — visible only to the submitter
+	// and to users holding wiki.review/wiki.manage. Anonymous/other viewers
+	// see the pending row redacted (service-side).
+	var viewerID pgtype.UUID
+	canReview := false
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewerID = u.UserID
+		if h.perms != nil {
+			canReview = h.perms.HasPermission(r.Context(), u.UserID, "wiki.review") ||
+				h.perms.HasPermission(r.Context(), u.UserID, "wiki.manage")
+		}
+	}
+
+	revs, total, err := h.service.GetRevisionHistory(r.Context(), viewerID, canReview, spaceSlug, pageSlug, page, limit)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -537,7 +568,19 @@ func (h *Handlers) HandleGetEntityRevisions(w http.ResponseWriter, r *http.Reque
 
 	page, limit := parsePageParams(r)
 
-	revs, total, err := h.service.ListEntityRevisions(r.Context(), entityType, entityID, page, limit)
+	// Pending revision bodies are unmoderated — redact them unless the viewer
+	// is the submitter or a reviewer (same rule as page history).
+	var viewerID pgtype.UUID
+	canReview := false
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewerID = u.UserID
+		if h.perms != nil {
+			canReview = h.perms.HasPermission(r.Context(), u.UserID, "wiki.review") ||
+				h.perms.HasPermission(r.Context(), u.UserID, "wiki.manage")
+		}
+	}
+
+	revs, total, err := h.service.ListEntityRevisions(r.Context(), viewerID, canReview, entityType, entityID, page, limit)
 	if err != nil {
 		slog.Error("wiki: entity revisions failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "entity_revisions_failed", "Failed to get entity revisions")
@@ -1233,6 +1276,24 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The admin UI's destination autocomplete sends ?dest= with the space UUID
+	// (GeoCountry.id); accept a slug too so the param works for either shape.
+	var destSlug string
+	if v := r.URL.Query().Get("dest"); v != "" {
+		var destID pgtype.UUID
+		if err := destID.Scan(v); err == nil && destID.Valid {
+			if spaceID.Valid && spaceID != destID {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "conflicting space_id and dest filters")
+				return
+			}
+			spaceID = destID
+		} else {
+			destSlug = v
+		}
+	}
+
+	sort := r.URL.Query().Get("sort")
+
 	category := r.URL.Query().Get("category")
 	q := r.URL.Query().Get("q")
 
@@ -1250,7 +1311,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	pages, total, err := h.service.AdminListPages(r.Context(), spaceID, category, q, lockedPtr, page, limit)
+	pages, total, err := h.service.AdminListPages(r.Context(), spaceID, destSlug, category, q, sort, lockedPtr, page, limit)
 	if err != nil {
 		slog.Error("wiki: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list wiki pages")

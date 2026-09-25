@@ -166,18 +166,24 @@ export async function apiList<T>(
 	const raw = payload as unknown as {
 		data: T[] | null;
 		meta?: ListMeta;
-		pagination?: { total?: number; page_size?: number; page_offset?: number };
+		pagination?: { total?: number; page?: number; limit?: number; page_size?: number; page_offset?: number };
 		total?: number;
 		page?: number;
 		limit?: number;
 		total_pages?: number;
 	};
-	// A `pagination` sidecar (e.g. GET /stories) maps into the same ListMeta
-	// shape so callers can read meta.total uniformly.
+	// A `pagination` sidecar (e.g. GET /stories, GET /wiki/.../history) maps
+	// into the same ListMeta shape so callers can read meta.total/page/limit
+	// uniformly. The wiki endpoints emit {page, limit, total}; older ones emit
+	// {page_size, page_offset} — cover both spellings.
 	const meta =
 		raw.meta ??
 		(raw.pagination?.total !== undefined
-			? { total: raw.pagination.total, limit: raw.pagination.page_size }
+			? {
+					total: raw.pagination.total,
+					page: raw.pagination.page,
+					limit: raw.pagination.limit ?? raw.pagination.page_size
+				}
 			: raw.total !== undefined
 				? { total: raw.total, page: raw.page, limit: raw.limit, total_pages: raw.total_pages }
 				: undefined);

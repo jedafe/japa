@@ -33,10 +33,33 @@ export interface WikiEntityFieldGroup {
 export interface WikiEntityFields {
 	groups: WikiEntityFieldGroup[];
 	pending_count: number;
+	/** Caller holds wiki.fields.propose (or manage) — may submit
+	 *  propose_field/propose_group ops. */
+	can_propose?: boolean;
+	/** Caller holds wiki.fields.manage — ops revisions auto-approve. */
+	can_manage?: boolean;
+	/** The entity's resolved custom-fields class (propose_group payload). */
+	entity_class?: string;
 }
 
-/** §80 field op — only set_value is produced by the suggest-edit UI; the
- *  other op kinds exist for propose/manage tiers. */
+/** Field definition carried by propose_field / propose_group ops. */
+export interface WikiFieldDefInput {
+	key: string;
+	label: string;
+	field_type: string;
+}
+
+/** Group definition carried by propose_group ops. */
+export interface WikiGroupDefInput {
+	slug: string;
+	name: string;
+	description?: string;
+	fields?: WikiFieldDefInput[];
+}
+
+/** §80 field op — set_value edits existing fields; propose_field /
+ *  propose_group (propose tier) and upsert_field / assign_group (manage
+ *  tier) extend the schema itself. */
 export interface WikiFieldOp {
 	op: 'set_value' | 'propose_field' | 'propose_group' | 'upsert_field' | 'assign_group';
 	entity_type?: string;
@@ -46,8 +69,8 @@ export interface WikiFieldOp {
 	entity_class?: string;
 	source_url?: string;
 	value?: unknown;
-	field?: unknown;
-	group?: unknown;
+	field?: WikiFieldDefInput;
+	group?: WikiGroupDefInput;
 }
 
 /** POST /wiki/suggest response payload. */
@@ -81,6 +104,14 @@ export interface EntityRevisionsPage {
 	total: number;
 }
 
+/** GET /wiki/field-types — the canonical proposable field types
+ *  ({value, label}); labels are server-English, callers may override via
+ *  i18n. Returns [] on failure — the propose form hides itself. */
+export async function getFieldTypes(): Promise<Array<{ value: string; label: string }>> {
+	const res = await api.get<Array<{ value: string; label: string }>>('/wiki/field-types');
+	return res.data ?? [];
+}
+
 export async function getEntityFields(
 	entityType: string,
 	entityId: string
@@ -103,18 +134,20 @@ export function suggestFields(payload: {
 }
 
 /** Paginated revision history targeting an entity. The envelope's top-level
- *  `pagination` object carries page/limit/total. */
+ *  `pagination` object carries page/limit/total. Returns null on error so
+ *  callers can distinguish a failure from an empty history. */
 export async function getEntityRevisions(
 	entityType: string,
 	entityId: string,
 	params: { page?: number; limit?: number } = {}
-): Promise<EntityRevisionsPage> {
+): Promise<EntityRevisionsPage | null> {
 	const qs = new URLSearchParams();
 	qs.set('page', String(params.page ?? 1));
 	qs.set('limit', String(params.limit ?? 20));
 	const res = await api.getEnvelope<WikiEntityRevision[]>(
 		`/wiki/entities/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/revisions?${qs.toString()}`
 	);
+	if (res.error) return null;
 	const pg = (res.envelope?.pagination ?? {}) as {
 		page?: number;
 		limit?: number;

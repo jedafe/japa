@@ -4,9 +4,16 @@
 	// values grouped by field-group name, a pending-suggestions banner, and a
 	// per-field edit affordance that opens the shared SuggestEdit dialog.
 	import { page } from '$app/state';
-	import { Clock, Pencil, Table2 } from 'lucide-svelte';
+	import { untrack } from 'svelte';
+	import { Clock, History, Pencil, Table2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import { getEntityFields, type WikiEntityField, type WikiEntityFields } from '$lib/api/wiki';
+	import {
+		getEntityFields,
+		getEntityRevisions,
+		type WikiEntityField,
+		type WikiEntityFields,
+		type WikiEntityRevision
+	} from '$lib/api/wiki';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import SuggestEdit from './SuggestEdit.svelte';
 
@@ -30,6 +37,39 @@
 	// and auto-approved values change server-side).
 	let reloadToken = $state(0);
 
+	// §80 entity edit history — GET /wiki/entities/{type}/{id}/revisions,
+	// fetched lazily when the disclosure opens.
+	let historyOpen = $state(false);
+	let history = $state<WikiEntityRevision[]>([]);
+	let historyLoading = $state(false);
+	let historyFailed = $state(false);
+	let historyLoaded = $state(false);
+
+	async function loadHistory() {
+		historyLoading = true;
+		historyFailed = false;
+		try {
+			const res = await getEntityRevisions(entityType, entityId, { limit: 20 });
+			if (res === null) {
+				historyFailed = true;
+			} else {
+				history = res.items;
+				historyLoaded = true;
+			}
+		} catch {
+			historyFailed = true;
+		} finally {
+			historyLoading = false;
+		}
+	}
+
+	async function toggleHistory() {
+		historyOpen = !historyOpen;
+		if (historyOpen && !historyLoaded && !historyLoading) {
+			await loadHistory();
+		}
+	}
+
 	$effect(() => {
 		if (!flagOn) return;
 		// entityType/entityId/reloadToken are tracked deps — refetch on change.
@@ -37,6 +77,10 @@
 		void entityId;
 		void reloadToken;
 		void load();
+		// Refresh an already-open history after a new suggestion lands.
+		// historyOpen is untracked so toggling the disclosure doesn't re-run
+		// the whole effect.
+		if (untrack(() => historyOpen)) void loadHistory();
 	});
 
 	async function load() {
@@ -152,6 +196,69 @@
 						</dl>
 					</section>
 				{/each}
+			</div>
+		{/if}
+
+		{#if schema}
+			<div class="mt-4 border-t border-[var(--color-border)] pt-3">
+				<button
+					type="button"
+					onclick={toggleHistory}
+					class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+				>
+					<History size={12} />
+					{t('wiki.entity_history', 'Edit history')}
+				</button>
+				{#if historyOpen}
+					{#if historyLoading}
+						<p class="mt-2 text-xs text-[var(--color-muted)]">
+							{t('common.loading', 'Loading')}…
+						</p>
+					{:else if historyFailed}
+						<p class="mt-2 text-xs text-[var(--color-muted)]">
+							{t('wiki.entity_history_error', 'Failed to load edit history.')}
+						</p>
+					{:else if history.length === 0}
+						<p class="mt-2 text-xs text-[var(--color-muted)]">
+							{t('wiki.entity_history_empty', 'No suggested edits yet.')}
+						</p>
+					{:else}
+						<ul class="mt-2 space-y-2">
+							{#each history as rev (rev.id)}
+								<li class="rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs">
+									<div class="flex items-center gap-2">
+										<span
+											class="rounded-full px-2 py-0.5 font-medium {rev.status === 'approved'
+												? 'bg-green-500/10 text-green-600'
+												: rev.status === 'rejected'
+													? 'bg-red-500/10 text-red-600'
+													: 'bg-amber-500/10 text-amber-600'}"
+										>
+											{rev.status === 'approved'
+												? t('wiki.revision_approved', 'Approved')
+												: rev.status === 'rejected'
+													? t('wiki.revision_rejected', 'Rejected')
+													: t('wiki.revision_pending', 'Pending')}
+										</span>
+										<span class="ml-auto text-[var(--color-muted)]">
+											{new Date(rev.created_at).toLocaleDateString()}
+										</span>
+									</div>
+									{#if rev.summary}
+										<p class="mt-1 text-[var(--color-text)]">{rev.summary}</p>
+									{:else if rev.status === 'pending'}
+										<p class="mt-1 text-[var(--color-muted)]">
+											{t(
+												'wiki.entity_history_review_pending',
+												'Pending review — contents hidden until approved.'
+											)}
+										</p>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				{/if}
 			</div>
 		{/if}
 	</section>

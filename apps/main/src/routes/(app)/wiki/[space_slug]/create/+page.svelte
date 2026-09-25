@@ -89,7 +89,7 @@
 		errorKey = null;
 		try {
 			const res = await api.post<{
-				data?: { page_id: string; revision_id: string; slug: string; status: string };
+				page_id: string; revision_id: string; slug: string; status: string;
 			}>('/wiki/' + encodeURIComponent(data.spaceSlug), {
 				title: title.trim(),
 				slug,
@@ -111,7 +111,7 @@
 				}
 				return;
 			}
-			const pageSlug = res.data?.data?.slug ?? slug;
+			const pageSlug = res.data?.slug ?? slug;
 			await goto(`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(pageSlug)}`);
 		} catch {
 			errorKey = 'wiki.create_failed';

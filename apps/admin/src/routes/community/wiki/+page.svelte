@@ -22,6 +22,8 @@
 		excerpt?: string;
 		is_locked?: boolean;
 		is_featured?: boolean;
+		is_active?: boolean;
+		data_entity_type?: string | null;
 		// ADR-088 AI generation columns
 		ai_generated?: boolean;
 		ai_model?: string;
@@ -174,27 +176,121 @@
 		}
 	}
 
+	async function toggleActive(item: WikiItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await wikiAdminApi.update(item.id, { is_active: !(item.is_active ?? true) });
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	// data_entity_type binds the page to a child entity class (e.g.
+	// 'visa_route') so §80 field ops target that entity — PATCHed from the
+	// view slide-over (wiki.manage).
+	let detSaving = $state(false);
+	let detDraft = $state('');
+	let detRowId = $state('');
+
+	function detValue(row: WikiItem): string {
+		return detRowId === row.id ? detDraft : (row.data_entity_type ?? '');
+	}
+
+	async function saveDataEntityType(row: WikiItem) {
+		if (detSaving) return;
+		detSaving = true;
+		pageError = '';
+		try {
+			const v = detValue(row).trim();
+			// NULLIF('') clears the binding server-side; JSON null is "omit".
+			const result = await wikiAdminApi.update(row.id, { data_entity_type: v });
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			detSaving = false;
+		}
+	}
+
 	// ── AI generate draft modal (wiki.manage) ───────────────────────────────
 	let showGenerateModal = $state(false);
 	let genSpaceSlug = $state('');
 	let genPageTitle = $state('');
+	let genPageSlug = $state('');
+	let genSlugTouched = $state(false);
 	let genCategory = $state('overview');
+	let genCategories = $state<Array<{ value: string; label: string }>>([]);
 	let generating = $state(false);
+
+	function slugify(s: string): string {
+		return s
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
+	}
+
+	function onGenTitleInput(e: Event) {
+		genPageTitle = (e.currentTarget as HTMLInputElement).value;
+		if (!genSlugTouched) genPageSlug = slugify(genPageTitle);
+	}
+
+	function onGenSlugInput(e: Event) {
+		genSlugTouched = true;
+		genPageSlug = slugify((e.currentTarget as HTMLInputElement).value);
+	}
+
+	// Canonical category list for the space (university spaces get a
+	// different set — GET /wiki/categories?space= resolves that server-side).
+	async function loadGenCategories(spaceSlug: string) {
+		const qs = spaceSlug ? `?space=${encodeURIComponent(spaceSlug)}` : '';
+		const res = await apiRaw<{ data?: Array<{ slug?: string; label_key?: string; label?: string }> }>(
+			`/wiki/categories${qs}`
+		);
+		if (res.ok && Array.isArray(res.data?.data)) {
+			genCategories = res.data.data.map((c) => ({
+				value: c.slug ?? '',
+				label: c.label_key ? t(c.label_key, c.label ?? c.slug ?? '') : (c.label ?? c.slug ?? '')
+			})).filter((c) => c.value);
+		}
+	}
 
 	function openGenerate() {
 		genSpaceSlug = '';
 		genPageTitle = '';
+		genPageSlug = '';
+		genSlugTouched = false;
 		genCategory = 'overview';
+		genCategories = [];
 		showGenerateModal = true;
+		void loadGenCategories('');
+	}
+
+	async function onGenSpaceChange() {
+		genCategory = 'overview';
+		await loadGenCategories(genSpaceSlug.trim());
 	}
 
 	async function confirmGenerate() {
-		if (!genSpaceSlug.trim() || !genPageTitle.trim()) return;
+		if (!genSpaceSlug.trim() || !genPageTitle.trim() || !genPageSlug.trim()) return;
 		generating = true;
 		pageError = '';
 		try {
 			const result = await wikiAdminApi.generate({
 				space_slug: genSpaceSlug.trim(),
+				page_slug: genPageSlug.trim(),
 				title: genPageTitle.trim(),
 				category: genCategory
 			});
@@ -243,6 +339,11 @@
 				label: t('app.wiki.toggle_featured', 'Toggle Featured'),
 				icon: Star,
 				onclick: toggleFeatured
+			});
+			acts.push({
+				label: t('app.wiki.toggle_active', 'Toggle Active'),
+				icon: CheckCircle,
+				onclick: toggleActive
 			});
 		}
 		return acts;
@@ -547,6 +648,7 @@
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				placeholder="e.g. japan"
 				bind:value={genSpaceSlug}
+				onblur={onGenSpaceChange}
 			/>
 		</div>
 		<div>
@@ -557,7 +659,20 @@
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				placeholder="e.g. Visa Routes"
-				bind:value={genPageTitle}
+				value={genPageTitle}
+				oninput={onGenTitleInput}
+			/>
+		</div>
+		<div>
+			<label for="gen-page-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.gen_page_slug', 'Page slug')}</label>
+			<input
+				id="gen-page-slug"
+				type="text"
+				class="w-full rounded-lg border p-3 font-mono text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				placeholder="e.g. visa-routes"
+				value={genPageSlug}
+				oninput={onGenSlugInput}
 			/>
 		</div>
 		<div>
@@ -568,20 +683,19 @@
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={genCategory}
 			>
-				<option value="overview">Overview</option>
-				<option value="visa">Visa</option>
-				<option value="cost_of_living">Cost of Living</option>
-				<option value="healthcare">Healthcare</option>
-				<option value="banking">Banking</option>
-				<option value="community">Community</option>
-				<option value="housing">Housing</option>
-				<option value="other">Other</option>
+				{#if genCategories.length === 0}
+					<option value="overview">{t('wiki.category_overview', 'Overview')}</option>
+				{:else}
+					{#each genCategories as c (c.value)}
+						<option value={c.value}>{c.label}</option>
+					{/each}
+				{/if}
 			</select>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('app.wiki.cancel', 'Cancel')}</Button>
-		<Button onclick={confirmGenerate} disabled={generating || !genSpaceSlug.trim() || !genPageTitle.trim()}>
+		<Button onclick={confirmGenerate} disabled={generating || !genSpaceSlug.trim() || !genPageTitle.trim() || !genPageSlug.trim()}>
 			{generating ? t('app.wiki.generating', 'Generating...') : t('app.wiki.generate', 'Generate')}
 		</Button>
 	</div>
@@ -624,6 +738,41 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_featured', 'Featured')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_featured ? t('app.wiki.featured_yes', 'Yes') : t('app.wiki.featured_no', 'No')}</p>
 		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_active', 'Active')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(row.is_active ?? true) ? t('app.wiki.active_yes', 'Yes') : t('app.wiki.active_no', 'No')}</p>
+		</div>
+		{#if canManage}
+			<div>
+				<label
+					for="det-input-{row.id}"
+					class="mb-1 block text-xs font-medium uppercase tracking-wider"
+					style="color: var(--color-muted)"
+				>
+					{t('app.wiki.data_entity_type', 'Data entity type')}
+				</label>
+				<div class="flex gap-2">
+					<input
+						id="det-input-{row.id}"
+						type="text"
+						class="min-w-0 flex-1 rounded-lg border p-2 font-mono text-sm"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						placeholder="e.g. visa_route"
+						value={detValue(row)}
+						oninput={(e) => {
+							detRowId = row.id;
+							detDraft = e.currentTarget.value;
+						}}
+					/>
+					<Button variant="ghost" disabled={detSaving} onclick={() => saveDataEntityType(row)}>
+						{detSaving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+					</Button>
+				</div>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">
+					{t('app.wiki.data_entity_type_hint', 'Binds this page to a child entity class for community field ops. Empty clears the binding.')}
+				</p>
+			</div>
+		{/if}
 	</div>
 {/snippet}
 

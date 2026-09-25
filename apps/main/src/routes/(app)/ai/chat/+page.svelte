@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import { Send, Sparkles, MessageSquare, Loader2, AlertCircle, BookOpen, ShieldCheck, Menu, X, Plus } from 'lucide-svelte';
 	import { enhance } from '$app/forms';
+	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import type { AiChatSource } from './+page.server';
 	import type { PageData } from './$types';
@@ -48,10 +49,11 @@
 		}
 	});
 
-	function sourceHref(s: AiChatSource): string {
-		if (!s.entity_id) return '#';
-		return `/content/${s.entity_id}`;
-	}
+	// The backend emits sources as { entity_type, entity_id (uuid), similarity,
+	// tier } — there is no slug or URL field, and the frontend routes resolve
+	// entities by slug (/content/{slug}, /spaces/{slug}, ...). A UUID cannot be
+	// turned into a working link client-side, so sources render as plain labels
+	// until the API emits a resolvable url/slug per §69.
 
 	function formatRole(metadata?: Record<string, unknown>): 'user' | 'assistant' {
 		if (!metadata || typeof metadata.role !== 'string') return 'assistant';
@@ -66,12 +68,15 @@
 		loadingConversation = false;
 		if (!res.error && res.data) {
 			conversationId = res.data.conversation_id;
+			error = '';
 			messages = (res.data.entries ?? []).map((e) => ({
 				role: formatRole(e.metadata),
 				content: e.content,
 				conversation_id: e.id
 			}));
 			sidebarOpen = false;
+		} else if (res.error) {
+			error = res.error.message;
 		}
 	}
 
@@ -199,16 +204,15 @@
 											<BookOpen size={12} /> {t('ai.chat.sources') ?? 'Sources'}:
 										</span>
 										{#each m.sources as s, i (i)}
-											<a
-												href={sourceHref(s)}
-												class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors hover:bg-[var(--color-surface-subtle)]"
+											<span
+												class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
 												style="border-color: var(--color-border); color: var(--color-muted)"
 											>
 												{s.entity_type ?? 'content'}
 												{#if s.similarity}
 													<span style="color: var(--color-muted)">{Math.round(s.similarity * 100)}%</span>
 												{/if}
-											</a>
+											</span>
 										{/each}
 									</div>
 								{/if}
@@ -237,7 +241,22 @@
 		<form
 			method="POST"
 			action="?/send"
-			use:enhance={() => {
+			use:enhance={({ formData, cancel }) => {
+				if (sending) {
+					cancel();
+					return;
+				}
+				// Optimistically render the user bubble for every submission —
+				// whether it came from Enter or the Send button.
+				const submitted = (formData.get('message') as string | null)?.trim() ?? '';
+				if (!submitted) {
+					cancel();
+					return;
+				}
+				sending = true;
+				error = '';
+				messages = [...messages, { role: 'user', content: submitted }];
+				input = '';
 				return async ({ result }) => {
 					sending = false;
 					if (result.type === 'success' && result.data?.ok) {
@@ -250,9 +269,27 @@
 						}];
 						if (replyData.conversation_id) conversationId = replyData.conversation_id;
 						error = '';
-						input = '';
 					} else if (result.type === 'failure') {
-						error = (result.data as { error?: string })?.error ?? 'ai_error';
+						const failData = result.data as { error?: string; detail?: string; message?: string } | undefined;
+						error = failData?.detail || failData?.error || t('ai.chat.error', 'JapaBot is unavailable');
+						// The send failed — drop the optimistic user bubble and
+						// restore the draft (the action echoes it back as
+						// `message`) so a failure doesn't silently eat it.
+						if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
+							messages = messages.slice(0, -1);
+						}
+						input = failData?.message ?? submitted;
+					} else if (result.type === 'redirect') {
+						// Custom enhance callbacks don't auto-follow redirects —
+						// apply them (e.g. session expired → /login).
+						await goto(result.location);
+					} else if (result.type === 'error') {
+						// Uncaught action error — same rollback as a fail().
+						error = t('ai.chat.error', 'JapaBot is unavailable');
+						if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
+							messages = messages.slice(0, -1);
+						}
+						input = submitted;
 					}
 				};
 			}}
@@ -271,9 +308,6 @@
 						e.preventDefault();
 						const form = (e.currentTarget as HTMLTextAreaElement).form;
 						if (input.trim()) {
-							sending = true;
-							error = '';
-							messages = [...messages, { role: 'user', content: input.trim() }];
 							form?.requestSubmit();
 						}
 					}

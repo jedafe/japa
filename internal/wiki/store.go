@@ -1092,6 +1092,31 @@ LIMIT 1`, spaceSlug).Scan(&id, &level)
 	return id, level, nil
 }
 
+// ListCountrySpaceIDs returns the IDs of all active country-level spaces —
+// the seed set for the wiki:seed_stub_pages fan-out when wiki.enabled is
+// activated (§80: every Country Space receives a wiki index).
+func (s *Store) ListCountrySpaceIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := s.pool.Reader.Query(ctx,
+		`SELECT id FROM spaces WHERE level = 'country' AND status = 'active'`)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list country spaces: %w", err)
+	}
+	defer rows.Close()
+
+	var out []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("wiki: scan country space id: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("wiki: iterate country spaces: %w", err)
+	}
+	return out, nil
+}
+
 // IsUniversitySpaceBySlug reports whether the slug resolves to an active
 // university space — typed via space_types.slug = 'university' or, for the
 // seeded university spaces, level = 'university'. Unknown slugs return false.
@@ -1217,9 +1242,11 @@ RETURNING id
 // AdminListPagesFilter holds filter parameters for the admin page list.
 type AdminListPagesFilter struct {
 	SpaceID  pgtype.UUID
+	DestSlug string // destination filter by space slug (admin UI sends ?dest=)
 	Category string
 	IsLocked *bool
 	Q        string
+	Sort     string // "<key>:<dir>" — whitelisted in adminPageSortColumn
 	Limit    int32
 	Offset   int32
 }
@@ -1237,6 +1264,12 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 	if f.SpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("wp.space_id = $%d", argIdx))
 		args = append(args, f.SpaceID)
+		argIdx++
+	}
+
+	if f.DestSlug != "" {
+		conditions = append(conditions, fmt.Sprintf("sp.slug = $%d", argIdx))
+		args = append(args, f.DestSlug)
 		argIdx++
 	}
 
@@ -1258,7 +1291,10 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		argIdx++
 	}
 
-	whereClause := strings.Join(conditions, " AND ")
+	whereClause := "true"
+	if len(conditions) > 0 {
+		whereClause = strings.Join(conditions, " AND ")
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -1300,9 +1336,9 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) lr ON true
 WHERE %s
-ORDER BY wp.updated_at DESC
+ORDER BY %s, wp.updated_at DESC
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, adminPageOrderBy(f.Sort), argIdx, argIdx+1)
 
 	args = append(args, limit, offset)
 
@@ -1334,7 +1370,7 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, fmt.Errorf("wiki: admin iterate pages: %w", err)
 	}
 
-	countQ := "SELECT COUNT(*) FROM wiki_pages wp WHERE " + whereClause
+	countQ := "SELECT COUNT(*) FROM wiki_pages wp JOIN spaces sp ON sp.id = wp.space_id WHERE " + whereClause
 
 	var total int64
 
@@ -1343,6 +1379,31 @@ LIMIT $%d OFFSET $%d
 	}
 
 	return out, total, nil
+}
+
+// adminPageOrderBy maps the admin UI's "<key>:<dir>" sort param to a safe
+// ORDER BY expression. Keys are whitelisted — never interpolate user input.
+// Sorting by "status" targets the latest revision status (NULLS LAST keeps
+// pages with no revisions at the end regardless of direction).
+func adminPageOrderBy(sort string) string {
+	key, dir, _ := strings.Cut(sort, ":")
+	col, ok := map[string]string{
+		"title":      "wp.title",
+		"space_slug": "sp.slug",
+		"status":     "lr.status",
+		"is_locked":  "wp.is_locked",
+		"is_active":  "wp.is_active",
+		"created_at": "wp.created_at",
+		"updated_at": "wp.updated_at",
+	}[key]
+	if !ok {
+		return "wp.updated_at DESC"
+	}
+	d := "DESC"
+	if dir == "asc" {
+		d = "ASC"
+	}
+	return col + " " + d + " NULLS LAST"
 }
 
 // ErrPageExists is returned when a wiki page with the same slug already

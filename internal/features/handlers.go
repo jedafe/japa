@@ -1,6 +1,7 @@
 package features
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -16,11 +17,33 @@ import (
 // Handlers holds dependencies for feature flag HTTP handlers.
 type Handlers struct {
 	checker *Checker
+	// onEnabled fires after a flag transitions off→on via the admin write
+	// endpoints (§80: wiki.enabled activation seeds stub pages). Optional.
+	onEnabled func(ctx context.Context, flagName string)
 }
 
 // NewHandlers creates a new Handlers with the given Checker.
 func NewHandlers(checker *Checker) *Handlers {
 	return &Handlers{checker: checker}
+}
+
+// SetOnFlagEnabled registers a callback invoked when a flag transitions to
+// enabled through HandleSetFeatureFlag/UpdateFeatureFlag/CreateFeatureFlag.
+// Wired in server.go to trigger the wiki:seed_stub_pages fan-out (§80).
+func (h *Handlers) SetOnFlagEnabled(fn func(ctx context.Context, flagName string)) {
+	h.onEnabled = fn
+}
+
+// fireOnEnabled runs the activation hook when a write transitioned a flag
+// off→on. wasEnabled must be read before the mutation. Rule 8 — the hook
+// fans out one task per country space, so it must not block the request;
+// the goroutine detaches from the request context (which dies on response)
+// via context.WithoutCancel.
+func (h *Handlers) fireOnEnabled(ctx context.Context, flagName string, wasEnabled, nowEnabled bool) {
+	if h.onEnabled == nil || wasEnabled || !nowEnabled {
+		return
+	}
+	go h.onEnabled(context.WithoutCancel(ctx), flagName)
 }
 
 // HandleGetFeatureFlags handles GET /api/v1/feature-flags.
@@ -59,6 +82,10 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Uncached pre-write snapshot — a stale cached value would miss the
+	// off→on transition and silently skip the activation hook.
+	wasEnabled := h.checker.QueryEnabled(r.Context(), flagName)
+
 	if err := h.checker.SetEnabled(r.Context(), flagName, input.Enabled, user.UserID); err != nil {
 		slog.Error("features: set enabled failed", "flag", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
@@ -68,6 +95,7 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 
 	// STD-003: clear only the affected platform's cache, not all platforms.
 	h.checker.ClearCache()
+	h.fireOnEnabled(r.Context(), flagName, wasEnabled, input.Enabled)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -212,6 +240,8 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
+	wasEnabled := h.checker.QueryEnabled(r.Context(), key)
+
 	if err := h.checker.UpdateFlag(r.Context(), key, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: create failed", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
@@ -220,6 +250,7 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.checker.ClearCache()
+	h.fireOnEnabled(r.Context(), key, wasEnabled, input.IsEnabled)
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": FeatureFlag{
 			ID:                key,
@@ -275,6 +306,8 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
+	wasEnabled := h.checker.QueryEnabled(r.Context(), flagName)
+
 	if err := h.checker.UpdateFlag(r.Context(), flagName, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: update failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
@@ -283,6 +316,7 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.checker.ClearCache()
+	h.fireOnEnabled(r.Context(), flagName, wasEnabled, input.IsEnabled)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": FeatureFlag{
 			ID:                flagName,
