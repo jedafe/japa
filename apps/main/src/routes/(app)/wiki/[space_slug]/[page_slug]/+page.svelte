@@ -302,9 +302,26 @@
 						</div>
 					</form>
 				{:else}
-					<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]">
-						{@html htmlContent}
-					</div>
+					{#if htmlContent}
+						<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]">
+							{@html htmlContent}
+						</div>
+					{:else}
+						<div class="rounded-[12px] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-6 text-center">
+							<p class="text-sm text-[var(--color-muted)]">
+								{t('wiki.empty_content', 'This page has no content yet.')}
+							</p>
+							{#if canEdit}
+								<button
+									type="button"
+									onclick={startEdit}
+									class="mt-3 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition hover:opacity-90"
+								>
+									<Pencil size={14} /> {t('wiki.contribute_cta', 'Be the first to contribute')}
+								</button>
+							{/if}
+						</div>
+					{/if}
 
 					{#if structuredEditsOn && panelSpaceId}
 						<EntityFieldsPanel entityType="space" entityId={panelSpaceId} />

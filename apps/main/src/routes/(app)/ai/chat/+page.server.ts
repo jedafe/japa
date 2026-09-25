@@ -90,9 +90,9 @@ export const actions: Actions = {
 			};
 		} catch (err) {
 			if (err instanceof ApiError) {
-				return fail(err.status, { error: err.code, message });
+				return fail(err.status, { error: err.code, detail: err.message, message });
 			}
-			return fail(500, { error: 'ai_error', message });
+			return fail(500, { error: 'ai_error', detail: 'JapaBot is unavailable', message });
 		}
 	}
 };

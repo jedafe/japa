@@ -1289,6 +1289,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	wikiService.SetCustomFields(cfService)
 	wikiService.SetPermissionChecker(rbacResolver)
 	wikiService.SetEnqueuer(taskEnqueuer)
+	// §80: activating wiki.enabled fans out wiki:seed_stub_pages to every
+	// country space (idempotent — existing pages are skipped).
+	featureHandlers.SetOnFlagEnabled(func(ctx context.Context, flagName string) {
+		if flagName == "wiki.enabled" {
+			wikiService.EnqueueStubSeedFanOut(ctx)
+		}
+	})
 	// B4/B5: wire the reputation (points) checker and RBAC resolver so the
 	// wiki.edit submission gate can enforce wiki.min_reputation_to_edit and
 	// wiki.community_edits (§80 business-logic gates).
@@ -6481,6 +6488,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					// per-op wiki.fields.* grant map is enforced in the service.
 					r.With(auth.RequireAuth(kr, vkClient.Redis())).
 						Post("/wiki/suggest", wikiHandlers.HandleSuggestFields)
+					// Proposable field types for the suggest-a-field form
+					// (literal segment wins over {space_slug}).
+					r.Get("/wiki/field-types", wikiHandlers.HandleGetFieldTypes)
 					// Public browse (anonymous), matching the wiki page GETs.
 					r.Get("/wiki/entities/{type}/{id}/fields", wikiHandlers.HandleGetEntityFields)
 					r.Get("/wiki/entities/{type}/{id}/revisions", wikiHandlers.HandleGetEntityRevisions)

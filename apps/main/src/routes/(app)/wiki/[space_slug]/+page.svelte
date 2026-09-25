@@ -172,6 +172,14 @@
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
 			{spaceName} — {t('wiki.heading', 'Wiki')}
 		</h1>
+		{#if canCreate && data.index.length > 0}
+			<a
+				href="/wiki/{encodeURIComponent(data.spaceSlug)}/create"
+				class="ml-auto inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				<Plus size={14} /> {t('wiki.create_page', 'New page')}
+			</a>
+		{/if}
 	</div>
 
 	<!-- Geo destination selector, or university search for university wikis -->

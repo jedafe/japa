@@ -461,10 +461,16 @@ export interface ChatSource {
 	/** Entity type: 'content', 'forum_thread', 'space', 'learning_track'. */
 	entity_type: string;
 	entity_id: string;
-	title: string;
-	url: string;
+	/** Similarity score from the retrieval ranking. */
+	similarity?: number;
 	/** Tier 1 (editorial) or Tier 2 (community) — §69. */
-	tier: 1 | 2;
+	tier?: 1 | 2;
+	/**
+	 * Optional resolvable link + label. The backend does not emit these yet —
+	 * when it does (§69 contract addition), citations upgrade to links.
+	 */
+	title?: string;
+	url?: string;
 }
 
 /**

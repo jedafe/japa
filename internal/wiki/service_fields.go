@@ -32,6 +32,11 @@ import (
 // .jeos/conventions/asynq-tasks.md).
 const TaskFieldsPropagate = "wiki:fields_propagate"
 
+// TaskSeedStubPages is the Asynq task type enqueued once per country space
+// when wiki.enabled is activated — the worker seeds the 7 default stub
+// pages idempotently (§80; registered in .jeos/conventions/asynq-tasks.md).
+const TaskSeedStubPages = "wiki:seed_stub_pages"
+
 // RBAC node names for the field-ops permission tiers (spec §10; seeded by
 // migration 000731_wiki_community_fields).
 const (
@@ -125,10 +130,15 @@ type EntityFieldGroupDTO struct {
 // EntityFieldsDTO is the response shape of GET /wiki/entities/:type/:id/fields
 // (spec §7): the field groups assigned to the entity's class, current values,
 // per-field permissions for the requesting user, and the count of pending
-// revisions targeting the entity.
+// revisions targeting the entity. can_propose/can_manage are the caller's
+// op-tier capabilities so the UI can gate "suggest a new field" affordances
+// (§10: wiki.fields.propose / wiki.fields.manage).
 type EntityFieldsDTO struct {
 	Groups       []EntityFieldGroupDTO `json:"groups"`
 	PendingCount int64                 `json:"pending_count"`
+	CanPropose   bool                  `json:"can_propose"`
+	CanManage    bool                  `json:"can_manage"`
+	EntityClass  string                `json:"entity_class,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +358,8 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	// wiki.fields.manage holders bypass field-level can_edit at submit, so
 	// the schema reports their fields as editable/visible too (§10).
 	canManage := s.perms != nil && s.perms.HasPermission(ctx, userID, PermFieldsManage)
+	canPropose := canManage ||
+		(s.perms != nil && s.perms.HasPermission(ctx, userID, PermFieldsPropose))
 
 	// Batched field-level RBAC (§06): two set lookups instead of one
 	// permission query per field. Both fail closed — a lookup error yields
@@ -441,7 +453,17 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 		return EntityFieldsDTO{}, fmt.Errorf("wiki: entity fields: count pending: %w", err)
 	}
 
-	return EntityFieldsDTO{Groups: groups, PendingCount: pending}, nil
+	dto := EntityFieldsDTO{
+		Groups:       groups,
+		PendingCount: pending,
+		CanPropose:   canPropose,
+		CanManage:    canManage,
+	}
+	if len(entityClasses) > 0 {
+		dto.EntityClass = entityClasses[0]
+	}
+
+	return dto, nil
 }
 
 // StructuredEditsEnabled reports whether the wiki.structured_edits feature
@@ -523,7 +545,9 @@ func (s *Service) AdminListRevisions(ctx context.Context, kind, status string, p
 
 // ListEntityRevisions returns the revision history targeting an entity
 // (fields/mixed revisions) for GET /wiki/entities/:type/:id/revisions.
-func (s *Service) ListEntityRevisions(ctx context.Context, entityType string, entityID pgtype.UUID, page, limit int32) ([]WikiRevisionDTO, int64, error) {
+// Pending bodies are redacted for viewers other than the submitter and
+// reviewers — same rule as GetRevisionHistory.
+func (s *Service) ListEntityRevisions(ctx context.Context, viewerID pgtype.UUID, canReview bool, entityType string, entityID pgtype.UUID, page, limit int32) ([]WikiRevisionDTO, int64, error) {
 	if entityType == "" || !entityID.Valid {
 		return nil, 0, errors.New("wiki: entity revisions: entity_type and a valid entity_id are required")
 	}
@@ -545,7 +569,13 @@ func (s *Service) ListEntityRevisions(ctx context.Context, entityType string, en
 
 	dtos := make([]WikiRevisionDTO, 0, len(revs))
 	for _, r := range revs {
-		dtos = append(dtos, revisionToDTO(r))
+		dto := revisionToDTO(r)
+		if r.Status == "pending" && !canReview && !(viewerID.Valid && r.SubmittedBy == viewerID) {
+			dto.Content = nil
+			dto.Ops = nil
+			dto.Summary = ""
+		}
+		dtos = append(dtos, dto)
 	}
 
 	return dtos, total, nil

@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -132,7 +133,7 @@ func validateOp(op FieldOp) error {
 			return fmt.Errorf("%s requires group_slug", op.Op)
 		}
 
-		return validateFieldDef(op.Field, op.Op+" field")
+		return validateFieldDef(op.Field, op.Op+" field", op.Op == OpProposeField)
 
 	case OpProposeGroup:
 		if op.Group == nil {
@@ -153,7 +154,7 @@ func validateOp(op FieldOp) error {
 
 		for j := range op.Group.Fields {
 			f := op.Group.Fields[j]
-			if err := validateFieldDef(&f, fmt.Sprintf("group.fields[%d]", j)); err != nil {
+			if err := validateFieldDef(&f, fmt.Sprintf("group.fields[%d]", j), true); err != nil {
 				return err
 			}
 		}
@@ -177,8 +178,11 @@ func validateOp(op FieldOp) error {
 }
 
 // validateFieldDef checks a field definition payload: required members, a
-// recognized field_type, and options shaped correctly for that type.
-func validateFieldDef(f *FieldDefInput, where string) error {
+// recognized field_type, and options shaped correctly for that type. When
+// proposable is true (propose-tier ops), the field type must also be in
+// customfields.ProposableFieldTypes — the same list GET /wiki/field-types
+// advertises.
+func validateFieldDef(f *FieldDefInput, where string, proposable bool) error {
 	if f == nil {
 		return fmt.Errorf("%s is required", where)
 	}
@@ -193,6 +197,10 @@ func validateFieldDef(f *FieldDefInput, where string) error {
 
 	if !customfields.IsValidFieldType(f.FieldType) {
 		return fmt.Errorf("%s has unknown field_type %q", where, f.FieldType)
+	}
+
+	if proposable && !slices.Contains(customfields.ProposableFieldTypes(), f.FieldType) {
+		return fmt.Errorf("%s field_type %q is not proposable", where, f.FieldType)
 	}
 
 	if msg, ok := customfields.ValidOptionsShape(f.FieldType, f.Options); !ok {

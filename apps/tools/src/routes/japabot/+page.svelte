@@ -301,15 +301,24 @@
 											<div class="mt-2 flex flex-wrap gap-1.5">
 												<span class="text-xs text-muted">{t('japabot.sources', 'Sources:')}</span>
 												{#each msg.sources as src (src.entity_id)}
-													<a
-														href={src.url}
-														target="_blank"
-														rel="noopener noreferrer"
-														class="text-xs text-primary hover:text-primary-hover underline inline-flex items-center gap-0.5"
-													>
-														{src.title}
-														<Icon name="external-link" size={10} />
-													</a>
+													{#if src.url}
+														<a
+															href={src.url}
+															target="_blank"
+															rel="noopener noreferrer"
+															class="text-xs text-primary hover:text-primary-hover underline inline-flex items-center gap-0.5"
+														>
+															{src.title ?? src.entity_type}
+															<Icon name="external-link" size={10} />
+														</a>
+													{:else}
+														<span class="text-xs text-muted inline-flex items-center gap-0.5">
+															{src.entity_type}
+															{#if src.similarity}
+																({Math.round(src.similarity * 100)}%)
+															{/if}
+														</span>
+													{/if}
 												{/each}
 											</div>
 										{/if}

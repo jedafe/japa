@@ -125,6 +125,20 @@ func (c *Checker) IsEnabled(ctx context.Context, key string) bool {
 	return enabled
 }
 
+// QueryEnabled reads the flag's effective enabled state straight from the DB,
+// bypassing the L1/L2 caches. Write handlers use it for the pre-write
+// snapshot that drives off→on transition detection — a cached value could be
+// stale (written by another instance within the cache TTL) and would skip the
+// activation hook. Falls back to IsEnabled on transient DB errors.
+func (c *Checker) QueryEnabled(ctx context.Context, key string) bool {
+	enabled, err := c.queryEnabled(ctx, key)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return c.IsEnabled(ctx, key)
+	}
+
+	return enabled
+}
+
 // queryEnabled queries the database for the feature flag. When the flag is
 // enabled and its config carries a rollout_percentage between 0 and 100
 // (exclusive), a deterministic hash of (ID, key) decides whether this

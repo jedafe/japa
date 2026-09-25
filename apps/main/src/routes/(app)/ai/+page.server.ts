@@ -6,7 +6,8 @@ import type { AgentCapabilities } from '$lib/ai/agentTypes';
 /**
  * /ai — the AI Agent chat surface. Auth-gated by the `agent.use` permission
  * (the backend returns 403 `agent_permission_required` if the user lacks it;
- * we surface that as a redirect to /ai/chat for the simpler JapaBot flow).
+ * the page renders a warning banner and the composer surfaces the error on
+ * send — redirecting to /ai/chat would silently switch assistants).
  *
  * Capabilities (tool catalog + geo context) are loaded server-side from
  * GET /api/v1/ai/agent/capabilities and passed to the AgentChat component.

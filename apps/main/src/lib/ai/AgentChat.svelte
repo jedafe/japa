@@ -155,6 +155,10 @@
 			in_progress: true
 		};
 		turns = [...turns, userTurn, assistantTurn];
+		// Mutations must go through the $state proxy — writes to the raw
+		// assistantTurn object bypass reactivity and leave the row frozen at
+		// its initial render. Indexing turns returns the reactive proxy.
+		const liveTurn = turns[turns.length - 1];
 
 		const abort = new AbortController();
 		activeAbort = abort;
@@ -163,31 +167,31 @@
 
 		try {
 			for await (const ev of streamAgent({ prompt, signal: abort.signal })) {
-				handleEvent(ev, assistantTurn);
+				handleEvent(ev, liveTurn);
 			}
 			// Stream closed — if the assistant turn never got a final_response,
 			// mark it complete with whatever content we have.
-			if (assistantTurn.in_progress) {
-				assistantTurn.in_progress = false;
-				if (!assistantTurn.content && !assistantTurn.error) {
-					assistantTurn.content = t('ai.agent.stream_closed', 'Stream closed.');
+			if (liveTurn.in_progress) {
+				liveTurn.in_progress = false;
+				if (!liveTurn.content && !liveTurn.error) {
+					liveTurn.content = t('ai.agent.stream_closed', 'Stream closed.');
 				}
 				turns = [...turns];
 			}
 		} catch (e) {
-			assistantTurn.in_progress = false;
+			liveTurn.in_progress = false;
 			if (e instanceof AgentRequestError) {
-				assistantTurn.error = e.message;
+				liveTurn.error = e.message;
 				error = e.message;
 				// Remove the empty assistant turn if it never produced any content.
-				if (!assistantTurn.content && !assistantTurn.tool_calls?.length) {
-					turns = turns.filter((tn) => tn.id !== assistantTurn.id);
+				if (!liveTurn.content && !liveTurn.tool_calls?.length) {
+					turns = turns.filter((tn) => tn.id !== liveTurn.id);
 				}
 			} else if (e instanceof DOMException && e.name === 'AbortError') {
-				assistantTurn.error = t('ai.agent.cancelled', 'Cancelled.');
+				liveTurn.error = t('ai.agent.cancelled', 'Cancelled.');
 			} else {
-				assistantTurn.error = e instanceof Error ? e.message : String(e);
-				error = assistantTurn.error;
+				liveTurn.error = e instanceof Error ? e.message : String(e);
+				error = liveTurn.error;
 			}
 			turns = [...turns];
 		} finally {

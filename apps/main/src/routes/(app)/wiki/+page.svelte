@@ -163,7 +163,10 @@
 	}
 
 	function pageCountLabel(count: number): string {
-		return t('wiki.destination_page_count', '{count} guides').replace('{count}', String(count));
+		return t(
+			count === 1 ? 'wiki.destination_page_count_one' : 'wiki.destination_page_count',
+			count === 1 ? '{count} guide' : '{count} guides'
+		).replace('{count}', String(count));
 	}
 
 	// §80 amendment — University Spaces: university wikis are searched by name
