@@ -1708,12 +1708,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("course", resolver.NewCourseResolver(universityCourseService))
-	jceResolver.Register("col_city", resolver.NewCityResolver(costOfLivingStore))
-	jceResolver.Register("visa_route", resolver.NewVisaRouteResolver(visaRoutesService))
+	jceResolver.Register("course", resolver.NewCourseResolver(universityCourseService, resolver.WithQueries(jceReadQueries)))
+	jceResolver.Register("col_city", resolver.NewCityResolver(costOfLivingStore, resolver.WithQueries(jceReadQueries)))
+	jceResolver.Register("visa_route", resolver.NewVisaRouteResolver(visaRoutesService, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("scholarship", resolver.NewScholarshipResolver(scholarshipsService))
-	jceResolver.Register("languagetest", resolver.NewLanguageTestResolver(languageTestHubService))
-	jceResolver.Register("mentor", resolver.NewMentorResolver(mentorshipService))
+	jceResolver.Register("languagetest", resolver.NewLanguageTestResolver(languageTestHubService, resolver.WithQueries(jceReadQueries)))
+	jceResolver.Register("mentor", resolver.NewMentorResolver(mentorshipService, resolver.WithQueries(jceReadQueries)))
+	// §80 Tool Surface Hydration: housing_guide registered so wiki field ops
+	// and JCE comparisons can target housing_guides rows.
+	jceResolver.Register("housing_guide", resolver.NewHousingGuideResolver(housingGuideService, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("remittance", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "remittance", Table: "remittance_providers", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "website_url", PlatformColumn: "", ActiveWhere: "t.is_active = true",

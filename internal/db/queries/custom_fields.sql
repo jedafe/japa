@@ -222,6 +222,22 @@ WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
  AND cf.show_in_frontend = true
 ORDER BY cf.position ASC, cf.created_at ASC;
 
+-- name: ListCustomFieldValuesWithDefsForEntities :many
+-- Batched counterpart of ListCustomFieldValuesWithDefsByEntity — one query
+-- fetches display-ready field values for many entities of the same type so
+-- list endpoints (tool surfaces, JCE search results) can merge community
+-- field values without per-row queries (§80 Tool Surface Hydration).
+SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
+ cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
+ cfv.created_at, cfv.updated_at,
+ cf.label AS field_label, cf.key AS field_key, cf.field_type,
+ cf.options AS field_options, cf.position AS field_position
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cfv.entity_type = @entity_type AND cfv.entity_id = ANY(@entity_ids::uuid[])
+ AND cf.show_in_frontend = true
+ORDER BY cf.position ASC, cf.created_at ASC;
+
 -- name: UpsertCustomFieldValue :one
 -- Scoping for upsert is enforced at the handler layer via a GetField
 -- pre-check (the handler rejects 404 before reaching this query). The

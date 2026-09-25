@@ -1,0 +1,38 @@
+package visaroutes
+
+import "testing"
+
+func TestRequirementsWithCFVShadowsPerKey(t *testing.T) {
+	req := map[string]any{"minimum_funds": 5000.0, "occupations": []any{"nurse"}}
+	cfv := map[string]any{"minimum_funds": 7500.0, "fee_usd": 1200.0}
+
+	merged, ok := requirementsWithCFV(req, cfv).(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result, got %T", merged)
+	}
+
+	if merged["minimum_funds"] != 7500.0 {
+		t.Fatalf("expected cfv to shadow per key, got %v", merged["minimum_funds"])
+	}
+
+	if merged["fee_usd"] != 1200.0 {
+		t.Fatalf("expected cfv key added, got %v", merged["fee_usd"])
+	}
+
+	if _, ok := merged["occupations"]; !ok {
+		t.Fatal("expected stored requirements key preserved")
+	}
+}
+
+func TestRequirementsWithCFVNonMapBase(t *testing.T) {
+	cfv := map[string]any{"fee_usd": 1200.0}
+
+	merged, ok := requirementsWithCFV(nil, cfv).(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result, got %T", merged)
+	}
+
+	if merged["fee_usd"] != 1200.0 {
+		t.Fatalf("expected cfv key present, got %v", merged["fee_usd"])
+	}
+}

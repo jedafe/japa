@@ -21,7 +21,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Requirement statuses (§99).
@@ -51,6 +53,13 @@ type Store struct {
 // NewStore creates a language test hub store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{pool: database}
+}
+
+// ListFieldValuesByTestIDs returns community field values keyed by test ID
+// (entity_type='languagetest') in one batched custom_field_values read — the
+// canonical source for the §80 Tool Surface Hydration projection.
+func (s *Store) ListFieldValuesByTestIDs(ctx context.Context, ids []pgtype.UUID) map[pgtype.UUID]map[string]any {
+	return customfields.EntityFieldValuesForEntities(ctx, gen.New(s.pool.Reader), "languagetest", ids)
 }
 
 // TestRow holds a single language_tests row.

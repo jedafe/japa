@@ -274,17 +274,17 @@ func TestResolveScoreInputs(t *testing.T) {
 			item: offeringToResolvedItem(university_courses.CourseOffering{
 				ID: id, CourseTitle: "Go", Slug: "go", Language: "English",
 				UniversityID: id, UniversityName: "Japa University",
-			}),
+			}, nil),
 			wantKeys: []string{"cost", "duration_weeks", "language", "field", "degree_type", "university_id"},
 		},
 		{
 			name:     "visa_route",
-			item:     routeToResolvedItem(visaroutes.RouteDTO{ID: id.String(), Name: "Work", Slug: "work", DestinationSpaceID: geoID.String()}),
+			item:     routeToResolvedItem(visaroutes.RouteDTO{ID: id.String(), Name: "Work", Slug: "work", DestinationSpaceID: geoID.String()}, nil),
 			wantKeys: []string{"cost", "income", "speed", "pr_path_ease", "minimum_funds", "work_allowed", "pr_eligible", "family_included", "language", "age_min", "age_max", "occupation_eligible", "destination_geo_space_id", "geo_space_id"},
 		},
 		{
 			name:     "col_city",
-			item:     cityRowToResolvedItem(gen.GetCOLCityByIDRow{ID: id, Title: "Lagos", GeoSpaceID: geoID}),
+			item:     cityRowToResolvedItem(gen.GetCOLCityByIDRow{ID: id, Title: "Lagos", GeoSpaceID: geoID}, nil),
 			wantKeys: []string{"cost", "rent", "groceries", "transport", "utilities", "income", "language", "safety_index", "healthcare_index", "geo_space_id"},
 		},
 		{
@@ -294,12 +294,12 @@ func TestResolveScoreInputs(t *testing.T) {
 		},
 		{
 			name:     "languagetest",
-			item:     languageTestToResolvedItem(languagetesthub.TestDTO{ID: id, Name: "IELTS", Slug: "ielts", ValidityMonths: 24}),
+			item:     languageTestToResolvedItem(languagetesthub.TestDTO{ID: id, Name: "IELTS", Slug: "ielts", ValidityMonths: 24}, nil),
 			wantKeys: []string{"cost", "speed", "validity_months", "accepted_by", "score_required", "language"},
 		},
 		{
 			name:     "mentor",
-			item:     mentorToResolvedItem(mentorship.MentorSummary{UserID: id, Username: "mentor", MentorAreas: []string{"career"}}),
+			item:     mentorToResolvedItem(mentorship.MentorSummary{UserID: id, Username: "mentor", MentorAreas: []string{"career"}}, nil),
 			wantKeys: []string{"cost", "rating", "sessions_count", "areas", "language", "availability_days"},
 		},
 		{

@@ -10,17 +10,24 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/visaroutes"
 )
 
 // visaRouteResolver resolves visa routes.
 type visaRouteResolver struct {
-	svc *visaroutes.Service
+	svc     *visaroutes.Service
+	queries *gen.Queries // optional: enables custom_field_values merge
 }
 
-// NewVisaRouteResolver creates a resolver for visa routes.
-func NewVisaRouteResolver(svc *visaroutes.Service) Resolver {
-	return &visaRouteResolver{svc: svc}
+// NewVisaRouteResolver creates a resolver for visa routes. Pass WithQueries
+// to merge custom_field_values (the canonical store) over requirements_json
+// (§80 Tool Surface Hydration).
+func NewVisaRouteResolver(svc *visaroutes.Service, opts ...Option) Resolver {
+	o := newResolverOptions(opts...)
+
+	return &visaRouteResolver{svc: svc, queries: o.queries}
 }
 
 func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
@@ -39,7 +46,7 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any) (Re
 			return ResolvedItem{}, false, fmt.Errorf("fetching visa route by id: %w", err)
 		}
 
-		return routeToResolvedItem(route), true, nil
+		return routeToResolvedItem(route, r.routeFieldValues(ctx, route.ID)), true, nil
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
@@ -52,10 +59,25 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any) (Re
 			return ResolvedItem{}, false, fmt.Errorf("fetching visa route by slug: %w", err)
 		}
 
-		return routeToResolvedItem(route), true, nil
+		return routeToResolvedItem(route, r.routeFieldValues(ctx, route.ID)), true, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("visa_route item_ref missing id or slug")
+}
+
+// routeFieldValues fetches the route's community field values from
+// custom_field_values for the field_values overlay (§80).
+func (r *visaRouteResolver) routeFieldValues(ctx context.Context, routeID string) map[string]any {
+	if r.queries == nil {
+		return nil
+	}
+
+	id, err := ParseUUID(routeID)
+	if err != nil {
+		return nil
+	}
+
+	return customfields.EntityFieldValues(ctx, r.queries, "visa_route", id)
 }
 
 func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
@@ -91,15 +113,35 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 		return nil, fmt.Errorf("searching visa routes: %w", err)
 	}
 
+	// One batched cfv read for the page — no per-route queries (§80).
+	var cfvByRoute map[pgtype.UUID]map[string]any
+
+	if r.queries != nil && len(routes) > 0 {
+		ids := make([]pgtype.UUID, 0, len(routes))
+		for _, route := range routes {
+			if id, perr := ParseUUID(route.ID); perr == nil {
+				ids = append(ids, id)
+			}
+		}
+
+		cfvByRoute = customfields.EntityFieldValuesForEntities(ctx, r.queries, "visa_route", ids)
+	}
+
 	out := make([]ResolvedItem, 0, len(routes))
 	for _, route := range routes {
-		out = append(out, routeToResolvedItem(route))
+		var cfv map[string]any
+
+		if id, perr := ParseUUID(route.ID); perr == nil {
+			cfv = cfvByRoute[id]
+		}
+
+		out = append(out, routeToResolvedItem(route, cfv))
 	}
 
 	return out, nil
 }
 
-func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
+func routeToResolvedItem(route visaroutes.RouteDTO, cfv map[string]any) ResolvedItem {
 	desc := route.EligibilitySummary
 	if route.DestinationSpaceName != "" {
 		if desc != "" {
@@ -109,12 +151,26 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 		desc += route.DestinationSpaceName
 	}
 
+	// Merged field bag (requirements_json || cfv) — computed once, shared by
+	// score_inputs and field_values so both see community values (§80).
+	req := visaRequirementsMap(route.Requirements)
+
+	if len(cfv) > 0 {
+		if req == nil {
+			req = make(map[string]any, len(cfv))
+		}
+
+		for k, v := range cfv {
+			req[k] = v
+		}
+	}
+
 	meta := map[string]any{
 		"slug":            route.Slug,
 		"visa_category":   route.VisaCategory,
 		"destination":     route.DestinationSpaceName,
 		"destination_geo": route.DestinationSpaceCode,
-		"score_inputs":    visaRouteScoreInputs(route),
+		"score_inputs":    visaRouteScoreInputs(route, req),
 	}
 
 	if route.DestinationSpaceID != "" {
@@ -131,10 +187,10 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 		meta["tags"] = []string{route.VisaCategory}
 	}
 
-	// §30 Sub-spec 5: visa_routes has no field_values column; its
-	// requirements_json object is the entity's field bag, so expose it for
-	// matrix hydration.
-	if req := visaRequirementsMap(route.Requirements); len(req) > 0 {
+	// §30 Sub-spec 5 + §80 Tool Surface Hydration: visa_routes has no
+	// field_values column; its requirements_json object is the entity's field
+	// bag, so the merged bag is exposed for matrix hydration.
+	if len(req) > 0 {
 		meta["field_values"] = req
 	}
 
@@ -147,7 +203,11 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 	}
 }
 
-func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
+// visaRouteScoreInputs builds the item's score inputs from the route's typed
+// columns plus the merged requirements bag (requirements_json || cfv — cfv
+// wins per key, so approved community values feed scoring the same as
+// ingested values; §80).
+func visaRouteScoreInputs(route visaroutes.RouteDTO, req map[string]any) map[string]any {
 	var cost any
 
 	if route.TypicalFeeUSD != nil {
@@ -156,7 +216,11 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
 		}
 	}
 
-	req := visaRequirementsMap(route.Requirements)
+	// Community-maintained fee fields fill the gap when the typed column is
+	// absent (the typed column stays authoritative when set — §80).
+	if cost == nil {
+		cost = visaNumber(req, "typical_fee_usd", "fee_usd", "fee")
+	}
 
 	income := visaNumber(req, "income", "minimum_income", "min_income", "annual_income")
 	speed := visaNumber(req, "speed", "processing_months", "processing_time", "duration_months")

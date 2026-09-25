@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -158,6 +159,14 @@ func (s *Store) GetValuesForCities(ctx context.Context, itemIDs []pgtype.UUID) (
 	}
 
 	return rows, nil
+}
+
+// ListSpaceFieldValues returns community field values keyed by geo space ID
+// (entity_type='space') in one batched custom_field_values read — the
+// canonical source for the §80 Tool Surface Hydration overlay in
+// CompareCities.
+func (s *Store) ListSpaceFieldValues(ctx context.Context, spaceIDs []pgtype.UUID) map[pgtype.UUID]map[string]any {
+	return customfields.EntityFieldValuesForEntities(ctx, s.queries, "space", spaceIDs)
 }
 
 // AdminStats returns the per-city data completeness + staleness report.

@@ -894,6 +894,84 @@ func (q *Queries) ListCustomFieldValuesWithDefsByEntity(ctx context.Context, arg
 	return items, nil
 }
 
+const listCustomFieldValuesWithDefsForEntities = `-- name: ListCustomFieldValuesWithDefsForEntities :many
+SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
+ cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
+ cfv.created_at, cfv.updated_at,
+ cf.label AS field_label, cf.key AS field_key, cf.field_type,
+ cf.options AS field_options, cf.position AS field_position
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cfv.entity_type = $1 AND cfv.entity_id = ANY($2::uuid[])
+ AND cf.show_in_frontend = true
+ORDER BY cf.position ASC, cf.created_at ASC
+`
+
+type ListCustomFieldValuesWithDefsForEntitiesParams struct {
+	EntityType string        `json:"entity_type"`
+	EntityIds  []pgtype.UUID `json:"entity_ids"`
+}
+
+type ListCustomFieldValuesWithDefsForEntitiesRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	FieldID       pgtype.UUID        `json:"field_id"`
+	EntityType    string             `json:"entity_type"`
+	EntityID      pgtype.UUID        `json:"entity_id"`
+	ValueText     *string            `json:"value_text"`
+	ValueNumber   pgtype.Numeric     `json:"value_number"`
+	ValueBool     *bool              `json:"value_bool"`
+	ValueDate     pgtype.Timestamptz `json:"value_date"`
+	ValueJson     []byte             `json:"value_json"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	FieldLabel    string             `json:"field_label"`
+	FieldKey      string             `json:"field_key"`
+	FieldType     string             `json:"field_type"`
+	FieldOptions  []byte             `json:"field_options"`
+	FieldPosition int32              `json:"field_position"`
+}
+
+// Batched counterpart of ListCustomFieldValuesWithDefsByEntity — one query
+// fetches display-ready field values for many entities of the same type so
+// list endpoints (tool surfaces, JCE search results) can merge community
+// field values without per-row queries (§80 Tool Surface Hydration).
+func (q *Queries) ListCustomFieldValuesWithDefsForEntities(ctx context.Context, arg ListCustomFieldValuesWithDefsForEntitiesParams) ([]ListCustomFieldValuesWithDefsForEntitiesRow, error) {
+	rows, err := q.db.Query(ctx, listCustomFieldValuesWithDefsForEntities, arg.EntityType, arg.EntityIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCustomFieldValuesWithDefsForEntitiesRow
+	for rows.Next() {
+		var i ListCustomFieldValuesWithDefsForEntitiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FieldID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ValueText,
+			&i.ValueNumber,
+			&i.ValueBool,
+			&i.ValueDate,
+			&i.ValueJson,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FieldLabel,
+			&i.FieldKey,
+			&i.FieldType,
+			&i.FieldOptions,
+			&i.FieldPosition,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCustomFieldsByGroup = `-- name: ListCustomFieldsByGroup :many
 
 SELECT id, group_id, label, key, field_type, options, embed_platforms,

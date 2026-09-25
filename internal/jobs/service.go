@@ -1212,6 +1212,28 @@ func sanitizeJobFieldURL(raw string) (string, bool) {
 	return v, true
 }
 
+// sanitizeJobMediaURL validates company_logo. The media service returns
+// uploaded assets as a same-origin path (/api/v1/media/serve/{bucket}/{key})
+// when no CDN base URL is configured, so site-root-relative paths are
+// accepted here in addition to absolute http(s) URLs — a leading "/" can
+// never carry a javascript:/data: scheme. External-link fields
+// (application_url, company_website) stay on the strict check.
+func sanitizeJobMediaURL(raw string) (string, bool) {
+	v := strings.TrimSpace(raw)
+	if v != "" && strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
+		return v, true
+	}
+	return sanitizeJobFieldURL(v)
+}
+
+// jobFieldURLSanitizer picks the validator for a url-typed field key.
+func jobFieldURLSanitizer(key string) func(string) (string, bool) {
+	if key == "company_logo" {
+		return sanitizeJobMediaURL
+	}
+	return sanitizeJobFieldURL
+}
+
 // validateJobFieldValues checks all url-typed values before any write so a
 // bad URL fails the whole request with a 400 instead of partially writing.
 // Runs before the contents insert/update in every write path.
@@ -1220,7 +1242,7 @@ func validateJobFieldValues(fieldValues map[string]string) error {
 		if jobFieldTypes[key] != fieldTypeURL {
 			continue
 		}
-		if _, ok := sanitizeJobFieldURL(value); !ok {
+		if _, ok := jobFieldURLSanitizer(key)(value); !ok {
 			return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalidFieldValue, key)
 		}
 	}
@@ -1246,7 +1268,7 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID
 	// url fields are pre-validated by validateJobFieldValues in every write
 	// path; sanitize again here so no caller can bypass the scheme check.
 	if ft == fieldTypeURL {
-		v, ok := sanitizeJobFieldURL(value)
+		v, ok := jobFieldURLSanitizer(key)(value)
 		if !ok {
 			slog.Warn("jobs: invalid url field value, skipping", "field_key", key)
 			return
