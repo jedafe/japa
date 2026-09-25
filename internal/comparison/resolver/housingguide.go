@@ -49,7 +49,9 @@ func (r *housingGuideResolver) Resolve(ctx context.Context, ref map[string]any) 
 		return ResolvedItem{}, false, fmt.Errorf("fetching housing guide by id: %w", err)
 	}
 
-	return r.guideToResolvedItem(ctx, guide), true, nil
+	// GetByID already merges cfv into guide.RentRanges (§80) — pass nil so
+	// the item builder uses that merged bag without a second cfv read.
+	return housingGuideToResolvedItem(guide, nil), true, nil
 }
 
 func (r *housingGuideResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
@@ -72,12 +74,23 @@ func (r *housingGuideResolver) Search(ctx context.Context, query string, filters
 
 	active := true
 
-	guides, _, err := r.svc.AdminList(ctx, "published", "", query, pgtype.UUID{}, pgtype.UUID{}, &active, page, limit)
+	// Scope the search with the geo/accommodation filters the comparison
+	// scope chain provides — "country_id" maps to the destination space.
+	destSpaceID := parseUUIDFilter(filters, "country_id")
+	citySpaceID := parseUUIDFilter(filters, "city_id")
+
+	var accommodationType string
+	if v, ok := filters["accommodation_type"].(string); ok {
+		accommodationType = v
+	}
+
+	guides, _, err := r.svc.AdminList(ctx, "published", accommodationType, query, destSpaceID, citySpaceID, &active, page, limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching housing guides: %w", err)
 	}
 
-	// One batched cfv read for the page — no per-guide queries (§80).
+	// AdminList intentionally returns the stored bag (§80 admin surfaces),
+	// so the resolver does its own batched cfv read for the page.
 	var cfvByGuide map[pgtype.UUID]map[string]any
 
 	if r.queries != nil && len(guides) > 0 {
@@ -103,16 +116,6 @@ func (r *housingGuideResolver) Search(ctx context.Context, query string, filters
 	}
 
 	return out, nil
-}
-
-func (r *housingGuideResolver) guideToResolvedItem(ctx context.Context, g housingguide.GuideDTO) ResolvedItem {
-	var cfv map[string]any
-
-	if id, err := ParseUUID(g.ID); err == nil {
-		cfv = customfields.EntityFieldValues(ctx, r.queries, "housing_guide", id)
-	}
-
-	return housingGuideToResolvedItem(g, cfv)
 }
 
 func housingGuideToResolvedItem(g housingguide.GuideDTO, cfv map[string]any) ResolvedItem {

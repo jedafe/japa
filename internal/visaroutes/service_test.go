@@ -36,3 +36,22 @@ func TestRequirementsWithCFVNonMapBase(t *testing.T) {
 		t.Fatalf("expected cfv key present, got %v", merged["fee_usd"])
 	}
 }
+
+func TestRequirementsWithCFVPreservesNonMapPayload(t *testing.T) {
+	req := []any{"degree", "job_offer"}
+	cfv := map[string]any{"fee_usd": 1200.0}
+
+	merged, ok := requirementsWithCFV(req, cfv).(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result, got %T", merged)
+	}
+
+	raw, ok := merged["_raw"].([]any)
+	if !ok || len(raw) != 2 {
+		t.Fatalf("expected original payload preserved under _raw, got %v", merged["_raw"])
+	}
+
+	if merged["fee_usd"] != 1200.0 {
+		t.Fatalf("expected cfv key present, got %v", merged["fee_usd"])
+	}
+}
