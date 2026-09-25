@@ -21,6 +21,11 @@ export interface AiChatSource {
 	entity_id?: string;
 	similarity?: number;
 	tier?: string;
+	// §69 Citation Source Contract — emitted by the backend; empty when the
+	// entity no longer resolves. Never derive hrefs from entity_id.
+	title?: string;
+	slug?: string;
+	url?: string;
 }
 
 export interface ConversationSummary {

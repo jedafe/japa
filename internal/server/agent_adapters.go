@@ -98,6 +98,9 @@ func (a *agentRAGAdapter) Retrieve(ctx context.Context, query, language string, 
 			ChunkText:  c.ChunkText,
 			Similarity: c.Similarity,
 			Tier:       c.Tier,
+			Title:      c.Title,
+			Slug:       c.Slug,
+			URL:        c.URL,
 		})
 	}
 

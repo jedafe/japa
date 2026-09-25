@@ -1112,7 +1112,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 
 	if preSearchResult != nil {
 		resp["presearch_level"] = preSearchResult.Level
-		resp["presearch_summary"] = preSearchResult.Summary
+		resp["presearch_summary"] = preSearchResult.Summary()
 	}
 
 	// For Tier 3 with create_post, create a new comparison content row.

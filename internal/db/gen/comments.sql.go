@@ -9,7 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pgvector/pgvector-go"
+	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 const countCommentsByAuthor = `-- name: CountCommentsByAuthor :one
@@ -295,10 +295,10 @@ LIMIT $4
 `
 
 type GetRelatedContentParams struct {
-	Embedding   *pgvector.Vector `json:"embedding"`
-	ExcludeID   pgtype.UUID      `json:"exclude_id"`
-	ContentType string           `json:"content_type"`
-	PageLimit   int32            `json:"page_limit"`
+	Embedding   *pgvector_go.Vector `json:"embedding"`
+	ExcludeID   pgtype.UUID         `json:"exclude_id"`
+	ContentType string              `json:"content_type"`
+	PageLimit   int32               `json:"page_limit"`
 }
 
 type GetRelatedContentRow struct {

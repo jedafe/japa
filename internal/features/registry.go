@@ -46,6 +46,7 @@ var Registry = []Feature{
 	// AI features
 	{Key: "feature.japabot", Label: "JapaBot AI Chat", Default: false},
 	{Key: "feature.ai_content_gen", Label: "AI Content Generation", Default: false},
+	{Key: "feature.ai_agent", Label: "AI Agent", Default: false},
 	// Section 70 — Visa Document Checklist Generator (ADR-070).
 	// Default true per ADR-070 §5 / §70 system_settings (checklist.enabled).
 	// The feature_flags row is optional; when absent the registry default

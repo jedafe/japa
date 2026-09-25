@@ -118,7 +118,7 @@ const createPersonaUser = `-- name: CreatePersonaUser :one
 
 INSERT INTO users (email, username, profile_type, status, is_bot) VALUES ($1, $2, 'regular', 'active', true)
 
-RETURNING id, email, email_verified_at, password_hash, username, profile_type, status, last_login_at, created_at, updated_at, follower_count, force_password_change, username_changed_at, is_bot, password_changed_at, ai_exempt, current_geo_space_id, is_synthetic, synthetic_source, source_id
+RETURNING id, email, email_verified_at, password_hash, username, profile_type, status, last_login_at, created_at, updated_at, follower_count, force_password_change, current_geo_space_id, username_changed_at, is_bot, password_changed_at, ai_exempt, is_synthetic, synthetic_source, source_id
 `
 
 type CreatePersonaUserParams struct {
@@ -156,11 +156,11 @@ func (q *Queries) CreatePersonaUser(ctx context.Context, arg CreatePersonaUserPa
 		&i.UpdatedAt,
 		&i.FollowerCount,
 		&i.ForcePasswordChange,
+		&i.CurrentGeoSpaceID,
 		&i.UsernameChangedAt,
 		&i.IsBot,
 		&i.PasswordChangedAt,
 		&i.AiExempt,
-		&i.CurrentGeoSpaceID,
 		&i.IsSynthetic,
 		&i.SyntheticSource,
 		&i.SourceID,

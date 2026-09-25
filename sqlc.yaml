@@ -25,3 +25,17 @@ sql:
             go_type:
               type: "Prefix"
               import: "net/netip"
+          # pgvector: always emit *pgvector.Vector (params and columns).
+          # Columns are declared public.vector(1536) in the baseline schema;
+          # without this override sqlc maps the type to interface{}.
+          - db_type: "public.vector"
+            go_type:
+              type: "Vector"
+              import: "github.com/pgvector/pgvector-go"
+              pointer: true
+          - db_type: "public.vector"
+            nullable: true
+            go_type:
+              type: "Vector"
+              import: "github.com/pgvector/pgvector-go"
+              pointer: true

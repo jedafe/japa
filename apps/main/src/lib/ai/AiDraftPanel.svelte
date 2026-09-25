@@ -1,8 +1,23 @@
 <script lang="ts">
 	import { Sparkles, X, Loader2, RefreshCw, Check } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { api, type ClientResult } from '$lib/api/client';
 	import { draftContent } from './draftApi';
+	import {
+		assistImprove,
+		assistSummarize,
+		assistTranslate,
+		assistGenerateTags,
+		assistGenerateOg,
+		extractAssistText,
+		extractTagList,
+		extractOgMetadata,
+		tagSlug,
+		htmlToPlainText,
+		plainTextToHtml,
+		type AssistResponse,
+		type OgMetadata
+	} from './assistApi';
 	import type { DraftRequest, DraftResponse, FieldSchema, DraftOptions } from './types';
 
 	interface Props {
@@ -13,9 +28,14 @@
 		context?: Record<string, unknown>;
 		fieldSchema?: FieldSchema[];
 		onApply: (payload: {
-			body: string;
+			body?: string;
 			title?: string;
 			fieldValues?: Record<string, unknown>;
+			// §20 assist actions write back to meta/tag fields too (CreateShell
+			// handles these; plain AiBodyField consumers ignore them).
+			metaTitle?: string;
+			metaDescription?: string;
+			tags?: string[];
 		}) => void;
 		onClose: () => void;
 	}
@@ -50,6 +70,19 @@
 	let models = $state<{ id: string; label: string }[]>([{ id: '', label: t('ai.body.model_default', 'Default model') }]);
 	let voices = $state<{ id: string; label: string }[]>([{ id: '', label: t('ai.body.voice_default', 'Default voice') }]);
 
+	// ---- §20 assist actions (improve / summarize / translate / tags / og) ----
+	let panelTab = $state<'draft' | 'assist'>('draft');
+	type AssistAction = 'improve' | 'summarize' | 'translate' | 'tags' | 'og';
+	let assistAction = $state<AssistAction>('improve');
+	let assistLoading = $state(false);
+	let assistError = $state('');
+	let assistText = $state('');
+	let assistTags = $state<string[]>([]);
+	let assistOg = $state<OgMetadata | null>(null);
+	let assistMaxWords = $state('100');
+	let assistLocale = $state('');
+	let locales = $state<string[]>([]);
+
 	function resizePrompt() {
 		if (!promptEl) return;
 		promptEl.style.height = 'auto';
@@ -78,9 +111,12 @@
 	$effect(() => {
 		if (!open) return;
 		(async () => {
-			const [modelRes, voicesRes] = await Promise.all([
+			const [modelRes, voicesRes, localesRes] = await Promise.all([
 				api.get<{ id: string; label: string }[]>('/ai/models?category=content_generation'),
-				api.get<{ id: string; name: string }[]>('/ai/voices?page_size=5000')
+				api.get<{ id: string; name: string }[]>('/ai/voices?page_size=5000'),
+				// Enabled platform locales for the translate action (Rule 16 —
+				// the option list comes from the API, not a hardcoded constant).
+				api.get<string[]>('/i18n/packs')
 			]);
 			if (modelRes.data) {
 				// The backend already injects a default entry with an empty id;
@@ -93,6 +129,9 @@
 					.filter((v) => v.id !== '')
 					.map((v) => ({ id: v.id, label: v.name }));
 				voices = [{ id: '', label: t('ai.body.voice_default', 'Default voice') }, ...fetched];
+			}
+			if (localesRes.data) {
+				locales = localesRes.data.filter((l) => typeof l === 'string' && l !== '');
 			}
 		})();
 	});
@@ -314,6 +353,146 @@
 		onClose();
 	}
 
+	// ---- §20 assist actions ----
+
+	const ASSIST_ACTIONS = $derived([
+		{ value: 'improve', label: t('ai.assist.action_improve', 'Improve writing') },
+		{ value: 'summarize', label: t('ai.assist.action_summarize', 'Summarize') },
+		{ value: 'translate', label: t('ai.assist.action_translate', 'Translate') },
+		{ value: 'tags', label: t('ai.assist.action_tags', 'Generate tags') },
+		{ value: 'og', label: t('ai.assist.action_og', 'Generate SEO metadata') }
+	]);
+
+	// The assist endpoints take plain text — strip the editor's HTML.
+	const sourceText = $derived(htmlToPlainText(body));
+
+	const assistCanRun = $derived.by(() => {
+		if (assistLoading) return false;
+		switch (assistAction) {
+			case 'translate':
+				return sourceText.length > 0 && assistLocale.trim() !== '';
+			case 'tags':
+				return title.trim() !== '' || sourceText.length > 0;
+			case 'og':
+				return title.trim() !== '';
+			default:
+				return sourceText.length > 0;
+		}
+	});
+
+	const assistHasResult = $derived(
+		assistText !== '' || assistTags.length > 0 || assistOg !== null
+	);
+
+	function clearAssistResult() {
+		assistText = '';
+		assistTags = [];
+		assistOg = null;
+		assistError = '';
+	}
+
+	function handleAssistResponse(res: ClientResult<AssistResponse>) {
+		if (res.error) {
+			assistError = errorMessageFromCode(
+				res.error.code,
+				res.error.message || t('ai.assist.error', 'AI assist failed')
+			);
+			return '';
+		}
+		const text = extractAssistText(res.data);
+		if (!text) {
+			assistError = t('ai.assist.error_empty', 'The AI returned an empty result. Try again.');
+		}
+		return text;
+	}
+
+	async function runAssist() {
+		if (!assistCanRun) return;
+		assistLoading = true;
+		clearAssistResult();
+		const model = selectedModel || undefined;
+		const voiceId = selectedVoice || undefined;
+		try {
+			switch (assistAction) {
+				case 'improve': {
+					const res = await assistImprove({ text: sourceText, tone, model, voice_id: voiceId });
+					const text = handleAssistResponse(res);
+					if (text) assistText = text;
+					break;
+				}
+				case 'summarize': {
+					const mw = parseInt(assistMaxWords, 10);
+					const res = await assistSummarize({
+						text: sourceText,
+						max_words: isNaN(mw) || mw <= 0 ? undefined : mw,
+						model,
+						voice_id: voiceId
+					});
+					const text = handleAssistResponse(res);
+					if (text) assistText = text;
+					break;
+				}
+				case 'translate': {
+					const res = await assistTranslate({
+						text: sourceText,
+						target_locale: assistLocale.trim(),
+						model,
+						voice_id: voiceId
+					});
+					const text = handleAssistResponse(res);
+					if (text) assistText = text;
+					break;
+				}
+				case 'tags': {
+					const res = await assistGenerateTags({ title, text: sourceText, model, voice_id: voiceId });
+					const text = handleAssistResponse(res);
+					if (text) {
+						assistTags = extractTagList(text);
+						if (assistTags.length === 0) {
+							assistError = t('ai.assist.error_parse', 'Could not parse the AI result. Try again.');
+						}
+					}
+					break;
+				}
+				case 'og': {
+					const res = await assistGenerateOg({ title, text: sourceText, content_type: contentType, model, voice_id: voiceId });
+					const text = handleAssistResponse(res);
+					if (text) {
+						assistOg = extractOgMetadata(text);
+						if (!assistOg?.title && !assistOg?.description) {
+							assistError = t('ai.assist.error_parse', 'Could not parse the AI result. Try again.');
+							assistOg = null;
+						}
+					}
+					break;
+				}
+			}
+		} catch (e) {
+			assistError = e instanceof Error ? e.message : t('ai.assist.error', 'AI assist failed');
+		} finally {
+			assistLoading = false;
+		}
+	}
+
+	function applyAssist() {
+		switch (assistAction) {
+			case 'improve':
+			case 'translate':
+				if (assistText) onApply({ body: plainTextToHtml(assistText) });
+				break;
+			case 'summarize':
+				if (assistText) onApply({ metaDescription: assistText.trim() });
+				break;
+			case 'tags':
+				if (assistTags.length > 0) onApply({ tags: assistTags.map(tagSlug) });
+				break;
+			case 'og':
+				if (assistOg) onApply({ metaTitle: assistOg.title, metaDescription: assistOg.description });
+				break;
+		}
+		onClose();
+	}
+
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
@@ -342,7 +521,7 @@
 		onkeydown={onKeydown}
 	>
 		<div class="flex h-full flex-col">
-			<div class="flex shrink-0 items-center justify-between p-4">
+			<div class="flex shrink-0 items-center justify-between p-4 pb-2">
 				<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
 					<Sparkles size={16} class="text-[var(--color-primary)]" />
 					{t('ai.body.panel_title')}
@@ -357,6 +536,29 @@
 				</button>
 			</div>
 
+			<!-- §20 assist endpoints live alongside drafting in one AI surface -->
+			<div class="flex shrink-0 gap-1 px-4 pb-2" role="tablist">
+				<button
+					type="button"
+					role="tab"
+					aria-selected={panelTab === 'draft'}
+					onclick={() => (panelTab = 'draft')}
+					class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {panelTab === 'draft' ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}"
+				>
+					{t('ai.body.tab_draft', 'Draft')}
+				</button>
+				<button
+					type="button"
+					role="tab"
+					aria-selected={panelTab === 'assist'}
+					onclick={() => (panelTab = 'assist')}
+					class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {panelTab === 'assist' ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}"
+				>
+					{t('ai.assist.tab', 'Assist')}
+				</button>
+			</div>
+
+			{#if panelTab === 'draft'}
 			<div class="px-4">
 				<textarea
 					bind:this={promptEl}
@@ -366,8 +568,113 @@
 					class="max-h-40 w-full resize-none overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-background)] p-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] outline-none focus:border-[var(--color-primary)]"
 				></textarea>
 			</div>
+			{/if}
 
 			<div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+			{#if panelTab === 'assist'}
+				<!-- §20 assist actions: improve / summarize / translate / tags / OG -->
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-assist-action">{t('ai.assist.action_label', 'Action')}</label>
+					<select
+						id="ai-assist-action"
+						bind:value={assistAction}
+						onchange={clearAssistResult}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					>
+						{#each ASSIST_ACTIONS as option (option.value)}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
+
+				{#if assistAction === 'improve'}
+					<div class="flex flex-col gap-1">
+						<label class="text-xs text-[var(--color-muted)]" for="ai-assist-tone">{t('ai.body.tone_label')}</label>
+						<select
+							id="ai-assist-tone"
+							bind:value={tone}
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+						>
+							{#each TONES as option (option.value)}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
+				{:else if assistAction === 'summarize'}
+					<div class="flex flex-col gap-1">
+						<label class="text-xs text-[var(--color-muted)]" for="ai-assist-max-words">{t('ai.assist.max_words', 'Max words')}</label>
+						<input
+							id="ai-assist-max-words"
+							type="number"
+							min="1"
+							bind:value={assistMaxWords}
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+						/>
+						<p class="text-[10px] text-[var(--color-muted)]">
+							{t('ai.assist.summarize_hint', 'The result is applied to the meta description field.')}
+						</p>
+					</div>
+				{:else if assistAction === 'translate'}
+					<div class="flex flex-col gap-1">
+						<label class="text-xs text-[var(--color-muted)]" for="ai-assist-locale">{t('ai.assist.target_locale', 'Target locale')}</label>
+						<input
+							id="ai-assist-locale"
+							type="text"
+							list="ai-assist-locales"
+							bind:value={assistLocale}
+							placeholder="fr"
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+						/>
+						<datalist id="ai-assist-locales">
+							{#each locales as locale (locale)}
+								<option value={locale}></option>
+							{/each}
+						</datalist>
+					</div>
+				{:else}
+					<p class="text-[10px] text-[var(--color-muted)]">
+						{#if assistAction === 'tags'}
+							{t('ai.assist.tags_hint', 'Tags are generated from the title and body, then merged into the tag field.')}
+						{:else}
+							{t('ai.assist.og_hint', 'Generates an og:title and og:description applied to the SEO fields.')}
+						{/if}
+					</p>
+				{/if}
+
+				{#if sourceText}
+					<p class="line-clamp-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-background)] p-2 text-xs text-[var(--color-muted)]">
+						{sourceText}
+					</p>
+				{:else if assistAction !== 'tags' && assistAction !== 'og'}
+					<p class="text-xs text-[var(--color-muted)]">{t('ai.assist.no_source', 'Write some body text first.')}</p>
+				{/if}
+
+				{#if assistText}
+					<div class="min-h-[8rem] whitespace-pre-wrap rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-sm text-[var(--color-text)]">
+						{assistText}
+					</div>
+				{/if}
+				{#if assistTags.length > 0}
+					<div class="flex flex-wrap gap-1.5">
+						{#each assistTags as tag (tag)}
+							<span class="inline-flex items-center rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text)]">{tag}</span>
+						{/each}
+					</div>
+				{/if}
+				{#if assistOg}
+					<div class="flex flex-col gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-sm">
+						{#if assistOg.title}
+							<p class="text-[var(--color-text)]"><span class="text-xs text-[var(--color-muted)]">og:title</span><br />{assistOg.title}</p>
+						{/if}
+						{#if assistOg.description}
+							<p class="text-[var(--color-text)]"><span class="text-xs text-[var(--color-muted)]">og:description</span><br />{assistOg.description}</p>
+						{/if}
+						{#if assistOg.imageAlt}
+							<p class="text-[var(--color-text)]"><span class="text-xs text-[var(--color-muted)]">og:image:alt</span><br />{assistOg.imageAlt}</p>
+						{/if}
+					</div>
+				{/if}
+			{:else}
 				<div class="grid grid-cols-2 gap-2">
 					<div class="flex flex-col gap-1">
 						<label class="text-xs text-[var(--color-muted)]" for="ai-model">{t('ai.body.model_label', 'Model')}</label>
@@ -557,9 +864,47 @@
 						{@html draft.body_html}
 					</div>
 				{/if}
+			{/if}
 			</div>
 
 			<div class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			{#if panelTab === 'assist'}
+				<div class="flex flex-col gap-2">
+					{#if assistError}
+						<p class="text-xs text-[var(--color-danger)]">{assistError}</p>
+					{/if}
+					{#if !assistHasResult}
+						<button
+							type="button"
+							disabled={!assistCanRun}
+							onclick={runAssist}
+							class="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+						>
+							{#if assistLoading}<Loader2 size={14} class="animate-spin" />{/if}
+							{t('ai.assist.run', 'Run')}
+						</button>
+					{:else}
+						<div class="flex gap-2">
+							<button
+								type="button"
+								disabled={assistLoading}
+								onclick={applyAssist}
+								class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+							>
+								<Check size={14} /> {t('ai.body.apply')}
+							</button>
+							<button
+								type="button"
+								disabled={!assistCanRun}
+								onclick={runAssist}
+								class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+							>
+								<RefreshCw size={14} /> {t('ai.body.regenerate', 'Regenerate')}
+							</button>
+						</div>
+					{/if}
+				</div>
+			{:else}
 				<div class="flex flex-col gap-2">
 					{#if error}
 						<p class="text-xs text-[var(--color-danger)]">{error}</p>
@@ -598,6 +943,7 @@
 						</div>
 					{/if}
 				</div>
+			{/if}
 			</div>
 		</div>
 	</div>

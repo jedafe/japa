@@ -9,7 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pgvector/pgvector-go"
+	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 const acceptMentorshipConnection = `-- name: AcceptMentorshipConnection :one
@@ -355,8 +355,8 @@ WHERE user_id = $1 AND is_mentor = true
 `
 
 type GetMentorEmbeddingRow struct {
-	UserID          pgtype.UUID      `json:"user_id"`
-	MentorEmbedding *pgvector.Vector `json:"mentor_embedding"`
+	UserID          pgtype.UUID         `json:"user_id"`
+	MentorEmbedding *pgvector_go.Vector `json:"mentor_embedding"`
 }
 
 // Get a mentor's embedding vector (for match scoring).
@@ -522,8 +522,8 @@ WHERE user_id = $1
 `
 
 type GetUserEmbeddingRow struct {
-	UserID          pgtype.UUID      `json:"user_id"`
-	MentorEmbedding *pgvector.Vector `json:"mentor_embedding"`
+	UserID          pgtype.UUID         `json:"user_id"`
+	MentorEmbedding *pgvector_go.Vector `json:"mentor_embedding"`
 }
 
 // Get any user's mentor_embedding vector (for match scoring on the discovery
@@ -887,11 +887,11 @@ LIMIT $2 OFFSET $1
 `
 
 type ListMentorsByMatchParams struct {
-	PageOffset      int32            `json:"page_offset"`
-	PageLimit       int32            `json:"page_limit"`
-	MenteeEmbedding *pgvector.Vector `json:"mentee_embedding"`
-	Areas           []string         `json:"areas"`
-	DestSpaceID     pgtype.UUID      `json:"dest_space_id"`
+	PageOffset      int32               `json:"page_offset"`
+	PageLimit       int32               `json:"page_limit"`
+	MenteeEmbedding *pgvector_go.Vector `json:"mentee_embedding"`
+	Areas           []string            `json:"areas"`
+	DestSpaceID     pgtype.UUID         `json:"dest_space_id"`
 }
 
 type ListMentorsByMatchRow struct {
@@ -964,14 +964,14 @@ WHERE up.is_mentor = true
 `
 
 type ListMentorsWithEmbeddingsRow struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	MentorEmbedding   *pgvector.Vector   `json:"mentor_embedding"`
-	IsMentor          *bool              `json:"is_mentor"`
-	MentorAreas       []string           `json:"mentor_areas"`
-	MentorBio         *string            `json:"mentor_bio"`
-	MentorCapacity    *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount *int16             `json:"active_mentee_count"`
-	MentorSince       pgtype.Timestamptz `json:"mentor_since"`
+	UserID            pgtype.UUID         `json:"user_id"`
+	MentorEmbedding   *pgvector_go.Vector `json:"mentor_embedding"`
+	IsMentor          *bool               `json:"is_mentor"`
+	MentorAreas       []string            `json:"mentor_areas"`
+	MentorBio         *string             `json:"mentor_bio"`
+	MentorCapacity    *int16              `json:"mentor_capacity"`
+	ActiveMenteeCount *int16              `json:"active_mentee_count"`
+	MentorSince       pgtype.Timestamptz  `json:"mentor_since"`
 }
 
 // Get all mentors with their embeddings for batch Meilisearch sync.
@@ -1263,8 +1263,8 @@ WHERE user_id = $2
 `
 
 type UpdateMentorEmbeddingParams struct {
-	Embedding *pgvector.Vector `json:"embedding"`
-	UserID    pgtype.UUID      `json:"user_id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+	UserID    pgtype.UUID         `json:"user_id"`
 }
 
 // Set the pgvector embedding for a mentor's bio (called by Asynq task).

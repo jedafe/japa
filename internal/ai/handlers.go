@@ -958,11 +958,17 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 			}
 
 			for _, c := range chunks {
+				// §69 Citation Source Contract: emit title/slug/url so the
+				// frontend can link each citation to the entity's canonical
+				// route (empty when the entity no longer resolves).
 				ragSources = append(ragSources, map[string]any{
 					"entity_type": c.EntityType,
 					"entity_id":   c.EntityID,
 					"similarity":  c.Similarity,
 					"tier":        c.Tier,
+					"title":       c.Title,
+					"slug":        c.Slug,
+					"url":         c.URL,
 				})
 			}
 		}
