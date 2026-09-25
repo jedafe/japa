@@ -20,6 +20,7 @@
 		Star
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import { serviceCategoryLabel } from '$lib/enumOptions';
 	import type { ServiceListing, ServiceCategory, ServiceReview } from '$lib/types';
 	import type { PageData } from './$types';
@@ -363,5 +364,10 @@
 				</div>
 			{/if}
 		</article>
+
+		<!-- Same-type recommendations, ranked by embedding similarity. -->
+		<div class="px-4 pb-8">
+			<RecommendedContentCard items={data.recommendedContent ?? []} contentType="service_listing" />
+		</div>
 	{/if}
 </div>

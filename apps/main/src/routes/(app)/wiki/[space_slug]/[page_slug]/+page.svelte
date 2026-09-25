@@ -128,8 +128,6 @@
 	const panelSpaceId = $derived(data.page?.space_id ?? data.spaceDetail?.space?.id ?? '');
 	// When the page is bound to a child entity class (data_entity_type, e.g.
 	// 'visa_route'), list that space's entities with per-row suggest buttons.
-	// The page DTO does not yet expose the column — the block stays dormant
-	// until the backend emits it.
 	const dataEntityType = $derived(data.page?.data_entity_type ?? '');
 
 	let childEntities = $state<ResolvedItem[]>([]);

@@ -654,7 +654,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	// eligible_spaces: empty = all spaces. When set, restrict to contents
 	// whose space slug is in the list (BUG-007 — previously ignored).
 	if len(policy.EligibleSpaces) > 0 {
-		query += ` AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = c.space_idsp.slug = ANY($` + strconv.Itoa(argIdx) + `))`
+		query += ` AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = c.space_id AND sp.slug = ANY($` + strconv.Itoa(argIdx) + `))`
 
 		args = append(args, policy.EligibleSpaces)
 		argIdx++
@@ -674,7 +674,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	// engagement ascending, then recency descending (BUG-006 — previously
 	// only ordered by created_at DESC, always targeting the newest content).
 	query += ` ORDER BY (
-		(SELECT count(*) FROM comments cm WHERE cm.content_id = c.idAND cm.deleted_at IS NULL) +
+		(SELECT count(*) FROM comments cm WHERE cm.content_id = c.id AND cm.deleted_at IS NULL) +
 		(SELECT count(*) FROM reactions r WHERE r.entity_type = 'content' AND r.entity_id = c.id)
 	) ASC, c.created_at DESC LIMIT 50`
 

@@ -1289,7 +1289,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"author_avatar_url": content.AuthorAvatarUrl,
 		"space_name":        content.SpaceName,
 		"space_slug":        content.SpaceSlug,
-		"excerpt":           makeExcerpt(content.BodyHtml, 160),
+		"excerpt":           MakeExcerpt(content.BodyHtml, 160),
 	}
 
 	// field_values is stored as JSONB — emit the decoded object, not the

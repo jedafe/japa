@@ -1,5 +1,7 @@
 -- 000680_docs_footer_and_api_key_limit_fixes.down.sql
 -- Reverts the docs_footer URL fixes and the is_public flag change.
+-- De-tenanted form: menu_items.tenant_id and menus.tenant_id were dropped by
+-- 000668, so the tenant column/filter is gone.
 
 BEGIN;
 
@@ -11,8 +13,8 @@ WHERE mi.menu_id = m.id
   AND mi.url = '/docs/users'
   AND mi.label = 'Getting Started';
 
-INSERT INTO menu_items (tenant_id, menu_id, label, url, icon, sort_order, visibility, target, status)
-SELECT m.tenant_id, m.id, 'Guides', '/docs/guides', NULL, 3, 'all', '_self', 'active'
+INSERT INTO menu_items (menu_id, label, url, icon, sort_order, visibility, target, status)
+SELECT m.id, 'Guides', '/docs/guides', NULL, 3, 'all', '_self', 'active'
 FROM menus m
 WHERE m.slug = 'docs_footer'
   AND NOT EXISTS (

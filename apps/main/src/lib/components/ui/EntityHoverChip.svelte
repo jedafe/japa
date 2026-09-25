@@ -11,6 +11,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
+	import { safeHttpUrl } from '$lib/utils/safeUrl';
 	import { goto } from '$app/navigation';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import type { FollowableType } from '$lib/api/hub';
@@ -35,6 +36,9 @@
 		secondary?: string;
 		/** Optional custom trigger content. When provided, the default chip/row markup is skipped. */
 		trigger?: Snippet;
+		/** When set, trigger click opens this external URL in a new tab instead
+		 *  of navigating to the internal entity page (hover card still works). */
+		externalHref?: string;
 	}
 
 	let {
@@ -49,7 +53,8 @@
 		isFollowing = false,
 		variant = 'chip',
 		secondary,
-		trigger
+		trigger,
+		externalHref
 	}: Props = $props();
 
 	let open = $state(false);
@@ -240,6 +245,11 @@
 
 	function onTriggerClick(e: MouseEvent) {
 		e.stopPropagation();
+		const ext = safeHttpUrl(externalHref);
+		if (ext) {
+			window.open(ext, '_blank', 'noopener,noreferrer');
+			return;
+		}
 		if (href) goto(href);
 	}
 

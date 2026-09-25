@@ -4,6 +4,7 @@
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import { listCountries } from '$lib/api/geo';
+	import { isoToLocalDateTime } from '$lib/utils/datetime';
 	import { t } from '$lib/i18n';
 
 	interface Props {
@@ -243,7 +244,7 @@
 				id={field.key}
 				type="datetime-local"
 				class="cf-input"
-				value={values[field.key] ?? ''}
+				value={isoToLocalDateTime(typeof values[field.key] === 'string' ? (values[field.key] as string) : null) ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'time'}

@@ -1,8 +1,9 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
 import type { ServiceListing, ServiceReview, ServiceReviewAggregate } from '$lib/types';
+import type { ContentArticle } from '$lib/types/content';
 
 /**
  * Service detail at /services/[slug] — SSR detail. Fetches
@@ -42,7 +43,23 @@ export const load: PageServerLoad = async (event) => {
 		const reviews = (envelope as unknown as { reviews?: ServiceReview[] }).reviews ?? [];
 		const reviewAggregate = (envelope as unknown as { review_aggregate?: ServiceReviewAggregate })
 			.review_aggregate ?? { count: 0, avg: 0 };
-		return { service, authed, currentUserId, myOrgs, reviews, reviewAggregate, loadError: false };
+
+		// "Recommended Services" card — same-type items ranked by the
+		// related endpoint's content_type filter. Best-effort; the card
+		// hides itself when the list is empty. NB: the endpoint reads
+		// `page_size`, not `limit`.
+		let recommendedContent: ContentArticle[] = [];
+		try {
+			recommendedContent =
+				(await apiGet<ContentArticle[]>(
+					ctx,
+					`/content/${service.id}/related?content_type=service_listing&page_size=5`
+				)) ?? [];
+		} catch {
+			recommendedContent = [];
+		}
+
+		return { service, authed, currentUserId, myOrgs, reviews, reviewAggregate, recommendedContent, loadError: false };
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Service not found' });
@@ -54,6 +71,7 @@ export const load: PageServerLoad = async (event) => {
 			myOrgs,
 			reviews: [] as ServiceReview[],
 			reviewAggregate: { count: 0, avg: 0 },
+			recommendedContent: [] as ContentArticle[],
 			loadError: true
 		};
 	}

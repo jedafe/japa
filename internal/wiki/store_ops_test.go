@@ -351,9 +351,9 @@ func TestFindHostPageID(t *testing.T) {
 		t.Fatalf("expected pgx.ErrNoRows for missing category, got %v", err)
 	}
 
-	typeID, err := store.GetSpaceTypeID(ctx, fx.spaceID)
+	typeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
-		t.Fatalf("GetSpaceTypeID: %v", err)
+		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
 
 	if !typeID.Valid {

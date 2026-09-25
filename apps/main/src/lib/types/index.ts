@@ -2680,6 +2680,19 @@ export interface RemittanceAlert {
 }
 
 // --- Section 63: Jobs Board ---
+/** The entity that published the listing — org (preferred) or author user.
+ *  Finder cards use it as the avatar/name/link fallback (§63, migration 000734). */
+export interface JobPoster {
+	kind: 'organization' | 'user';
+	id: string;
+	/** Org slug or username — hover card + profile link target. */
+	slug: string;
+	name: string;
+	logo_url?: string;
+	verified?: boolean;
+	website_url?: string;
+}
+
 export interface JobListing {
 	id: string;
 	title: string;
@@ -2689,6 +2702,7 @@ export interface JobListing {
 	published_at: string;
 	organization_id?: string;
 	source?: SourceAttribution | null;
+	poster?: JobPoster | null;
 }
 
 export interface JobDetail {
@@ -2701,6 +2715,7 @@ export interface JobDetail {
 	published_at: string;
 	organization_id?: string;
 	source?: SourceAttribution | null;
+	poster?: JobPoster | null;
 	/** Authenticated viewer's own application, or null. */
 	my_application?: { id: string; status: string; applied_at?: string } | null;
 }
@@ -2995,6 +3010,9 @@ export interface WikiPageIndex {
 	updated_at: string;
 	space_slug?: string;
 	space_name?: string;
+	/** §80: binds the page to a child entity class (e.g. 'visa_route') — the
+	 *  page's Data panel lists those entities instead of the space's fields. */
+	data_entity_type?: string | null;
 }
 
 export interface WikiDestination {
@@ -3013,9 +3031,6 @@ export interface WikiPage extends WikiPageIndex {
 	current_content: unknown;
 	revision_summary?: string;
 	submitted_by?: string;
-	/** §80: binds the page to a child entity class (e.g. 'visa_route') so the
-	 *  data panel can list those entities instead of the space's own fields. */
-	data_entity_type?: string | null;
 }
 
 export type WikiRevisionStatus = 'approved' | 'rejected' | 'pending';

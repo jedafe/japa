@@ -4,11 +4,13 @@
 	import { page } from '$app/state';
 	import { Briefcase, MapPin, Clock, CheckCircle2, AlertCircle, ExternalLink, Pencil, Star, Calendar, Globe, Truck, FileText, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import { api } from '$lib/api/client';
 	import { initiateUpload, uploadToPresigned, confirmMedia } from '$lib/api/create';
 	import type { JobDetail, MediaAsset } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeHttpUrl } from '$lib/utils/safeUrl';
 
 	let { data }: { data: PageData } = $props();
 
@@ -283,17 +285,17 @@
 			{/if}
 
 			<!-- Apply form -->
-			<div class="mt-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<div id="apply" class="mt-6 scroll-mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
 					{t('jobs.apply', 'Apply for this job')}
 				</h2>
 
-				{#if field('application_url')}
+				{#if safeHttpUrl(field('application_url'))}
 					<p class="mb-3 text-sm text-[var(--color-muted)]">
 						{t('jobs.apply_external_hint', 'This job is listed externally. Apply on the employer site.')}
 					</p>
 					<a
-						href={field('application_url')}
+						href={safeHttpUrl(field('application_url'))}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
@@ -390,6 +392,11 @@
 					</form>
 				{/if}
 			</div>
+		</div>
+
+		<!-- Same-type recommendations, ranked by embedding similarity. -->
+		<div class="px-4 pb-6">
+			<RecommendedContentCard items={data.recommendedContent ?? []} contentType="job_listing" />
 		</div>
 	{/if}
 </div>

@@ -189,7 +189,7 @@ entity via `custom_field_group_assignments`:
 
 | entity_type | entity_class lookup |
 |---|---|
-| `space`, `university`, `country`, `state`, `city` | `space_type:{id}` — `university_fields`, `space_fields` |
+| `space`, `university`, `country`, `state`, `city` | `space_type:{slug}` + `space_type:{id}` + class-wide `space_type` — `university_fields`, `space_fields` |
 | `organization`, `bank` | `organization` |
 | content-backed types | `content_type:{slug}` |
 | table-backed JCE types (`visa_route`, `scholarship`, …) | `jce_entity:{type}` — new assignment token |

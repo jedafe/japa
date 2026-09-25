@@ -9,7 +9,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { WikiDestination } from '$lib/types';
 	import { page } from '$app/state';
-	import { BookOpen, Globe, MapPin, GraduationCap } from 'lucide-svelte';
+	import { BookOpen, Globe, MapPin, GraduationCap, Table2 } from 'lucide-svelte';
 	import { ListPageBar } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
@@ -22,6 +22,11 @@
 	let browseLoading = $state(false);
 	let browseLevel = $state<'country' | 'state' | 'city'>('country');
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
+	// §80 community field ops — destination structured data is
+	// community-editable when the structured_edits flag is on.
+	const structuredEditsOn = $derived(
+		wikiEnabled && data.features?.['wiki.structured_edits'] === true
+	);
 
 	let selectedContinent = $state<string | null>(null);
 	let selectedCountry = $state<WikiDestination | null>(null);
@@ -203,6 +208,12 @@
 	<p class="text-sm text-[var(--color-muted)]">
 		{t('wiki.landing_description', 'Choose a destination to explore community-maintained guides.')}
 	</p>
+	{#if structuredEditsOn}
+		<p class="mt-2 flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+			<Table2 size={13} />
+			{t('wiki.community_data_note', 'Guides and destination data are community-maintained — suggest edits on any wiki page.')}
+		</p>
+	{/if}
 
 	{#if !wikiEnabled}
 		<div class="mt-8">

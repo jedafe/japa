@@ -7,6 +7,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { Achievement } from '$lib/types';
+import type { ContentArticle } from '$lib/types/content';
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
@@ -30,5 +31,20 @@ export const load: PageServerLoad = async (event) => {
 		throw error(500, { code: 'internal_error', message: 'Failed to load achievement' });
 	}
 
-	return { achievement, authed, canEdit, loadError: false };
+	// "Recommended Achievements" card — same-type items ranked by the
+	// related endpoint's content_type filter. Best-effort; the card hides
+	// itself when the list is empty. NB: the endpoint reads `page_size`,
+	// not `limit`.
+	let recommendedContent: ContentArticle[] = [];
+	try {
+		recommendedContent =
+			(await apiGet<ContentArticle[]>(
+				ctx,
+				`/content/${achievement.id}/related?content_type=achievement&page_size=5`
+			)) ?? [];
+	} catch {
+		recommendedContent = [];
+	}
+
+	return { achievement, authed, canEdit, recommendedContent, loadError: false };
 };
