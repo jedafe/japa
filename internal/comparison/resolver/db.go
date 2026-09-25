@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -264,22 +265,30 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any)
 	// field_values column. cfv wins over the raw column (canonical truth).
 	if r.queries != nil {
 		if id, perr := ParseUUID(rv.id); perr == nil {
-			if cfv := resolveFieldValues(ctx, r.queries, r.cfg.Entity, id); len(cfv) > 0 {
-				merged, _ := item.Metadata["field_values"].(map[string]any)
-				if merged == nil {
-					merged = make(map[string]any, len(cfv))
-				}
-
-				for k, v := range cfv {
-					merged[k] = v
-				}
-
-				item.Metadata["field_values"] = merged
-			}
+			mergeCFVIntoItem(&item, resolveFieldValues(ctx, r.queries, r.cfg.Entity, id))
 		}
 	}
 
 	return item, true, nil
+}
+
+// mergeCFVIntoItem overlays community field values onto an item's
+// field_values metadata — cfv wins per key (§80).
+func mergeCFVIntoItem(item *ResolvedItem, cfv map[string]any) {
+	if len(cfv) == 0 {
+		return
+	}
+
+	merged, _ := item.Metadata["field_values"].(map[string]any)
+	if merged == nil {
+		merged = make(map[string]any, len(cfv))
+	}
+
+	for k, v := range cfv {
+		merged[k] = v
+	}
+
+	item.Metadata["field_values"] = merged
 }
 
 // Search performs a case-insensitive prefix/substring search against the title
@@ -400,6 +409,27 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	// §80 Tool Surface Hydration: same cfv merge as resolveBy, batched — one
+	// cfv query per search page, keyed on the entity's own ID.
+	if r.queries != nil && len(out) > 0 {
+		ids := make([]pgtype.UUID, 0, len(out))
+		itemIDs := make([]pgtype.UUID, len(out))
+
+		for i, item := range out {
+			if id, perr := ParseUUID(item.ID); perr == nil && id.Valid {
+				itemIDs[i] = id
+
+				ids = append(ids, id)
+			}
+		}
+
+		cfvByID := customfields.EntityFieldValuesForEntities(ctx, r.queries, r.cfg.Entity, ids)
+
+		for i := range out {
+			mergeCFVIntoItem(&out[i], cfvByID[itemIDs[i]])
+		}
 	}
 
 	return out, nil

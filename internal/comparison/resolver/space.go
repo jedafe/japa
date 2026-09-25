@@ -53,7 +53,7 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any) (Resolv
 		}
 
 		if base, ok := spaceBaseFromRow(row); ok {
-			return resolveSpaceBase(ctx, r.deps, "space", base), true, nil
+			return resolveSpaceBase(ctx, r.deps, "space", base, depsFieldValues(ctx, r.deps, "space", base.ID)), true, nil
 		}
 
 		return ResolvedItem{}, false, nil
@@ -70,7 +70,7 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any) (Resolv
 		}
 
 		if base, ok := spaceBaseFromRow(row); ok {
-			return resolveSpaceBase(ctx, r.deps, "space", base), true, nil
+			return resolveSpaceBase(ctx, r.deps, "space", base, depsFieldValues(ctx, r.deps, "space", base.ID)), true, nil
 		}
 
 		return ResolvedItem{}, false, nil
@@ -128,12 +128,19 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}
 
-	out := make([]ResolvedItem, 0, len(items))
-
+	bases := make([]spaceBase, 0, len(items))
 	for _, it := range items {
 		if base, ok := spaceBaseFromRow(it); ok {
-			out = append(out, resolveSpaceBase(ctx, r.deps, "space", base))
+			bases = append(bases, base)
 		}
+	}
+
+	// One batched cfv read for the page — no per-row queries (§80).
+	cfvBySpace := batchedSpaceFieldValues(ctx, r.deps, "space", bases)
+
+	out := make([]ResolvedItem, 0, len(bases))
+	for _, base := range bases {
+		out = append(out, resolveSpaceBase(ctx, r.deps, "space", base, cfvBySpace[base.ID]))
 	}
 
 	return out, nil
@@ -161,7 +168,7 @@ func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID 
 		"geo_code":     deref(geoCode),
 		"image_id":     imageID,
 		"member_count": memberCount,
-		"score_inputs": spaceScoreInputs(context.Background(), nil, "space", base),
+		"score_inputs": spaceScoreInputs(context.Background(), nil, "space", base, nil),
 	}
 	if level == "country" && geoCode != nil && *geoCode != "" {
 		meta["country"] = *geoCode

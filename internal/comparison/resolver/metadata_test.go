@@ -115,7 +115,7 @@ func TestVisaRouteResolvedItemMetadata(t *testing.T) {
 		VisaCategory:         "work",
 	}
 
-	item := routeToResolvedItem(route)
+	item := routeToResolvedItem(route, nil)
 
 	if item.Metadata["geo_space_id"] != route.DestinationSpaceID {
 		t.Fatalf("expected geo_space_id %q, got %v", route.DestinationSpaceID, item.Metadata["geo_space_id"])
@@ -139,7 +139,7 @@ func TestMentorResolvedItemMetadata(t *testing.T) {
 		MentorAreas: []string{"career", "visa"},
 	}
 
-	item := mentorToResolvedItem(m)
+	item := mentorToResolvedItem(m, nil)
 
 	if !slices.Equal(item.Metadata["tags"].([]string), []string{"career", "visa"}) {
 		t.Fatalf("unexpected tags: %v", item.Metadata["tags"])
@@ -159,7 +159,7 @@ func TestCityResolvedItemMetadata(t *testing.T) {
 		GeoSpaceSlug: ptr("lagos"),
 	}
 
-	item := cityRowToResolvedItem(row)
+	item := cityRowToResolvedItem(row, nil)
 
 	if item.Metadata["geo_space_id"] != geoID.String() {
 		t.Fatalf("expected geo_space_id %q, got %v", geoID.String(), item.Metadata["geo_space_id"])

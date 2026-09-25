@@ -7,17 +7,23 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/mentorship"
 )
 
 // mentorResolver resolves mentorship users.
 type mentorResolver struct {
-	svc *mentorship.Service
+	svc     *mentorship.Service
+	queries *gen.Queries // optional: enables custom_field_values merge
 }
 
-// NewMentorResolver creates a resolver for mentors.
-func NewMentorResolver(svc *mentorship.Service) Resolver {
-	return &mentorResolver{svc: svc}
+// NewMentorResolver creates a resolver for mentors. Pass WithQueries to
+// merge custom_field_values into field_values (§80 Tool Surface Hydration).
+func NewMentorResolver(svc *mentorship.Service, opts ...Option) Resolver {
+	o := newResolverOptions(opts...)
+
+	return &mentorResolver{svc: svc, queries: o.queries}
 }
 
 func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
@@ -36,7 +42,7 @@ func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any) (Resol
 			return ResolvedItem{}, false, nil
 		}
 
-		return mentorToResolvedItem(mentors[0]), true, nil
+		return mentorToResolvedItem(mentors[0], r.mentorFieldValues(ctx, mentors[0].UserID)), true, nil
 	}
 
 	if username, ok := ref["username"].(string); ok && username != "" {
@@ -49,10 +55,16 @@ func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any) (Resol
 			return ResolvedItem{}, false, fmt.Errorf("fetching mentor by username: %w", err)
 		}
 
-		return mentorToResolvedItem(m), true, nil
+		return mentorToResolvedItem(m, r.mentorFieldValues(ctx, m.UserID)), true, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("mentor item_ref missing id or username")
+}
+
+// mentorFieldValues fetches a mentor's community field values (entity_type
+// 'mentor', entity_id = user_id) for the field_values overlay (§80).
+func (r *mentorResolver) mentorFieldValues(ctx context.Context, userID pgtype.UUID) map[string]any {
+	return customfields.EntityFieldValues(ctx, r.queries, "mentor", userID)
 }
 
 func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]any, limit, offset int32) ([]ResolvedItem, error) {
@@ -82,15 +94,31 @@ func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]
 		end = len(mentors)
 	}
 
-	out := make([]ResolvedItem, 0, end-int(offset))
-	for _, m := range mentors[offset:end] {
-		out = append(out, mentorToResolvedItem(m))
+	page := mentors[offset:end]
+
+	// One batched cfv read for the page — no per-mentor queries (§80).
+	var cfvByMentor map[pgtype.UUID]map[string]any
+
+	if r.queries != nil && len(page) > 0 {
+		ids := make([]pgtype.UUID, 0, len(page))
+		for _, m := range page {
+			if m.UserID.Valid {
+				ids = append(ids, m.UserID)
+			}
+		}
+
+		cfvByMentor = customfields.EntityFieldValuesForEntities(ctx, r.queries, "mentor", ids)
+	}
+
+	out := make([]ResolvedItem, 0, len(page))
+	for _, m := range page {
+		out = append(out, mentorToResolvedItem(m, cfvByMentor[m.UserID]))
 	}
 
 	return out, nil
 }
 
-func mentorToResolvedItem(m mentorship.MentorSummary) ResolvedItem {
+func mentorToResolvedItem(m mentorship.MentorSummary, cfv map[string]any) ResolvedItem {
 	title := m.Username
 	if m.DisplayName != nil && *m.DisplayName != "" {
 		title = *m.DisplayName
@@ -110,6 +138,12 @@ func mentorToResolvedItem(m mentorship.MentorSummary) ResolvedItem {
 	}
 	if len(m.MentorAreas) > 0 {
 		meta["tags"] = m.MentorAreas
+	}
+
+	// §80 Tool Surface Hydration: mentors have no JSONB field bag, so
+	// community field values project as field_values.
+	if len(cfv) > 0 {
+		meta["field_values"] = cfv
 	}
 
 	return ResolvedItem{

@@ -370,6 +370,8 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 		dtos = append(dtos, rowToDTO(r))
 	}
 
+	s.mergeGuideFieldValues(ctx, dtos)
+
 	return dtos, total, nil
 }
 
@@ -384,7 +386,81 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (GuideDTO, error)
 		return GuideDTO{}, fmt.Errorf("housingguide: get by id: %w", err)
 	}
 
-	return rowToDTO(row), nil
+	return s.mergeGuideFieldValue(ctx, rowToDTO(row)), nil
+}
+
+// mergeGuideFieldValues overlays each guide's community field values onto
+// its rent_ranges bag — cfv wins per key — so approved wiki edits reach the
+// tool surface on next read (§80 Tool Surface Hydration). Community values
+// address the guide entity itself (entity_type='housing_guide'), matching
+// the JCE resolver's (entity_type, entity_id) convention. One batched cfv
+// read per call.
+func (s *Service) mergeGuideFieldValues(ctx context.Context, dtos []GuideDTO) {
+	if len(dtos) == 0 {
+		return
+	}
+
+	ids := make([]pgtype.UUID, 0, len(dtos))
+	for _, d := range dtos {
+		var id pgtype.UUID
+		if err := id.Scan(d.ID); err == nil && id.Valid {
+			ids = append(ids, id)
+		}
+	}
+
+	cfvByID := s.store.ListFieldValuesByGuideIDs(ctx, ids)
+	if len(cfvByID) == 0 {
+		return
+	}
+
+	for i := range dtos {
+		var id pgtype.UUID
+		if err := id.Scan(dtos[i].ID); err != nil {
+			continue
+		}
+
+		cfv := cfvByID[id]
+		if len(cfv) == 0 {
+			continue
+		}
+
+		dtos[i].RentRanges = rentRangesWithCFV(dtos[i].RentRanges, cfv)
+	}
+}
+
+// mergeGuideFieldValue applies the same overlay for a single-guide read.
+func (s *Service) mergeGuideFieldValue(ctx context.Context, dto GuideDTO) GuideDTO {
+	dtos := []GuideDTO{dto}
+	s.mergeGuideFieldValues(ctx, dtos)
+
+	return dtos[0]
+}
+
+// rentRangesWithCFV merges community field values over the rent_ranges JSON
+// bag — cfv wins per key. Unparseable or absent rent_ranges still yields a
+// valid JSON object holding the cfv values.
+func rentRangesWithCFV(rentRanges json.RawMessage, cfv map[string]any) json.RawMessage {
+	var ranges map[string]any
+	if len(rentRanges) > 0 {
+		if err := json.Unmarshal(rentRanges, &ranges); err != nil {
+			ranges = nil
+		}
+	}
+
+	if ranges == nil {
+		ranges = make(map[string]any, len(cfv))
+	}
+
+	for k, v := range cfv {
+		ranges[k] = v
+	}
+
+	merged, err := json.Marshal(ranges)
+	if err != nil {
+		return rentRanges
+	}
+
+	return merged
 }
 
 // Create creates a new housing guide (admin). Returns the created guide.
@@ -596,6 +672,9 @@ func (s *Service) AdminList(ctx context.Context, status, accommodationType, q st
 		return nil, 0, fmt.Errorf("housingguide: admin list: %w", err)
 	}
 
+	// No cfv merge on the admin list: admins must see the stored
+	// rent_ranges so an edit round-trip can't bake community values into
+	// the typed bag (§80). The JCE resolver merges cfv itself.
 	dtos := make([]GuideDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))

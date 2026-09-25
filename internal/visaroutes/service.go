@@ -197,6 +197,8 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, profession,
 		dtos = append(dtos, rowToDTO(r))
 	}
 
+	s.mergeRouteFieldValues(ctx, dtos)
+
 	return dtos, total, nil
 }
 
@@ -220,6 +222,8 @@ func (s *Service) Compare(ctx context.Context, ids []pgtype.UUID) ([]RouteDTO, e
 		dtos = append(dtos, rowToDTO(r))
 	}
 
+	s.mergeRouteFieldValues(ctx, dtos)
+
 	return dtos, nil
 }
 
@@ -238,7 +242,7 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (RouteDTO, error)
 		return RouteDTO{}, pgx.ErrNoRows
 	}
 
-	return rowToDTO(row), nil
+	return s.mergeRouteFieldValue(ctx, rowToDTO(row)), nil
 }
 
 // GetBySlug returns a single published, active visa route by its slug.
@@ -256,7 +260,7 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (RouteDTO, error) 
 		return RouteDTO{}, pgx.ErrNoRows
 	}
 
-	return rowToDTO(row), nil
+	return s.mergeRouteFieldValue(ctx, rowToDTO(row)), nil
 }
 
 // AdminList returns all visa routes (any status) for the admin view.
@@ -287,6 +291,9 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, status
 		return nil, 0, fmt.Errorf("visaroutes: admin list: %w", err)
 	}
 
+	// No cfv merge on the admin list: admins must see the stored
+	// requirements_json so an edit round-trip can't bake community values
+	// into the typed bag (§80). The JCE resolver merges cfv itself.
 	dtos := make([]RouteDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
@@ -624,6 +631,67 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateRouteRequest)
 		DestinationSpaceID: destSpaceID.String(),
 		VisaCategory:       visaCategory,
 	}, nil
+}
+
+// mergeRouteFieldValues overlays each route's community field values onto
+// its requirements bag — cfv wins per key — so approved wiki edits reach the
+// tool surface on next read (§80 Tool Surface Hydration). Typed columns
+// (typical_fee_usd etc.) are never shadowed. One batched cfv read per call.
+func (s *Service) mergeRouteFieldValues(ctx context.Context, dtos []RouteDTO) {
+	if len(dtos) == 0 {
+		return
+	}
+
+	ids := make([]pgtype.UUID, 0, len(dtos))
+	for _, d := range dtos {
+		var id pgtype.UUID
+		if err := id.Scan(d.ID); err == nil && id.Valid {
+			ids = append(ids, id)
+		}
+	}
+
+	cfvByID := s.store.ListFieldValuesByRouteIDs(ctx, ids)
+	if len(cfvByID) == 0 {
+		return
+	}
+
+	for i := range dtos {
+		var id pgtype.UUID
+		if err := id.Scan(dtos[i].ID); err != nil {
+			continue
+		}
+
+		cfv := cfvByID[id]
+		if len(cfv) == 0 {
+			continue
+		}
+
+		dtos[i].Requirements = requirementsWithCFV(dtos[i].Requirements, cfv)
+	}
+}
+
+// mergeRouteFieldValue applies the same overlay for a single-route read.
+func (s *Service) mergeRouteFieldValue(ctx context.Context, dto RouteDTO) RouteDTO {
+	dtos := []RouteDTO{dto}
+	s.mergeRouteFieldValues(ctx, dtos)
+
+	return dtos[0]
+}
+
+// requirementsWithCFV merges community field values over the requirements
+// object — cfv wins per key. A non-map requirements value is replaced by a
+// fresh map so cfv keys are never silently dropped.
+func requirementsWithCFV(requirements any, cfv map[string]any) any {
+	req, _ := requirements.(map[string]any)
+	if req == nil {
+		req = make(map[string]any, len(cfv))
+	}
+
+	for k, v := range cfv {
+		req[k] = v
+	}
+
+	return req
 }
 
 // rowToDTO converts a RouteRow to a RouteDTO.

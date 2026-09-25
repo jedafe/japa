@@ -383,6 +383,59 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 		}
 	}
 
+	// Overlay community field values from each city's linked geo space
+	// (entity_type='space') — cfv keys matched by dimension slug shadow the
+	// stored comparison_values so approved wiki edits reach the calculator
+	// (§80 Tool Surface Hydration). comparison_values rows themselves are
+	// never community-edited. One batched cfv read per comparison.
+	geoSpaceByCity := make(map[pgtype.UUID]pgtype.UUID, len(cityOrder))
+	if baseline.GeoSpaceID.Valid {
+		geoSpaceByCity[baselineID] = baseline.GeoSpaceID
+	}
+
+	for id, c := range cityRows {
+		if c.GeoSpaceID.Valid {
+			geoSpaceByCity[id] = c.GeoSpaceID
+		}
+	}
+
+	geoSpaceIDs := make([]pgtype.UUID, 0, len(geoSpaceByCity))
+	for _, spaceID := range geoSpaceByCity {
+		geoSpaceIDs = append(geoSpaceIDs, spaceID)
+	}
+
+	spaceCFV := s.store.ListSpaceFieldValues(ctx, geoSpaceIDs)
+
+	for cityID, spaceID := range geoSpaceByCity {
+		cfv := spaceCFV[spaceID]
+		if len(cfv) == 0 {
+			continue
+		}
+
+		cityKey := cityID.String()
+
+		for dimKey, meta := range dimMetaMap {
+			v, ok := cfv[meta.Slug]
+			if !ok {
+				continue
+			}
+
+			if dimValues[dimKey] == nil {
+				dimValues[dimKey] = make(map[string]float64)
+			}
+
+			if f, ok := anyToFloat(v); ok {
+				dimValues[dimKey][cityKey] = f
+			}
+
+			if cityRawValues[cityKey] == nil {
+				cityRawValues[cityKey] = make(map[string]string)
+			}
+
+			cityRawValues[cityKey][dimKey] = fmt.Sprint(v)
+		}
+	}
+
 	cities := make([]CityData, 0, len(cityOrder))
 
 	for _, id := range cityOrder {
@@ -595,6 +648,28 @@ func parseWeights(config []byte) map[string]float64 {
 	}
 
 	return wrapper.Weights
+}
+
+// anyToFloat coerces a display-ready custom-field value (float64/string/etc.)
+// into a float for the comparison matrix, applying the same currency-prefix
+// cleanup as parseFloatValue for string values.
+func anyToFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case string:
+		return parseFloatValue(&n, pgtype.Numeric{})
+	}
+
+	return 0, false
 }
 
 // parseFloatValue parses a numeric cost value from the comparison_values row.

@@ -90,7 +90,7 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any) (Re
 		}
 
 		if base, ok := spaceBaseFromRow(row); ok {
-			return resolveSpaceBase(ctx, r.deps, r.entityType, base), true, nil
+			return resolveSpaceBase(ctx, r.deps, r.entityType, base, depsFieldValues(ctx, r.deps, r.entityType, base.ID)), true, nil
 		}
 
 		return ResolvedItem{}, false, nil
@@ -110,7 +110,7 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any) (Re
 	}
 
 	if base, ok := spaceBaseFromRow(row); ok {
-		return resolveSpaceBase(ctx, r.deps, r.entityType, base), true, nil
+		return resolveSpaceBase(ctx, r.deps, r.entityType, base, depsFieldValues(ctx, r.deps, r.entityType, base.ID)), true, nil
 	}
 
 	return ResolvedItem{}, false, nil
@@ -196,24 +196,33 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 		items = rows
 	}
 
-	out := make([]ResolvedItem, 0)
+	var bases []spaceBase
+
 	switch rows := items.(type) {
 	case []gen.ListSpacesByTypePaginatedRow:
-		out = make([]ResolvedItem, 0, len(rows))
+		bases = make([]spaceBase, 0, len(rows))
 
 		for _, it := range rows {
 			if base, ok := spaceBaseFromRow(it); ok {
-				out = append(out, resolveSpaceBase(ctx, r.deps, r.entityType, base))
+				bases = append(bases, base)
 			}
 		}
 	case []gen.ListSpacesByAncestorAndTypeRow:
-		out = make([]ResolvedItem, 0, len(rows))
+		bases = make([]spaceBase, 0, len(rows))
 
 		for _, it := range rows {
 			if base, ok := spaceBaseFromRow(it); ok {
-				out = append(out, resolveSpaceBase(ctx, r.deps, r.entityType, base))
+				bases = append(bases, base)
 			}
 		}
+	}
+
+	// One batched cfv read for the page — no per-row queries (§80).
+	cfvBySpace := batchedSpaceFieldValues(ctx, r.deps, r.entityType, bases)
+
+	out := make([]ResolvedItem, 0, len(bases))
+	for _, base := range bases {
+		out = append(out, resolveSpaceBase(ctx, r.deps, r.entityType, base, cfvBySpace[base.ID]))
 	}
 
 	return out, nil

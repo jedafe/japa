@@ -9,18 +9,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/costofliving"
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // cityResolver resolves cost-of-living cities (comparison_items of the
 // seeded cost_of_living type).
 type cityResolver struct {
-	store *costofliving.Store
+	store   *costofliving.Store
+	queries *gen.Queries // optional: enables custom_field_values merge
 }
 
-// NewCityResolver creates a resolver for cost-of-living cities.
-func NewCityResolver(store *costofliving.Store) Resolver {
-	return &cityResolver{store: store}
+// NewCityResolver creates a resolver for cost-of-living cities. Pass
+// WithQueries to merge the linked geo space's custom_field_values over
+// intel_cost_data (§80 Tool Surface Hydration).
+func NewCityResolver(store *costofliving.Store, opts ...Option) Resolver {
+	o := newResolverOptions(opts...)
+
+	return &cityResolver{store: store, queries: o.queries}
 }
 
 func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
@@ -43,7 +49,7 @@ func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any) (Resolve
 		return ResolvedItem{}, false, fmt.Errorf("fetching city by id: %w", err)
 	}
 
-	return cityRowToResolvedItem(row), true, nil
+	return cityRowToResolvedItem(row, r.cityFieldValues(ctx, row.GeoSpaceID)), true, nil
 }
 
 func (r *cityResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
@@ -81,15 +87,41 @@ func (r *cityResolver) Search(ctx context.Context, query string, filters map[str
 		return nil, fmt.Errorf("searching cities: %w", err)
 	}
 
+	// One batched cfv read for the page — community values address the geo
+	// space, so the batch keys on geo_space_id, not the item ID (§80).
+	var cfvBySpace map[pgtype.UUID]map[string]any
+
+	if r.queries != nil && len(rows) > 0 {
+		spaceIDs := make([]pgtype.UUID, 0, len(rows))
+		seen := make(map[pgtype.UUID]bool, len(rows))
+
+		for _, row := range rows {
+			if row.GeoSpaceID.Valid && !seen[row.GeoSpaceID] {
+				seen[row.GeoSpaceID] = true
+
+				spaceIDs = append(spaceIDs, row.GeoSpaceID)
+			}
+		}
+
+		cfvBySpace = customfields.EntityFieldValuesForEntities(ctx, r.queries, "space", spaceIDs)
+	}
+
 	out := make([]ResolvedItem, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, cityRowToResolvedItem(row))
+		out = append(out, cityRowToResolvedItem(row, cfvBySpace[row.GeoSpaceID]))
 	}
 
 	return out, nil
 }
 
-func cityRowToResolvedItem(row any) ResolvedItem {
+// cityFieldValues fetches the community field values recorded against the
+// city's geo space (entity_type='space', entity_id=geo_space_id) — community
+// edits target the space, not the comparison_items row (§80).
+func (r *cityResolver) cityFieldValues(ctx context.Context, geoSpaceID pgtype.UUID) map[string]any {
+	return customfields.EntityFieldValues(ctx, r.queries, "space", geoSpaceID)
+}
+
+func cityRowToResolvedItem(row any, cfv map[string]any) ResolvedItem {
 	var id, geoSpaceID pgtype.UUID
 
 	var title string
@@ -125,13 +157,28 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 		slug = *geoSlug
 	}
 
+	// §80 Tool Surface Hydration: community values recorded on the city's geo
+	// space overlay intel_cost_data — cfv wins per key — so approved wiki
+	// edits feed score inputs and matrix hydration on next read.
+	costs := intelCostDataMap(intelCostData)
+
+	if len(cfv) > 0 {
+		for k, v := range cfv {
+			costs[k] = v
+		}
+	}
+
 	meta := map[string]any{
 		"geo_space_name": deref(geoName),
 		"geo_space_slug": slug,
-		"score_inputs":   cityScoreInputs(geoSpaceID, intelCostData),
+		"score_inputs":   cityScoreInputs(geoSpaceID, costs),
 	}
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
+	}
+
+	if len(costs) > 0 {
+		meta["field_values"] = costs
 	}
 
 	return ResolvedItem{
@@ -143,7 +190,9 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 	}
 }
 
-func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]any {
+// intelCostDataMap parses a comparison_items.intel_cost_data JSONB blob into
+// a mutable map so community field values can be overlaid onto it (§80).
+func intelCostDataMap(intelCostData []byte) map[string]any {
 	costs := map[string]any{}
 
 	if len(intelCostData) > 0 {
@@ -151,6 +200,14 @@ func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]an
 		if err := json.Unmarshal(intelCostData, &parsed); err == nil {
 			costs = parsed
 		}
+	}
+
+	return costs
+}
+
+func cityScoreInputs(geoSpaceID pgtype.UUID, costs map[string]any) map[string]any {
+	if costs == nil {
+		costs = map[string]any{}
 	}
 
 	getNumeric := func(key string) any {

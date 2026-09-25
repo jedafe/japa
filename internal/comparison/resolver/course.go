@@ -7,18 +7,25 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/university_courses"
 )
 
 // courseResolver resolves university course offerings for comparison.
 type courseResolver struct {
-	svc *university_courses.Service
+	svc     *university_courses.Service
+	queries *gen.Queries // optional: enables custom_field_values merge
 }
 
-// NewCourseResolver creates a resolver for university course offerings.
-func NewCourseResolver(svc *university_courses.Service) Resolver {
-	return &courseResolver{svc: svc}
+// NewCourseResolver creates a resolver for university course offerings. Pass
+// WithQueries to merge custom_field_values into field_values (§80 Tool
+// Surface Hydration).
+func NewCourseResolver(svc *university_courses.Service, opts ...Option) Resolver {
+	o := newResolverOptions(opts...)
+
+	return &courseResolver{svc: svc, queries: o.queries}
 }
 
 func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
@@ -52,7 +59,13 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any) (Resol
 		return ResolvedItem{}, false, fmt.Errorf("fetching course offering: %w", err)
 	}
 
-	return offeringToResolvedItem(offering), true, nil
+	return offeringToResolvedItem(offering, r.offeringFieldValues(ctx, offering.ID)), true, nil
+}
+
+// offeringFieldValues fetches the offering's community field values
+// (entity_type 'course') for the field_values overlay (§80).
+func (r *courseResolver) offeringFieldValues(ctx context.Context, id pgtype.UUID) map[string]any {
+	return customfields.EntityFieldValues(ctx, r.queries, "course", id)
 }
 
 func (r *courseResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
@@ -78,9 +91,23 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 		return nil, fmt.Errorf("searching course offerings: %w", err)
 	}
 
+	// One batched cfv read for the page — no per-offering queries (§80).
+	var cfvByOffering map[pgtype.UUID]map[string]any
+
+	if r.queries != nil && len(offerings) > 0 {
+		ids := make([]pgtype.UUID, 0, len(offerings))
+		for _, o := range offerings {
+			if o.ID.Valid {
+				ids = append(ids, o.ID)
+			}
+		}
+
+		cfvByOffering = customfields.EntityFieldValuesForEntities(ctx, r.queries, "course", ids)
+	}
+
 	out := make([]ResolvedItem, 0, len(offerings))
 	for _, o := range offerings {
-		out = append(out, offeringToResolvedItem(o))
+		out = append(out, offeringToResolvedItem(o, cfvByOffering[o.ID]))
 	}
 
 	return out, nil
@@ -110,7 +137,7 @@ func pgNumericToFloat64(n pgtype.Numeric) float64 {
 	return f.Float64
 }
 
-func offeringToResolvedItem(o university_courses.CourseOffering) ResolvedItem {
+func offeringToResolvedItem(o university_courses.CourseOffering, cfv map[string]any) ResolvedItem {
 	title := o.CourseTitle
 	if o.UniversityName != "" {
 		title = fmt.Sprintf("%s — %s", o.CourseTitle, o.UniversityName)
@@ -141,19 +168,27 @@ func offeringToResolvedItem(o university_courses.CourseOffering) ResolvedItem {
 		"university_id":  o.UniversityID.String(),
 	}
 
+	meta := map[string]any{
+		"slug":            o.Slug,
+		"course_slug":     o.CourseSlug,
+		"university_id":   o.UniversityID.String(),
+		"university_name": o.UniversityName,
+		"university_slug": o.UniversitySlug,
+		"degree_type":     deref(o.DegreeType),
+		"score_inputs":    scoreInputs,
+	}
+
+	// §80 Tool Surface Hydration: university_course_offerings has no JSONB
+	// field bag, so community field values project as field_values.
+	if len(cfv) > 0 {
+		meta["field_values"] = cfv
+	}
+
 	return ResolvedItem{
 		Type:        "course",
 		ID:          o.ID.String(),
 		Title:       title,
 		Description: Excerpt(deref(o.CourseDescription), 160),
-		Metadata: map[string]any{
-			"slug":            o.Slug,
-			"course_slug":     o.CourseSlug,
-			"university_id":   o.UniversityID.String(),
-			"university_name": o.UniversityName,
-			"university_slug": o.UniversitySlug,
-			"degree_type":     deref(o.DegreeType),
-			"score_inputs":    scoreInputs,
-		},
+		Metadata:    meta,
 	}
 }

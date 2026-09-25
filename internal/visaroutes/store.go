@@ -24,7 +24,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Route statuses (§90).
@@ -46,6 +48,13 @@ type Store struct {
 // NewStore creates a visa routes store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{pool: database}
+}
+
+// ListFieldValuesByRouteIDs returns community field values keyed by route ID
+// (entity_type='visa_route') in one batched custom_field_values read — the
+// canonical source for the §80 Tool Surface Hydration merge.
+func (s *Store) ListFieldValuesByRouteIDs(ctx context.Context, ids []pgtype.UUID) map[pgtype.UUID]map[string]any {
+	return customfields.EntityFieldValuesForEntities(ctx, gen.New(s.pool.Reader), "visa_route", ids)
 }
 
 // RouteRow is the full row shape returned by list, get-by-id, and

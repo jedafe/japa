@@ -299,6 +299,13 @@ func TestValidateJobFieldValues(t *testing.T) {
 		{"bare domain", map[string]string{"application_url": "acme.example/jobs"}, true},
 		{"non-url key untouched", map[string]string{"company_name": "javascript:still-fine"}, false},
 		{"unknown key untouched", map[string]string{"totally_made_up": "//evil.example.com"}, false},
+		// company_logo stores the media serve URL, which is a same-origin
+		// path when no CDN is configured — root-relative is allowed, but
+		// scheme-relative and non-http(s) schemes are still rejected.
+		{"relative logo path", map[string]string{"company_logo": "/api/v1/media/serve/bucket/key.png"}, false},
+		{"scheme-relative logo", map[string]string{"company_logo": "//evil.example.com/x.png"}, true},
+		{"javascript logo", map[string]string{"company_logo": "javascript:alert(1)"}, true},
+		{"relative website rejected", map[string]string{"company_website": "/internal/path"}, true},
 	}
 	for _, tc := range cases {
 		err := validateJobFieldValues(tc.values)

@@ -23,7 +23,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Accommodation types (§96).
@@ -83,6 +85,14 @@ LIMIT 1
 	}
 
 	return name, nil
+}
+
+// ListFieldValuesByGuideIDs returns community field values keyed by guide ID
+// (entity_type='housing_guide') in one batched custom_field_values read — the
+// canonical source for the §80 Tool Surface Hydration merge, matching the
+// housing_guide JCE resolver's (entity_type, entity_id) addressing.
+func (s *Store) ListFieldValuesByGuideIDs(ctx context.Context, ids []pgtype.UUID) map[pgtype.UUID]map[string]any {
+	return customfields.EntityFieldValuesForEntities(ctx, gen.New(s.pool.Reader), "housing_guide", ids)
 }
 
 // GuideRow is the row shape returned by list and get-by-id queries,

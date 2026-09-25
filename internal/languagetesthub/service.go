@@ -32,11 +32,12 @@ type AIDispatcher interface {
 
 // TestDTO is the API response shape for a single language test.
 type TestDTO struct {
-	ID             pgtype.UUID `json:"id"`
-	Slug           string      `json:"slug"`
-	Name           string      `json:"name"`
-	OfficialURL    string      `json:"official_url,omitempty"`
-	ValidityMonths int32       `json:"validity_months,omitempty"`
+	ID             pgtype.UUID    `json:"id"`
+	Slug           string         `json:"slug"`
+	Name           string         `json:"name"`
+	OfficialURL    string         `json:"official_url,omitempty"`
+	ValidityMonths int32          `json:"validity_months,omitempty"`
+	FieldValues    map[string]any `json:"field_values,omitempty"`
 }
 
 // RequirementDTO is the API response shape for a single requirement.
@@ -202,6 +203,42 @@ func (s *Service) Enabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "language_test_hub.enabled", false)
 }
 
+// mergeTestFieldValues projects each test's community field values into
+// dto.FieldValues so approved wiki edits reach the tool surface (§80 Tool
+// Surface Hydration). Typed columns stay authoritative — cfv carries
+// auxiliary fields like fee or result_days. One batched cfv read per call.
+func (s *Service) mergeTestFieldValues(ctx context.Context, dtos []TestDTO) {
+	if len(dtos) == 0 {
+		return
+	}
+
+	ids := make([]pgtype.UUID, 0, len(dtos))
+	for _, d := range dtos {
+		if d.ID.Valid {
+			ids = append(ids, d.ID)
+		}
+	}
+
+	cfvByID := s.store.ListFieldValuesByTestIDs(ctx, ids)
+	if len(cfvByID) == 0 {
+		return
+	}
+
+	for i := range dtos {
+		if cfv := cfvByID[dtos[i].ID]; len(cfv) > 0 {
+			dtos[i].FieldValues = cfv
+		}
+	}
+}
+
+// mergeTestFieldValue applies the same projection for a single-test read.
+func (s *Service) mergeTestFieldValue(ctx context.Context, dto TestDTO) TestDTO {
+	dtos := []TestDTO{dto}
+	s.mergeTestFieldValues(ctx, dtos)
+
+	return dtos[0]
+}
+
 // ListTests returns all language tests.
 func (s *Service) ListTests(ctx context.Context) ([]TestDTO, error) {
 	rows, err := s.store.ListTests(ctx)
@@ -213,6 +250,8 @@ func (s *Service) ListTests(ctx context.Context) ([]TestDTO, error) {
 	for _, r := range rows {
 		dtos = append(dtos, testRowToDTO(r))
 	}
+
+	s.mergeTestFieldValues(ctx, dtos)
 
 	return dtos, nil
 }
@@ -228,7 +267,7 @@ func (s *Service) GetTestBySlug(ctx context.Context, slug string) (TestDTO, erro
 		return TestDTO{}, fmt.Errorf("languagetesthub: get test by slug: %w", err)
 	}
 
-	return testRowToDTO(row), nil
+	return s.mergeTestFieldValue(ctx, testRowToDTO(row)), nil
 }
 
 // GetTestByID returns a single language test by its id.
@@ -242,7 +281,7 @@ func (s *Service) GetTestByID(ctx context.Context, id pgtype.UUID) (TestDTO, err
 		return TestDTO{}, fmt.Errorf("languagetesthub: get test by id: %w", err)
 	}
 
-	return testRowToDTO(row), nil
+	return s.mergeTestFieldValue(ctx, testRowToDTO(row)), nil
 }
 
 // SearchTests returns language tests matching the given query, ordered by name.
@@ -264,6 +303,8 @@ func (s *Service) SearchTests(ctx context.Context, query string, limit int32) ([
 	for _, r := range rows {
 		dtos = append(dtos, testRowToDTO(r))
 	}
+
+	s.mergeTestFieldValues(ctx, dtos)
 
 	return dtos, nil
 }
