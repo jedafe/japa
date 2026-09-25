@@ -21,6 +21,12 @@
 	const canManageJobs = $derived(data.canManageJobs ?? false);
 	const isJobAdmin = $derived(data.isJobAdmin ?? false);
 	const orgJobs = $derived(data.orgJobs ?? []);
+	// Published job listings from the public org content feed — shown on the
+	// Jobs tab for viewers who aren't org job editors (they see the
+	// management list from GET /org/{id}/jobs instead).
+	const publicJobs = $derived(
+		(data.posts ?? []).filter((p) => p.content_type === 'job_listing')
+	);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
 	// Map ProfilePost → FeedItem so org posts render through the shared FeedCard.
 	function toFeedItem(post: ProfilePost): FeedItem {
@@ -69,9 +75,11 @@
 		{ value: 'posts', label: t('profile.tab.posts', 'Posts') },
 		{ value: 'media', label: t('profile.tab.media', 'Media') },
 		{ value: 'members', label: t('profile.tab.members', 'Members') },
-		// Section 63 — org job editors get a Jobs management tab. Hidden for
-		// guests and regular members (the backing endpoint requires the role).
-		...(canManageJobs ? [{ value: 'jobs', label: t('profile.tab.jobs', 'Jobs') }] : []),
+		// Section 63 — the Jobs tab lists the org's published listings for all
+		// viewers; org job editors see the management list (applications/edit).
+		...(canManageJobs || publicJobs.length > 0
+			? [{ value: 'jobs', label: t('profile.tab.jobs', 'Jobs') }]
+			: []),
 		...(isUniversity
 			? [{ value: 'compare', label: t('profile.tab.compare', 'Compare') }]
 			: [])
@@ -224,43 +232,67 @@
 				</ul>
 			{/if}
 		{:else if activeTab === 'jobs'}
-			<!-- Section 63 — org job management. Each listing links to the
-			applications view (admin-only actions) and the public edit page. -->
-			{#if orgJobs.length === 0}
+			<!-- Section 63 — org job editors get the management list (applications
+			view + edit). Everyone else sees the org's published listings. -->
+			{#if canManageJobs}
+				{#if orgJobs.length === 0}
+					<EmptyState
+						icon={Briefcase}
+						title={t('jobs.org_empty', 'No job listings yet')}
+						body={t('jobs.org_empty_body', 'Post a job to start receiving applications.')}
+						action={{ label: t('jobs.create_button', 'Post a job'), href: '/jobs/create' }}
+					/>
+				{:else}
+					<div class="space-y-2">
+						{#each orgJobs as job (job.id)}
+							<div class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+								<div class="min-w-0 flex-1">
+									<a href="/jobs/{job.slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:underline">
+										{job.title}
+									</a>
+									<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+										{job.field_values?.company_name ?? ''}
+										{#if job.field_values?.job_type}· {job.field_values.job_type}{/if}
+									</p>
+								</div>
+								{#if isJobAdmin}
+									<a
+										href="/org/{org.slug}/jobs/{job.id}"
+										class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+									>
+										{t('jobs.view_applications', 'Applications')}
+									</a>
+								{/if}
+								<a
+									href="/jobs/{job.slug}/edit"
+									class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								>
+									<Pencil size={12} /> {t('common.edit', 'Edit')}
+								</a>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			{:else if publicJobs.length === 0}
 				<EmptyState
 					icon={Briefcase}
 					title={t('jobs.org_empty', 'No job listings yet')}
-					body={t('jobs.org_empty_body', 'Post a job to start receiving applications.')}
-					action={{ label: t('jobs.create_button', 'Post a job'), href: '/jobs/create' }}
 				/>
 			{:else}
 				<div class="space-y-2">
-					{#each orgJobs as job (job.id)}
-						<div class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+					{#each publicJobs as job (job.id)}
+						<a
+							href="/jobs/{job.slug}"
+							class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
 							<div class="min-w-0 flex-1">
-								<a href="/jobs/{job.slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:underline">
-									{job.title}
-								</a>
-								<p class="mt-0.5 text-xs text-[var(--color-muted)]">
-									{job.field_values?.company_name ?? ''}
-									{#if job.field_values?.job_type}· {job.field_values.job_type}{/if}
-								</p>
+								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{job.title}</span>
+								{#if job.excerpt}
+									<p class="mt-0.5 truncate text-xs text-[var(--color-muted)]">{job.excerpt}</p>
+								{/if}
 							</div>
-							{#if isJobAdmin}
-								<a
-									href="/org/{org.slug}/jobs/{job.id}"
-									class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-								>
-									{t('jobs.view_applications', 'Applications')}
-								</a>
-							{/if}
-							<a
-								href="/jobs/{job.slug}/edit"
-								class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-							>
-								<Pencil size={12} /> {t('common.edit', 'Edit')}
-							</a>
-						</div>
+							<ArrowRight size={14} class="shrink-0 text-[var(--color-muted)]" />
+						</a>
 					{/each}
 				</div>
 			{/if}

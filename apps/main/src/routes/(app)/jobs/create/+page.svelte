@@ -44,7 +44,19 @@
 		data.fieldGroup?.fields.filter((f) => f.field_type === 'boolean') ?? []
 	);
 	const mainFields = $derived(
-		data.fieldGroup?.fields.filter((f) => !isManagedKey(f.key) && f.field_type !== 'boolean') ?? []
+		data.fieldGroup?.fields
+			.filter((f) => !isManagedKey(f.key) && f.field_type !== 'boolean')
+			// Salary currency is a dropdown fed by the managed currency list
+			// (Control → Currencies) — the stored value stays the code (e.g. USD).
+			// Skills required is a repeater; string[] serializes to the same
+			// comma-joined value_text the textarea produced (toStringFieldValues).
+			.map((f) =>
+				f.key === 'salary_currency'
+					? { ...f, field_type: 'select', options: { source: 'wallet_currencies' } }
+					: f.key === 'skills_required'
+						? { ...f, field_type: 'repeater', placeholder: t('jobs.skill_placeholder', 'e.g. TypeScript') }
+						: f
+			) ?? []
 	);
 	const hasGeoFields = $derived(
 		data.fieldGroup?.fields.some((f) => f.key === 'country' || f.key === 'city') ?? false
