@@ -9,6 +9,8 @@
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
+	import { Sparkles } from 'lucide-svelte';
+	import { t } from '$lib/i18n';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -81,6 +83,15 @@
 	// onMount guarantees a browser-only connect.
 	// Ref: sections/10-realtime-websockets.md, sections/42-feature-flags.md
 	const dmEnabled = $derived(data.features?.['feature.dm'] === true);
+
+	// §23 — JapaBot floating action button: links to /ai/chat from every
+	// app-shell page, gated by the same feature.japabot flag as the route.
+	// Hidden on /ai/chat itself (self-link). Guests can click — the route
+	// redirects to login.
+	const showChatFab = $derived(
+		data.features?.['feature.japabot'] === true &&
+			!page.route.id?.startsWith('/(app)/ai/chat')
+	);
 	onMount(() => {
 		if (data.user && dmEnabled) realtime.connect();
 		// Register the PWA service worker so push subscriptions can be created.
@@ -173,6 +184,18 @@
 	</AppShell>
 	{#if !exception}
 		<MobileBottomTabBar user={data.user} features={data.features} menu={data.mobileMenu} />
+	{/if}
+	{#if showChatFab}
+		<!-- §23 JapaBot FAB — sits above the mobile tab bar (bottom-20),
+		     flush to the left rail on desktop (bottom-5). -->
+		<a
+			href="/ai/chat"
+			aria-label={t('ai.chat.title') ?? 'JapaBot Chat'}
+			title={t('ai.chat.title') ?? 'JapaBot Chat'}
+			class="fixed bottom-20 left-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"
+		>
+			<Sparkles size={22} />
+		</a>
 	{/if}
 	{#if tourRequested && data.user}
 		<!-- Section 09 Product Tour: triggered after onboarding completion -->
