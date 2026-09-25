@@ -7,6 +7,7 @@
 	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, FilterToggle, PageAction, BookmarkButton, type SearchSuggestion } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
+	import { salaryPeriodLabel } from '$lib/utils/jobs';
 	import { safeHttpUrl } from '$lib/utils/safeUrl';
 	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
@@ -105,17 +106,7 @@
 		const n = Number(v);
 		return v.trim() !== '' && Number.isFinite(n) ? n.toLocaleString(i18n.locale) : v;
 	}
-	const SALARY_PERIODS: Record<string, string> = {
-		year: 'year', yearly: 'year', annual: 'year', annually: 'year',
-		month: 'month', monthly: 'month',
-		week: 'week', weekly: 'week',
-		hour: 'hour', hourly: 'hour',
-		day: 'day', daily: 'day'
-	};
-	function salaryPeriodLabel(v: string): string {
-		const norm = SALARY_PERIODS[v.trim().toLowerCase()];
-		return norm ? t(`jobs.per_${norm}`, `per ${norm}`) : '';
-	}
+
 
 	const hasActiveFilters = $derived(
 		!!q || !!country || !!jobType || !!remote || visaSponsorship || (sort !== 'newest' && !!sort)

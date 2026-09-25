@@ -5,7 +5,8 @@
 	import {
 		Briefcase, MapPin, Clock, CheckCircle2, AlertCircle, ExternalLink, Pencil,
 		Calendar, Globe, Truck, FileText, Loader2, BadgeCheck, Bookmark, Share2,
-		Flag, ArrowRight, ChevronRight, Building2, Wallet, GraduationCap, X
+		Flag, ArrowRight, ChevronRight, Building2, Wallet, GraduationCap, X,
+		UserRound, Layers
 	} from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import { EmptyState } from '$lib/components/ui';
@@ -19,6 +20,7 @@
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { safeHttpUrl } from '$lib/utils/safeUrl';
+	import { salaryPeriodLabel } from '$lib/utils/jobs';
 
 	let { data }: { data: PageData } = $props();
 
@@ -154,15 +156,24 @@
 		return [city, country].filter(Boolean).join(', ');
 	});
 
-	// Build a salary range string from salary_min/salary_max/salary_currency.
+	// Build a salary range string from salary_min/salary_max/salary_currency,
+	// suffixed with the pay period ("USD 5,000 – 8,000 per month").
 	const salaryStr = $derived(() => {
 		const min = field('salary_min');
 		const max = field('salary_max');
 		const currency = field('salary_currency');
 		if (!min && !max) return '';
 		const range = [min, max].filter(Boolean).join(' – ');
-		return currency ? `${currency} ${range}` : range;
+		const period = salaryPeriodLabel(field('salary_period'));
+		const amount = currency ? `${currency} ${range}` : range;
+		return period ? `${amount} ${period}` : amount;
 	});
+
+	// job_function values are seeded select tokens (engineering, hr, …) with
+	// i18n labels; fall back to the prettified token for unseeded values.
+	const jobFunctionLabel = $derived(
+		field('job_function') ? t(`jobs.func_${field('job_function')}`, prettify(field('job_function'))) : ''
+	);
 
 	const companyName = $derived(field('company_name') || job?.poster?.name || '');
 	const companyLogo = $derived(field('company_logo') || job?.poster?.logo_url || '');
@@ -696,6 +707,20 @@
 								<Wallet size={15} class="shrink-0 text-[var(--color-muted)]" />
 								<dt class="w-24 shrink-0 text-xs text-[var(--color-muted)]">{t('jobs.salary', 'Salary')}</dt>
 								<dd class="text-xs font-medium text-[var(--color-success)]">{salaryStr()}</dd>
+							</div>
+						{/if}
+						{#if field('job_role')}
+							<div class="flex items-center gap-2.5">
+								<UserRound size={15} class="shrink-0 text-[var(--color-muted)]" />
+								<dt class="w-24 shrink-0 text-xs text-[var(--color-muted)]">{t('jobs.role', 'Role')}</dt>
+								<dd class="text-xs font-medium text-[var(--color-text)]">{field('job_role')}</dd>
+							</div>
+						{/if}
+						{#if jobFunctionLabel}
+							<div class="flex items-center gap-2.5">
+								<Layers size={15} class="shrink-0 text-[var(--color-muted)]" />
+								<dt class="w-24 shrink-0 text-xs text-[var(--color-muted)]">{t('jobs.function', 'Function')}</dt>
+								<dd class="text-xs font-medium text-[var(--color-text)]">{jobFunctionLabel}</dd>
 							</div>
 						{/if}
 						{#if jobTypeLabel}
