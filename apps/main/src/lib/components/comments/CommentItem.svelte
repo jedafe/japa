@@ -1,8 +1,8 @@
 <script lang="ts">
 	import {
-		ArrowUp,
-		ArrowDown,
-		CornerUpLeft,
+		ArrowBigUp,
+		ArrowBigDown,
+		Reply,
 		Pin,
 		Pencil,
 		Trash2,
@@ -473,7 +473,7 @@
 
 			<!-- Actions -->
 			{#if !editing}
-				<div class="relative mt-2 flex flex-row items-center gap-0.5">
+				<div class="relative mt-2 flex flex-row items-center gap-3">
 					{#if allReplies.length > 0 && !collapsed}
 						<button
 							type="button"
@@ -494,7 +494,7 @@
 						aria-label={t('comments.upvote')}
 						class="{iconBtn} {userVote === 1 ? 'text-[var(--color-success)] bg-[var(--color-success)]/10' : 'text-[var(--color-muted)] hover:text-[var(--color-success)]'}"
 					>
-						<ArrowUp size={18} />
+						<ArrowBigUp size={18} fill={userVote === 1 ? 'currentColor' : 'none'} />
 					</button>
 					<button
 						type="button"
@@ -504,7 +504,7 @@
 						aria-label={t('comments.downvote')}
 						class="{iconBtn} {userVote === -1 ? 'text-[var(--color-danger)] bg-[var(--color-danger)]/10' : 'text-[var(--color-muted)] hover:text-[var(--color-danger)]'}"
 					>
-						<ArrowDown size={18} />
+						<ArrowBigDown size={18} fill={userVote === -1 ? 'currentColor' : 'none'} />
 					</button>
 
 					{#if authed}
@@ -515,7 +515,7 @@
 							aria-label={t('comments.reply')}
 							title={t('comments.reply')}
 						>
-							<CornerUpLeft size={18} />
+							<Reply size={18} />
 						</button>
 					{/if}
 

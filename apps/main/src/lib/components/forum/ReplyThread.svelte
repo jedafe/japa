@@ -72,15 +72,18 @@
 
 	const allTop = $derived.by(() => {
 		// §88 BUG-008: pin host replies above regular replies when hostUserId
-		// is set (AMA threads). Host replies stay in created_at order within
-		// their group; non-host replies follow in created_at order.
+		// is set (AMA threads). Otherwise rank top-level replies by vote
+		// score so upvoted answers surface first — parity with the comment
+		// thread's default "top" sort. Children stay chronological.
 		const combined = [...topLevel, ...addedTop];
-		if (!hostUserId) return combined;
+		const rank = (a: ForumReply, b: ForumReply) =>
+			b.vote_score - a.vote_score || a.created_at.localeCompare(b.created_at);
+		if (!hostUserId) return combined.sort(rank);
 		return combined.sort((a, b) => {
 			const aHost = a.author_user_id === hostUserId ? 0 : 1;
 			const bHost = b.author_user_id === hostUserId ? 0 : 1;
 			if (aHost !== bHost) return aHost - bHost;
-			return a.created_at.localeCompare(b.created_at);
+			return rank(a, b);
 		});
 	});
 	const replyCount = $derived(replies.length + addedTop.length);
