@@ -1,6 +1,6 @@
 <script lang="ts">
 	import {
-		CornerUpLeft,
+		Reply,
 		CheckCircle2,
 		Pencil,
 		Trash2,
@@ -428,7 +428,7 @@
 
 			<!-- Actions -->
 			{#if !editing}
-				<div class="relative mt-2 flex flex-row items-center gap-0.5">
+				<div class="relative mt-2 flex flex-row items-center gap-3">
 					{#if allChildren.length > 0 && !collapsed}
 						<button
 							type="button"
@@ -458,7 +458,7 @@
 							aria-label={t('forum.reply', 'Reply')}
 							title={t('forum.reply', 'Reply')}
 						>
-							<CornerUpLeft size={18} />
+							<Reply size={18} />
 						</button>
 					{/if}
 
