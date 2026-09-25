@@ -17,6 +17,7 @@
 		type WikiEntityField,
 		type WikiEntityFieldGroup,
 		type WikiEntityFields,
+		type WikiFieldDefInput,
 		type WikiFieldOp
 	} from '$lib/api/wiki';
 	import type { CustomFieldDef } from '$lib/types';
@@ -72,6 +73,7 @@
 	let pfKey = $state('');
 	let pfKeyTouched = $state(false);
 	let pfType = $state('');
+	let pfOptions = $state('');
 	let pfGroupSlug = $state('');
 	let pfGroupName = $state('');
 	let pfGroupSlugTouched = $state(false);
@@ -118,6 +120,11 @@
 		}
 	}
 
+	// Choice-bearing types: select/multiselect require options at submit;
+	// suggest accepts an optional static list alongside its option sources.
+	const CHOICE_TYPES = new Set(['select', 'multiselect', 'suggest']);
+	const pfOptionsRequired = $derived(pfType === 'select' || pfType === 'multiselect');
+
 	function addProposedField() {
 		pfError = '';
 		const label = pfLabel.trim();
@@ -130,7 +137,17 @@
 			pfError = 'wiki.missing_fields';
 			return;
 		}
-		const field = { key, label, field_type: pfType };
+		const options = pfOptions
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+			.map((s) => ({ value: slugifyFieldKey(s), label: s }));
+		if (pfOptionsRequired && options.length === 0) {
+			pfError = 'wiki.propose_options_required';
+			return;
+		}
+		const field: WikiFieldDefInput = { key, label, field_type: pfType };
+		if (options.length > 0) field.options = options;
 		if (pfGroupSlug === '__new__') {
 			const gName = pfGroupName.trim();
 			if (!gName || !pfNewGroupSlug) {
@@ -160,6 +177,7 @@
 		pfLabel = '';
 		pfKey = '';
 		pfKeyTouched = false;
+		pfOptions = '';
 		pfGroupName = '';
 		pfNewGroupSlug = '';
 		pfGroupSlugTouched = false;
@@ -486,6 +504,20 @@
 													{/each}
 												</select>
 											</div>
+											{#if CHOICE_TYPES.has(pfType)}
+												<div class="flex flex-col gap-1">
+													<label for="pf-options" class="text-xs font-medium text-[var(--color-text)]">
+														{t('wiki.propose_options', 'Options')}{#if pfOptionsRequired}<span class="text-red-500">*</span>{/if}
+													</label>
+													<input
+														id="pf-options"
+														type="text"
+														bind:value={pfOptions}
+														placeholder={t('wiki.propose_options_hint', 'Comma-separated choices')}
+														class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+													/>
+												</div>
+											{/if}
 											<div class="flex flex-col gap-1">
 												<label for="pf-group" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_group', 'Group')}

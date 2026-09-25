@@ -47,6 +47,7 @@ export interface WikiFieldDefInput {
 	key: string;
 	label: string;
 	field_type: string;
+	options?: Array<{ value: string; label: string }>;
 }
 
 /** Group definition carried by propose_group ops. */
