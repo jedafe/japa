@@ -39,7 +39,11 @@ export const load: PageServerLoad = async (event) => {
 
 	const [members, posts, media, isFollowing, comparisons] = await Promise.all([
 		apiList<OrgMember>(ctx, `/organizations/${org.id}/members`).then((r) => r.items).catch(() => []),
-		apiList<ProfilePost>(ctx, `/organizations/${org.id}/content`).then((r) => r.items).catch(() => []),
+		// page_size 60 — this feed backs the Posts tab and the public Jobs tab
+		// (job_listing items filtered client-side); the default page would cap it.
+		apiList<ProfilePost>(ctx, `/organizations/${org.id}/content?page_size=60`)
+			.then((r) => r.items)
+			.catch(() => []),
 		apiList<OrgMedia>(ctx, `/organizations/${org.id}/media`).then((r) => r.items).catch(() => []),
 		// Hydrate the follow button's initial state. Best-effort: a failure
 		// degrades to `false` (not following). Only fetch when the viewer is

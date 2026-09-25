@@ -86,6 +86,9 @@ export const getCurrencyPreference = () => api.get<{ preferred_currency: string 
 export const setCurrencyPreference = (currencyCode: string) =>
 	api.patch<{ preferred_currency: string }>('/me/preferences/currency', { currency_code: currencyCode });
 
+// Public currency list — managed in Control → Currencies (Section 58).
+export const listCurrencies = () =>
+	api.get<Array<{ code: string; name: string; symbol: string }>>('/wallet/currencies');
 export const listCreditPacks = () => api.get<Array<unknown>>('/wallet/credit-packs');
 export const purchaseCredits = (body: { pack_id?: string; credit_amount?: number; currency?: string; provider?: string }) =>
 	api.post<{ checkout_url?: string }>('/wallet/purchase-credits', body, {

@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList, apiPost, ApiError } from '$lib/server/api';
 import { error } from '@sveltejs/kit';
-import type { ComposerOrganization, FormEmbed, JobDetail } from '$lib/types';
+import type { ComposerOrganization, FormEmbed, JobDetail, ProfilePost, PublicOrganization } from '$lib/types';
 import type { ContentArticle } from '$lib/types/content';
 
 const JOB_EDITOR_ROLES = new Set(['owner', 'admin', 'editor']);
@@ -71,7 +71,28 @@ export const load: PageServerLoad = async (event) => {
 		recommendedContent = [];
 	}
 
-	return { job, authed, canEdit, applicationFormId, recommendedContent };
+	// Sidebar org card + "More jobs" — resolve the posting org's public
+	// profile (description/verified for the About card) and its other
+	// published job listings. Both are best-effort and degrade gracefully.
+	let org: PublicOrganization | null = null;
+	let moreJobs: ProfilePost[] = [];
+	const orgSlug = job.poster?.kind === 'organization' ? job.poster.slug : '';
+	if (job.organization_id) {
+		const [orgRes, orgContentRes] = await Promise.allSettled([
+			orgSlug
+				? apiGetEnvelope<PublicOrganization>(ctx, `/organizations/${encodeURIComponent(orgSlug)}`)
+				: Promise.resolve(null),
+			apiList<ProfilePost>(ctx, `/organizations/${job.organization_id}/content?page_size=60`)
+		]);
+		if (orgRes.status === 'fulfilled') org = orgRes.value?.data ?? null;
+		if (orgContentRes.status === 'fulfilled') {
+			moreJobs = orgContentRes.value.items
+				.filter((c) => c.content_type === 'job_listing' && c.slug !== job.slug)
+				.slice(0, 4);
+		}
+	}
+
+	return { job, authed, canEdit, applicationFormId, recommendedContent, org, moreJobs };
 };
 
 export const actions: Actions = {

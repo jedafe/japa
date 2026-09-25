@@ -4,6 +4,7 @@
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import { listCountries } from '$lib/api/geo';
+	import { listCurrencies } from '$lib/api/hub';
 	import { isoToLocalDateTime } from '$lib/utils/datetime';
 	import { t } from '$lib/i18n';
 
@@ -81,10 +82,11 @@
 		return Array.isArray(field.options) ? field.options : [];
 	}
 
-	// §06 'suggest' fields can declare a named option source instead of a
-	// static list — {"source":"geo_countries"} pulls the platform's countries
-	// from GET /geo/countries (Rule 16).
-	function suggestSource(field: CustomFieldDef): string | null {
+	// §06 'suggest'/'select' fields can declare a named option source instead
+	// of a static list — {"source":"geo_countries"} pulls the platform's
+	// countries from GET /geo/countries, {"source":"wallet_currencies"} pulls
+	// the managed currency list from GET /wallet/currencies (Rule 16).
+	function optionSource(field: CustomFieldDef): string | null {
 		const o = field.options;
 		if (o && !Array.isArray(o) && typeof (o as { source?: unknown }).source === 'string') {
 			return (o as { source: string }).source;
@@ -96,7 +98,7 @@
 	$effect(() => {
 		if (
 			geoCountries === null &&
-			fields.some((f) => f.field_type === 'suggest' && suggestSource(f) === 'geo_countries')
+			fields.some((f) => f.field_type === 'suggest' && optionSource(f) === 'geo_countries')
 		) {
 			geoCountries = [];
 			listCountries()
@@ -105,8 +107,36 @@
 		}
 	});
 
+	// Managed currency list (Control → Currencies). Fetched lazily when a
+	// field declares options {"source":"wallet_currencies"} — select fields
+	// store the currency code (e.g. "USD") as the value.
+	let walletCurrencies = $state<{ code: string; name: string; symbol: string }[] | null>(null);
+	$effect(() => {
+		if (
+			walletCurrencies === null &&
+			fields.some((f) => optionSource(f) === 'wallet_currencies')
+		) {
+			walletCurrencies = [];
+			listCurrencies()
+				.then((r) => (walletCurrencies = r.data ?? []))
+				.catch(() => (walletCurrencies = []));
+		}
+	});
+
+	function currencyItems(q: string): AutocompleteItem[] {
+		const items = (walletCurrencies ?? []).map((c): AutocompleteItem => ({
+			id: c.code,
+			label: c.name ? `${c.code} — ${c.name}` : c.code,
+			sublabel: c.symbol
+		}));
+		const query = q.toLowerCase().trim();
+		return query
+			? items.filter((i) => i.label.toLowerCase().includes(query) || i.id.toLowerCase().includes(query))
+			: items;
+	}
+
 	function suggestItems(field: CustomFieldDef, q: string): Promise<AutocompleteItem[]> {
-		if (suggestSource(field) === 'geo_countries') {
+		if (optionSource(field) === 'geo_countries') {
 			const items = (geoCountries ?? []).map((c): AutocompleteItem => ({
 				id: c.geo_code,
 				label: c.name,
@@ -116,6 +146,9 @@
 			return Promise.resolve(
 				query ? items.filter((i) => i.label.toLowerCase().includes(query) || i.id.toLowerCase() === query) : items
 			);
+		}
+		if (optionSource(field) === 'wallet_currencies') {
+			return Promise.resolve(currencyItems(q));
 		}
 		const items = optionList(field).map((o): AutocompleteItem => {
 			const opt = typeof o === 'object' ? o : { value: o, label: o };
@@ -135,12 +168,19 @@
 		});
 	}
 	function selectFetcher(field: CustomFieldDef) {
+		if (optionSource(field) === 'wallet_currencies') {
+			return (q = '') => Promise.resolve(currencyItems(q));
+		}
 		return staticAutocompleteFetcher(selectItems(field));
 	}
 	// Resolve a stored option value back to its label for the chip; falls
 	// back to the raw value for legacy data saved before {value,label}.
 	function selectLabel(field: CustomFieldDef, val: unknown): string | null {
 		if (typeof val !== 'string' || !val) return null;
+		if (optionSource(field) === 'wallet_currencies') {
+			const c = (walletCurrencies ?? []).find((c) => c.code === val);
+			return c ? (c.name ? `${c.code} — ${c.name}` : c.code) : val;
+		}
 		const opt = optionList(field).find((o) => (typeof o === 'object' ? o.value : o) === val);
 		return opt ? (typeof opt === 'object' ? opt.label : opt) : val;
 	}
@@ -198,7 +238,7 @@
 				selectedLabel={typeof values[field.key] === 'string' ? (values[field.key] as string) : null}
 				onSelect={(item) => setField(field.key, item.label)}
 				onClear={() => setField(field.key, '')}
-				allowFreeText={suggestSource(field) === null}
+				allowFreeText={optionSource(field) === null}
 			/>
 		{:else if field.field_type === 'multiselect'}
 			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
