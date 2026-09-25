@@ -10,12 +10,14 @@
 		audience: string;
 		/** Docs page slug. Used to POST feedback. */
 		slug: string;
+		/** Optional override for the prompt label (sidebar widget `question` prop). */
+		question?: string;
 		/** ISO timestamp of last review, or null. */
 		lastReviewedAt?: string | null;
 		lastReviewedBy?: string | null;
 	}
 
-	let { pageId, audience, slug, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
+	let { pageId, audience, slug, question = '', lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
 
 	let vote = $state<'up' | 'down' | null>(null);
 	let voteError = $state('');
@@ -122,7 +124,7 @@
 		<p class="vote-error">{voteError}</p>
 	{/if}
 	<div class="helpful-row">
-		<span class="helpful-label">{t('a11y.helpful')}</span>
+		<span class="helpful-label">{question || t('a11y.helpful')}</span>
 		<div class="helpful-buttons">
 			<button
 				type="button"

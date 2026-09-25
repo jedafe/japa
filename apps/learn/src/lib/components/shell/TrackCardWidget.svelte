@@ -40,7 +40,9 @@
 					error = r.error.message;
 				}
 			} else {
-				const r = await api.get<TrackSummary[]>('/learn/university/catalog');
+				// Only the first catalog entry is used — pass limit=1 so the
+				// widget doesn't pay for a full 20-item page.
+				const r = await api.get<TrackSummary[]>('/learn/university/catalog?limit=1');
 				if (cancelled) return;
 				loading = false;
 				if (r.data && r.data.length > 0) {

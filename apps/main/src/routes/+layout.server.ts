@@ -99,10 +99,14 @@ export const load: LayoutServerLoad = async (event) => {
 		apiList<TrendingTag>(ctx, '/trending/tags?limit=8')
 			.then((v) => ({ ok: true as const, value: v.items }))
 			.catch(() => ({ ok: false as const, value: [] as TrendingTag[] })),
-		// Suggested spaces for the right sidebar.
-		apiList<SpaceSuggestion>(ctx, '/suggestions/spaces?limit=5')
-			.then((v) => ({ ok: true as const, value: v.items }))
-			.catch(() => ({ ok: false as const, value: [] as SpaceSuggestion[] })),
+		// Suggested spaces for the right sidebar — authed only. The endpoint
+		// requires a session, so guests skip the request entirely instead of
+		// paying a guaranteed 401 on every pageview.
+		user
+			? apiList<SpaceSuggestion>(ctx, '/suggestions/spaces?limit=5')
+					.then((v) => ({ ok: true as const, value: v.items }))
+					.catch(() => ({ ok: false as const, value: [] as SpaceSuggestion[] }))
+			: Promise.resolve({ ok: true as const, value: [] as SpaceSuggestion[] }),
 		// User's joined spaces — authed only. Request a small first page; the
 		// left nav switcher only renders a handful and the full list is huge
 		// for super admins.

@@ -22,6 +22,12 @@
 		name?: string;
 	}
 
+	interface Props {
+		/** Optional override for the empty-input hint (sidebar widget `placeholder` prop). */
+		placeholder?: string;
+	}
+	let { placeholder = '' }: Props = $props();
+
 	let query = $state('');
 	let suggestions = $state<AutocompleteSuggestion[]>([]);
 	let showDropdown = $state(false);
@@ -119,7 +125,7 @@
 			onkeydown={onKeydown}
 			onblur={onBlur}
 			onfocus={() => { if (suggestions.length > 0) showDropdown = true; }}
-			placeholder={t('sidebar.search_placeholder')}
+			placeholder={placeholder || t('sidebar.search_placeholder')}
 			class="w-full rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			aria-expanded={showDropdown}
 			aria-autocomplete="list"

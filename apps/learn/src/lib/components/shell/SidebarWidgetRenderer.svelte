@@ -55,7 +55,18 @@
 	const defaultLanguage = $derived(
 		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
 	);
-	const showLanguageToggle = $derived(enabledLanguages.length > 1);
+	// The language_toggle `languages` prop restricts the offered locales to a
+	// subset of the site-enabled list — empty means all enabled languages.
+	const configuredLanguages = $derived(
+		(typeof widgetProps.languages === 'string' ? widgetProps.languages : '')
+			.split(',').map((l) => l.trim()).filter(Boolean)
+	);
+	const langList = $derived(
+		configuredLanguages.length > 0
+			? enabledLanguages.filter((l) => configuredLanguages.includes(l))
+			: enabledLanguages
+	);
+	const showLanguageToggle = $derived(langList.length > 1);
 
 	// SSR-safe current path for locale-switch links.
 	const currentPath = $derived(page.url.pathname.replace(/^\//, ''));
@@ -164,9 +175,9 @@
 		></iframe>
 	{/if}
 {:else if widget.widget_type === 'search'}
-	<SearchAutocomplete />
+	<SearchAutocomplete placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
 {:else if widget.widget_type === 'search_launcher'}
-	<SearchAutocomplete />
+	<SearchAutocomplete placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
 {:else if widget.widget_type === 'theme_toggle'}
 	<button
 		type="button"
@@ -188,7 +199,7 @@
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Portal>
 				<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
-					{#each enabledLanguages as lang (lang)}
+					{#each langList as lang (lang)}
 						<DropdownMenu.Item
 							onclick={() => switchLanguage(lang)}
 							class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
@@ -201,17 +212,12 @@
 			</DropdownMenu.Portal>
 		</DropdownMenu.Root>
 	{/if}
-{:else if widget.widget_type === 'continue_learning'}
-	<!-- continue_learning is rendered globally by RightSidebar (ContinueLearningCard).
-	     The admin-managed widget is a no-op here to avoid a duplicate with user=null. -->
 {:else if widget.widget_type === 'learning_enrollments'}
 	<LearningEnrollmentsWidget {title} limit={typeof widgetProps.limit === 'number' ? widgetProps.limit : 3} />
 {:else if widget.widget_type === 'progress_ring'}
 	<ProgressRingWidget {title} />
 {:else if widget.widget_type === 'track_card'}
 	<TrackCardWidget {title} trackSlug={typeof widgetProps.track_slug === 'string' ? widgetProps.track_slug : ''} />
-{:else if widget.widget_type === 'curriculum_rail'}
-	<!-- Curriculum rail is rendered by the lesson player route snippet, not the widget renderer. -->
 {:else if widget.widget_type === 'metric_card'}
 	{@const MetricIcon = iconByName[String(widgetProps.icon ?? '').toLowerCase().replace(/[\s]+/g, '-')] ?? BarChart3}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -231,6 +237,9 @@
 			<Mail size={18} class="text-[var(--color-primary)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.newsletter', 'Subscribe')}</h2>
 		</div>
+		{#if typeof widgetProps.description === 'string' && widgetProps.description}
+			<p class="mb-3 text-xs text-[var(--color-muted)]">{widgetProps.description}</p>
+		{/if}
 		<form class="space-y-2" onsubmit={handleNewsletterSubmit}>
 			<input
 				type="email"
@@ -300,7 +309,7 @@
 	{#if user}
 		<UserDropdown {user} />
 	{/if}
-{:else if ['recent_content', 'space_list', 'trending_tags', 'suggested_spaces', 'suggested_content', 'leaderboard', 'featured_content', 'related_discussions', 'upcoming_events', 'tag_cloud', 'user_card', 'space_categories', 'bookmark_folders', 'notification_centre', 'table_of_contents', 'helpful_widget'].includes(widget.widget_type)}
+{:else if ['recent_content', 'space_list', 'trending_tags', 'suggested_spaces', 'suggested_content', 'leaderboard', 'featured_content', 'related_discussions', 'upcoming_events', 'tag_cloud', 'user_card', 'space_categories', 'bookmark_folders', 'notification_centre', 'continue_learning', 'helpful_widget'].includes(widget.widget_type)}
 	<!-- Main-app / Docs-only widget type — the backend registry rejects
 	     creating these on learn sidebars; legacy rows render as a no-op
 	     instead of a permanent "Loading…" stub. -->

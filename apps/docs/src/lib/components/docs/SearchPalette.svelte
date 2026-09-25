@@ -14,9 +14,11 @@
 		 * Derived from the current route when not provided.
 		 */
 		audience?: DocAudience | null;
+		/** Optional override for the input placeholder (sidebar widget `placeholder` prop). */
+		placeholder?: string;
 	}
 
-	let { onClose, audience = null }: Props = $props();
+	let { onClose, audience = null, placeholder = '' }: Props = $props();
 
 	// Dialog is mounted already-open by SearchLauncher; bind:open lets Bits UI
 	// manage the close transition (escape / outside-click), and onOpenChange
@@ -98,8 +100,8 @@
 					<Command.Input
 						bind:value={query}
 						class="input"
-						placeholder={t('search.placeholder')}
-						aria-label={t('search.placeholder')}
+						placeholder={placeholder || t('search.placeholder')}
+						aria-label={placeholder || t('search.placeholder')}
 					/>
 					<button type="button" class="close-btn" onclick={onClose} aria-label={t('a11y.close_menu')}>
 						<X size={16} />
