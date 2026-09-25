@@ -202,6 +202,11 @@ type RAGChunk struct {
 	ChunkText  string  `json:"chunk_text"`
 	Similarity float64 `json:"similarity"`
 	Tier       string  `json:"tier,omitempty"`
+	// §69 Citation Source Contract — resolvable entity metadata so citation
+	// links work. Empty when the entity row no longer resolves.
+	Title string `json:"title,omitempty"`
+	Slug  string `json:"slug,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
 // SettingsReader is the subset of internal/config.Settings the tool handlers

@@ -285,6 +285,27 @@ export const load: PageServerLoad = async (event) => {
 
 	let defaultProfile = profiles.find((p) => p.is_default) ?? profiles[0] ?? null;
 
+	// §30 AI Quick Compare — the POST /ai/compare-entities endpoint is gated
+	// by agent.use. /me/permissions only returns explicitly resolved nodes,
+	// so super_admin (which bypasses RBAC at middleware) is checked via groups.
+	// Best-effort: a failed lookup degrades to false, never blocks the page.
+	let canAiQuick = false;
+	if (event.locals.user) {
+		const isSuperAdmin = (event.locals.user.groups ?? []).some(
+			(g) => g === 'Super Admin' || g === 'super_admin'
+		);
+		if (isSuperAdmin) {
+			canAiQuick = true;
+		} else {
+			try {
+				const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+				canAiQuick = (permRes?.permissions ?? []).includes('agent.use');
+			} catch {
+				canAiQuick = false;
+			}
+		}
+	}
+
 	return {
 		types,
 		selectedType: selectedType ?? null,
@@ -308,6 +329,7 @@ export const load: PageServerLoad = async (event) => {
 		myMeta,
 		profiles,
 		defaultProfile,
+		canAiQuick,
 		apiBase: API_BASE,
 		mainOrigin: event.url.origin
 	};

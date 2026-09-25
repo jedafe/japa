@@ -66,9 +66,9 @@ type Chunk struct {
 type EntityRef struct {
 	Type       string
 	ID         pgtype.UUID
-	Visibility string       // 'public' | 'members' | 'private'
-	SpaceID    pgtype.UUID  // community space for space/thread entities
-	AuthorID   pgtype.UUID  // content author / thread author
+	Visibility string      // 'public' | 'members' | 'private'
+	SpaceID    pgtype.UUID // community space for space/thread entities
+	AuthorID   pgtype.UUID // content author / thread author
 }
 
 // RetrievalScope describes what the viewer may retrieve — mirrors
@@ -92,6 +92,63 @@ type RetrievedChunk struct {
 	ChunkText   string
 	Similarity  float64
 	Tier        string
+	// §69 Citation Source Contract — resolvable entity metadata so API
+	// consumers can link citations. Empty when the entity row no longer
+	// resolves (e.g. a chunk that outlived a hard-deleted entity).
+	Title string
+	Slug  string
+	URL   string
+}
+
+// contentRoutePrefix mirrors the canonical frontend route families in
+// apps/main/src/lib/utils/contentLink.ts (ADR-058) — keyed by content_type
+// for entity_type='content'. Keep the two maps in sync.
+var contentRoutePrefix = map[string]string{
+	"blog_post":       "/blog",
+	"guide":           "/guide",
+	"discussion":      "/forum",
+	"forum_thread":    "/forum", // legacy alias for 'discussion'
+	"comparison":      "/comparisons",
+	"story":           "/story",
+	"achievement":     "/achievements",
+	"page":            "/pages",
+	"job_listing":     "/jobs",
+	"service_listing": "/services",
+	"video":           "/video",
+}
+
+// SourceURL returns the canonical frontend-relative path for a retrieved
+// entity, per the §69 Citation Source Contract. Empty slug or unknown type
+// yields "" — callers render a non-linking fallback.
+func SourceURL(entityType, contentType, slug string) string {
+	if slug == "" {
+		return ""
+	}
+	switch entityType {
+	case EntityTypeContent:
+		prefix, ok := contentRoutePrefix[contentType]
+		if !ok {
+			prefix = "/content"
+		}
+		return prefix + "/" + slug
+	case EntityTypeForumThread:
+		return "/forum/" + slug
+	case EntityTypeSpace:
+		return "/spaces/" + slug
+	case EntityTypeLearningTrack:
+		return "/learn/tracks/" + slug
+	default:
+		return ""
+	}
+}
+
+// interfaceString extracts a string from sqlc's interface{} columns
+// (nullable CASE expressions scan as interface{}).
+func interfaceString(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
 
 // Store wraps the sqlc-generated Queries for content_embeddings operations.
@@ -295,13 +352,8 @@ func (s *Store) Search(ctx context.Context, queryVector []float32, language stri
 	results := make([]RetrievedChunk, 0, len(rows))
 
 	for _, row := range rows {
-		contentType := ""
-
-		if row.ContentType != nil {
-			if s, ok := row.ContentType.(string); ok {
-				contentType = s
-			}
-		}
+		contentType := interfaceString(row.ContentType)
+		slug := interfaceString(row.EntitySlug)
 
 		results = append(results, RetrievedChunk{
 			EntityID:    row.EntityID.String(),
@@ -310,6 +362,9 @@ func (s *Store) Search(ctx context.Context, queryVector []float32, language stri
 			ChunkText:   row.ChunkText,
 			Similarity:  row.Similarity,
 			Tier:        SourceTier(row.EntityType, contentType),
+			Title:       interfaceString(row.EntityTitle),
+			Slug:        slug,
+			URL:         SourceURL(row.EntityType, contentType, slug),
 		})
 	}
 
@@ -348,6 +403,9 @@ func (s *Store) SearchGeoFiltered(ctx context.Context, queryVector []float32, la
 			ChunkText:   row.ChunkText,
 			Similarity:  row.Similarity,
 			Tier:        SourceTier(row.EntityType, row.ContentType),
+			Title:       row.EntityTitle,
+			Slug:        row.EntitySlug,
+			URL:         SourceURL(row.EntityType, row.ContentType, row.EntitySlug),
 		})
 	}
 

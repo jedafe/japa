@@ -49,11 +49,9 @@
 		}
 	});
 
-	// The backend emits sources as { entity_type, entity_id (uuid), similarity,
-	// tier } — there is no slug or URL field, and the frontend routes resolve
-	// entities by slug (/content/{slug}, /spaces/{slug}, ...). A UUID cannot be
-	// turned into a working link client-side, so sources render as plain labels
-	// until the API emits a resolvable url/slug per §69.
+	// §69 Citation Source Contract: the backend emits { title, slug, url } per
+	// source — url is the canonical frontend path (never derived from
+	// entity_id). Sources without a url render as non-linking labels.
 
 	function formatRole(metadata?: Record<string, unknown>): 'user' | 'assistant' {
 		if (!metadata || typeof metadata.role !== 'string') return 'assistant';
@@ -204,15 +202,28 @@
 											<BookOpen size={12} /> {t('ai.chat.sources') ?? 'Sources'}:
 										</span>
 										{#each m.sources as s, i (i)}
-											<span
-												class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
-												style="border-color: var(--color-border); color: var(--color-muted)"
-											>
-												{s.entity_type ?? 'content'}
-												{#if s.similarity}
-													<span style="color: var(--color-muted)">{Math.round(s.similarity * 100)}%</span>
-												{/if}
-											</span>
+											{#if s.url}
+												<a
+													href={s.url}
+													class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors hover:opacity-80"
+													style="border-color: var(--color-border); color: var(--color-text)"
+												>
+													{s.title ?? s.entity_type ?? 'content'}
+													{#if s.similarity}
+														<span style="color: var(--color-muted)">{Math.round(s.similarity * 100)}%</span>
+													{/if}
+												</a>
+											{:else}
+												<span
+													class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+													style="border-color: var(--color-border); color: var(--color-muted)"
+												>
+													{s.title ?? s.entity_type ?? 'content'}
+													{#if s.similarity}
+														<span style="color: var(--color-muted)">{Math.round(s.similarity * 100)}%</span>
+													{/if}
+												</span>
+											{/if}
 										{/each}
 									</div>
 								{/if}
@@ -242,17 +253,13 @@
 			method="POST"
 			action="?/send"
 			use:enhance={({ formData, cancel }) => {
-				if (sending) {
+				const submitted = (formData.get('message') as string | null)?.trim() ?? '';
+				if (sending || !submitted) {
 					cancel();
 					return;
 				}
 				// Optimistically render the user bubble for every submission —
 				// whether it came from Enter or the Send button.
-				const submitted = (formData.get('message') as string | null)?.trim() ?? '';
-				if (!submitted) {
-					cancel();
-					return;
-				}
 				sending = true;
 				error = '';
 				messages = [...messages, { role: 'user', content: submitted }];

@@ -10,7 +10,7 @@ import (
 	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pgvector/pgvector-go"
+	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 type BanOperation string
@@ -1026,17 +1026,17 @@ type ContentCampaignItem struct {
 }
 
 type ContentEmbedding struct {
-	ID         pgtype.UUID        `json:"id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	ChunkIndex int32              `json:"chunk_index"`
-	ChunkText  string             `json:"chunk_text"`
-	Embedding  *pgvector.Vector   `json:"embedding"`
-	Language   string             `json:"language"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Visibility string             `json:"visibility"`
-	SpaceID    pgtype.UUID        `json:"space_id"`
-	AuthorID   pgtype.UUID        `json:"author_id"`
+	ID         pgtype.UUID         `json:"id"`
+	EntityType string              `json:"entity_type"`
+	EntityID   pgtype.UUID         `json:"entity_id"`
+	ChunkIndex int32               `json:"chunk_index"`
+	ChunkText  string              `json:"chunk_text"`
+	Embedding  *pgvector_go.Vector `json:"embedding"`
+	Language   string              `json:"language"`
+	CreatedAt  pgtype.Timestamptz  `json:"created_at"`
+	Visibility string              `json:"visibility"`
+	SpaceID    pgtype.UUID         `json:"space_id"`
+	AuthorID   pgtype.UUID         `json:"author_id"`
 }
 
 type ContentEngagement struct {
@@ -1114,15 +1114,15 @@ type ContentRevision struct {
 }
 
 type ContentScore struct {
-	ContentID          pgtype.UUID        `json:"content_id"`
-	VoteScore          int32              `json:"vote_score"`
-	CommentCount       int32              `json:"comment_count"`
-	ViewCount          int32              `json:"view_count"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	RelevanceEmbedding *pgvector.Vector   `json:"relevance_embedding"`
-	LastScoredAt       pgtype.Timestamptz `json:"last_scored_at"`
-	ReactionCount      int32              `json:"reaction_count"`
+	ContentID          pgtype.UUID         `json:"content_id"`
+	VoteScore          int32               `json:"vote_score"`
+	CommentCount       int32               `json:"comment_count"`
+	ViewCount          int32               `json:"view_count"`
+	BookmarkCount      int32               `json:"bookmark_count"`
+	VelocityScore      pgtype.Numeric      `json:"velocity_score"`
+	RelevanceEmbedding *pgvector_go.Vector `json:"relevance_embedding"`
+	LastScoredAt       pgtype.Timestamptz  `json:"last_scored_at"`
+	ReactionCount      int32               `json:"reaction_count"`
 }
 
 type ContentShare struct {
@@ -2267,8 +2267,8 @@ type LearningTrack struct {
 	UniversityReviewedAt       pgtype.Timestamptz `json:"university_reviewed_at"`
 	// Admin rejection reason; cleared on re-submit (ADR-063 §5).
 	UniversityRejectionReason *string `json:"university_rejection_reason"`
-	UniversityFeatured        bool    `json:"university_featured"`
 	SubscriptionEligible      bool    `json:"subscription_eligible"`
+	UniversityFeatured        bool    `json:"university_featured"`
 }
 
 type LessonProgress struct {
@@ -2424,7 +2424,7 @@ type MenuItem struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	RequiredGroupIds []byte             `json:"required_group_ids"`
-	// Optional feature flag key (feature_flags.key). If set, the item is shown only when the flag is enabled on this platform.
+	// Optional feature flag key (feature_flags.key). If set, the item is shown only when the flag is enabled.
 	FeatureFlag *string `json:"feature_flag"`
 }
 
@@ -3730,12 +3730,12 @@ type Tag struct {
 	FollowerCount int32              `json:"follower_count"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
 	Rules         *string            `json:"rules"`
 	CoverMediaID  pgtype.UUID        `json:"cover_media_id"`
 	ContentCount  int32              `json:"content_count"`
 	IsSystem      bool               `json:"is_system"`
 	FieldValues   []byte             `json:"field_values"`
-	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
 }
 
 type TagModerator struct {
@@ -3965,11 +3965,11 @@ type User struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	FollowerCount       int32              `json:"follower_count"`
 	ForcePasswordChange bool               `json:"force_password_change"`
+	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
 	UsernameChangedAt   pgtype.Timestamptz `json:"username_changed_at"`
 	IsBot               bool               `json:"is_bot"`
 	PasswordChangedAt   pgtype.Timestamptz `json:"password_changed_at"`
 	AiExempt            bool               `json:"ai_exempt"`
-	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
 	IsSynthetic         bool               `json:"is_synthetic"`
 	SyntheticSource     *string            `json:"synthetic_source"`
 	SourceID            pgtype.UUID        `json:"source_id"`
@@ -4124,26 +4124,26 @@ type UserProfile struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	// User override for geo content weighting (ISO country code). NULL = use resolved VisitorContext (ADR-064).
-	ContentCountryPreference *string            `json:"content_country_preference"`
-	CoverUrl                 *string            `json:"cover_url"`
-	PreferredCurrency        *string            `json:"preferred_currency"`
-	AvatarMediaID            pgtype.UUID        `json:"avatar_media_id"`
-	HeaderMediaID            pgtype.UUID        `json:"header_media_id"`
-	JapaStage                *string            `json:"japa_stage"`
-	JapaStageDestSpaceID     pgtype.UUID        `json:"japa_stage_dest_space_id"`
-	JapaStageUpdatedAt       pgtype.Timestamptz `json:"japa_stage_updated_at"`
-	JapaStageIsPublic        bool               `json:"japa_stage_is_public"`
-	JapaStageHistory         []byte             `json:"japa_stage_history"`
-	IsMentor                 *bool              `json:"is_mentor"`
-	MentorCapacity           *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount        *int16             `json:"active_mentee_count"`
-	MentorAreas              []string           `json:"mentor_areas"`
-	MentorBio                *string            `json:"mentor_bio"`
-	MentorSince              pgtype.Timestamptz `json:"mentor_since"`
-	MentorEmbedding          *pgvector.Vector   `json:"mentor_embedding"`
-	Location                 *string            `json:"location"`
-	BannerMediaID            pgtype.UUID        `json:"banner_media_id"`
-	JapaIntent               *string            `json:"japa_intent"`
+	ContentCountryPreference *string             `json:"content_country_preference"`
+	CoverUrl                 *string             `json:"cover_url"`
+	PreferredCurrency        *string             `json:"preferred_currency"`
+	AvatarMediaID            pgtype.UUID         `json:"avatar_media_id"`
+	HeaderMediaID            pgtype.UUID         `json:"header_media_id"`
+	JapaStage                *string             `json:"japa_stage"`
+	JapaStageDestSpaceID     pgtype.UUID         `json:"japa_stage_dest_space_id"`
+	JapaStageUpdatedAt       pgtype.Timestamptz  `json:"japa_stage_updated_at"`
+	JapaStageIsPublic        bool                `json:"japa_stage_is_public"`
+	JapaStageHistory         []byte              `json:"japa_stage_history"`
+	IsMentor                 *bool               `json:"is_mentor"`
+	MentorCapacity           *int16              `json:"mentor_capacity"`
+	ActiveMenteeCount        *int16              `json:"active_mentee_count"`
+	MentorAreas              []string            `json:"mentor_areas"`
+	MentorBio                *string             `json:"mentor_bio"`
+	MentorSince              pgtype.Timestamptz  `json:"mentor_since"`
+	MentorEmbedding          *pgvector_go.Vector `json:"mentor_embedding"`
+	Location                 *string             `json:"location"`
+	BannerMediaID            pgtype.UUID         `json:"banner_media_id"`
+	JapaIntent               *string             `json:"japa_intent"`
 }
 
 type UserRole struct {

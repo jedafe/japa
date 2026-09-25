@@ -33,6 +33,9 @@ export const routeFeatureFlags: Map<string, string> = new Map([
 	['/tools/remittance', 'remittance.enabled'],
 	['/tools/travel', 'travel.enabled'],
 	['/ai/chat', 'feature.japabot'],
+	// §103 — /ai/chat must be listed first so longest-prefix matching keeps
+	// it mapped to feature.japabot; bare /ai maps to the agent flag.
+	['/ai', 'feature.ai_agent'],
 	['/tools/visa-checklist', 'checklist.enabled'],
 	// Tools — V2 functional
 	['/tools/visa-routes', 'visa_routes.enabled'],

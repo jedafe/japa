@@ -64,6 +64,15 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		sections: ['planning', 'immigration']
 	},
 	{
+		// §103 — AI Agent. Gated by feature.ai_agent (hub visibility only;
+		// the backend enforces agent.use on every call).
+		href: '/ai',
+		labelKey: 'tools.ai_agent',
+		descKey: 'tools.ai_agent_desc',
+		enabledSetting: 'feature.ai_agent',
+		sections: ['planning', 'immigration']
+	},
+	{
 		href: '/tools/travel',
 		labelKey: 'tools.travel',
 		descKey: 'tools.travel_desc',

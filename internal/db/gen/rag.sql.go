@@ -9,7 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pgvector/pgvector-go"
+	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 const countContentEmbeddingsByEntity = `-- name: CountContentEmbeddingsByEntity :one
@@ -449,7 +449,19 @@ SELECT
  CASE WHEN ce.entity_type = 'content' THEN
  (SELECT c.content_type FROM contents c
  WHERE c.id = ce.entity_id)
- ELSE NULL END AS content_type
+ ELSE NULL END AS content_type,
+ CASE ce.entity_type
+ WHEN 'content' THEN (SELECT c.title FROM contents c WHERE c.id = ce.entity_id)
+ WHEN 'forum_thread' THEN (SELECT ft.title FROM forum_threads ft WHERE ft.id = ce.entity_id)
+ WHEN 'space' THEN (SELECT s.name FROM spaces s WHERE s.id = ce.entity_id)
+ WHEN 'learning_track' THEN (SELECT lt.title FROM learning_tracks lt WHERE lt.id = ce.entity_id)
+ ELSE NULL END AS entity_title,
+ CASE ce.entity_type
+ WHEN 'content' THEN (SELECT c.slug FROM contents c WHERE c.id = ce.entity_id)
+ WHEN 'forum_thread' THEN (SELECT ft.slug FROM forum_threads ft WHERE ft.id = ce.entity_id)
+ WHEN 'space' THEN (SELECT s.slug FROM spaces s WHERE s.id = ce.entity_id)
+ WHEN 'learning_track' THEN (SELECT lt.slug FROM learning_tracks lt WHERE lt.id = ce.entity_id)
+ ELSE NULL END AS entity_slug
 FROM content_embeddings ce
 WHERE ($2::text = '' OR ce.language = $2)
  AND CASE ce.entity_type
@@ -493,12 +505,12 @@ LIMIT $6
 `
 
 type SearchContentEmbeddingsParams struct {
-	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
-	Language       string           `json:"language"`
-	ViewerID       pgtype.UUID      `json:"viewer_id"`
-	CanSeePrivate  bool             `json:"can_see_private"`
-	MemberSpaceIds []pgtype.UUID    `json:"member_space_ids"`
-	TopK           int32            `json:"top_k"`
+	QueryEmbedding *pgvector_go.Vector `json:"query_embedding"`
+	Language       string              `json:"language"`
+	ViewerID       pgtype.UUID         `json:"viewer_id"`
+	CanSeePrivate  bool                `json:"can_see_private"`
+	MemberSpaceIds []pgtype.UUID       `json:"member_space_ids"`
+	TopK           int32               `json:"top_k"`
 }
 
 type SearchContentEmbeddingsRow struct {
@@ -511,6 +523,8 @@ type SearchContentEmbeddingsRow struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	Similarity  float64            `json:"similarity"`
 	ContentType interface{}        `json:"content_type"`
+	EntityTitle interface{}        `json:"entity_title"`
+	EntitySlug  interface{}        `json:"entity_slug"`
 }
 
 // =====================================================================
@@ -537,6 +551,10 @@ type SearchContentEmbeddingsRow struct {
 // as defense-in-depth. The forum/spaces/learning handlers purge embeddings on
 // delete, but those are fire-and-forget — a failed purge leaves orphaned
 // embeddings. The CASE expression checks each entity type's status condition.
+// §69 Citation Source Contract: entity_title/entity_slug let the API emit a
+// resolvable {title, slug, url} per source so citations link to the entity.
+// Scalar subqueries only evaluate for emitted rows (post-LIMIT), so the
+// polymorphic CASE costs nothing on filtered-out candidates.
 func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContentEmbeddingsParams) ([]SearchContentEmbeddingsRow, error) {
 	rows, err := q.db.Query(ctx, searchContentEmbeddings,
 		arg.QueryEmbedding,
@@ -563,6 +581,8 @@ func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContent
 			&i.CreatedAt,
 			&i.Similarity,
 			&i.ContentType,
+			&i.EntityTitle,
+			&i.EntitySlug,
 		); err != nil {
 			return nil, err
 		}
@@ -585,7 +605,11 @@ SELECT
  ce.language,
  ce.created_at,
  (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
- c.content_type
+ c.content_type,
+ -- §69 Citation Source Contract: content-only query — title/slug come
+ -- straight from the joined contents row.
+ c.title AS entity_title,
+ c.slug AS entity_slug
 FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
 WHERE ($2::text = '' OR ce.language = $2)
@@ -609,12 +633,12 @@ LIMIT $6
 `
 
 type SearchContentEmbeddingsGeoFilteredParams struct {
-	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
-	Language       string           `json:"language"`
-	GeoSpaceID     pgtype.UUID      `json:"geo_space_id"`
-	ViewerID       pgtype.UUID      `json:"viewer_id"`
-	CanSeePrivate  bool             `json:"can_see_private"`
-	TopK           int32            `json:"top_k"`
+	QueryEmbedding *pgvector_go.Vector `json:"query_embedding"`
+	Language       string              `json:"language"`
+	GeoSpaceID     pgtype.UUID         `json:"geo_space_id"`
+	ViewerID       pgtype.UUID         `json:"viewer_id"`
+	CanSeePrivate  bool                `json:"can_see_private"`
+	TopK           int32               `json:"top_k"`
 }
 
 type SearchContentEmbeddingsGeoFilteredRow struct {
@@ -627,6 +651,8 @@ type SearchContentEmbeddingsGeoFilteredRow struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	Similarity  float64            `json:"similarity"`
 	ContentType string             `json:"content_type"`
+	EntityTitle string             `json:"entity_title"`
+	EntitySlug  string             `json:"entity_slug"`
 }
 
 // =====================================================================
@@ -673,6 +699,8 @@ func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg Se
 			&i.CreatedAt,
 			&i.Similarity,
 			&i.ContentType,
+			&i.EntityTitle,
+			&i.EntitySlug,
 		); err != nil {
 			return nil, err
 		}
@@ -747,15 +775,15 @@ RETURNING id, entity_type, entity_id, chunk_index, chunk_text, embedding, langua
 `
 
 type UpsertContentEmbeddingParams struct {
-	EntityType string           `json:"entity_type"`
-	EntityID   pgtype.UUID      `json:"entity_id"`
-	ChunkIndex int32            `json:"chunk_index"`
-	ChunkText  string           `json:"chunk_text"`
-	Embedding  *pgvector.Vector `json:"embedding"`
-	Language   string           `json:"language"`
-	Visibility string           `json:"visibility"`
-	SpaceID    pgtype.UUID      `json:"space_id"`
-	AuthorID   pgtype.UUID      `json:"author_id"`
+	EntityType string              `json:"entity_type"`
+	EntityID   pgtype.UUID         `json:"entity_id"`
+	ChunkIndex int32               `json:"chunk_index"`
+	ChunkText  string              `json:"chunk_text"`
+	Embedding  *pgvector_go.Vector `json:"embedding"`
+	Language   string              `json:"language"`
+	Visibility string              `json:"visibility"`
+	SpaceID    pgtype.UUID         `json:"space_id"`
+	AuthorID   pgtype.UUID         `json:"author_id"`
 }
 
 // rag.sql — JapaBot RAG Knowledge Layer queries (Section 69, ADR-069).

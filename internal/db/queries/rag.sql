@@ -85,6 +85,10 @@ WHERE entity_type = @entity_type AND entity_id = @entity_id
 -- as defense-in-depth. The forum/spaces/learning handlers purge embeddings on
 -- delete, but those are fire-and-forget — a failed purge leaves orphaned
 -- embeddings. The CASE expression checks each entity type's status condition.
+-- §69 Citation Source Contract: entity_title/entity_slug let the API emit a
+-- resolvable {title, slug, url} per source so citations link to the entity.
+-- Scalar subqueries only evaluate for emitted rows (post-LIMIT), so the
+-- polymorphic CASE costs nothing on filtered-out candidates.
 SELECT
  ce.id,
  ce.entity_type,
@@ -97,7 +101,19 @@ SELECT
  CASE WHEN ce.entity_type = 'content' THEN
  (SELECT c.content_type FROM contents c
  WHERE c.id = ce.entity_id)
- ELSE NULL END AS content_type
+ ELSE NULL END AS content_type,
+ CASE ce.entity_type
+ WHEN 'content' THEN (SELECT c.title FROM contents c WHERE c.id = ce.entity_id)
+ WHEN 'forum_thread' THEN (SELECT ft.title FROM forum_threads ft WHERE ft.id = ce.entity_id)
+ WHEN 'space' THEN (SELECT s.name FROM spaces s WHERE s.id = ce.entity_id)
+ WHEN 'learning_track' THEN (SELECT lt.title FROM learning_tracks lt WHERE lt.id = ce.entity_id)
+ ELSE NULL END AS entity_title,
+ CASE ce.entity_type
+ WHEN 'content' THEN (SELECT c.slug FROM contents c WHERE c.id = ce.entity_id)
+ WHEN 'forum_thread' THEN (SELECT ft.slug FROM forum_threads ft WHERE ft.id = ce.entity_id)
+ WHEN 'space' THEN (SELECT s.slug FROM spaces s WHERE s.id = ce.entity_id)
+ WHEN 'learning_track' THEN (SELECT lt.slug FROM learning_tracks lt WHERE lt.id = ce.entity_id)
+ ELSE NULL END AS entity_slug
 FROM content_embeddings ce
 WHERE (@language::text = '' OR ce.language = @language)
  AND CASE ce.entity_type
@@ -168,7 +184,11 @@ SELECT
  ce.language,
  ce.created_at,
  (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
- c.content_type
+ c.content_type,
+ -- §69 Citation Source Contract: content-only query — title/slug come
+ -- straight from the joined contents row.
+ c.title AS entity_title,
+ c.slug AS entity_slug
 FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
 WHERE (@language::text = '' OR ce.language = @language)

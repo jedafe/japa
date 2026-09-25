@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pgvector/pgvector-go"
+	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 const addContentSpace = `-- name: AddContentSpace :exec
@@ -1489,15 +1489,15 @@ WHERE content_id = $1
 `
 
 type GetContentScoreRow struct {
-	ContentID          pgtype.UUID        `json:"content_id"`
-	VoteScore          int32              `json:"vote_score"`
-	CommentCount       int32              `json:"comment_count"`
-	ViewCount          int32              `json:"view_count"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	ReactionCount      int32              `json:"reaction_count"`
-	RelevanceEmbedding *pgvector.Vector   `json:"relevance_embedding"`
-	LastScoredAt       pgtype.Timestamptz `json:"last_scored_at"`
+	ContentID          pgtype.UUID         `json:"content_id"`
+	VoteScore          int32               `json:"vote_score"`
+	CommentCount       int32               `json:"comment_count"`
+	ViewCount          int32               `json:"view_count"`
+	BookmarkCount      int32               `json:"bookmark_count"`
+	VelocityScore      pgtype.Numeric      `json:"velocity_score"`
+	ReactionCount      int32               `json:"reaction_count"`
+	RelevanceEmbedding *pgvector_go.Vector `json:"relevance_embedding"`
+	LastScoredAt       pgtype.Timestamptz  `json:"last_scored_at"`
 }
 
 func (q *Queries) GetContentScore(ctx context.Context, contentID pgtype.UUID) (GetContentScoreRow, error) {
@@ -5456,15 +5456,15 @@ type UpsertContentScoreParams struct {
 }
 
 type UpsertContentScoreRow struct {
-	ContentID          pgtype.UUID        `json:"content_id"`
-	VoteScore          int32              `json:"vote_score"`
-	CommentCount       int32              `json:"comment_count"`
-	ViewCount          int32              `json:"view_count"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	ReactionCount      int32              `json:"reaction_count"`
-	RelevanceEmbedding *pgvector.Vector   `json:"relevance_embedding"`
-	LastScoredAt       pgtype.Timestamptz `json:"last_scored_at"`
+	ContentID          pgtype.UUID         `json:"content_id"`
+	VoteScore          int32               `json:"vote_score"`
+	CommentCount       int32               `json:"comment_count"`
+	ViewCount          int32               `json:"view_count"`
+	BookmarkCount      int32               `json:"bookmark_count"`
+	VelocityScore      pgtype.Numeric      `json:"velocity_score"`
+	ReactionCount      int32               `json:"reaction_count"`
+	RelevanceEmbedding *pgvector_go.Vector `json:"relevance_embedding"`
+	LastScoredAt       pgtype.Timestamptz  `json:"last_scored_at"`
 }
 
 // =====================

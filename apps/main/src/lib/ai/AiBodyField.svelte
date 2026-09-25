@@ -77,7 +77,10 @@
 	{context}
 	{fieldSchema}
 	onApply={(payload) => {
-		onBody(payload.body);
+		// Assist-tab payloads may carry metaTitle/metaDescription/tags instead
+		// of a body — AiBodyField only owns the body/title fields, so those
+		// keys are simply ignored here (CreateShell handles them).
+		if (payload.body !== undefined) onBody(payload.body);
 		if (payload.title && onTitle) onTitle(payload.title);
 	}}
 	onClose={() => (open = false)}

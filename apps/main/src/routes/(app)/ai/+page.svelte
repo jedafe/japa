@@ -23,6 +23,17 @@
 	<title>{t('ai.agent.title', 'AI Agent')} — JapaConnect</title>
 </svelte:head>
 
+{#if !data.enabled}
+	<div class="mx-auto flex h-[calc(100vh-8rem)] max-w-5xl flex-col items-center justify-center gap-4 text-center">
+		<Sparkles class="h-12 w-12" style="color: var(--color-muted)" />
+		<h1 class="text-xl font-semibold" style="color: var(--color-text)">
+			{t('ai.agent.disabled', 'AI Agent is currently disabled')}
+		</h1>
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('ai.agent.disabled_help', 'This feature is turned off on this platform. Contact an administrator to enable it.')}
+		</p>
+	</div>
+{:else}
 <div class="mx-auto flex h-[calc(100vh-8rem)] max-w-4xl flex-col">
 	<!-- Header -->
 	<header class="mb-4 flex items-start justify-between gap-3">
@@ -88,3 +99,4 @@
 		</a>
 	</div>
 </div>
+{/if}

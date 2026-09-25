@@ -560,9 +560,19 @@
 					title = payload.title;
 					handleTitle(payload.title);
 				}
-				bodyHtml = payload.body;
+				if (payload.body !== undefined) {
+					bodyHtml = payload.body;
+				}
 				if (payload.fieldValues) {
 					fieldValues = { ...fieldValues, ...payload.fieldValues };
+				}
+				// §20 assist actions: summarize→meta description, og→meta
+				// title+description, generate-tags→merge into the tag field
+				// (slugs, deduped, capped at maxTags).
+				if (payload.metaTitle) metaTitle = payload.metaTitle;
+				if (payload.metaDescription) metaDescription = payload.metaDescription;
+				if (payload.tags && payload.tags.length > 0) {
+					tags = [...new Set([...tags, ...payload.tags])].slice(0, maxTags);
 				}
 				markDirty();
 			}}

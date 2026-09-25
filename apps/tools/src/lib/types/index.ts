@@ -463,13 +463,15 @@ export interface ChatSource {
 	entity_id: string;
 	/** Similarity score from the retrieval ranking. */
 	similarity?: number;
-	/** Tier 1 (editorial) or Tier 2 (community) — §69. */
-	tier?: 1 | 2;
+	/** Source tier label — 'editorial' or 'community' (§69, ADR-069 §4). */
+	tier?: string;
 	/**
-	 * Optional resolvable link + label. The backend does not emit these yet —
-	 * when it does (§69 contract addition), citations upgrade to links.
+	 * §69 Citation Source Contract — resolvable link + label emitted by the
+	 * backend. Empty when the entity row no longer resolves; render a
+	 * non-linking fallback in that case. Never derive hrefs from entity_id.
 	 */
 	title?: string;
+	slug?: string;
 	url?: string;
 }
 

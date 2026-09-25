@@ -9,6 +9,7 @@
 		previewScore,
 		listScoreFactors
 	} from '$lib/api/jce';
+	import { compareEntities, type CompareEntitiesResult } from '$lib/ai/compareApi';
 	import type { ComparisonProfile, ComparisonProfileInput, ComparisonType, ResolvedItem, JCEComparisonSummary, ScoreResult } from '$lib/types/jce';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
 	import ScopeChain from '$lib/components/compare/ScopeChain.svelte';
@@ -160,6 +161,22 @@
 	let promoting = $state<string | null>(null);
 	let error = $state('');
 	let errorParams = $state<Record<string, string>>({});
+
+	// §30 AI Quick Compare — POST /api/v1/ai/compare-entities (§103 task 7.07).
+	// Visible when feature.jce.ai_quick is on and the user carries agent.use.
+	let aiQuickOpen = $state(false);
+	let aiQuickFocus = $state('');
+	let aiQuickFields = $state('');
+	let aiQuickCreatePost = $state(false);
+	let aiQuickLoading = $state(false);
+	let aiQuickResult = $state<CompareEntitiesResult | null>(null);
+	let aiQuickError = $state('');
+	let aiQuickEnabled = $derived(
+		Boolean(
+			(data as { features?: Record<string, boolean> }).features?.['feature.jce.ai_quick'] &&
+				data.canAiQuick
+		)
+	);
 
 	const maxItems = $derived((selectedType?.config?.max_item_count as number) ?? 4);
 
@@ -537,6 +554,36 @@
 		}
 	}
 
+	async function runAiQuick() {
+		if (!selectedType || selectedItems.length < 2 || aiQuickLoading) return;
+		aiQuickLoading = true;
+		aiQuickError = '';
+		aiQuickResult = null;
+		try {
+			const fields = aiQuickFields
+				.split(',')
+				.map((f) => f.trim())
+				.filter(Boolean);
+			const res = await compareEntities({
+				entity_type: selectedType.slug,
+				entity_ids: selectedItems.map((i) => i.title),
+				...(fields.length > 0 ? { comparison_fields: fields } : {}),
+				...(aiQuickFocus.trim() ? { focus: aiQuickFocus.trim() } : {}),
+				...(user?.current_geo_space_id ? { geo_space_id: user.current_geo_space_id } : {}),
+				create_post: aiQuickCreatePost
+			});
+			if (res.error || !res.data) {
+				aiQuickError = res.error?.message ?? t('jce.compare.ai_quick.errors.unknown');
+			} else {
+				aiQuickResult = res.data;
+			}
+		} catch (e) {
+			aiQuickError = e instanceof Error ? e.message : t('jce.compare.ai_quick.errors.unknown');
+		} finally {
+			aiQuickLoading = false;
+		}
+	}
+
 	function navigateToMain(path: string) {
 		const target = mainOrigin ?? page.url.origin;
 		if (target === page.url.origin) {
@@ -771,16 +818,29 @@
 					</div>
 					{#if selectedItems.length >= 2}
 						{#if user}
-							<button
-								type="button"
-								disabled={creating}
-								onclick={create}
-								class="inline-flex items-center gap-2 px-5 py-2 rounded-[var(--radius-button)] text-sm font-medium disabled:opacity-50"
-								style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
-							>
-								{creating ? t('jce.compare.creating') : t('jce.compare.compare_now')}
-								<ArrowRight size={16} />
-							</button>
+							<div class="flex items-center gap-2 flex-wrap">
+								{#if aiQuickEnabled}
+									<button
+										type="button"
+										onclick={() => (aiQuickOpen = !aiQuickOpen)}
+										class="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-button)] text-sm font-medium"
+										style="background-color: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text)"
+									>
+										<Sparkles size={16} />
+										{t('jce.compare.ai_quick.button')}
+									</button>
+								{/if}
+								<button
+									type="button"
+									disabled={creating}
+									onclick={create}
+									class="inline-flex items-center gap-2 px-5 py-2 rounded-[var(--radius-button)] text-sm font-medium disabled:opacity-50"
+									style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+								>
+									{creating ? t('jce.compare.creating') : t('jce.compare.compare_now')}
+									<ArrowRight size={16} />
+								</button>
+							</div>
 						{:else}
 							<button
 								type="button"
@@ -793,6 +853,121 @@
 						{/if}
 					{/if}
 				</div>
+
+				{#if aiQuickOpen && aiQuickEnabled && selectedItems.length >= 2}
+					<div
+						class="rounded-[var(--radius-card)] border p-3 space-y-3 text-sm"
+						style="background-color: var(--color-bg); border-color: var(--color-border); color: var(--color-text)"
+					>
+						<div class="grid gap-3 sm:grid-cols-2">
+							<label class="space-y-1">
+								<span class="text-xs font-medium" style="color: var(--color-muted)">
+									{t('jce.compare.ai_quick.focus_label')}
+								</span>
+								<input
+									type="text"
+									bind:value={aiQuickFocus}
+									placeholder={t('jce.compare.ai_quick.focus_placeholder')}
+									class="w-full rounded-[var(--radius-button)] border px-3 py-1.5 text-sm"
+									style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-text)"
+								/>
+							</label>
+							<label class="space-y-1">
+								<span class="text-xs font-medium" style="color: var(--color-muted)">
+									{t('jce.compare.ai_quick.fields_label')}
+								</span>
+								<input
+									type="text"
+									bind:value={aiQuickFields}
+									placeholder={t('jce.compare.ai_quick.fields_placeholder')}
+									class="w-full rounded-[var(--radius-button)] border px-3 py-1.5 text-sm"
+									style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-text)"
+								/>
+							</label>
+						</div>
+						<div class="flex items-center gap-3 flex-wrap">
+							<label class="inline-flex items-center gap-2 text-xs" style="color: var(--color-text)">
+								<input type="checkbox" bind:checked={aiQuickCreatePost} />
+								{t('jce.compare.ai_quick.create_post')}
+							</label>
+							<button
+								type="button"
+								disabled={aiQuickLoading}
+								onclick={runAiQuick}
+								class="inline-flex items-center gap-2 px-4 py-1.5 rounded-[var(--radius-button)] text-sm font-medium disabled:opacity-50"
+								style="background-color: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text)"
+							>
+								{aiQuickLoading
+									? t('jce.compare.ai_quick.running')
+									: t('jce.compare.ai_quick.run')}
+							</button>
+						</div>
+
+						{#if aiQuickError}
+							<p class="text-xs" style="color: #ef4444">{aiQuickError}</p>
+						{/if}
+
+						{#if aiQuickResult}
+							<div class="space-y-2">
+								<div class="flex items-center gap-2 flex-wrap">
+									<span
+										class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium"
+										style="border-color: var(--color-border); color: var(--color-text)"
+									>
+										{t(`jce.compare.ai_quick.tier.${aiQuickResult.tier}`, aiQuickResult.tier)}
+									</span>
+									{#if aiQuickResult.type_name}
+										<span class="text-xs" style="color: var(--color-muted)">
+											{aiQuickResult.type_name}
+										</span>
+									{/if}
+								</div>
+
+								{#if aiQuickResult.existing_dimensions?.length}
+									<div class="flex flex-wrap gap-1.5">
+										{#each aiQuickResult.existing_dimensions as dim (dim)}
+											<span
+												class="rounded-full px-2 py-0.5 text-xs"
+												style="background-color: var(--color-surface); color: var(--color-text)"
+											>{dim}</span>
+										{/each}
+									</div>
+								{/if}
+
+								{#if aiQuickResult.missing_dimensions?.length}
+									<p class="text-xs" style="color: var(--color-muted)">
+										{t('jce.compare.ai_quick.missing_dimensions')}:
+										{aiQuickResult.missing_dimensions.join(', ')}
+									</p>
+								{/if}
+
+								{#if aiQuickResult.presearch_level || aiQuickResult.presearch_summary}
+									<p class="text-xs" style="color: var(--color-muted)">
+										{t('jce.compare.ai_quick.presearch')}:
+										{aiQuickResult.presearch_summary ?? aiQuickResult.presearch_level}
+									</p>
+								{/if}
+
+								{#if aiQuickResult.content_id}
+									<p class="text-xs" style="color: var(--color-text)">
+										{t('jce.compare.ai_quick.draft_created')}
+										{#if aiQuickResult.comparison?.comparison?.slug}
+											<a
+												href="/compare/{aiQuickResult.comparison.comparison.slug}"
+												class="underline"
+												style="color: var(--color-accent, currentColor)"
+											>
+												{aiQuickResult.comparison.comparison.title}
+											</a>
+										{:else}
+											<code>{aiQuickResult.content_id}</code>
+										{/if}
+									</p>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/if}
 
 				{#if user}
 					<div class="flex items-center gap-3 flex-wrap">
