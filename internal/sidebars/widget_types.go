@@ -129,11 +129,8 @@ var appMainLearn = []string{string(AppMain), string(AppLearn)}
 // appDocsLearn scopes the docs-style search launcher to Docs and Learn.
 var appDocsLearn = []string{string(AppDocs), string(AppLearn)}
 
-// appDocsOnly scopes docs-only widgets (TOC, helpful vote) to the Docs app.
+// appDocsOnly scopes docs-only widgets (helpful vote) to the Docs app.
 var appDocsOnly = []string{string(AppDocs)}
-
-// appLearnOnly scopes learn-only widgets (curriculum rail) to the Learn app.
-var appLearnOnly = []string{string(AppLearn)}
 
 // widgetRegistry holds every sidebar widget type available.
 var widgetRegistry = []WidgetType{
@@ -251,7 +248,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "ad_slot",
 		Name:        "Ad Slot",
-		Description: "Advertisement slot — data fetched from /ads/serve?slot= (requires the feature.ads flag; renders nothing when no campaign is served)",
+		Description: "Advertisement slot — data fetched from /ads/serve?slot= (requires the feature.ads flag; renders nothing when no campaign is served). The only widget type the left rail renders",
 		Icon:        "megaphone",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryMonetization,
@@ -266,6 +263,7 @@ var widgetRegistry = []WidgetType{
 				PropOption{Value: "square", Label: "Square"},
 				PropOption{Value: "banner", Label: "Banner"},
 				PropOption{Value: "inline", Label: "Inline"},
+				PropOption{Value: "skyscraper", Label: "Skyscraper (160×600 left rail)"},
 			),
 		},
 	},
@@ -284,19 +282,17 @@ var widgetRegistry = []WidgetType{
 	},
 	{
 		Type:        "custom_html",
-		Name:        "Custom HTML / Embed",
-		Description: "Raw HTML or iframe embed (sanitized server-side; scripts stripped unless embed_enabled)",
+		Name:        "Custom HTML",
+		Description: "Raw HTML block rendered inside a sandboxed frame — scripts, iframes and embeds are always stripped",
 		Icon:        "code",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryCustom,
 		Apps:        appAll,
 		DefaultProps: map[string]any{
-			"html":          "",
-			"embed_enabled": false,
+			"html": "",
 		},
 		PropSchema: []PropField{
-			textareaField("html", "HTML / embed markup", "Sanitized server-side"),
-			boolField("embed_enabled", "Allow iframe embeds", "Scripts are always stripped — enable only for trusted embeds"),
+			textareaField("html", "HTML markup", "Sanitized server-side; rendered in a sandboxed frame"),
 		},
 	},
 	{
@@ -334,6 +330,7 @@ var widgetRegistry = []WidgetType{
 				PropOption{Value: "country", Label: "Country"},
 				PropOption{Value: "state", Label: "State"},
 				PropOption{Value: "city", Label: "City"},
+				PropOption{Value: "custom", Label: "Custom"},
 			),
 			titleProp(),
 		},
@@ -345,7 +342,10 @@ var widgetRegistry = []WidgetType{
 		Icon:        "play-circle",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryLearning,
-		Apps:        appMainLearn,
+		// Learn renders its own hardcoded ContinueLearningCard route widget
+		// (Section 59), so this type is main-only — scoped otherwise it
+		// resolves on learn as a duplicate no-op.
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"title": "Continue Learning",
 		},
@@ -378,16 +378,7 @@ var widgetRegistry = []WidgetType{
 		},
 		PropSchema: []PropField{titleProp()},
 	},
-	{
-		Type:         "curriculum_rail",
-		Name:         "Curriculum Rail",
-		Description:  "Module/lesson rail for the Learn lesson player (rendered by the lesson player route)",
-		Icon:         "list",
-		Slot:         WidgetSlotContent,
-		Category:     WidgetCategoryLearning,
-		Apps:         appLearnOnly,
-		DefaultProps: map[string]any{},
-	},
+
 	{
 		Type:        "track_card",
 		Name:        "Featured Track Card",
@@ -402,16 +393,7 @@ var widgetRegistry = []WidgetType{
 		},
 		PropSchema: []PropField{textField("track_slug", "Track slug", "Leave empty to feature from the catalog"), titleProp()},
 	},
-	{
-		Type:         "table_of_contents",
-		Name:         "Table of Contents",
-		Description:  "Auto-generated TOC for docs pages (rendered by the docs page route)",
-		Icon:         "list",
-		Slot:         WidgetSlotContent,
-		Category:     WidgetCategoryNavigation,
-		Apps:         appDocsOnly,
-		DefaultProps: map[string]any{},
-	},
+
 	{
 		Type:        "related_discussions",
 		Name:        "Related Discussions",
@@ -484,12 +466,13 @@ var widgetRegistry = []WidgetType{
 			textField("icon", "Icon", "Lucide icon name, e.g. bar-chart-3"),
 			textField("value", "Value", ""),
 			textField("label", "Label", ""),
+			textField("delta", "Delta", "Optional secondary line under the value, e.g. '+12% this week'"),
 		},
 	},
 	{
 		Type:        "featured_content",
 		Name:        "Featured Content",
-		Description: "Curated featured posts — data fetched from /blog/featured",
+		Description: "Curated featured posts — data fetched from /blog/featured, or /content?type=forum_thread&featured=1 on forum pages",
 		Icon:        "star",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -531,15 +514,22 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "user_card",
 		Name:        "User / Profile Card",
-		Description: "User or organization profile card — data fetched from /users/{username} or /organizations/{slug} based on page context",
+		Description: "User or organization profile card — data fetched from /users/{username} or /organizations/{slug} based on page context or props",
 		Icon:        "user-circle",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,
 		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"username": "",
+			"source":   "page_context",
 		},
-		PropSchema: []PropField{textField("username", "Username", "Leave empty to use the page context")},
+		PropSchema: []PropField{
+			selectField("source", "Source",
+				PropOption{Value: "page_context", Label: "Page context (profile / article author)"},
+				PropOption{Value: "org_owner", Label: "Organization owner (org pages)"},
+			),
+			textField("username", "Username", "Fixed user to display on any page — overrides the page context when set"),
+		},
 	},
 	{
 		Type:        "space_categories",

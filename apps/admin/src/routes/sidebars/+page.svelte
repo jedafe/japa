@@ -377,15 +377,18 @@
 	// Widget types the sidebar's app can actually render — the backend
 	// registry scopes each type via `apps` and rejects out-of-scope creates,
 	// so the picker must not offer types that would render as dead stubs.
+	// Left-position sidebars feed the 160px LeftRail, which renders only
+	// ad_slot widgets — other types would resolve but never display.
 	// When editing, the widget's current type is always included so legacy
 	// rows remain editable even if scoping rules changed after creation.
 	const availableWidgetTypes = $derived(
 		widgetTypes.filter(
 			(wt) =>
-				!wt.apps ||
-				wt.apps.length === 0 ||
-				!widgetsSidebar?.app ||
-				wt.apps.includes(widgetsSidebar.app) ||
+				((!wt.apps ||
+					wt.apps.length === 0 ||
+					!widgetsSidebar?.app ||
+					wt.apps.includes(widgetsSidebar.app)) &&
+					(widgetsSidebar?.position !== 'left' || wt.type === 'ad_slot')) ||
 				wt.type === editingWidget?.widget_type
 		)
 	);

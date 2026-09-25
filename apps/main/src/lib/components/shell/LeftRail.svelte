@@ -16,7 +16,7 @@
 	interface AdWidget {
 		id: string;
 		widget_type: string;
-		props?: { slot?: string };
+		props?: { slot?: string; format?: string };
 	}
 
 	// Only ad_slot widgets belong in this rail — anything else an admin
@@ -24,11 +24,17 @@
 	const adSlots = $derived(
 		(widgets as AdWidget[]).filter((w) => w && w.widget_type === 'ad_slot')
 	);
+
+	// Honor the widget's configured format when it fits the rail —
+	// skyscraper is the 160×600 default; the other formats still render.
+	function railFormat(format?: string): 'skyscraper' | 'square' | 'banner' | 'inline' {
+		return format === 'square' || format === 'banner' || format === 'inline' ? format : 'skyscraper';
+	}
 </script>
 
 {#each adSlots as widget (widget.id)}
 	<aside class="left-rail" aria-label={t('a11y.sidebar', 'Sidebar')}>
-		<AdSlot slot={widget.props?.slot ?? 'left_rail'} format="skyscraper" />
+		<AdSlot slot={widget.props?.slot ?? 'left_rail'} format={railFormat(widget.props?.format)} />
 	</aside>
 {/each}
 

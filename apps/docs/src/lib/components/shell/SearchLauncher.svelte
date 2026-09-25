@@ -6,9 +6,11 @@
 	interface Props {
 		/** Whether this launcher registers the global ⌘/Ctrl+K shortcut. */
 		keyboardShortcut?: boolean;
+		/** Optional override for the palette input placeholder (sidebar widget `placeholder` prop). */
+		placeholder?: string;
 	}
 
-	let { keyboardShortcut = true }: Props = $props();
+	let { keyboardShortcut = true, placeholder = '' }: Props = $props();
 
 	let open = $state(false);
 
@@ -38,7 +40,7 @@
 </button>
 
 {#if open}
-	<SearchPalette onClose={() => (open = false)} />
+	<SearchPalette onClose={() => (open = false)} {placeholder} />
 {/if}
 
 <style>

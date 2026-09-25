@@ -59,7 +59,22 @@
 			: 'square' as const
 	);
 
-	let showLanguageToggle = $derived(enabledLanguages.split(',').filter(Boolean).length > 1);
+	// Site-enabled locales (from the layout prop). The language_toggle widget's
+	// `languages` prop restricts the offered locales to a subset of this list —
+	// empty means all enabled languages.
+	const siteLanguages = $derived(
+		enabledLanguages.split(',').map((l) => l.trim()).filter(Boolean)
+	);
+	const configuredLanguages = $derived(
+		(typeof widgetProps.languages === 'string' ? widgetProps.languages : '')
+			.split(',').map((l) => l.trim()).filter(Boolean)
+	);
+	const langList = $derived(
+		configuredLanguages.length > 0
+			? siteLanguages.filter((l) => configuredLanguages.includes(l))
+			: siteLanguages
+	);
+	let showLanguageToggle = $derived(langList.length > 1);
 
 	// Default language from site settings (for unprefixed URL generation).
 	// Ref: §18 — English unprefixed at root, other languages prefixed.
@@ -67,10 +82,14 @@
 		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
 	);
 
-	// Parse the enabled-languages list for the dropdown.
-	const langList = $derived(
-		enabledLanguages.split(',').map((l) => l.trim()).filter(Boolean)
-	);
+	// Locale-stripped path segments for context detection. Main's `reroute`
+	// hook (hooks.ts) maps /fr/... onto the unprefixed route tree but leaves
+	// the prefix in page.url.pathname, so path-based widget context must strip
+	// a leading enabled-locale segment itself.
+	const pagePathParts = $derived.by(() => {
+		const parts = page.url.pathname.split('/').filter(Boolean);
+		return parts.length > 0 && siteLanguages.includes(parts[0]) ? parts.slice(1) : parts;
+	});
 
 	// Resolve locale codes to display names via Intl.DisplayNames (platform
 	// API, not app data — Rule 16 safe). Falls back to the code itself.
@@ -89,7 +108,7 @@
 	function localeHref(lang: string): string {
 		let path = currentPath || '';
 		const firstSeg = path.split('/')[0];
-		if (langList.includes(firstSeg)) path = path.slice(firstSeg.length).replace(/^\//, '');
+		if (siteLanguages.includes(firstSeg)) path = path.slice(firstSeg.length).replace(/^\//, '');
 		return lang === defaultLanguage ? `/${path}` : `/${lang}${path ? `/${path}` : ''}`;
 	}
 
@@ -159,9 +178,10 @@
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
 	let spaceTypes = $state<SpaceTypeItem[]>([]);
-	// Last path for which the context widgets resolved, so they recompute on
-	// client navigation without depending on this state directly.
-	let resolvedForPath = $state(page.url.pathname);
+	// Last URL for which the context widgets resolved, so they recompute on
+	// client navigation without depending on this state directly. Includes the
+	// query string — upcoming_events reads ?dest= from search params.
+	let resolvedForUrl = $state(page.url.pathname + page.url.search);
 
 	// --- Learning widgets state ---
 	let featuredTrack = $state<CatalogTrack | null>(null);
@@ -200,9 +220,23 @@
 		return (d.article ?? d.story) as ContentArticleContext | undefined;
 	}
 
+	// A configured username prop wins over page context on every route.
+	// `user_id` is a legacy alias read as a username (the public lookup is
+	// /users/{username}) — kept for rows written before `username` existed.
+	function configuredUsername(): string {
+		return (
+			(typeof widgetProps.username === 'string' && widgetProps.username.trim()) ||
+			(typeof widgetProps.user_id === 'string' && widgetProps.user_id.trim()) ||
+			''
+		);
+	}
+
 	function resolveUserCardFromPageData(): UserCardData | null | undefined {
+		// Configured username → always a fetch, on any route.
+		if (configuredUsername()) return undefined;
+
 		const source = widgetProps.source;
-		const pathParts = page.url.pathname.split('/').filter(Boolean);
+		const pathParts = pagePathParts;
 
 		if (source === 'org_owner') {
 			// Only resolve on org-scoped routes (/org/[slug] and its nested
@@ -210,7 +244,7 @@
 			// segments under /org (e.g. /org/new, /org/invite/[token]) are not
 			// org slugs — treating them as such causes 404 fetch noise.
 			if (!page.route.id?.includes('/org/[slug]')) return null;
-			const orgSlug = pathParts[1];
+			const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
 			if (!orgSlug) return null;
 			const pageData = page.data as Record<string, unknown>;
 			// /org/[slug] load returns the org under `data.org` (not
@@ -241,14 +275,8 @@
 		}
 
 		// Content single pages (/content/[slug], /blog/[slug], /story/[slug]):
-		// the widget's natural context is the article author. An explicitly
-		// configured user_id/username prop wins and requires a fetch by username.
+		// the widget's natural context is the article author.
 		if (isContentSingleRoute()) {
-			const configured =
-				(typeof widgetProps.user_id === 'string' && widgetProps.user_id.trim()) ||
-				(typeof widgetProps.username === 'string' && widgetProps.username.trim()) ||
-				'';
-			if (configured) return undefined;
 			const article = contentArticle();
 			if (!article?.author_id) return null;
 			return {
@@ -264,7 +292,7 @@
 	}
 
 	function resolveRelatedDiscussionsFromPageData(): RelatedDiscussion[] | undefined {
-		const pathParts = page.url.pathname.split('/').filter(Boolean);
+		const pathParts = pagePathParts;
 		const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
 		const profileUsername = pathParts[0] === 'u' ? pathParts[1] : null;
 
@@ -352,12 +380,20 @@
 		newsletterEmail = '';
 	}
 
+	// Widgets whose data depends on the current URL must re-resolve on client
+	// navigation — featured_content switches endpoints (/blog/featured vs
+	// /content?type=forum_thread), upcoming_events reads ?dest=, and the
+	// context widgets key off the route path.
+	const PATH_DEPENDENT_WIDGETS = new Set([
+		'user_card', 'related_discussions', 'featured_content', 'upcoming_events'
+	]);
+
 	$effect(() => {
 		const wt = widget.widget_type;
-		const currentPath = page.url.pathname;
-		if (untrack(() => resolvedForPath) !== currentPath) {
-			resolvedForPath = currentPath;
-			if (wt === 'user_card' || wt === 'related_discussions') {
+		const currentUrl = page.url.pathname + page.url.search;
+		if (untrack(() => resolvedForUrl) !== currentUrl) {
+			resolvedForUrl = currentUrl;
+			if (PATH_DEPENDENT_WIDGETS.has(wt)) {
 				dataLoaded = { ...dataLoaded, [wt]: false };
 			}
 		}
@@ -366,13 +402,20 @@
 		const settled = () => inflight.delete(wt);
 
 		async function fetchFeatured() {
-			const path = page.url.pathname;
-			const isForum = path === '/forum' || path.startsWith('/forum/');
+			// Locale prefixes stay in page.url.pathname (reroute only rewrites
+			// route matching) — use the stripped segments for context checks.
+			const isForum = pagePathParts[0] === 'forum';
 			const endpoint = isForum
 				? `/content?type=forum_thread&featured=1&page_size=${limit}`
 				: '/blog/featured';
 			const res = await api.get<FeaturedPost[]>(endpoint);
-			featuredPosts = res.data ?? [];
+			// /blog/featured cards carry no content_type — default it so
+			// contentHref links straight to /blog/{slug} instead of 301ing
+			// through /content/{slug}.
+			featuredPosts = (res.data ?? []).map((p) => ({
+				...p,
+				content_type: p.content_type ?? 'blog_post'
+			}));
 			dataLoaded = { ...dataLoaded, featured_content: true };
 		}
 		async function fetchSpaces() {
@@ -488,10 +531,16 @@
 			}
 			interface CalendarEntryLite { id: string; title: string; occurs_at?: string; }
 			const from = new Date().toISOString();
-			const dest = page.url.searchParams.get('dest')
-				?? user?.current_geo_space_id
-				?? user?.primary_space?.id
-				?? '';
+			// `dest` is overloaded across the app: geo-aware pages (/radar,
+			// /scam-alerts) use it as a country code, but /calendar expects a
+			// space UUID and 400s on anything else — forward the param only when
+			// it is actually a UUID.
+			const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+			const destParamRaw = page.url.searchParams.get('dest');
+			const dest = (destParamRaw && UUID_RE.test(destParamRaw) ? destParamRaw : '')
+				|| user?.current_geo_space_id
+				|| user?.primary_space?.id
+				|| '';
 			const destParam = dest ? `&dest=${encodeURIComponent(dest)}` : '';
 			const res = await api.get<CalendarEntryLite[]>(
 				`/calendar?view=list&from=${encodeURIComponent(from)}${destParam}&page_size=${limit}`
@@ -516,22 +565,33 @@
 		//   1. source=org_owner on /org/[slug] — reads the owner from the org API.
 		//   2. /u/[username] profile page — fetches the profile user by username.
 		async function fetchUserCard() {
+			const pathParts = pagePathParts;
+			// A configured username prop wins on every route — previously it was
+			// only honored on content-single pages, so the widget silently
+			// rendered "No user to display" everywhere else.
+			const configured = configuredUsername();
+			if (configured) {
+				const res = await api.get<UserCardData>(`/users/${encodeURIComponent(configured)}`);
+				userCardData = res.data ?? null;
+				dataLoaded = { ...dataLoaded, user_card: true };
+				return;
+			}
 			const source = widgetProps.source;
-			const pathParts = page.url.pathname.split('/').filter(Boolean);
 			if (source === 'org_owner') {
-				// Only fetch on the org profile route — reserved static segments
+				// Only fetch on org-scoped routes — reserved static segments
 				// under /org (e.g. /org/new, /org/invite/[token]) are not slugs.
-				const orgSlug = page.route.id?.endsWith('/org/[slug]') ? pathParts[1] : null;
+				// `includes` matches nested org routes (/org/[slug]/jobs/[jobId]),
+				// consistent with the SSR-side resolver.
+				const orgSlug =
+					page.route.id?.includes('/org/[slug]') && pathParts[0] === 'org'
+						? pathParts[1]
+						: null;
 				if (!orgSlug) {
 					dataLoaded = { ...dataLoaded, user_card: true };
 					return;
 				}
-				try {
-					const orgRes = await api.get<{ owner?: UserCardData }>(`/organizations/${orgSlug}`);
-					userCardData = orgRes.data?.owner ?? null;
-				} catch {
-					userCardData = null;
-				}
+				const orgRes = await api.get<{ owner?: UserCardData }>(`/organizations/${encodeURIComponent(orgSlug)}`);
+				userCardData = orgRes.data?.owner ?? null;
 				dataLoaded = { ...dataLoaded, user_card: true };
 				return;
 			}
@@ -550,34 +610,17 @@
 						bio: profileUser.bio ?? undefined
 					};
 				} else {
-					try {
-						const res = await api.get<UserCardData>(`/users/${pathParts[1]}`);
-						userCardData = res.data ?? null;
-					} catch {
-						userCardData = null;
-					}
+					const res = await api.get<UserCardData>(`/users/${encodeURIComponent(pathParts[1])}`);
+					userCardData = res.data ?? null;
 				}
 				dataLoaded = { ...dataLoaded, user_card: true };
 				return;
 			}
 			// Content single pages (/content/[slug], /blog/[slug],
-			// /story/[slug]): a configured user_id/username prop fetches that
-			// profile; otherwise the widget shows the article author already
+			// /story/[slug]): the widget shows the article author already
 			// present in page data.
 			if (isContentSingleRoute()) {
-				const configured =
-					(typeof widgetProps.user_id === 'string' && widgetProps.user_id.trim()) ||
-					(typeof widgetProps.username === 'string' ? widgetProps.username.trim() : '');
-				if (configured) {
-					try {
-						const res = await api.get<UserCardData>(`/users/${encodeURIComponent(configured)}`);
-						userCardData = res.data ?? null;
-					} catch {
-						userCardData = null;
-					}
-				} else {
-					userCardData = resolveUserCardFromPageData() ?? null;
-				}
+				userCardData = resolveUserCardFromPageData() ?? null;
 				dataLoaded = { ...dataLoaded, user_card: true };
 				return;
 			}
@@ -587,11 +630,11 @@
 		// page context. On /org/[slug] it fetches the org's discussions; on
 		// /u/[username] it fetches the user's discussion-type content.
 		async function fetchRelatedDiscussions() {
-			const pathParts = page.url.pathname.split('/').filter(Boolean);
+			const pathParts = pagePathParts;
 			// Only treat the second segment as an org slug on the actual
 			// /org/[slug] route — /org/new and /org/invite/[token] are static
 			// routes, not org profiles.
-			const orgSlug = page.route.id?.endsWith('/org/[slug]') ? pathParts[1] : null;
+			const orgSlug = page.route.id?.endsWith('/org/[slug]') && pathParts[0] === 'org' ? pathParts[1] : null;
 			const profileUsername = pathParts[0] === 'u' ? pathParts[1] : null;
 			if (orgSlug) {
 				try {
@@ -683,7 +726,7 @@
 </script>
 
 {#if widget.widget_type === 'search'}
-	<SearchAutocomplete />
+	<SearchAutocomplete placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
 {:else if widget.widget_type === 'theme_toggle'}
 	<button
 		type="button"
@@ -862,6 +905,9 @@
 			<Mail size={18} class="text-[var(--color-primary)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.newsletter')}</h2>
 		</div>
+		{#if typeof widgetProps.description === 'string' && widgetProps.description}
+			<p class="mb-3 text-xs text-[var(--color-muted)]">{widgetProps.description}</p>
+		{/if}
 		<form class="space-y-2" onsubmit={handleNewsletterSubmit}>
 			<input
 				type="email"
@@ -1231,14 +1277,10 @@
 			<p class="text-xs text-[var(--color-muted)]">{t('learn.empty', 'No learning tracks yet.')}</p>
 		{/if}
 	</section>
-{:else if widget.widget_type === 'table_of_contents'}
-	<!-- TOC widget — rendered by the Docs app; no-op in Main app. -->
 {:else if widget.widget_type === 'search_launcher'}
 	<!-- Search launcher — Docs/Learn variant; Main app uses 'search' widget. -->
 {:else if widget.widget_type === 'helpful_widget'}
 	<!-- Helpful widget — rendered by the Docs app; no-op in Main app. -->
-{:else if widget.widget_type === 'curriculum_rail'}
-	<!-- Curriculum rail — rendered by the Learn app on lesson pages; no-op in Main. -->
 {:else}
 	<!-- Unknown widget type — render nothing rather than crashing. -->
 {/if}
