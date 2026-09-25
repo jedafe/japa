@@ -867,7 +867,7 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 	}
 
 	// Rule 12: compute content_hash before every contents insert so the
-	// unique index idx_contents_tenant_content_hash rejects duplicates.
+	// unique index idx_contents_content_hash rejects duplicates.
 	// Skip hashing for empty bodies — NULL content_hash doesn't collide
 	// (the index has WHERE content_hash IS NOT NULL).
 	var contentHash *string
