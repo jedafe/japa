@@ -187,12 +187,12 @@
 	{/if}
 	{#if showChatFab}
 		<!-- §23 JapaBot FAB — sits above the mobile tab bar (bottom-20),
-		     flush to the left rail on desktop (bottom-5). -->
+		     flush to the right edge on desktop (bottom-5). -->
 		<a
 			href="/ai/chat"
 			aria-label={t('ai.chat.title') ?? 'JapaBot Chat'}
 			title={t('ai.chat.title') ?? 'JapaBot Chat'}
-			class="fixed bottom-20 left-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"
+			class="fixed bottom-20 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"
 		>
 			<Sparkles size={22} />
 		</a>
