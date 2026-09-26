@@ -15,6 +15,7 @@ package promoter
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 )
@@ -55,6 +56,15 @@ const (
 	ActionUpdated  = "updated"
 	ActionVerified = "verified"
 )
+
+// ErrRouteToReview marks a promote failure as a *data* problem — the
+// extraction is missing something the projection requires (e.g. a
+// resolvable geo space for a NOT NULL FK). The promote worker catches it
+// with errors.Is, flips the record to 'review_required' with a review-log
+// note, and completes the task instead of burning retries on a failure no
+// amount of retrying can fix. Wrap it with fmt.Errorf("...: %w",
+// ErrRouteToReview) so the detail survives in the message.
+var ErrRouteToReview = errors.New("route to review")
 
 // Lifecycle/status constants shared by the domain promoters.
 const (

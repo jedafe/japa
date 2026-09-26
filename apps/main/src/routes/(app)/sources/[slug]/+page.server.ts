@@ -31,12 +31,12 @@ export const load: PageServerLoad = async (event) => {
 	}));
 
 	// Scope the filter pills to the entity types this source actually
-	// publishes (GET /sources/{slug}.entity_types) — offering the global
-	// meta list rendered guaranteed-empty feeds for most types. Fall back
-	// to the full meta list only when the field is absent (older backend).
-	const sourceTypes = source.entity_types;
-	const entityTypes = (sourceMeta.entity_types ?? []).filter(
-		(e) => !sourceTypes || sourceTypes.includes(e.value)
+	// publishes (GET /sources/{slug}.entity_types). The field is omitempty
+	// on the backend — absent means "publishes nothing yet", so pills are
+	// omitted entirely rather than offering guaranteed-empty feeds.
+	const sourceTypes = source.entity_types ?? [];
+	const entityTypes = (sourceMeta.entity_types ?? []).filter((e) =>
+		sourceTypes.includes(e.value)
 	);
 	const validEntityTypes = new Set(['', ...entityTypes.map((e) => e.value)]);
 

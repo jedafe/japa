@@ -339,6 +339,9 @@ func TestWikiPromoteCreateUnresolvableSpaceRoutesToReview(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unresolvable space, got nil")
 	}
+	if !errors.Is(err, ErrRouteToReview) {
+		t.Errorf("err = %v, want wrapped ErrRouteToReview so the worker routes the record to the review queue", err)
+	}
 	if len(m.created) != 0 {
 		t.Errorf("no wiki_pages row should be written, got %d creates", len(m.created))
 	}

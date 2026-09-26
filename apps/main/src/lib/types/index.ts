@@ -3008,8 +3008,21 @@ export interface WikiDestination {
 	name: string;
 	geo_code?: string;
 	region?: string;
-	level: 'country' | 'state' | 'city' | 'university';
+	/** The space's `level` field — 'custom' for non-geo types (e.g.
+	 *  universities report 'custom', not 'university'). */
+	level: string;
 	page_count: number;
+}
+
+/** One row of GET /wiki/types — an enabled wiki type over a space_type. */
+export interface WikiTypeItem {
+	space_type_id: string;
+	space_type_slug: string;
+	space_type_name: string;
+	enabled: boolean;
+	label?: string | null;
+	icon?: string | null;
+	position: number;
 }
 
 export interface WikiPage extends WikiPageIndex {
@@ -3034,7 +3047,12 @@ export type WikiRevisionStatus = 'approved' | 'rejected' | 'pending';
 export interface WikiRevision {
 	id: string;
 	status: string;
+	/** §80: 'content' (prose), 'fields' (field ops), or 'mixed'. */
+	kind?: string;
 	content?: unknown;
+	/** Field ops submitted by a fields/mixed revision (redacted while pending
+	 *  for non-reviewers). */
+	ops?: unknown;
 	summary?: string;
 	ai_generated: boolean;
 	submitted_by?: string;

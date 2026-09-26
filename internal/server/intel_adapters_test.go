@@ -3,11 +3,17 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
+	"github.com/jedafe/japa/internal/intelligence/promoter"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // staticGateway is a test double for extractor.AIGateway that always returns
@@ -179,3 +185,45 @@ func TestIntelRecordsToResults_RawExtractionIsValidJSON(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// stubPromoter returns a fixed error so the adapter's error mapping can be
+// exercised without a store.
+type stubPromoter struct{ err error }
+
+func (s stubPromoter) Promote(_ context.Context, _ uuid.UUID) (promoter.PromoteResult, error) {
+	return promoter.PromoteResult{}, s.err
+}
+
+func (s stubPromoter) Entity() string { return "wiki_page" }
+
+func TestIntelPromoterPortAdapter_MapsRouteToReview(t *testing.T) {
+	inner := fmt.Errorf("promoter: wiki page requires a resolvable geo space but none matched: %w", promoter.ErrRouteToReview)
+	a := &intelPromoterPortAdapter{prom: stubPromoter{err: inner}}
+
+	_, err := a.Promote(t.Context(), uuid.New())
+
+	var rte *worker.RouteToReviewError
+	if !errors.As(err, &rte) {
+		t.Fatalf("err = %T %v, want *worker.RouteToReviewError", err, err)
+	}
+	if !errors.Is(err, promoter.ErrRouteToReview) {
+		t.Error("wrapped reason should still match promoter.ErrRouteToReview")
+	}
+	if !strings.Contains(err.Error(), "resolvable geo space") {
+		t.Errorf("detail lost in mapping: %v", err)
+	}
+}
+
+func TestIntelPromoterPortAdapter_PassesThroughOtherErrors(t *testing.T) {
+	a := &intelPromoterPortAdapter{prom: stubPromoter{err: errors.New("db down")}}
+
+	_, err := a.Promote(t.Context(), uuid.New())
+
+	var rte *worker.RouteToReviewError
+	if errors.As(err, &rte) {
+		t.Fatalf("infra error must not map to RouteToReviewError: %v", err)
+	}
+	if err == nil || err.Error() != "db down" {
+		t.Errorf("err = %v, want passthrough 'db down'", err)
+	}
+}

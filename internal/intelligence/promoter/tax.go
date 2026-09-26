@@ -138,8 +138,8 @@ func (p *TaxPromoter) taxCreatePath(ctx context.Context, record gen.IntelRecord,
 
 	if !originSpaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
-			"promoter: tax obligation guide requires an origin country space but none resolved for %q — routing to review",
-			originCountryCode,
+			"promoter: tax obligation guide requires an origin country space but none resolved for %q: %w",
+			originCountryCode, ErrRouteToReview,
 		)
 	}
 
@@ -158,8 +158,8 @@ func (p *TaxPromoter) taxCreatePath(ctx context.Context, record gen.IntelRecord,
 
 	if !destinationSpaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
-			"promoter: tax obligation guide requires a destination country space but none resolved for %q — routing to review",
-			destinationCountryCode,
+			"promoter: tax obligation guide requires a destination country space but none resolved for %q: %w",
+			destinationCountryCode, ErrRouteToReview,
 		)
 	}
 

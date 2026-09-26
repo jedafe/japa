@@ -7,7 +7,7 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { WikiDestination } from '$lib/types';
+	import type { WikiDestination, WikiTypeItem } from '$lib/types';
 	import { page } from '$app/state';
 	import { BookOpen, Globe, MapPin, GraduationCap, Table2 } from 'lucide-svelte';
 	import { ListPageBar } from '$lib/components/ui';
@@ -20,7 +20,6 @@
 	const initialDestinations = data.destinations ?? [];
 	let browseOptions = $state<WikiDestination[]>(initialDestinations);
 	let browseLoading = $state(false);
-	let browseLevel = $state<'country' | 'state' | 'city'>('country');
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	// §80 community field ops — destination structured data is
 	// community-editable when the structured_edits flag is on.
@@ -97,19 +96,15 @@
 			const params = new URLSearchParams();
 			params.set('has_wiki', 'false');
 			if (selectedState) {
-				browseLevel = 'city';
 				params.set('level', 'city');
 				params.set('parent', selectedState.slug);
 			} else if (selectedCountry) {
-				browseLevel = 'state';
 				params.set('level', 'state');
 				params.set('parent', selectedCountry.slug);
 			} else if (selectedContinent) {
-				browseLevel = 'country';
 				params.set('level', 'country');
 				params.set('region', selectedContinent);
 			} else {
-				browseLevel = 'country';
 				params.set('level', 'country');
 			}
 			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${params.toString()}`);
@@ -121,10 +116,10 @@
 		}
 	}
 
-	$effect(() => {
-		if (!wikiEnabled) return;
-		loadBrowse();
-	});
+	// No mount-time fetch: browseOptions is seeded from SSR data and every
+	// chooser change calls loadBrowse() explicitly. (An $effect calling
+	// loadBrowse here double-fetches on mount — the reads inside loadBrowse
+	// are tracked — and again on each selection change.)
 
 	function onSelectContinent(item: AutocompleteItem) {
 		selectedContinent = item.id;
@@ -169,27 +164,45 @@
 		).replace('{count}', String(count));
 	}
 
-	// §80 amendment — University Spaces: university wikis are searched by name
-	// via /wiki/destinations?level=university&q= (server-side — the set is too
-	// large to filter client-side) and the browse grid lists universities that
-	// already carry wiki pages.
+	// §80 Wiki Types: every enabled non-geo wiki type gets a search + browse
+	// section driven by GET /wiki/types, so newly enabled types surface here
+	// with zero code. `?level=` matches the space type slug server-side.
 	// svelte-ignore state_referenced_locally
-	const universityWikis = data.universityWikis ?? [];
+	const extraTypes = data.extraTypes ?? [];
+	// svelte-ignore state_referenced_locally
+	const typeWikis = data.typeWikis ?? {};
 
-	async function searchUniversities(q: string): Promise<AutocompleteItem[]> {
-		// Require a query — the university set is too large to list unfiltered.
-		const query = q.trim();
-		if (!query) return [];
-		try {
-			const params = new URLSearchParams({ level: 'university', has_wiki: 'false', q: query });
-			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${params.toString()}`);
-			return (res.data ?? []).map(toAutocompleteItem);
-		} catch {
-			return [];
-		}
+	function typeLabel(wt: WikiTypeItem): string {
+		return t(`wiki.type_${wt.space_type_slug}`, wt.label ?? wt.space_type_name);
 	}
 
-	function onSelectUniversity(item: AutocompleteItem) {
+	function typeSectionLabel(wt: WikiTypeItem): string {
+		return t(`wiki.${wt.space_type_slug}_wikis`, t('wiki.type_wikis', '{type} wikis', { type: typeLabel(wt) }));
+	}
+
+	function typeSearchHint(wt: WikiTypeItem): string {
+		return t(
+			`wiki.${wt.space_type_slug}_search_hint`,
+			t('wiki.type_search_hint', 'Search a {type}…', { type: typeLabel(wt).toLowerCase() })
+		);
+	}
+
+	function searchTypeEntities(typeSlug: string): (q: string) => Promise<AutocompleteItem[]> {
+		return async (q: string) => {
+			// Require a query — non-geo entity sets are too large to list.
+			const query = q.trim();
+			if (!query) return [];
+			try {
+				const params = new URLSearchParams({ level: typeSlug, has_wiki: 'false', q: query });
+				const res = await api.get<WikiDestination[]>(`/wiki/destinations?${params.toString()}`);
+				return (res.data ?? []).map(toAutocompleteItem);
+			} catch {
+				return [];
+			}
+		};
+	}
+
+	function onSelectTypeEntity(item: AutocompleteItem) {
 		if (item.id) goto(`/wiki/${encodeURIComponent(item.id)}`);
 	}
 </script>
@@ -274,46 +287,49 @@
 			{/if}
 		</div>
 
-		<!-- §80 amendment — University Spaces: search any university by name
-		     and browse universities that already carry wiki pages. Rendered
+		<!-- §80 Wiki Types — one search + browse section per enabled non-geo
+		     wiki type (university today; new types appear without code). Rendered
 		     above the (long) destination grid so it stays visible. -->
-		<div class="mt-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<div class="mb-4 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<GraduationCap size={16} />
-				{t('wiki.universities_label', 'University wikis')}
-			</div>
-			<div class="w-full max-w-sm">
-				<Autocomplete
-					id="wiki-university"
-					placeholder={t('wiki.university_search_hint', 'Search a university…')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={searchUniversities}
-					selectedId={null}
-					selectedLabel={null}
-					onSelect={onSelectUniversity}
-				/>
-			</div>
-		</div>
-
-		{#if universityWikis.length > 0}
-			<div class="mt-6">
-				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-					{t('wiki.browse_universities', 'University wikis')}
-				</h2>
-				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-					{#each universityWikis as uni (uni.slug)}
-						<a
-							href="/wiki/{encodeURIComponent(uni.slug)}"
-							class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
-							data-sveltekit-preload-data="hover"
-						>
-							<span class="text-sm font-medium text-[var(--color-text)]">{uni.name}</span>
-							<span class="text-xs text-[var(--color-muted)]">{pageCountLabel(uni.page_count)}</span>
-						</a>
-					{/each}
+		{#each extraTypes as wt (wt.space_type_slug)}
+			{@const wikis = typeWikis[wt.space_type_slug] ?? []}
+			<div class="mt-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<div class="mb-4 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+					<GraduationCap size={16} />
+					{typeSectionLabel(wt)}
+				</div>
+				<div class="w-full max-w-sm">
+					<Autocomplete
+						id="wiki-type-{wt.space_type_slug}"
+						placeholder={typeSearchHint(wt)}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={searchTypeEntities(wt.space_type_slug)}
+						selectedId={null}
+						selectedLabel={null}
+						onSelect={onSelectTypeEntity}
+					/>
 				</div>
 			</div>
-		{/if}
+
+			{#if wikis.length > 0}
+				<div class="mt-6">
+					<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+						{typeSectionLabel(wt)}
+					</h2>
+					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						{#each wikis as w (w.slug)}
+							<a
+								href="/wiki/{encodeURIComponent(w.slug)}"
+								class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+								data-sveltekit-preload-data="hover"
+							>
+								<span class="text-sm font-medium text-[var(--color-text)]">{w.name}</span>
+								<span class="text-xs text-[var(--color-muted)]">{pageCountLabel(w.page_count)}</span>
+							</a>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		{/each}
 
 		<div class="mt-6">
 			{#if browseLoading}
