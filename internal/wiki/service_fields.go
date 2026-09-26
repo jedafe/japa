@@ -466,6 +466,102 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	return dto, nil
 }
 
+// GetPageFields builds the bound field group's schema + the space's stored
+// values for a wiki page (§80 Wiki Types & Field-Group Pages): exactly one
+// group — the one the page's category binds — rather than every group
+// assigned to the entity's class. Field-level RBAC mirrors GetEntityFields
+// (can_view/can_edit per user, fail-closed lookups, wiki.fields.manage
+// bypass). Returns nil when the custom-fields service is not configured.
+func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pgtype.UUID) (*EntityFieldGroupDTO, error) {
+	if s.fields == nil || !groupID.Valid {
+		return nil, nil
+	}
+
+	canManage := s.perms != nil && s.perms.HasPermission(ctx, userID, PermFieldsManage)
+
+	var visibleSet, editableSet map[string]bool
+
+	if !canManage {
+		if ids, perr := s.fields.ListVisibleFieldIDsForUser(ctx, userID); perr != nil {
+			slog.Warn("wiki: page fields: visible-perm lookup failed",
+				"user_id", userID.String(), "error", perr)
+		} else {
+			visibleSet = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				visibleSet[id.String()] = true
+			}
+		}
+
+		if ids, perr := s.fields.ListEditableFieldIDsForUser(ctx, userID); perr != nil {
+			slog.Warn("wiki: page fields: editable-perm lookup failed",
+				"user_id", userID.String(), "error", perr)
+		} else {
+			editableSet = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				editableSet[id.String()] = true
+			}
+		}
+	}
+
+	group, err := s.fields.GetFieldGroup(ctx, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: page fields: get group: %w", err)
+	}
+
+	fields, err := s.fields.ListFieldsByGroup(ctx, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: page fields: list fields: %w", err)
+	}
+
+	values, err := s.fields.ListFieldValuesWithDefsByEntity(ctx, customfields.ValueEntityType("space"), spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: page fields: list values: %w", err)
+	}
+
+	valuesByField := make(map[string]gen.ListCustomFieldValuesWithDefsByEntityRow, len(values))
+	for _, v := range values {
+		valuesByField[v.FieldID.String()] = v
+	}
+
+	dtos := make([]EntityFieldDTO, 0, len(fields))
+	for _, f := range fields {
+		dto := EntityFieldDTO{
+			ID:        f.ID.String(),
+			Key:       f.Key,
+			Label:     f.Label,
+			FieldType: f.FieldType,
+		}
+
+		if len(f.Options) > 0 {
+			dto.Options = json.RawMessage(f.Options)
+		}
+
+		if v, ok := valuesByField[f.ID.String()]; ok {
+			dto.Value = cfvValueJSON(v)
+		}
+
+		dto.Visible = visibleSet[f.ID.String()] || canManage
+		dto.CanEdit = editableSet[f.ID.String()] || canManage
+
+		if !dto.Visible {
+			dto.Value = nil
+		}
+
+		dtos = append(dtos, dto)
+	}
+
+	if len(dtos) == 0 {
+		return nil, nil
+	}
+
+	return &EntityFieldGroupDTO{
+		ID:     group.ID.String(),
+		Slug:   group.Slug,
+		Name:   group.Name,
+		Fields: dtos,
+	}, nil
+}
+
 // StructuredEditsEnabled reports whether the wiki.structured_edits feature
 // flag is on (§80 Community Field Ops — default false, requires
 // wiki.enabled). Handlers gate ops-bearing submissions on this so the

@@ -319,61 +319,81 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
-// WikiCategoryDef describes a wiki page category (slug + display label key).
-//
-//nolint:revive // exported: stutter naming is intentional
-type WikiCategoryDef struct {
-	Slug     string `json:"slug"`
-	LabelKey string `json:"label_key"`
-	Label    string `json:"label"`
+// wikiCategoryItem is the public GET /wiki/categories payload shape.
+// slug is the wiki_pages.category token (matches each index page's
+// `category` field — the value the tab strip and create form key on);
+// page_slug is the stub page slug used in /wiki/{entity}/{slug} URLs.
+type wikiCategoryItem struct {
+	Slug         string `json:"slug"`
+	PageSlug     string `json:"page_slug"`
+	Category     string `json:"category"`
+	LabelKey     string `json:"label_key"`
+	Label        string `json:"label"`
+	FieldGroupID string `json:"field_group_id,omitempty"`
+	Position     int32  `json:"position"`
+	IsSystem     bool   `json:"is_system"`
 }
 
-// wikiCategories is the canonical list of wiki page categories, ordered by
-// display priority. The slugs match the wiki_pages.category enum values
-// defined in migrations/000301_create_wiki_tables.up.sql.
-//
-// Ref: japaconnect-engineering/sections/80-destination-wiki.md.
-var wikiCategories = []WikiCategoryDef{
-	{Slug: "overview", LabelKey: "wiki.category_overview", Label: "Overview"},
-	{Slug: "visa", LabelKey: "wiki.category_visa", Label: "Visa"},
-	{Slug: "cost_of_living", LabelKey: "wiki.category_cost_of_living", Label: "Cost of Living"},
-	{Slug: "healthcare", LabelKey: "wiki.category_healthcare", Label: "Healthcare"},
-	{Slug: "banking", LabelKey: "wiki.category_banking", Label: "Banking"},
-	{Slug: "community", LabelKey: "wiki.category_community", Label: "Community"},
-	{Slug: "housing", LabelKey: "wiki.category_housing", Label: "Housing"},
-	{Slug: "other", LabelKey: "wiki.category_other", Label: "Other"},
-}
-
-// wikiUniversityCategories is the canonical category list for university
-// spaces (§80 amendment). Geo categories are relocation topics and do not
-// apply to institutions.
-var wikiUniversityCategories = []WikiCategoryDef{
-	{Slug: "overview", LabelKey: "wiki.category_overview", Label: "Overview"},
-	{Slug: "admissions", LabelKey: "wiki.category_admissions", Label: "Admissions"},
-	{Slug: "programs", LabelKey: "wiki.category_programs", Label: "Programs"},
-	{Slug: "tuition_fees", LabelKey: "wiki.category_tuition_fees", Label: "Tuition & Fees"},
-	{Slug: "scholarships", LabelKey: "wiki.category_scholarships", Label: "Scholarships"},
-	{Slug: "accommodation", LabelKey: "wiki.category_accommodation", Label: "Accommodation"},
-	{Slug: "campus_life", LabelKey: "wiki.category_campus_life", Label: "Campus Life"},
-	{Slug: "careers", LabelKey: "wiki.category_careers", Label: "Careers"},
-	{Slug: "other", LabelKey: "wiki.category_other", Label: "Other"},
-}
-
-// HandleGetCategories handles GET /wiki/categories — returns the canonical
-// list of wiki page categories. This allows the frontend to derive the
-// category list from the API rather than hardcoding it (Rule 16). When
-// ?space={slug} is a university space the university set is returned and the
-// envelope carries scope=university (scope=geo otherwise).
-func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
-	scope := "geo"
-	cats := wikiCategories
-	if spaceSlug := strings.TrimSpace(r.URL.Query().Get("space")); spaceSlug != "" {
-		if isUni, err := h.service.IsUniversitySpace(r.Context(), spaceSlug); err == nil && isUni {
-			scope = "university"
-			cats = wikiUniversityCategories
-		}
+func categoryItem(c WikiCategory) wikiCategoryItem {
+	item := wikiCategoryItem{
+		Slug:     c.Category,
+		PageSlug: c.Slug,
+		Category: c.Category,
+		LabelKey: "wiki.category_" + c.Category,
+		Label:    c.Label,
+		Position: c.Position,
+		IsSystem: c.IsSystem,
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats, "scope": scope})
+	if c.FieldGroupID.Valid {
+		item.FieldGroupID = c.FieldGroupID.String()
+	}
+
+	return item
+}
+
+// HandleGetCategories handles GET /wiki/categories — the space's wiki type
+// category template, resolved from wiki_type_categories (§80 Wiki Types
+// amendment; replaces the hardcoded geo/university slices so new wiki types
+// and admin-managed categories appear automatically — Rule 16). ?space=
+// resolves the space's type and scopes the list; without it the union of
+// every enabled type's categories is returned. scope carries the
+// space_type slug ("university" still satisfies the frontend's
+// scope==='university' check; "all" for the union).
+func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
+	var (
+		cats  []WikiCategory
+		err   error
+		scope = "all"
+	)
+
+	if spaceSlug := strings.TrimSpace(r.URL.Query().Get("space")); spaceSlug != "" {
+		cats, scope, err = h.service.ListCategoriesForSpace(r.Context(), spaceSlug)
+	} else {
+		cats, err = h.service.ListAllCategories(r.Context())
+	}
+	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+			return
+		}
+
+		slog.Error("wiki: categories failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "categories_failed", "Failed to list wiki categories")
+
+		return
+	}
+
+	out := make([]wikiCategoryItem, 0, len(cats))
+	seen := make(map[string]bool, len(cats))
+	for _, c := range cats {
+		if seen[c.Category] {
+			continue
+		}
+		seen[c.Category] = true
+		out = append(out, categoryItem(c))
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out, "scope": scope})
 }
 
 // HandleGetFieldTypes handles GET /wiki/field-types — the field types
@@ -437,7 +457,12 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.service.GetWikiPage(r.Context(), spaceSlug, pageSlug)
+	var userID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		userID = u.UserID
+	}
+
+	page, err := h.service.GetWikiPage(r.Context(), userID, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")

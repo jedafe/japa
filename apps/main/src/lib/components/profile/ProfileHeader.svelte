@@ -80,7 +80,10 @@
 	</div>
 
 	<div class="px-4 pb-4">
-		<div class="-mt-12 flex flex-col gap-3 sm:-mt-16 sm:flex-row sm:items-end sm:gap-4">
+		<!-- relative + z-10: the cover wrapper above is position:relative, so
+		     without its own stacking position this row (and the avatar it
+		     overlaps upward via -mt-12/-mt-16) would paint under the cover. -->
+		<div class="relative z-10 -mt-12 flex flex-col gap-3 sm:-mt-16 sm:flex-row sm:items-end sm:gap-4">
 			{#if user.avatar_url}
 				<img
 					src={user.avatar_url}

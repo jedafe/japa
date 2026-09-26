@@ -21,11 +21,15 @@
 	let {
 		entityType,
 		entityId,
-		title = undefined
+		title = undefined,
+		groupId = undefined
 	}: {
 		entityType: string;
 		entityId: string;
 		title?: string;
+		/** §80 Wiki Types: when set (a bound wiki category), the panel renders
+		 *  only that group instead of every group assigned to the entity. */
+		groupId?: string;
 	} = $props();
 
 	const flagOn = $derived(page.data?.features?.['wiki.structured_edits'] === true);
@@ -98,6 +102,7 @@
 
 	const visibleGroups = $derived(
 		(schema?.groups ?? [])
+			.filter((g) => !groupId || g.id === groupId)
 			.map((g) => ({ ...g, fields: g.fields.filter((f) => f.visible) }))
 			.filter((g) => g.fields.length > 0)
 	);

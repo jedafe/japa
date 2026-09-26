@@ -4452,6 +4452,33 @@ type WikiRevision struct {
 	ApplyError       *string            `json:"apply_error"`
 }
 
+type WikiTypeCategory struct {
+	ID           pgtype.UUID        `json:"id"`
+	SpaceTypeID  pgtype.UUID        `json:"space_type_id"`
+	Slug         string             `json:"slug"`
+	Category     string             `json:"category"`
+	Label        string             `json:"label"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	Position     int32              `json:"position"`
+	IsSystem     bool               `json:"is_system"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type WikiTypeConfig struct {
+	SpaceTypeID pgtype.UUID        `json:"space_type_id"`
+	Enabled     bool               `json:"enabled"`
+	Label       *string            `json:"label"`
+	Icon        *string            `json:"icon"`
+	SeedStubs   bool               `json:"seed_stubs"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type WikiTypeParent struct {
+	SpaceTypeID       pgtype.UUID `json:"space_type_id"`
+	ParentSpaceTypeID pgtype.UUID `json:"parent_space_type_id"`
+}
+
 type WsTicket struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`

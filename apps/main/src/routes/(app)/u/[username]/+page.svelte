@@ -2,7 +2,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { invalidate } from '$app/navigation';
+	import { afterNavigate, invalidate } from '$app/navigation';
 	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin } from 'lucide-svelte';
 	import { DropdownMenu } from 'bits-ui';
 	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
@@ -97,6 +97,20 @@
 	$effect(() => {
 		if (activeTab && !tabs.some((tab) => tab.value === activeTab)) {
 			activeTab = 'posts';
+		}
+	});
+
+	// Keep activeTab in sync when ?tab= changes via real navigation — same-route
+	// links (sidebar "View all spaces", browser back/forward, shared deep links)
+	// reuse the mounted component, so mount-time init alone leaves a stale tab.
+	// afterNavigate (not an $effect on page.url) because UrlTabs syncs tab clicks
+	// with replaceState — replaceState does not fire afterNavigate, so this never
+	// fights the click handler.
+	afterNavigate(({ to, type }) => {
+		console.log('[afterNavigate]', type, 'to=', to?.url.href, 'page.url=', page.url.href, 'location=', location.href, 'activeTab=', activeTab);
+		const urlTab = new URL(location.href).searchParams.get('tab') ?? 'posts';
+		if (urlTab !== activeTab && tabs.some((tab) => tab.value === urlTab)) {
+			activeTab = urlTab;
 		}
 	});
 

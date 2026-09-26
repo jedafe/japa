@@ -59,6 +59,13 @@ export const load: PageServerLoad = async (event) => {
 	// invalidate('/api/v1/users/{username}').
 	event.depends(`/api/v1/users/${username}`);
 
+	// apiGet/apiList go through ctx.fetch with an absolute backend URL, so
+	// SvelteKit never matches client-side invalidate() calls that use the
+	// relative /api/v1/... path. Declaring the dependency keys here makes the
+	// block/mute toggles' invalidate() calls actually re-run this load and
+	// refresh initiallyBlocked/initiallyMuted authoritatively.
+	event.depends('/api/v1/me/blocked-users');
+
 	// Profile header — 404 propagates as a SvelteKit error (banned/suspended/deleted).
 	let user: PublicUser;
 	let jsonLd: unknown = null;
@@ -95,6 +102,11 @@ export const load: PageServerLoad = async (event) => {
 
 	const userId = user.id;
 	const isOwnProfile = !!event.locals.user && event.locals.user.id === userId;
+
+	// See the depends comment above — the mute toggle invalidates
+	// /api/v1/users/{id}/mute-status, which must be declared here for the
+	// relative-path invalidate to match this load.
+	event.depends(`/api/v1/users/${userId}/mute-status`);
 
 	// C2: hydrate the follow button's initial state on SSR. Only fetch when
 	// the viewer is authenticated and viewing someone else's profile — own

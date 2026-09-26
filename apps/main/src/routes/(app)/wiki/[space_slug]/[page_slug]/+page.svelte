@@ -36,7 +36,9 @@
 	);
 
 	function categoryLabel(cat: WikiCategory): string {
-		return t(`wiki.category_${cat}`, cat.replace(/_/g, ' '));
+		// §80 Wiki Types: prefer the admin-set template label when the API
+		// supplies it; fall back to the i18n key for unmanaged categories.
+		return data.page?.category_label || t(`wiki.category_${cat}`, cat.replace(/_/g, ' '));
 	}
 
 	// Render the wiki content to safe HTML. TipTap JSON is serialized to HTML;
@@ -385,7 +387,11 @@
 					{/if}
 
 					{#if structuredEditsOn && panelSpaceId}
-						<EntityFieldsPanel entityType="space" entityId={panelSpaceId} />
+						<EntityFieldsPanel
+							entityType="space"
+							entityId={panelSpaceId}
+							groupId={data.page.fields?.id ?? undefined}
+						/>
 					{/if}
 
 					{#if structuredEditsOn && dataEntityType}

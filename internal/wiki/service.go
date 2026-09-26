@@ -56,6 +56,9 @@ type AdminWikiPageDTO struct {
 }
 
 // WikiPageDetailDTO is the full wiki page with current approved revision.
+// Fields carries the page category's bound field group — schema + this
+// space's stored values — when the wiki type binds a group to the category
+// (§80 Wiki Types & Field-Group Pages).
 // //nolint:revive // exported: stutter naming is intentional
 type WikiPageDetailDTO struct {
 	WikiPageDTO
@@ -64,6 +67,11 @@ type WikiPageDetailDTO struct {
 	CurrentContent  json.RawMessage `json:"current_content"`
 	RevisionSummary string          `json:"revision_summary,omitempty"`
 	SubmittedBy     string          `json:"submitted_by,omitempty"`
+	// Fields is the bound field group's schema+values block (§80); nil for
+	// prose-only categories. CategoryLabel echoes the template's admin-set
+	// label so the page heading isn't hardcoded.
+	Fields        *EntityFieldGroupDTO `json:"fields,omitempty"`
+	CategoryLabel string               `json:"category_label,omitempty"`
 }
 
 // WikiDestinationDTO is the API response shape for a destination with wikis.
@@ -312,7 +320,7 @@ func (s *Service) IsUniversitySpace(ctx context.Context, spaceSlug string) (bool
 
 // GetWikiIndex returns all active wiki pages for a destination space (by space slug).
 func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) ([]WikiPageDTO, error) {
-	spaceID, level, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
+	spaceID, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSpaceNotFound
@@ -326,11 +334,13 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) ([]WikiPag
 		return nil, fmt.Errorf("wiki: index: %w", err)
 	}
 
-	// §80: a country space with an empty index hasn't been seeded yet (e.g.
-	// created after wiki.enabled activation) — enqueue the idempotent seed
-	// task rather than leaving the index permanently empty.
-	if len(pages) == 0 && level == "country" {
-		s.enqueueStubSeed(ctx, spaceID)
+	// §80 Wiki Types: a space with an empty index and a seed_stubs wiki type
+	// hasn't been seeded yet (e.g. created after wiki.enabled activation) —
+	// enqueue the idempotent seed task rather than leaving the index empty.
+	if len(pages) == 0 {
+		if seed, serr := s.store.SpaceSeedStubs(ctx, spaceID); serr == nil && seed {
+			s.enqueueStubSeed(ctx, spaceID)
+		}
 	}
 
 	dtos := make([]WikiPageDTO, 0, len(pages))
@@ -383,9 +393,16 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 	return dtos, nil
 }
 
-// GetWikiPage returns a single wiki page with its current approved revision.
-func (s *Service) GetWikiPage(ctx context.Context, spaceSlug, pageSlug string) (WikiPageDetailDTO, error) {
-	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
+// GetWikiPage returns a single wiki page with its current approved
+// revision. When the space's wiki type binds a field group to the page's
+// category (§80 Wiki Types & Field-Group Pages), the response carries the
+// group's schema + this space's stored values in fields — the shared
+// structured block every entity of the type renders at the same slug.
+// userID drives field-level can_view/can_edit (invalid UUID = anonymous,
+// fail-closed per §06).
+func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string) (WikiPageDetailDTO, error) {
+	spaceID, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WikiPageDetailDTO{}, ErrSpaceNotFound
 		}
@@ -422,6 +439,21 @@ func (s *Service) GetWikiPage(ctx context.Context, spaceSlug, pageSlug string) (
 	}
 	// If no approved revision exists, current_content is nil — the page
 	// is a stub waiting for its first approved content.
+
+	// §80 Wiki Types: resolve the page's category template and attach the
+	// bound field group's schema+values. Failures degrade to a prose-only
+	// page — a missing template or group never blocks the page itself.
+	if cat, cerr := s.store.GetCategoryForSpace(ctx, spaceID, pageSlug); cerr == nil {
+		dto.CategoryLabel = cat.Label
+		if cat.FieldGroupID.Valid {
+			if grp, ferr := s.GetPageFields(ctx, userID, spaceID, cat.FieldGroupID); ferr == nil && grp != nil {
+				dto.Fields = grp
+			} else if ferr != nil {
+				slog.Warn("wiki: page fields load failed",
+					"space_id", spaceID.String(), "group_id", cat.FieldGroupID.String(), "error", ferr)
+			}
+		}
+	}
 
 	return dto, nil
 }
@@ -917,31 +949,13 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 	}, nil
 }
 
-// stubPageSpec defines a default wiki sub-page to seed for each Country Space.
-type stubPageSpec struct {
-	slug     string
-	title    string
-	category string
-}
-
-// defaultStubPages is the set of 7 default wiki sub-pages every Country Space
-// receives when wiki.enabled is activated (§80, ADR-088). The list mirrors
-// the §80 Overview spec: "Overview, Visa Routes, Cost of Living, Healthcare,
-// Banking, Community, Housing".
-var defaultStubPages = []stubPageSpec{
-	{slug: "overview", title: "Overview", category: "overview"},
-	{slug: "visa-routes", title: "Visa Routes", category: "visa"},
-	{slug: "cost-of-living", title: "Cost of Living", category: "cost_of_living"},
-	{slug: "healthcare", title: "Healthcare", category: "healthcare"},
-	{slug: "banking", title: "Banking", category: "banking"},
-	{slug: "community", title: "Community", category: "community"},
-	{slug: "housing", title: "Housing", category: "housing"},
-}
-
-// SeedStubPages creates the 7 default wiki sub-pages for a Country Space.
-// Idempotent: pages that already exist (matched by + space_id +
-// slug) are skipped via the store's ON CONFLICT DO NOTHING. Used by the
-// wiki:seed_stub_pages Asynq task handler.
+// SeedStubPages materializes the wiki type's category template as wiki
+// pages for a space (§80 Wiki Types amendment). The template — slug, title,
+// category token — comes from wiki_type_categories for the space's type,
+// replacing the former hardcoded 7-page country set. Idempotent: pages that
+// already exist (matched by space_id + slug) are skipped via the store's
+// ON CONFLICT DO NOTHING. Used by the wiki:seed_stub_pages Asynq task
+// handler.
 // // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 // //	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 func (s *Service) SeedStubPages(ctx context.Context, spaceID pgtype.UUID) error {
@@ -949,14 +963,24 @@ func (s *Service) SeedStubPages(ctx context.Context, spaceID pgtype.UUID) error 
 		return errors.New("wiki: seed stub pages: space_id is required")
 	}
 
+	spaceTypeID, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
+	if err != nil {
+		return fmt.Errorf("wiki: seed stub pages: resolve space type: %w", err)
+	}
+
+	specs, err := s.store.ListSeedCategories(ctx, spaceTypeID)
+	if err != nil {
+		return err
+	}
+
 	var createdBy pgtype.UUID // system-created stub pages have no human author
-	for _, spec := range defaultStubPages {
-		if _, err := s.store.CreatePage(ctx, spaceID, createdBy, spec.slug, spec.title, spec.category); err != nil {
+	for _, spec := range specs {
+		if _, err := s.store.CreatePage(ctx, spaceID, createdBy, spec.Slug, spec.Label, spec.Category); err != nil {
 			if errors.Is(err, ErrPageExists) {
 				continue // idempotent — page already seeded
 			}
 
-			return fmt.Errorf("wiki: seed stub page %q: %w", spec.slug, err)
+			return fmt.Errorf("wiki: seed stub page %q: %w", spec.Slug, err)
 		}
 	}
 
@@ -964,18 +988,18 @@ func (s *Service) SeedStubPages(ctx context.Context, spaceID pgtype.UUID) error 
 }
 
 // EnqueueStubSeedFanOut enqueues one wiki:seed_stub_pages task per active
-// country space — the §80 activation-time background job wired to the
-// wiki.enabled flag transition (features.SetOnFlagEnabled in server.go).
-// Each task is idempotent, so re-activation is harmless. Failures on
-// individual spaces are logged and skipped — one bad space must not abort
-// the rest of the fan-out.
+// space whose wiki type opts into stub seeding — the §80 activation-time
+// background job wired to the wiki.enabled flag transition
+// (features.SetOnFlagEnabled in server.go). Each task is idempotent, so
+// re-activation is harmless. Failures on individual spaces are logged and
+// skipped — one bad space must not abort the rest of the fan-out.
 func (s *Service) EnqueueStubSeedFanOut(ctx context.Context) {
 	if s.enqueuer == nil {
 		slog.Warn("wiki: seed stub fan-out skipped — no Asynq enqueuer wired")
 		return
 	}
 
-	ids, err := s.store.ListCountrySpaceIDs(ctx)
+	ids, err := s.store.ListSeedSpaceIDs(ctx)
 	if err != nil {
 		slog.Error("wiki: seed stub fan-out: list country spaces failed", "error", err)
 		return

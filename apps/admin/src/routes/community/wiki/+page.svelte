@@ -5,6 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import RevisionDiff from '$lib/components/wiki/RevisionDiff.svelte';
+	import WikiTypesAdmin from '$lib/components/wiki/WikiTypesAdmin.svelte';
 	import { wikiAdminApi, apiRaw, type WikiRevisionItem } from '$lib/api';
 	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -42,8 +43,9 @@
 	});
 
 	// ── View switcher: Pages (existing page-scoped queue) vs Revisions (§80
-	// flat revision queue with kind/status filters + field-ops diff) ────────
-	let view = $state<'pages' | 'revisions'>('pages');
+	// flat revision queue with kind/status filters + field-ops diff) vs
+	// Types (§80 Wiki Types — managed types + category templates) ──────────
+	let view = $state<'pages' | 'revisions' | 'types'>('pages');
 
 	// ── State-action confirmation modal (reject with optional reason) ────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -587,7 +589,8 @@
 	class="mb-4"
 	tabs={[
 		{ value: 'pages', label: t('app.wiki.tab_pages', 'Pages') },
-		{ value: 'revisions', label: t('app.wiki.tab_revisions', 'Revisions') }
+		{ value: 'revisions', label: t('app.wiki.tab_revisions', 'Revisions') },
+		...(canManage ? [{ value: 'types', label: t('app.wiki.tab_types', 'Types & Categories') }] : [])
 	]}
 	bind:value={view}
 />
@@ -603,8 +606,10 @@
 	{/if}
 
 	<EntityPage {config} bind:controller={entityController} />
-{:else}
+{:else if view === 'revisions'}
 	<EntityPage config={revisionConfig} bind:controller={revisionsController} />
+{:else}
+	<WikiTypesAdmin />
 {/if}
 
 <!-- ── Reject revision confirmation modal ─────────────────────────────────── -->

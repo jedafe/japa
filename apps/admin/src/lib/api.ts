@@ -1946,6 +1946,35 @@ export type WikiEntityFields = {
 	pending_count?: number;
 };
 
+// WikiTypeItem is one row of GET /admin/wiki/types (§80 Wiki Types
+// amendment) — a space_type carrying an enabled wiki_type_configs row.
+export type WikiTypeItem = {
+	space_type_id: string;
+	space_type_slug: string;
+	space_type_name: string;
+	enabled: boolean;
+	label: string;
+	icon?: string;
+	seed_stubs: boolean;
+	position: number;
+	parent_type_ids: string[];
+};
+
+// WikiCategoryItem is one row of a type's category template —
+// GET /admin/wiki/types/:id/categories. field_group_* identify the bound
+// custom field group; empty means the category is prose-only.
+export type WikiCategoryItem = {
+	id: string;
+	slug: string;
+	category: string;
+	label: string;
+	field_group_id?: string;
+	field_group_slug?: string;
+	field_group_name?: string;
+	position: number;
+	is_system: boolean;
+};
+
 export const wikiAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/wiki${params ? `?${params}` : ''}`),
 	approveRevision: (pageId: string, revId: string) =>
@@ -1971,6 +2000,21 @@ export const wikiAdminApi = {
 		api<unknown>(`/admin/wiki/${pageId}`, { method: 'PATCH', body }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/wiki/generate`, { method: 'POST', body }),
+	// §80 Wiki Types & Field-Group Pages — managed wiki types over
+	// space_types and per-type category templates (wiki.manage).
+	listTypes: () => api<WikiTypeItem[]>('/admin/wiki/types'),
+	createType: (body: Record<string, unknown>) =>
+		api<WikiTypeItem>('/admin/wiki/types', { method: 'POST', body }),
+	updateType: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/wiki/types/${id}`, { method: 'PATCH', body }),
+	deleteType: (id: string) => api<unknown>(`/admin/wiki/types/${id}`, { method: 'DELETE' }),
+	listTypeCategories: (typeId: string) =>
+		api<WikiCategoryItem[]>(`/admin/wiki/types/${typeId}/categories`),
+	createCategory: (typeId: string, body: Record<string, unknown>) =>
+		api<WikiCategoryItem>(`/admin/wiki/types/${typeId}/categories`, { method: 'POST', body }),
+	updateCategory: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/wiki/categories/${id}`, { method: 'PATCH', body }),
+	deleteCategory: (id: string) => api<unknown>(`/admin/wiki/categories/${id}`, { method: 'DELETE' }),
 };
 
 export const scamAlertAdminApi = {
