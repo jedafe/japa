@@ -202,7 +202,7 @@
 			label: t('app.wiki.cat_group', 'Field group'),
 			type: 'select',
 			options: [],
-			help: t('app.wiki.cat_group_help', 'Bound group = the page’s shared structured schema. Empty keeps the page prose-only.')
+			help: t('app.wiki.cat_group_help', 'The bound group is the page’s shared structured schema — a dedicated group is created automatically when none is picked. Only pick an existing group to deliberately share a schema.')
 		},
 		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' }
 	];
@@ -250,7 +250,7 @@
 							render: (v: string, row: WikiCategoryItem) =>
 								v
 									? `${v}<span class="block font-mono text-xs" style="color: var(--color-muted)">${row.field_group_slug ?? ''}</span>`
-									: `<span class="text-xs" style="color: var(--color-muted)">${t('app.wiki.prose_only', 'prose only')}</span>`
+									: `<span class="text-xs" style="color: var(--color-muted)">${t('app.wiki.unbound', 'unbound')}</span>`
 						},
 						{ key: 'position', label: t('app.wiki.cat_position', 'Pos'), width: 64 },
 						{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), componentSnippet: BoolCell }

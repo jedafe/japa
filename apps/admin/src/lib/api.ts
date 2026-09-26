@@ -1962,7 +1962,8 @@ export type WikiTypeItem = {
 
 // WikiCategoryItem is one row of a type's category template —
 // GET /admin/wiki/types/:id/categories. field_group_* identify the bound
-// custom field group; empty means the category is prose-only.
+// custom field group — always set; the group is the page's schema
+// (auto-provisioned as wiki_{type}_{category} when not specified).
 export type WikiCategoryItem = {
 	id: string;
 	slug: string;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -20,19 +21,23 @@ import (
 // Fakes for the service's injected collaborators
 // ---------------------------------------------------------------------------
 
-// fakeFieldReader is a fieldReadStore stub. Field lookups hit fieldsByKey;
-// per-field permissions come from perms keyed by field ID string —
-// [canView, canEdit] — surfaced through the batched list methods the
-// service actually calls.
+// fakeFieldReader is a fieldReadStore + fieldGroupProvisioner stub. Field
+// lookups hit fieldsByKey; per-field permissions come from perms keyed by
+// field ID string — [canView, canEdit] — surfaced through the batched list
+// methods the service actually calls. The provisioner methods are an
+// in-memory get-or-create store keyed by group slug.
 type fakeFieldReader struct {
-	fieldsByKey map[string]gen.GetCustomFieldByKeyRow
-	perms       map[string][2]bool // fieldID.String() → [canView, canEdit]
-	permErr     error             // injected failure for the batch lookups
-	assignments []gen.CustomFieldGroupAssignment
-	groups      map[string]gen.CustomFieldGroup
-	groupFields map[string][]gen.ListCustomFieldsByGroupRow
-	values      []gen.ListCustomFieldValuesWithDefsByEntityRow
-	byKeyCalls  []string
+	fieldsByKey       map[string]gen.GetCustomFieldByKeyRow
+	perms             map[string][2]bool // fieldID.String() → [canView, canEdit]
+	permErr           error              // injected failure for the batch lookups
+	assignments       []gen.CustomFieldGroupAssignment
+	groups            map[string]gen.CustomFieldGroup
+	groupFields       map[string][]gen.ListCustomFieldsByGroupRow
+	values            []gen.ListCustomFieldValuesWithDefsByEntityRow
+	byKeyCalls        []string
+	createdGroups     []gen.CustomFieldGroup
+	createdAssigns    []gen.CreateAssignmentParams
+	nextProvisionUUID int
 }
 
 func (f *fakeFieldReader) permSet(wantEdit bool) []pgtype.UUID {
@@ -101,6 +106,49 @@ func (f *fakeFieldReader) GetFieldGroup(_ context.Context, id pgtype.UUID) (gen.
 
 func (f *fakeFieldReader) ListFieldsByGroup(_ context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
 	return f.groupFields[groupID.String()], nil
+}
+
+// fieldGroupProvisioner side — slug-keyed get-or-create.
+
+func (f *fakeFieldReader) GetFieldGroupBySlug(_ context.Context, slug string) (gen.CustomFieldGroup, error) {
+	for _, g := range f.groups {
+		if g.Slug == slug {
+			return g, nil
+		}
+	}
+
+	return gen.CustomFieldGroup{}, pgx.ErrNoRows
+}
+
+func (f *fakeFieldReader) CreateFieldGroup(_ context.Context, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error) {
+	f.nextProvisionUUID++
+
+	var id pgtype.UUID
+	if err := id.Scan(fmt.Sprintf("00000000-0000-0000-0000-%012x", f.nextProvisionUUID)); err != nil {
+		return gen.CustomFieldGroup{}, err
+	}
+
+	g := gen.CustomFieldGroup{ID: id, Name: name, Slug: slug, Description: description, IsSystem: isSystem}
+	if f.groups == nil {
+		f.groups = map[string]gen.CustomFieldGroup{}
+	}
+	f.groups[id.String()] = g
+	f.createdGroups = append(f.createdGroups, g)
+
+	return g, nil
+}
+
+func (f *fakeFieldReader) CreateAssignment(_ context.Context, p gen.CreateAssignmentParams) (gen.CustomFieldGroupAssignment, error) {
+	a := gen.CustomFieldGroupAssignment{
+		GroupID:     p.GroupID,
+		EntityClass: p.EntityClass,
+		EntityID:    p.EntityID,
+		Position:    p.Position,
+	}
+	f.assignments = append(f.assignments, a)
+	f.createdAssigns = append(f.createdAssigns, p)
+
+	return a, nil
 }
 
 // fakePermChecker stubs the RBAC resolver; granted maps node → allowed.
@@ -360,10 +408,10 @@ func TestEntityClassesFor(t *testing.T) {
 	spaceTypeID := mustUUID(t, "00000000-0000-0000-0000-0000000000d1")
 
 	cases := []struct {
-		entityType     string
-		spaceTypeID    pgtype.UUID
-		spaceTypeSlug  string
-		want           []string
+		entityType    string
+		spaceTypeID   pgtype.UUID
+		spaceTypeSlug string
+		want          []string
 	}{
 		{"university", spaceTypeID, "university", []string{"space_type:university", "space_type:" + spaceTypeID.String(), "space_type"}},
 		{"space", spaceTypeID, "country", []string{"space_type:country", "space_type:" + spaceTypeID.String(), "space_type"}},

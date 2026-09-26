@@ -67,9 +67,10 @@ type WikiPageDetailDTO struct {
 	CurrentContent  json.RawMessage `json:"current_content"`
 	RevisionSummary string          `json:"revision_summary,omitempty"`
 	SubmittedBy     string          `json:"submitted_by,omitempty"`
-	// Fields is the bound field group's schema+values block (§80); nil for
-	// prose-only categories. CategoryLabel echoes the template's admin-set
-	// label so the page heading isn't hardcoded.
+	// Fields is the bound field group's schema+values block (§80); every
+	// category binds a group, so nil only when the group lookup itself
+	// fails. CategoryLabel echoes the template's admin-set label so the
+	// page heading isn't hardcoded.
 	Fields        *EntityFieldGroupDTO `json:"fields,omitempty"`
 	CategoryLabel string               `json:"category_label,omitempty"`
 }
@@ -190,11 +191,12 @@ type Service struct {
 	dispatcher AIDispatcher
 
 	// §80 community field ops collaborators (see service_fields.go):
-	fields         fieldReadStore    // submit-time custom-field reads
-	entityResolver entityResolver    // JCE item_ref resolver registry
-	jceBuster      jceCacheBuster    // JCE comparison cache invalidation
-	enqueuer       TaskEnqueuer      // Asynq enqueue for wiki:fields_propagate
-	perms          permissionChecker // per-op RBAC node checks
+	fields           fieldReadStore        // submit-time custom-field reads
+	fieldProvisioner fieldGroupProvisioner // category group auto-provisioning
+	entityResolver   entityResolver        // JCE item_ref resolver registry
+	jceBuster        jceCacheBuster        // JCE comparison cache invalidation
+	enqueuer         TaskEnqueuer          // Asynq enqueue for wiki:fields_propagate
+	perms            permissionChecker     // per-op RBAC node checks
 }
 
 // NewService creates a wiki service.
@@ -217,7 +219,12 @@ func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 // SetCustomFields injects the custom-fields read store used for submit-time
 // ops validation (field existence, can_edit) and the entity fields schema
 // read (§80 Community Field Ops). Implemented by *customfields.Service.
-func (s *Service) SetCustomFields(cfs fieldReadStore) { s.fields = cfs }
+// When the collaborator also satisfies fieldGroupProvisioner (the real
+// service does) it is retained for category group auto-provisioning.
+func (s *Service) SetCustomFields(cfs fieldReadStore) {
+	s.fields = cfs
+	s.fieldProvisioner, _ = cfs.(fieldGroupProvisioner)
+}
 
 // SetEntityResolver injects the JCE item_ref resolver registry used by
 // SuggestFields to verify the target entity exists and to find its host wiki

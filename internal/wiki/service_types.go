@@ -16,6 +16,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // ErrWikiTypeInUse is returned when deleting a wiki type while spaces of
@@ -53,8 +55,9 @@ type WikiTypeDTO struct {
 }
 
 // WikiCategoryDTO is a category template row — the public category list and
-// admin editor share the shape. field_group_* identify the bound group;
-// empty means the category is prose-only.
+// admin editor share the shape. field_group_* identify the bound group
+// (always present — the group is the page's schema; a prose-only page has
+// a group with no fields).
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiCategoryDTO struct {
 	ID             string `json:"id,omitempty"`
@@ -355,16 +358,20 @@ type CreateWikiCategoryRequest struct {
 	Position     int32  `json:"position"`
 }
 
-// CreateWikiTypeCategory adds a category to a type's template. The
-// field-group binding is validated against custom_field_groups so the
-// schema the page renders always resolves.
+// CreateWikiTypeCategory adds a category to a type's template. Every
+// category binds a field group — the group IS the page's schema: an
+// explicit field_group_id rebinds an existing group (validated against
+// custom_field_groups), while an omitted one auto-provisions a dedicated
+// group named wiki_{type}_{category} assigned to entity_class
+// 'space_type:{type_slug}' (§80 — per-level schema isolation for JCE).
 func (s *Service) CreateWikiTypeCategory(ctx context.Context, spaceTypeIDStr string, req CreateWikiCategoryRequest) (WikiCategoryDTO, error) {
 	spaceTypeID, err := s.resolveSpaceTypeID(ctx, spaceTypeIDStr, spaceTypeIDStr)
 	if err != nil {
 		return WikiCategoryDTO{}, err
 	}
 
-	if _, err := s.store.GetWikiType(ctx, spaceTypeID); err != nil {
+	wt, err := s.store.GetWikiType(ctx, spaceTypeID)
+	if err != nil {
 		return WikiCategoryDTO{}, err
 	}
 
@@ -386,7 +393,12 @@ func (s *Service) CreateWikiTypeCategory(ctx context.Context, spaceTypeIDStr str
 		return WikiCategoryDTO{}, fmt.Errorf("%w: category label required", ErrInvalidInput)
 	}
 
-	fgID, err := s.validateFieldGroup(ctx, req.FieldGroupID)
+	var fgID pgtype.UUID
+	if strings.TrimSpace(req.FieldGroupID) == "" {
+		fgID, err = s.provisionCategoryGroup(ctx, wt.SpaceTypeSlug, category, label)
+	} else {
+		fgID, err = s.validateFieldGroup(ctx, req.FieldGroupID)
+	}
 	if err != nil {
 		return WikiCategoryDTO{}, err
 	}
@@ -396,15 +408,73 @@ func (s *Service) CreateWikiTypeCategory(ctx context.Context, spaceTypeIDStr str
 		return WikiCategoryDTO{}, err
 	}
 
+	// The create RETURNING does not join the group — fill slug/name so the
+	// admin UI can show the (often auto-provisioned) binding immediately.
+	if c.FieldGroupID.Valid && s.fields != nil {
+		if g, err := s.fields.GetFieldGroup(ctx, c.FieldGroupID); err == nil {
+			c.FieldGroupSlug = &g.Slug
+			c.FieldGroupName = &g.Name
+		}
+	}
+
 	return wikiCategoryToDTO(c), nil
 }
 
-// validateFieldGroup resolves an optional field_group_id — empty means
-// prose-only (NULL). A non-empty value must be a real group.
+// provisionCategoryGroup get-or-creates the category's dedicated field
+// group (slug wiki_{type}_{category}) and ensures its entity-class
+// assignment (space_type:{type}) exists. A group that survives a deleted
+// category is reused rather than duplicated, keeping the binding stable
+// across delete/recreate.
+func (s *Service) provisionCategoryGroup(ctx context.Context, typeSlug, category, label string) (pgtype.UUID, error) {
+	if s.fieldProvisioner == nil {
+		return pgtype.UUID{}, fmt.Errorf("%w: field_group_id required (group provisioning unavailable)", ErrInvalidInput)
+	}
+
+	groupSlug := "wiki_" + typeSlug + "_" + category
+	group, err := s.fieldProvisioner.GetFieldGroupBySlug(ctx, groupSlug)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, err
+		}
+		group, err = s.fieldProvisioner.CreateFieldGroup(ctx, label+" ("+typeSlug+")", groupSlug, nil, false)
+		if err != nil {
+			return pgtype.UUID{}, err
+		}
+	}
+
+	entityClass := "space_type:" + typeSlug
+	assignments, err := s.fields.ListAssignmentsByEntityClass(ctx, entityClass)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	assigned := false
+	for _, a := range assignments {
+		if a.GroupID == group.ID && !a.EntityID.Valid {
+			assigned = true
+			break
+		}
+	}
+	if !assigned {
+		if _, err := s.fieldProvisioner.CreateAssignment(ctx, gen.CreateAssignmentParams{
+			GroupID:     group.ID,
+			EntityClass: entityClass,
+			Position:    0,
+		}); err != nil {
+			return pgtype.UUID{}, err
+		}
+	}
+
+	return group.ID, nil
+}
+
+// validateFieldGroup resolves an explicit field_group_id — it must be a
+// real custom_field_groups row. The binding is mandatory (NOT NULL);
+// category create without a value goes through provisionCategoryGroup
+// instead.
 func (s *Service) validateFieldGroup(ctx context.Context, idStr string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	if strings.TrimSpace(idStr) == "" {
-		return id, nil
+		return pgtype.UUID{}, fmt.Errorf("%w: field_group_id required", ErrInvalidInput)
 	}
 	if err := id.Scan(idStr); err != nil || !id.Valid {
 		return pgtype.UUID{}, ErrFieldGroupNotFound
@@ -423,7 +493,8 @@ func (s *Service) validateFieldGroup(ctx context.Context, idStr string) (pgtype.
 
 // UpdateWikiCategoryRequest is the admin patch payload; nil fields are left
 // unchanged. field_group_id participates via a pointer: an explicit value
-// (including "") replaces the binding — "" clears it to NULL.
+// rebinds to an existing group. The binding is mandatory — an empty string
+// is rejected (a category cannot exist without a group).
 // //nolint:revive // exported: request DTO naming follows package convention
 type UpdateWikiCategoryRequest struct {
 	Label        *string `json:"label"`
@@ -453,7 +524,9 @@ func (s *Service) UpdateWikiTypeCategory(ctx context.Context, idStr string, req 
 }
 
 // DeleteWikiTypeCategory removes a non-system category. Blocked while pages
-// in the category (any space of the type) carry approved prose.
+// in the category (any space of the type) carry approved prose. The bound
+// field group (and any field definitions / stored values) is left intact —
+// orphaned groups are cleaned up in the Admin Panel.
 func (s *Service) DeleteWikiTypeCategory(ctx context.Context, idStr string) error {
 	var id pgtype.UUID
 	if err := id.Scan(idStr); err != nil || !id.Valid {

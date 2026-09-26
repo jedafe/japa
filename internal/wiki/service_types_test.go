@@ -11,8 +11,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -100,10 +102,10 @@ func TestValidateFieldGroup(t *testing.T) {
 	}
 	svc := &Service{fields: fields}
 
-	// Empty = prose-only — returns an invalid (NULL) UUID without a lookup.
-	id, err := svc.validateFieldGroup(t.Context(), "")
-	if err != nil || id.Valid {
-		t.Fatalf("empty: want valid NULL id, got %v / %v", id, err)
+	// Empty is rejected — the binding is mandatory; category create routes an
+	// omitted id through provisionCategoryGroup instead.
+	if _, err := svc.validateFieldGroup(t.Context(), ""); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("empty: want ErrInvalidInput, got %v", err)
 	}
 
 	if _, err := svc.validateFieldGroup(t.Context(), "not-a-uuid"); !errors.Is(err, ErrFieldGroupNotFound) {
@@ -113,7 +115,7 @@ func TestValidateFieldGroup(t *testing.T) {
 		t.Fatalf("unknown group: want ErrFieldGroupNotFound, got %v", err)
 	}
 
-	id, err = svc.validateFieldGroup(t.Context(), groupID.String())
+	id, err := svc.validateFieldGroup(t.Context(), groupID.String())
 	if err != nil || id != groupID {
 		t.Fatalf("known group: want %v, got %v / %v", groupID, id, err)
 	}
@@ -231,14 +233,38 @@ func seedWikiTypeFixture(t *testing.T, ctx context.Context, database *db.DB) pgt
 	return typeID
 }
 
+// seedTestGroup inserts a real custom_field_groups row — category rows
+// require a valid field_group_id (NOT NULL). The group is removed on
+// cleanup after the referencing category (cleanups run LIFO, so seed the
+// group before creating categories that bind it).
+func seedTestGroup(t *testing.T, ctx context.Context, database *db.DB, slug string) pgtype.UUID {
+	t.Helper()
+
+	var id pgtype.UUID
+	if err := database.Writer.QueryRow(ctx,
+		`INSERT INTO custom_field_groups (name, slug, is_system)
+		 VALUES ($1, $2, false)
+		 ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+		 RETURNING id`, "Test "+slug, slug).Scan(&id); err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	t.Cleanup(func() {
+		database.Writer.Exec(context.Background(), `DELETE FROM custom_field_group_assignments WHERE group_id = $1`, id)
+		database.Writer.Exec(context.Background(), `DELETE FROM custom_field_groups WHERE id = $1`, id)
+	})
+
+	return id
+}
+
 func TestDeleteWikiTypeCategory_SystemGuard(t *testing.T) {
 	store, database := opsTestStore(t)
 	ctx := t.Context()
 	typeID := seedWikiTypeFixture(t, ctx, database)
+	groupID := seedTestGroup(t, ctx, database, "t-grp-"+genUUIDText(t)[:8])
 	svc := &Service{store: store}
 
 	sysSlug := "t-sys-" + genUUIDText(t)[:8]
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, sysSlug, strings.ReplaceAll(sysSlug, "-", "_"), "System Cat", pgtype.UUID{}, 90, true)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, sysSlug, strings.ReplaceAll(sysSlug, "-", "_"), "System Cat", groupID, 90, true)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -264,9 +290,10 @@ func TestDeleteWikiTypeCategory_ProseGuard(t *testing.T) {
 		t.Fatalf("retype space: %v", err)
 	}
 
+	groupID := seedTestGroup(t, ctx, database, "t-grp-"+genUUIDText(t)[:8])
 	proseSlug := "t-prose-" + genUUIDText(t)[:8]
 	proseCat := strings.ReplaceAll(proseSlug, "-", "_")
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, proseSlug, proseCat, "Guarded", pgtype.UUID{}, 91, false)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, proseSlug, proseCat, "Guarded", groupID, 91, false)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -324,9 +351,10 @@ func TestCreateWikiTypeCategory_DBValidation(t *testing.T) {
 	store, database := opsTestStore(t)
 	ctx := t.Context()
 	typeID := seedWikiTypeFixture(t, ctx, database)
-	// fakeFieldReader validates field_group_id against an empty group set —
-	// any binding resolves to ErrFieldGroupNotFound before the store.
-	svc := &Service{store: store, fields: &fakeFieldReader{groups: map[string]gen.CustomFieldGroup{}}}
+	// Real customfields service — auto-provisioning must write the group +
+	// assignment so the category row's mandatory FK resolves.
+	svc := &Service{store: store}
+	svc.SetCustomFields(customfields.NewService(database))
 
 	if _, err := svc.CreateWikiTypeCategory(ctx, typeID.String(), CreateWikiCategoryRequest{Slug: "Bad Slug", Label: "X"}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("invalid slug: want ErrInvalidInput, got %v", err)
@@ -348,6 +376,10 @@ func TestCreateWikiTypeCategory_DBValidation(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_categories WHERE slug = $1`, slug)
+		if cat.FieldGroupID != "" {
+			database.Writer.Exec(context.Background(), `DELETE FROM custom_field_group_assignments WHERE group_id = $1`, cat.FieldGroupID)
+			database.Writer.Exec(context.Background(), `DELETE FROM custom_field_groups WHERE id = $1`, cat.FieldGroupID)
+		}
 	})
 
 	// Category token derives from the slug (hyphens → underscores) when omitted.
@@ -357,16 +389,38 @@ func TestCreateWikiTypeCategory_DBValidation(t *testing.T) {
 	if cat.Slug != slug || cat.Label != "Created" {
 		t.Fatalf("created row mismatch: %+v", cat)
 	}
+	// A dedicated group was auto-provisioned: wiki_{type}_{category}.
+	var typeSlug string
+	if err := database.Writer.QueryRow(ctx, `SELECT slug FROM space_types WHERE id = $1`, typeID).Scan(&typeSlug); err != nil {
+		t.Fatalf("type slug: %v", err)
+	}
+	wantGroupSlug := "wiki_" + typeSlug + "_" + cat.Category
+	if cat.FieldGroupSlug != wantGroupSlug {
+		t.Fatalf("auto-provisioned group: want slug %q, got %+v", wantGroupSlug, cat)
+	}
+	// And it is scoped to exactly this type's entity class.
+	var assignCount int
+	if err := database.Writer.QueryRow(ctx,
+		`SELECT count(*) FROM custom_field_group_assignments
+		 WHERE group_id = $1 AND entity_class = $2 AND entity_id IS NULL`,
+		cat.FieldGroupID, "space_type:"+typeSlug).Scan(&assignCount); err != nil {
+		t.Fatalf("assignment lookup: %v", err)
+	}
+	if assignCount != 1 {
+		t.Fatalf("want 1 space_type:%s assignment, got %d", typeSlug, assignCount)
+	}
 }
 
 func TestUpdateWikiTypeCategory_PatchesMutableFields(t *testing.T) {
 	store, database := opsTestStore(t)
 	ctx := t.Context()
 	typeID := seedWikiTypeFixture(t, ctx, database)
+	groupID := seedTestGroup(t, ctx, database, "t-grp-"+genUUIDText(t)[:8])
 	svc := &Service{store: store}
+	svc.SetCustomFields(customfields.NewService(database))
 
 	updSlug := "t-upd-" + genUUIDText(t)[:8]
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, updSlug, strings.ReplaceAll(updSlug, "-", "_"), "Before", pgtype.UUID{}, 92, false)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, updSlug, strings.ReplaceAll(updSlug, "-", "_"), "Before", groupID, 92, false)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -374,8 +428,15 @@ func TestUpdateWikiTypeCategory_PatchesMutableFields(t *testing.T) {
 		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_categories WHERE id = $1`, cat.ID)
 	})
 
-	label, pos, fg := "After", int32(7), ""
-	if err := svc.UpdateWikiTypeCategory(ctx, cat.ID.String(), UpdateWikiCategoryRequest{Label: &label, Position: &pos, FieldGroupID: &fg}); err != nil {
+	// The binding is mandatory — an explicit empty field_group_id is
+	// rejected rather than clearing the group.
+	empty := ""
+	if err := svc.UpdateWikiTypeCategory(ctx, cat.ID.String(), UpdateWikiCategoryRequest{FieldGroupID: &empty}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("clear binding: want ErrInvalidInput, got %v", err)
+	}
+
+	label, pos := "After", int32(7)
+	if err := svc.UpdateWikiTypeCategory(ctx, cat.ID.String(), UpdateWikiCategoryRequest{Label: &label, Position: &pos}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
@@ -383,13 +444,105 @@ func TestUpdateWikiTypeCategory_PatchesMutableFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.Label != "After" || got.Position != 7 || got.FieldGroupID.Valid {
+	if got.Label != "After" || got.Position != 7 || got.FieldGroupID != groupID {
 		t.Fatalf("patch mismatch: %+v", got)
 	}
 	// Slug and category are immutable — not even addressable by the update
 	// request; confirm the row is unchanged.
 	if got.Slug != cat.Slug || got.Category != cat.Category {
 		t.Fatalf("immutable fields changed: %+v vs %+v", got, cat)
+	}
+}
+
+func TestProvisionCategoryGroup(t *testing.T) {
+	// Nil provisioner → mandatory binding cannot be satisfied.
+	svcNil := &Service{}
+	if _, err := svcNil.provisionCategoryGroup(t.Context(), "city", "cost_of_living", "Cost of Living"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("nil provisioner: want ErrInvalidInput, got %v", err)
+	}
+
+	// Fresh category → dedicated group + entity-class assignment created.
+	fields := &fakeFieldReader{}
+	svc := &Service{fields: fields, fieldProvisioner: fields}
+
+	gid, err := svc.provisionCategoryGroup(t.Context(), "city", "cost_of_living", "Cost of Living")
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if len(fields.createdGroups) != 1 {
+		t.Fatalf("want 1 created group, got %d", len(fields.createdGroups))
+	}
+	g := fields.createdGroups[0]
+	if g.Slug != "wiki_city_cost_of_living" || g.Name != "Cost of Living (city)" || g.IsSystem {
+		t.Fatalf("created group mismatch: %+v", g)
+	}
+	if gid != g.ID {
+		t.Fatalf("returned id %v != created group %v", gid, g.ID)
+	}
+	if len(fields.createdAssigns) != 1 {
+		t.Fatalf("want 1 assignment, got %d", len(fields.createdAssigns))
+	}
+	a := fields.createdAssigns[0]
+	if a.GroupID != g.ID || a.EntityClass != "space_type:city" || a.EntityID.Valid {
+		t.Fatalf("assignment mismatch: %+v", a)
+	}
+
+	// Per-level isolation — the same category on another level yields a
+	// distinct group slug.
+	if _, err := svc.provisionCategoryGroup(t.Context(), "country", "cost_of_living", "Cost of Living"); err != nil {
+		t.Fatalf("provision country: %v", err)
+	}
+	if len(fields.createdGroups) != 2 || fields.createdGroups[1].Slug != "wiki_country_cost_of_living" {
+		t.Fatalf("country group: %+v", fields.createdGroups)
+	}
+
+	// Reuse — an existing group with its assignment intact is bound as-is.
+	fields2 := &fakeFieldReader{
+		groups: map[string]gen.CustomFieldGroup{
+			g.ID.String(): g,
+		},
+		assignments: []gen.CustomFieldGroupAssignment{
+			{GroupID: g.ID, EntityClass: "space_type:city"},
+		},
+	}
+	svc2 := &Service{fields: fields2, fieldProvisioner: fields2}
+	gotID, err := svc2.provisionCategoryGroup(t.Context(), "city", "cost_of_living", "Cost of Living")
+	if err != nil {
+		t.Fatalf("reuse provision: %v", err)
+	}
+	if gotID != g.ID || len(fields2.createdGroups) != 0 || len(fields2.createdAssigns) != 0 {
+		t.Fatalf("reuse should create nothing: id=%v groups=%d assigns=%d", gotID, len(fields2.createdGroups), len(fields2.createdAssigns))
+	}
+}
+
+func TestDeleteFieldGroup_BlockedWhileCategoryBound(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	typeID := seedWikiTypeFixture(t, ctx, database)
+	groupID := seedTestGroup(t, ctx, database, "t-grp-"+genUUIDText(t)[:8])
+	cfSvc := customfields.NewService(database)
+
+	catSlug := "t-fg-" + genUUIDText(t)[:8]
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, catSlug, strings.ReplaceAll(catSlug, "-", "_"), "Bound", groupID, 93, false)
+	if err != nil {
+		t.Fatalf("create category: %v", err)
+	}
+	t.Cleanup(func() {
+		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_categories WHERE id = $1`, cat.ID)
+	})
+
+	// ON DELETE RESTRICT — a bound group cannot be deleted even with force.
+	if err := cfSvc.DeleteFieldGroup(ctx, groupID, true); !errors.Is(err, errpkg.ErrInUse) {
+		t.Fatalf("delete bound group: want ErrInUse, got %v", err)
+	}
+
+	// Deleting the category leaves the group + its data intact; the group
+	// is then deletable on its own.
+	if _, err := database.Writer.Exec(ctx, `DELETE FROM wiki_type_categories WHERE id = $1`, cat.ID); err != nil {
+		t.Fatalf("delete category: %v", err)
+	}
+	if err := cfSvc.DeleteFieldGroup(ctx, groupID, true); err != nil {
+		t.Fatalf("delete unbound group: %v", err)
 	}
 }
 

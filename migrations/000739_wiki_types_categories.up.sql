@@ -37,14 +37,21 @@ CREATE TABLE wiki_type_parents (
     CONSTRAINT wiki_type_parents_no_self CHECK (space_type_id <> parent_space_type_id)
 );
 
--- Per-type category template. field_group_id NULL = prose-only page.
+-- Per-type category template. Every category owns a custom field group
+-- (field_group_id NOT NULL): the group IS the page's schema — a prose-only
+-- page is a category whose group has no fields. Each level's category binds
+-- its own group scoped to entity_class 'space_type:{slug}' so JCE compares
+-- like-for-like (city↔city, country↔country) — disjoint groups make
+-- cross-level comparison unrepresentable. ON DELETE RESTRICT: a bound group
+-- cannot be deleted out from under a category (DeleteFieldGroup → 409
+-- in_use, same contract as ticket_types/comparison_type_definitions).
 CREATE TABLE wiki_type_categories (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     space_type_id  uuid NOT NULL REFERENCES wiki_type_configs(space_type_id) ON DELETE CASCADE,
     slug           text NOT NULL,
     category       text NOT NULL,
     label          text NOT NULL,
-    field_group_id uuid REFERENCES custom_field_groups(id) ON DELETE SET NULL,
+    field_group_id uuid NOT NULL REFERENCES custom_field_groups(id) ON DELETE RESTRICT,
     position       int NOT NULL DEFAULT 0,
     is_system      boolean NOT NULL DEFAULT false,
     created_at     timestamptz NOT NULL DEFAULT now(),
@@ -53,7 +60,7 @@ CREATE TABLE wiki_type_categories (
 );
 
 CREATE INDEX idx_wiki_type_categories_group
-    ON wiki_type_categories (field_group_id) WHERE field_group_id IS NOT NULL;
+    ON wiki_type_categories (field_group_id);
 
 -- ---------------------------------------------------------------------------
 -- Seeds: wiki types for the geo chain + university.
@@ -80,44 +87,94 @@ INSERT INTO wiki_type_parents (space_type_id, parent_space_type_id) VALUES
     ('00000000-0000-0000-0000-000000000064', '00000000-0000-0000-0000-000000000062')  -- uni   → city
 ON CONFLICT DO NOTHING;
 
--- Geo category set (was the hardcoded wikiCategories slice + stub seeder
--- spec). Per-level fit: visa-routes and banking are country-only (visas and
+-- Category template seeds + their dedicated per-level field groups.
+-- Per-level fit: visa-routes and banking are country-only (visas and
 -- banking systems are national); healthcare, cost-of-living, community,
--- housing, overview, and other exist at every geo level.
-INSERT INTO wiki_type_categories (id, space_type_id, slug, category, label, field_group_id, position, is_system) VALUES
+-- housing, overview, and other exist at every geo level; university keeps
+-- its own set.
+--
+-- Every category owns one empty custom_field_groups row named
+-- wiki_{type_slug}_{category} (e.g. wiki_city_cost_of_living) plus a
+-- custom_field_group_assignments row scoped to entity_class
+-- 'space_type:{type_slug}'. Schema is type-level and cfv values are
+-- entity-level, so JCE compares like-for-like (city↔city across countries,
+-- never city↔country) — cross-level comparison is unrepresentable because
+-- the groups are disjoint. A "prose-only" page is a category whose group
+-- has no fields.
+CREATE TEMP TABLE _wiki_cat_seed (
+    type_id  uuid,
+    slug     text,
+    category text,
+    label    text,
+    position int
+);
+
+INSERT INTO _wiki_cat_seed (type_id, slug, category, label, position) VALUES
     -- country
-    ('00000000-0000-0000-0000-00000000d001', '00000000-0000-0000-0000-000000000060', 'overview',       'overview',       'Overview',        NULL, 1, true),
-    ('00000000-0000-0000-0000-00000000d002', '00000000-0000-0000-0000-000000000060', 'visa-routes',    'visa',           'Visa Routes',     NULL, 2, true),
-    ('00000000-0000-0000-0000-00000000d003', '00000000-0000-0000-0000-000000000060', 'cost-of-living', 'cost_of_living', 'Cost of Living',  NULL, 3, true),
-    ('00000000-0000-0000-0000-00000000d004', '00000000-0000-0000-0000-000000000060', 'healthcare',     'healthcare',     'Healthcare',      NULL, 4, true),
-    ('00000000-0000-0000-0000-00000000d005', '00000000-0000-0000-0000-000000000060', 'banking',        'banking',        'Banking',         NULL, 5, true),
-    ('00000000-0000-0000-0000-00000000d006', '00000000-0000-0000-0000-000000000060', 'community',      'community',      'Community',       NULL, 6, true),
-    ('00000000-0000-0000-0000-00000000d007', '00000000-0000-0000-0000-000000000060', 'housing',        'housing',        'Housing',         NULL, 7, true),
-    ('00000000-0000-0000-0000-00000000d008', '00000000-0000-0000-0000-000000000060', 'other',          'other',          'Other',           NULL, 8, true),
+    ('00000000-0000-0000-0000-000000000060', 'overview',       'overview',       'Overview',       1),
+    ('00000000-0000-0000-0000-000000000060', 'visa-routes',    'visa',           'Visa Routes',    2),
+    ('00000000-0000-0000-0000-000000000060', 'cost-of-living', 'cost_of_living', 'Cost of Living', 3),
+    ('00000000-0000-0000-0000-000000000060', 'healthcare',     'healthcare',     'Healthcare',     4),
+    ('00000000-0000-0000-0000-000000000060', 'banking',        'banking',        'Banking',        5),
+    ('00000000-0000-0000-0000-000000000060', 'community',      'community',      'Community',      6),
+    ('00000000-0000-0000-0000-000000000060', 'housing',        'housing',        'Housing',        7),
+    ('00000000-0000-0000-0000-000000000060', 'other',          'other',          'Other',          8),
     -- state (no visa-routes or banking — national topics)
-    ('00000000-0000-0000-0000-00000000d011', '00000000-0000-0000-0000-000000000061', 'overview',       'overview',       'Overview',        NULL, 1, true),
-    ('00000000-0000-0000-0000-00000000d013', '00000000-0000-0000-0000-000000000061', 'cost-of-living', 'cost_of_living', 'Cost of Living',  NULL, 2, true),
-    ('00000000-0000-0000-0000-00000000d014', '00000000-0000-0000-0000-000000000061', 'healthcare',     'healthcare',     'Healthcare',      NULL, 3, true),
-    ('00000000-0000-0000-0000-00000000d016', '00000000-0000-0000-0000-000000000061', 'community',      'community',      'Community',       NULL, 4, true),
-    ('00000000-0000-0000-0000-00000000d017', '00000000-0000-0000-0000-000000000061', 'housing',        'housing',        'Housing',         NULL, 5, true),
-    ('00000000-0000-0000-0000-00000000d018', '00000000-0000-0000-0000-000000000061', 'other',          'other',          'Other',           NULL, 6, true),
+    ('00000000-0000-0000-0000-000000000061', 'overview',       'overview',       'Overview',       1),
+    ('00000000-0000-0000-0000-000000000061', 'cost-of-living', 'cost_of_living', 'Cost of Living', 2),
+    ('00000000-0000-0000-0000-000000000061', 'healthcare',     'healthcare',     'Healthcare',     3),
+    ('00000000-0000-0000-0000-000000000061', 'community',      'community',      'Community',      4),
+    ('00000000-0000-0000-0000-000000000061', 'housing',        'housing',        'Housing',        5),
+    ('00000000-0000-0000-0000-000000000061', 'other',          'other',          'Other',          6),
     -- city (no visa-routes or banking — national topics)
-    ('00000000-0000-0000-0000-00000000d021', '00000000-0000-0000-0000-000000000062', 'overview',       'overview',       'Overview',        NULL, 1, true),
-    ('00000000-0000-0000-0000-00000000d023', '00000000-0000-0000-0000-000000000062', 'cost-of-living', 'cost_of_living', 'Cost of Living',  NULL, 2, true),
-    ('00000000-0000-0000-0000-00000000d024', '00000000-0000-0000-0000-000000000062', 'healthcare',     'healthcare',     'Healthcare',      NULL, 3, true),
-    ('00000000-0000-0000-0000-00000000d026', '00000000-0000-0000-0000-000000000062', 'community',      'community',      'Community',       NULL, 4, true),
-    ('00000000-0000-0000-0000-00000000d027', '00000000-0000-0000-0000-000000000062', 'housing',        'housing',        'Housing',         NULL, 5, true),
-    ('00000000-0000-0000-0000-00000000d028', '00000000-0000-0000-0000-000000000062', 'other',          'other',          'Other',           NULL, 6, true),
-    -- university (was the hardcoded wikiUniversityCategories slice)
-    ('00000000-0000-0000-0000-00000000d031', '00000000-0000-0000-0000-000000000064', 'overview',       'overview',       'Overview',        NULL, 1, true),
-    ('00000000-0000-0000-0000-00000000d032', '00000000-0000-0000-0000-000000000064', 'admissions',     'admissions',     'Admissions',      NULL, 2, true),
-    ('00000000-0000-0000-0000-00000000d033', '00000000-0000-0000-0000-000000000064', 'programs',       'programs',       'Programs',        NULL, 3, true),
-    ('00000000-0000-0000-0000-00000000d034', '00000000-0000-0000-0000-000000000064', 'tuition-fees',   'tuition_fees',   'Tuition & Fees',  NULL, 4, true),
-    ('00000000-0000-0000-0000-00000000d035', '00000000-0000-0000-0000-000000000064', 'scholarships',   'scholarships',   'Scholarships',    NULL, 5, true),
-    ('00000000-0000-0000-0000-00000000d036', '00000000-0000-0000-0000-000000000064', 'accommodation',  'accommodation',  'Accommodation',   NULL, 6, true),
-    ('00000000-0000-0000-0000-00000000d037', '00000000-0000-0000-0000-000000000064', 'campus-life',    'campus_life',    'Campus Life',     NULL, 7, true),
-    ('00000000-0000-0000-0000-00000000d038', '00000000-0000-0000-0000-000000000064', 'careers',        'careers',        'Careers',         NULL, 8, true),
-    ('00000000-0000-0000-0000-00000000d039', '00000000-0000-0000-0000-000000000064', 'other',          'other',          'Other',           NULL, 9, true)
+    ('00000000-0000-0000-0000-000000000062', 'overview',       'overview',       'Overview',       1),
+    ('00000000-0000-0000-0000-000000000062', 'cost-of-living', 'cost_of_living', 'Cost of Living', 2),
+    ('00000000-0000-0000-0000-000000000062', 'healthcare',     'healthcare',     'Healthcare',     3),
+    ('00000000-0000-0000-0000-000000000062', 'community',      'community',      'Community',      4),
+    ('00000000-0000-0000-0000-000000000062', 'housing',        'housing',        'Housing',        5),
+    ('00000000-0000-0000-0000-000000000062', 'other',          'other',          'Other',          6),
+    -- university
+    ('00000000-0000-0000-0000-000000000064', 'overview',       'overview',       'Overview',       1),
+    ('00000000-0000-0000-0000-000000000064', 'admissions',     'admissions',     'Admissions',     2),
+    ('00000000-0000-0000-0000-000000000064', 'programs',       'programs',       'Programs',       3),
+    ('00000000-0000-0000-0000-000000000064', 'tuition-fees',   'tuition_fees',   'Tuition & Fees', 4),
+    ('00000000-0000-0000-0000-000000000064', 'scholarships',   'scholarships',   'Scholarships',   5),
+    ('00000000-0000-0000-0000-000000000064', 'accommodation',  'accommodation',  'Accommodation',  6),
+    ('00000000-0000-0000-0000-000000000064', 'campus-life',    'campus_life',    'Campus Life',    7),
+    ('00000000-0000-0000-0000-000000000064', 'careers',        'careers',        'Careers',        8),
+    ('00000000-0000-0000-0000-000000000064', 'other',          'other',          'Other',          9);
+
+-- Dedicated per-level groups: wiki_{type_slug}_{category}.
+INSERT INTO custom_field_groups (name, slug, is_system)
+SELECT c.label || ' (' || st.slug || ')',
+       'wiki_' || st.slug || '_' || c.category,
+       true
+FROM _wiki_cat_seed c
+JOIN space_types st ON st.id = c.type_id
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO wiki_type_categories (id, space_type_id, slug, category, label, field_group_id, position, is_system)
+SELECT gen_random_uuid(), c.type_id, c.slug, c.category, c.label,
+       g.id, c.position, true
+FROM _wiki_cat_seed c
+JOIN space_types st ON st.id = c.type_id
+JOIN custom_field_groups g ON g.slug = 'wiki_' || st.slug || '_' || c.category
 ON CONFLICT (space_type_id, slug) DO NOTHING;
+
+-- Scope each category's group to exactly its wiki type's entity class so
+-- field resolution, permissions, and ops validation treat it as the type's
+-- class-level group.
+INSERT INTO custom_field_group_assignments (group_id, entity_class, entity_id, position)
+SELECT DISTINCT wtc.field_group_id, 'space_type:' || st.slug, NULL::uuid, 0
+FROM wiki_type_categories wtc
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM custom_field_group_assignments a
+    WHERE a.group_id = wtc.field_group_id
+      AND a.entity_class = 'space_type:' || st.slug
+      AND a.entity_id IS NULL
+);
+
+DROP TABLE _wiki_cat_seed;
 
 COMMIT;

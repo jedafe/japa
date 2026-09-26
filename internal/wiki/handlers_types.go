@@ -116,7 +116,9 @@ func (h *Handlers) HandleAdminListTypeCategories(w http.ResponseWriter, r *http.
 
 // HandleCreateWikiCategory handles
 // POST /admin/wiki/types/{space_type_id}/categories — adds a category to the
-// type's template; an optional field_group_id binds the shared schema.
+// type's template; an omitted field_group_id auto-provisions the category's
+// dedicated wiki_{type}_{category} group, an explicit one rebinds an
+// existing group.
 func (h *Handlers) HandleCreateWikiCategory(w http.ResponseWriter, r *http.Request) {
 	var req CreateWikiCategoryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
