@@ -115,6 +115,13 @@ type intelPromoterPortAdapter struct {
 func (a *intelPromoterPortAdapter) Promote(ctx context.Context, recordID uuid.UUID) (worker.IntelPromoteResult, error) {
 	result, err := a.prom.Promote(ctx, recordID)
 	if err != nil {
+		// Map the domain-level "data can't be promoted" sentinel onto the
+		// worker-side type so HandleIntelPromote can route the record to the
+		// review queue (the worker can't import promoter — import cycle).
+		if errors.Is(err, promoter.ErrRouteToReview) {
+			return worker.IntelPromoteResult{}, &worker.RouteToReviewError{Reason: err}
+		}
+
 		return worker.IntelPromoteResult{}, err
 	}
 

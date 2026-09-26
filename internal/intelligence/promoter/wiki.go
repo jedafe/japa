@@ -136,7 +136,7 @@ func (p *WikiPromoter) wikiCreatePath(ctx context.Context, record gen.IntelRecor
 	}
 	if !spaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
-			"promoter: wiki page requires a resolvable geo space but none matched — routing to review")
+			"promoter: wiki page requires a resolvable geo space but none matched: %w", ErrRouteToReview)
 	}
 
 	// Land on the managed category template; absent/unresolvable tokens

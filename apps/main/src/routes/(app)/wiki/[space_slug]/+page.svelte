@@ -42,7 +42,7 @@
 	const isUniversityWiki = data.wikiScope === 'university';
 
 	function categoryDesc(cat: string): string {
-		return t(`wiki.category_desc_${cat}`, t('wiki.category_desc_other', 'Guides and resources.'));
+		return t(`wiki.category_desc_${cat}`, t('wiki.category_desc_other', 'Guides and resources.'), { name: spaceName });
 	}
 
 	function categoryLabel(slug: string): string {

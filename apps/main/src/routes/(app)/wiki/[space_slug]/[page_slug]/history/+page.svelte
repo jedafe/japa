@@ -2,10 +2,12 @@
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { t } from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight, Table2 } from 'lucide-svelte';
 	import type { WikiRevision, WikiRevisionStatus } from '$lib/types';
 	import type { PageData } from './$types';
 	import { tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
+	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
+	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -45,6 +47,23 @@
 	const title = $derived(`${t('wiki.history_title', 'Revision history')} — JapaConnect`);
 	const description = $derived(t('wiki.history_description'));
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
+	const spaceName = $derived(data.spaceDetail?.space?.name ?? data.index[0]?.space_name ?? data.spaceSlug);
+	const spaceId = $derived(data.spaceDetail?.space?.id ?? data.index[0]?.space_id ?? '');
+	const spaceLevel = $derived(data.spaceDetail?.space?.level ?? '');
+
+	function kindBadge(kind: string | undefined): { label: string; cls: string } | null {
+		if (kind === 'fields') {
+			return { label: t('wiki.kind_fields', 'Fields'), cls: 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]' };
+		}
+		if (kind === 'mixed') {
+			return { label: t('wiki.kind_mixed', 'Content + fields'), cls: 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]' };
+		}
+		return null;
+	}
+
+	function opsCount(rev: WikiRevision): number {
+		return Array.isArray(rev.ops) ? rev.ops.length : 0;
+	}
 </script>
 
 <svelte:head>
@@ -54,6 +73,17 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 </svelte:head>
+
+<SetSidebar>
+	<WikiSidebar
+		spaceSlug={data.spaceSlug}
+		{spaceName}
+		{spaceId}
+		{spaceLevel}
+		pages={data.index ?? []}
+		currentPageSlug={data.pageSlug}
+	/>
+</SetSidebar>
 
 <div class="mx-auto w-full max-w-full">
 	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
@@ -83,19 +113,25 @@
 		{:else if data.revisions.length === 0}
 			<EmptyState
 				icon={History}
-				title={t('wiki.empty_title', 'No revisions yet')}
-				body={t('wiki.history_description', 'All revisions for this wiki page.')}
+				title={t('wiki.history_empty_title', 'No revisions yet')}
+				body={t('wiki.history_empty_body', 'No edits have been submitted for this page yet.')}
 				action={{ label: t('wiki.back_to_index', 'Back to page'), href: `/wiki/${data.spaceSlug}/${data.pageSlug}` }}
 			/>
 		{:else}
 			<ul class="mx-auto max-w-3xl divide-y divide-[var(--color-border)] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 				{#each data.revisions as rev (rev.id)}
 					{@const badge = statusBadge(rev.status as WikiRevisionStatus)}
+					{@const kind = kindBadge(rev.kind)}
 					<li class="px-4 py-3">
 						<div class="flex flex-wrap items-center gap-2">
 							<span class="rounded-full px-2.5 py-0.5 text-xs font-medium {badge.cls}">
 								{badge.label}
 							</span>
+							{#if kind}
+								<span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium {kind.cls}">
+									<Table2 size={12} /> {kind.label}
+								</span>
+							{/if}
 							{#if rev.ai_generated}
 								<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">
 									<Bot size={12} /> {t('wiki.revision_ai_generated', 'AI-generated')}
@@ -111,6 +147,10 @@
 						{#if rev.content}
 							<p class="mt-2 text-xs leading-relaxed text-[var(--color-text-subtle)]">
 								{excerpt(rev.content)}
+							</p>
+						{:else if opsCount(rev) > 0}
+							<p class="mt-2 text-xs leading-relaxed text-[var(--color-text-subtle)]">
+								{t('wiki.ops_count', '{count} field change(s)', { count: opsCount(rev) })}
 							</p>
 						{/if}
 

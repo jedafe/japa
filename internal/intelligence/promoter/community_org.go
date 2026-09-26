@@ -145,8 +145,8 @@ func (p *CommunityOrgPromoter) communityOrgCreatePath(ctx context.Context, recor
 
 	if !destinationSpaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
-			"promoter: community organisation requires a destination country space but none resolved for %q — routing to review",
-			countryCode,
+			"promoter: community organisation requires a destination country space but none resolved for %q: %w",
+			countryCode, ErrRouteToReview,
 		)
 	}
 

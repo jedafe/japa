@@ -16,6 +16,12 @@
 
 	$effect.pre(() => {
 		if (ctx) ctx.current = children;
-		return () => { if (ctx) ctx.current = null; };
+		// On route transitions SvelteKit can mount the incoming page before
+		// the outgoing page's cleanup runs — an unconditional reset would
+		// null out the NEW page's snippet, blanking the sidebar on every
+		// in-app navigation between sidebar routes (e.g. wiki index → page).
+		return () => {
+			if (ctx && ctx.current === children) ctx.current = null;
+		};
 	});
 </script>

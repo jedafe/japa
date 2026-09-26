@@ -1,3 +1,4 @@
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet } from '$lib/server/api';
 import type { Source, SourceCollection, SourceMeta } from '$lib/types/sources';
@@ -26,8 +27,11 @@ export const load: PageServerLoad = async (event) => {
 	const sort = validSorts.has(rawSort) ? rawSort : defaultSort;
 
 	const pageSize = PAGE_SIZE;
-	const page = parseInt(event.url.searchParams.get('page') ?? '1', 10);
-	const pageOffset = Math.max(0, page - 1) * pageSize;
+	// Normalize ?page= — parseInt yields NaN for junk input and admits
+	// non-positive values, which previously rendered "Page NaN of N".
+	const rawPage = Number(event.url.searchParams.get('page') ?? '1');
+	const page = Number.isInteger(rawPage) && rawPage >= 1 ? rawPage : 1;
+	const pageOffset = (page - 1) * pageSize;
 
 	const params = new URLSearchParams();
 	if (q) params.set('q', q);
@@ -50,6 +54,18 @@ export const load: PageServerLoad = async (event) => {
 			: Promise.resolve([] as SourceCollection[])
 	]);
 	const { items: sources, meta } = listResult;
+
+	// Canonicalize out-of-range pages (e.g. ?page=99 with one page of
+	// results) — otherwise the UI renders "Page 99 of 1" over an empty
+	// list. Redirect to the last valid page (or drop the param when the
+	// result set fits on page 1).
+	const lastPage = Math.max(1, Math.ceil((meta?.total ?? 0) / pageSize));
+	if (page > lastPage) {
+		const url = new URL(event.url);
+		if (lastPage > 1) url.searchParams.set('page', String(lastPage));
+		else url.searchParams.delete('page');
+		redirect(303, `${url.pathname}${url.search}`);
+	}
 
 	return {
 		sources,

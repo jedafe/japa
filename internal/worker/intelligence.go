@@ -74,6 +74,18 @@ type IntelPromoterPort interface {
 	Entity() string
 }
 
+// RouteToReviewError wraps a promoter data-level failure — the extraction is
+// missing something the projection requires (e.g. a resolvable geo space for
+// a NOT NULL FK), so retrying can never succeed. Adapters map
+// promoter.ErrRouteToReview to this type at the port boundary (the worker
+// cannot import promoter — same import cycle the port interface dodges).
+// HandleIntelPromote matches it with errors.As, flips the record to
+// 'review_required' with a review-log note, and completes the task.
+type RouteToReviewError struct{ Reason error }
+
+func (e *RouteToReviewError) Error() string { return e.Reason.Error() }
+func (e *RouteToReviewError) Unwrap() error { return e.Reason }
+
 // IntelPromoteResult mirrors promoter.PromoteResult. Exported so the
 // server package can build port adapters that satisfy intelPromoterPort
 // from outside the worker package.
@@ -2745,6 +2757,37 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 
 	result, err := prom.Promote(ctx, uid)
 	if err != nil {
+		// RouteToReviewError is a data-level failure (e.g. no resolvable geo
+		// space for a NOT NULL FK) — retrying can never fix it. Flip the
+		// record to review_required with a note so it lands in the human
+		// queue, and complete the task (same shape as the dedup
+		// cross-source-conflict path).
+		var rte *RouteToReviewError
+		if errors.As(err, &rte) {
+			slog.Warn("task:intel:promote: unresolvable record data, routing to review",
+				"record_id", p.RecordID, "entity_type", record.EntityType, "reason", err)
+
+			if uerr := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+				ID:     recordID,
+				Status: "review_required",
+			}); uerr != nil {
+				return fmt.Errorf("task:intel:promote: set review status: %w", uerr)
+			}
+
+			note := err.Error()
+			if lerr := intelStores.CreateIntelReviewLog(ctx, gen.CreateIntelReviewLogParams{
+				IntelRecordID: recordID,
+				ActorUserID:   pgtype.UUID{}, // system-generated, no human actor
+				Action:        "route_to_review",
+				FieldChanges:  []byte(`[]`),
+				Note:          &note,
+			}); lerr != nil {
+				return fmt.Errorf("task:intel:promote: write route-to-review log: %w", lerr)
+			}
+
+			return nil
+		}
+
 		return fmt.Errorf("task:intel:promote: %w", err)
 	}
 
