@@ -25,10 +25,10 @@ type stubSpaceReader struct {
 func (s stubSpaceReader) GetSpaceTypeBySlug(_ context.Context, _ string) (gen.SpaceType, error) {
 	return gen.SpaceType{}, nil
 }
-func (s stubSpaceReader) ListSpacesByTypePaginated(_ context.Context, _ pgtype.UUID, _, _, _, _, _ string, _, _ int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
+func (s stubSpaceReader) ListSpacesByTypePaginated(_ context.Context, _ pgtype.UUID, _, _, _, _, _, _ string, _, _ int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	return nil, nil
 }
-func (s stubSpaceReader) CountSpacesByType(_ context.Context, _ pgtype.UUID, _, _, _, _ string) (int64, error) {
+func (s stubSpaceReader) CountSpacesByType(_ context.Context, _ pgtype.UUID, _, _, _, _, _ string) (int64, error) {
 	return 0, nil
 }
 func (s stubSpaceReader) GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error) {

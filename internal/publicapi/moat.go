@@ -78,8 +78,8 @@ type ScholarshipReader interface {
 // the §47-intended public guard lives in the query, not app code.
 type SpaceReader interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error)
-	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
-	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
+	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
+	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string) (int64, error)
 	GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error)
 	// GetPublicSpaceByGeoCode enforces the same public/active/deleted guard
 	// in SQL — the extension digest resolves destination_country through it.
@@ -232,11 +232,11 @@ func (s *Service) ListUniversities(ctx context.Context, search, country, sort st
 	if err != nil {
 		return nil, 0, err
 	}
-	items, err := s.moat.Spaces.ListSpacesByTypePaginated(ctx, st.ID, search, country, "", "", sort, limit, offset)
+	items, err := s.moat.Spaces.ListSpacesByTypePaginated(ctx, st.ID, search, country, "", "", "", sort, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.moat.Spaces.CountSpacesByType(ctx, st.ID, search, country, "", "")
+	total, err := s.moat.Spaces.CountSpacesByType(ctx, st.ID, search, country, "", "", "")
 	if err != nil {
 		return nil, 0, err
 	}

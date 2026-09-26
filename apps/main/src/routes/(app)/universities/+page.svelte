@@ -44,6 +44,8 @@
 	// universities first". An explicit param always wins.
 	const qParam = $derived(page.url.searchParams.get('q') ?? '');
 	const countryParam = $derived(page.url.searchParams.get('country') ?? '');
+	const stateParam = $derived(page.url.searchParams.get('state') ?? '');
+	const cityParam = $derived(page.url.searchParams.get('city') ?? '');
 	const effectiveCountry = $derived(countryParam || data.countryDefault || '');
 	const sortParam = $derived(page.url.searchParams.get('sort') ?? 'newest');
 
@@ -51,6 +53,8 @@
 	// loaded server-side (ADR-005). The dropdown now shows all 250 primary
 	// geo-space countries and filters client-side via Autocomplete.
 	const allLabel = t('universities.all_countries', 'All countries');
+	const allStatesLabel = t('universities.all_states', 'All states');
+	const allCitiesLabel = t('universities.all_cities', 'All cities');
 
 	const sortOptions = $derived([
 		{ value: 'newest', label: t('universities.sort_newest', 'Newest') },
@@ -62,7 +66,9 @@
 
 	// Panel-active = explicit filters only: the geo-aware country default and
 	// the always-visible search box don't count (they're not in the panel).
-	const hasActiveFilters = $derived(!!countryParam || sortParam !== 'newest');
+	const hasActiveFilters = $derived(
+		!!countryParam || !!stateParam || !!cityParam || sortParam !== 'newest'
+	);
 
 	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
 	let showFilters = $state(false);
@@ -82,12 +88,19 @@
 	// restores the visible field values.
 	let qInput = $state(page.url.searchParams.get('q') ?? '');
 	let countryInput = $state(page.url.searchParams.get('country') ?? untrack(() => data.countryDefault) ?? '');
+	let stateInput = $state(page.url.searchParams.get('state') ?? untrack(() => data.stateDefault) ?? '');
+	let cityInput = $state(page.url.searchParams.get('city') ?? '');
 	let viewMode = $state<'grid' | 'list'>('grid');
 
 	// Sync local form state whenever the URL params change (back/forward, clear).
 	$effect(() => {
 		qInput = page.url.searchParams.get('q') ?? '';
 		countryInput = page.url.searchParams.get('country') ?? data.countryDefault ?? '';
+		// ?? data.stateDefault surfaces the server-resolved parent state on
+		// city-only URLs; it is null unless ?city= is present, so clearing the
+		// state filter can't resurrect it.
+		stateInput = page.url.searchParams.get('state') ?? data.stateDefault ?? '';
+		cityInput = page.url.searchParams.get('city') ?? '';
 	});
 
 	// Build a URLSearchParams from the current filter state, resetting to page 1.
@@ -95,9 +108,13 @@
 		const params = new URLSearchParams();
 		const q = overrides.q ?? qInput;
 		const country = overrides.country ?? countryInput;
+		const state = overrides.state ?? stateInput;
+		const city = overrides.city ?? cityInput;
 		const sort = overrides.sort ?? sortParam;
 		if (q) params.set('q', q);
 		if (country) params.set('country', country);
+		if (state) params.set('state', state);
+		if (city) params.set('city', city);
 		if (sort && sort !== 'newest') params.set('sort', sort);
 		return params;
 	}
@@ -121,13 +138,32 @@
 
 	function setCountry(value: string) {
 		countryInput = value;
-		const params = buildParams({ country: value });
+		// A new country invalidates the old state/city selections.
+		stateInput = '';
+		cityInput = '';
+		const params = buildParams({ country: value, state: '', city: '' });
+		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+	}
+
+	function setState(value: string) {
+		stateInput = value;
+		// A new state invalidates the old city selection.
+		cityInput = '';
+		const params = buildParams({ state: value, city: '' });
+		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+	}
+
+	function setCity(value: string) {
+		cityInput = value;
+		const params = buildParams({ city: value });
 		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
 	}
 
 	function clearFilters() {
 		qInput = '';
 		countryInput = '';
+		stateInput = '';
+		cityInput = '';
 		// Sort lives in the filter panel too — clear it along with country.
 		goto('/universities');
 	}
@@ -198,6 +234,40 @@
 	}
 	const selectedCountryLabel = $derived(
 		countryInput ? data.countries.find((c) => c.geo_code === countryInput)?.name ?? countryInput : allLabel
+	);
+
+	// State/city autocompletes — cascade off the country selection. Options are
+	// primary-space slugs (the backend `within` filter resolves descendants via
+	// space_parent_spaces). Each list is loaded server-side for the current
+	// parent selection.
+	function fetchStates(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allStatesLabel };
+		const items = data.states.map((s) => ({ id: s.slug, label: s.name }));
+		if (query === '') return Promise.resolve([allItem, ...items]);
+		const filtered = items.filter((s) => s.label.toLowerCase().includes(query));
+		return Promise.resolve(allStatesLabel.toLowerCase().includes(query) ? [allItem, ...filtered] : filtered);
+	}
+	function fetchStatesInitial(): Promise<AutocompleteItem[]> {
+		return fetchStates('');
+	}
+	const selectedStateLabel = $derived(
+		stateInput ? data.states.find((s) => s.slug === stateInput)?.name ?? stateInput : allStatesLabel
+	);
+
+	function fetchCities(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allCitiesLabel };
+		const items = data.cities.map((c) => ({ id: c.slug, label: c.name }));
+		if (query === '') return Promise.resolve([allItem, ...items]);
+		const filtered = items.filter((c) => c.label.toLowerCase().includes(query));
+		return Promise.resolve(allCitiesLabel.toLowerCase().includes(query) ? [allItem, ...filtered] : filtered);
+	}
+	function fetchCitiesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCities('');
+	}
+	const selectedCityLabel = $derived(
+		cityInput ? data.cities.find((c) => c.slug === cityInput)?.name ?? cityInput : allCitiesLabel
 	);
 
 </script>
@@ -291,6 +361,36 @@
 						selectedLabel={selectedCountryLabel}
 						onSelect={(item) => setCountry(item.id)}
 						onClear={() => setCountry('')}
+					/>
+				</div>
+				<div class="w-56 {effectiveCountry ? '' : 'pointer-events-none opacity-50'}">
+					<Autocomplete
+						placeholder={effectiveCountry
+							? t('universities.all_states', 'All states')
+							: t('universities.select_country_first', 'Select a country first')}
+						ariaLabel={t('universities.state_filter', 'Filter by state')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchStates}
+						initialFetcher={fetchStatesInitial}
+						selectedId={stateInput || null}
+						selectedLabel={selectedStateLabel}
+						onSelect={(item) => setState(item.id)}
+						onClear={() => setState('')}
+					/>
+				</div>
+				<div class="w-56 {stateInput || cityInput ? '' : 'pointer-events-none opacity-50'}">
+					<Autocomplete
+						placeholder={stateInput || cityInput
+							? t('universities.all_cities', 'All cities')
+							: t('universities.select_state_first', 'Select a state first')}
+						ariaLabel={t('universities.city_filter', 'Filter by city')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchCities}
+						initialFetcher={fetchCitiesInitial}
+						selectedId={cityInput || null}
+						selectedLabel={selectedCityLabel}
+						onSelect={(item) => setCity(item.id)}
+						onClear={() => setCity('')}
 					/>
 				</div>
 				<div class="w-44">

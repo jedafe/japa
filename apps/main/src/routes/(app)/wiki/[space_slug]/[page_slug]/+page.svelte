@@ -7,15 +7,33 @@
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
 	import SuggestEdit from '$lib/components/wiki/SuggestEdit.svelte';
+	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
+	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
+	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 	import { searchEntities } from '$lib/api/jce';
 	import type { ResolvedItem } from '$lib/types/jce';
-	import { BookOpen, Lock, Pencil, History, ArrowLeft, Send } from 'lucide-svelte';
+	import { BookOpen, ChevronRight, Lock, Pencil, History, Send } from 'lucide-svelte';
 	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
 
 	let { data }: { data: PageData } = $props();
+
+	const spaceName = $derived(
+		data.page?.space_name ?? data.spaceDetail?.space?.name ?? data.spaceSlug
+	);
+	const spaceId = $derived(data.page?.space_id ?? data.spaceDetail?.space?.id ?? '');
+	const spaceLevel = $derived(data.spaceDetail?.space?.level ?? '');
+	const crumbKind = $derived(
+		data.wikiScope === 'university'
+			? t('wiki.breadcrumb_university_guides', 'University Guides')
+			: spaceLevel === 'city'
+				? t('wiki.breadcrumb_city_guides', 'City Guides')
+				: spaceLevel === 'state'
+					? t('wiki.breadcrumb_state_guides', 'State Guides')
+					: t('wiki.breadcrumb_country_guides', 'Country Guides')
+	);
 
 	function categoryLabel(cat: WikiCategory): string {
 		return t(`wiki.category_${cat}`, cat.replace(/_/g, ' '));
@@ -110,9 +128,11 @@
 		if (!text) return t('wiki.page_description');
 		return text.length > 160 ? text.slice(0, 157).trimEnd() + '…' : text;
 	});
-	const ogImage = $derived(
-		data.spaceDetail?.header_url || data.spaceDetail?.logo_url || ''
-	);
+	const ogImage = $derived.by(() => {
+		const u = data.spaceDetail?.header_url || data.spaceDetail?.logo_url || '';
+		return u && !u.startsWith('http') ? page.url.origin + u : u;
+	});
+	const canonicalUrl = $derived(page.url.origin + page.url.pathname);
 	const canEdit = $derived(
 		!!data.page && !data.page.is_locked && data.authed && data.userPermissions?.includes('wiki.edit')
 	);
@@ -154,23 +174,64 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<meta property="og:url" content={canonicalUrl} />
 	{#if ogImage}
 		<meta property="og:image" content={ogImage} />
 		<meta name="twitter:image" content={ogImage} />
 		<meta name="twitter:card" content="summary_large_image" />
 	{/if}
-	<link rel="canonical" href={page.url.href} />
+	<link rel="canonical" href={canonicalUrl} />
 </svelte:head>
 
+<SetSidebar>
+	<WikiSidebar
+		spaceSlug={data.spaceSlug}
+		{spaceName}
+		{spaceId}
+		{spaceLevel}
+		pages={data.index ?? []}
+		currentPageSlug={data.pageSlug}
+	/>
+</SetSidebar>
+
 <div class="mx-auto w-full max-w-full">
-	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
-		<a
-			href="/wiki/{data.spaceSlug}"
-			class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
-		>
-			<ArrowLeft size={14} /> {t('wiki.back_to_index', 'Back to wiki')}
-		</a>
+	<!-- Breadcrumb: Wiki / {kind} Guides / {space} / {page} -->
+	<div class="border-b border-[var(--color-border)] px-4 py-2.5 sm:px-6">
+		<nav aria-label={t('a11y.breadcrumb', 'Breadcrumb')} class="min-w-0 text-xs text-[var(--color-muted)]">
+			<ol class="flex items-center gap-1.5">
+				<li>
+					<a href="/wiki" class="transition-colors hover:text-[var(--color-text)]">
+						{t('wiki.heading', 'Wiki')}
+					</a>
+				</li>
+				<li aria-hidden="true"><ChevronRight size={12} /></li>
+				<li>{crumbKind}</li>
+				<li aria-hidden="true"><ChevronRight size={12} /></li>
+				<li>
+					<a
+						href="/wiki/{encodeURIComponent(data.spaceSlug)}"
+						class="truncate transition-colors hover:text-[var(--color-text)]"
+					>
+						{spaceName}
+					</a>
+				</li>
+				{#if data.page}
+					<li aria-hidden="true"><ChevronRight size={12} /></li>
+					<li class="truncate font-medium text-[var(--color-text)]">{data.page.title}</li>
+				{/if}
+			</ol>
+		</nav>
+	</div>
+
+	<!-- Guide tab strip — active tab = this page's category -->
+	<div class="px-1 sm:px-3">
+		<WikiTabs
+			spaceSlug={data.spaceSlug}
+			categories={data.apiCategories ?? []}
+			pages={data.index ?? []}
+			active={data.page?.category ?? ''}
+			currentPageSlug={data.pageSlug}
+		/>
 	</div>
 
 	<div class="p-4">

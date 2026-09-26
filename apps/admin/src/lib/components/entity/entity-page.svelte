@@ -65,7 +65,11 @@
 		}) => Promise<{ data: any[]; total: number; totalPages: number } | any[]>;
 		create?: (body: Record<string, any>) => Promise<{ ok: boolean; error?: string; id?: string }>;
 		update?: (id: string, body: Record<string, any>) => Promise<{ ok: boolean; error?: string }>;
-		remove?: (id: string) => Promise<{ ok: boolean; error?: string }>;
+		remove?: (id: string) => Promise<{ ok: boolean; error?: string; inUse?: boolean }>;
+		/** Second-chance delete when `remove` reports the row is still referenced
+		 *  (returns `{ ok: false, inUse: true }`). The confirm modal then offers a
+		 *  "Delete Anyway" button that calls this callback (e.g. ?force=true). */
+		forceRemove?: (id: string) => Promise<{ ok: boolean; error?: string }>;
 		/** Permanently delete a soft-deleted row. When provided, a "Hard Delete" action
 		 *  appears for rows where `isDeleted(row)` returns true. */
 		hardRemove?: (id: string) => Promise<{ ok: boolean; error?: string }>;
@@ -138,6 +142,9 @@
 	// Delete-confirm modal
 	let confirmOpen = $state(false);
 	let deleteTarget = $state<any | null>(null);
+	// Set when a delete comes back in_use and config.forceRemove exists — the
+	// confirm modal switches into a "delete anyway" state with this message.
+	let deleteBlockedMessage = $state('');
 
 	// Hard-delete confirm modal (separate, stronger warning)
 	let hardDeleteConfirmOpen = $state(false);
@@ -397,6 +404,7 @@
 
 	function openDelete(row: any) {
 		deleteTarget = row;
+		deleteBlockedMessage = '';
 		confirmOpen = true;
 	}
 
@@ -436,11 +444,36 @@
 				deleteTarget = null;
 				success = t('common.saved', 'Saved');
 				await reload();
+			} else if (res?.inUse && config.forceRemove) {
+				// The row is still referenced — keep the modal open and offer
+				// the destructive "Delete Anyway" path instead of a dead end.
+				deleteBlockedMessage = res.error ?? t('common.error', 'An error occurred');
 			} else {
 				error = res?.error ?? t('common.error', 'An error occurred');
+				confirmOpen = false;
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+			confirmOpen = false;
+		}
+	}
+
+	async function confirmForceDelete() {
+		if (!deleteTarget || !config.forceRemove) return;
+		try {
+			const res = await config.forceRemove(deleteTarget.id);
+			if (res?.ok) {
+				confirmOpen = false;
+				deleteTarget = null;
+				deleteBlockedMessage = '';
+				success = t('common.saved', 'Saved');
+				await reload();
+			} else {
+				// Still blocked (e.g. a non-cascading reference) — show why.
+				deleteBlockedMessage = res?.error ?? t('common.error', 'An error occurred');
+			}
+		} catch (e) {
+			deleteBlockedMessage = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 		}
 	}
 
@@ -776,17 +809,34 @@
 
 <!-- Delete-confirm modal (soft delete) -->
 <Modal bind:open={confirmOpen} title={t('common.confirmDelete', 'Confirm Delete')}>
-	<p class="text-sm" style="color: var(--color-muted)">
-		{t('common.confirmDelete', 'Confirm Delete')}. {t('common.cannotUndo', 'This cannot be undone.')}.
-	</p>
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (confirmOpen = false)}>
-			{t('common.cancel', 'Cancel')}
-		</Button>
-		<Button variant="destructive" onclick={confirmDelete}>
-			{t('common.confirm', 'Confirm')}
-		</Button>
-	</div>
+	{#if deleteBlockedMessage}
+		<p class="text-sm" style="color: var(--color-danger)">
+			{deleteBlockedMessage}
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-muted)">
+			{t('common.forceDeleteWarning', 'Deleting anyway permanently removes this record and every stored value referencing it. This cannot be undone.')}
+		</p>
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (confirmOpen = false)}>
+				{t('common.cancel', 'Cancel')}
+			</Button>
+			<Button variant="destructive" onclick={confirmForceDelete}>
+				{t('common.forceDelete', 'Delete Anyway')}
+			</Button>
+		</div>
+	{:else}
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('common.confirmDelete', 'Confirm Delete')}. {t('common.cannotUndo', 'This cannot be undone.')}.
+		</p>
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (confirmOpen = false)}>
+				{t('common.cancel', 'Cancel')}
+			</Button>
+			<Button variant="destructive" onclick={confirmDelete}>
+				{t('common.confirm', 'Confirm')}
+			</Button>
+		</div>
+	{/if}
 </Modal>
 
 <!-- Hard-delete confirm modal (permanent erasure) -->

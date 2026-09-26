@@ -273,8 +273,8 @@ func (s *Service) MinReputationToEdit(ctx context.Context) int {
 // non-empty parentSlug filters to direct children of that space; a non-empty
 // region filters country-level spaces by spaces.region; hasWiki, when true,
 // only returns spaces with at least one active wiki page.
-func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, region, search string, hasWiki bool) ([]WikiDestinationDTO, error) {
-	dests, err := s.store.ListWikiDestinations(ctx, level, parentSlug, region, search, hasWiki)
+func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool) ([]WikiDestinationDTO, error) {
+	dests, err := s.store.ListWikiDestinations(ctx, level, parentSlug, region, search, within, hasWiki)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: get destinations: %w", err)
 	}

@@ -82,6 +82,7 @@ seed-geo-wiki
 fix-geo-logos
 seed-geo-enrich
 seed-universities
+/backfill-university-geo
 /api
 jc-api
 reindex

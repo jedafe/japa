@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -131,25 +132,41 @@ func (s *Service) UpdateFieldGroup(ctx context.Context, id pgtype.UUID, name str
 
 // DeleteFieldGroup deletes a non-system custom field group, scoped to the
 // platform. System groups are protected at the database level.
-// BUG-008: rejects deletion when the group has existing custom_field_values
-// (i.e. the group is actively storing data for entities). This prevents
-// silent data loss when an admin deletes a group that's in use.
-func (s *Service) DeleteFieldGroup(ctx context.Context, id pgtype.UUID) error {
-	// Check for existing field values referencing this group's fields.
-	count, err := s.read.CountCustomFieldValuesByGroup(ctx,
-		id,
-	)
-	if err != nil {
-		return fmt.Errorf("checking field group usage: %w", err)
-	}
+// BUG-008: without force, rejects deletion when the group has existing
+// custom_field_values (i.e. the group is actively storing data for entities).
+// This prevents silent data loss when an admin deletes a group that's in use.
+// With force (DELETE ?force=true, Section 06), the single DELETE statement
+// cascades through custom_fields → custom_field_values and
+// custom_field_group_assignments. References declared ON DELETE SET NULL —
+// space_types.field_group_id and wiki_type_categories.field_group_id — are
+// detached (the space type / wiki category loses its bound group). References
+// without a cascade — ticket_types.field_group_id and
+// comparison_type_definitions.field_group_id — still block via FK violation
+// and surface as ErrInUse.
+func (s *Service) DeleteFieldGroup(ctx context.Context, id pgtype.UUID, force bool) error {
+	if !force {
+		// Check for existing field values referencing this group's fields.
+		count, err := s.read.CountCustomFieldValuesByGroup(ctx,
+			id,
+		)
+		if err != nil {
+			return fmt.Errorf("checking field group usage: %w", err)
+		}
 
-	if count > 0 {
-		return fmt.Errorf("%w: cannot delete field group with %d existing value(s)", errpkg.ErrInUse, count)
+		if count > 0 {
+			return fmt.Errorf("%w: cannot delete field group with %d existing value(s)", errpkg.ErrInUse, count)
+		}
 	}
 
 	if err := s.write.DeleteCustomFieldGroup(ctx,
 		id,
 	); err != nil {
+		// foreign_key_violation — the group is still referenced by a
+		// non-cascading table (e.g. ticket_types, comparison_type_definitions).
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return fmt.Errorf("%w: field group is still referenced by %s", errpkg.ErrInUse, pgErr.TableName)
+		}
 		return fmt.Errorf("deleting custom field group: %w", err)
 	}
 
