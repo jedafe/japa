@@ -32,6 +32,10 @@ var ErrWikiCategoryProtected = errors.New("wiki category is system-protected")
 // carry approved prose.
 var ErrWikiCategoryInUse = errors.New("wiki category has pages with content")
 
+// ErrWikiCategoryExists is returned when a category's slug or category
+// token collides with an existing template row on the same type.
+var ErrWikiCategoryExists = errors.New("wiki category already exists")
+
 // ErrFieldGroupNotFound is returned when a category binds a
 // custom_field_groups id that does not exist.
 var ErrFieldGroupNotFound = errors.New("field group not found")
@@ -426,7 +430,7 @@ func (s *Service) CreateWikiTypeCategory(ctx context.Context, spaceTypeIDStr str
 // category is reused rather than duplicated, keeping the binding stable
 // across delete/recreate.
 func (s *Service) provisionCategoryGroup(ctx context.Context, typeSlug, category, label string) (pgtype.UUID, error) {
-	if s.fieldProvisioner == nil {
+	if s.fieldProvisioner == nil || s.fields == nil {
 		return pgtype.UUID{}, fmt.Errorf("%w: field_group_id required (group provisioning unavailable)", ErrInvalidInput)
 	}
 
@@ -438,7 +442,12 @@ func (s *Service) provisionCategoryGroup(ctx context.Context, typeSlug, category
 		}
 		group, err = s.fieldProvisioner.CreateFieldGroup(ctx, label+" ("+typeSlug+")", groupSlug, nil, false)
 		if err != nil {
-			return pgtype.UUID{}, err
+			// A concurrent create (or a read replica that shadowed an
+			// existing row) took the slug — reuse it rather than fail.
+			group, err = s.fieldProvisioner.GetFieldGroupBySlug(ctx, groupSlug)
+			if err != nil {
+				return pgtype.UUID{}, err
+			}
 		}
 	}
 
@@ -460,7 +469,22 @@ func (s *Service) provisionCategoryGroup(ctx context.Context, typeSlug, category
 			EntityClass: entityClass,
 			Position:    0,
 		}); err != nil {
-			return pgtype.UUID{}, err
+			// A concurrent create (or a read replica that shadowed a
+			// committed row) may have beaten this insert — re-read the class
+			// assignments and continue only when the row now exists. A real
+			// failure must surface: without the assignment the group is
+			// invisible to entity-field resolution even though the page
+			// renders it via field_group_id.
+			retry, rerr := s.fields.ListAssignmentsByEntityClass(ctx, entityClass)
+			if rerr != nil {
+				return pgtype.UUID{}, fmt.Errorf("wiki: provision category group: %w", rerr)
+			}
+			for _, a := range retry {
+				if a.GroupID == group.ID && !a.EntityID.Valid {
+					return group.ID, nil
+				}
+			}
+			return pgtype.UUID{}, fmt.Errorf("wiki: provision category group assignment: %w", err)
 		}
 	}
 
@@ -508,6 +532,13 @@ func (s *Service) UpdateWikiTypeCategory(ctx context.Context, idStr string, req 
 	var id pgtype.UUID
 	if err := id.Scan(idStr); err != nil || !id.Valid {
 		return ErrWikiCategoryNotFound
+	}
+
+	if req.Label != nil {
+		*req.Label = strings.TrimSpace(*req.Label)
+		if *req.Label == "" {
+			return fmt.Errorf("%w: category label required", ErrInvalidInput)
+		}
 	}
 
 	updateFG := req.FieldGroupID != nil

@@ -135,6 +135,7 @@
 		'jsonld',
 		'tabular',
 		'sitemap',
+		'spider',
 		'ical',
 		'git',
 		'social',

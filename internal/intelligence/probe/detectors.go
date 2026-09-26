@@ -704,6 +704,84 @@ func mailtoAddress(href string) (string, bool) {
 	return addr, addr != ""
 }
 
+// spiderDetector proposes a bounded same-host crawl (Phase-4 spider
+// method) when the entry page is a link index: a page carrying many
+// distinct same-host anchors has content a feed or sitemap may not cover.
+// Page-signal only — no requests.
+type spiderDetector struct{}
+
+// spiderLinkFloor is the distinct same-host link count at which a page
+// qualifies as a link index worth crawling.
+const spiderLinkFloor = 10
+
+// spiderSkipExts are anchor targets that can never be content pages —
+// media/asset links must not count toward the link-index signal.
+var spiderSkipExts = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+	".svg": true, ".ico": true, ".css": true, ".js": true, ".zip": true,
+	".mp4": true, ".mp3": true, ".woff": true, ".woff2": true,
+}
+
+// Detect implements Detector.
+func (spiderDetector) Detect(_ context.Context, page *FetchedPage, out *Report) {
+	doc := page.HTML()
+	if doc == nil {
+		return
+	}
+
+	base, err := url.Parse(page.FinalURL)
+	if err != nil || base.Host == "" {
+		return
+	}
+
+	host := base.Hostname()
+	seen := map[string]bool{}
+
+	walk(doc, func(n *html.Node) {
+		if n.Data != "a" {
+			return
+		}
+
+		href := absURL(page, attr(n, "href"))
+		if href == "" {
+			return
+		}
+
+		lu, err := url.Parse(href)
+		if err != nil || !strings.EqualFold(lu.Hostname(), host) {
+			return
+		}
+
+		// Self-links and asset targets don't count — the signal is the
+		// breadth of distinct content paths the page links to.
+		if lu.Path == base.Path && (lu.RawQuery == base.RawQuery || lu.Fragment != "") {
+			return
+		}
+		if spiderSkipExts[strings.ToLower(path.Ext(lu.Path))] {
+			return
+		}
+
+		key := lu.Hostname() + lu.Path + "?" + lu.RawQuery
+		if !seen[key] {
+			seen[key] = true
+		}
+	})
+
+	count := len(seen)
+	if count < spiderLinkFloor {
+		return
+	}
+
+	out.addMethod(string(sources.CrawlMethodSpider), weightSpider,
+		fmt.Sprintf("%d distinct same-host links", count))
+	out.Channels = append(out.Channels, ChannelProposal{
+		Label:       "Site crawl (shallow link walk)",
+		EntryURL:    page.FinalURL,
+		CrawlMethod: string(sources.CrawlMethodSpider),
+		Confidence:  weightSpider,
+	})
+}
+
 // --- shared helpers -------------------------------------------------------
 
 // mediaType strips parameters from a Content-Type header value.

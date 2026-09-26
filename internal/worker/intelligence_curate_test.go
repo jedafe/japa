@@ -38,7 +38,9 @@ func (f *fakeIntelCurator) Curate(_ context.Context, body []byte, _ string, _ so
 // fakeSettingsReader satisfies the settingsReader interface with a static
 // int map — enough for the intel.curate.* thresholds the curate handler reads.
 type fakeSettingsReader struct {
-	ints map[string]int
+	ints    map[string]int
+	strings map[string]string
+	bools   map[string]bool
 }
 
 func (f fakeSettingsReader) GetIntOr(_ context.Context, key string, fallback int) int {
@@ -51,10 +53,18 @@ func (f fakeSettingsReader) GetIntOr(_ context.Context, key string, fallback int
 func (fakeSettingsReader) GetFloatOr(_ context.Context, _ string, fallback float64) float64 {
 	return fallback
 }
-func (fakeSettingsReader) GetStringOr(_ context.Context, _, fallback string) string {
+func (f fakeSettingsReader) GetStringOr(_ context.Context, key, fallback string) string {
+	if v, ok := f.strings[key]; ok {
+		return v
+	}
+
 	return fallback
 }
-func (fakeSettingsReader) GetBoolOr(_ context.Context, _ string, fallback bool) bool {
+func (f fakeSettingsReader) GetBoolOr(_ context.Context, key string, fallback bool) bool {
+	if v, ok := f.bools[key]; ok {
+		return v
+	}
+
 	return fallback
 }
 

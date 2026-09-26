@@ -348,6 +348,13 @@ type intelChannelPayload struct {
 	// child is itself a sitemap, so it fetches via the sitemap adapter
 	// (producing a nested manifest doc) instead of the static adapter.
 	SitemapChild bool `json:"sitemap_child,omitempty"`
+	// SpiderChild + SpiderDepth implement the Phase-4 spider fan-out: a
+	// spider manifest's changed child below max_depth fetches via the
+	// spider adapter (producing a nested manifest) at depth SpiderDepth.
+	// Children at the ceiling fetch static instead — they are content
+	// pages, not indexes.
+	SpiderChild bool `json:"spider_child,omitempty"`
+	SpiderDepth int  `json:"spider_depth,omitempty"`
 }
 
 type intelDetectChangesPayload struct {
@@ -660,6 +667,8 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 		opts.ParentDocID = parentID
 	}
 	opts.SitemapChild = p.SitemapChild
+	opts.SpiderChild = p.SpiderChild
+	opts.SpiderDepth = p.SpiderDepth
 
 	return intelFetchChannel(ctx, "task:intel:fetch_channel", src, ch, opts)
 }
@@ -674,6 +683,12 @@ type intelFetchOpts struct {
 	URLOverride  string
 	ParentDocID  pgtype.UUID
 	SitemapChild bool
+	// SpiderChild marks a derived fetch of a spider manifest's same-host
+	// link below max_depth — fetched via the spider adapter with
+	// SpiderDepth injected into provider_config so the produced manifest
+	// records where the page sat in the crawl.
+	SpiderChild bool
+	SpiderDepth int
 }
 
 // intelFetchChannel is the shared fetch core for intel:fetch_channel and the
@@ -702,9 +717,21 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 	effCh := ch
 	if opts.URLOverride != "" {
 		effCh.EntryUrl = opts.URLOverride
-		if opts.SitemapChild {
+		switch {
+		case opts.SitemapChild:
 			effCh.CrawlMethod = string(sources.CrawlMethodSitemap)
-		} else {
+		case opts.SpiderChild:
+			// A spider manifest child below max_depth is itself a link
+			// index — spider fetch produces a nested manifest stamped
+			// with its depth (provider_config.spider_depth). Inject into
+			// the RESOLVED config: channel provider_config is winner-take-
+			// all over the source's, so writing spider_depth into an empty
+			// '{}' channel config would silently drop source-level
+			// max_urls/max_outbound/url_filter on every derived fetch.
+			effCh.CrawlMethod = string(sources.CrawlMethodSpider)
+			effCh.ProviderConfig = intelInjectSpiderDepth(
+				fetcher.ResolveChannelProviderConfig(effCh, src), opts.SpiderDepth)
+		default:
 			effCh.CrawlMethod = string(sources.CrawlMethodStatic)
 		}
 	}
@@ -1076,10 +1103,23 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 		if chResolved && intelManifestMethod(ch.CrawlMethod) &&
 			(decision == changedetector.DecisionChanged || decision == changedetector.DecisionFirstCrawl) {
 			intelExpandManifest(ctx, ch, rawDoc)
+
+			// Spider manifests carry the page's outbound link set —
+			// harvest them into source candidates even when the internal
+			// URL diff produced no children.
+			if intelManifestKind(rawDoc) == fetcher.ManifestKindSpider {
+				intelEnqueueHarvestOutbound(ctx, rawDoc)
+			}
 		}
 
 		return nil
 	}
+
+	// Content docs: harvest external links into proposed sources before
+	// pipeline dispatch (Phase 4 outbound discovery). Manifest-shaped
+	// docs already returned above; everything else is a content page —
+	// the handler skips non-HTML bodies itself.
+	intelEnqueueHarvestOutbound(ctx, rawDoc)
 
 	pipeline := sources.PipelineExtract
 	if chResolved {
@@ -1132,10 +1172,12 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 }
 
 // intelManifestMethod reports whether m produces a url<TAB>stamp manifest
-// rather than page content — sitemap and wayback (Phase 2).
+// rather than page content — sitemap and wayback (Phase 2), spider
+// (Phase 4: same-host link walk).
 func intelManifestMethod(method string) bool {
 	m := sources.CrawlMethod(method)
-	return m == sources.CrawlMethodSitemap || m == sources.CrawlMethodWayback
+	return m == sources.CrawlMethodSitemap || m == sources.CrawlMethodWayback ||
+		m == sources.CrawlMethodSpider
 }
 
 // intelIsManifestDoc reports whether a raw document is a sitemap/wayback
@@ -1200,16 +1242,36 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 	filter := intelCfgString(cfg, "url_filter")
 	maxChildren := intelCfgInt(cfg, "max_urls", 0)
 	if maxChildren <= 0 && appSettings != nil {
-		maxChildren = appSettings.GetIntOr(ctx, "intel.sitemap.max_children_per_crawl", 25)
+		if intelManifestKind(manifestDoc) == fetcher.ManifestKindSpider {
+			maxChildren = appSettings.GetIntOr(ctx, "intel.spider.max_children_per_crawl", 25)
+		} else {
+			maxChildren = appSettings.GetIntOr(ctx, "intel.sitemap.max_children_per_crawl", 25)
+		}
 	}
 	if maxChildren <= 0 {
 		maxChildren = 25
 	}
 
+	manifestKind := intelManifestKind(manifestDoc)
+
 	// Sitemapindex children are member sitemaps — fetch them as nested
 	// manifests (sitemap adapter), not static pages. The shape rides the
 	// manifest doc's recorded headers (X-Intel-Manifest-Kind).
-	sitemapChild := intelManifestKind(manifestDoc) == fetcher.ManifestKindIndex
+	sitemapChild := manifestKind == fetcher.ManifestKindIndex
+
+	// Spider manifests (Phase-4): children at depth+1 stay under the same
+	// host and fetch as nested spider manifests while inside the channel's
+	// max_depth bound; at the ceiling they are content pages (static).
+	var spiderManifestHost string
+	spiderDepth, spiderMaxDepth, spiderChild := 0, 1, false
+	if manifestKind == fetcher.ManifestKindSpider {
+		if mu, merr := url.Parse(manifestDoc.Url); merr == nil {
+			spiderManifestHost = mu.Hostname()
+		}
+		spiderDepth = fetcher.SpiderManifestDepth(intelDocHeaders(manifestDoc))
+		spiderMaxDepth = fetcher.SpiderMaxDepth(providerConfig)
+		spiderChild = spiderDepth+1 < spiderMaxDepth
+	}
 
 	enqueued := 0
 	for _, u := range changed {
@@ -1220,6 +1282,13 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 		parsed, err := url.Parse(u)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || sources.IsPrivateIPLiteral(parsed.Hostname()) {
 			slog.Warn("task:intel:detect_changes: skipping invalid manifest URL", "channel_id", ch.ID.String(), "url", u)
+			continue
+		}
+		if manifestKind == fetcher.ManifestKindSpider && !strings.EqualFold(parsed.Hostname(), spiderManifestHost) {
+			// Defense in depth — the fetcher already scoped extraction to
+			// the page's host, but a replayed/hand-edited manifest must
+			// never fan a fetch out to a foreign host.
+			slog.Warn("task:intel:detect_changes: skipping cross-host spider URL", "channel_id", ch.ID.String(), "url", u)
 			continue
 		}
 		if filter != "" && !intelManifestURLMatch(filter, u) {
@@ -1233,6 +1302,8 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 			URLOverride:  u,
 			ParentDocID:  manifestDoc.ID.String(),
 			SitemapChild: sitemapChild,
+			SpiderChild:  spiderChild,
+			SpiderDepth:  spiderDepth + 1,
 		})
 		if payload == nil {
 			continue
@@ -1241,7 +1312,7 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 		enqueued++
 	}
 
-	slog.Info("task:intel:detect_changes: manifest fan-out", "channel_id", ch.ID.String(), "raw_doc_id", manifestDoc.ID.String(), "changed", len(changed), "enqueued", enqueued, "sitemap_children", sitemapChild)
+	slog.Info("task:intel:detect_changes: manifest fan-out", "channel_id", ch.ID.String(), "raw_doc_id", manifestDoc.ID.String(), "changed", len(changed), "enqueued", enqueued, "sitemap_children", sitemapChild, "spider_child", spiderChild, "spider_depth", spiderDepth)
 }
 
 // intelManifestKind reads the manifest shape marker the fetch adapter
@@ -1249,12 +1320,55 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 // "index" for sitemapindex documents, "urlset" for plain urlsets, "" when
 // absent (wayback manifests and pre-marker docs).
 func intelManifestKind(doc gen.IntelRawDocument) string {
+	return intelDocHeaders(doc)[fetcher.ManifestKindHeader]
+}
+
+// intelDocHeaders decodes the raw doc's recorded http_headers — empty map
+// on absent/malformed values.
+func intelDocHeaders(doc gen.IntelRawDocument) map[string]string {
 	var headers map[string]string
-	if err := json.Unmarshal(doc.HttpHeaders, &headers); err != nil {
-		return ""
+	if err := json.Unmarshal(doc.HttpHeaders, &headers); err != nil || headers == nil {
+		return map[string]string{}
 	}
 
-	return headers[fetcher.ManifestKindHeader]
+	return headers
+}
+
+// intelInjectSpiderDepth merges "spider_depth" into a provider_config
+// document — the depth stamp a derived spider fetch must record on the
+// manifest it produces (mirrors injectWaybackSince in the fetcher).
+func intelInjectSpiderDepth(providerConfig []byte, depth int) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(providerConfig, &m); err != nil || m == nil {
+		m = map[string]any{}
+	}
+	m["spider_depth"] = depth
+
+	b, err := json.Marshal(m)
+	if err != nil {
+		return providerConfig
+	}
+
+	return b
+}
+
+// intelEnqueueHarvestOutbound queues the Phase-4 outbound-discovery task
+// for a changed/first-crawl raw doc. Skipped when the discovery feature is
+// disabled; the handler re-checks the flag plus the trust/dedupe gates.
+func intelEnqueueHarvestOutbound(ctx context.Context, rawDoc gen.IntelRawDocument) {
+	if appSettings != nil && !appSettings.GetBoolOr(ctx, "intel.discovery.enabled", true) {
+		return
+	}
+
+	payload := marshalPayload(intelHarvestOutboundPayload{
+		Version:   intelPayloadVersion,
+		SourceID:  rawDoc.SourceID.String(),
+		ChannelID: rawDoc.ChannelID.String(),
+		RawDocID:  rawDoc.ID.String(),
+	})
+	if payload != nil {
+		enqueueIntel(TypeIntelHarvestOutbound, payload)
+	}
 }
 
 // intelManifestURLMatch applies provider_config.url_filter — a single glob

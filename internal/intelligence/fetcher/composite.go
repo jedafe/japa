@@ -106,6 +106,8 @@ func PendingFetchMethod(m string) bool {
 //   - api → APIFetcher (provider_config resolved channel-first)
 //   - jsonld → static fetch + ld+json block extraction
 //   - sitemap → static fetch + URL/lastmod manifest
+//   - spider → static fetch + same-host link manifest (Phase-4 bounded
+//     domain crawl — manifest fan-out + outbound-link discovery, spec §8)
 //   - render → RenderFetcher (headless service; ErrAdapterDisabled when
 //     intel.render.service_url is unset or the circuit is open)
 //   - git → GitFetcher (in-memory clone / tag ls-remote)
@@ -190,6 +192,8 @@ func (c *Composite) fetchMethod(ctx context.Context, eff sources.Source, method 
 		return c.fetchJSONLD(ctx, eff)
 	case sources.CrawlMethodSitemap:
 		return c.fetchSitemapManifest(ctx, eff)
+	case sources.CrawlMethodSpider:
+		return c.fetchSpider(ctx, eff)
 	case sources.CrawlMethodRender:
 		return c.render.Fetch(ctx, eff)
 	case sources.CrawlMethodGit:

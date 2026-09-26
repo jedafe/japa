@@ -650,7 +650,7 @@ import { contentHref } from '$lib/utils/contentLink';
 		<!-- Poll (if the thread has one) -->
 		{#if data.poll}
 			<div class="mt-5">
-				<PollBlock pollData={data.poll} spaceId={data.thread.space_id} />
+				<PollBlock pollData={data.poll} spaceId={data.thread?.space_id} />
 			</div>
 		{:else if canCreatePoll}
 			<div class="mt-5">

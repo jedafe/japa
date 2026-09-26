@@ -57,7 +57,8 @@ const (
 	weightRender      = 0.6
 	weightDocs        = 0.5
 	weightEmailHint   = 0.4
-	weightStatic      = 0.3 // fallback
+	weightSpider      = 0.35 // link-index heuristic — advisory, ranked just above static
+	weightStatic      = 0.3  // fallback
 )
 
 // Prober runs source-URL probes. It is stateless across runs — per-run state
@@ -342,6 +343,7 @@ func (r *runState) detectors() []Detector {
 		&apiSniffDetector{run: r},
 		spaDetector{},
 		emailHintDetector{},
+		spiderDetector{},
 	}
 }
 
@@ -436,6 +438,7 @@ var bypassMethods = map[string]bool{
 	string(sources.CrawlMethodSitemap): true,
 	string(sources.CrawlMethodSocial):  true,
 	string(sources.CrawlMethodGit):     true,
+	string(sources.CrawlMethodSpider):  true,
 }
 
 // methodAllowed reports whether a proposal for method survives the

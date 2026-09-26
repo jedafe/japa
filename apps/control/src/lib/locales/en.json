@@ -677,6 +677,7 @@
   "intel.method_rss": "RSS / Atom",
   "intel.method_search": "Search",
   "intel.method_sitemap": "Sitemap",
+  "intel.method_spider": "Site crawl (spider)",
   "intel.method_social": "Social",
   "intel.method_static": "Static (HTML)",
   "intel.method_tabular": "Tabular data",

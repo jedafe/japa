@@ -70,8 +70,12 @@ type WikiPageDetailDTO struct {
 	// Fields is the bound field group's schema+values block (§80); every
 	// category binds a group, so nil only when the group lookup itself
 	// fails. CategoryLabel echoes the template's admin-set label so the
-	// page heading isn't hardcoded.
+	// page heading isn't hardcoded. FieldGroupID carries the binding even
+	// when the group has no fields — the frontend scopes the entity-fields
+	// panel by it, and without it an empty bound group would leave the
+	// panel unscoped (showing every class-assigned group on a prose page).
 	Fields        *EntityFieldGroupDTO `json:"fields,omitempty"`
+	FieldGroupID  string               `json:"field_group_id,omitempty"`
 	CategoryLabel string               `json:"category_label,omitempty"`
 }
 
@@ -453,6 +457,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 	if cat, cerr := s.store.GetCategoryForSpace(ctx, spaceID, pageSlug); cerr == nil {
 		dto.CategoryLabel = cat.Label
 		if cat.FieldGroupID.Valid {
+			dto.FieldGroupID = cat.FieldGroupID.String()
 			if grp, ferr := s.GetPageFields(ctx, userID, spaceID, cat.FieldGroupID); ferr == nil && grp != nil {
 				dto.Fields = grp
 			} else if ferr != nil {

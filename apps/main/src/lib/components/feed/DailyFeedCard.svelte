@@ -106,8 +106,12 @@
 						: time
 	);
 
-	const visibleTags = $derived(item.tags?.slice(0, 3) ?? []);
-	const extraTagCount = $derived(Math.max((item.tags?.length ?? 0) - visibleTags.length, 0));
+	// The API can return the same tag name more than once (tag attached via
+	// multiple relations) — dedupe so the keyed each block and the +N counter
+	// stay consistent.
+	const uniqueTags = $derived(item.tags ? [...new Set(item.tags)] : []);
+	const visibleTags = $derived(uniqueTags.slice(0, 3));
+	const extraTagCount = $derived(Math.max(uniqueTags.length - visibleTags.length, 0));
 
 	function navigate(e: MouseEvent) {
 		const target = e.target as HTMLElement | null;
@@ -239,7 +243,7 @@
 			{/if}
 
 			<!-- Tags -->
-			{#if item.tags && item.tags.length > 0}
+			{#if uniqueTags.length > 0}
 				<div class="flex flex-wrap items-center gap-2">
 					{#each visibleTags as tag (tag)}
 						<span class="rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-subtle)]">

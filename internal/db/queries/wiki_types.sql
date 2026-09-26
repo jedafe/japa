@@ -191,4 +191,7 @@ SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.
 FROM wiki_type_categories wtc
 JOIN wiki_type_configs cfg ON cfg.space_type_id = wtc.space_type_id AND cfg.enabled = true
 JOIN space_types st ON st.id = wtc.space_type_id
-ORDER BY wtc.position, wtc.slug;
+-- Deterministic tiebreak: the handler dedupes the union by category token,
+-- so the winner's fields (label, field_group_id) must not flap on equal
+-- (position, slug) across types.
+ORDER BY wtc.position, wtc.slug, st.slug;

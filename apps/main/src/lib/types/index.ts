@@ -2982,22 +2982,9 @@ export interface StoryMeta {
 }
 
 // --- Section 80: Destination Wiki ---
-export type WikiCategory =
-	| 'overview'
-	| 'visa'
-	| 'cost_of_living'
-	| 'healthcare'
-	| 'banking'
-	| 'community'
-	| 'housing'
-	| 'admissions'
-	| 'programs'
-	| 'tuition_fees'
-	| 'scholarships'
-	| 'accommodation'
-	| 'campus_life'
-	| 'careers'
-	| 'other';
+// §80 Wiki Types: category tokens come from the wiki_type_categories
+// template (admin-managed), not a fixed enum — this is a plain string.
+export type WikiCategory = string;
 
 export interface WikiPageIndex {
 	id: string;
@@ -3035,6 +3022,9 @@ export interface WikiPage extends WikiPageIndex {
 	 *  space's stored values. The group is the page's schema (always bound);
 	 *  a prose-only page has a group with no fields. */
 	fields?: import('$lib/api/wiki').WikiEntityFieldGroup | null;
+	/** The bound group's id — present even when the group has no fields so
+	 *  the entity-fields panel can scope itself (absent = unscoped). */
+	field_group_id?: string;
 	/** Admin-set label from the wiki type's category template. */
 	category_label?: string;
 }

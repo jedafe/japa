@@ -340,7 +340,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  COALESCE(s.slug, '') AS space_slug,
  m.storage_bucket AS featured_storage_bucket,
  m.storage_path AS featured_storage_path,
- COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+ COALESCE(string_agg(DISTINCT t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
  bs.id AS series_id,
  bs.title AS series_title,
  bs.slug AS series_slug,
@@ -991,7 +991,7 @@ SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until
  m.storage_bucket AS featured_storage_bucket,
  m.storage_path AS featured_storage_path,
  COALESCE(LEFT(c.body, 200), '') AS excerpt,
- (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
+ (SELECT COALESCE(string_agg(DISTINCT t.slug, ',' ORDER BY t.slug), '')
  FROM content_tags ct
  JOIN tags t ON t.id = ct.tag_id
  WHERE ct.content_id = c.id) AS tags_csv
@@ -1328,7 +1328,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  m.storage_bucket AS featured_storage_bucket,
  m.storage_path AS featured_storage_path,
  COALESCE(LEFT(c.body, 200), '') AS excerpt,
- (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
+ (SELECT COALESCE(string_agg(DISTINCT t.slug, ',' ORDER BY t.slug), '')
  FROM content_tags ct
  JOIN tags t ON t.id = ct.tag_id
  WHERE ct.content_id = c.id) AS tags_csv

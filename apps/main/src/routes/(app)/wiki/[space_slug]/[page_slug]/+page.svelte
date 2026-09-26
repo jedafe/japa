@@ -390,7 +390,7 @@
 						<EntityFieldsPanel
 							entityType="space"
 							entityId={panelSpaceId}
-							groupId={data.page.fields?.id ?? undefined}
+							groupId={data.page.field_group_id ?? undefined}
 						/>
 					{/if}
 

@@ -78,7 +78,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  vs.thumbnail_url AS video_thumbnail_url,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+ COALESCE(string_agg(DISTINCT t.name, ',' ORDER BY t.name), '') AS tags,
  COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
@@ -371,7 +371,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  vs.thumbnail_url AS video_thumbnail_url,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+ COALESCE(string_agg(DISTINCT t.name, ',' ORDER BY t.name), '') AS tags,
  COALESCE(c.author_id = ANY(COALESCE($1::uuid[], ARRAY[]::uuid[])), false)::bool AS is_author_followed,
  COALESCE(c.space_id = ANY(COALESCE($2::uuid[], ARRAY[]::uuid[])), false)::bool AS is_space_followed,
  COUNT(DISTINCT t.id) FILTER (
@@ -599,7 +599,7 @@ SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
  vs.thumbnail_url AS video_thumbnail_url,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+ COALESCE(string_agg(DISTINCT t.name, ',' ORDER BY t.name), '') AS tags
 FROM feeds f
 JOIN contents c ON c.id = f.content_id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
@@ -790,7 +790,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  vs.thumbnail_url AS video_thumbnail_url,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+ COALESCE(string_agg(DISTINCT t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -999,7 +999,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  vs.thumbnail_url AS video_thumbnail_url,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+ COALESCE(string_agg(DISTINCT t.name, ',' ORDER BY t.name), '') AS tags,
  COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
@@ -1175,7 +1175,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
  vs.thumbnail_url AS video_thumbnail_url,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+ COALESCE(string_agg(DISTINCT t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -1379,7 +1379,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  vs.thumbnail_url AS video_thumbnail_url,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+ COALESCE(string_agg(DISTINCT t.name, ',' ORDER BY t.name), '') AS tags,
  COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
