@@ -14,8 +14,12 @@ var WikiPage = EntitySchema{
 		{Name: "title", Type: "string", Required: true},        // page title; falls back to "name"
 		{Name: "name", Type: "string", Required: false},        // alias for title
 		{Name: "slug", Type: "string", Required: false},        // derived from title when absent
-		{Name: "category", Type: "string", Required: false},    // defaults to "general"
-		{Name: "space_id", Type: "string", Required: false},    // optional UUID for space scoping
+		{Name: "category", Type: "string", Required: false},    // resolved against wiki_type_categories; falls back to "overview" (§80)
+		{Name: "space_id", Type: "string", Required: false},    // optional UUID for space scoping — verified before insert
+		{Name: "space_slug", Type: "string", Required: false},  // geo-hint: space slug ("lagos", "ghana")
+		{Name: "country", Type: "string", Required: false},     // geo-hint: country name or ISO-3 code
+		{Name: "state", Type: "string", Required: false},       // geo-hint: state/region name
+		{Name: "city", Type: "string", Required: false},        // geo-hint: city name
 		{Name: "is_active", Type: "string", Required: false},   // boolean-ish; promoter uses boolField
 		{Name: "is_featured", Type: "string", Required: false}, // boolean-ish; promoter uses boolField
 		{Name: "source_url", Type: "string", Required: true},   // provenance for the wiki page

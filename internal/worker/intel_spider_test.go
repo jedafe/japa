@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/fetcher"
@@ -26,6 +28,7 @@ func mkSpiderManifestDoc(t *testing.T, store *stores.Store, src gen.IntelSource,
 	headers, err := json.Marshal(map[string]string{
 		fetcher.ManifestKindHeader: fetcher.ManifestKindSpider,
 		fetcher.SpiderDepthHeader:  fmt.Sprintf("%d", depth),
+		fetcher.SpiderScopeHeader:  ch.EntryUrl,
 	})
 	if err != nil {
 		t.Fatalf("marshal headers: %v", err)
@@ -235,6 +238,57 @@ func TestIntelDiscoveryCandidateOK(t *testing.T) {
 		if got := intelDiscoveryCandidateOK(t.Context(), tc.candidate, src, doc); got != tc.want {
 			t.Errorf("%s: candidateOK(%q) = %v, want %v", tc.name, tc.candidate, got, tc.want)
 		}
+	}
+}
+
+// TestIntelEnqueueHarvestOutbound covers the enqueue helper: payload
+// shape, queue tier, and the intel.discovery.enabled kill switch. Needs
+// only miniredis — no database.
+func TestIntelEnqueueHarvestOutbound(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+
+	client := asynq.NewClient(asynq.RedisClientOpt{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = inspector.Close() })
+
+	oldClient, oldSettings := intelAsynqClient, appSettings
+	intelAsynqClient = client
+	appSettings = fakeSettingsReader{}
+	t.Cleanup(func() { intelAsynqClient, appSettings = oldClient, oldSettings })
+
+	doc := gen.IntelRawDocument{
+		ID:        pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
+		SourceID:  pgtype.UUID{Bytes: [16]byte{2}, Valid: true},
+		ChannelID: pgtype.UUID{Bytes: [16]byte{3}, Valid: true},
+	}
+
+	intelEnqueueHarvestOutbound(t.Context(), doc)
+
+	tasks := pendingTasks(t, inspector, TypeIntelHarvestOutbound)
+	if len(tasks) != 1 {
+		t.Fatalf("harvest tasks pending = %d, want 1", len(tasks))
+	}
+	if tasks[0].Queue != QueueLow {
+		t.Errorf("harvest task queue = %q, want %q", tasks[0].Queue, QueueLow)
+	}
+	var p intelHarvestOutboundPayload
+	if err := json.Unmarshal(tasks[0].Payload, &p); err != nil {
+		t.Fatalf("payload decode: %v", err)
+	}
+	if p.SourceID != doc.SourceID.String() || p.ChannelID != doc.ChannelID.String() || p.RawDocID != doc.ID.String() {
+		t.Errorf("payload = %+v, want source/channel/rawdoc from doc", p)
+	}
+
+	// Kill switch: intel.discovery.enabled=false skips the enqueue.
+	appSettings = fakeSettingsReader{bools: map[string]bool{"intel.discovery.enabled": false}}
+	intelEnqueueHarvestOutbound(t.Context(), doc)
+	if n := len(pendingTasks(t, inspector, TypeIntelHarvestOutbound)); n != 1 {
+		t.Errorf("harvest tasks pending = %d after disabled enqueue, want 1", n)
 	}
 }
 

@@ -1386,3 +1386,22 @@ func (q *Queries) UpdateWikiPageTouched(ctx context.Context, id pgtype.UUID) err
 	_, err := q.db.Exec(ctx, updateWikiPageTouched, id)
 	return err
 }
+
+const wikiPageSlugExists = `-- name: WikiPageSlugExists :one
+SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE space_id = $1 AND slug = $2) AS exists
+`
+
+type WikiPageSlugExistsParams struct {
+	SpaceID pgtype.UUID `json:"space_id"`
+	Slug    string      `json:"slug"`
+}
+
+// Slug uniqueness probe scoped to (space_id, slug) — used by the intel
+// promoter's suffix loop before inserting a promoted page (§80 Intel
+// ingestion → wiki_pages).
+func (q *Queries) WikiPageSlugExists(ctx context.Context, arg WikiPageSlugExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, wikiPageSlugExists, arg.SpaceID, arg.Slug)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}

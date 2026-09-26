@@ -1158,6 +1158,63 @@ func (s *Store) UpdateWikiPageIntel(ctx context.Context, arg gen.UpdateWikiPageI
 	return nil
 }
 
+// WikiPageSlugExists probes the (space_id, slug) unique index — the wiki
+// promoter's suffix loop uses it before inserting a promoted page.
+func (s *Store) WikiPageSlugExists(ctx context.Context, arg gen.WikiPageSlugExistsParams) (bool, error) {
+	exists, err := s.queries.WikiPageSlugExists(ctx, arg)
+	if err != nil {
+		return false, fmt.Errorf("stores: wiki page slug exists: %w", err)
+	}
+
+	return exists, nil
+}
+
+// GetSpaceByID loads a space by id. The wiki promoter uses it to verify an
+// extracted space_id points at a real space before stamping the NOT NULL
+// wiki_pages.space_id column (§80 Intel ingestion → wiki_pages).
+func (s *Store) GetSpaceByID(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error) {
+	row, err := s.queries.GetSpaceByID(ctx, id)
+	if err != nil {
+		return gen.GetSpaceByIDRow{}, fmt.Errorf("stores: get space by id: %w", err)
+	}
+
+	return row, nil
+}
+
+// GetSpaceBySlug loads a space by slug — the wiki promoter's space_slug /
+// name-hint resolution path.
+func (s *Store) GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error) {
+	row, err := s.queries.GetSpaceBySlug(ctx, slug)
+	if err != nil {
+		return gen.GetSpaceBySlugRow{}, fmt.Errorf("stores: get space by slug: %w", err)
+	}
+
+	return row, nil
+}
+
+// GetSpaceTypeRef returns the space_type id + slug for a space — used to
+// resolve which wiki_type_categories template a promoted page must match.
+func (s *Store) GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (gen.GetSpaceTypeRefRow, error) {
+	row, err := s.queries.GetSpaceTypeRef(ctx, spaceID)
+	if err != nil {
+		return gen.GetSpaceTypeRefRow{}, fmt.Errorf("stores: get space type ref: %w", err)
+	}
+
+	return row, nil
+}
+
+// ResolveWikiTypeCategoryToken canonicalizes an extracted category token to
+// the managed wiki_type_categories row for a wiki type (§80 Intel ingestion
+// → wiki_pages).
+func (s *Store) ResolveWikiTypeCategoryToken(ctx context.Context, arg gen.ResolveWikiTypeCategoryTokenParams) (gen.WikiTypeCategory, error) {
+	row, err := s.queries.ResolveWikiTypeCategoryToken(ctx, arg)
+	if err != nil {
+		return gen.WikiTypeCategory{}, fmt.Errorf("stores: resolve wiki type category token: %w", err)
+	}
+
+	return row, nil
+}
+
 // ---------------------------------------------------------------------------
 // LanguageTestRequirements (intelligence columns — domain projection for the language test domain)
 // ---------------------------------------------------------------------------

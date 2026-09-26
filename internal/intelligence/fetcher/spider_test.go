@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -25,6 +26,7 @@ func spiderPage(srvURL string) string {
 		<a href="https://external.example.com/other">External A dup</a>
 		<a href="https://other.example.net/jobs">External B</a>
 		<a href="https://10.9.9.9/internal">Private literal</a>
+		<a href="http://127.0.0.1:1/admin">Sibling service</a>
 		<a href="mailto:hi@example.com">Mail</a>
 		<a href="javascript:void(0)">JS</a>
 	</body></html>`, srvURL, host)
@@ -86,7 +88,7 @@ func TestCompositeFetch_Spider(t *testing.T) {
 
 	hosts := map[string]int{}
 	for _, u := range outbound {
-		if strings.Contains(u, "10.9.9.9") || strings.HasPrefix(u, "mailto:") {
+		if strings.Contains(u, "10.9.9.9") || strings.Contains(u, "127.0.0.1:1") || strings.HasPrefix(u, "mailto:") {
 			t.Errorf("outbound list carried a non-crawlable URL: %q", u)
 		}
 		if i := strings.Index(u, "://"); i >= 0 {
@@ -98,6 +100,50 @@ func TestCompositeFetch_Spider(t *testing.T) {
 	}
 	if hosts["other.example.net"] != 1 {
 		t.Errorf("other.example.net missing from outbound list: %v", outbound)
+	}
+}
+
+// TestCompositeFetch_SpiderRedirectScope covers the post-redirect scope:
+// an entry URL that redirects cross-origin must scope the manifest to the
+// FINAL host:port and record it in X-Intel-Spider-Scope — otherwise
+// expansion compares children against the entry URL's authority and
+// drops them all.
+func TestCompositeFetch_SpiderRedirectScope(t *testing.T) {
+	t.Parallel()
+
+	// Server B is the real content host; server A is the entry that
+	// redirects to it (different port = different crawl scope).
+	var bURL string
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(spiderPage(bURL)))
+	}))
+	t.Cleanup(b.Close)
+	bURL = b.URL
+
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, b.URL+"/landing", http.StatusFound)
+	}))
+	t.Cleanup(a.Close)
+
+	composite := NewCompositeWithClient(a.Client(), nil, nil)
+	res, err := composite.Fetch(t.Context(),
+		sources.Source{SourceUrl: "https://src.example/"},
+		sources.Channel{EntryUrl: a.URL + "/entry", CrawlMethod: string(sources.CrawlMethodSpider)})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	if res.FinalURL != b.URL+"/landing" {
+		t.Fatalf("FinalURL = %q, want %q", res.FinalURL, b.URL+"/landing")
+	}
+	if got := res.Headers[SpiderScopeHeader]; got != b.URL+"/landing" {
+		t.Errorf("scope header = %q, want %q", got, b.URL+"/landing")
+	}
+	for u := range ParseManifest(res.Body) {
+		if !strings.HasPrefix(u, b.URL) {
+			t.Errorf("manifest URL %q not scoped to the post-redirect host", u)
+		}
 	}
 }
 
@@ -202,6 +248,34 @@ func TestExtractOutboundLinks(t *testing.T) {
 
 	if capped := ExtractOutboundLinks(body, "https://site.example/", 1); len(capped) != 1 {
 		t.Fatalf("cap = %v, want 1", capped)
+	}
+}
+
+// TestSpiderSameScope covers the host+port origin check shared by
+// extraction and worker expansion.
+func TestSpiderSameScope(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		child, base string
+		want        bool
+	}{
+		{"https://example.com/a", "https://example.com/", true},
+		{"https://EXAMPLE.com/a", "https://example.com/", true},
+		{"https://example.com:443/a", "https://example.com/", true},
+		{"http://example.com/a", "https://example.com/", false},       // 80 vs 443
+		{"https://example.com:8443/a", "https://example.com/", false}, // sibling service
+		{"https://sub.example.com/a", "https://example.com/", false},
+		{"https://other.com/a", "https://example.com/", false},
+		{"http://127.0.0.1:8080/x", "http://127.0.0.1:8080/", true},
+		{"http://127.0.0.1:9090/x", "http://127.0.0.1:8080/", false},
+		{"not-a-url", "https://example.com/", false},
+		{"https://example.com/a", "not-a-url", false},
+	}
+	for _, tc := range cases {
+		if got := SpiderSameScope(tc.child, tc.base); got != tc.want {
+			t.Errorf("SpiderSameScope(%q, %q) = %v, want %v", tc.child, tc.base, got, tc.want)
+		}
 	}
 }
 
