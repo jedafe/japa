@@ -516,10 +516,12 @@ func (s *Service) ListSpacesByType(ctx context.Context, viewerUserID, spaceTypeI
 }
 
 // ListSpacesByTypePaginated returns a page of spaces of the given type,
-// filtered by optional search, geo_code, region, and subregion, with
-// server-side pagination and optional sort (” = newest, 'name', 'members',
-// 'followers', 'posts').
-func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
+// filtered by optional search, geo_code, region, subregion, and within,
+// with server-side pagination and optional sort (” = newest, 'name',
+// 'members', 'followers', 'posts'). within is a primary-space slug
+// (country/state/city) matched against the space_parent_spaces junction and
+// spaces.parent_id, including descendants of the target.
+func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
 
 		SpaceTypeID: spaceTypeID,
@@ -527,6 +529,7 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgt
 		GeoCode:     geoCode,
 		Region:      region,
 		Subregion:   subregion,
+		Within:      within,
 		Sort:        sort,
 		LimitVal:    limit,
 		OffsetVal:   offset,
@@ -539,8 +542,9 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgt
 }
 
 // CountSpacesByType returns the total count of spaces of the given type,
-// matching the same optional search, geo_code, region, and subregion filters.
-func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error) {
+// matching the same optional search, geo_code, region, subregion, and
+// within filters as ListSpacesByTypePaginated.
+func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string) (int64, error) {
 	total, err := s.read.CountSpacesByType(ctx, gen.CountSpacesByTypeParams{
 
 		SpaceTypeID: spaceTypeID,
@@ -548,6 +552,7 @@ func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID
 		GeoCode:     geoCode,
 		Region:      region,
 		Subregion:   subregion,
+		Within:      within,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces by type: %w", err)

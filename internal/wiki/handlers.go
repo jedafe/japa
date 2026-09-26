@@ -397,6 +397,8 @@ func (h *Handlers) HandleGetFieldTypes(w http.ResponseWriter, r *http.Request) {
 //
 //	?level=        country|state|city|university
 //	?parent=       parent space slug (returns its direct children)
+//	?within=       primary-space slug — matches spaces linked to it or to
+//	               one of its descendants via space_parent_spaces/parent_id
 //	?region=       continent/region value (e.g. Africa, Europe) — filters country-level spaces
 //	?q=            case-insensitive name search
 //	?has_wiki=     true (default) or false — when true, only spaces with at
@@ -406,12 +408,13 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 	q := r.URL.Query()
 	level := strings.ToLower(q.Get("level"))
 	parentSlug := strings.ToLower(q.Get("parent"))
+	within := strings.ToLower(strings.TrimSpace(q.Get("within")))
 	region := q.Get("region")
 	search := strings.TrimSpace(q.Get("q"))
 
 	hasWiki := q.Get("has_wiki") != "false"
 
-	dests, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, search, hasWiki)
+	dests, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, search, within, hasWiki)
 	if err != nil {
 		slog.Error("wiki: destinations failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "destinations_failed", "Failed to get wiki destinations")

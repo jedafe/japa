@@ -11,7 +11,9 @@ type FetchOptions = {
 	signal?: AbortSignal;
 };
 
-type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
+type ApiResult<T> =
+	| { ok: true; data: T }
+	| { ok: false; error: string; code?: string; status?: number };
 
 // fetchRaw performs a direct fetch that bypasses the JSON envelope parsing in
 // apiFetch. Used for non-JSON responses (e.g. CSV exports from
@@ -32,13 +34,15 @@ async function fetchRaw(path: string): Promise<ApiResult<string>> {
 		if (!res.ok) {
 			const text = await res.text();
 			let msg = res.statusText;
+			let code: string | undefined;
 			try {
 				const body = JSON.parse(text);
 				if (body?.error?.message) msg = body.error.message;
+				if (body?.error?.code) code = body.error.code;
 			} catch {
 				if (text) msg = text;
 			}
-			return { ok: false, error: msg };
+			return { ok: false, error: msg, code, status: res.status };
 		}
 		return { ok: true, data: await res.text() };
 	} catch (err) {
@@ -62,7 +66,7 @@ export async function api<T>(path: string, opts: FetchOptions = {}): Promise<Api
 	});
 
 	if (result.error) {
-		return { ok: false, error: result.error.message };
+		return { ok: false, error: result.error.message, code: result.error.code, status: result.status };
 	}
 	return { ok: true, data: result.data as T };
 }
@@ -82,7 +86,7 @@ export async function apiRaw<T = any>(path: string, opts: FetchOptions = {}): Pr
 	});
 
 	if (result.error) {
-		return { ok: false, error: result.error.message };
+		return { ok: false, error: result.error.message, code: result.error.code, status: result.status };
 	}
 	// `body` is the full JSON response body; `data` is just body.data.
 	return { ok: true, data: result.body as T };
@@ -1303,7 +1307,8 @@ export const fieldGroupsAdminApiExtended = {
 	create: (body: Record<string, unknown>) => api<unknown>('/admin/field-groups', { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/field-groups/${id}`, { method: 'PATCH', body }),
-	delete: (id: string) => api<{ deleted: boolean }>(`/admin/field-groups/${id}`, { method: 'DELETE' }),
+	delete: (id: string, force?: boolean) =>
+		api<{ deleted: boolean }>(`/admin/field-groups/${id}${force ? '?force=true' : ''}`, { method: 'DELETE' }),
 	addField: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/field-groups/${id}/fields`, { method: 'POST', body }),
 	updateField: (id: string, fid: string, body: Record<string, unknown>) =>

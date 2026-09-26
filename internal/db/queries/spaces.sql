@@ -246,6 +246,25 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
  AND (@region::text = '' OR s.region = @region)
  AND (@subregion::text = '' OR s.subregion = @subregion)
+ -- @within is a primary-space slug (country/state/city): match when the
+ -- space is linked — via the space_parent_spaces junction or spaces.parent_id
+ -- — to that space or any of its descendants (e.g. a state slug also matches
+ -- spaces linked to one of its cities). The level guard keeps non-geo slugs
+ -- from matching, and deleted ancestors can't satisfy the filter.
+ AND (@within::text = '' OR EXISTS (
+ SELECT 1
+ FROM (
+ SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
+ UNION ALL
+ SELECT s.parent_id WHERE s.parent_id IS NOT NULL
+ ) links
+ JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+ LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+ LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+ WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+ ))
 ORDER BY
  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
  CASE
@@ -273,7 +292,22 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
  OR cfv.value_text ILIKE '%' || @search || '%')
  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
  AND (@region::text = '' OR s.region = @region)
- AND (@subregion::text = '' OR s.subregion = @subregion);
+ AND (@subregion::text = '' OR s.subregion = @subregion)
+ -- @within mirrors ListSpacesByTypePaginated (junction + parent_id subtree).
+ AND (@within::text = '' OR EXISTS (
+ SELECT 1
+ FROM (
+ SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
+ UNION ALL
+ SELECT s.parent_id WHERE s.parent_id IS NOT NULL
+ ) links
+ JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+ LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+ LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+ WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+ ));
 
 -- name: ListSpacesByParentPaginated :many
 -- Directory ?parent= branch — children of a parent space via the canonical

@@ -656,6 +656,8 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteFieldGroup handles DELETE /api/v1/custom-field-groups/{id}.
+// ?force=true bypasses the in-use guard and cascade-deletes the group's
+// fields, stored values, and assignments (Section 06).
 func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -663,7 +665,9 @@ func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteFieldGroup(r.Context(), id); err != nil {
+	force := r.URL.Query().Get("force") == "true"
+
+	if err := h.Service.DeleteFieldGroup(r.Context(), id, force); err != nil {
 		handleServiceError(w, err)
 		return
 	}

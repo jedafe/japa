@@ -100,10 +100,10 @@ type WikiRevision struct {
 	TargetEntityType *string
 	TargetEntityID   pgtype.UUID
 
-	Status          string // pending|approved|rejected
-	SubmittedBy     pgtype.UUID
-	ReviewedBy      pgtype.UUID
-	ReviewedAt      pgtype.Timestamptz
+	Status      string // pending|approved|rejected
+	SubmittedBy pgtype.UUID
+	ReviewedBy  pgtype.UUID
+	ReviewedAt  pgtype.Timestamptz
 	// ApplyError records the last ops-application failure on a pending
 	// fields/mixed revision (§80) — set when approve+applyOps rolls back so
 	// reviewers can see why; cleared on successful approval.
@@ -261,10 +261,13 @@ func isDestinationLevel(level string) bool {
 }
 
 // ListWikiDestinations returns active destination spaces (country/state/city)
-// with their active wiki page count. Optional level, parent and region filters
-// narrow the result. When hasWiki is true, only spaces with at least one active
-// wiki page are returned; otherwise all destination spaces are included.
-func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region, search string, hasWiki bool) ([]WikiDestination, error) {
+// with their active wiki page count. Optional level, parent, region, search
+// and within filters narrow the result. within is a primary-space slug
+// matched against the space_parent_spaces junction and parent_id, including
+// descendants of the target (e.g. a state matches its cities' universities).
+// When hasWiki is true, only spaces with at least one active wiki page are
+// returned; otherwise all destination spaces are included.
+func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool) ([]WikiDestination, error) {
 	var conds []string
 
 	var args []any
@@ -298,6 +301,26 @@ func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, reg
 	if search != "" {
 		conds = append(conds, fmt.Sprintf("sp.name ILIKE '%%' || $%d || '%%'", argn))
 		args = append(args, search)
+		argn++
+	}
+
+	if within != "" {
+		conds = append(conds, fmt.Sprintf(`EXISTS (
+SELECT 1
+FROM (
+	SELECT parent_space_id AS pid
+	FROM space_parent_spaces
+	WHERE space_id = sp.id
+	UNION ALL
+	SELECT sp.parent_id
+	WHERE sp.parent_id IS NOT NULL
+) links
+JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+LEFT JOIN spaces gp ON gp.id = g.parent_id
+LEFT JOIN spaces ggp ON ggp.id = gp.parent_id
+WHERE g.slug = $%d OR gp.slug = $%d OR ggp.slug = $%d
+)`, argn, argn, argn))
+		args = append(args, within)
 		argn++
 	}
 

@@ -68,9 +68,14 @@
 	}
 
 	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	// Two-phase: plain delete first; groups that come back in_use are offered a
+	// force-delete confirmation (?force=true) since bulk actions have no
+	// built-in confirm dialog.
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
+	let showBulkForceConfirm = $state(false);
+	let bulkForceTargets = $state<string[]>([]);
 
 	async function bulkDelete(ids: Set<string>) {
 		const idArr = Array.from(ids);
@@ -79,7 +84,41 @@
 		bulkDeleting = true;
 		pageError = '';
 		try {
-			await Promise.all(idArr.map((id) => fieldGroupsAdminApiExtended.delete(id)));
+			const results = await Promise.all(
+				idArr.map(async (id) => ({ id, res: await fieldGroupsAdminApiExtended.delete(id) }))
+			);
+			const failures = results.filter((r) => !r.res.ok);
+			const inUseIds = failures.filter((r) => !r.res.ok && r.res.code === 'in_use').map((r) => r.id);
+			const others = failures.filter((r) => !r.res.ok && r.res.code !== 'in_use');
+			if (others.length > 0) {
+				pageError = others.map((r) => (!r.res.ok ? r.res.error : '')).join('; ');
+			}
+			if (inUseIds.length > 0) {
+				bulkForceTargets = inUseIds;
+				showBulkForceConfirm = true;
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete field groups');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	async function confirmBulkForceDelete() {
+		if (bulkForceTargets.length === 0 || bulkDeleting) return;
+		bulkDeleting = true;
+		showBulkForceConfirm = false;
+		pageError = '';
+		try {
+			const results = await Promise.all(
+				bulkForceTargets.map(async (id) => ({ id, res: await fieldGroupsAdminApiExtended.delete(id, true) }))
+			);
+			const failures = results.filter((r) => !r.res.ok);
+			if (failures.length > 0) {
+				pageError = failures.map((r) => (!r.res.ok ? r.res.error : '')).join('; ');
+			}
+			bulkForceTargets = [];
+			entityController?.reload();
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete field groups');
 		} finally {
@@ -240,6 +279,12 @@
 		},
 		remove: async (id) => {
 			const res = await fieldGroupsAdminApiExtended.delete(id);
+			return res.ok
+				? { ok: true }
+				: { ok: false, error: res.error, inUse: res.code === 'in_use' };
+		},
+		forceRemove: async (id) => {
+			const res = await fieldGroupsAdminApiExtended.delete(id, true);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		viewSnippet: GroupView
@@ -762,6 +807,27 @@
 		</Button>
 		<Button variant="destructive" onclick={executeDeleteField}>
 			{t('common.delete', 'Delete')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- Bulk force-delete confirmation (groups still holding stored values) -->
+<Modal bind:open={showBulkForceConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
+	<p class="text-sm" style="color: var(--color-muted)">
+		{t('fieldGroups.bulk_force_confirm', '{count} selected group(s) contain stored values. Deleting them permanently removes the groups, their fields, and all stored values.').replace('{count}', String(bulkForceTargets.length))}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button
+			variant="outline"
+			onclick={() => {
+				showBulkForceConfirm = false;
+				bulkForceTargets = [];
+			}}
+		>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={confirmBulkForceDelete} disabled={bulkDeleting}>
+			{t('common.forceDelete', 'Delete Anyway')}
 		</Button>
 	</div>
 </Modal>

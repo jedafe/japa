@@ -564,6 +564,21 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  AND ($3::text = '' OR s.geo_code = $3)
  AND ($4::text = '' OR s.region = $4)
  AND ($5::text = '' OR s.subregion = $5)
+ -- @within mirrors ListSpacesByTypePaginated (junction + parent_id subtree).
+ AND ($6::text = '' OR EXISTS (
+ SELECT 1
+ FROM (
+ SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
+ UNION ALL
+ SELECT s.parent_id WHERE s.parent_id IS NOT NULL
+ ) links
+ JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+ LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+ LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+ WHERE (g.slug = $6 AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = $6 AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = $6 AND ggp.level IN ('country', 'state', 'city'))
+ ))
 `
 
 type CountSpacesByTypeParams struct {
@@ -572,6 +587,7 @@ type CountSpacesByTypeParams struct {
 	GeoCode     string      `json:"geo_code"`
 	Region      string      `json:"region"`
 	Subregion   string      `json:"subregion"`
+	Within      string      `json:"within"`
 }
 
 // Counts spaces with the same filters as ListSpacesByTypePaginated, including
@@ -584,6 +600,7 @@ func (q *Queries) CountSpacesByType(ctx context.Context, arg CountSpacesByTypePa
 		arg.GeoCode,
 		arg.Region,
 		arg.Subregion,
+		arg.Within,
 	)
 	var total int64
 	err := row.Scan(&total)
@@ -3546,16 +3563,35 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  AND ($3::text = '' OR s.geo_code = $3)
  AND ($4::text = '' OR s.region = $4)
  AND ($5::text = '' OR s.subregion = $5)
+ -- @within is a primary-space slug (country/state/city): match when the
+ -- space is linked — via the space_parent_spaces junction or spaces.parent_id
+ -- — to that space or any of its descendants (e.g. a state slug also matches
+ -- spaces linked to one of its cities). The level guard keeps non-geo slugs
+ -- from matching, and deleted ancestors can't satisfy the filter.
+ AND ($6::text = '' OR EXISTS (
+ SELECT 1
+ FROM (
+ SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
+ UNION ALL
+ SELECT s.parent_id WHERE s.parent_id IS NOT NULL
+ ) links
+ JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+ LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+ LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+ WHERE (g.slug = $6 AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = $6 AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = $6 AND ggp.level IN ('country', 'state', 'city'))
+ ))
 ORDER BY
- CASE WHEN $6::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $7::text = 'name' THEN s.name ELSE NULL END ASC,
  CASE
- WHEN $6::text = 'members' THEN s.member_count
- WHEN $6::text = 'followers' THEN s.follower_count
- WHEN $6::text = 'posts' THEN s.post_count
+ WHEN $7::text = 'members' THEN s.member_count
+ WHEN $7::text = 'followers' THEN s.follower_count
+ WHEN $7::text = 'posts' THEN s.post_count
  ELSE NULL
  END DESC,
  s.created_at DESC, s.id DESC
-LIMIT $8 OFFSET $7
+LIMIT $9 OFFSET $8
 `
 
 type ListSpacesByTypePaginatedParams struct {
@@ -3564,6 +3600,7 @@ type ListSpacesByTypePaginatedParams struct {
 	GeoCode     string      `json:"geo_code"`
 	Region      string      `json:"region"`
 	Subregion   string      `json:"subregion"`
+	Within      string      `json:"within"`
 	Sort        string      `json:"sort"`
 	OffsetVal   int32       `json:"offset_val"`
 	LimitVal    int32       `json:"limit_val"`
@@ -3610,6 +3647,7 @@ func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesB
 		arg.GeoCode,
 		arg.Region,
 		arg.Subregion,
+		arg.Within,
 		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,

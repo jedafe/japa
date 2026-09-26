@@ -43,8 +43,8 @@ const customFieldEntityTypeSpace = "space"
 type SpacesService interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error)
 	ListSpacesByType(ctx context.Context, viewerUserID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error)
-	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
-	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
+	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
+	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string) (int64, error)
 	GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
 	GetSpace(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
 	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
@@ -279,7 +279,9 @@ type universityDetail struct {
 
 // ListUniversities handles GET /api/v1/universities — every space of the
 // University space-type. Honors the Section 39 catalogued query params:
-// ?country= (ISO 3166-1 alpha-2), ?q= (name/slug ILIKE search), ?page= (1-based),
+// ?country= (ISO 3166-1 alpha-2), ?state=/?city= (primary-space slugs,
+// resolved via the space_parent_spaces hierarchy — a state includes its
+// cities' universities), ?q= (name/slug ILIKE search), ?page= (1-based),
 // ?limit= (page size, default 25, max 100). Returns {data, meta} with pagination
 // metadata. Server-side filtered + paginated so the ~9,000-row seeded catalog
 // never loads in full on a single SSR render (Section 39 line 149, ADR-039).
@@ -308,15 +310,20 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
+	// Slugs are lowercase — normalize so ?state=Lagos resolves lagos.
+	within := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("city")))
+	if within == "" {
+		within = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("state")))
+	}
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", sort, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", within, sort, limit32, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "")
+	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "", within)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return
@@ -416,15 +423,20 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
+	// Slugs are lowercase — normalize so ?state=Lagos resolves lagos.
+	within := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("city")))
+	if within == "" {
+		within = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("state")))
+	}
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", sort, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", within, sort, limit32, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "")
+	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "", within)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return

@@ -16,6 +16,7 @@
 	} from '$lib/api/wiki';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import SuggestEdit from './SuggestEdit.svelte';
+	import { formatWikiFieldValue } from '$lib/utils/wikiFieldValue';
 
 	let {
 		entityType,
@@ -102,17 +103,7 @@
 	);
 
 	function formatValue(f: WikiEntityField): string {
-		const v = f.value;
-		if (v === null || v === undefined || v === '') return '—';
-		if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');
-		if (typeof v === 'number') return String(v);
-		if (typeof v === 'string') return v;
-		if (Array.isArray(v)) {
-			return v
-				.map((i) => (typeof i === 'object' && i !== null ? JSON.stringify(i) : String(i)))
-				.join(', ');
-		}
-		return JSON.stringify(v);
+		return formatWikiFieldValue(f);
 	}
 </script>
 
