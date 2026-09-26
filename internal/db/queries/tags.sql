@@ -32,6 +32,9 @@ FROM tags
 WHERE (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%');
 
 -- name: GetTagBySlug :one
+-- Case-insensitive slug match (§08 slug-uniqueness amendment): 'Career'
+-- resolves the canonical 'career' tag. ORDER BY prefers the lowercase-slug
+-- row if a legacy case-variant still coexists (pre-000740 data).
 SELECT t.id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
  t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
  t.field_values, t.created_at, t.updated_at,
@@ -40,13 +43,17 @@ SELECT t.id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
 FROM tags t
 LEFT JOIN media lm ON lm.id = t.logo_media_id
 LEFT JOIN media cm ON cm.id = t.cover_media_id
-WHERE t.slug = @slug;
+WHERE LOWER(t.slug) = LOWER(@slug)
+ORDER BY (t.slug = LOWER(t.slug)) DESC, t.created_at
+LIMIT 1;
 
 -- name: GetTagsBySlugs :many
 -- Resolve multiple tag slugs to their IDs in one query (Section 14: bulk tag_slugs).
+-- Callers pass lowercase-normalized slugs (content.Slugify); LOWER() on the
+-- column keeps resolution correct for legacy mixed-case rows.
 SELECT id, name, slug
 FROM tags
-WHERE slug = ANY(@slugs::text[]);
+WHERE LOWER(slug) = ANY(@slugs::text[]);
 
 -- name: GetTagByID :one
 -- Used by DeleteTag guard to check is_system before deletion.

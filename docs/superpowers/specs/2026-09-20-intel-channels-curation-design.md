@@ -400,3 +400,68 @@ intel.social.enabled_providers     jsonb
 - Render-service dependency → config-gated; probe degrades to static.
 - Social platform ToS → provider allowlist.
 - LLM cost on `xhr_sniff`/`hybrid` → existing extraction cache + curate-first ordering.
+
+---
+
+## 8. Phase 4 — domain-scoped spider + outbound source discovery
+
+Bounded link-following that adds spider-style discovery upside without an
+open-web crawler. Two mechanisms, both scoped by the curated registry.
+
+### 8.1 `spider` crawl method — shallow same-host crawl
+
+A `crawl_method='spider'` channel treats its entry page as a link index:
+the adapter fetches the page via the static path, extracts anchors, and
+persists a `application/x-intel-manifest` raw doc whose body is the sorted
+`url<TAB>anchor-stamp` list of normalized **same-host** links (exact host
+match, case-insensitive; subdomains are separate channels by design). The
+doc's headers carry:
+
+- `X-Intel-Manifest-Kind: spider`
+- `X-Intel-Spider-Depth: <n>` — depth of the fetched page (entry = 0)
+- `X-Intel-Outbound-Links: <json []string>` — one representative URL per
+  distinct external host (drives §8.2)
+
+`detect_changes` diffs the manifest like a sitemap manifest and fans out
+one derived `intel:fetch_channel` per changed URL — reusing the
+`url_override`/`parent_document_id` machinery. Children fetch as:
+
+- `spider` (nested manifest) while `depth+1 < provider_config.max_depth`
+- `static` (content page → normal pipeline) at the depth ceiling
+
+Bounds: `max_depth` clamped to 1–2 (default 1 — entry + children only),
+manifest size `provider_config.max_urls` (default 200, hard cap 1000),
+fan-out `intel.spider.max_children_per_crawl` (default 25,
+`provider_config.max_urls` override), optional `provider_config.url_filter`
+glob on child paths. Same-host is enforced at extraction AND again at
+expansion. Every child fetch still passes the channel+URL-scoped preflight
+(robots, rate limit, derived crawl lock).
+
+### 8.2 Outbound source discovery — `intel:harvest_outbound` (low tier)
+
+`detect_changes` enqueues `intel:harvest_outbound` for every changed or
+first-crawl document (manifest docs only when `kind=spider`). The handler:
+
+1. Reads candidates from `X-Intel-Outbound-Links`, else parses the HTML
+   body for external anchors.
+2. Filters: same host as the parent source, private/reserved IP literals,
+   a built-in share/widget host denylist, `intel.discovery.domain_blocklist`
+   (suffix match), domains already in `intel_sources` (case-insensitive).
+3. Trust gate: parent source `trust_level <= intel.discovery.max_trust_level`
+   (default 2 — official/trusted only).
+4. Creates `status='proposed'`, `enabled=false`, `trust_level=5`,
+   `crawl_method='manual'` sources (categories inherited from the parent
+   source), capped at `intel.discovery.max_per_crawl` (default 10) per run.
+
+Discovered sources enter the SAME curated path as user proposals — admin
+approval → `intel:probe_verify` → materialized channels. Nothing external
+is ever auto-trusted; recursion depth for discovery is exactly one hop
+(candidates are sources, not pages).
+
+### 8.3 Probe integration
+
+`spiderDetector` (entry-page only, no requests) proposes a `spider` channel
+when the page carries ≥10 same-host links — a listing/index heuristic —
+at confidence 0.35, just above the static fallback. `spider` joins the
+proposal `bypassMethods`/materializer `platformProbeMethods` set as a
+discovery multiplier (same treatment as `sitemap`).

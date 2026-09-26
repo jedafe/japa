@@ -28,10 +28,14 @@
 	let error = $state('');
 
 	// Subscribe to the space room and listen for live poll result updates.
+	// Capture spaceId once per run — it's a lazily-evaluated prop getter, so
+	// re-reading it in the teardown could hit a detached parent (undefined)
+	// or unsubscribe a room that was never subscribed if the id changed.
 	$effect(() => {
-		if (!spaceId) return;
-		realtime.subscribeSpace(spaceId);
-		return () => realtime.unsubscribeSpace(spaceId);
+		const id = spaceId;
+		if (!id) return;
+		realtime.subscribeSpace(id);
+		return () => realtime.unsubscribeSpace(id);
 	});
 
 	$effect(() => {

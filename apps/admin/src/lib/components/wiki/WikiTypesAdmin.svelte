@@ -45,7 +45,7 @@
 		if (res.ok) {
 			const rows = (res.data?.data as { id: string; name: string; slug: string }[]) ?? [];
 			groupOptions = [
-				{ value: '', label: t('app.wiki.group_none', '— Prose only (no group) —') },
+				{ value: '', label: t('app.wiki.group_auto', '— Auto-create dedicated group —') },
 				...rows.map((g) => ({ value: g.id, label: g.name }))
 			];
 		}
@@ -67,7 +67,12 @@
 		{ key: 'icon', label: t('app.wiki.type_icon', 'Icon'), type: 'text' },
 		{ key: 'position', label: t('app.wiki.type_position', 'Position'), type: 'number' },
 		{ key: 'enabled', label: t('app.wiki.type_enabled', 'Enabled'), type: 'checkbox' },
-		{ key: 'seed_stubs', label: t('app.wiki.type_seed_stubs', 'Seed stub pages'), type: 'checkbox' }
+		{ key: 'seed_stubs', label: t('app.wiki.type_seed_stubs', 'Seed stub pages'), type: 'checkbox' },
+		// Seed-only: EntityPage seeds the edit form from fields keys — without
+		// this entry parent_type_ids is absent from formValue on edit and the
+		// PATCH below would clear every parent edge. The TypeForm snippet owns
+		// its rendering (checkbox group), so no input is drawn for it.
+		{ key: 'parent_type_ids', label: t('app.wiki.type_parents', 'Parents'), type: 'text' }
 	];
 
 	function toggleParent(value: Record<string, unknown>, id: string, checked: boolean) {
@@ -166,7 +171,9 @@
 				icon: String(body.icon ?? '').trim() || null,
 				seed_stubs: !!body.seed_stubs,
 				position: Number(body.position ?? 0),
-				parent_type_ids: (body.parent_type_ids as string[]) ?? []
+				// Omit rather than send [] when the field was never seeded —
+				// a nil list is a no-op server-side, an empty list clears edges.
+				parent_type_ids: body.parent_type_ids as string[] | undefined
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -282,11 +289,13 @@
 					},
 					update: async (id, body) => {
 						// Slug/category are immutable — the PATCH contract carries
-						// label, position, and the group binding ("" clears it).
+						// label, position, and the group binding. The binding is
+						// mandatory (NOT NULL), so an empty selection is omitted —
+						// the server rejects "" rather than clearing.
 						const res = await wikiAdminApi.updateCategory(id, {
 							label: String(body.label ?? '').trim(),
 							position: Number(body.position ?? 0),
-							field_group_id: String(body.field_group_id ?? '')
+							field_group_id: String(body.field_group_id ?? '').trim() || undefined
 						});
 						return res.ok ? { ok: true } : { ok: false, error: res.error };
 					},

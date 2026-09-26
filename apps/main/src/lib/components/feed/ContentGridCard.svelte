@@ -63,7 +63,9 @@
 			}
 			if (item.visa_route) tags.push(humanizeKey(item.visa_route));
 		}
-		return tags.slice(0, 2);
+		// item.tags can repeat a name (same API dup as DailyFeedCard) — dedupe
+		// so the keyed each block can't crash on a duplicate key.
+		return [...new Set(tags)].slice(0, 2);
 	});
 
 	const formattedDate = $derived(

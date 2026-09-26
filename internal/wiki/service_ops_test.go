@@ -27,17 +27,20 @@ import (
 // methods the service actually calls. The provisioner methods are an
 // in-memory get-or-create store keyed by group slug.
 type fakeFieldReader struct {
-	fieldsByKey       map[string]gen.GetCustomFieldByKeyRow
-	perms             map[string][2]bool // fieldID.String() → [canView, canEdit]
-	permErr           error              // injected failure for the batch lookups
-	assignments       []gen.CustomFieldGroupAssignment
-	groups            map[string]gen.CustomFieldGroup
-	groupFields       map[string][]gen.ListCustomFieldsByGroupRow
-	values            []gen.ListCustomFieldValuesWithDefsByEntityRow
-	byKeyCalls        []string
-	createdGroups     []gen.CustomFieldGroup
-	createdAssigns    []gen.CreateAssignmentParams
-	nextProvisionUUID int
+	fieldsByKey        map[string]gen.GetCustomFieldByKeyRow
+	perms              map[string][2]bool // fieldID.String() → [canView, canEdit]
+	permErr            error              // injected failure for the batch lookups
+	assignments        []gen.CustomFieldGroupAssignment
+	assignmentsOnRetry []gen.CustomFieldGroupAssignment // returned by the second+ list call
+	assignErr          error                            // injected CreateAssignment failure (provisioning retry path)
+	listAssignCalls    int
+	groups             map[string]gen.CustomFieldGroup
+	groupFields        map[string][]gen.ListCustomFieldsByGroupRow
+	values             []gen.ListCustomFieldValuesWithDefsByEntityRow
+	byKeyCalls         []string
+	createdGroups      []gen.CustomFieldGroup
+	createdAssigns     []gen.CreateAssignmentParams
+	nextProvisionUUID  int
 }
 
 func (f *fakeFieldReader) permSet(wantEdit bool) []pgtype.UUID {
@@ -89,6 +92,13 @@ func (f *fakeFieldReader) GetCustomFieldByKey(_ context.Context, key string) (ge
 }
 
 func (f *fakeFieldReader) ListAssignmentsByEntityClass(_ context.Context, _ string) ([]gen.CustomFieldGroupAssignment, error) {
+	f.listAssignCalls++
+	// Provisioning retry simulation: return a different set after the first
+	// call so a "concurrent commit" can materialize between the reads.
+	if f.listAssignCalls > 1 && f.assignmentsOnRetry != nil {
+		return f.assignmentsOnRetry, nil
+	}
+
 	return f.assignments, nil
 }
 
@@ -139,6 +149,10 @@ func (f *fakeFieldReader) CreateFieldGroup(_ context.Context, name, slug string,
 }
 
 func (f *fakeFieldReader) CreateAssignment(_ context.Context, p gen.CreateAssignmentParams) (gen.CustomFieldGroupAssignment, error) {
+	if f.assignErr != nil {
+		return gen.CustomFieldGroupAssignment{}, f.assignErr
+	}
+
 	a := gen.CustomFieldGroupAssignment{
 		GroupID:     p.GroupID,
 		EntityClass: p.EntityClass,

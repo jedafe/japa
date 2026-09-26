@@ -18,14 +18,14 @@ import (
 const (
 	// ---- Critical tier (immediate processing, highest concurrency) ----.
 
-	TypeNotificationDispatchBatch = "notification:dispatch_batch"
-	TypeWebhookDelivery           = "webhook:deliver"
-	TypePaymentWebhookProcess     = "payment:process_webhook"
+	TypeNotificationDispatchBatch  = "notification:dispatch_batch"
+	TypeWebhookDelivery            = "webhook:deliver"
+	TypePaymentWebhookProcess      = "payment:process_webhook"
 	TypeSubscriptionWebhookProcess = "subscription:webhook_process" // §17 recurring billing lifecycle
-	TypeTicketSendConfirmation    = "ticket:send_confirmation"
-	TypePushDelivery              = "push:deliver"
-	TypeDMNotifyRequest           = "dm:notify_request"
-	TypeDMNotifyMessage           = "dm:notify_message"
+	TypeTicketSendConfirmation     = "ticket:send_confirmation"
+	TypePushDelivery               = "push:deliver"
+	TypeDMNotifyRequest            = "dm:notify_request"
+	TypeDMNotifyMessage            = "dm:notify_message"
 
 	// ---- Default tier (standard background processing) ----.
 
@@ -120,9 +120,9 @@ const (
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
-	TypeScheduledPublishSweep = "content:publish_sweep"
-	TypeGdprRetentionSweep    = "gdpr:retention_sweep"
-	TypeJceRefreshStale       = "jce:refresh_stale"
+	TypeScheduledPublishSweep   = "content:publish_sweep"
+	TypeGdprRetentionSweep      = "gdpr:retention_sweep"
+	TypeJceRefreshStale         = "jce:refresh_stale"
 	TypeSubscriptionExpirySweep = "subscription:expiry_sweep" // §17 webhook-miss safety net
 
 	// ---- Intelligence System (Section INTEL) ----.
@@ -148,6 +148,7 @@ const (
 	TypeIntelWebSubRenew        = "intel:websub_renew"         // low (intel-channels Phase 3)
 	TypeIntelSearchPoll         = "intel:search_poll"          // default (intel-channels Phase 3)
 	TypeIntelPurgeInboundEvents = "intel:purge_inbound_events" // low (daily retention sweep)
+	TypeIntelHarvestOutbound    = "intel:harvest_outbound"     // low (intel-channels Phase 4)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -334,6 +335,7 @@ var handlerRegistry = []struct {
 	{TypeIntelWebSubRenew, HandleIntelWebSubRenew},
 	{TypeIntelSearchPoll, HandleIntelSearchPoll},
 	{TypeIntelPurgeInboundEvents, HandleIntelPurgeInboundEvents},
+	{TypeIntelHarvestOutbound, HandleIntelHarvestOutbound},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

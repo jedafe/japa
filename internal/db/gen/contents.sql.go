@@ -1031,7 +1031,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  m.storage_path AS featured_storage_path,
  hm.storage_bucket AS header_storage_bucket,
  hm.storage_path AS header_storage_path,
- COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+ COALESCE(string_agg(DISTINCT t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
  bs.id AS series_id,
  bs.title AS series_title,
  bs.slug AS series_slug,
@@ -1249,7 +1249,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  o.slug AS organization_slug,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
- COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+ COALESCE(string_agg(DISTINCT t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
  vs.source_url AS video_source_url,
  vs.source_type AS video_source_type,
  vs.duration_secs AS video_duration_secs,
@@ -2246,7 +2246,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
- COALESCE(string_agg(t2.name, ',' ORDER BY t2.name), '') AS tags
+ COALESCE(string_agg(DISTINCT t2.name, ',' ORDER BY t2.name), '') AS tags
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -2865,7 +2865,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
  FROM content_tags ct
  JOIN tags t ON t.id = ct.tag_id
  WHERE ct.content_id = c.id), '') AS tags
@@ -3834,7 +3834,7 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  vs.source_type AS video_source_type,
  vs.duration_secs AS video_duration_secs,
  vs.thumbnail_url AS video_thumbnail_url,
- COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
  FROM content_tags ct
  JOIN tags t ON t.id = ct.tag_id
  WHERE ct.content_id = c.id), '') AS tags,
@@ -4043,7 +4043,7 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  vs.source_type AS video_source_type,
  vs.duration_secs AS video_duration_secs,
  vs.thumbnail_url AS video_thumbnail_url,
- COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
  FROM content_tags ct
  JOIN tags t ON t.id = ct.tag_id
  WHERE ct.content_id = c.id), '') AS tags,

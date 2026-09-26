@@ -16,8 +16,10 @@ package tags
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -104,8 +106,21 @@ func (s *Service) GetTagByID(ctx context.Context, id pgtype.UUID) (gen.GetTagByI
 }
 
 // ResolveTagSlugs resolves multiple tag slugs to their IDs in one query (Section 14).
+// Inputs are normalized through content.Slugify first: user-typed values are
+// tag names, not canonical slugs, and slug uniqueness is case-insensitive
+// (§08 slug-uniqueness amendment — 'Career' resolves the 'career' tag).
 func (s *Service) ResolveTagSlugs(ctx context.Context, slugs []string) ([]gen.GetTagsBySlugsRow, error) {
-	rows, err := s.read.GetTagsBySlugs(ctx, slugs)
+	norm := make([]string, 0, len(slugs))
+	seen := make(map[string]bool, len(slugs))
+	for _, raw := range slugs {
+		n := content.Slugify(raw)
+		if !seen[n] {
+			seen[n] = true
+			norm = append(norm, n)
+		}
+	}
+
+	rows, err := s.read.GetTagsBySlugs(ctx, norm)
 	if err != nil {
 		return nil, fmt.Errorf("resolving tag slugs: %w", err)
 	}
@@ -113,16 +128,34 @@ func (s *Service) ResolveTagSlugs(ctx context.Context, slugs []string) ([]gen.Ge
 	return rows, nil
 }
 
-// ResolveTagSlugMap resolves tag slugs to a slug→userID map (content.TagSlugResolver adapter).
+// tagsByNormSlug indexes resolved rows by LOWER(slug), preferring the
+// canonical lowercase-slug row when a legacy case-variant row also matches.
+func tagsByNormSlug(rows []gen.GetTagsBySlugsRow) map[string]pgtype.UUID {
+	m := make(map[string]pgtype.UUID, len(rows))
+	for _, row := range rows {
+		norm := strings.ToLower(row.Slug)
+		if _, ok := m[norm]; !ok || row.Slug == norm {
+			m[norm] = row.ID
+		}
+	}
+	return m
+}
+
+// ResolveTagSlugMap resolves tag slugs to a slug→tagID map (content.TagSlugResolver
+// adapter). The map is keyed by the caller's raw input string so lookups like
+// m["Career"] resolve to the canonical 'career' tag.
 func (s *Service) ResolveTagSlugMap(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error) {
 	rows, err := s.ResolveTagSlugs(ctx, slugs)
 	if err != nil {
 		return nil, err
 	}
 
-	m := make(map[string]pgtype.UUID, len(rows))
-	for _, row := range rows {
-		m[row.Slug] = row.ID
+	byNorm := tagsByNormSlug(rows)
+	m := make(map[string]pgtype.UUID, len(slugs))
+	for _, raw := range slugs {
+		if id, ok := byNorm[content.Slugify(raw)]; ok {
+			m[raw] = id
+		}
 	}
 
 	return m, nil
@@ -136,40 +169,57 @@ func (s *Service) ResolveTagSlugMap(ctx context.Context, slugs []string) (map[st
 // // Concurrent calls for the same slug are safe: if CreateTag fails with a
 // unique-violation (the tag was just created by a parallel request), the
 // slug is re-resolved instead of returning an error.
+// The returned map is keyed by the caller's raw input (composer tag names are
+// resolved by their typed string). Inputs are normalized to canonical
+// lowercase slugs via content.Slugify before resolving/creating — the slug
+// carries the lowercase form while name keeps the user's display casing
+// (§08 slug-uniqueness amendment).
 func (s *Service) GetOrCreateTagSlugs(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error) {
 	rows, err := s.ResolveTagSlugs(ctx, slugs)
 	if err != nil {
 		return nil, fmt.Errorf("resolving tag slugs: %w", err)
 	}
 
+	byNorm := tagsByNormSlug(rows)
 	m := make(map[string]pgtype.UUID, len(slugs))
-	for _, row := range rows {
-		m[row.Slug] = row.ID
-	}
 
-	for _, slug := range slugs {
-		if _, exists := m[slug]; exists {
+	for _, raw := range slugs {
+		if _, exists := m[raw]; exists {
+			continue
+		}
+		norm := content.Slugify(raw)
+		if id, ok := byNorm[norm]; ok {
+			m[raw] = id
 			continue
 		}
 
+		// name keeps the user's display casing; slug is canonical lowercase.
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			name = norm
+		}
 		tag, cerr := s.CreateTag(ctx, CreateTagInput{
-			Name:     slug,
-			Slug:     slug,
+			Name:     name,
+			Slug:     norm,
 			IsSystem: false,
 		})
 		if cerr != nil {
 			// A concurrent call may have just created this tag. Re-resolve
-			// the single slug; if it now exists, use it. Otherwise propagate.
-			retry, rerr := s.ResolveTagSlugs(ctx, []string{slug})
-			if rerr == nil && len(retry) > 0 {
-				m[slug] = retry[0].ID
-				continue
+			// the single input; if it now exists, use it. Otherwise propagate.
+			retry, rerr := s.ResolveTagSlugs(ctx, []string{raw})
+			if rerr == nil {
+				if id, ok := tagsByNormSlug(retry)[norm]; ok {
+					m[raw] = id
+					byNorm[norm] = id
+					continue
+				}
 			}
 
-			return nil, fmt.Errorf("creating tag %q: %w", slug, cerr)
+			return nil, fmt.Errorf("creating tag %q: %w", raw, cerr)
 		}
 
-		m[slug] = tag.ID
+		m[raw] = tag.ID
+		byNorm[norm] = tag.ID
 	}
 
 	return m, nil

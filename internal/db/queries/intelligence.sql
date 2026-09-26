@@ -407,3 +407,11 @@ SELECT COUNT(*) FROM intel_records WHERE entity_type = $1 AND status = $2;
 
 -- name: CountIntelRecordsByStatusAll :one
 SELECT COUNT(*) FROM intel_records WHERE status = $1;
+
+-- name: IntelSourceDomainExists :one
+-- Case-insensitive host check for outbound-link source discovery
+-- (intel-channels Phase 4): a candidate domain already registered under
+-- ANY status (active/proposed/blocked) is not re-proposed.
+SELECT EXISTS(
+    SELECT 1 FROM intel_sources WHERE lower(domain) = lower($1)
+) AS exists;

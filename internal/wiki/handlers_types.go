@@ -179,6 +179,8 @@ func writeWikiTypeErr(w http.ResponseWriter, err error, op string) {
 		errpkg.WriteError(w, http.StatusConflict, "wiki_category_protected", "System categories cannot be deleted")
 	case errors.Is(err, ErrWikiCategoryInUse):
 		errpkg.WriteError(w, http.StatusConflict, "wiki_category_in_use", "Pages in this category still have content")
+	case errors.Is(err, ErrWikiCategoryExists):
+		errpkg.WriteError(w, http.StatusConflict, "wiki_category_exists", "A category with this slug or token already exists on this type")
 	case errors.Is(err, ErrFieldGroupNotFound):
 		errpkg.WriteError(w, http.StatusBadRequest, "field_group_not_found", "Field group not found")
 	default:

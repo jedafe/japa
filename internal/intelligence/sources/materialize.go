@@ -54,6 +54,7 @@ var platformProbeMethods = map[CrawlMethod]bool{
 	CrawlMethodSitemap: true,
 	CrawlMethodSocial:  true,
 	CrawlMethodGit:     true,
+	CrawlMethodSpider:  true,
 }
 
 // curateDefaultMethods mirrors probe's method-default pipeline table:

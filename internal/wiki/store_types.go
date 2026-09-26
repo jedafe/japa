@@ -13,6 +13,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -240,7 +241,14 @@ func (s *Store) ListWikiTypes(ctx context.Context) ([]WikiType, error) {
 
 // GetWikiType returns one wiki type config by space_type id.
 func (s *Store) GetWikiType(ctx context.Context, spaceTypeID pgtype.UUID) (WikiType, error) {
-	r, err := s.read.GetWikiTypeConfig(ctx, spaceTypeID)
+	return s.getWikiType(ctx, s.read, spaceTypeID)
+}
+
+// getWikiType reads a wiki type through the given query handle — callers
+// needing read-your-writes (UpsertWikiType's post-commit re-read) pass the
+// write pool so a read replica's lag can't shadow a fresh write.
+func (s *Store) getWikiType(ctx context.Context, q *gen.Queries, spaceTypeID pgtype.UUID) (WikiType, error) {
+	r, err := q.GetWikiTypeConfig(ctx, spaceTypeID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WikiType{}, ErrWikiTypeNotFound
@@ -249,7 +257,7 @@ func (s *Store) GetWikiType(ctx context.Context, spaceTypeID pgtype.UUID) (WikiT
 		return WikiType{}, fmt.Errorf("wiki: get type config: %w", err)
 	}
 
-	parentIDs, err := s.read.ListWikiTypeParentIDs(ctx, spaceTypeID)
+	parentIDs, err := q.ListWikiTypeParentIDs(ctx, spaceTypeID)
 	if err != nil {
 		return WikiType{}, fmt.Errorf("wiki: list type parents: %w", err)
 	}
@@ -309,8 +317,9 @@ func (s *Store) UpsertWikiType(ctx context.Context, spaceTypeID pgtype.UUID, ena
 	}
 
 	// Re-read through the joined query so the response carries the space
-	// type's slug/name alongside the config.
-	out, err := s.GetWikiType(ctx, spaceTypeID)
+	// type's slug/name alongside the config — via the write pool so a read
+	// replica's lag can't shadow the just-committed row.
+	out, err := s.getWikiType(ctx, s.write, spaceTypeID)
 	if err != nil {
 		return WikiType{}, fmt.Errorf("wiki: upsert type: re-read: %w", err)
 	}
@@ -392,9 +401,10 @@ func (s *Store) DeleteWikiType(ctx context.Context, spaceTypeID pgtype.UUID) err
 }
 
 // CountActivePagesBySpaceType is the delete-type guard: active wiki pages on
-// spaces of this type.
+// spaces of this type. Reads through the write pool — a replica lagging a
+// just-created page would let the delete proceed and orphan it.
 func (s *Store) CountActivePagesBySpaceType(ctx context.Context, spaceTypeID pgtype.UUID) (int64, error) {
-	n, err := s.read.CountActivePagesBySpaceType(ctx, spaceTypeID)
+	n, err := s.write.CountActivePagesBySpaceType(ctx, spaceTypeID)
 	if err != nil {
 		return 0, fmt.Errorf("wiki: count pages by type: %w", err)
 	}
@@ -467,6 +477,12 @@ func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.U
 		IsSystem:     isSystem,
 	})
 	if err != nil {
+		// Unique collision on (space_type_id, slug|category) → 409, not 500.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return WikiCategory{}, fmt.Errorf("%w: %s", ErrWikiCategoryExists, pgErr.ConstraintName)
+		}
+
 		return WikiCategory{}, fmt.Errorf("wiki: create category: %w", err)
 	}
 
@@ -485,8 +501,9 @@ func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.U
 
 // UpdateWikiTypeCategory patches label, bound group, and position — slug and
 // category are immutable (page URLs are /wiki/{entity}/{slug}).
-// updateFieldGroup distinguishes "don't touch" from "set/clear": when true,
-// fieldGroupID replaces the binding (zero UUID clears it to NULL).
+// updateFieldGroup distinguishes "don't touch" from "rebind": when true,
+// fieldGroupID replaces the binding (the column is NOT NULL — callers must
+// pass a validated group id, never a zero UUID).
 func (s *Store) UpdateWikiTypeCategory(ctx context.Context, id pgtype.UUID, label *string, updateFieldGroup bool, fieldGroupID pgtype.UUID, position *int32) error {
 	affected, err := s.write.UpdateWikiTypeCategory(ctx, gen.UpdateWikiTypeCategoryParams{
 		Label:            label,
@@ -525,9 +542,10 @@ func (s *Store) DeleteWikiTypeCategory(ctx context.Context, id pgtype.UUID) erro
 
 // CountCategoryProsePages is the delete-category guard: pages in this
 // category (any space of the type) that carry an approved content/mixed
-// revision — i.e. real prose that deletion would orphan.
+// revision — i.e. real prose that deletion would orphan. Reads through the
+// write pool so a lagging replica can't mask fresh prose.
 func (s *Store) CountCategoryProsePages(ctx context.Context, category string, spaceTypeID pgtype.UUID) (int64, error) {
-	n, err := s.read.CountCategoryProsePages(ctx, gen.CountCategoryProsePagesParams{
+	n, err := s.write.CountCategoryProsePages(ctx, gen.CountCategoryProsePagesParams{
 		Category:    category,
 		SpaceTypeID: spaceTypeID,
 	})

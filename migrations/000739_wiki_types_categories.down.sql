@@ -4,21 +4,31 @@
 
 BEGIN;
 
--- Remove assignments + groups bound to category templates before dropping
--- the referencing table. Note: if an admin added fields/values to a seeded
--- group since migrate-up, the custom_field_groups delete will fail on the
--- FK — clear the group's fields/values first (same in_use contract as
--- DeleteFieldGroup).
-DELETE FROM custom_field_group_assignments a
-USING wiki_type_categories wtc
-WHERE a.group_id = wtc.field_group_id;
-
-DELETE FROM custom_field_groups g
-USING wiki_type_categories wtc
-WHERE g.id = wtc.field_group_id;
+-- field_group_id is ON DELETE RESTRICT, so the groups cannot be deleted
+-- while category rows still reference them. Capture the bound ids first,
+-- drop the tables, then delete the groups that follow the auto-provisioned
+-- wiki_{type}_{category} naming convention — a category rebound to a
+-- pre-existing shared group must not destroy that group on rollback.
+CREATE TEMP TABLE _wtc_groups AS
+SELECT field_group_id FROM wiki_type_categories;
 
 DROP TABLE IF EXISTS wiki_type_categories;
 DROP TABLE IF EXISTS wiki_type_parents;
 DROP TABLE IF EXISTS wiki_type_configs;
+
+DELETE FROM custom_field_group_assignments a
+USING custom_field_groups g
+WHERE a.group_id = g.id
+  AND g.id IN (SELECT field_group_id FROM _wtc_groups)
+  AND g.slug LIKE 'wiki\_%';
+
+-- Note: if an admin added fields/values to a seeded group since
+-- migrate-up, this delete fails on the custom_fields FK — clear the
+-- group's fields/values first (same in_use contract as DeleteFieldGroup).
+DELETE FROM custom_field_groups g
+WHERE g.id IN (SELECT field_group_id FROM _wtc_groups)
+  AND g.slug LIKE 'wiki\_%';
+
+DROP TABLE _wtc_groups;
 
 COMMIT;

@@ -293,7 +293,7 @@ SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.
 FROM wiki_type_categories wtc
 JOIN wiki_type_configs cfg ON cfg.space_type_id = wtc.space_type_id AND cfg.enabled = true
 JOIN space_types st ON st.id = wtc.space_type_id
-ORDER BY wtc.position, wtc.slug
+ORDER BY wtc.position, wtc.slug, st.slug
 `
 
 type ListAllWikiCategoriesRow struct {
@@ -306,6 +306,9 @@ type ListAllWikiCategoriesRow struct {
 	SpaceTypeSlug string      `json:"space_type_slug"`
 }
 
+// Deterministic tiebreak: the handler dedupes the union by category token,
+// so the winner's fields (label, field_group_id) must not flap on equal
+// (position, slug) across types.
 func (q *Queries) ListAllWikiCategories(ctx context.Context) ([]ListAllWikiCategoriesRow, error) {
 	rows, err := q.db.Query(ctx, listAllWikiCategories)
 	if err != nil {

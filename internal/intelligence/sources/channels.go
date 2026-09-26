@@ -120,7 +120,8 @@ func (m CrawlMethod) IsValid() bool {
 		CrawlMethodRender, CrawlMethodJSONLD, CrawlMethodTabular,
 		CrawlMethodSitemap, CrawlMethodICal, CrawlMethodGit, CrawlMethodSocial,
 		CrawlMethodSearch, CrawlMethodWayback, CrawlMethodXHRSniff,
-		CrawlMethodOneshot, CrawlMethodEmail, CrawlMethodWebhook:
+		CrawlMethodOneshot, CrawlMethodEmail, CrawlMethodWebhook,
+		CrawlMethodSpider:
 		return true
 	}
 

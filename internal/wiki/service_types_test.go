@@ -84,6 +84,15 @@ func TestUpdateDeleteWikiCategory_RejectBadID(t *testing.T) {
 	}
 }
 
+func TestUpdateWikiTypeCategory_RejectEmptyLabel(t *testing.T) {
+	svc := &Service{}
+
+	blank := "   "
+	if err := svc.UpdateWikiTypeCategory(t.Context(), genUUIDText(t), UpdateWikiCategoryRequest{Label: &blank}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("blank label: want ErrInvalidInput, got %v", err)
+	}
+}
+
 func TestCreateWikiTypeCategory_RejectsBadTypeID(t *testing.T) {
 	svc := &Service{}
 
@@ -512,6 +521,37 @@ func TestProvisionCategoryGroup(t *testing.T) {
 	}
 	if gotID != g.ID || len(fields2.createdGroups) != 0 || len(fields2.createdAssigns) != 0 {
 		t.Fatalf("reuse should create nothing: id=%v groups=%d assigns=%d", gotID, len(fields2.createdGroups), len(fields2.createdAssigns))
+	}
+
+	// Assignment create fails AND the retry read finds nothing — the error
+	// must surface; a silently-missing assignment leaves the group
+	// invisible to entity-field resolution.
+	fields3 := &fakeFieldReader{assignErr: errors.New("conn reset")}
+	svc3 := &Service{fields: fields3, fieldProvisioner: fields3}
+	if _, err := svc3.provisionCategoryGroup(t.Context(), "city", "cost_of_living", "Cost of Living"); err == nil {
+		t.Fatal("assignment failure must surface, got nil error")
+	}
+
+	// Assignment create fails but the retry read finds the row (concurrent
+	// commit / replica lag shadowed it in the first list) — provisioning
+	// succeeds by reuse rather than erroring.
+	existingID := mustUUID(t, genUUIDText(t))
+	fields4 := &fakeFieldReader{
+		assignErr: errors.New("conn reset"),
+		groups: map[string]gen.CustomFieldGroup{
+			existingID.String(): {ID: existingID, Slug: "wiki_city_cost_of_living", Name: "Cost of Living (city)"},
+		},
+		assignmentsOnRetry: []gen.CustomFieldGroupAssignment{
+			{GroupID: existingID, EntityClass: "space_type:city"},
+		},
+	}
+	svc4 := &Service{fields: fields4, fieldProvisioner: fields4}
+	gotID4, err := svc4.provisionCategoryGroup(t.Context(), "city", "cost_of_living", "Cost of Living")
+	if err != nil {
+		t.Fatalf("retry-materialized assignment should succeed: %v", err)
+	}
+	if gotID4 != existingID {
+		t.Fatalf("want reused group %v, got %v", existingID, gotID4)
 	}
 }
 

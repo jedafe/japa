@@ -103,6 +103,17 @@ func (s *Store) GetByURL(ctx context.Context, sourceURL string) (Source, error) 
 	return row, nil
 }
 
+// DomainExists reports whether a domain is already registered as an intel
+// source under any status — the Phase-4 outbound-discovery dedupe check.
+func (s *Store) DomainExists(ctx context.Context, domain string) (bool, error) {
+	exists, err := s.queries.IntelSourceDomainExists(ctx, domain)
+	if err != nil {
+		return false, fmt.Errorf("sources: domain exists: %w", err)
+	}
+
+	return exists, nil
+}
+
 // List returns a page of sources ordered by created_at descending. The
 // ID is stamped into the query params regardless of any value the
 // caller set on arg.

@@ -58,6 +58,11 @@ type FetchResult struct {
 	ContentType string
 	Body        []byte
 	ContentHash string
+	// FinalURL is the post-redirect URL the body was fetched from — the
+	// base relative links resolve against (spider link extraction).
+	// Adapters that do not follow redirects may leave it empty; callers
+	// fall back to the entry URL.
+	FinalURL string
 }
 
 // NormalizeForHash produces a stable hash key from raw bytes.

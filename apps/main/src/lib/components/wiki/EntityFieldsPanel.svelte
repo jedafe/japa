@@ -107,6 +107,14 @@
 			.filter((g) => g.fields.length > 0)
 	);
 
+	// SuggestEdit receives the group-scoped schema too — on a bound wiki
+	// page the dialog must not offer fields from the entity's other groups
+	// (e.g. Healthcare fields on a Cost of Living page). Unbound pages keep
+	// the full entity schema.
+	const scopedSchema = $derived<WikiEntityFields | null>(
+		schema && groupId ? { ...schema, groups: schema.groups.filter((g) => g.id === groupId) } : schema
+	);
+
 	function formatValue(f: WikiEntityField): string {
 		return formatWikiFieldValue(f);
 	}
@@ -121,11 +129,11 @@
 				<Table2 size={14} class="text-[var(--color-muted)]" />
 				{title ?? t('wiki.data_panel_title', 'Details')}
 			</h2>
-			{#if schema}
+			{#if scopedSchema}
 				<SuggestEdit
 					{entityType}
 					{entityId}
-					fieldsData={schema}
+					fieldsData={scopedSchema}
 					bind:open={editOpen}
 					onsubmitted={() => (reloadToken += 1)}
 				/>

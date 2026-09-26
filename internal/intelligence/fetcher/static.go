@@ -63,6 +63,7 @@ func (f *StaticFetcher) Fetch(ctx context.Context, source sources.Source) (Fetch
 		ContentType: contentType,
 		Body:        body,
 		ContentHash: hash,
+		FinalURL:    resp.Request.URL.String(),
 	}, nil
 }
 

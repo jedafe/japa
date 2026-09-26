@@ -597,6 +597,12 @@ var settingsCatalog = map[string]settingMeta{
 	"intel.email.inbound_domain":     {Type: "string", DefaultValue: "", Description: "Inbound email domain for the Phase 3 email inbound adapter (empty = disabled).", Panel: "control"},
 	"intel.email.allowed_senders":    {Type: "json", DefaultValue: "[]", Description: "JSON array of sender addresses/domains allowed to submit intel items via the Phase 3 email inbound adapter.", Panel: "control"},
 	"intel.social.enabled_providers": {Type: "json", DefaultValue: "[]", Description: "JSON array of social providers enabled for the Phase 3 social intel adapter (e.g. reddit, telegram).", Panel: "control"},
+	// Intel channels — Phase 4 (spider + outbound source discovery)
+	"intel.spider.max_children_per_crawl": {Type: "int", DefaultValue: "25", Min: 1, Description: "Cap on derived child fetches a changed spider manifest may enqueue per crawl (provider_config.max_urls overrides per channel).", Panel: "control"},
+	"intel.discovery.enabled":             {Type: "bool", DefaultValue: "true", Description: "Outbound source discovery toggle — when false, intel:harvest_outbound enqueues are skipped and the handler no-ops.", Panel: "control"},
+	"intel.discovery.max_trust_level":     {Type: "int", DefaultValue: "2", Min: 1, Max: 5, Description: "Only sources at or above this trust tier (lower = more trusted) contribute outbound-link source candidates.", Panel: "control"},
+	"intel.discovery.domain_blocklist":    {Type: "json", DefaultValue: "[]", Description: "JSON array of hostnames never auto-proposed as sources (suffix match); supplements the built-in share/widget denylist.", Panel: "control"},
+	"intel.discovery.max_per_crawl":       {Type: "int", DefaultValue: "10", Min: 1, Description: "Max proposed sources a single intel:harvest_outbound task may create.", Panel: "control"},
 
 	// Generic Comparison System (§30, ADR-030)
 	"comparison.auto_dimension_hints":         {Type: "json", DefaultValue: `{"default":["Overview","Key features","Pros","Cons","Overall rating"],"groups":[{"hints":["price","cost","plan","package","version","edition","model"],"dimensions":["Price","Value for money"],"prepend":true},{"hints":["course","university","school","program","degree","certification"],"dimensions":["Curriculum","Duration","Cost","Accreditation"],"prepend":false}]}`, Description: "Heuristic hints used by POST /comparisons/auto-dimensions to derive dimension suggestions from item names. Admin-configurable per platform.", Panel: "control"},

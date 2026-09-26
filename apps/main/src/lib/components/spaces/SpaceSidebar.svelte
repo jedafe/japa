@@ -11,7 +11,9 @@
 
 	interface Props {
 		space: Space;
-		rules: SpaceRule[];
+		/** Space rules — the detail bundle omits this field entirely when the
+		 * space has none, so it must default rather than assume an array. */
+		rules?: SpaceRule[];
 		authed: boolean;
 		/** Imgproxy-signed logo URL (from GET /spaces/{slug} logo_url field). */
 		logoUrl?: string;
@@ -32,7 +34,7 @@
 		 * members widget; hidden when empty. */
 		members?: SpaceMember[];
 	}
-	let { space, rules, authed, logoUrl = '', initialJoined = false, initialPending = false, following: followingProp = false, onFollowChange, achievements = [], members = [] }: Props = $props();
+	let { space, rules = [], authed, logoUrl = '', initialJoined = false, initialPending = false, following: followingProp = false, onFollowChange, achievements = [], members = [] }: Props = $props();
 
 	let following = $state(untrack(() => followingProp ?? false));
 

@@ -146,6 +146,10 @@ func taskDefaults(taskType string) []asynq.Option {
 	// Search poll: one SERP request + the shared fetch bookkeeping.
 	case TypeIntelSearchPoll:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(3))
+	// Outbound harvest: HTML parse + per-domain dedupe + source inserts —
+	// all local DB work, short timeout.
+	case TypeIntelHarvestOutbound:
+		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(3))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -327,6 +331,8 @@ var taskTier = func() map[string]string {
 		TypeIntelWebSubRenew,
 		// §intel-channels — daily inbound-event retention sweep, low tier.
 		TypeIntelPurgeInboundEvents,
+		// §intel-channels Phase 4 — outbound source discovery, low tier.
+		TypeIntelHarvestOutbound,
 	} {
 		m[t] = QueueLow
 	}
@@ -440,6 +446,8 @@ var taskTypeCatalog = []struct {
 	{TypeIntelWebSubRenew, "low", "Re-subscribe a webhook channel before the hub-granted lease lapses (§intel-channels Phase 3)"},
 	{TypeIntelSearchPoll, "default", "Poll the configured SERP provider for a search channel; stores the result page as NDJSON (§intel-channels Phase 3)"},
 	{TypeIntelPurgeInboundEvents, "low", "Daily sweep deleting intel_inbound_events rows older than intel.inbound.retention_days (§intel-channels)"},
+	// §intel-channels Phase 4 — domain-scoped spider + outbound discovery.
+	{TypeIntelHarvestOutbound, "low", "Harvest a raw doc's external links into proposed intel_sources rows (§intel-channels Phase 4)"},
 	// Low tier
 	{TypeDigestEmail, "low", "Send digest email"},
 	{TypeSitemapGenerate, "low", "Generate sitemap XML"},

@@ -333,7 +333,9 @@ SELECT t.id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
 FROM tags t
 LEFT JOIN media lm ON lm.id = t.logo_media_id
 LEFT JOIN media cm ON cm.id = t.cover_media_id
-WHERE t.slug = $1
+WHERE LOWER(t.slug) = LOWER($1)
+ORDER BY (t.slug = LOWER(t.slug)) DESC, t.created_at
+LIMIT 1
 `
 
 type GetTagBySlugRow struct {
@@ -357,6 +359,9 @@ type GetTagBySlugRow struct {
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 }
 
+// Case-insensitive slug match (§08 slug-uniqueness amendment): 'Career'
+// resolves the canonical 'career' tag. ORDER BY prefers the lowercase-slug
+// row if a legacy case-variant still coexists (pre-000740 data).
 func (q *Queries) GetTagBySlug(ctx context.Context, slug string) (GetTagBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getTagBySlug, slug)
 	var i GetTagBySlugRow
@@ -386,7 +391,7 @@ func (q *Queries) GetTagBySlug(ctx context.Context, slug string) (GetTagBySlugRo
 const getTagsBySlugs = `-- name: GetTagsBySlugs :many
 SELECT id, name, slug
 FROM tags
-WHERE slug = ANY($1::text[])
+WHERE LOWER(slug) = ANY($1::text[])
 `
 
 type GetTagsBySlugsRow struct {
@@ -396,6 +401,8 @@ type GetTagsBySlugsRow struct {
 }
 
 // Resolve multiple tag slugs to their IDs in one query (Section 14: bulk tag_slugs).
+// Callers pass lowercase-normalized slugs (content.Slugify); LOWER() on the
+// column keeps resolution correct for legacy mixed-case rows.
 func (q *Queries) GetTagsBySlugs(ctx context.Context, slugs []string) ([]GetTagsBySlugsRow, error) {
 	rows, err := q.db.Query(ctx, getTagsBySlugs, slugs)
 	if err != nil {

@@ -1005,6 +1005,22 @@ func (q *Queries) IncrementSourcePostCount(ctx context.Context, id pgtype.UUID) 
 	return err
 }
 
+const intelSourceDomainExists = `-- name: IntelSourceDomainExists :one
+SELECT EXISTS(
+    SELECT 1 FROM intel_sources WHERE lower(domain) = lower($1)
+) AS exists
+`
+
+// Case-insensitive host check for outbound-link source discovery
+// (intel-channels Phase 4): a candidate domain already registered under
+// ANY status (active/proposed/blocked) is not re-proposed.
+func (q *Queries) IntelSourceDomainExists(ctx context.Context, lower string) (bool, error) {
+	row := q.db.QueryRow(ctx, intelSourceDomainExists, lower)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const isSourceBlocked = `-- name: IsSourceBlocked :one
 SELECT EXISTS(
  SELECT 1 FROM user_source_blocks

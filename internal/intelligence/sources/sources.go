@@ -73,6 +73,11 @@ const (
 	CrawlMethodWayback  CrawlMethod = "wayback"
 	CrawlMethodXHRSniff CrawlMethod = "xhr_sniff"
 	CrawlMethodOneshot  CrawlMethod = "oneshot"
+	// CrawlMethodSpider is the Phase-4 bounded same-host crawl: the entry
+	// page (and optionally its children to a shallow depth) is fetched as
+	// HTML and rewritten into a url<TAB>anchor-stamp manifest that fans out
+	// like a sitemap — discovery of pages a site omits from feeds/sitemaps.
+	CrawlMethodSpider CrawlMethod = "spider"
 	// CrawlMethodEmail and CrawlMethodWebhook are inbound push methods —
 	// they ingest via the inbound endpoints writing intel_inbound_events
 	// and are never returned by ListDueChannels.
