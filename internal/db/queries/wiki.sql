@@ -377,3 +377,9 @@ WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
   AND (@category::text = '' OR wp.category = @category)
   AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
   AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%');
+
+-- name: WikiPageSlugExists :one
+-- Slug uniqueness probe scoped to (space_id, slug) — used by the intel
+-- promoter's suffix loop before inserting a promoted page (§80 Intel
+-- ingestion → wiki_pages).
+SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE space_id = @space_id AND slug = @slug) AS exists;

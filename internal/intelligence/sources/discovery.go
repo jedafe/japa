@@ -38,10 +38,11 @@ type DiscoveredSourceInput struct {
 }
 
 // ProposeDiscovered registers a source candidate discovered from an
-// outbound link. It dedupes on the registrable host (a domain already in
-// the registry under any status is not re-proposed) and on the exact
-// source_url, and reports created=false for both so callers can cap on
-// successful inserts rather than attempts.
+// outbound link. It dedupes on the exact hostname (a host already in the
+// registry under any status is not re-proposed — subdomain siblings are
+// distinct candidates by design) and on the exact source_url, and
+// reports created=false for both so callers can cap on successful
+// inserts rather than attempts.
 func (s *Service) ProposeDiscovered(ctx context.Context, in DiscoveredSourceInput) (Source, bool, error) {
 	rawURL := strings.TrimSpace(in.URL)
 	if rawURL == "" {

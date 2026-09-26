@@ -59,6 +59,13 @@ const (
 	// by intel:harvest_outbound into proposed intel_sources rows.
 	OutboundLinksHeader = "X-Intel-Outbound-Links"
 
+	// SpiderScopeHeader records the normalized post-redirect base URL the
+	// link graph was scoped to. The raw doc's url field stays the entry
+	// URL (derived-fetch bookkeeping keys on it), so expansion must scope
+	// against this header — an example.com → www.example.com redirect
+	// otherwise drops every manifest child at the scope re-check.
+	SpiderScopeHeader = "X-Intel-Spider-Scope"
+
 	// spiderMaxDepthCeiling bounds provider_config.max_depth — a deeper
 	// same-host walk is a crawler, not a channel.
 	spiderMaxDepthCeiling = 2
@@ -111,6 +118,11 @@ func (c *Composite) fetchSpider(ctx context.Context, eff sources.Source) (FetchR
 	if base == "" {
 		base = eff.SourceUrl
 	}
+	baseURL, _ := url.Parse(base)
+	scope := ""
+	if baseURL != nil {
+		scope = normalizeLinkURL(baseURL)
+	}
 
 	var cfg map[string]any
 	_ = json.Unmarshal(eff.ProviderConfig, &cfg)
@@ -143,6 +155,9 @@ func (c *Composite) fetchSpider(ctx context.Context, eff sources.Source) (FetchR
 	}
 	res.Headers[ManifestKindHeader] = ManifestKindSpider
 	res.Headers[SpiderDepthHeader] = fmt.Sprintf("%d", depth)
+	if scope != "" {
+		res.Headers[SpiderScopeHeader] = scope
+	}
 	if len(external) > 0 {
 		res.Headers[OutboundLinksHeader] = string(outboundJSON)
 	}
@@ -185,6 +200,42 @@ func SpiderMaxDepth(providerConfig []byte) int {
 type spiderLink struct {
 	url   string
 	stamp string
+}
+
+// spiderScopePort returns the port a URL's authority resolves to — the
+// explicit port or the scheme default. Same-host crawling is
+// origin-scoped: host:8080 is a different service than host:443, and a
+// page must not nominate its host's sibling services as manifest children.
+func spiderScopePort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	}
+
+	return ""
+}
+
+// SpiderSameScope reports whether childURL sits inside baseURL's crawl
+// scope — same hostname AND same effective port (http/80 vs https/443 vs
+// explicit ports are distinct origins). Used at extraction AND at worker
+// expansion (defense in depth on persisted manifests).
+func SpiderSameScope(childURL, baseURL string) bool {
+	cu, err := url.Parse(childURL)
+	if err != nil {
+		return false
+	}
+	bu, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(cu.Hostname(), bu.Hostname()) &&
+		spiderScopePort(cu) == spiderScopePort(bu)
 }
 
 // extractPageLinks walks the document's <a href> anchors and splits them
@@ -272,6 +323,13 @@ func normalizeAnchor(base *url.URL, href, self string) string {
 	// need the literal check here so a link graph cannot nominate a
 	// private address as a manifest child or discovery candidate.
 	if !strings.EqualFold(u.Hostname(), base.Hostname()) && sources.IsPrivateIPLiteral(u.Hostname()) {
+		return ""
+	}
+
+	// Same hostname but a different effective port is a sibling service,
+	// not the site — neither a manifest child nor a discovery candidate
+	// (the harvest gate would reject it as same-host anyway).
+	if strings.EqualFold(u.Hostname(), base.Hostname()) && spiderScopePort(u) != spiderScopePort(base) {
 		return ""
 	}
 

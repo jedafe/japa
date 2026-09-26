@@ -413,12 +413,18 @@ open-web crawler. Two mechanisms, both scoped by the curated registry.
 A `crawl_method='spider'` channel treats its entry page as a link index:
 the adapter fetches the page via the static path, extracts anchors, and
 persists a `application/x-intel-manifest` raw doc whose body is the sorted
-`url<TAB>anchor-stamp` list of normalized **same-host** links (exact host
-match, case-insensitive; subdomains are separate channels by design). The
+`url<TAB>anchor-stamp` list of normalized **same-origin** links (exact
+host + effective-port match, case-insensitive; subdomains are separate
+channels by design, and `host:8080` is a sibling service, not the site —
+same-host/different-port links are neither children nor candidates). The
 doc's headers carry:
 
 - `X-Intel-Manifest-Kind: spider`
 - `X-Intel-Spider-Depth: <n>` — depth of the fetched page (entry = 0)
+- `X-Intel-Spider-Scope: <normalized-url>` — the post-redirect base the
+  link graph was scoped to; expansion scopes children against this, not
+  the raw doc's `url` (entry URL), so a `domain → www.domain` redirect
+  cannot orphan the whole manifest
 - `X-Intel-Outbound-Links: <json []string>` — one representative URL per
   distinct external host (drives §8.2)
 
@@ -431,11 +437,11 @@ one derived `intel:fetch_channel` per changed URL — reusing the
 
 Bounds: `max_depth` clamped to 1–2 (default 1 — entry + children only),
 manifest size `provider_config.max_urls` (default 200, hard cap 1000),
-fan-out `intel.spider.max_children_per_crawl` (default 25,
-`provider_config.max_urls` override), optional `provider_config.url_filter`
-glob on child paths. Same-host is enforced at extraction AND again at
-expansion. Every child fetch still passes the channel+URL-scoped preflight
-(robots, rate limit, derived crawl lock).
+fan-out `intel.spider.max_children_per_crawl` (default 25, overridden per
+channel by `provider_config.max_children`, else `max_urls`), optional
+`provider_config.url_filter` glob on child paths. Scope is enforced at
+extraction AND again at expansion. Every child fetch still passes the
+channel+URL-scoped preflight (robots, rate limit, derived crawl lock).
 
 ### 8.2 Outbound source discovery — `intel:harvest_outbound` (low tier)
 

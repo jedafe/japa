@@ -32,6 +32,13 @@ type WikiStore interface {
 	UpdateWikiPageIntel(ctx context.Context, arg gen.UpdateWikiPageIntelParams) error
 	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
 	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
+	// Space/category resolution for the managed-template model (§80 Intel
+	// ingestion → wiki_pages).
+	GetSpaceByID(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
+	GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
+	GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (gen.GetSpaceTypeRefRow, error)
+	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
+	ResolveWikiTypeCategoryToken(ctx context.Context, arg gen.ResolveWikiTypeCategoryTokenParams) (gen.WikiTypeCategory, error)
 	WithTx(ctx context.Context, fn func(WikiTxStore) error) error
 }
 
@@ -45,6 +52,7 @@ type WikiTxStore interface {
 	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
 	UpdateWikiPageIntel(ctx context.Context, arg gen.UpdateWikiPageIntelParams) error
 	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
+	WikiPageSlugExists(ctx context.Context, arg gen.WikiPageSlugExistsParams) (bool, error)
 }
 
 // WikiPromoter promotes wiki_page intel_records into the wiki_pages
@@ -118,11 +126,40 @@ func (p *WikiPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Promote
 // rolls back the other (BUG-01 fix, §6.2).
 func (p *WikiPromoter) wikiCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
 	authorID := resolveAuthorID(ctx, p.store, source, p.authorID)
-	params := buildWikiCreateParams(record, ext, authorID)
+
+	// wiki_pages.space_id is NOT NULL — the extraction must resolve to a
+	// real geo space, so when none of the hints resolve the record routes to
+	// review instead of failing the INSERT (§80 Intel ingestion → wiki_pages).
+	spaceID, spaceTypeID, err := p.resolveWikiSpace(ctx, record, ext)
+	if err != nil {
+		return PromoteResult{}, err
+	}
+	if !spaceID.Valid {
+		return PromoteResult{}, fmt.Errorf(
+			"promoter: wiki page requires a resolvable geo space but none matched — routing to review")
+	}
+
+	// Land on the managed category template; absent/unresolvable tokens
+	// fall back to "overview", which every seeded wiki type owns.
+	category, ok := p.resolveWikiCategory(ctx, spaceTypeID, stringField(ext, "category"))
+	if !ok {
+		category = "overview"
+	}
+
+	params := buildWikiCreateParams(record, ext, authorID, spaceID, category)
 
 	var result PromoteResult
 
-	err := p.store.WithTx(ctx, func(tx WikiTxStore) error {
+	err = p.store.WithTx(ctx, func(tx WikiTxStore) error {
+		// (space_id, slug) is unique — suffix the slug when a page with the
+		// same slug already exists on this space (same convention as the
+		// scholarship promoter's ensureUniqueSlug).
+		slug, err := ensureUniqueWikiSlug(ctx, tx, spaceID, params.Slug)
+		if err != nil {
+			return err
+		}
+		params.Slug = slug
+
 		wiki, err := tx.CreateWikiPageIntel(ctx, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create wiki page: %w", err)
@@ -158,6 +195,20 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 		return PromoteResult{}, fmt.Errorf("promoter: parse editorial overrides: %w", err)
 	}
 
+	// Canonicalize the extracted category against the page's managed
+	// template before the override-aware merge runs (§80 Intel ingestion →
+	// wiki_pages). An unresolvable token is suppressed rather than allowed
+	// to overwrite a managed category.
+	if tok := stringField(ext, "category"); tok != "" {
+		if ref, refErr := p.store.GetSpaceTypeRef(ctx, existing.SpaceID); refErr == nil && ref.SpaceTypeID.Valid {
+			if canonical, ok := p.resolveWikiCategory(ctx, ref.SpaceTypeID, tok); ok {
+				ext["category"] = extractor.FieldExtraction{Value: canonical, Confidence: 1}
+			} else {
+				delete(ext, "category")
+			}
+		}
+	}
+
 	params, changed := buildWikiUpdateParams(existing, ext, overrides)
 	params.FreshnessScore = freshScore
 
@@ -180,11 +231,13 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 // ---------------------------------------------------------------------------
 
 // buildWikiCreateParams maps a validated extraction to a
-// CreateWikiPageIntelParams. SpaceID is resolved from the extraction's
-// "space_id" field when present (a UUID string); otherwise it is left NULL
-// for Studio to assign. guide_id is always NULL on the create path so
-// Studio can fill it in later (Approach B).
-func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, authorID pgtype.UUID) gen.CreateWikiPageIntelParams {
+// CreateWikiPageIntelParams. spaceID is pre-resolved by createPath (the
+// column is NOT NULL); category is the canonical managed-category token
+// resolved against the space's wiki type ("overview" when the extraction
+// supplies nothing resolvable — §80 Intel ingestion → wiki_pages). guide_id
+// is always NULL on the create path so Studio can fill it in later
+// (Approach B).
+func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, authorID pgtype.UUID, spaceID pgtype.UUID, category string) gen.CreateWikiPageIntelParams {
 	title := stringField(ext, "title")
 	if title == "" {
 		title = stringField(ext, "name")
@@ -195,14 +248,9 @@ func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, aut
 		slug = slugify(title)
 	}
 
-	category := stringField(ext, "category")
-	if category == "" {
-		category = "general"
-	}
-
 	return gen.CreateWikiPageIntelParams{
 
-		SpaceID:            extractSpaceID(ext),
+		SpaceID:            spaceID,
 		Slug:               slug,
 		Title:              title,
 		Category:           category,
@@ -284,6 +332,146 @@ func marshalWikiFieldChanges(existing gen.WikiPage, params gen.UpdateWikiPageInt
 	}
 
 	return json.Marshal(changes)
+}
+
+// ---------------------------------------------------------------------------
+// Space & category resolution (§80 Intel ingestion → wiki_pages)
+// ---------------------------------------------------------------------------
+
+// resolveWikiSpace resolves the geo space a promoted wiki page attaches to.
+// Resolution order: extracted space_id (verified) → space_slug → city /
+// state / country name hints (slug → GetSpaceBySlug; country also tries
+// geo_code) → intel_records.geo_space_ids when it holds exactly one space.
+// Returns the space id and its space_type_id; both invalid when nothing
+// resolved. Lookup errors other than not-found propagate.
+func (p *WikiPromoter) resolveWikiSpace(ctx context.Context, record gen.IntelRecord, ext extractor.Extraction) (pgtype.UUID, pgtype.UUID, error) {
+	if id := extractSpaceID(ext); id.Valid {
+		row, err := p.store.GetSpaceByID(ctx, id)
+		if err == nil {
+			return row.ID, row.SpaceTypeID, nil
+		}
+		if !isNotFound(err) {
+			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve space_id: %w", err)
+		}
+	}
+
+	slugHints := []string{stringField(ext, "space_slug")}
+	for _, key := range []string{"city", "state", "country"} {
+		if name := stringField(ext, key); name != "" {
+			slugHints = append(slugHints, slugify(name))
+		}
+	}
+	for _, slug := range slugHints {
+		if slug == "" {
+			continue
+		}
+		row, err := p.store.GetSpaceBySlug(ctx, slug)
+		if err == nil {
+			return row.ID, row.SpaceTypeID, nil
+		}
+		if !isNotFound(err) {
+			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve space slug %q: %w", slug, err)
+		}
+	}
+
+	// Country may arrive as an ISO code rather than a name — try geo_code.
+	if country := stringField(ext, "country"); country != "" {
+		id, err := p.store.GetCountrySpace(ctx, country)
+		if err == nil && id.Valid {
+			ref, refErr := p.store.GetSpaceTypeRef(ctx, id)
+			if refErr == nil {
+				return id, ref.SpaceTypeID, nil
+			}
+			if !isNotFound(refErr) {
+				return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve country space type: %w", refErr)
+			}
+		} else if err != nil && !isNotFound(err) {
+			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve country space: %w", err)
+		}
+	}
+
+	// Last resort: the record's geo tags — only when unambiguous.
+	if len(record.GeoSpaceIds) == 1 && record.GeoSpaceIds[0].Valid {
+		ref, err := p.store.GetSpaceTypeRef(ctx, record.GeoSpaceIds[0])
+		if err == nil {
+			return record.GeoSpaceIds[0], ref.SpaceTypeID, nil
+		}
+		if !isNotFound(err) {
+			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve geo_space_ids: %w", err)
+		}
+	}
+
+	return pgtype.UUID{}, pgtype.UUID{}, nil
+}
+
+// resolveWikiCategory canonicalizes an extracted category token against the
+// managed wiki_type_categories rows for the space's wiki type. Returns the
+// canonical category token and true on a match; false when nothing resolves
+// (caller decides the fallback — "overview" on create, suppress on update).
+// Lookup failures report no match rather than hard-failing the promotion —
+// the page is valid content either way.
+func (p *WikiPromoter) resolveWikiCategory(ctx context.Context, spaceTypeID pgtype.UUID, token string) (string, bool) {
+	candidate := normalizeCategoryToken(token)
+	if candidate == "" {
+		return "", false
+	}
+
+	row, err := p.store.ResolveWikiTypeCategoryToken(ctx, gen.ResolveWikiTypeCategoryTokenParams{
+		SpaceTypeID: spaceTypeID,
+		Token:       candidate,
+	})
+	if err != nil {
+		return "", false
+	}
+
+	return row.Category, true
+}
+
+// ensureUniqueWikiSlug appends a numeric suffix (-2, -3, …) until no
+// wiki_pages row on this space uses the slug, mirroring the scholarship
+// promoter's ensureUniqueSlug against the (space_id, slug) unique index.
+func ensureUniqueWikiSlug(ctx context.Context, tx WikiTxStore, spaceID pgtype.UUID, slug string) (string, error) {
+	if slug == "" {
+		return "", errors.New("promoter: cannot ensure unique empty slug")
+	}
+
+	for i := 1; i <= maxSlugAttempts; i++ {
+		candidate := slug
+		if i > 1 {
+			candidate = fmt.Sprintf("%s-%d", slug, i)
+		}
+
+		exists, err := tx.WikiPageSlugExists(ctx, gen.WikiPageSlugExistsParams{
+			SpaceID: spaceID,
+			Slug:    candidate,
+		})
+		if err != nil {
+			return "", fmt.Errorf("promoter: checking wiki slug %q: %w", candidate, err)
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("promoter: could not find unique wiki slug after %d attempts", maxSlugAttempts)
+}
+
+// normalizeCategoryToken lowercases a free-form category string and folds
+// spaces/hyphens into underscores so "Cost of Living", "cost-of-living" and
+// "cost_of_living" all match the managed category token.
+func normalizeCategoryToken(s string) string {
+	var b strings.Builder
+
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		case r == ' ' || r == '-':
+			b.WriteRune('_')
+		}
+	}
+
+	return strings.Trim(b.String(), "_")
 }
 
 // ---------------------------------------------------------------------------

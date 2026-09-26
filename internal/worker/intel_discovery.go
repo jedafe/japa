@@ -26,9 +26,11 @@ import (
 // fetched and discovered sources never auto-activate, so the registry
 // stays curated while the crawl gains spider-style discovery reach.
 //
-// Dedupe is by registrable domain against intel_sources (any status) plus
+// Dedupe is by exact hostname against intel_sources (any status) plus
 // the exact source_url — a re-run over the same doc is a no-op, and a
-// thousand pages linking to the same external domain produce one row.
+// thousand pages linking to the same external host produce one row.
+// Granularity is per-host, not per-registrable-domain: a.blog.example
+// and b.blog.example are distinct candidates (subdomain sites differ).
 
 type intelHarvestOutboundPayload struct {
 	Version   string `json:"version"`
@@ -163,7 +165,7 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if created > 0 {
-		slog.Info("task:intel:harvest_outbound: proposed sources", "raw_doc_id", rawDoc.ID.String(), "source_id", src.ID.String(), "created", created, "attempted", proposed)
+		slog.Info("task:intel:harvest_outbound: proposed sources", "raw_doc_id", rawDoc.ID.String(), "source_id", src.ID.String(), "channel_id", p.ChannelID, "created", created, "attempted", proposed)
 	}
 
 	return nil

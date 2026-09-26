@@ -195,3 +195,19 @@ JOIN space_types st ON st.id = wtc.space_type_id
 -- so the winner's fields (label, field_group_id) must not flap on equal
 -- (position, slug) across types.
 ORDER BY wtc.position, wtc.slug, st.slug;
+
+-- name: ResolveWikiTypeCategoryToken :one
+-- Canonicalizes an externally-supplied category token (e.g. an intel
+-- extraction category) to the managed wiki_type_categories row for a wiki
+-- type. Accepts either spelling: the stored category token
+-- ('cost_of_living') or the page slug ('cost-of-living') — hyphenated slugs
+-- are compared underscore-normalized so both forms resolve.
+-- Ref: §80 Intel ingestion → wiki_pages.
+SELECT id, space_type_id, slug, category, label, field_group_id,
+       position, is_system, created_at
+FROM wiki_type_categories
+WHERE space_type_id = @space_type_id
+  AND (lower(category) = lower(@token)
+       OR lower(replace(slug, '-', '_')) = lower(@token))
+ORDER BY position ASC
+LIMIT 1;

@@ -623,6 +623,45 @@ func (q *Queries) ListWikiTypes(ctx context.Context) ([]ListWikiTypesRow, error)
 	return items, nil
 }
 
+const resolveWikiTypeCategoryToken = `-- name: ResolveWikiTypeCategoryToken :one
+SELECT id, space_type_id, slug, category, label, field_group_id,
+       position, is_system, created_at
+FROM wiki_type_categories
+WHERE space_type_id = $1
+  AND (lower(category) = lower($2)
+       OR lower(replace(slug, '-', '_')) = lower($2))
+ORDER BY position ASC
+LIMIT 1
+`
+
+type ResolveWikiTypeCategoryTokenParams struct {
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	Token       string      `json:"token"`
+}
+
+// Canonicalizes an externally-supplied category token (e.g. an intel
+// extraction category) to the managed wiki_type_categories row for a wiki
+// type. Accepts either spelling: the stored category token
+// ('cost_of_living') or the page slug ('cost-of-living') — hyphenated slugs
+// are compared underscore-normalized so both forms resolve.
+// Ref: §80 Intel ingestion → wiki_pages.
+func (q *Queries) ResolveWikiTypeCategoryToken(ctx context.Context, arg ResolveWikiTypeCategoryTokenParams) (WikiTypeCategory, error) {
+	row := q.db.QueryRow(ctx, resolveWikiTypeCategoryToken, arg.SpaceTypeID, arg.Token)
+	var i WikiTypeCategory
+	err := row.Scan(
+		&i.ID,
+		&i.SpaceTypeID,
+		&i.Slug,
+		&i.Category,
+		&i.Label,
+		&i.FieldGroupID,
+		&i.Position,
+		&i.IsSystem,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const updateWikiTypeCategory = `-- name: UpdateWikiTypeCategory :execrows
 UPDATE wiki_type_categories
 SET label = COALESCE($1, label),

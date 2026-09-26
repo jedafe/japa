@@ -1193,8 +1193,9 @@ func intelIsManifestDoc(doc gen.IntelRawDocument) bool {
 // intelExpandManifest fans out a changed manifest (Phase-2 manifest
 // fan-out): diffs the new url<TAB>stamp body against the previous manifest
 // and enqueues one derived intel:fetch_channel per new/changed URL —
-// bounded by provider_config.max_urls then
-// intel.sitemap.max_children_per_crawl (default 25), filtered by
+// bounded by provider_config.max_urls then the per-kind setting
+// (intel.spider.max_children_per_crawl for spider manifests,
+// intel.sitemap.max_children_per_crawl otherwise; default 25), filtered by
 // provider_config.url_filter glob on the URL path. Derived fetches stamp
 // parent_document_id so their docs dispatch to the channel's pipeline.
 // Invalid child URLs (non-http, private literals) are skipped — manifests
@@ -1239,10 +1240,21 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 	var cfg map[string]any
 	_ = json.Unmarshal(providerConfig, &cfg)
 
+	manifestKind := intelManifestKind(manifestDoc)
+
 	filter := intelCfgString(cfg, "url_filter")
 	maxChildren := intelCfgInt(cfg, "max_urls", 0)
+	if manifestKind == fetcher.ManifestKindSpider {
+		// max_children overrides max_urls for spider manifests —
+		// max_urls also caps the manifest's breadth at fetch time, so a
+		// channel wanting a wide link index but a tight crawl needs the
+		// separate key.
+		if n := intelCfgInt(cfg, "max_children", 0); n > 0 {
+			maxChildren = n
+		}
+	}
 	if maxChildren <= 0 && appSettings != nil {
-		if intelManifestKind(manifestDoc) == fetcher.ManifestKindSpider {
+		if manifestKind == fetcher.ManifestKindSpider {
 			maxChildren = appSettings.GetIntOr(ctx, "intel.spider.max_children_per_crawl", 25)
 		} else {
 			maxChildren = appSettings.GetIntOr(ctx, "intel.sitemap.max_children_per_crawl", 25)
@@ -1252,8 +1264,6 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 		maxChildren = 25
 	}
 
-	manifestKind := intelManifestKind(manifestDoc)
-
 	// Sitemapindex children are member sitemaps — fetch them as nested
 	// manifests (sitemap adapter), not static pages. The shape rides the
 	// manifest doc's recorded headers (X-Intel-Manifest-Kind).
@@ -1262,15 +1272,20 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 	// Spider manifests (Phase-4): children at depth+1 stay under the same
 	// host and fetch as nested spider manifests while inside the channel's
 	// max_depth bound; at the ceiling they are content pages (static).
-	var spiderManifestHost string
+	// Scope checks run against the recorded scope URL — the post-redirect
+	// page address — because the doc's url field is the entry URL and a
+	// cross-host redirect (example.com → www.example.com) must not drop
+	// every child.
 	spiderDepth, spiderMaxDepth, spiderChild := 0, 1, false
+	spiderScope := ""
 	if manifestKind == fetcher.ManifestKindSpider {
-		if mu, merr := url.Parse(manifestDoc.Url); merr == nil {
-			spiderManifestHost = mu.Hostname()
-		}
 		spiderDepth = fetcher.SpiderManifestDepth(intelDocHeaders(manifestDoc))
 		spiderMaxDepth = fetcher.SpiderMaxDepth(providerConfig)
 		spiderChild = spiderDepth+1 < spiderMaxDepth
+		spiderScope = intelDocHeaders(manifestDoc)[fetcher.SpiderScopeHeader]
+		if spiderScope == "" {
+			spiderScope = manifestDoc.Url
+		}
 	}
 
 	enqueued := 0
@@ -1284,11 +1299,11 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 			slog.Warn("task:intel:detect_changes: skipping invalid manifest URL", "channel_id", ch.ID.String(), "url", u)
 			continue
 		}
-		if manifestKind == fetcher.ManifestKindSpider && !strings.EqualFold(parsed.Hostname(), spiderManifestHost) {
+		if manifestKind == fetcher.ManifestKindSpider && !fetcher.SpiderSameScope(u, spiderScope) {
 			// Defense in depth — the fetcher already scoped extraction to
-			// the page's host, but a replayed/hand-edited manifest must
-			// never fan a fetch out to a foreign host.
-			slog.Warn("task:intel:detect_changes: skipping cross-host spider URL", "channel_id", ch.ID.String(), "url", u)
+			// the page's host+port origin, but a replayed/hand-edited
+			// manifest must never fan a fetch out of scope.
+			slog.Warn("task:intel:detect_changes: skipping out-of-scope spider URL", "channel_id", ch.ID.String(), "url", u)
 			continue
 		}
 		if filter != "" && !intelManifestURLMatch(filter, u) {
