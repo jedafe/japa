@@ -3031,6 +3031,11 @@ export interface WikiPage extends WikiPageIndex {
 	current_content: unknown;
 	revision_summary?: string;
 	submitted_by?: string;
+	/** §80 Wiki Types: the page category's bound field group — schema + this
+	 *  space's stored values. Absent on prose-only categories. */
+	fields?: import('$lib/api/wiki').WikiEntityFieldGroup | null;
+	/** Admin-set label from the wiki type's category template. */
+	category_label?: string;
 }
 
 export type WikiRevisionStatus = 'approved' | 'rejected' | 'pending';

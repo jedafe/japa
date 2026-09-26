@@ -71,8 +71,9 @@
 		{/if}
 	</div>
 
-	<!-- Avatar overlapping the header -->
-	<div class="-mt-12 flex justify-center px-4">
+	<!-- Avatar overlapping the header — relative so it paints above the
+	     position:relative cover block it overlaps via -mt-12. -->
+	<div class="relative -mt-12 flex justify-center px-4">
 		{#if user.avatar_url}
 			<img
 				src={remoteImageUrl(user.avatar_url)}

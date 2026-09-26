@@ -993,73 +993,75 @@
 		</section>
 	{/if}
 {:else if widget.widget_type === 'leaderboard'}
+	<!-- Hidden while empty — when gamification.enabled is off or nobody has
+	     points yet, a permanent "No leaderboard data" card is dead space on
+	     every page (consistent with upcoming_events hide-when-empty). -->
+	{#if leaderboard.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Trophy size={18} class="text-[var(--color-primary)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.top_contributors')}</h2>
 		</div>
-		{#if leaderboard.length === 0}
-			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_leaderboard')}</p>
-		{:else}
-			<ul class="space-y-2">
-				{#each leaderboard.slice(0, limit) as entry, i (entry.id)}
-					<li>
-						<a href={`/u/${entry.username}`} class="flex items-center gap-2 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
-							<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-semibold text-[var(--color-text-subtle)]">{i + 1}</span>
-							{#if entry.avatar_url}
-								<img src={entry.avatar_url} alt={entry.display_name ?? entry.username} class="h-8 w-8 shrink-0 rounded-full object-cover" />
-							{:else}
-								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">{(entry.display_name ?? entry.username).charAt(0).toUpperCase()}</span>
-							{/if}
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm text-[var(--color-text)]">{entry.display_name ?? entry.username}</span>
-								<span class="block text-xs text-[var(--color-muted)]">@{entry.username}</span>
-							</span>
-							<span class="shrink-0 text-xs font-medium text-[var(--color-muted)]">
-								{entry.score.toLocaleString()} {t('gamification.points', 'pts')}
-							</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+		<ul class="space-y-2">
+			{#each leaderboard.slice(0, limit) as entry, i (entry.id)}
+				<li>
+					<a href={`/u/${entry.username}`} class="flex items-center gap-2 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
+						<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-semibold text-[var(--color-text-subtle)]">{i + 1}</span>
+						{#if entry.avatar_url}
+							<img src={entry.avatar_url} alt={entry.display_name ?? entry.username} class="h-8 w-8 shrink-0 rounded-full object-cover" />
+						{:else}
+							<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">{(entry.display_name ?? entry.username).charAt(0).toUpperCase()}</span>
+						{/if}
+						<span class="min-w-0 flex-1">
+							<span class="block truncate text-sm text-[var(--color-text)]">{entry.display_name ?? entry.username}</span>
+							<span class="block text-xs text-[var(--color-muted)]">@{entry.username}</span>
+						</span>
+						<span class="shrink-0 text-xs font-medium text-[var(--color-muted)]">
+							{entry.score.toLocaleString()} {t('gamification.points', 'pts')}
+						</span>
+					</a>
+				</li>
+			{/each}
+		</ul>
 	</section>
+	{/if}
 {:else if widget.widget_type === 'featured_content'}
+	<!-- Hidden while empty — a permanent "No featured content" card is dead
+	     space (consistent with tag_cloud/upcoming_events hide-when-empty). -->
+	{#if featuredPosts.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Star size={18} class="text-[var(--color-primary)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured', 'Featured')}</h2>
 		</div>
-		{#if featuredPosts.length === 0}
-			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_featured', 'No featured content')}</p>
-		{:else}
-			<ul class="space-y-2">
-				{#each featuredPosts.slice(0, limit) as post (post.id)}
-					<li>
-						<a href={contentHref(post)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{post.title}</a>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+		<ul class="space-y-2">
+			{#each featuredPosts.slice(0, limit) as post (post.id)}
+				<li>
+					<a href={contentHref(post)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{post.title}</a>
+				</li>
+			{/each}
+		</ul>
 	</section>
+	{/if}
 {:else if widget.widget_type === 'related_discussions'}
+	<!-- Hidden while empty — routes with no matching discussions should not
+	     render a permanent "No related discussions" card (consistent with
+	     upcoming_events hide-when-empty). -->
+	{#if relatedDiscussions.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<MessageSquare size={18} class="text-[var(--color-text-subtle)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.related_discussions', 'Related Discussions')}</h2>
 		</div>
-		{#if relatedDiscussions.length === 0}
-			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_discussions', 'No related discussions')}</p>
-		{:else}
-			<ul class="space-y-2">
-				{#each relatedDiscussions as disc (disc.id)}
-					<li>
-						<a href={`/forum/${disc.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{disc.title}</a>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+		<ul class="space-y-2">
+			{#each relatedDiscussions as disc (disc.id)}
+				<li>
+					<a href={`/forum/${disc.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{disc.title}</a>
+				</li>
+			{/each}
+		</ul>
 	</section>
+	{/if}
 {:else if widget.widget_type === 'upcoming_events'}
 	<!-- Hidden while empty — there is no /events backend route yet, so this
 	     widget must not render a permanent "No upcoming events" card on every

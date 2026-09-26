@@ -4186,5 +4186,6 @@
 	"wiki.universities_label": "Wikis des universités",
 	"wiki.university_search_hint": "Rechercher une université…",
 	"wiki.update_failed": "Échec de la mise à jour de la page. Veuillez réessayer.",
-	"wiki.view_all_articles": "Voir tous les articles"
+	"wiki.view_all_articles": "Voir tous les articles",
+	"profile.view_all_spaces": "Voir les {count} espaces"
 }

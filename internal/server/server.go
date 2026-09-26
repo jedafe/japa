@@ -6459,6 +6459,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Public browse (anonymous): categories, destinations, index, single page, history.
 				r.Get("/wiki/categories", wikiHandlers.HandleGetCategories)
 				r.Get("/wiki/destinations", wikiHandlers.HandleGetDestinations)
+				// §80 Wiki Types: enabled wiki types for navigation/filters.
+				r.Get("/wiki/types", wikiHandlers.HandleListWikiTypes)
 				r.Get("/wiki/{space_slug}", wikiHandlers.HandleGetIndex)
 				r.Get("/wiki/{space_slug}/{page_slug}", wikiHandlers.HandleGetPage)
 				r.Get("/wiki/{space_slug}/{page_slug}/history", wikiHandlers.HandleGetHistory)
@@ -6480,6 +6482,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/wiki/generate", wikiHandlers.HandleGenerate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Get("/admin/wiki", wikiHandlers.HandleAdminList)
+
+				// §80 Wiki Types & Field-Group Pages: admin management of
+				// wiki types (space types carrying a wiki, with parent
+				// edges) and their category templates (wiki.manage).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Get("/admin/wiki/types", wikiHandlers.HandleAdminListWikiTypes)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Post("/admin/wiki/types", wikiHandlers.HandleUpsertWikiType)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Patch("/admin/wiki/types/{space_type_id}", wikiHandlers.HandleUpdateWikiType)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Delete("/admin/wiki/types/{space_type_id}", wikiHandlers.HandleDeleteWikiType)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Get("/admin/wiki/types/{space_type_id}/categories", wikiHandlers.HandleAdminListTypeCategories)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Post("/admin/wiki/types/{space_type_id}/categories", wikiHandlers.HandleCreateWikiCategory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Patch("/admin/wiki/categories/{id}", wikiHandlers.HandleUpdateWikiCategory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Delete("/admin/wiki/categories/{id}", wikiHandlers.HandleDeleteWikiCategory)
 
 				// §80 Community Field Ops — structured entity-field edits.
 				// Nested under wiki.enabled AND wiki.structured_edits (§80:

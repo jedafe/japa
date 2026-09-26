@@ -9,6 +9,12 @@
 	}
 	let { certificates, spaces }: Props = $props();
 
+	// Cap the sidebar lists — a member of dozens of spaces would otherwise
+	// push every global widget below the fold. The Spaces tab on the same
+	// profile page carries the full list.
+	const MAX_SIDEBAR_ITEMS = 6;
+	const visibleSpaces = $derived(spaces.slice(0, MAX_SIDEBAR_ITEMS));
+
 	function formatDate(iso: string | undefined): string {
 		if (!iso) return '';
 		return new Date(iso).toLocaleDateString(i18n.locale);
@@ -50,7 +56,7 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('profile.spaces', 'Spaces')}</h2>
 		<ul class="space-y-2">
-			{#each spaces as space (space.id)}
+			{#each visibleSpaces as space (space.id)}
 				<li>
 					<a
 						href={`/spaces/${space.slug}`}
@@ -60,12 +66,20 @@
 						<span class="min-w-0 flex-1">
 							<span class="block truncate text-sm text-[var(--color-text)]">{space.name}</span>
 							{#if space.role}
-								<span class="block text-xs text-[var(--color-muted)]">{space.role}</span>
+								<span class="block text-xs capitalize text-[var(--color-muted)]">{space.role}</span>
 							{/if}
 						</span>
 					</a>
 				</li>
 			{/each}
 		</ul>
+		{#if spaces.length > visibleSpaces.length}
+			<a
+				href="?tab=spaces"
+				class="mt-2 block text-xs font-medium text-[var(--color-primary)] hover:underline"
+			>
+				{t('profile.view_all_spaces', 'View all {count} spaces').replace('{count}', String(spaces.length))}
+			</a>
+		{/if}
 	</section>
 {/if}

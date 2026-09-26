@@ -4267,5 +4267,6 @@
 	"wiki.universities_label": "University wikis",
 	"wiki.university_search_hint": "Search a university…",
 	"wiki.update_failed": "Failed to update the page. Please try again.",
-	"wiki.view_all_articles": "View all articles"
+	"wiki.view_all_articles": "View all articles",
+	"profile.view_all_spaces": "View all {count} spaces"
 }

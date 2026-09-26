@@ -1,0 +1,379 @@
+-- Wiki (§80) queries — consolidated from internal/wiki/store.go.
+-- Ref: japaconnect-engineering/sections/80-destination-wiki.md
+
+-- =====================
+-- Pages
+-- =====================
+
+-- name: GetWikiPageBySlug :one
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type,
+       sp.slug AS space_slug, sp.name AS space_name
+FROM wiki_pages wp
+JOIN spaces sp ON sp.id = wp.space_id
+WHERE sp.slug = @space_slug AND wp.slug = @page_slug
+  AND wp.is_active = true
+LIMIT 1;
+
+-- name: ListWikiPagesBySpaceSlug :many
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type,
+       sp.slug AS space_slug, sp.name AS space_name
+FROM wiki_pages wp
+JOIN spaces sp ON sp.id = wp.space_id
+WHERE sp.slug = @space_slug AND wp.is_active = true
+ORDER BY wp.category, wp.title;
+
+-- name: ListWikiPagesBySpaceID :many
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type,
+       sp.slug AS space_slug, sp.name AS space_name
+FROM wiki_pages wp
+JOIN spaces sp ON sp.id = wp.space_id
+WHERE wp.space_id = @space_id AND wp.is_active = true
+ORDER BY wp.category, wp.title;
+
+-- name: ListWikiDestinations :many
+-- Wiki-type-driven destination list (§80 Wiki Types amendment): the base set
+-- is spaces whose space_type has wiki_type_configs.enabled — the former
+-- hardcoded (level IN geo+university) predicate is gone so new wiki types
+-- appear automatically. ?level matches sp.level OR st.slug so legacy
+-- level='university' spaces and future type slugs both resolve.
+SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
+       COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
+FROM spaces sp
+JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
+LEFT JOIN space_types st ON st.id = sp.space_type_id
+LEFT JOIN wiki_pages wp ON wp.space_id = sp.id
+WHERE sp.status = 'active'
+  AND (@level::text = '' OR sp.level = @level OR st.slug = @level)
+  AND (@region::text = '' OR sp.region = @region)
+  AND (@search::text = '' OR sp.name ILIKE '%' || @search || '%')
+  AND (@parent::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = @parent))
+  AND (@within::text = '' OR EXISTS (
+        SELECT 1
+        FROM (
+            SELECT parent_space_id AS pid
+            FROM space_parent_spaces
+            WHERE space_id = sp.id
+            UNION ALL
+            SELECT sp.parent_id
+            WHERE sp.parent_id IS NOT NULL
+        ) links
+        JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+        LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+        LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+        WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
+           OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
+           OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+      ))
+GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
+HAVING (NOT @has_wiki::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
+ORDER BY sp.name;
+
+-- =====================
+-- Revisions
+-- =====================
+
+-- name: GetApprovedWikiRevision :one
+-- kind='fields' revisions are excluded: they carry no prose and approving
+-- one must never replace the page body (§80 community field ops).
+SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
+       wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
+       wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.apply_error,
+       wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
+       wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
+       wr.created_at,
+       COALESCE(u.username, '') AS submitted_by_name
+FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
+WHERE wr.wiki_page_id = @page_id AND wr.status = 'approved'
+  AND wr.kind IN ('content', 'mixed')
+ORDER BY wr.created_at DESC
+LIMIT 1;
+
+-- name: ListWikiRevisions :many
+SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
+       wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
+       wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.apply_error,
+       wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
+       wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
+       wr.created_at,
+       COALESCE(u.username, '') AS submitted_by_name,
+       COALESCE(ru.username, '') AS reviewed_by_name
+FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN users ru ON ru.id = wr.reviewed_by
+WHERE wr.wiki_page_id = @page_id
+ORDER BY wr.created_at DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: CountWikiRevisionsByPage :one
+SELECT COUNT(*) FROM wiki_revisions WHERE wiki_page_id = @page_id;
+
+-- name: InsertWikiRevision :one
+-- Shared INSERT for SubmitRevision/SubmitAIRevision. content_hash is
+-- computed in Go (Rule 12) and passed in.
+INSERT INTO wiki_revisions (wiki_page_id, kind, content, ops, summary,
+    target_entity_type, target_entity_id, status,
+    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)
+VALUES (@wiki_page_id, @kind, @content, @ops, @summary,
+    @target_entity_type, @target_entity_id, 'pending',
+    @submitted_by, @ai_generated, @ai_model, @ai_prompt_hash, @content_hash)
+RETURNING id;
+
+-- name: ApproveWikiRevision :one
+-- Page-scoped approve (legacy route): flips a pending revision, stamps the
+-- reviewer, returns the content for RAG indexing. The page's updated_at is
+-- bumped by UpdateWikiPageTouched in the same tx.
+UPDATE wiki_revisions
+SET status = 'approved', reviewed_by = @reviewed_by, reviewed_at = now(),
+    hitl_reviewed_by = @reviewed_by, hitl_reviewed_at = now(),
+    hitl_review_notes = sqlc.narg(hitl_review_notes)
+WHERE id = @id AND status = 'pending'
+RETURNING content;
+
+-- name: ApproveWikiRevisionByID :one
+-- Revision-keyed approve (canonical; §80): same status flip but returns the
+-- full row so the caller can apply ops and enqueue propagation.
+UPDATE wiki_revisions
+SET status = 'approved', reviewed_by = @reviewed_by, reviewed_at = now(),
+    apply_error = NULL,
+    hitl_reviewed_by = @reviewed_by, hitl_reviewed_at = now(),
+    hitl_review_notes = sqlc.narg(hitl_review_notes)
+WHERE id = @id AND status = 'pending'
+RETURNING id, wiki_page_id, content, summary,
+    kind, ops, target_entity_type, target_entity_id,
+    status, submitted_by, reviewed_by, reviewed_at,
+    apply_error,
+    ai_generated, ai_model, ai_prompt_hash,
+    hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
+    created_at;
+
+-- name: UpdateWikiPageTouched :exec
+UPDATE wiki_pages SET updated_at = now() WHERE id = @id;
+
+-- name: RejectWikiRevision :exec
+UPDATE wiki_revisions
+SET status = 'rejected', reviewed_by = @reviewed_by, reviewed_at = now(),
+    hitl_reviewed_by = @reviewed_by, hitl_reviewed_at = now(),
+    hitl_review_notes = sqlc.narg(hitl_review_notes)
+WHERE id = @id AND status = 'pending';
+
+-- name: GetWikiRevision :one
+SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
+       wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
+       wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.apply_error,
+       wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
+       wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
+       wr.created_at,
+       COALESCE(u.username, '') AS submitted_by_name,
+       COALESCE(ru.username, '') AS reviewed_by_name
+FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN users ru ON ru.id = wr.reviewed_by
+WHERE wr.id = @id;
+
+-- name: SetWikiRevisionApplyError :exec
+-- Records an ops-application failure outside the rolled-back approve tx —
+-- the reason persists so reviewers see why the revision cannot be approved.
+UPDATE wiki_revisions SET apply_error = @apply_error WHERE id = @id;
+
+-- name: ListWikiRevisionsByTarget :many
+SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
+       wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
+       wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.apply_error,
+       wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
+       wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
+       wr.created_at,
+       COALESCE(u.username, '') AS submitted_by_name,
+       COALESCE(ru.username, '') AS reviewed_by_name
+FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN users ru ON ru.id = wr.reviewed_by
+WHERE wr.target_entity_type = @target_entity_type
+  AND wr.target_entity_id = @target_entity_id
+ORDER BY wr.created_at DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: CountWikiRevisionsByTarget :one
+SELECT COUNT(*) FROM wiki_revisions
+WHERE target_entity_type = @target_entity_type
+  AND target_entity_id = @target_entity_id;
+
+-- name: AdminListWikiRevisions :many
+SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
+       wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
+       wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
+       wr.apply_error,
+       wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
+       wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
+       wr.created_at,
+       COALESCE(u.username, '') AS submitted_by_name,
+       COALESCE(ru.username, '') AS reviewed_by_name
+FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN users ru ON ru.id = wr.reviewed_by
+WHERE (@kind::text = '' OR wr.kind = @kind)
+  AND (@status::text = '' OR wr.status = @status)
+ORDER BY wr.created_at DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: AdminCountWikiRevisions :one
+SELECT COUNT(*) FROM wiki_revisions wr
+WHERE (@kind::text = '' OR wr.kind = @kind)
+  AND (@status::text = '' OR wr.status = @status);
+
+-- name: CountPendingRevisionsByTarget :one
+SELECT COUNT(*) FROM wiki_revisions
+WHERE target_entity_type = @target_entity_type
+  AND target_entity_id = @target_entity_id
+  AND status = 'pending';
+
+-- =====================
+-- Page writes & spaces
+-- =====================
+
+-- name: FindWikiHostPage :one
+-- First active wiki page for a space+category — the "host page" an
+-- entity-bound ops revision attaches to (§80).
+SELECT id FROM wiki_pages
+WHERE space_id = @space_id AND category = @category AND is_active = true
+ORDER BY created_at ASC
+LIMIT 1;
+
+-- name: GetSpaceTypeRef :one
+SELECT sp.space_type_id, COALESCE(st.slug, '') AS space_type_slug
+FROM spaces sp
+LEFT JOIN space_types st ON st.id = sp.space_type_id
+WHERE sp.id = @space_id;
+
+-- name: UpdateWikiPage :execrows
+-- Optional-field update: NULL params keep the current column value;
+-- update_data_entity_type distinguishes "don't touch" from "set/clear" —
+-- an empty string clears the binding to NULL (§80 data_entity_type).
+UPDATE wiki_pages
+SET is_locked = COALESCE(sqlc.narg(is_locked), is_locked),
+    is_featured = COALESCE(sqlc.narg(is_featured), is_featured),
+    is_active = COALESCE(sqlc.narg(is_active), is_active),
+    data_entity_type = CASE WHEN @update_data_entity_type::bool
+                        THEN NULLIF(@data_entity_type, '')
+                        ELSE data_entity_type END,
+    updated_at = now()
+WHERE id = @id;
+
+-- name: GetWikiSpaceBySlug :one
+-- Resolves a wiki-bearing space slug: the space's type must have an enabled
+-- wiki_type_configs row (§80 Wiki Types amendment).
+SELECT sp.id, sp.level
+FROM spaces sp
+JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
+WHERE sp.slug = @slug AND sp.status = 'active'
+LIMIT 1;
+
+-- name: GetWikiSpaceByID :one
+SELECT sp.slug, sp.level
+FROM spaces sp
+JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
+WHERE sp.id = @id AND sp.status = 'active'
+LIMIT 1;
+
+-- name: ListWikiSeedSpaceIDs :many
+-- Spaces whose type opts into stub seeding (seed_stubs=true) — the
+-- wiki:seed_stub_pages fan-out set (§80). Replaces the country-only list.
+SELECT s.id
+FROM spaces s
+JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id AND wtc.seed_stubs = true
+WHERE s.status = 'active' AND s.deleted_at IS NULL;
+
+-- name: IsUniversitySpaceBySlug :one
+SELECT (sp.level = 'university' OR st.slug = 'university') AS is_university
+FROM spaces sp
+LEFT JOIN space_types st ON st.id = sp.space_type_id
+WHERE sp.slug = @slug AND sp.status = 'active'
+LIMIT 1;
+
+-- name: CreateWikiPage :one
+INSERT INTO wiki_pages (space_id, slug, title, category, created_by)
+VALUES (@space_id, @slug, @title, @category, sqlc.narg(created_by))
+ON CONFLICT (space_id, slug) DO NOTHING
+RETURNING id;
+
+-- name: InsertInitialWikiRevision :one
+-- Initial pending revision for a page created with content
+-- (CreatePageWithRevision) — kind='content', empty ops.
+INSERT INTO wiki_revisions (wiki_page_id, kind, content, ops, summary,
+    target_entity_type, target_entity_id, status,
+    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)
+VALUES (@wiki_page_id, 'content', @content, '[]'::jsonb, sqlc.narg(summary),
+    NULL, NULL, 'pending', @submitted_by, false, NULL, NULL, @content_hash)
+RETURNING id;
+
+-- =====================
+-- Admin page list
+-- =====================
+
+-- name: AdminListWikiPages :many
+-- Filtered + whitelisted-sort admin list. Sort keys arrive as "<key>:<dir>"
+-- and are applied via per-column CASE expressions (user input can never
+-- reach ORDER BY). The latest revision's id/status/excerpt comes from a
+-- LEFT JOIN LATERAL so pages without revisions still list.
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type,
+       sp.slug AS space_slug, sp.name AS space_name,
+       lr.id AS latest_revision_id,
+       COALESCE(lr.status, '') AS latest_revision_status,
+       COALESCE(lr.excerpt, '') AS excerpt
+FROM wiki_pages wp
+JOIN spaces sp ON sp.id = wp.space_id
+LEFT JOIN LATERAL (
+    SELECT wr.id, wr.status,
+           COALESCE(wr.summary, left(btrim(regexp_replace(
+               wr.content::text, '<[^>]+>', '', 'g')), 200), '') AS excerpt
+    FROM wiki_revisions wr
+    WHERE wr.wiki_page_id = wp.id
+    ORDER BY wr.created_at DESC
+    LIMIT 1
+) lr ON true
+WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
+  AND (@dest_slug::text = '' OR sp.slug = @dest_slug)
+  AND (@category::text = '' OR wp.category = @category)
+  AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
+  AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%')
+ORDER BY
+  CASE WHEN @sort = 'title:asc'       THEN wp.title END ASC NULLS LAST,
+  CASE WHEN @sort = 'title:desc'      THEN wp.title END DESC NULLS LAST,
+  CASE WHEN @sort = 'space_slug:asc'  THEN sp.slug END ASC NULLS LAST,
+  CASE WHEN @sort = 'space_slug:desc' THEN sp.slug END DESC NULLS LAST,
+  CASE WHEN @sort = 'status:asc'      THEN lr.status END ASC NULLS LAST,
+  CASE WHEN @sort = 'status:desc'     THEN lr.status END DESC NULLS LAST,
+  CASE WHEN @sort = 'is_locked:asc'   THEN wp.is_locked::int END ASC NULLS LAST,
+  CASE WHEN @sort = 'is_locked:desc'  THEN wp.is_locked::int END DESC NULLS LAST,
+  CASE WHEN @sort = 'is_active:asc'   THEN wp.is_active::int END ASC NULLS LAST,
+  CASE WHEN @sort = 'is_active:desc'  THEN wp.is_active::int END DESC NULLS LAST,
+  CASE WHEN @sort = 'created_at:asc'  THEN wp.created_at END ASC NULLS LAST,
+  CASE WHEN @sort = 'created_at:desc' THEN wp.created_at END DESC NULLS LAST,
+  wp.updated_at DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: AdminCountWikiPages :one
+SELECT COUNT(*)
+FROM wiki_pages wp
+JOIN spaces sp ON sp.id = wp.space_id
+WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
+  AND (@dest_slug::text = '' OR sp.slug = @dest_slug)
+  AND (@category::text = '' OR wp.category = @category)
+  AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
+  AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%');

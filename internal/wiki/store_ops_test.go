@@ -79,10 +79,13 @@ func seedOpsFixture(t *testing.T, ctx context.Context, database *db.DB) opsFixtu
 	fx.target = mustUUID(t, genUUID(t, ctx, database))
 
 	t.Cleanup(func() {
-		database.Writer.Exec(ctx, `DELETE FROM wiki_revisions WHERE submitted_by = $1 OR target_entity_id = $2`, fx.userID, fx.target)
-		database.Writer.Exec(ctx, `DELETE FROM wiki_pages WHERE id = $1`, fx.pageID)
-		database.Writer.Exec(ctx, `DELETE FROM spaces WHERE id = $1`, fx.spaceID)
-		database.Writer.Exec(ctx, `DELETE FROM users WHERE id = $1`, fx.userID)
+		// t.Context() is canceled before cleanups run — use a fresh context
+		// so these deletes actually execute.
+		cctx := context.Background()
+		database.Writer.Exec(cctx, `DELETE FROM wiki_revisions WHERE submitted_by = $1 OR target_entity_id = $2`, fx.userID, fx.target)
+		database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE id = $1`, fx.pageID)
+		database.Writer.Exec(cctx, `DELETE FROM spaces WHERE id = $1`, fx.spaceID)
+		database.Writer.Exec(cctx, `DELETE FROM users WHERE id = $1`, fx.userID)
 	})
 
 	return fx
