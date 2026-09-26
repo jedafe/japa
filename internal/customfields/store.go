@@ -138,11 +138,11 @@ func (s *Service) UpdateFieldGroup(ctx context.Context, id pgtype.UUID, name str
 // With force (DELETE ?force=true, Section 06), the single DELETE statement
 // cascades through custom_fields → custom_field_values and
 // custom_field_group_assignments. References declared ON DELETE SET NULL —
-// space_types.field_group_id and wiki_type_categories.field_group_id — are
-// detached (the space type / wiki category loses its bound group). References
-// without a cascade — ticket_types.field_group_id and
-// comparison_type_definitions.field_group_id — still block via FK violation
-// and surface as ErrInUse.
+// space_types.field_group_id — are detached (the space type loses its bound
+// group). References without a cascade — ticket_types.field_group_id,
+// comparison_type_definitions.field_group_id, and
+// wiki_type_categories.field_group_id (RESTRICT — the category's group IS
+// its page schema) — still block via FK violation and surface as ErrInUse.
 func (s *Service) DeleteFieldGroup(ctx context.Context, id pgtype.UUID, force bool) error {
 	if !force {
 		// Check for existing field values referencing this group's fields.

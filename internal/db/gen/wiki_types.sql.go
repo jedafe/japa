@@ -235,14 +235,28 @@ func (q *Queries) GetWikiTypeCategory(ctx context.Context, id pgtype.UUID) (Wiki
 
 const getWikiTypeConfig = `-- name: GetWikiTypeConfig :one
 SELECT wtc.space_type_id, wtc.enabled, wtc.label, wtc.icon, wtc.seed_stubs,
-       wtc.position, wtc.created_at
+       wtc.position, wtc.created_at,
+       st.slug AS space_type_slug, st.name AS space_type_name
 FROM wiki_type_configs wtc
+JOIN space_types st ON st.id = wtc.space_type_id
 WHERE wtc.space_type_id = $1
 `
 
-func (q *Queries) GetWikiTypeConfig(ctx context.Context, spaceTypeID pgtype.UUID) (WikiTypeConfig, error) {
+type GetWikiTypeConfigRow struct {
+	SpaceTypeID   pgtype.UUID        `json:"space_type_id"`
+	Enabled       bool               `json:"enabled"`
+	Label         *string            `json:"label"`
+	Icon          *string            `json:"icon"`
+	SeedStubs     bool               `json:"seed_stubs"`
+	Position      int32              `json:"position"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	SpaceTypeSlug string             `json:"space_type_slug"`
+	SpaceTypeName string             `json:"space_type_name"`
+}
+
+func (q *Queries) GetWikiTypeConfig(ctx context.Context, spaceTypeID pgtype.UUID) (GetWikiTypeConfigRow, error) {
 	row := q.db.QueryRow(ctx, getWikiTypeConfig, spaceTypeID)
-	var i WikiTypeConfig
+	var i GetWikiTypeConfigRow
 	err := row.Scan(
 		&i.SpaceTypeID,
 		&i.Enabled,
@@ -251,6 +265,8 @@ func (q *Queries) GetWikiTypeConfig(ctx context.Context, spaceTypeID pgtype.UUID
 		&i.SeedStubs,
 		&i.Position,
 		&i.CreatedAt,
+		&i.SpaceTypeSlug,
+		&i.SpaceTypeName,
 	)
 	return i, err
 }

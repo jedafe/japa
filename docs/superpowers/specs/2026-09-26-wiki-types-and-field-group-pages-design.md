@@ -90,33 +90,45 @@ space it sits on." A separate registry would drift from `space_types` and
 duplicate `space_types.field_group_id` (the existing per-type default group).
 A config table over `space_types` keeps one type system.
 
-## 4. Design — Category = Field Group
+## 4. Design — Category = Field Group (mandatory, per-level)
 
 ```sql
 CREATE TABLE wiki_type_categories (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   space_type_id  uuid NOT NULL REFERENCES wiki_type_configs(space_type_id),
-  slug           text NOT NULL,          -- page slug: 'overview','cost_of_living'
+  slug           text NOT NULL,          -- page slug: 'overview','cost-of-living'
+  category       text NOT NULL,          -- wiki_pages.category token: 'cost_of_living'
   label          text NOT NULL,
-  field_group_id uuid REFERENCES custom_field_groups(id), -- NULL = prose-only
+  field_group_id uuid NOT NULL REFERENCES custom_field_groups(id) ON DELETE RESTRICT,
   position       int NOT NULL DEFAULT 0,
   is_system      boolean NOT NULL DEFAULT false,
   created_at     timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (space_type_id, slug)
+  UNIQUE (space_type_id, slug),
+  UNIQUE (space_type_id, category)
 );
 ```
 
 - Replaces the hardcoded `wikiCategories` / `wikiUniversityCategories` slices.
   `GET /wiki/categories?space={slug}` resolves space → `space_type_id` →
   rows (Rule 16: the frontend already consumes this endpoint).
-- `field_group_id NULL` = prose-only page (e.g. `community`, `other`).
-  Non-NULL = prose **plus** the bound group's fields — `kind='mixed'`
-  revisions already support both atomically.
-- The bound group still gets a normal `custom_field_group_assignments` row
-  (`entity_class = 'space_type:{slug}'`), so `GET
-  /wiki/entities/:type/:id/fields`, field-level RBAC, and ops validation work
-  unchanged. The category row adds *page-scoped selection*: which group this
-  page renders.
+- **`field_group_id` is mandatory** — the group IS the page's schema. A
+  prose-only page is a category whose group has no fields. Every category
+  owns a *dedicated per-level* group named `wiki_{type}_{category}`:
+  `wiki_country_cost_of_living`, `wiki_state_cost_of_living`, and
+  `wiki_city_cost_of_living` are three disjoint groups.
+- Each group carries a `custom_field_group_assignments` row scoped to
+  `entity_class = 'space_type:{slug}'`, so schema is type-level while
+  `custom_field_values` stays entity-level. Adding a field to
+  `wiki_city_cost_of_living` surfaces it on every city's page (each city
+  stores its own value); Lagos article content never propagates to Kumasi.
+- **JCE isolation by construction:** disjoint groups per level make
+  city↔state or city↔country comparison unrepresentable — JCE only ever
+  compares entities sharing the same group, hence the same field keys.
+- Category create auto-provisions group + assignment when `field_group_id`
+  is omitted (get-or-create by slug, so a group surviving a deleted
+  category is reused). An explicit `field_group_id` rebinds an existing
+  group — deliberate sharing only, not the default.
+- `kind='mixed'` revisions already carry prose + field ops atomically.
 - `space_types.field_group_id` remains the type's *default/catch-all* group
   (shown on the wiki index's Data panel); category groups are per-page.
 
@@ -135,11 +147,13 @@ page renders "empty schema + no prose" from the category template before
 then — eliminating the stub-seeding job for new categories/types; assigning
 a category makes the page exist on every entity instantly.
 
-**Shared vs per-type groups:** identical field sets across levels use ONE
-group assigned to several entity_classes (`space_type:country` +
-`space_type:state` + `space_type:city` — e.g. `cost_of_living`). Divergent
-sets use per-type groups (`country_overview` with `capital`, `population`
-vs `city_overview` without). Decide per concept, not per page.
+**Why dedicated per-level groups (not one shared `cost_of_living` group
+assigned to all three entity_classes):** a shared group would make every
+field comparable across levels — JCE could then rank "Country A's cost of
+living" against "City X's cost of living," which is a nonsense comparison.
+Distinct groups keep the comparison surface level-pure by construction; the
+cost of the choice is that a field wanted at multiple levels (e.g.
+`rent_1br` on state AND city) must be added to each level's group.
 
 ## 5. Downstream sourcing contract
 
@@ -194,15 +208,17 @@ the page handler filters to the bound group for the page's Data section.
 
 1. Create `wiki_type_configs`, `wiki_type_parents`, `wiki_type_categories`.
 2. Seed configs for `country`, `state`, `city`, `university`; seed parent
-   edges (`state→country`, `city→state`, `city→country`? — decide whether
-   city lists directly under country, matching `space_parent_spaces` usage).
+   edges (`state→country`, `city→state`; city lists under country via the
+   state chain — no direct edge). Universities parent under all geo levels.
 3. Seed `wiki_type_categories` from the two hardcoded slices, trimmed per
    level — `visa-routes` + `banking` are country-only (national topics);
    state/city seed `overview`, `cost-of-living`, `healthcare`, `community`,
    `housing`, `other`. Delete the Go slices.
-4. Create/bound field groups for structured categories (start:
-   `cost_of_living`, `banking` for geo; `admissions`, `tuition_fees`,
-   `programs` for university). Prose-only categories keep `field_group_id NULL`.
+4. Seed one empty `custom_field_groups` row per category per level
+   (`wiki_{type}_{category}`, `is_system`) + the `space_type:{slug}`
+   assignment; `field_group_id` is NOT NULL with `ON DELETE RESTRICT`.
+   Field definitions (e.g. `rent_1br`, `meal_inexpensive`) are added by
+   admins/ops after rollout — the schema container ships first.
 5. Update `GET /wiki/categories` + page handler; admin Wiki section gains
    Types and Categories CRUD screens.
 
@@ -216,13 +232,15 @@ the page handler filters to the bound group for the page's Data section.
 - Backfilling structured values — ingestion/AI fill via the ops path after
   groups exist.
 
-## 10. Open questions
+## 10. Decisions (resolved during implementation)
 
-- Should category slug changes be allowed post-creation (page URLs are
-  `/wiki/{entity}/{category-slug}` — renames break links/history)? Recommend:
-  slug immutable, `label` editable.
-- City → country direct parent edge, or only city → state? Match whatever
-  `space_parent_spaces` actually stores for cities.
-- When an admin deletes a field group bound to a category: block, or detach
-  (`field_group_id → NULL`, page becomes prose-only)? Recommend block while
-  cfv rows exist, matching `DeleteFieldGroup`'s 409 in_use contract.
+- **Slug/category immutable after create** — page URLs are
+  `/wiki/{entity}/{slug}` and `wiki_pages.category` stores the token;
+  renames would break links + history. `label` stays editable.
+- **No direct city → country parent edge** — cities list under countries
+  through the state chain, matching `space_parent_spaces` usage.
+- **Bound groups cannot be deleted** — `ON DELETE RESTRICT` turns group
+  deletion into `DeleteFieldGroup`'s existing 409 in_use while a category
+  references it. Category deletion never removes its group (fields/values
+  may be shared or valuable); orphaned groups are cleaned up manually in
+  the Admin Panel.

@@ -3032,7 +3032,8 @@ export interface WikiPage extends WikiPageIndex {
 	revision_summary?: string;
 	submitted_by?: string;
 	/** §80 Wiki Types: the page category's bound field group — schema + this
-	 *  space's stored values. Absent on prose-only categories. */
+	 *  space's stored values. The group is the page's schema (always bound);
+	 *  a prose-only page has a group with no fields. */
 	fields?: import('$lib/api/wiki').WikiEntityFieldGroup | null;
 	/** Admin-set label from the wiki type's category template. */
 	category_label?: string;

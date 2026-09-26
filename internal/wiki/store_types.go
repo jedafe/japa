@@ -33,8 +33,9 @@ type WikiType struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
-// WikiCategory is one row of a wiki type's category template. A nil-ish
-// FieldGroupID (Valid=false) means the category is prose-only.
+// WikiCategory is one row of a wiki type's category template.
+// FieldGroupID is always bound (NOT NULL) — the group is the page's
+// schema; a prose-only page has a group with no fields.
 type WikiCategory struct {
 	ID             pgtype.UUID
 	SpaceTypeID    pgtype.UUID
@@ -258,13 +259,15 @@ func (s *Store) GetWikiType(ctx context.Context, spaceTypeID pgtype.UUID) (WikiT
 		parents = append(parents, id.String())
 	}
 
-	label := ""
-	if r.Label != nil {
+	label := r.SpaceTypeName
+	if r.Label != nil && *r.Label != "" {
 		label = *r.Label
 	}
 
 	return WikiType{
 		SpaceTypeID:   r.SpaceTypeID,
+		SpaceTypeSlug: r.SpaceTypeSlug,
+		SpaceTypeName: r.SpaceTypeName,
 		Enabled:       r.Enabled,
 		Label:         label,
 		Icon:          r.Icon,
@@ -286,15 +289,14 @@ func (s *Store) UpsertWikiType(ctx context.Context, spaceTypeID pgtype.UUID, ena
 
 	q := s.write.WithTx(tx)
 
-	cfg, err := q.UpsertWikiTypeConfig(ctx, gen.UpsertWikiTypeConfigParams{
+	if _, err := q.UpsertWikiTypeConfig(ctx, gen.UpsertWikiTypeConfigParams{
 		SpaceTypeID: spaceTypeID,
 		Enabled:     enabled,
 		Label:       label,
 		Icon:        icon,
 		SeedStubs:   seedStubs,
 		Position:    position,
-	})
-	if err != nil {
+	}); err != nil {
 		return WikiType{}, fmt.Errorf("wiki: upsert type config: %w", err)
 	}
 
@@ -306,21 +308,11 @@ func (s *Store) UpsertWikiType(ctx context.Context, spaceTypeID pgtype.UUID, ena
 		return WikiType{}, fmt.Errorf("wiki: upsert type: commit: %w", err)
 	}
 
-	out := WikiType{
-		SpaceTypeID: cfg.SpaceTypeID,
-		Enabled:     cfg.Enabled,
-		Icon:        cfg.Icon,
-		SeedStubs:   cfg.SeedStubs,
-		Position:    cfg.Position,
-		CreatedAt:   cfg.CreatedAt,
-	}
-	// Echo the persisted edge set — ListWikiTypes re-reads them, but the
-	// upsert response should reflect what was just written.
-	for _, id := range parentIDs {
-		out.ParentTypeIDs = append(out.ParentTypeIDs, id.String())
-	}
-	if cfg.Label != nil {
-		out.Label = *cfg.Label
+	// Re-read through the joined query so the response carries the space
+	// type's slug/name alongside the config.
+	out, err := s.GetWikiType(ctx, spaceTypeID)
+	if err != nil {
+		return WikiType{}, fmt.Errorf("wiki: upsert type: re-read: %w", err)
 	}
 
 	return out, nil

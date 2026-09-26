@@ -31,8 +31,10 @@ ORDER BY wtc.position, st.name;
 
 -- name: GetWikiTypeConfig :one
 SELECT wtc.space_type_id, wtc.enabled, wtc.label, wtc.icon, wtc.seed_stubs,
-       wtc.position, wtc.created_at
+       wtc.position, wtc.created_at,
+       st.slug AS space_type_slug, st.name AS space_type_name
 FROM wiki_type_configs wtc
+JOIN space_types st ON st.id = wtc.space_type_id
 WHERE wtc.space_type_id = @space_type_id;
 
 -- name: UpsertWikiTypeConfig :one
@@ -131,7 +133,7 @@ ORDER BY wtc.position, wtc.slug;
 
 -- name: CreateWikiTypeCategory :one
 INSERT INTO wiki_type_categories (space_type_id, slug, category, label, field_group_id, position, is_system)
-VALUES (@space_type_id, @slug, @category, @label, sqlc.narg(field_group_id), @position, @is_system)
+VALUES (@space_type_id, @slug, @category, @label, @field_group_id, @position, @is_system)
 RETURNING id, space_type_id, slug, category, label, field_group_id, position, is_system, created_at;
 
 -- name: UpdateWikiTypeCategory :execrows

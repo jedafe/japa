@@ -72,6 +72,18 @@ type fieldReadStore interface {
 	ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
 }
 
+// fieldGroupProvisioner is the write-side interface used to auto-provision
+// a category's dedicated custom_field_groups row + entity-class assignment
+// on category create (§80 — group slug wiki_{type}_{category}). Category
+// admin writes run outside the ops-apply transaction, so a pool-bound
+// service is correct here. Satisfied by *customfields.Service; picked up
+// via type assertion in SetCustomFields.
+type fieldGroupProvisioner interface {
+	GetFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error)
+	CreateFieldGroup(ctx context.Context, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error)
+	CreateAssignment(ctx context.Context, params gen.CreateAssignmentParams) (gen.CustomFieldGroupAssignment, error)
+}
+
 // entityResolver resolves a JCE item_ref ({type, id}) into a normalized item.
 // Satisfied by *resolver.Registry — the same registry comparison.Service
 // receives via SetResolver.
@@ -96,8 +108,9 @@ type TaskEnqueuer interface {
 // Compile-time checks that the production collaborators satisfy the
 // injection interfaces.
 var (
-	_ fieldReadStore = (*customfields.Service)(nil)
-	_ entityResolver = (*resolver.Registry)(nil)
+	_ fieldReadStore        = (*customfields.Service)(nil)
+	_ fieldGroupProvisioner = (*customfields.Service)(nil)
+	_ entityResolver        = (*resolver.Registry)(nil)
 )
 
 // ---------------------------------------------------------------------------

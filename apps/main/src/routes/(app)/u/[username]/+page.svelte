@@ -105,9 +105,11 @@
 	// reuse the mounted component, so mount-time init alone leaves a stale tab.
 	// afterNavigate (not an $effect on page.url) because UrlTabs syncs tab clicks
 	// with replaceState — replaceState does not fire afterNavigate, so this never
-	// fights the click handler.
-	afterNavigate(({ to, type }) => {
-		console.log('[afterNavigate]', type, 'to=', to?.url.href, 'page.url=', page.url.href, 'location=', location.href, 'activeTab=', activeTab);
+	// fights the click handler. Reads location.href rather than to.url/page.url:
+	// on popstate to a replaceState-written entry, SvelteKit reports the URL from
+	// the entry's original navigation (without the shallow ?tab= param), while
+	// the browser location already carries the real URL.
+	afterNavigate(() => {
 		const urlTab = new URL(location.href).searchParams.get('tab') ?? 'posts';
 		if (urlTab !== activeTab && tabs.some((tab) => tab.value === urlTab)) {
 			activeTab = urlTab;
