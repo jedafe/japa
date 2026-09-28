@@ -272,8 +272,18 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// §14 list amendment — permission-gated types (list.create) are filtered
+	// against the session user's RBAC nodes; super admins bypass the check.
+	// /me exposes `permissions` (effective nodes) and `groups` (group slugs).
+	const callerPerms = {
+		permissions: event.locals.user?.permissions ?? [],
+		isSuperAdmin: (event.locals.user?.groups ?? []).some(
+			(g) => g === 'super_admin' || g === 'Super Admin'
+		)
+	};
+
 	return {
-		types: createAvailableTypes(rawTypes, flags, siteSettings),
+		types: createAvailableTypes(rawTypes, flags, siteSettings, callerPerms),
 		spaces,
 		fieldGroups,
 		series,
