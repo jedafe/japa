@@ -124,9 +124,22 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	total, err := h.service.CountNotifications(r.Context(), user.UserID, unreadOnly)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count notifications")
+		return
+	}
+
 	h.resolveLiterals(r, &notifications)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": notifications})
+	// total/has_more as envelope sidecars (same shape as the admin list
+	// endpoints) — clients can stop paginating deterministically instead of
+	// inferring end-of-list from a short page.
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":     notifications,
+		"total":    total,
+		"has_more": offset+int32(len(notifications)) < total,
+	})
 }
 
 // GetUnreadCount handles GET /api/v1/notifications/unread-count.
@@ -239,10 +252,13 @@ func (h *Handlers) UpdatePreference(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pointer fields: a PATCH that omits a channel keeps its current value —
+	// bare bools would decode absent fields as false and silently disable
+	// channels the client never mentioned.
 	var input struct {
-		InApp bool `json:"in_app"`
-		Email bool `json:"email"`
-		Push  bool `json:"push"`
+		InApp *bool `json:"in_app"`
+		Email *bool `json:"email"`
+		Push  *bool `json:"push"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -250,7 +266,7 @@ func (h *Handlers) UpdatePreference(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.UpdatePreference(r.Context(), user.UserID, nType, input.InApp, input.Email, input.Push); err != nil {
+	if err := h.service.UpdatePreferencePartial(r.Context(), user.UserID, nType, input.InApp, input.Email, input.Push); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update preference")
 		return
 	}
@@ -268,12 +284,14 @@ func (h *Handlers) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pointer fields so each item's omitted channels keep their current
+	// values (same partial-PATCH semantics as the per-type endpoint).
 	var input struct {
 		Preferences []struct {
 			Type  string `json:"type"`
-			InApp bool   `json:"in_app"`
-			Email bool   `json:"email"`
-			Push  bool   `json:"push"`
+			InApp *bool  `json:"in_app"`
+			Email *bool  `json:"email"`
+			Push  *bool  `json:"push"`
 		} `json:"preferences"`
 	}
 
@@ -288,7 +306,7 @@ func (h *Handlers) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := h.service.UpdatePreference(r.Context(), user.UserID, p.Type, p.InApp, p.Email, p.Push); err != nil {
+		if err := h.service.UpdatePreferencePartial(r.Context(), user.UserID, p.Type, p.InApp, p.Email, p.Push); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update preference")
 			return
 		}
@@ -597,6 +615,14 @@ func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		return
+	}
+
+	// The UPDATE statement sets label and category unconditionally, so a
+	// partial PATCH that omits them would silently blank the columns.
+	// Require both on update, same as on create.
+	if input.Label == "" || input.Category == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "label and category are required")
 		return
 	}
 

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
-	import { Select } from '$lib/components/ui/select';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import { replaceState } from '$app/navigation';
 
 	let {
@@ -10,7 +10,8 @@
 		totalItems = 0,
 		pageSize = $bindable(10),
 		pageSizeOptions = [10, 25, 50, 100],
-		urlSync = true
+		urlSync = true,
+		defaultPageSize = 10
 	}: {
 		page: number;
 		totalPages: number;
@@ -18,6 +19,10 @@
 		pageSize?: number;
 		pageSizeOptions?: number[];
 		urlSync?: boolean;
+		// Page size treated as the app's default — the ?pageSize param is only
+		// written when the selection differs from it (matches EntityPage's
+		// pageSize omission logic so the two writers agree).
+		defaultPageSize?: number;
 	} = $props();
 
 	function syncToUrl() {
@@ -27,7 +32,7 @@
 		const params = new URLSearchParams(window.location.search);
 		if (page > 0) params.set('page', String(page + 1));
 		else params.delete('page');
-		if (pageSize !== 10) params.set('pageSize', String(pageSize));
+		if (pageSize !== defaultPageSize) params.set('pageSize', String(pageSize));
 		else params.delete('pageSize');
 		const qs = params.toString();
 		const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
@@ -56,12 +61,24 @@
 
 		<div class="flex items-center gap-1.5">
 			<span class="text-xs">{t('lib.components.ui.Pagination.svelte.per_page')}</span>
-			<Select
-				options={pageSizeOptions.map(o => ({ value: String(o), label: String(o) }))}
-				value={String(pageSize)}
-				onchange={handlePageSizeChange}
-				class="!h-7 !text-xs !w-20"
-			/>
+			<!-- Page-size is a dropdown field — rendered through the shared
+			     Autocomplete like every other dropdown in the app. -->
+			<div class="w-20">
+				<Autocomplete
+					placeholder={String(pageSize)}
+					emptyMessage={t('common.no_results', 'No results found')}
+					inputClass="!h-7 !text-xs"
+					fetcher={async (q: string) =>
+						pageSizeOptions
+							.filter((o) => String(o).includes(q.trim()))
+							.map((o) => ({ id: String(o), label: String(o) }))}
+					initialFetcher={async () => pageSizeOptions.map((o) => ({ id: String(o), label: String(o) }))}
+					selectedId={String(pageSize)}
+					selectedLabel={String(pageSize)}
+					onSelect={(item) => handlePageSizeChange(item.id)}
+					onClear={() => handlePageSizeChange(String(defaultPageSize))}
+				/>
+			</div>
 		</div>
 	</div>
 

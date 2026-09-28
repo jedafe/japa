@@ -30,6 +30,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/services"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/intelligence/stores"
+	"github.com/jedafe/japa/internal/intelligence/textprep"
 )
 
 // ---------------------------------------------------------------------------
@@ -1527,6 +1528,34 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:extract: load raw doc: %w", err)
 	}
 
+	// Skip documents that cannot produce data: hard HTTP errors, soft-404
+	// error pages served with 200, and JS-shell/blank pages with no visible
+	// text. None of them contain an extractable entity — running the LLM on
+	// them only produces all-null records that pollute the review queue.
+	rawBody := string(rawDoc.Body)
+	contentType := ""
+	if rawDoc.ContentType != nil {
+		contentType = *rawDoc.ContentType
+	}
+
+	if textprep.IsSoft404(rawBody, contentType, int(rawDoc.HttpStatus)) {
+		slog.Warn("task:intel:extract: document is an error page, skipping extraction", "raw_doc_id", p.RawDocID, "url", rawDoc.Url, "http_status", rawDoc.HttpStatus)
+
+		return nil
+	}
+
+	if !textprep.HasExtractableText(rawBody, contentType) {
+		slog.Warn("task:intel:extract: document has no extractable text, skipping extraction", "raw_doc_id", p.RawDocID, "url", rawDoc.Url)
+
+		return nil
+	}
+
+	// Reduce HTML to visible text before the prompt — raw markup (scripts,
+	// styles, navigation boilerplate, hundreds of KB) both wastes tokens and
+	// pushes weaker models toward all-null responses. Non-HTML bodies
+	// (RSS/XML, JSON) pass through untouched for the rule-based extractors.
+	sourceText := textprep.SourceText(rawBody, contentType, textprep.DefaultMaxSourceChars)
+
 	// Load the source to resolve source_url and source_type for the extractor.
 	src, err := intelSourcesStore.Get(ctx, rawDoc.SourceID)
 	if err != nil {
@@ -1549,8 +1578,6 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 		return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, src.Category)
 	}
-
-	sourceText := string(rawDoc.Body)
 
 	// Relevance gate (Task 10, extract path): the raw body is not itemized
 	// pre-LLM, so gating runs post-extraction per returned record on its
@@ -1758,6 +1785,17 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, chann
 					continue
 				}
 			}
+		}
+
+		// An extraction where every field is null carries no data — the
+		// document contained nothing for this entity type (index page,
+		// navigation-only content, or a model that returned the schema
+		// skeleton). Persisting it only floods the review queue with empty
+		// records a reviewer cannot repair.
+		if !schemas.HasExtractedValues(result.RawExtraction) {
+			slog.Info("task:intel:extract: extraction returned no field values, skipping", "source_id", sourceID.String(), "external_key", result.ExternalKey, "entity_type", entityType)
+
+			continue
 		}
 
 		record, err := intelStores.CreateIntelRecord(ctx, gen.CreateIntelRecordParams{
@@ -2215,6 +2253,15 @@ const (
 // column notes the curator origin so reviewers can tell deterministic
 // records from LLM extractions.
 func intelPersistCuratedRecord(ctx context.Context, rawDoc gen.IntelRawDocument, ch gen.IntelSourceChannel, rec IntelCuratedRecord, entityType string) (pgtype.UUID, intelPersistOutcome) {
+	// Defense-in-depth: a curated record whose extraction carries no field
+	// values is junk — the curator parsed a node but mapped nothing. Skip it
+	// rather than persisting an empty record (same rule as the LLM path).
+	if !schemas.HasExtractedValues(rec.RawExtraction) {
+		slog.Info("task:intel:curate_channel: curated record has no field values, skipping", "source_id", rawDoc.SourceID.String(), "external_key", rec.ExternalKey, "entity_type", entityType)
+
+		return pgtype.UUID{}, intelPersistFailed
+	}
+
 	confidence := rec.ConfidenceOverall
 	if confidence <= 0 {
 		confidence = 1.0 // curated fields are deterministic — full confidence
@@ -2709,6 +2756,35 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 	record, err := intelStores.GetIntelRecord(ctx, recordID)
 	if err != nil {
 		return fmt.Errorf("task:intel:promote: load record: %w", err)
+	}
+
+	// Refuse to promote a record whose extraction carries no field values
+	// (empty {} stubs and all-null skeletons). Promoters fall back to the
+	// source name as title, so an empty record would publish a content row
+	// full of nulls — irreversible damage vs. a queue round-trip. The
+	// reviewer must edit extracted data in first (or reject the record).
+	if !schemas.HasExtractedValues(record.Extracted) {
+		slog.Warn("task:intel:promote: record has no extracted values, routing to review", "record_id", p.RecordID, "entity_type", record.EntityType)
+
+		if err := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
+			ID:     recordID,
+			Status: "review_required",
+		}); err != nil {
+			return fmt.Errorf("task:intel:promote: set review status: %w", err)
+		}
+
+		note := "promote refused: record has no extracted field values — edit the extraction or reject the record"
+		if lerr := intelStores.CreateIntelReviewLog(ctx, gen.CreateIntelReviewLogParams{
+			IntelRecordID: recordID,
+			ActorUserID:   pgtype.UUID{}, // system-generated, no human actor
+			Action:        "route_to_review",
+			FieldChanges:  []byte(`[]`),
+			Note:          &note,
+		}); lerr != nil {
+			return fmt.Errorf("task:intel:promote: write empty-record log: %w", lerr)
+		}
+
+		return nil
 	}
 
 	// Per-domain kill switch (audit B12): a disabled domain

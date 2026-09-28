@@ -105,6 +105,11 @@ class RealtimeStore {
 		this.unreadNotifications = Math.max(0, this.unreadNotifications - by);
 	}
 
+	/** Increment the unread count (e.g. rolling back a failed mark-read). */
+	incrementUnread(by = 1): void {
+		this.unreadNotifications += by;
+	}
+
 	/** Reset unread to zero (e.g. after "mark all read"). */
 	clearUnread(): void {
 		this.unreadNotifications = 0;

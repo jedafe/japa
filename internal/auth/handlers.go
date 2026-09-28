@@ -621,6 +621,7 @@ const refreshReuseLeeway = 15 * time.Second
 // body instead of the HttpOnly cookie used by the web SPA.
 func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	var refreshToken string
+	var stored *RefreshToken
 
 	if isMobileClient(r) {
 		var req struct {
@@ -633,55 +634,101 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		}
 
 		refreshToken = req.RefreshToken
+
+		row, err := h.DB.GetRefreshToken(r.Context(), HashRefreshToken(refreshToken))
+		if err != nil || row == nil {
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
+			return
+		}
+		stored = row
+		if stored.RevokedAt.Valid {
+			if time.Since(stored.RevokedAt.Time) >= refreshReuseLeeway {
+				_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
+					stored.UserID,
+				)
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+				return
+			}
+		}
+		if time.Now().After(stored.ExpiresAt) {
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has expired")
+			return
+		}
 	} else {
-		cookie, err := r.Cookie("jc_refresh")
-		if err != nil || cookie.Value == "" {
+		// Multiple jc_refresh cookies can coexist in the same jar: the
+		// backend sets Path=/api/v1 for direct-SPA surfaces while SSR
+		// proxies (e.g. the main app) re-set it at Path=/ for server-side
+		// loads. Both are sent on /api/v1/* requests and cookie ordering
+		// can put a rotated-out sibling-app value first, so resolve the
+		// token across ALL presented values instead of trusting the first.
+		// Ref: §02 (jc_refresh intentionally shared for SSO across apps).
+		var cookies []*http.Cookie
+		for _, c := range r.Cookies() {
+			if c.Name == "jc_refresh" && c.Value != "" {
+				cookies = append(cookies, c)
+			}
+		}
+		if len(cookies) == 0 {
 			errpkg.WriteError(w, http.StatusUnauthorized, "no_refresh_token", "Refresh token cookie is required")
 			return
 		}
 
-		refreshToken = cookie.Value
+		var theftCandidate *RefreshToken
+		var sawExpired bool
+		for _, c := range cookies {
+			row, err := h.DB.GetRefreshToken(r.Context(), HashRefreshToken(c.Value))
+			if err != nil || row == nil {
+				continue
+			}
+			if row.RevokedAt.Valid {
+				// Revoked-beyond-leeway is a theft signal only when no
+				// sibling cookie resolves to a live token — a stale
+				// duplicate-path cookie alongside a live one is a leftover
+				// from cross-app rotation, not a replay.
+				if time.Since(row.RevokedAt.Time) >= refreshReuseLeeway {
+					if theftCandidate == nil {
+						theftCandidate = row
+					}
+					continue
+				}
+				// Within leeway: rotation race — usable, stays revoked.
+				if stored == nil {
+					refreshToken, stored = c.Value, row
+				}
+				continue
+			}
+			if time.Now().After(row.ExpiresAt) {
+				sawExpired = true
+				continue
+			}
+			// Fully valid token wins immediately.
+			refreshToken, stored = c.Value, row
+			break
+		}
+
+		if stored == nil {
+			if theftCandidate != nil {
+				// Every resolvable cookie was revoked beyond the leeway
+				// window: a revoked token re-presented alone indicates
+				// theft (the legitimate user rotated past it, or an
+				// attacker stole it before rotation). Revoke the entire
+				// session family. Ref: §02 (rotation reuse detection).
+				_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
+					theftCandidate.UserID,
+				)
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+				return
+			}
+			if sawExpired {
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has expired")
+				return
+			}
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
+			return
+		}
 	}
 
 	tokenHash := HashRefreshToken(refreshToken)
-
-	stored, err := h.DB.GetRefreshToken(r.Context(), tokenHash)
-	if err != nil || stored == nil {
-		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
-		return
-	}
-
-	if stored.RevokedAt.Valid {
-		// Leeway window: a token rotated out within the last few seconds was
-		// almost certainly presented by a concurrent refresh racing the
-		// cookie rotation, or by a sibling app on the same domain sharing
-		// the jc_refresh cookie (SSO across apps) — not theft. Family-
-		// revoking on those races logs every session out (observed: any
-		// second app or parallel page load nuked all refresh tokens within
-		// seconds). Genuine replay of an old token still revokes the family.
-		// Ref: §02 (Refresh-token rotation reuse detection — leeway window
-		// per OAuth BCP token rotation guidance).
-		if time.Since(stored.RevokedAt.Time) >= refreshReuseLeeway {
-			// A revoked token presented for refresh indicates possible theft
-			// (the legitimate user rotated past it, or an attacker stole it
-			// before rotation). Revoke the entire session family to contain
-			// the damage. Ref: §02 (Refresh-token rotation reuse detection).
-			_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
-				stored.UserID,
-			)
-
-			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
-
-			return
-		}
-		// Within the leeway window: fall through and issue a fresh pair.
-		// The presented token stays revoked — only the family survives.
-	}
-
-	if time.Now().After(stored.ExpiresAt) {
-		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has expired")
-		return
-	}
 
 	// Re-check the user's status. A suspended/banned user whose refresh
 	// token was issued before the ban must not be able to keep refreshing

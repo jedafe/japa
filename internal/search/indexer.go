@@ -1284,7 +1284,8 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 		rows, err := ix.read.ListOrganizations(ctx, gen.ListOrganizationsParams{Column1: "", Column2: // org_type filter (empty = all)
 		"", Column3:// country_code filter (empty = all)
 		"", Column4:// name search (empty = all)
-		"", // verified filter (empty = all)
+		"", Column7: // verified filter (empty = all)
+		"", // deleted filter (empty = live rows only)
 			Limit:  reindexBatchSize,
 			Offset: offset,
 		})

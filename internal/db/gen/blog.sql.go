@@ -36,6 +36,19 @@ func (q *Queries) AddPostToSeries(ctx context.Context, arg AddPostToSeriesParams
 	return err
 }
 
+const blogSeriesExists = `-- name: BlogSeriesExists :one
+SELECT EXISTS(SELECT 1 FROM blog_series WHERE id = $1) AS exists
+`
+
+// Existence probe for the hard-delete path: distinguishes 404 not_found
+// from 409 not_deleted when the DELETE affects no row.
+func (q *Queries) BlogSeriesExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, blogSeriesExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const bulkUpdateFeaturedOrder = `-- name: BulkUpdateFeaturedOrder :exec
 UPDATE content_featured
 SET featured_order = $1
@@ -625,6 +638,21 @@ func (q *Queries) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID
 	var series_id pgtype.UUID
 	err := row.Scan(&series_id)
 	return series_id, err
+}
+
+const hardDeleteBlogSeries = `-- name: HardDeleteBlogSeries :execrows
+DELETE FROM blog_series WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Permanent delete — only for already-soft-deleted series (?force=true).
+// blog_series_posts join rows cascade via ON DELETE CASCADE; the linked
+// contents rows themselves are untouched.
+func (q *Queries) HardDeleteBlogSeries(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteBlogSeries, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertSeriesPostWithPosition = `-- name: InsertSeriesPostWithPosition :exec

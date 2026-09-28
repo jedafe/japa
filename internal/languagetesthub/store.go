@@ -303,6 +303,9 @@ func (s *Store) ListRequirements(ctx context.Context, f ListRequirementsFilter) 
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -404,6 +407,9 @@ func (s *Store) AdminListRequirements(ctx context.Context, f AdminListRequiremen
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -880,6 +886,9 @@ func (s *Store) ListStories(ctx context.Context, testID, destSpaceID pgtype.UUID
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	q := fmt.Sprintf(`
 SELECT s.id, s.user_id, s.test_id, s.starting_level,

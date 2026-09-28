@@ -345,7 +345,7 @@
 		</div>
 	{/if}
 
-	<Tabs {tabs} bind:value={activeTab} />
+	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 	{#if activeTab === 'languages'}
 		<Card>

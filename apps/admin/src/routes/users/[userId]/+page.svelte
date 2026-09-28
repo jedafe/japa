@@ -267,13 +267,19 @@
     }
   }
 
-  function switchTab(tab: string) {
-    activeTab = tab;
-    if (tab === "activity") loadActivity();
-    else if (tab === "ai") loadAiContext();
-    else if (tab === "sessions") loadSessions();
-    else if (tab === "warnings") loadWarnings();
-  }
+  // Lazy-load a tab's data the first time it is activated — covers tab
+  // clicks, ?tab= deep-links, and back/forward navigation. (The shared
+  // Tabs component binds `activeTab` directly, so this must be an effect,
+  // not a click handler.)
+  const loadedTabs = new Set<string>();
+  $effect(() => {
+    if (loadedTabs.has(activeTab)) return;
+    loadedTabs.add(activeTab);
+    if (activeTab === "activity") void loadActivity();
+    else if (activeTab === "ai") void loadAiContext();
+    else if (activeTab === "sessions") void loadSessions();
+    else if (activeTab === "warnings") void loadWarnings();
+  });
 
   function flash(msg: string, isError = false) {
     actionSuccess = isError ? "" : msg;
@@ -697,7 +703,7 @@
     </CardContent>
   </Card>
 
-  <Tabs {tabs} bind:value={activeTab} />
+  <Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
   <Card class="mt-4">
     <CardContent class="p-5">

@@ -2206,8 +2206,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Read max retries from system_settings (Rule 3, INTEL-012 fix).
 	intelExtractionMaxRetries := settingsService.GetIntOr(context.Background(), "intel.extraction_max_retries", 3)
 
+	// Meter worker-side AI calls (extraction, relevance classification) into
+	// ai_usage_log — they bypass the HTTP handlers where usage was
+	// previously recorded, leaving all pipeline spend unmetered.
+	intelAIUsage := &intelUsageRecorder{
+		store: aiStore,
+		costs: ai.NewCostEstimator(settingsService),
+	}
+
 	intelExtractor := extractor.NewExtractor(
-		aiDispatcher,
+		&intelMeteredAIGateway{inner: aiDispatcher, usage: intelAIUsage},
 		extractor.WithModel(intelExtractionModel),
 		extractor.WithMaxRetries(intelExtractionMaxRetries),
 	)
@@ -2393,6 +2401,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	worker.RegisterIntelRelevanceClassifier(&intelRelevanceClassifierAdapter{
 		d:        aiDispatcher,
 		settings: settingsService,
+		usage:    intelAIUsage,
 	})
 
 	// ADR-076 Amendment 1: wire the Studio auto-promote port so
@@ -3643,16 +3652,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				return true
 			})
 
+			// WebSocket transport routes are NOT gated by feature.dm: the
+			// notification system (Section 35) delivers `notification` events
+			// over the same socket, so disabling DM must not break realtime
+			// notifications, presence, or feed updates. DM-specific routes
+			// below stay behind the flag.
+			// WebSocket — tight rate limit on upgrade to prevent abuse
+			// (10 connections per minute per IP, per ADR-022).
+			r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/ws", wsHandlers.HandleWebSocket)
+			// /auth/ws-ticket: any authenticated user needs a WebSocket
+			// ticket for real-time notifications — not just DM users. The
+			// previous dm.view gate caused 403 for users without DM
+			// permission, breaking notification delivery on the Learn app.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
+
 			// WebSocket + DM routes — gated by feature.dm (Section 10)
 			r.With(features.Gate(featureChecker, "feature.dm")).Group(func(r chi.Router) {
-				// WebSocket — tight rate limit on upgrade to prevent abuse
-				// (10 connections per minute per IP, per ADR-022).
-				r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/ws", wsHandlers.HandleWebSocket)
-				// /auth/ws-ticket: any authenticated user needs a WebSocket
-				// ticket for real-time notifications — not just DM users. The
-				// previous dm.view gate caused 403 for users without DM
-				// permission, breaking notification delivery on the Learn app.
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/ws/online", wsHandlers.GetOnlineUsers)
 
 				// Direct Messaging — dm.view enforced on all read routes (BUG-016).
@@ -6091,6 +6106,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 23: Content admin moderation
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/content", contentHandlers.ListContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/content/{id}", contentHandlers.GetAdminContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_any")).
 				Patch("/admin/content/{id}", contentHandlers.UpdateContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any")).
@@ -6478,9 +6495,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Admin: manage pages (wiki.manage permission).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Patch("/admin/wiki/{page_id}", wikiHandlers.HandleUpdatePage)
+				// Admin: delete pages (wiki.delete permission) — soft delete;
+				// ?force=true permanently removes an already-soft-deleted page.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.delete")).
+					Delete("/admin/wiki/{page_id}", wikiHandlers.HandleDeletePage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Post("/admin/wiki/generate", wikiHandlers.HandleGenerate)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+				// §80: wiki.review (moderator+) — the admin page list is the
+				// review queue's page index; mutating routes stay wiki.manage.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.review")).
 					Get("/admin/wiki", wikiHandlers.HandleAdminList)
 
 				// §80 Wiki Types & Field-Group Pages: admin management of

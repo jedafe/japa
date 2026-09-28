@@ -483,6 +483,21 @@ func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 	return ids, nil
 }
 
+// ListVisibleFieldIDsForGroupSlug returns the field IDs a user group —
+// addressed by slug, e.g. rbac.SystemGroupGuest — is allowed to view
+// (Section 06). Anonymous wiki readers have no user_group_memberships row,
+// so the user-keyed variant cannot see the guest group's can_view grants.
+// Not cached: guest grants are shared by every anonymous caller and the
+// query is a single indexed join.
+func (s *Service) ListVisibleFieldIDsForGroupSlug(ctx context.Context, groupSlug string) ([]pgtype.UUID, error) {
+	ids, err := s.read.ListVisibleFieldIDsForGroupSlug(ctx, groupSlug)
+	if err != nil {
+		return nil, fmt.Errorf("listing visible field ids for group: %w", err)
+	}
+
+	return ids, nil
+}
+
 // ListEditableFieldIDsForUser returns the set of field IDs the user is
 // allowed to edit per field-level RBAC (Section 06) — the batched
 // counterpart of CheckFieldPermissionForUser's can_edit arm, used by the

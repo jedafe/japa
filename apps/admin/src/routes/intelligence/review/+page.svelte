@@ -1,9 +1,11 @@
 <script lang="ts">
 	// /intelligence/review — intelligence review queue moderation page.
 	// Lists extracted intel records pending review, with approve/reject/edit
-	// actions. Backed by /intel/review/queue and /intel/review/{id}/*.
+	// actions. Backed by /intel/records (defaults to review_required) and
+	// /intel/review/{id}/*.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -37,11 +39,21 @@
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 
+	// Fallback option sets — the authoritative lists come from
+	// /admin/catalogs/intelligence.review.{status,entity_type} (mirroring the
+	// intel_records.status CHECK constraint and the extractor schema registry);
+	// these mirror the same values so the filters still work if the catalog
+	// endpoint is unreachable.
 	let intelReviewStatusOptions = $state<CatalogOption[]>([
 		{ value: 'review_required', label: t('intel.status_review_required', 'Review Required') },
 		{ value: 'extracted', label: t('intel.status_extracted', 'Extracted') },
+		{ value: 'deduped', label: t('intel.status_deduped', 'Deduped') },
+		{ value: 'auto_published', label: t('intel.status_auto_published', 'Auto Published') },
 		{ value: 'approved', label: t('intel.status_approved', 'Approved') },
-		{ value: 'rejected', label: t('intel.status_rejected', 'Rejected') }
+		{ value: 'rejected', label: t('intel.status_rejected', 'Rejected') },
+		{ value: 'published', label: t('intel.status_published', 'Published') },
+		{ value: 'stale', label: t('intel.status_stale', 'Stale') },
+		{ value: 'off_topic', label: t('intel.status_off_topic', 'Off Topic') }
 	]);
 
 	let intelReviewEntityTypeOptions = $state<CatalogOption[]>([
@@ -58,6 +70,13 @@
 		{ value: 'work_career', label: t('intel.entity_work_career', 'Work & Career') },
 		{ value: 'health_insurance', label: t('intel.entity_health_insurance', 'Health Insurance') },
 		{ value: 'culture_lifestyle', label: t('intel.entity_culture_lifestyle', 'Culture & Lifestyle') },
+		{ value: 'internship', label: t('intel.entity_internship', 'Internship') },
+		{ value: 'import_export', label: t('intel.entity_import_export', 'Import & Export') },
+		{ value: 'credential_pathway', label: t('intel.entity_credential_pathway', 'Credential Pathway') },
+		{ value: 'news', label: t('intel.entity_news', 'News') },
+		{ value: 'article', label: t('intel.entity_article', 'Article') },
+		{ value: 'event', label: t('intel.entity_event', 'Event') },
+		{ value: 'dataset', label: t('intel.entity_dataset', 'Dataset') },
 		{ value: 'wiki_page', label: t('intel.entity_wiki_page', 'Wiki Page') },
 		{ value: 'language_test_requirement', label: t('intel.entity_language_test_requirement', 'Language Test Requirement') },
 		{ value: 'tax_obligation_guide', label: t('intel.entity_tax_obligation_guide', 'Tax Obligation Guide') },
@@ -212,6 +231,12 @@
 		work_career: 'guide',
 		health_insurance: 'guide',
 		culture_lifestyle: 'guide',
+		internship: 'job_listing',
+		import_export: 'guide',
+		credential_pathway: 'guide',
+		article: 'guide',
+		event: 'guide',
+		dataset: 'guide',
 		// News promotes to contents with content_type='news' — not a guide.
 		news: 'news'
 	};
@@ -289,16 +314,37 @@
 		return acts;
 	});
 
+	// Wraps a static CatalogOption list as Autocomplete data source — the
+	// filter panel requires every dropdown to be an Autocomplete, and the
+	// option sets here are catalog-sized (small, already loaded), so
+	// filtering happens client-side over the loaded options.
+	function optionFilter(options: CatalogOption[]) {
+		return {
+			fetcher: async (q: string) => {
+				const needle = q.trim().toLowerCase();
+				return options
+					.filter((o) => !needle || o.label.toLowerCase().includes(needle) || o.value.includes(needle))
+					.map((o) => ({ id: o.value, label: o.label }));
+			},
+			initialFetcher: async () => options.map((o) => ({ id: o.value, label: o.label })),
+			getSelectedLabel: (id: string) => options.find((o) => o.value === id)?.label ?? id
+		};
+	}
+
 	const filters = $derived<FilterDef[]>([
 		{
 			key: 'status',
 			label: t('intel.status', 'Status'),
-			options: intelReviewStatusOptions
+			type: 'autocomplete',
+			placeholder: t('intel.status', 'Status'),
+			...optionFilter(intelReviewStatusOptions)
 		},
 		{
 			key: 'entity_type',
 			label: t('intel.entity_type', 'Entity Type'),
-			options: intelReviewEntityTypeOptions
+			type: 'autocomplete',
+			placeholder: t('intel.entity_type', 'Entity Type'),
+			...optionFilter(intelReviewEntityTypeOptions)
 		}
 	]);
 
@@ -329,6 +375,7 @@
 			{
 				key: 'external_key',
 				label: t('intel.external_key', 'External Key'),
+				sortable: true,
 				render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v || '—'}</span>`
 			},
 			{
@@ -350,8 +397,13 @@
 					const clsMap: Record<string, string> = {
 						review_required: 'bg-warning/15 text-warning border-warning',
 						extracted: 'bg-primary/15 text-primary border-primary',
+						deduped: 'bg-primary/15 text-primary border-primary',
+						auto_published: 'bg-success/15 text-success border-success',
 						approved: 'bg-success/15 text-success border-success',
-						rejected: 'bg-danger/15 text-danger border-danger'
+						published: 'bg-success/15 text-success border-success',
+						rejected: 'bg-danger/15 text-danger border-danger',
+						stale: 'bg-muted text-muted-foreground border-border',
+						off_topic: 'bg-muted text-muted-foreground border-border'
 					};
 					const cls = clsMap[v] ?? 'bg-muted text-muted-foreground border-border';
 					return `<span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls}">${v.replace(/_/g, ' ')}</span>`;
@@ -373,14 +425,24 @@
 		filters,
 		actions: rowActions,
 		fields,
-		load: async ({ q, filter, page, pageSize }) => {
+		load: async ({ q, filter, page, pageSize, sort }) => {
 			const params = new URLSearchParams();
 			if (q) params.set('q', q);
 			if (filter.status) params.set('status', filter.status);
 			if (filter.entity_type) params.set('entity_type', filter.entity_type);
+			// sort arrives as "key:dir" (EntityPage convention); the API takes
+			// separate sort/dir params over a whitelisted column set.
+			if (sort) {
+				const [sortKey, sortDir] = sort.split(':');
+				if (sortKey) params.set('sort', sortKey);
+				if (sortDir === 'desc') params.set('dir', 'desc');
+			}
 			params.set('page_offset', String(page * pageSize));
 			params.set('page_size', String(pageSize));
-			const result = await intelReviewApi.queue(params.toString());
+			// /intel/records (not /intel/review/queue) — the status filter needs
+			// arbitrary statuses; the endpoint defaults to review_required when
+			// no status is selected, preserving the queue behaviour.
+			const result = await intelReviewApi.list(params.toString());
 			if (result.ok) {
 				const body = result.data as {
 					data?: ReviewRecord[];
@@ -425,6 +487,9 @@
 			({actionTarget.external_key || actionTarget.id.slice(0, 8)})?
 		</p>
 	{/if}
+	{#if pageError}
+		<p class="mt-3 text-sm text-danger">{pageError}</p>
+	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => (showActionConfirm = false)} disabled={actingId !== ''}>
 			{t('common.cancel', 'Cancel')}
@@ -439,8 +504,8 @@
 	</div>
 </Modal>
 
-<!-- ── Edit slide-over (page-local Modal for simplicity) ───── -->
-<Modal bind:open={showEditPanel} title={t('intel.edit_extracted', 'Edit Extracted Data')} size="lg">
+<!-- ── Edit slide-over ───── -->
+<SlideOver bind:open={showEditPanel} title={t('intel.edit_extracted', 'Edit Extracted Data')} size="lg">
 	{#if editTarget}
 		<div class="space-y-4">
 			<div>
@@ -458,22 +523,24 @@
 				<textarea
 					id="extracted-edit"
 					bind:value={editExtracted}
-					rows="12"
+					rows="14"
 					class="mt-1 w-full rounded-md border p-3 font-mono text-xs"
 					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				></textarea>
 			</div>
 		</div>
 	{/if}
-	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (showEditPanel = false)} disabled={editSaving}>
-			{t('common.cancel', 'Cancel')}
-		</Button>
-		<Button onclick={saveEdit} disabled={editSaving}>
-			{editSaving ? t('common.processing', 'Processing...') : t('common.save', 'Save')}
-		</Button>
-	</div>
-</Modal>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (showEditPanel = false)} disabled={editSaving}>
+				{t('common.cancel', 'Cancel')}
+			</Button>
+			<Button onclick={saveEdit} disabled={editSaving}>
+				{editSaving ? t('common.processing', 'Processing...') : t('common.save', 'Save Changes')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
 
 <!-- ── View snippet ──────────────────────────────────────────────────────── -->
 {#snippet ReviewView({ row }: { row: ReviewRecord })}

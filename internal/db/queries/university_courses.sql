@@ -80,14 +80,19 @@ LIMIT 1;
 -- name: ListCourseCatalogAdmin :many
 SELECT c.id, c.title, c.slug, c.description, c.degree_type, c.department,
  c.field_of_study, c.language, c.default_duration_years, c.is_published,
- c.created_at, c.updated_at,
+ c.created_at, c.updated_at, c.deleted_at,
  (SELECT count(*) FROM university_course_offerings o
   WHERE o.course_id = c.id AND o.deleted_at IS NULL) AS offering_count
 FROM university_course_catalog c
-WHERE c.deleted_at IS NULL
- AND (@search::text = '' OR c.title ILIKE '%' || @search || '%' OR c.slug ILIKE '%' || @search || '%')
+WHERE (@search::text = '' OR c.title ILIKE '%' || @search || '%' OR c.slug ILIKE '%' || @search || '%')
  AND (@degree_type::text = '' OR c.degree_type = @degree_type)
  AND (sqlc.narg(is_published)::bool IS NULL OR c.is_published = sqlc.narg(is_published))
+ -- ?deleted=only|all surfaces soft-deleted rows for admin force-delete.
+ AND CASE @deleted::text
+       WHEN 'only' THEN c.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE c.deleted_at IS NULL
+     END
 ORDER BY
  CASE WHEN @sort::text = 'title' THEN c.title END ASC NULLS LAST,
  CASE WHEN @sort::text = 'oldest' THEN c.created_at END ASC NULLS LAST,
@@ -97,10 +102,14 @@ LIMIT @limit_val OFFSET @offset_val;
 -- name: CountCourseCatalogAdmin :one
 SELECT count(*) AS total
 FROM university_course_catalog c
-WHERE c.deleted_at IS NULL
- AND (@search::text = '' OR c.title ILIKE '%' || @search || '%' OR c.slug ILIKE '%' || @search || '%')
+WHERE (@search::text = '' OR c.title ILIKE '%' || @search || '%' OR c.slug ILIKE '%' || @search || '%')
  AND (@degree_type::text = '' OR c.degree_type = @degree_type)
- AND (sqlc.narg(is_published)::bool IS NULL OR c.is_published = sqlc.narg(is_published));
+ AND (sqlc.narg(is_published)::bool IS NULL OR c.is_published = sqlc.narg(is_published))
+ AND CASE @deleted::text
+       WHEN 'only' THEN c.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE c.deleted_at IS NULL
+     END;
 
 -- name: GetCourseCatalogByID :one
 SELECT c.id, c.title, c.slug, c.description, c.degree_type, c.department,
@@ -137,22 +146,48 @@ UPDATE university_course_catalog
 SET deleted_at = now(), updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
+-- name: HardDeleteCourseCatalog :execrows
+-- Permanent delete — only for already-soft-deleted catalog rows (admin
+-- ?force=true). Offerings FK-cascade, so the row must have no offerings at
+-- all (live or deleted): force-delete the offerings first rather than
+-- silently cascading live children.
+DELETE FROM university_course_catalog c
+WHERE c.id = @id AND c.deleted_at IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM university_course_offerings o WHERE o.course_id = c.id);
+
+-- name: CourseCatalogExists :one
+-- Existence probe for the hard-delete path: distinguishes 404 not_found
+-- from 409 not_deleted/in_use when the guarded DELETE affects no row.
+SELECT EXISTS(SELECT 1 FROM university_course_catalog WHERE id = @id) AS exists;
+
+-- name: CourseCatalogHasOfferings :one
+-- Dependency probe for the hard-delete path (offerings must go first).
+SELECT EXISTS(SELECT 1 FROM university_course_offerings WHERE course_id = @id) AS exists;
+
 -- Admin: course offerings CRUD (universities.course_offering.* RBAC nodes)
 
 -- name: ListCourseOfferingsAdmin :many
+-- ?deleted=only|all surfaces soft-deleted rows for admin force-delete.
+-- The catalog/university JOINs drop their deleted_at filter so deleted
+-- offerings still resolve their parent names in the admin list.
 SELECT o.id, o.course_id, o.university_id, o.slug,
  o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
  o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
+ o.deleted_at,
  c.title AS course_title, c.slug AS course_slug, c.degree_type,
  s.name AS university_name, s.slug AS university_slug
 FROM university_course_offerings o
-JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
-JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
-WHERE o.deleted_at IS NULL
- AND (@search::text = '' OR c.title ILIKE '%' || @search || '%' OR o.slug ILIKE '%' || @search || '%' OR s.name ILIKE '%' || @search || '%')
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+WHERE (@search::text = '' OR c.title ILIKE '%' || @search || '%' OR o.slug ILIKE '%' || @search || '%' OR s.name ILIKE '%' || @search || '%')
  AND (sqlc.narg(university_id)::uuid IS NULL OR o.university_id = sqlc.narg(university_id))
  AND (sqlc.narg(course_id)::uuid IS NULL OR o.course_id = sqlc.narg(course_id))
  AND (sqlc.narg(is_published)::bool IS NULL OR o.is_published = sqlc.narg(is_published))
+ AND CASE @deleted::text
+       WHEN 'only' THEN o.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE o.deleted_at IS NULL
+     END
 ORDER BY
  CASE WHEN @sort::text = 'title' THEN c.title END ASC NULLS LAST,
  CASE WHEN @sort::text = 'university' THEN s.name END ASC NULLS LAST,
@@ -163,13 +198,17 @@ LIMIT @limit_val OFFSET @offset_val;
 -- name: CountCourseOfferingsAdmin :one
 SELECT count(*) AS total
 FROM university_course_offerings o
-JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
-JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
-WHERE o.deleted_at IS NULL
- AND (@search::text = '' OR c.title ILIKE '%' || @search || '%' OR o.slug ILIKE '%' || @search || '%' OR s.name ILIKE '%' || @search || '%')
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+WHERE (@search::text = '' OR c.title ILIKE '%' || @search || '%' OR o.slug ILIKE '%' || @search || '%' OR s.name ILIKE '%' || @search || '%')
  AND (sqlc.narg(university_id)::uuid IS NULL OR o.university_id = sqlc.narg(university_id))
  AND (sqlc.narg(course_id)::uuid IS NULL OR o.course_id = sqlc.narg(course_id))
- AND (sqlc.narg(is_published)::bool IS NULL OR o.is_published = sqlc.narg(is_published));
+ AND (sqlc.narg(is_published)::bool IS NULL OR o.is_published = sqlc.narg(is_published))
+ AND CASE @deleted::text
+       WHEN 'only' THEN o.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE o.deleted_at IS NULL
+     END;
 
 -- name: CreateCourseOffering :one
 INSERT INTO university_course_offerings (course_id, university_id, slug,
@@ -201,6 +240,16 @@ RETURNING id, course_id, university_id, slug, tuition, currency, duration_years,
 UPDATE university_course_offerings
 SET deleted_at = now(), updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
+
+-- name: HardDeleteCourseOffering :execrows
+-- Permanent delete — only for already-soft-deleted offerings (admin
+-- ?force=true). Nothing references offerings as a parent FK.
+DELETE FROM university_course_offerings WHERE id = @id AND deleted_at IS NOT NULL;
+
+-- name: CourseOfferingExists :one
+-- Existence probe for the hard-delete path: distinguishes 404 not_found
+-- from 409 not_deleted when the DELETE affects no row.
+SELECT EXISTS(SELECT 1 FROM university_course_offerings WHERE id = @id) AS exists;
 
 -- name: BulkSetCourseOfferingsPublished :exec
 UPDATE university_course_offerings

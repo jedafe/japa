@@ -2,10 +2,13 @@ package organizations
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store provides database access for organizations.
@@ -56,16 +59,18 @@ func (s *Store) GetOrganizationBySlug(ctx context.Context, slug string) (gen.Org
 	return s.read.GetOrganizationBySlug(ctx, slug)
 }
 
-// ListOrganizations returns paginated organizations.
-func (s *Store) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, error) {
+// ListOrganizations returns paginated organizations. deleted is '' (live
+// only), 'only' (soft-deleted), or 'all'.
+func (s *Store) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, error) {
 	return s.read.ListOrganizations(ctx, gen.ListOrganizationsParams{Column1: orgType, Column2: countryCode, Column3: search, Column4: verified, Limit: clampLimit(limit),
-		Offset: offset,
+		Offset:  offset,
+		Column7: deleted,
 	})
 }
 
 // CountOrganizations returns the total count of matching organizations.
-func (s *Store) CountOrganizations(ctx context.Context, orgType, countryCode, search, verified string) (int64, error) {
-	return s.read.CountOrganizations(ctx, gen.CountOrganizationsParams{Column1: orgType, Column2: countryCode, Column3: search, Column4: verified})
+func (s *Store) CountOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string) (int64, error) {
+	return s.read.CountOrganizations(ctx, gen.CountOrganizationsParams{Column1: orgType, Column2: countryCode, Column3: search, Column4: verified, Column5: deleted})
 }
 
 // UpdateOrganization updates an organization.
@@ -76,6 +81,37 @@ func (s *Store) UpdateOrganization(ctx context.Context, params gen.UpdateOrganiz
 // SoftDeleteOrganization soft-deletes an organization.
 func (s *Store) SoftDeleteOrganization(ctx context.Context, id pgtype.UUID) error {
 	return s.write.SoftDeleteOrganization(ctx, id)
+}
+
+// HardDeleteOrganization permanently removes a soft-deleted organization.
+// Members, invitations, and boosts cascade; ownership claims must be cleared
+// first (ErrInUse). Returns pgx.ErrNoRows when missing and
+// errpkg.ErrNotDeleted while live.
+func (s *Store) HardDeleteOrganization(ctx context.Context, id pgtype.UUID) error {
+	affected, err := s.write.HardDeleteOrganization(ctx, id)
+	if err != nil {
+		return fmt.Errorf("hard deleting organization: %w", err)
+	}
+
+	if affected == 0 {
+		exists, err := s.read.OrganizationExists(ctx, id)
+		if err != nil {
+			return fmt.Errorf("check organization exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		hasClaims, err := s.read.OrganizationHasOwnershipClaims(ctx, id)
+		if err != nil {
+			return fmt.Errorf("check organization claims: %w", err)
+		}
+		if hasClaims {
+			return errpkg.ErrInUse
+		}
+		return errpkg.ErrNotDeleted
+	}
+
+	return nil
 }
 
 // AddMember adds a member to an organization.

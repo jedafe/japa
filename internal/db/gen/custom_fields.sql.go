@@ -307,6 +307,67 @@ func (q *Queries) GetAssignmentByEntity(ctx context.Context, arg GetAssignmentBy
 	return i, err
 }
 
+const getCustomFieldByGroupAndKey = `-- name: GetCustomFieldByGroupAndKey :one
+SELECT id, group_id, label, key, field_type, options, embed_platforms,
+ placeholder, default_value, is_required, is_system, show_in_frontend,
+ filterable, sortable, searchable, position, created_at
+FROM custom_fields
+WHERE group_id = $1 AND key = $2
+`
+
+type GetCustomFieldByGroupAndKeyParams struct {
+	GroupID pgtype.UUID `json:"group_id"`
+	Key     string      `json:"key"`
+}
+
+type GetCustomFieldByGroupAndKeyRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        []byte             `json:"options"`
+	EmbedPlatforms []string           `json:"embed_platforms"`
+	Placeholder    *string            `json:"placeholder"`
+	DefaultValue   *string            `json:"default_value"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Filterable     bool               `json:"filterable"`
+	Sortable       bool               `json:"sortable"`
+	Searchable     bool               `json:"searchable"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+// §80 community field ops: field keys are unique only per group
+// (custom_fields group_id+key), so ops must resolve field_key inside the
+// target group — a same-named key in another group must never be touched.
+func (q *Queries) GetCustomFieldByGroupAndKey(ctx context.Context, arg GetCustomFieldByGroupAndKeyParams) (GetCustomFieldByGroupAndKeyRow, error) {
+	row := q.db.QueryRow(ctx, getCustomFieldByGroupAndKey, arg.GroupID, arg.Key)
+	var i GetCustomFieldByGroupAndKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.Label,
+		&i.Key,
+		&i.FieldType,
+		&i.Options,
+		&i.EmbedPlatforms,
+		&i.Placeholder,
+		&i.DefaultValue,
+		&i.IsRequired,
+		&i.IsSystem,
+		&i.ShowInFrontend,
+		&i.Filterable,
+		&i.Sortable,
+		&i.Searchable,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCustomFieldByID = `-- name: GetCustomFieldByID :one
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
@@ -1110,6 +1171,38 @@ func (q *Queries) ListPermissionsByField(ctx context.Context, fieldID pgtype.UUI
 	return items, nil
 }
 
+const listVisibleFieldIDsForGroupSlug = `-- name: ListVisibleFieldIDsForGroupSlug :many
+SELECT cfp.field_id
+FROM custom_field_permissions cfp
+JOIN user_groups ug ON ug.id = cfp.user_group_id
+WHERE ug.slug = $1
+ AND cfp.can_view = true
+`
+
+// Returns the field_ids a user group (by slug, e.g. 'guest') is allowed
+// to view. Used by the §80 wiki entity-fields schema for anonymous
+// callers, who have no user_group_memberships row but still hold the
+// guest group's can_view grants (Section 06 field-level RBAC).
+func (q *Queries) ListVisibleFieldIDsForGroupSlug(ctx context.Context, groupSlug string) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listVisibleFieldIDsForGroupSlug, groupSlug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var field_id pgtype.UUID
+		if err := rows.Scan(&field_id); err != nil {
+			return nil, err
+		}
+		items = append(items, field_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVisibleFieldIDsForUser = `-- name: ListVisibleFieldIDsForUser :many
 SELECT DISTINCT cfp.field_id
 FROM custom_field_permissions cfp
@@ -1139,6 +1232,34 @@ func (q *Queries) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 		return nil, err
 	}
 	return items, nil
+}
+
+const seedFieldPermissions = `-- name: SeedFieldPermissions :exec
+INSERT INTO custom_field_permissions (field_id, user_group_id, can_view, can_edit)
+SELECT $1::uuid, ug.id, true,
+       ug.slug <> 'guest'
+           AND EXISTS (SELECT 1
+                       FROM custom_field_group_assignments a
+                       WHERE a.group_id = $2::uuid)
+FROM user_groups ug
+ON CONFLICT (field_id, user_group_id) DO NOTHING
+`
+
+type SeedFieldPermissionsParams struct {
+	FieldID pgtype.UUID `json:"field_id"`
+	GroupID pgtype.UUID `json:"group_id"`
+}
+
+// §80 §8.1a runtime twin of the 000733 bootstrap: a field created by an
+// approved community proposal is viewable by every user group and editable
+// by non-guest groups when its group is assigned to an entity class
+// (assignment is the opt-in to community editing). Without these rows the
+// fail-closed field-permission check would leave approved fields
+// permanently invisible and uneditable. ON CONFLICT preserves any
+// pre-existing grants or denials.
+func (q *Queries) SeedFieldPermissions(ctx context.Context, arg SeedFieldPermissionsParams) error {
+	_, err := q.db.Exec(ctx, seedFieldPermissions, arg.FieldID, arg.GroupID)
+	return err
 }
 
 const updateCustomField = `-- name: UpdateCustomField :one

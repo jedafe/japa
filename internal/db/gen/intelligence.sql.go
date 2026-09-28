@@ -135,6 +135,28 @@ func (q *Queries) CountIntelRecordsByStatusAll(ctx context.Context, status strin
 	return count, err
 }
 
+const countIntelRecordsFiltered = `-- name: CountIntelRecordsFiltered :one
+SELECT count(*) FROM intel_records
+WHERE status = $1
+  AND ($2::text = '' OR entity_type = $2)
+  AND ($3::text = '' OR external_key ILIKE '%' || $3 || '%'
+       OR entity_type ILIKE '%' || $3 || '%'
+       OR extracted::text ILIKE '%' || $3 || '%')
+`
+
+type CountIntelRecordsFilteredParams struct {
+	Status     string `json:"status"`
+	EntityType string `json:"entity_type"`
+	Search     string `json:"search"`
+}
+
+func (q *Queries) CountIntelRecordsFiltered(ctx context.Context, arg CountIntelRecordsFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countIntelRecordsFiltered, arg.Status, arg.EntityType, arg.Search)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPromotedIntelRecordsBySource = `-- name: CountPromotedIntelRecordsBySource :one
 SELECT count(*) FROM intel_records
 WHERE source_id = $1 AND promoted_record_id IS NOT NULL
@@ -1384,6 +1406,90 @@ func (q *Queries) ListIntelRecordsByStatusAll(ctx context.Context, arg ListIntel
 	return items, nil
 }
 
+const listIntelRecordsFiltered = `-- name: ListIntelRecordsFiltered :many
+SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id FROM intel_records
+WHERE status = $1
+  AND ($2::text = '' OR entity_type = $2)
+  AND ($3::text = '' OR external_key ILIKE '%' || $3 || '%'
+       OR entity_type ILIKE '%' || $3 || '%'
+       OR extracted::text ILIKE '%' || $3 || '%')
+ORDER BY
+  CASE WHEN $4::text = 'entity_type'        AND $5::text = 'asc'  THEN entity_type        END ASC,
+  CASE WHEN $4::text = 'entity_type'        AND $5::text = 'desc' THEN entity_type        END DESC,
+  CASE WHEN $4::text = 'external_key'       AND $5::text = 'asc'  THEN external_key       END ASC,
+  CASE WHEN $4::text = 'external_key'       AND $5::text = 'desc' THEN external_key       END DESC,
+  CASE WHEN $4::text = 'status'             AND $5::text = 'asc'  THEN status             END ASC,
+  CASE WHEN $4::text = 'status'             AND $5::text = 'desc' THEN status             END DESC,
+  CASE WHEN $4::text = 'confidence_overall' AND $5::text = 'asc'  THEN confidence_overall END ASC,
+  CASE WHEN $4::text = 'confidence_overall' AND $5::text = 'desc' THEN confidence_overall END DESC,
+  CASE WHEN $4::text = 'freshness_score'    AND $5::text = 'asc'  THEN freshness_score    END ASC,
+  CASE WHEN $4::text = 'freshness_score'    AND $5::text = 'desc' THEN freshness_score    END DESC,
+  CASE WHEN $4::text = 'extracted_at'       AND $5::text = 'asc'  THEN extracted_at       END ASC,
+  CASE WHEN $4::text = 'extracted_at'       AND $5::text = 'desc' THEN extracted_at       END DESC,
+  extracted_at DESC
+LIMIT $7 OFFSET $6
+`
+
+type ListIntelRecordsFilteredParams struct {
+	Status     string `json:"status"`
+	EntityType string `json:"entity_type"`
+	Search     string `json:"search"`
+	SortKey    string `json:"sort_key"`
+	SortDir    string `json:"sort_dir"`
+	RowOffset  int32  `json:"row_offset"`
+	RowLimit   int32  `json:"row_limit"`
+}
+
+// Filtered intel records list for the admin review queue / records browser:
+// status is required; entity_type and search are optional (” disables).
+// search matches external_key, entity_type, and the extracted payload.
+// ORDER BY uses whitelisted CASE keys — only the active (sort_key, sort_dir)
+// pair produces non-NULL values, so each inactive key is a no-op; the final
+// extracted_at DESC keeps the default newest-first ordering.
+func (q *Queries) ListIntelRecordsFiltered(ctx context.Context, arg ListIntelRecordsFilteredParams) ([]IntelRecord, error) {
+	rows, err := q.db.Query(ctx, listIntelRecordsFiltered,
+		arg.Status,
+		arg.EntityType,
+		arg.Search,
+		arg.SortKey,
+		arg.SortDir,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntelRecord
+	for rows.Next() {
+		var i IntelRecord
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.RawDocumentID,
+			&i.EntityType,
+			&i.ExternalKey,
+			&i.Extracted,
+			&i.Confidence,
+			&i.Evidence,
+			&i.ConfidenceOverall,
+			&i.Status,
+			&i.FreshnessScore,
+			&i.GeoSpaceIds,
+			&i.ExtractedAt,
+			&i.LastVerifiedAt,
+			&i.PromotedRecordID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIntelReviewLog = `-- name: ListIntelReviewLog :many
 SELECT id, intel_record_id, actor_user_id, action, field_changes, note, created_at FROM intel_review_log WHERE intel_record_id = $1 ORDER BY created_at DESC
 `
@@ -2218,6 +2324,24 @@ func (q *Queries) ListVideoChannelSourcesDue(ctx context.Context, arg ListVideoC
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateIntelRecordExtracted = `-- name: UpdateIntelRecordExtracted :exec
+UPDATE intel_records SET extracted = $2, last_verified_at = now() WHERE id = $1
+`
+
+type UpdateIntelRecordExtractedParams struct {
+	ID        pgtype.UUID `json:"id"`
+	Extracted []byte      `json:"extracted"`
+}
+
+// Merges reviewer-edited fields into the record's extracted payload. Used by
+// the review-edit endpoint when the record has no domain projection row yet
+// (projections are only created by intel:promote after approval), so edits
+// must land on the intel_record itself for promotion to respect them.
+func (q *Queries) UpdateIntelRecordExtracted(ctx context.Context, arg UpdateIntelRecordExtractedParams) error {
+	_, err := q.db.Exec(ctx, updateIntelRecordExtracted, arg.ID, arg.Extracted)
+	return err
 }
 
 const updateIntelRecordFreshness = `-- name: UpdateIntelRecordFreshness :exec

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
@@ -319,6 +320,24 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&body) // note is optional
 	}
 
+	// Refuse to approve a record whose extraction carries no field values —
+	// promoting it would publish a domain row built entirely from fallbacks
+	// (source name as title, nulls elsewhere). The reviewer must edit the
+	// extraction first (PATCH .../edit) or reject the record.
+	record, err := h.intelStores.GetIntelRecord(r.Context(), recordID)
+	if err != nil {
+		slog.Error("intel: approve load record failed", "record_id", recordID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to load record")
+
+		return
+	}
+
+	if !schemas.HasExtractedValues(record.Extracted) {
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "record_empty", "Record has no extracted field values — edit the extraction or reject it instead")
+
+		return
+	}
+
 	// Set the record status to 'approved'.
 	if err := h.intelStores.UpdateIntelRecordStatus(r.Context(), gen.UpdateIntelRecordStatusParams{
 		ID:     recordID,
@@ -507,68 +526,70 @@ func intelRecordsToResponse(rows []gen.IntelRecord) []intelRecordResponse {
 	return out
 }
 
-// HandleReviewQueue lists intel records awaiting human review.
-// GET /api/v1/intel/review/queue.
-func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
-	if h.intelStores == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
-		return
+// intelRecordSortKeys is the whitelist of ?sort= column names accepted by the
+// review queue and records list endpoints. Anything else falls back to the
+// default extracted_at DESC ordering. The keys match the intel_records column
+// names (and the admin table's column keys) exactly.
+var intelRecordSortKeys = map[string]bool{
+	"entity_type":        true,
+	"external_key":       true,
+	"status":             true,
+	"confidence_overall": true,
+	"freshness_score":    true,
+	"extracted_at":       true,
+}
+
+// parseIntelRecordListParams extracts the shared list params used by both
+// HandleReviewQueue and HandleListIntelRecords: entity_type filter, free-text
+// search (?q=), and whitelisted sort (?sort=&dir=).
+func parseIntelRecordListParams(r *http.Request) gen.ListIntelRecordsFilteredParams {
+	q := r.URL.Query()
+
+	params := gen.ListIntelRecordsFilteredParams{
+		EntityType: q.Get("entity_type"),
+		Search:     q.Get("q"),
 	}
 
+	if sortKey := q.Get("sort"); intelRecordSortKeys[sortKey] {
+		params.SortKey = sortKey
+		if q.Get("dir") == "desc" {
+			params.SortDir = "desc"
+		} else {
+			params.SortDir = "asc"
+		}
+	}
+
+	return params
+}
+
+// listIntelRecordsFiltered runs the filtered list + count queries and writes
+// the standard list response. status is supplied by the caller (the review
+// queue pins review_required; the records endpoint accepts ?status=).
+func (h *Handlers) listIntelRecordsFiltered(w http.ResponseWriter, r *http.Request, status, errCode, errMsg string) {
 	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
 
-	// BUG-002 fix: the intel_records.status CHECK constraint (migration 000428)
-	// only allows ('extracted','deduped','auto_published','review_required',
-	// 'approved','rejected','published','stale'). The prior 'review' value
-	// matched nothing, so the moderation queue was always empty.
-	// // BUG-001 fix: the prior handler hardcoded EntityType='scholarship', so
-	// job/visa/grant records awaiting review were invisible. Now an optional
-	// ?entity_type= query param filters by entity type; when omitted, ALL
-	// entity types with review_required status are returned.
-	entityType := r.URL.Query().Get("entity_type")
+	params := parseIntelRecordListParams(r)
+	params.Status = status
+	params.RowLimit = clampInt32(limit)
+	params.RowOffset = offset
 
-	var rows []gen.IntelRecord
-
-	var err error
-	if entityType != "" {
-		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), gen.ListIntelRecordsByStatusParams{
-			EntityType: entityType,
-			Status:     "review_required",
-			Limit:      clampInt32(limit),
-			Offset:     offset,
-		})
-	} else {
-		rows, err = h.intelStores.ListIntelRecordsByStatusAll(r.Context(), gen.ListIntelRecordsByStatusAllParams{
-			Status: "review_required",
-			Limit:  clampInt32(limit),
-			Offset: offset,
-		})
-	}
-
+	rows, err := h.intelStores.ListIntelRecordsFiltered(r.Context(), params)
 	if err != nil {
-		slog.Error("intel: review queue list failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "review_queue_failed", "Failed to load review queue")
+		slog.Error("intel: records list failed", "status", status, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, errCode, errMsg)
 
 		return
 	}
 
-	// Total matching rows for pagination — the prior meta only carried the
-	// current page length, so the admin table computed totalPages=1 and the
-	// queue could never be paged past the first page.
-	var total int64
-	if entityType != "" {
-		total, err = h.intelStores.CountIntelRecordsByStatus(r.Context(), gen.CountIntelRecordsByStatusParams{
-			EntityType: entityType,
-			Status:     "review_required",
-		})
-	} else {
-		total, err = h.intelStores.CountIntelRecordsByStatusAll(r.Context(), "review_required")
-	}
-
+	total, err := h.intelStores.CountIntelRecordsFiltered(r.Context(), gen.CountIntelRecordsFilteredParams{
+		Status:     status,
+		EntityType: params.EntityType,
+		Search:     params.Search,
+	})
 	if err != nil {
-		slog.Error("intel: review queue count failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "review_queue_failed", "Failed to load review queue")
+		slog.Error("intel: records count failed", "status", status, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, errCode, errMsg)
 
 		return
 	}
@@ -580,8 +601,31 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 			"page_offset": (page - 1) * limit,
 			"count":       len(rows),
 			"total":       total,
+			"status":      status,
 		},
 	})
+}
+
+// HandleReviewQueue lists intel records awaiting human review.
+// // BUG-002 fix: the intel_records.status CHECK constraint (migration 000428)
+// only allows ('extracted','deduped','auto_published','review_required',
+// 'approved','rejected','published','stale','off_topic'). The prior 'review'
+// value matched nothing, so the moderation queue was always empty.
+// // BUG-001 fix: the prior handler hardcoded EntityType='scholarship', so
+// job/visa/grant records awaiting review were invisible. Now an optional
+// ?entity_type= query param filters by entity type; when omitted, ALL
+// entity types with review_required status are returned.
+// // Supports ?q= free-text search and whitelisted ?sort=&dir= so the admin
+// table's search box and sortable headers actually filter/order the queue
+// (previously the params were silently ignored).
+// GET /api/v1/intel/review/queue.
+func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
+	if h.intelStores == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	h.listIntelRecordsFiltered(w, r, "review_required", "review_queue_failed", "Failed to load review queue")
 }
 
 // validIntelRecordStatuses mirrors the intel_records.status CHECK
@@ -597,6 +641,7 @@ var validIntelRecordStatuses = map[string]bool{
 	"rejected":        true,
 	"published":       true,
 	"stale":           true,
+	"off_topic":       true,
 }
 
 // HandleListIntelRecords lists intel records filtered by status (and
@@ -621,67 +666,13 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 	}
 
 	if !validIntelRecordStatuses[status] {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "status must be one of: extracted, deduped, auto_published, review_required, approved, rejected, published, stale")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "status must be one of: extracted, deduped, auto_published, review_required, approved, rejected, published, stale, off_topic")
 		return
 	}
 
-	entityType := r.URL.Query().Get("entity_type")
-
-	page, limit := h.parsePagination(r)
-	offset := clampInt32((page - 1) * limit)
-
-	var rows []gen.IntelRecord
-
-	var err error
-	if entityType != "" {
-		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), gen.ListIntelRecordsByStatusParams{
-			EntityType: entityType,
-			Status:     status,
-			Limit:      clampInt32(limit),
-			Offset:     offset,
-		})
-	} else {
-		rows, err = h.intelStores.ListIntelRecordsByStatusAll(r.Context(), gen.ListIntelRecordsByStatusAllParams{
-			Status: status,
-			Limit:  clampInt32(limit),
-			Offset: offset,
-		})
-	}
-
-	if err != nil {
-		slog.Error("intel: records list failed", "status", status, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "records_list_failed", "Failed to list intel records")
-
-		return
-	}
-
-	var total int64
-	if entityType != "" {
-		total, err = h.intelStores.CountIntelRecordsByStatus(r.Context(), gen.CountIntelRecordsByStatusParams{
-			EntityType: entityType,
-			Status:     status,
-		})
-	} else {
-		total, err = h.intelStores.CountIntelRecordsByStatusAll(r.Context(), status)
-	}
-
-	if err != nil {
-		slog.Error("intel: records count failed", "status", status, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "records_list_failed", "Failed to list intel records")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": intelRecordsToResponse(rows),
-		"meta": map[string]interface{}{
-			"page_size":   limit,
-			"page_offset": (page - 1) * limit,
-			"count":       len(rows),
-			"total":       total,
-			"status":      status,
-		},
-	})
+	// Also honors ?entity_type=, ?q= free-text search, and whitelisted
+	// ?sort=&dir= — shared with the review queue handler.
+	h.listIntelRecordsFiltered(w, r, status, "records_list_failed", "Failed to list intel records")
 }
 
 // HandleGetIntelRecord returns a single intel record by id, regardless of

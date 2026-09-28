@@ -290,14 +290,15 @@ func (s *Service) GetOrganizationBySlug(ctx context.Context, slug string) (gen.O
 	return s.store.GetOrganizationBySlug(ctx, slug)
 }
 
-// ListOrganizations returns organizations filtered by type, country, search, and verified status.
-func (s *Service) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
-	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, limit, offset)
+// ListOrganizations returns organizations filtered by type, country, search,
+// and verified status. Public callers pass deleted="".
+func (s *Service) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
+	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, deleted, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountOrganizations(ctx, orgType, countryCode, search, verified)
+	total, err := s.store.CountOrganizations(ctx, orgType, countryCode, search, verified, deleted)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1024,14 +1025,15 @@ func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID pgtype.UUI
 
 // ─── Admin methods (bypass ownership checks) ─────────────────────────────
 
-// AdminListOrganizations lists all organisations for admin view (no ownership filter).
-func (s *Service) AdminListOrganizations(ctx context.Context, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
-	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, limit, offset)
+// AdminListOrganizations lists all organisations for admin view (no
+// ownership filter). deleted is '' (live only), 'only', or 'all'.
+func (s *Service) AdminListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
+	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, deleted, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountOrganizations(ctx, orgType, countryCode, search, verified)
+	total, err := s.store.CountOrganizations(ctx, orgType, countryCode, search, verified, deleted)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1068,9 +1070,17 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id pgtype.UUID, i
 	return nil
 }
 
-// AdminDeleteOrganization soft-deletes an organisation without checking ownership.
-func (s *Service) AdminDeleteOrganization(ctx context.Context, id pgtype.UUID) error {
-	if err := s.store.SoftDeleteOrganization(ctx, id); err != nil {
+// AdminDeleteOrganization deletes an organisation without checking
+// ownership. force=true permanently removes an already-soft-deleted row
+// (ErrNotDeleted while live, ErrInUse while ownership claims remain).
+func (s *Service) AdminDeleteOrganization(ctx context.Context, id pgtype.UUID, force bool) error {
+	var err error
+	if force {
+		err = s.store.HardDeleteOrganization(ctx, id)
+	} else {
+		err = s.store.SoftDeleteOrganization(ctx, id)
+	}
+	if err != nil {
 		return err
 	}
 

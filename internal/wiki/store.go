@@ -78,6 +78,9 @@ type AdminWikiPageWithSpace struct {
 	LatestRevisionID     *pgtype.UUID
 	LatestRevisionStatus *string
 	Excerpt              *string
+	// DeletedAt is the soft-delete marker (§80) — non-nil rows can be
+	// force-deleted from the admin queue.
+	DeletedAt pgtype.Timestamptz
 }
 
 // WikiDestination is a wiki-bearing space with its active wiki page count.
@@ -570,18 +573,25 @@ func (s *Store) ApproveRevision(ctx context.Context, revID, pageID, reviewerID p
 }
 
 // RejectRevision marks a revision as rejected and stamps the reviewer.
+// Returns ErrRevisionNotPending when the revision is missing or already
+// reviewed — the UPDATE's status='pending' guard matches zero rows.
 func (s *Store) RejectRevision(ctx context.Context, revID, reviewerID pgtype.UUID, reviewNotes string) error {
 	var notesPtr *string
 	if reviewNotes != "" {
 		notesPtr = &reviewNotes
 	}
 
-	if err := s.write.RejectWikiRevision(ctx, gen.RejectWikiRevisionParams{
+	n, err := s.write.RejectWikiRevision(ctx, gen.RejectWikiRevisionParams{
 		ReviewedBy:      reviewerID,
 		HitlReviewNotes: notesPtr,
 		ID:              revID,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("wiki: reject revision: %w", err)
+	}
+
+	if n == 0 {
+		return ErrRevisionNotPending
 	}
 
 	return nil
@@ -732,10 +742,12 @@ func (s *Store) ListRevisionsByTarget(ctx context.Context, entityType string, en
 	return out, total, nil
 }
 
-// AdminListRevisions returns revisions for the admin review queue (newest
-// first). kind and status are optional filters — an empty string means no
-// filter (§80 community field ops review).
-func (s *Store) AdminListRevisions(ctx context.Context, kind, status string, limit, offset int32) ([]WikiRevision, int64, error) {
+// AdminListRevisions returns revisions for the admin review queue. kind,
+// status, and q are optional filters — an empty string means no filter.
+// sort is a whitelisted "key:dir" token ("created_at:asc|desc"); anything
+// else falls through to the created_at DESC default (§80 community field
+// ops review).
+func (s *Store) AdminListRevisions(ctx context.Context, kind, status, q, sort string, limit, offset int32) ([]WikiRevision, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -751,6 +763,8 @@ func (s *Store) AdminListRevisions(ctx context.Context, kind, status string, lim
 	rows, err := s.read.AdminListWikiRevisions(ctx, gen.AdminListWikiRevisionsParams{
 		Kind:      kind,
 		Status:    status,
+		Q:         q,
+		Sort:      sort,
 		OffsetVal: offset,
 		LimitVal:  limit,
 	})
@@ -766,6 +780,7 @@ func (s *Store) AdminListRevisions(ctx context.Context, kind, status string, lim
 	total, err := s.read.AdminCountWikiRevisions(ctx, gen.AdminCountWikiRevisionsParams{
 		Kind:   kind,
 		Status: status,
+		Q:      q,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin count revisions: %w", err)
@@ -847,6 +862,50 @@ func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, is
 
 	if affected == 0 {
 		return pgx.ErrNoRows
+	}
+
+	return nil
+}
+
+// ErrPageNotDeleted is returned by HardDeleteWikiPage when the page exists
+// but is not soft-deleted — permanent removal requires a prior soft delete
+// (§80).
+var ErrPageNotDeleted = errors.New("wiki page is not soft-deleted")
+
+// DeleteWikiPage soft-deletes a wiki page: deleted_at is stamped and
+// is_active flips false so every public reader excludes it. Returns
+// pgx.ErrNoRows when the page is missing or already deleted.
+func (s *Store) DeleteWikiPage(ctx context.Context, pageID pgtype.UUID) error {
+	affected, err := s.write.SoftDeleteWikiPage(ctx, pageID)
+	if err != nil {
+		return fmt.Errorf("wiki: soft delete page: %w", err)
+	}
+
+	if affected == 0 {
+		return pgx.ErrNoRows
+	}
+
+	return nil
+}
+
+// HardDeleteWikiPage permanently removes a soft-deleted page; revisions
+// cascade via ON DELETE CASCADE. Returns pgx.ErrNoRows when the page does
+// not exist and ErrPageNotDeleted when it exists but is still live.
+func (s *Store) HardDeleteWikiPage(ctx context.Context, pageID pgtype.UUID) error {
+	affected, err := s.write.HardDeleteWikiPage(ctx, pageID)
+	if err != nil {
+		return fmt.Errorf("wiki: hard delete page: %w", err)
+	}
+
+	if affected == 0 {
+		exists, err := s.read.WikiPageExists(ctx, pageID)
+		if err != nil {
+			return fmt.Errorf("wiki: check page exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		return ErrPageNotDeleted
 	}
 
 	return nil
@@ -997,8 +1056,11 @@ type AdminListPagesFilter struct {
 	IsLocked *bool
 	Q        string
 	Sort     string // "<key>:<dir>" — whitelisted CASE keys in the query
-	Limit    int32
-	Offset   int32
+	// Deleted selects the soft-delete scope (§80): '' excludes deleted rows,
+	// 'only' returns just them, 'all' includes both.
+	Deleted string
+	Limit   int32
+	Offset  int32
 }
 
 // AdminListPages returns all wiki pages for admin management (paginated).
@@ -1031,6 +1093,7 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		IsLocked:  f.IsLocked,
 		Q:         f.Q,
 		Sort:      f.Sort,
+		Deleted:   f.Deleted,
 		OffsetVal: offset,
 		LimitVal:  limit,
 	})
@@ -1053,6 +1116,7 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		}
 		p.LatestRevisionStatus = strPtrOrNil(r.LatestRevisionStatus)
 		p.Excerpt = strPtrOrNil(r.Excerpt)
+		p.DeletedAt = r.DeletedAt
 
 		out = append(out, p)
 	}
@@ -1063,6 +1127,7 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		Category: f.Category,
 		IsLocked: f.IsLocked,
 		Q:        f.Q,
+		Deleted:  f.Deleted,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin count pages: %w", err)

@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store wraps the sqlc-generated queries for university course catalog and
@@ -78,7 +80,8 @@ func toCourseOffering(row any) (CourseOffering, error) {
 			ID: r.ID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
 			Tuition: r.Tuition, Currency: r.Currency, DurationYears: r.DurationYears,
 			StudyMode: r.StudyMode, IntakeMonths: r.IntakeMonths, EntryRequirements: r.EntryRequirements,
-			Accreditation: r.Accreditation, IsPublished: r.IsPublished, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			Accreditation: r.Accreditation, IsPublished: r.IsPublished, DeletedAt: r.DeletedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 			CourseTitle: r.CourseTitle, CourseSlug: r.CourseSlug,
 			DegreeType:     r.DegreeType,
 			UniversityName: r.UniversityName, UniversitySlug: r.UniversitySlug,
@@ -177,7 +180,8 @@ func toCourseCatalog(row any) (CourseCatalog, error) {
 			ID: r.ID, Title: r.Title, Slug: r.Slug, Description: r.Description,
 			DegreeType: r.DegreeType, Department: r.Department, FieldOfStudy: r.FieldOfStudy,
 			Language: r.Language, DefaultDurationYears: r.DefaultDurationYears,
-			IsPublished: r.IsPublished, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			IsPublished: r.IsPublished, DeletedAt: r.DeletedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 			OfferingCount: r.OfferingCount,
 		}, nil
 	case gen.GetCourseCatalogByIDRow:
@@ -208,22 +212,25 @@ func toCourseCatalog(row any) (CourseCatalog, error) {
 }
 
 // CatalogListFilters are the admin list filters for the course catalog.
+// Deleted is '' (live only), 'only' (soft-deleted), or 'all'.
 type CatalogListFilters struct {
 	Search      string
 	DegreeType  string
 	IsPublished *bool
+	Deleted     string
 	Sort        string
 	Limit       int32
 	Offset      int32
 }
 
 // ListCatalogAdmin returns catalog rows for the admin DataTable (all publish
-// states, soft-deleted excluded).
+// states; soft-deleted excluded unless f.Deleted is 'only' or 'all').
 func (s *Store) ListCatalogAdmin(ctx context.Context, f CatalogListFilters) ([]CourseCatalog, error) {
 	rows, err := s.read.ListCourseCatalogAdmin(ctx, gen.ListCourseCatalogAdminParams{
 		Search:      f.Search,
 		DegreeType:  f.DegreeType,
 		IsPublished: f.IsPublished,
+		Deleted:     f.Deleted,
 		Sort:        f.Sort,
 		LimitVal:    f.Limit,
 		OffsetVal:   f.Offset,
@@ -250,6 +257,7 @@ func (s *Store) CountCatalogAdmin(ctx context.Context, f CatalogListFilters) (in
 		Search:      f.Search,
 		DegreeType:  f.DegreeType,
 		IsPublished: f.IsPublished,
+		Deleted:     f.Deleted,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("university_courses: count catalog admin: %w", err)
@@ -299,25 +307,61 @@ func (s *Store) SoftDeleteCatalog(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
+// HardDeleteCatalog permanently removes a soft-deleted catalog row. The
+// query refuses while any offering still references it (live or deleted) —
+// the FK cascade would otherwise silently remove live children. Returns
+// pgx.ErrNoRows when missing, errpkg.ErrInUse when offerings remain, and
+// errpkg.ErrNotDeleted when the row is still live.
+func (s *Store) HardDeleteCatalog(ctx context.Context, id pgtype.UUID) error {
+	affected, err := s.write.HardDeleteCourseCatalog(ctx, id)
+	if err != nil {
+		return fmt.Errorf("university_courses: hard delete catalog: %w", err)
+	}
+
+	if affected == 0 {
+		exists, err := s.read.CourseCatalogExists(ctx, id)
+		if err != nil {
+			return fmt.Errorf("university_courses: check catalog exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		hasOfferings, err := s.read.CourseCatalogHasOfferings(ctx, id)
+		if err != nil {
+			return fmt.Errorf("university_courses: check catalog offerings: %w", err)
+		}
+		if hasOfferings {
+			return errpkg.ErrInUse
+		}
+		return errpkg.ErrNotDeleted
+	}
+
+	return nil
+}
+
 // OfferingListFilters are the admin list filters for course offerings.
+// Deleted is '' (live only), 'only' (soft-deleted), or 'all'.
 type OfferingListFilters struct {
 	Search       string
 	UniversityID pgtype.UUID
 	CourseID     pgtype.UUID
 	IsPublished  *bool
+	Deleted      string
 	Sort         string
 	Limit        int32
 	Offset       int32
 }
 
 // ListOfferingsAdmin returns offering rows for the admin DataTable (all
-// publish states, soft-deleted excluded), joined with catalog + university.
+// publish states; soft-deleted excluded unless f.Deleted is 'only' or
+// 'all'), joined with catalog + university.
 func (s *Store) ListOfferingsAdmin(ctx context.Context, f OfferingListFilters) ([]CourseOffering, error) {
 	rows, err := s.read.ListCourseOfferingsAdmin(ctx, gen.ListCourseOfferingsAdminParams{
 		Search:       f.Search,
 		UniversityID: f.UniversityID,
 		CourseID:     f.CourseID,
 		IsPublished:  f.IsPublished,
+		Deleted:      f.Deleted,
 		Sort:         f.Sort,
 		LimitVal:     f.Limit,
 		OffsetVal:    f.Offset,
@@ -345,6 +389,7 @@ func (s *Store) CountOfferingsAdmin(ctx context.Context, f OfferingListFilters) 
 		UniversityID: f.UniversityID,
 		CourseID:     f.CourseID,
 		IsPublished:  f.IsPublished,
+		Deleted:      f.Deleted,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("university_courses: count offerings admin: %w", err)
@@ -377,6 +422,28 @@ func (s *Store) UpdateOffering(ctx context.Context, p gen.UpdateCourseOfferingPa
 func (s *Store) SoftDeleteOffering(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.SoftDeleteCourseOffering(ctx, id); err != nil {
 		return fmt.Errorf("university_courses: delete offering: %w", err)
+	}
+
+	return nil
+}
+
+// HardDeleteOffering permanently removes a soft-deleted offering. Returns
+// pgx.ErrNoRows when missing and errpkg.ErrNotDeleted when still live.
+func (s *Store) HardDeleteOffering(ctx context.Context, id pgtype.UUID) error {
+	affected, err := s.write.HardDeleteCourseOffering(ctx, id)
+	if err != nil {
+		return fmt.Errorf("university_courses: hard delete offering: %w", err)
+	}
+
+	if affected == 0 {
+		exists, err := s.read.CourseOfferingExists(ctx, id)
+		if err != nil {
+			return fmt.Errorf("university_courses: check offering exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		return errpkg.ErrNotDeleted
 	}
 
 	return nil

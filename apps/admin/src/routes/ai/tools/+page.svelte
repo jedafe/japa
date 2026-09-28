@@ -8,6 +8,9 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Pencil, Trash2, Loader2, AlertCircle } from 'lucide-svelte';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 
 	// Backend admin AI tools routes (GET/PUT/DELETE /admin/ai/tools*) are
 	// gated by ai.tools.manage (server.go:4002-4011). The frontend must
@@ -19,7 +22,14 @@
 	let usage = $state<AiUsageSummary | null>(null);
 	let loading = $state(true);
 	let error = $state('');
-	let activeTab = $state<'tools' | 'usage'>('tools');
+	const AI_TOOLS_TABS = ['tools', 'usage'] as const;
+	let activeTab = $state<'tools' | 'usage'>(initTabParam('tools', { valid: AI_TOOLS_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: AI_TOOLS_TABS });
+	// ?tab=generate|models deep-links live on /ai — forward them there.
+	$effect(() => {
+		const t = page.url.searchParams.get('tab');
+		if (t === 'generate' || t === 'models') void goto(`/ai?tab=${t}`);
+	});
 	let showEditSlideOver = $state(false);
 	let editingTool = $state<AiTool | null>(null);
 	let saving = $state(false);

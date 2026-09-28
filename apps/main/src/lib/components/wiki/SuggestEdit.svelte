@@ -27,6 +27,7 @@
 		entityId,
 		label = undefined,
 		fieldsData = undefined,
+		proposeGroupSlug = undefined,
 		open = $bindable(false),
 		showTrigger = true,
 		onsubmitted = undefined
@@ -38,6 +39,9 @@
 		/** Prefetched schema — a parent that already loaded GET .../fields can
 		 *  pass the result to share one request. */
 		fieldsData?: WikiEntityFields | null;
+		/** §80 Wiki Types: the bound category group's slug. Field proposals
+		 *  target it implicitly — members never pick a group. */
+		proposeGroupSlug?: string;
 		open?: boolean;
 		/** When false only the dialog renders — open it via bind:open. */
 		showTrigger?: boolean;
@@ -63,7 +67,7 @@
 
 	const pendingCount = $derived(schema?.pending_count ?? 0);
 	// Propose-tier ops UI: the schema reports can_propose (wiki.fields.propose
-	// or manage) and the entity_class token propose_group needs.
+	// or manage).
 	const canPropose = $derived(schema?.can_propose === true);
 
 	// ── "Propose a new field" form state ─────────────────────────────────
@@ -75,9 +79,6 @@
 	let pfType = $state('');
 	let pfOptions = $state('');
 	let pfGroupSlug = $state('');
-	let pfGroupName = $state('');
-	let pfGroupSlugTouched = $state(false);
-	let pfNewGroupSlug = $state('');
 	let pfError = $state('');
 	// Ops queued by the propose form — submitted alongside set_value ops.
 	let proposedOps = $state<WikiFieldOp[]>([]);
@@ -101,17 +102,6 @@
 		pfKey = slugifyFieldKey((e.currentTarget as HTMLInputElement).value);
 	}
 
-	function onPfGroupNameInput(e: Event) {
-		pfGroupName = (e.currentTarget as HTMLInputElement).value;
-		if (!pfGroupSlugTouched) {
-			pfNewGroupSlug = pfGroupName
-				.toLowerCase()
-				.trim()
-				.replace(/[^a-z0-9]+/g, '-')
-				.replace(/^-+|-+$/g, '');
-		}
-	}
-
 	async function togglePropose() {
 		proposeOpen = !proposeOpen;
 		if (proposeOpen && fieldTypes.length === 0) {
@@ -123,6 +113,14 @@
 	// Choice-bearing types: select/multiselect require options at submit;
 	// suggest accepts an optional static list alongside its option sources.
 	const CHOICE_TYPES = new Set(['select', 'multiselect', 'suggest']);
+
+	// §80: the proposal target group is implicit — the bound category group
+	// (proposeGroupSlug) when the page binds one, else the schema's sole
+	// group. A picker only renders when several groups could apply.
+	const resolvedProposeGroup = $derived(
+		proposeGroupSlug ?? (schema && schema.groups.length === 1 ? schema.groups[0].slug : '')
+	);
+	const showGroupPicker = $derived(!resolvedProposeGroup && (schema?.groups.length ?? 0) > 1);
 	const pfOptionsRequired = $derived(pfType === 'select' || pfType === 'multiselect');
 
 	function addProposedField() {
@@ -148,39 +146,20 @@
 		}
 		const field: WikiFieldDefInput = { key, label, field_type: pfType };
 		if (options.length > 0) field.options = options;
-		if (pfGroupSlug === '__new__') {
-			const gName = pfGroupName.trim();
-			if (!gName || !pfNewGroupSlug) {
-				pfError = 'wiki.missing_fields';
-				return;
-			}
-			proposedOps = [
-				...proposedOps,
-				{
-					op: 'propose_group',
-					entity_class: schema?.entity_class,
-					group: { slug: pfNewGroupSlug, name: gName, fields: [field] }
-				}
-			];
-			proposedLabels = [...proposedLabels, `${gName} › ${label}`];
-		} else {
-			if (!pfGroupSlug) {
-				pfError = 'wiki.missing_fields';
-				return;
-			}
-			proposedOps = [
-				...proposedOps,
-				{ op: 'propose_field', group_slug: pfGroupSlug, field }
-			];
-			proposedLabels = [...proposedLabels, label];
+		const targetGroup = resolvedProposeGroup || pfGroupSlug;
+		if (!targetGroup) {
+			pfError = 'wiki.missing_fields';
+			return;
 		}
+		proposedOps = [
+			...proposedOps,
+			{ op: 'propose_field', group_slug: targetGroup, field }
+		];
+		proposedLabels = [...proposedLabels, label];
 		pfLabel = '';
 		pfKey = '';
 		pfKeyTouched = false;
 		pfOptions = '';
-		pfGroupName = '';
-		pfNewGroupSlug = '';
-		pfGroupSlugTouched = false;
 	}
 
 	$effect(() => {
@@ -285,14 +264,37 @@
 		return JSON.stringify(v);
 	}
 
+	// Controls emit '' when cleared (select/date/time/datetime/text inputs)
+	// and NaN for emptied number inputs — both mean "no value", which the
+	// backend expects as JSON null. Normalizing before the change check also
+	// keeps a cleared-but-already-empty field from producing a no-op
+	// set_value.
+	function normValue(v: unknown): unknown {
+		if (v === '' || v === null || v === undefined) return null;
+		if (typeof v === 'number' && Number.isNaN(v)) return null;
+		if (Array.isArray(v) && v.length === 0) return null;
+		return v;
+	}
+
 	function changedOps(): WikiFieldOp[] {
 		const ops: WikiFieldOp[] = [];
 		if (!schema) return ops;
 		for (const g of schema.groups) {
 			for (const f of g.fields) {
 				if (!f.visible || !f.can_edit) continue;
-				const cur = values[f.key] ?? null;
-				const init = initialValues[f.key] ?? null;
+				// <input type="datetime-local"> carries the wall-clock time
+				// with no zone; emit UTC RFC3339 so the backend stores the
+				// instant the user saw, not the same digits read as UTC.
+				const norm = (v: unknown) => {
+					const n = normValue(v);
+					if (n !== null && f.field_type === 'datetime') {
+						const d = new Date(n as string);
+						if (!Number.isNaN(d.getTime())) return d.toISOString();
+					}
+					return n;
+				};
+				const cur = norm(values[f.key]);
+				const init = norm(initialValues[f.key]);
 				if (JSON.stringify(cur) === JSON.stringify(init)) continue;
 				ops.push({
 					op: 'set_value',
@@ -407,7 +409,7 @@
 								{t('common.retry', 'Try again')}
 							</button>
 						</div>
-					{:else if schema && !hasVisibleFields && !canPropose}
+					{:else if schema && !hasVisibleFields && !(canPropose && (resolvedProposeGroup !== '' || showGroupPicker))}
 						<p class="py-4 text-sm text-[var(--color-muted)]">
 							{t('wiki.fields_empty', 'No editable fields for this entry.')}
 						</p>
@@ -451,7 +453,7 @@
 								{/if}
 							{/each}
 
-							{#if canPropose}
+							{#if canPropose && (resolvedProposeGroup !== '' || showGroupPicker)}
 								<section class="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] p-3">
 									<button
 										type="button"
@@ -518,54 +520,21 @@
 													/>
 												</div>
 											{/if}
-											<div class="flex flex-col gap-1">
-												<label for="pf-group" class="text-xs font-medium text-[var(--color-text)]">
-													{t('wiki.field_group', 'Group')}
-												</label>
-												<select
-													id="pf-group"
-													bind:value={pfGroupSlug}
-													class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-												>
-													<option value="" disabled>—</option>
-													{#each schema.groups as g (g.id)}
-														<option value={g.slug}>{g.name}</option>
-													{/each}
-													{#if schema.entity_class}
-														<option value="__new__">{t('wiki.new_group_option', 'New group…')}</option>
-													{/if}
-												</select>
-											</div>
-											{#if pfGroupSlug === '__new__'}
+											{#if showGroupPicker}
 												<div class="flex flex-col gap-1">
-													<label for="pf-group-name" class="text-xs font-medium text-[var(--color-text)]">
-														{t('wiki.group_name', 'Group name')}
+													<label for="pf-group" class="text-xs font-medium text-[var(--color-text)]">
+														{t('wiki.field_group', 'Group')}
 													</label>
-													<input
-														id="pf-group-name"
-														type="text"
-														value={pfGroupName}
-														oninput={onPfGroupNameInput}
+													<select
+														id="pf-group"
+														bind:value={pfGroupSlug}
 														class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-													/>
-												</div>
-												<div class="flex flex-col gap-1">
-													<label for="pf-group-slug" class="text-xs font-medium text-[var(--color-text)]">
-														{t('wiki.group_slug', 'Group slug')}
-													</label>
-													<input
-														id="pf-group-slug"
-														type="text"
-														value={pfNewGroupSlug}
-														oninput={(e) => {
-															pfGroupSlugTouched = true;
-															pfNewGroupSlug = e.currentTarget.value
-																.toLowerCase()
-																.replace(/[^a-z0-9]+/g, '-')
-																.replace(/^-+|-+$/g, '');
-														}}
-														class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-mono text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-													/>
+													>
+														<option value="" disabled>—</option>
+														{#each schema.groups as g (g.id)}
+															<option value={g.slug}>{g.name}</option>
+														{/each}
+													</select>
 												</div>
 											{/if}
 											{#if pfError}

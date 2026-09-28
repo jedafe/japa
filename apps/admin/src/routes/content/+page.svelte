@@ -2,6 +2,7 @@
 	// /content — migrated to the EntityPage scaffold; read-only moderation list
 	// (content is created by users, not from this page) with Remove/Restore/Feature
 	// state actions driven by a custom `actions` array + page-local confirm Modals.
+	import { page } from "$app/state";
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
@@ -76,6 +77,38 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state("");
 	let bulkRemoving = $state(false);
+
+	// ── Deep-link: ?view=<id> opens the row's view slide-over. The dashboard's
+	// Top Content links land here; fetch by id so the view works even when the
+	// row is not in the current page of results.
+	let viewHandled = $state("");
+	$effect(() => {
+		const viewId = page.url.searchParams.get("view") ?? "";
+		const ctrl = entityController;
+		if (!viewId) {
+			viewHandled = "";
+			return;
+		}
+		if (viewId === viewHandled || !ctrl) return;
+		viewHandled = viewId;
+		(async () => {
+			const res = await contentAdminApi.get(viewId);
+			if (!res.ok) {
+				pageError = res.error ?? t("content.view_failed", "Failed to load content");
+				return;
+			}
+			ctrl.openView(res.data as ContentItem);
+		})();
+	});
+
+	// Clear ?view= when the slide-over closes so re-clicking the same link
+	// re-opens the view.
+	function clearViewParam() {
+		const url = new URL(window.location.href);
+		if (!url.searchParams.has("view")) return;
+		url.searchParams.delete("view");
+		history.replaceState(history.state, "", url.toString());
+	}
 
 	async function bulkRemove(ids: Set<string>) {
 		const idArr = Array.from(ids);
@@ -312,7 +345,8 @@
 			}
 			throw new Error(result.error ?? t("common.error", "Failed to load content"));
 		},
-		viewSnippet: ContentView
+		viewSnippet: ContentView,
+		onViewClose: clearViewParam
 	});
 </script>
 

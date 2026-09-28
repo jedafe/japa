@@ -480,7 +480,7 @@
 	<div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">{pageError}</div>
 {/if}
 
-<Tabs {tabs} bind:value={activeTab} />
+<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 {#if activeTab === 'subscribers'}
 	<EntityPage config={subscriberConfig} bind:controller={subscriberController} />

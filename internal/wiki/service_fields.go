@@ -56,6 +56,11 @@ var ErrOpNotPermitted = errors.New("wiki: field op not permitted")
 // the entity does not exist or the type has no registered resolver.
 var ErrEntityNotResolvable = errors.New("wiki: entity not resolvable")
 
+// guestGroupSlug is the user_groups.slug of the anonymous/guest group
+// (§03 system group). Anonymous readers have no user_group_memberships row,
+// so the wiki schema resolves their can_view grants by group slug instead.
+const guestGroupSlug = "guest"
+
 // fieldReadStore is the narrow read-side interface the wiki service needs
 // from customfields.Service: submit-time field lookups + batched per-field
 // RBAC, and the group/assignment/value reads behind GetEntityFields. Writes
@@ -64,11 +69,13 @@ var ErrEntityNotResolvable = errors.New("wiki: entity not resolvable")
 // methods belong here.
 type fieldReadStore interface {
 	ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error)
+	ListVisibleFieldIDsForGroupSlug(ctx context.Context, groupSlug string) ([]pgtype.UUID, error)
 	ListEditableFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error)
 	GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error)
 	ListAssignmentsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroupAssignment, error)
 	ListFieldValuesWithDefsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error)
 	GetFieldGroup(ctx context.Context, id pgtype.UUID) (gen.CustomFieldGroup, error)
+	GetFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error)
 	ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
 }
 
@@ -199,10 +206,26 @@ func (s *Service) SubmitFieldOps(ctx context.Context, userID, pageID pgtype.UUID
 		return "", false, err
 	}
 
-	// set_value semantic validation: field exists (or is proposed earlier in
-	// the same array), the value coerces to the field's value column and
-	// belongs to its options, and field-level can_edit allows the submitter.
-	if err := s.checkSetValueFields(ctx, userID, ops, canManage); err != nil {
+	// The entity's assigned-group field schema — set_value resolves
+	// field_key inside it (keys are unique per group, never globally). Nil
+	// for target-less submissions; ops that need a schema field then fail.
+	schema, err := s.entitySchema(ctx, targetType, targetID)
+	if err != nil {
+		return "", false, err
+	}
+
+	// set_value semantic validation: field exists in the entity schema (or
+	// is proposed earlier in the same array), the value coerces to the
+	// field's value column and belongs to its options, and field-level
+	// can_edit allows the submitter.
+	if err := s.checkSetValueFields(ctx, userID, ops, canManage, schema); err != nil {
+		return "", false, err
+	}
+
+	// Schema-op targets: groups must exist (or be proposed earlier in the
+	// same array), field keys/group slugs must be free — a revision that
+	// can never apply must not queue as an unapprovable pending row.
+	if err := s.checkSchemaOpTargets(ctx, ops); err != nil {
 		return "", false, err
 	}
 
@@ -378,19 +401,10 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	// permission query per field. Both fail closed — a lookup error yields
 	// empty sets, keeping every field non-visible/non-editable rather than
 	// leaking values on a public route.
-	var visibleSet, editableSet map[string]bool
+	var editableSet map[string]bool
+	visibleSet := s.visibleFieldIDs(ctx, userID, canManage)
 
-	if !canManage {
-		if ids, perr := s.fields.ListVisibleFieldIDsForUser(ctx, userID); perr != nil {
-			slog.Warn("wiki: entity fields: visible-perm lookup failed",
-				"user_id", userID.String(), "error", perr)
-		} else {
-			visibleSet = make(map[string]bool, len(ids))
-			for _, id := range ids {
-				visibleSet[id.String()] = true
-			}
-		}
-
+	if !canManage && userID.Valid {
 		if ids, perr := s.fields.ListEditableFieldIDsForUser(ctx, userID); perr != nil {
 			slog.Warn("wiki: entity fields: editable-perm lookup failed",
 				"user_id", userID.String(), "error", perr)
@@ -479,6 +493,41 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	return dto, nil
 }
 
+// visibleFieldIDs resolves the caller's viewable-field set: membership-based
+// for authenticated users, the guest group's can_view grants for anonymous
+// readers (§06), nil for wiki.fields.manage holders who bypass field-level
+// RBAC entirely. Fail-closed — a lookup error yields nil so every field
+// stays non-visible rather than leaking values on a public route.
+func (s *Service) visibleFieldIDs(ctx context.Context, userID pgtype.UUID, canManage bool) map[string]bool {
+	if canManage || s.fields == nil {
+		return nil
+	}
+
+	var (
+		ids []pgtype.UUID
+		err error
+	)
+
+	if userID.Valid {
+		ids, err = s.fields.ListVisibleFieldIDsForUser(ctx, userID)
+	} else {
+		ids, err = s.fields.ListVisibleFieldIDsForGroupSlug(ctx, guestGroupSlug)
+	}
+
+	if err != nil {
+		slog.Warn("wiki: visible-perm lookup failed",
+			"user_id", userID.String(), "anonymous", !userID.Valid, "error", err)
+		return nil
+	}
+
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id.String()] = true
+	}
+
+	return set
+}
+
 // GetPageFields builds the bound field group's schema + the space's stored
 // values for a wiki page (§80 Wiki Types & Field-Group Pages): exactly one
 // group — the one the page's category binds — rather than every group
@@ -491,20 +540,11 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 	}
 
 	canManage := s.perms != nil && s.perms.HasPermission(ctx, userID, PermFieldsManage)
+	visibleSet := s.visibleFieldIDs(ctx, userID, canManage)
 
-	var visibleSet, editableSet map[string]bool
+	var editableSet map[string]bool
 
-	if !canManage {
-		if ids, perr := s.fields.ListVisibleFieldIDsForUser(ctx, userID); perr != nil {
-			slog.Warn("wiki: page fields: visible-perm lookup failed",
-				"user_id", userID.String(), "error", perr)
-		} else {
-			visibleSet = make(map[string]bool, len(ids))
-			for _, id := range ids {
-				visibleSet[id.String()] = true
-			}
-		}
-
+	if !canManage && userID.Valid {
 		if ids, perr := s.fields.ListEditableFieldIDsForUser(ctx, userID); perr != nil {
 			slog.Warn("wiki: page fields: editable-perm lookup failed",
 				"user_id", userID.String(), "error", perr)
@@ -627,8 +667,10 @@ func (s *Service) GetRevision(ctx context.Context, revID pgtype.UUID) (WikiRevis
 }
 
 // AdminListRevisions returns revisions for the admin review queue
-// (GET /admin/wiki/revisions) with optional kind/status filters (§80).
-func (s *Service) AdminListRevisions(ctx context.Context, kind, status string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
+// (GET /admin/wiki/revisions) with optional kind/status filters, a q
+// search term matched against summary and submitter username, and a
+// whitelisted sort key ("created_at:asc|desc") (§80).
+func (s *Service) AdminListRevisions(ctx context.Context, kind, status, q, sort string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -639,7 +681,7 @@ func (s *Service) AdminListRevisions(ctx context.Context, kind, status string, p
 
 	offset := (page - 1) * limit
 
-	revs, total, err := s.store.AdminListRevisions(ctx, kind, status, limit, offset)
+	revs, total, err := s.store.AdminListRevisions(ctx, kind, status, q, sort, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin list revisions: %w", err)
 	}
@@ -746,7 +788,37 @@ func (s *Service) approveOpsRevision(ctx context.Context, revID, reviewerID pgty
 		return fmt.Errorf("wiki: approve ops: %w", err)
 	}
 
-	if err := s.applyOps(ctx, tx, ops); err != nil {
+	// Rebuild the target entity's assigned-group schema inside the
+	// transaction — set_value/upsert_field resolve field_key within it,
+	// and proposal ops register new keys as they apply. Stored target wins;
+	// fall back to the ops array for revisions written before targets were
+	// recorded.
+	targetType, targetID := "", pgtype.UUID{}
+	if rev.TargetEntityType != nil {
+		targetType = *rev.TargetEntityType
+	}
+	if rev.TargetEntityID.Valid {
+		targetID = rev.TargetEntityID
+	}
+
+	if targetType == "" || !targetID.Valid {
+		if t, id, terr := resolveOpsTarget("", pgtype.UUID{}, ops); terr == nil {
+			targetType, targetID = t, id
+		}
+	}
+
+	schema, err := s.entitySchemaTx(ctx, tx, targetType, targetID)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+
+		if serr := s.store.SetApplyError(ctx, revID, err.Error()); serr != nil {
+			slog.Warn("wiki: record apply error failed", "revision_id", revID.String(), "error", serr)
+		}
+
+		return fmt.Errorf("wiki: approve ops: %w", err)
+	}
+
+	if err := s.applyOps(ctx, tx, ops, schema); err != nil {
 		// Roll back explicitly BEFORE recording the failure — the tx holds a
 		// row lock on this revision (ApproveRevisionTx already UPDATEd it),
 		// so SetApplyError's separate-pool write would deadlock waiting for
@@ -885,17 +957,17 @@ func (s *Service) checkOpsPermissions(ctx context.Context, userID pgtype.UUID, o
 	return nil
 }
 
-// checkSetValueFields validates every set_value op against the live field
-// definitions: the field must exist (or be created by an earlier proposal op
-// in the same array), the value must coerce to the field's storage column,
-// select/multiselect values must belong to the field's options, and the
-// submitter's user group must hold custom_field_permissions.can_edit on the
-// field — can_edit is skipped for canManage (§10) and for fields proposed in
-// the same array (new fields have no permission rows yet; §06 defaults apply
-// on creation).
-func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, ops []FieldOp, canManage bool) error {
-	proposed := proposedFieldKeys(ops)
-
+// checkSetValueFields validates every set_value op against the entity's
+// assigned-group field schema (entitySchemaFields — field keys resolve
+// inside the schema, never globally): the field must exist in the schema or
+// be created by an EARLIER proposal op in the same array (ops apply in
+// order — a set_value cannot rely on a proposal that follows it), the value
+// must coerce to the field's storage column and belong to its options, and
+// the submitter's user group must hold custom_field_permissions.can_edit on
+// the field — can_edit is skipped for canManage (§10) and for fields
+// proposed earlier in the same array (their §8.1a permission rows are
+// seeded at apply time).
+func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, ops []FieldOp, canManage bool, schema map[string]schemaField) error {
 	hasSetValue := false
 
 	for _, op := range ops {
@@ -933,18 +1005,40 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 		}
 	}
 
+	// Keys a proposal op creates are tracked positionally: only an EARLIER
+	// proposal counts, since ops apply in order. A set_value whose key was
+	// proposed later — or never — is rejected at submit rather than landing
+	// in the queue as an unapprovable pending revision.
+	proposed := make(map[string]bool)
+
 	for i, op := range ops {
-		if op.Op != OpSetValue || proposed[op.FieldKey] {
+		switch op.Op {
+		case OpProposeField, OpUpsertField:
+			if op.Field != nil && op.Field.Key != "" {
+				proposed[op.Field.Key] = true
+			}
+			continue
+		case OpProposeGroup:
+			if op.Group != nil {
+				for _, f := range op.Group.Fields {
+					if f.Key != "" {
+						proposed[f.Key] = true
+					}
+				}
+			}
+			continue
+		case OpSetValue:
+		default:
 			continue
 		}
 
-		field, err := s.fields.GetCustomFieldByKey(ctx, op.FieldKey)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return fmt.Errorf("wiki: submit fields: ops[%d] field %q does not exist", i, op.FieldKey)
+		field, exists := schema[op.FieldKey]
+		if !exists {
+			if proposed[op.FieldKey] {
+				continue
 			}
 
-			return fmt.Errorf("wiki: submit fields: ops[%d] lookup field %q: %w", i, op.FieldKey, err)
+			return fmt.Errorf("wiki: submit fields: ops[%d] field %q does not exist in the entity's field schema", i, op.FieldKey)
 		}
 
 		var eid pgtype.UUID
@@ -964,7 +1058,7 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 			continue
 		}
 
-		if !editableSet[field.ID.String()] {
+		if !editableSet[field.id.String()] {
 			return fmt.Errorf("%w: ops[%d] field %q is not editable by your user group", ErrOpNotPermitted, i, op.FieldKey)
 		}
 	}
@@ -972,32 +1066,96 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 	return nil
 }
 
-// proposedFieldKeys collects the field keys created by proposal ops in this
-// array — propose_field's field.key, each field of a propose_group, and
-// upsert_field's field.key (upsert creates missing keys at apply time, so a
-// manage-tier set_value may reference them too). A set_value targeting one
-// of these keys skips the existence/can_edit checks.
-func proposedFieldKeys(ops []FieldOp) map[string]bool {
-	proposed := make(map[string]bool)
-
-	for _, op := range ops {
-		switch op.Op {
-		case OpProposeField, OpUpsertField:
-			if op.Field != nil && op.Field.Key != "" {
-				proposed[op.Field.Key] = true
+// checkSchemaOpTargets resolves the group targets of schema-changing ops at
+// submit time so a revision that can never apply is rejected instead of
+// queuing as an unapprovable pending row: a propose_field/upsert_field/
+// assign_group group must exist (or be created by an earlier propose_group
+// in the same array), a propose_field key must be free inside its group
+// (the INSERT would violate the group_id+key unique constraint at apply),
+// and a propose_group slug must be free.
+func (s *Service) checkSchemaOpTargets(ctx context.Context, ops []FieldOp) error {
+	if s.fields == nil {
+		for _, op := range ops {
+			switch op.Op {
+			case OpProposeField, OpProposeGroup, OpUpsertField, OpAssignGroup:
+				return errors.New("wiki: custom fields service not configured")
 			}
+		}
+
+		return nil
+	}
+
+	// Groups and keys introduced by earlier proposal ops — valid targets for
+	// subsequent ops even though they do not exist yet.
+	pendingGroups := make(map[string]map[string]bool)
+
+	for i, op := range ops {
+		switch op.Op {
 		case OpProposeGroup:
-			if op.Group != nil {
-				for _, f := range op.Group.Fields {
-					if f.Key != "" {
-						proposed[f.Key] = true
+			slug := op.Group.Slug
+			if _, dup := pendingGroups[slug]; dup {
+				return fmt.Errorf("wiki: submit fields: ops[%d] proposes group %q twice", i, slug)
+			}
+
+			if _, err := s.fields.GetFieldGroupBySlug(ctx, slug); err == nil {
+				return fmt.Errorf("wiki: submit fields: ops[%d] group slug %q already exists", i, slug)
+			} else if !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("wiki: submit fields: ops[%d] lookup group %q: %w", i, slug, err)
+			}
+
+			pendingGroups[slug] = make(map[string]bool)
+			for _, f := range op.Group.Fields {
+				pendingGroups[slug][f.Key] = true
+			}
+		case OpProposeField:
+			if pending, ok := pendingGroups[op.GroupSlug]; ok {
+				if op.Field != nil {
+					if pending[op.Field.Key] {
+						return fmt.Errorf("wiki: submit fields: ops[%d] field %q is already proposed for group %q", i, op.Field.Key, op.GroupSlug)
+					}
+					pending[op.Field.Key] = true
+				}
+
+				continue
+			}
+
+			group, err := s.fields.GetFieldGroupBySlug(ctx, op.GroupSlug)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return fmt.Errorf("wiki: submit fields: ops[%d] group %q does not exist", i, op.GroupSlug)
+				}
+
+				return fmt.Errorf("wiki: submit fields: ops[%d] lookup group %q: %w", i, op.GroupSlug, err)
+			}
+
+			if op.Field != nil && op.Field.Key != "" {
+				fields, err := s.fields.ListFieldsByGroup(ctx, group.ID)
+				if err != nil {
+					return fmt.Errorf("wiki: submit fields: ops[%d] list fields for group %q: %w", i, op.GroupSlug, err)
+				}
+
+				for _, f := range fields {
+					if f.Key == op.Field.Key {
+						return fmt.Errorf("wiki: submit fields: ops[%d] field %q already exists in group %q", i, op.Field.Key, op.GroupSlug)
 					}
 				}
+			}
+		case OpUpsertField, OpAssignGroup:
+			if _, ok := pendingGroups[op.GroupSlug]; ok {
+				continue
+			}
+
+			if _, err := s.fields.GetFieldGroupBySlug(ctx, op.GroupSlug); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return fmt.Errorf("wiki: submit fields: ops[%d] group %q does not exist", i, op.GroupSlug)
+				}
+
+				return fmt.Errorf("wiki: submit fields: ops[%d] lookup group %q: %w", i, op.GroupSlug, err)
 			}
 		}
 	}
 
-	return proposed
+	return nil
 }
 
 // resolveOpsTarget derives the revision's (target_entity_type,
@@ -1055,17 +1213,17 @@ func resolveOpsTarget(entityType string, entityID pgtype.UUID, ops []FieldOp) (s
 // a select field must name one of the field's option values, and a
 // multiselect must name a subset. Other field types (and select fields with
 // no options configured) pass through.
-func valueWithinOptions(field gen.GetCustomFieldByKeyRow, v json.RawMessage) error {
-	if field.FieldType != customfields.FieldTypeSelect && field.FieldType != customfields.FieldTypeMultiselect {
+func valueWithinOptions(field schemaField, v json.RawMessage) error {
+	if field.fieldType != customfields.FieldTypeSelect && field.fieldType != customfields.FieldTypeMultiselect {
 		return nil
 	}
 
-	if len(field.Options) == 0 || string(v) == "null" {
+	if len(field.options) == 0 || string(v) == "null" {
 		return nil
 	}
 
 	var opts []customfields.FieldOption
-	if err := json.Unmarshal(field.Options, &opts); err != nil || len(opts) == 0 {
+	if err := json.Unmarshal(field.options, &opts); err != nil || len(opts) == 0 {
 		return nil // malformed/empty options — nothing to check against
 	}
 
@@ -1076,16 +1234,16 @@ func valueWithinOptions(field gen.GetCustomFieldByKeyRow, v json.RawMessage) err
 
 	check := func(val string) error {
 		if !allowed[val] {
-			return fmt.Errorf("field %q: value %q is not one of the field's options", field.Key, val)
+			return fmt.Errorf("field %q: value %q is not one of the field's options", field.key, val)
 		}
 
 		return nil
 	}
 
-	if field.FieldType == customfields.FieldTypeSelect {
+	if field.fieldType == customfields.FieldTypeSelect {
 		var s string
 		if err := json.Unmarshal(v, &s); err != nil {
-			return fmt.Errorf("field %q expects a JSON string value: %w", field.Key, err)
+			return fmt.Errorf("field %q expects a JSON string value: %w", field.key, err)
 		}
 
 		return check(s)
@@ -1093,7 +1251,7 @@ func valueWithinOptions(field gen.GetCustomFieldByKeyRow, v json.RawMessage) err
 
 	var arr []string
 	if err := json.Unmarshal(v, &arr); err != nil {
-		return fmt.Errorf("field %q expects a JSON array of option values: %w", field.Key, err)
+		return fmt.Errorf("field %q expects a JSON array of option values: %w", field.key, err)
 	}
 
 	for _, s := range arr {
@@ -1203,4 +1361,130 @@ func cfvValueJSON(v gen.ListCustomFieldValuesWithDefsByEntityRow) json.RawMessag
 	}
 
 	return nil
+}
+
+// schemaFieldReader is the read shape entitySchemaFields needs — satisfied
+// by fieldReadStore (submit path, via s.fields) and genSchemaSource (apply
+// path, bound to the approval transaction).
+type schemaFieldReader interface {
+	ListAssignmentsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroupAssignment, error)
+	ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
+}
+
+// genSchemaSource adapts a transaction-bound *gen.Queries to
+// schemaFieldReader so the approval path reads the schema inside its own
+// transaction.
+type genSchemaSource struct{ q *gen.Queries }
+
+func (g genSchemaSource) ListAssignmentsByEntityClass(ctx context.Context, class string) ([]gen.CustomFieldGroupAssignment, error) {
+	return g.q.ListAssignmentsByEntityClass(ctx, class)
+}
+
+func (g genSchemaSource) ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
+	return g.q.ListCustomFieldsByGroup(ctx, groupID)
+}
+
+// entitySchema builds the revision target's assigned-group field map — the
+// §8.1 "editable schema" scope set_value and upsert_field resolve field_key
+// inside. Reads go through s.fields (the same source GetEntityFields uses)
+// so submit-time checks and display resolve keys identically. Returns nil
+// for target-less revisions, unresolvable entities, or when the
+// custom-fields service is not configured.
+func (s *Service) entitySchema(ctx context.Context, entityType string, entityID pgtype.UUID) (map[string]schemaField, error) {
+	if entityType == "" || !entityID.Valid || s.fields == nil {
+		return nil, nil
+	}
+
+	var spaceTypeID pgtype.UUID
+	var spaceTypeSlug string
+
+	if isSpaceBackedEntityType(entityType) && s.store != nil {
+		id, slug, err := s.store.GetSpaceTypeRef(ctx, entityID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, nil
+			}
+
+			return nil, fmt.Errorf("wiki: schema fields: resolve space type: %w", err)
+		}
+
+		spaceTypeID, spaceTypeSlug = id, slug
+	}
+
+	return entitySchemaFields(ctx, s.fields, entityType, entityID, spaceTypeID, spaceTypeSlug)
+}
+
+// entitySchemaTx is the apply-path twin of entitySchema: it reads the schema
+// inside the caller's transaction (no dependency on the injected read
+// service) so the ops apply against the state the approval will commit.
+func (s *Service) entitySchemaTx(ctx context.Context, tx pgx.Tx, entityType string, entityID pgtype.UUID) (map[string]schemaField, error) {
+	if entityType == "" || !entityID.Valid {
+		return nil, nil
+	}
+
+	q := gen.New(tx)
+
+	var spaceTypeID pgtype.UUID
+	var spaceTypeSlug string
+
+	if isSpaceBackedEntityType(entityType) {
+		ref, err := q.GetSpaceTypeRef(ctx, entityID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, nil
+			}
+
+			return nil, fmt.Errorf("wiki: schema fields: resolve space type: %w", err)
+		}
+
+		spaceTypeID, spaceTypeSlug = ref.SpaceTypeID, ref.SpaceTypeSlug
+	}
+
+	return entitySchemaFields(ctx, genSchemaSource{q}, entityType, entityID, spaceTypeID, spaceTypeSlug)
+}
+
+// entitySchemaFields builds the field_key → field map over the entity's
+// assigned groups. Field keys are unique only per group (custom_fields
+// group_id+key), not globally — a global key lookup can return a field from
+// an unrelated group and would check permissions on, or write values to,
+// the wrong row. When a key exists in two assigned groups the first (in
+// assignment order) wins — matching what GetEntityFields displays.
+func entitySchemaFields(ctx context.Context, f schemaFieldReader, entityType string, entityID pgtype.UUID, spaceTypeID pgtype.UUID, spaceTypeSlug string) (map[string]schemaField, error) {
+	seenGroups := make(map[string]bool)
+	out := make(map[string]schemaField)
+
+	for _, class := range entityClassesFor(entityType, spaceTypeID, spaceTypeSlug) {
+		assignments, err := f.ListAssignmentsByEntityClass(ctx, class)
+		if err != nil {
+			return nil, fmt.Errorf("wiki: schema fields: list assignments for %q: %w", class, err)
+		}
+
+		for _, a := range assignments {
+			if a.EntityID.Valid && a.EntityID != entityID {
+				continue
+			}
+			if seenGroups[a.GroupID.String()] {
+				continue
+			}
+			seenGroups[a.GroupID.String()] = true
+
+			fields, err := f.ListFieldsByGroup(ctx, a.GroupID)
+			if err != nil {
+				return nil, fmt.Errorf("wiki: schema fields: list fields for group %s: %w", a.GroupID.String(), err)
+			}
+
+			for _, field := range fields {
+				if _, dup := out[field.Key]; !dup {
+					out[field.Key] = schemaField{
+						id:        field.ID,
+						key:       field.Key,
+						fieldType: field.FieldType,
+						options:   field.Options,
+					}
+				}
+			}
+		}
+	}
+
+	return out, nil
 }

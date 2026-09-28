@@ -26,6 +26,7 @@
 		verification_type?: string | null;
 		created_at: string;
 		status?: string;
+		deleted_at?: string | null;
 	};
 
 	type PendingClaim = {
@@ -60,6 +61,59 @@
 			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete organisations");
 		} finally {
 			bulkDeleting = false;
+		}
+	}
+
+	// ── Force delete — single + bulk share one confirm modal ──
+	// BulkAction.onclick receives only ids — resolve them against a map of
+	// every row seen this session so deleted-row filtering keeps working.
+	const orgRowMap = new Map<string, Organisation>();
+	const orgRowsFor = (ids: Set<string>): Organisation[] =>
+		Array.from(ids)
+			.map((id) => orgRowMap.get(id))
+			.filter((r): r is Organisation => !!r);
+
+	let forceTargets = $state<Organisation[]>([]);
+	let showForceModal = $state(false);
+
+	function openForceDelete(row: Organisation) {
+		forceTargets = [row];
+		showForceModal = true;
+	}
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = orgRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (acting || forceTargets.length === 0) return;
+		acting = true;
+		pageError = "";
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = "";
+			for (const row of targets) {
+				const res = await organisationsAdminApi.hardDelete(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? "";
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t("common.bulkDeletePartial", "{failed} of {n} items could not be deleted")
+						.replace("{failed}", String(failed))
+						.replace("{n}", String(targets.length)) + (lastErr ? ` — ${lastErr}` : "");
+			}
+			entityController?.reload();
+		} finally {
+			acting = false;
 		}
 	}
 
@@ -118,30 +172,39 @@
 			{ label: t("common.view", "View"), icon: Eye, onclick: (row: Organisation, ctx?: any) => ctx?.openView(row) }
 		];
 		if (canManage) {
-			acts.push({ label: t("common.edit", "Edit"), icon: Pencil, onclick: (row: Organisation, ctx?: any) => ctx?.openEdit(row) });
+			acts.push({ label: t("common.edit", "Edit"), icon: Pencil, onclick: (row: Organisation, ctx?: any) => ctx?.openEdit(row), show: (row: Organisation) => !row.deleted_at });
 			acts.push({
 				label: t("organisations.verify", "Verify"),
 				icon: ShieldCheck,
 				onclick: toggleVerify,
-				show: (row: Organisation) => !row.verified
+				show: (row: Organisation) => !row.deleted_at && !row.verified
 			});
 			acts.push({
 				label: t("organisations.unverify", "Unverify"),
 				icon: ShieldOff,
 				onclick: toggleVerify,
-				show: (row: Organisation) => row.verified
+				show: (row: Organisation) => !row.deleted_at && row.verified
 			});
 			acts.push({
 				label: t("organisations.approve_claim", "Approve Claim"),
 				icon: ShieldCheck,
 				onclick: (row: Organisation) => openClaim(row),
-				show: (row: Organisation) => !!pendingClaimsByOrg[row.id]
+				show: (row: Organisation) => !row.deleted_at && !!pendingClaimsByOrg[row.id]
 			});
 			acts.push({
 				label: t("common.delete", "Delete"),
 				icon: Trash2,
 				variant: "destructive",
-				onclick: (row: Organisation, ctx?: any) => ctx?.openDelete(row)
+				onclick: (row: Organisation, ctx?: any) => ctx?.openDelete(row),
+				show: (row: Organisation) => !row.deleted_at
+			});
+			// Permanent removal — only for already-soft-deleted rows.
+			acts.push({
+				label: t("common.force_delete", "Force Delete"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: (row: Organisation) => openForceDelete(row),
+				show: (row: Organisation) => !!row.deleted_at
 			});
 		}
 		return acts;
@@ -198,7 +261,17 @@
 		// BUG-022: Org type filter driven by the API meta endpoint (Rule 16).
 		...(orgTypeOptions.length > 0
 			? [{ key: "org_type", label: t("organisations.new.field_type", "Type"), options: orgTypeOptions }]
-			: [])
+			: []),
+		// Soft-deleted orgs are hidden by default — this filter surfaces them
+		// so the Force Delete action has targets.
+		{
+			key: "deleted",
+			label: t("common.filter_deleted", "Deleted"),
+			options: [
+				{ value: "only", label: t("common.filter_deleted_only", "Deleted only") },
+				{ value: "all", label: t("common.filter_deleted_all", "Include deleted") }
+			]
+		}
 	]);
 
 	// Config built as $derived so pendingClaimsByOrg updates propagate to the actions show() predicates.
@@ -224,7 +297,16 @@
 				label: t("common.delete_selected", "Delete Selected"),
 				icon: Trash2,
 				variant: "destructive",
-				onclick: bulkDelete
+				onclick: bulkDelete,
+				// Rows already soft-deleted can't be deleted again.
+				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
+			},
+			{
+				label: t("common.force_delete", "Force Delete Selected"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: openBulkForceDelete,
+				disabled: (ids) => acting || !orgRowsFor(ids).some((r) => !!r.deleted_at)
 			}
 		],
 		fields,
@@ -233,6 +315,7 @@
 			if (q) params.set("q", q);
 			if (filter.verified) params.set("verified", filter.verified);
 			if (filter.org_type) params.set("org_type", filter.org_type);
+			if (filter.deleted) params.set("deleted", filter.deleted);
 			const [orgResult, claimsResult] = await Promise.all([
 				apiRaw<{ data?: Organisation[]; items?: Organisation[]; meta?: { total?: number; total_pages?: number }; total?: number; total_pages?: number }>(`/admin/organizations?${params.toString()}`),
 				organisationsAdminApi.pendingClaims()
@@ -242,6 +325,7 @@
 			}
 			const d = orgResult.data;
 			const data = d?.data ?? d?.items ?? [];
+			for (const r of data) orgRowMap.set(r.id, r);
 			// BUG-019: Read pagination from meta (standard format), falling back
 			// to top-level for backwards compatibility.
 			const meta = d?.meta ?? {};
@@ -325,12 +409,35 @@
 	</div>
 </Modal>
 
+<!-- ── Force Delete confirmation (single + bulk) — permanent erasure of soft-deleted rows ── -->
+<Modal bind:open={showForceModal} title={t("common.force_delete", "Force Delete")} size="sm">
+	{#if forceTargets.length > 0}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{#if forceTargets.length === 1}
+				{t("common.force_delete_confirm", 'Permanently delete "{name}"? This cannot be undone.').replace("{name}", forceTargets[0].name)}
+			{:else}
+				{t("common.force_delete_confirm_bulk", "Permanently delete {count} selected items? This cannot be undone.").replace("{count}", String(forceTargets.length))}
+			{/if}
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showForceModal = false)} disabled={acting}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={acting}>{acting ? t("common.deleting", "Deleting...") : t("common.force_delete", "Force Delete")}</Button>
+	</div>
+</Modal>
+
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-{#snippet VerifiedCell({ value }: { value: any; row: Organisation })}
-	<span class={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${value ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}`}>
-		{value ? t("organisations.yes", "Yes") : t("organisations.no", "No")}
-	</span>
+{#snippet VerifiedCell({ value, row }: { value: any; row: Organisation })}
+	{#if row.deleted_at}
+		<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-danger/15 text-danger dark:text-danger">
+			{t("common.filter_deleted", "Deleted")}
+		</span>
+	{:else}
+		<span class={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${value ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}`}>
+			{value ? t("organisations.yes", "Yes") : t("organisations.no", "No")}
+		</span>
+	{/if}
 {/snippet}
 
 <!-- View slide-over body (mirrors the legacy view modal) -->

@@ -25,6 +25,7 @@
 		status: string;
 		visibility: string;
 		space_type: string;
+		deleted_at?: string | null;
 		created_at: string;
 		updated_at: string;
 	};
@@ -101,6 +102,16 @@
 			key: "visibility",
 			label: t("spaces.visibility", "Visibility"),
 			options: visibilityOptions
+		},
+		// Soft-deleted spaces are hidden by default — this filter surfaces
+		// them so the Force Delete action has targets.
+		{
+			key: "deleted",
+			label: t("common.filter_deleted", "Deleted"),
+			options: [
+				{ value: "only", label: t("common.filter_deleted_only", "Deleted only") },
+				{ value: "all", label: t("common.filter_deleted_all", "Include deleted") }
+			]
 		}
 	]);
 
@@ -124,19 +135,20 @@
 			acts.push({
 				label: t("common.edit", "Edit"),
 				icon: Pencil,
-				onclick: (row: Space) => openEdit(row)
+				onclick: (row: Space) => openEdit(row),
+				show: (row: Space) => !row.deleted_at
 			});
 		}
 		if (canModerateSpaces) {
 			acts.push({
 				label: t("spaces.suspend", "Suspend"),
 				onclick: (row: Space) => openSuspend(row),
-				show: (row: Space) => row.status !== "suspended"
+				show: (row: Space) => !row.deleted_at && row.status !== "suspended"
 			});
 			acts.push({
 				label: t("spaces.unsuspend", "Unsuspend"),
 				onclick: (row: Space) => openSuspend(row),
-				show: (row: Space) => row.status === "suspended"
+				show: (row: Space) => !row.deleted_at && row.status === "suspended"
 			});
 		}
 		if (canManageSpaces) {
@@ -144,7 +156,16 @@
 				label: t("common.delete", "Delete"),
 				icon: Trash2,
 				variant: "destructive",
-				onclick: (row: Space) => confirmDelete(row)
+				onclick: (row: Space) => confirmDelete(row),
+				show: (row: Space) => !row.deleted_at
+			});
+			// Permanent removal — only for already-soft-deleted rows.
+			acts.push({
+				label: t("common.force_delete", "Force Delete"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: (row: Space) => openForceDelete(row),
+				show: (row: Space) => !!row.deleted_at
 			});
 		}
 		return acts;
@@ -165,7 +186,10 @@
 			{
 				key: "status",
 				label: t("spaces.status", "Status"),
-				render: (v: string) => {
+				render: (v: string, row: Space) => {
+					if (row.deleted_at) {
+						return `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-danger/15 text-danger dark:text-danger">${t("common.filter_deleted", "Deleted")}</span>`;
+					}
 					const cls = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "suspended" ? "bg-danger/15 text-danger dark:text-danger" : "bg-muted/15 text-muted dark:text-muted";
 					const label = t(`spaces.${v}`, v);
 					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${label}</span>`;
@@ -181,7 +205,16 @@
 				label: t("common.delete_selected", "Delete Selected"),
 				icon: Trash2,
 				variant: "destructive",
-				onclick: bulkDelete
+				onclick: bulkDelete,
+				// Rows already soft-deleted can't be deleted again.
+				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
+			},
+			{
+				label: t("common.force_delete", "Force Delete Selected"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: openBulkForceDelete,
+				disabled: (ids) => acting || !spaceRowsFor(ids).some((r) => !!r.deleted_at)
 			}
 		] : [],
 		fields,
@@ -196,9 +229,12 @@
 			if (q) params.set("q", q);
 			if (filter?.status) params.set("status", filter.status);
 			if (filter?.visibility) params.set("visibility", filter.visibility);
+			if (filter?.deleted) params.set("deleted", filter.deleted);
 			const result = await spacesAdminApi.list(params.toString());
 			if (result.ok) {
 				const d = result.data as Space[] | { items: Space[]; total: number; total_pages: number };
+				const pageRows = Array.isArray(d) ? d : (d.items ?? []);
+				for (const r of pageRows) spaceRowMap.set(r.id, r);
 				if (Array.isArray(d)) {
 					const start = page * pageSize;
 					const total = d.length;
@@ -328,6 +364,59 @@
 			bulkDeleting = false;
 		}
 	}
+
+	// ── Force delete (spaces.admin) — single + bulk share one confirm modal ──
+	// BulkAction.onclick receives only ids — resolve them against a map of
+	// every row seen this session so deleted-row filtering keeps working.
+	const spaceRowMap = new Map<string, Space>();
+	const spaceRowsFor = (ids: Set<string>): Space[] =>
+		Array.from(ids)
+			.map((id) => spaceRowMap.get(id))
+			.filter((r): r is Space => !!r);
+
+	let forceTargets = $state<Space[]>([]);
+	let showForceModal = $state(false);
+
+	function openForceDelete(row: Space) {
+		forceTargets = [row];
+		showForceModal = true;
+	}
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = spaceRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (acting || forceTargets.length === 0) return;
+		acting = true;
+		pageError = "";
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = "";
+			for (const row of targets) {
+				const res = await spacesAdminApi.hardDelete(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? "";
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t("common.bulkDeletePartial", "{failed} of {n} items could not be deleted")
+						.replace("{failed}", String(failed))
+						.replace("{n}", String(targets.length)) + (lastErr ? ` — ${lastErr}` : "");
+			}
+			entityController?.reload();
+		} finally {
+			acting = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -374,6 +463,23 @@
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => (showDeleteConfirm = false)}>{t('spaces.cancel')}</Button>
 		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? t("common.deleting", "Deleting...") : t("common.delete", "Delete")}</Button>
+	</div>
+</Modal>
+
+<!-- Force Delete confirmation (single + bulk) — permanent erasure of soft-deleted rows -->
+<Modal bind:open={showForceModal} title={t("common.force_delete", "Force Delete")} size="sm">
+	{#if forceTargets.length > 0}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{#if forceTargets.length === 1}
+				{t("common.force_delete_confirm", 'Permanently delete "{name}"? This cannot be undone.').replace("{name}", forceTargets[0].name)}
+			{:else}
+				{t("common.force_delete_confirm_bulk", "Permanently delete {count} selected items? This cannot be undone.").replace("{count}", String(forceTargets.length))}
+			{/if}
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showForceModal = false)} disabled={acting}>{t('spaces.cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={acting}>{acting ? t("common.deleting", "Deleting...") : t("common.force_delete", "Force Delete")}</Button>
 	</div>
 </Modal>
 

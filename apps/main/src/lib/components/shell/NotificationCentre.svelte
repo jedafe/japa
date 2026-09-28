@@ -41,6 +41,7 @@
 	let { side = 'right', align = 'start', collapsed = false, class: klass = '', children }: Props = $props();
 
 	let notifications = $state<Notification[]>([]);
+	let loaded = $state(false);
 	let loading = $state(false);
 	let markingAll = $state(false);
 	let open = $state(false);
@@ -61,6 +62,9 @@
 	// WS event arrives (regardless of whether the dropdown is open).
 	function handleLiveNotification(n: Partial<Notification> & { id?: string }) {
 		if (!n.id) return;
+		// The same event can be delivered twice (reconnect replay) or arrive
+		// after the row was already fetched — never duplicate a key.
+		if (notifications.some((x) => x.id === n.id)) return;
 		const row: Notification = {
 			id: n.id,
 			notification_type: n.notification_type ?? 'system',
@@ -87,15 +91,26 @@
 
 	/** Fetch the first page when the dropdown opens (lazy — no SSR fetch). */
 	async function loadOnOpen() {
-		if (notifications.length > 0 || loading) return;
+		// `loaded` — not `notifications.length` — gates the fetch: a live
+		// prepend can populate the list before the dropdown is ever opened,
+		// and skipping the fetch then would show only realtime rows forever.
+		if (loaded || loading) return;
 		loading = true;
 		page = 0;
 		hasMore = true;
-		const res = await api.get<Notification[]>(`/me/notifications?page_size=20`);
+		const res = await api.getEnvelope<Notification[]>(`/me/notifications?page_size=20`);
 		if (res.data) {
-			notifications = res.data;
-			// BUG-015: if the API returned fewer than the page size, there's no more.
-			if (res.data.length < 20) hasMore = false;
+			// Merge with any realtime rows that arrived before the first fetch.
+			const fetched = new Set(res.data.map((x) => x.id));
+			notifications = [
+				...notifications.filter((x) => !fetched.has(x.id)),
+				...res.data
+			];
+			// §35: prefer the server's has_more sidecar; fall back to the
+			// short-page heuristic when the field is absent.
+			const serverHasMore = res.envelope?.['has_more'];
+			hasMore = typeof serverHasMore === 'boolean' ? serverHasMore : res.data.length >= 20;
+			loaded = true;
 		}
 		loading = false;
 	}
@@ -109,10 +124,18 @@
 		loadingMore = true;
 		page += 1;
 		const offset = page * 20;
-		const res = await api.get<Notification[]>(`/me/notifications?page_size=20&page_offset=${offset}`);
+		const res = await api.getEnvelope<Notification[]>(
+			`/me/notifications?page_size=20&page_offset=${offset}`
+		);
 		if (res.data) {
-			notifications = [...notifications, ...res.data];
-			if (res.data.length < 20) hasMore = false;
+			// Live prepends shift the server-side offset window, so a page can
+			// return rows we already have — drop duplicates to keep the keyed
+			// each-block valid.
+			const seen = new Set(notifications.map((x) => x.id));
+			const fresh = res.data.filter((x) => !seen.has(x.id));
+			notifications = [...notifications, ...fresh];
+			const serverHasMore = res.envelope?.['has_more'];
+			hasMore = typeof serverHasMore === 'boolean' ? serverHasMore : res.data.length >= 20;
 		} else {
 			hasMore = false;
 		}
@@ -127,9 +150,18 @@
 				x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x
 			);
 			realtime.decrementUnread(1);
-			void api.post(`/me/notifications/${n.id}/read`);
+			const res = await api.post(`/me/notifications/${n.id}/read`);
+			if (res.error) {
+				// Roll back the optimistic read so the unread state stays true.
+				notifications = notifications.map((x) =>
+					x.id === n.id ? { ...x, read_at: null } : x
+				);
+				realtime.incrementUnread(1);
+			}
 		}
-		if (n.action_url) goto(n.action_url);
+		// Only navigate to in-app paths — an absolute/external action_url would
+		// throw inside goto(). Non-path values are ignored safely.
+		if (n.action_url && n.action_url.startsWith('/')) goto(n.action_url);
 		open = false;
 	}
 

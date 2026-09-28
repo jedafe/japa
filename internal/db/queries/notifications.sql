@@ -28,6 +28,14 @@ SELECT COUNT(*)::int AS count
 FROM notifications
 WHERE recipient_id = @recipient_id AND read_at IS NULL;
 
+-- name: CountNotificationsByRecipient :one
+-- Total matching the same unread_only filter as GetNotificationsByRecipient,
+-- so the list endpoint can return { data, total, has_more } (§35).
+SELECT COUNT(*)::int AS count
+FROM notifications
+WHERE recipient_id = @recipient_id
+ AND (@unread_only::bool = false OR read_at IS NULL);
+
 -- name: MarkNotificationRead :exec
 UPDATE notifications SET read_at = now() WHERE id = @id AND recipient_id = @recipient_id;
 
@@ -97,6 +105,11 @@ WHERE id = @id;
 -- name: GetNotificationTypes :many
 SELECT key, label, description, category, enabled, default_in_app, default_email, default_push
 FROM notification_types ORDER BY key;
+
+-- name: GetNotificationTypeLabel :one
+-- Label lookup for a single type — used to enrich WebSocket `notification`
+-- payloads with type_label so clients don't fall back to a generic label.
+SELECT label FROM notification_types WHERE key = @key;
 
 -- name: AdminListNotificationTypes :many
 -- Admin list with offset pagination + search + enabled filter + sort (Section 35).

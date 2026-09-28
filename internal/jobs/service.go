@@ -445,6 +445,9 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 	}
 
 	whereClause := strings.Join(clauses, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	// Count query (no limit/offset).
 	countSQL := "\n\t\tSELECT COUNT(*) FROM contents c\n\t\tWHERE " + whereClause

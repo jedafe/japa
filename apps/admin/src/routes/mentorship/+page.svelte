@@ -434,7 +434,7 @@
 	<title>{t('app.mentorship.page_title', 'Mentorship — JapaConnect Admin')}</title>
 </svelte:head>
 
-<Tabs {tabs} bind:value={activeTab} />
+<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 {#if activeTab === 'programs'}
 	{#if programPageError}

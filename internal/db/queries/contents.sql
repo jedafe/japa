@@ -224,10 +224,9 @@ GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url;
 
 -- name: ContentSlugExists :one
--- Returns true if any contents row (including soft-deleted) in the platform
--- uses the given slug. The unique index on (slug) is not partial,
--- so a slug held by a deleted row is still unavailable.
-SELECT EXISTS(SELECT 1 FROM contents WHERE slug = @slug);
+-- Returns true if a live contents row uses the given slug. Mirrors the
+-- partial unique index (000745): soft-deleted rows no longer occupy slugs.
+SELECT EXISTS(SELECT 1 FROM contents WHERE slug = @slug AND deleted_at IS NULL);
 
 -- name: ListContents :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,

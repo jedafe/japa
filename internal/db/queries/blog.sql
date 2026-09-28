@@ -85,6 +85,17 @@ UPDATE blog_series
 SET deleted_at = now(), status = 'archived', updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
+-- name: HardDeleteBlogSeries :execrows
+-- Permanent delete — only for already-soft-deleted series (?force=true).
+-- blog_series_posts join rows cascade via ON DELETE CASCADE; the linked
+-- contents rows themselves are untouched.
+DELETE FROM blog_series WHERE id = @id AND deleted_at IS NOT NULL;
+
+-- name: BlogSeriesExists :one
+-- Existence probe for the hard-delete path: distinguishes 404 not_found
+-- from 409 not_deleted when the DELETE affects no row.
+SELECT EXISTS(SELECT 1 FROM blog_series WHERE id = @id) AS exists;
+
 -- =====================
 -- Blog Series Posts
 -- =====================

@@ -401,7 +401,7 @@
 		<Button variant="outline" size="sm" onclick={applyRange}>{t('common.apply', 'Apply')}</Button>
 	</div>
 
-	<Tabs {tabs} bind:value={activeTab} />
+	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={['from', 'to']} />
 	
 	{#if loading}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

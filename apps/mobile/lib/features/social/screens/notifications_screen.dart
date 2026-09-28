@@ -17,15 +17,31 @@ class NotificationsScreen extends ConsumerWidget {
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,
-          itemBuilder: (_, i) => ListTile(
-            title: Text(items[i].title ?? ''),
-            trailing: IconButton(
-              icon: const Icon(Icons.check),
-              onPressed: () => ref
-                  .read(socialServiceProvider)
-                  .markNotificationRead(items[i].id),
-            ),
-          ),
+          itemBuilder: (_, i) {
+            final n = items[i];
+            final unread = !(n.isRead ?? false);
+            return ListTile(
+              leading: unread
+                  ? Icon(Icons.circle,
+                      size: 10, color: Theme.of(context).colorScheme.primary)
+                  : const SizedBox(width: 10),
+              title: Text(
+                n.title ?? n.typeLabel ?? '',
+                style: TextStyle(
+                    fontWeight: unread ? FontWeight.w600 : FontWeight.normal),
+              ),
+              subtitle: (n.body?.isNotEmpty ?? false) ? Text(n.body!) : null,
+              trailing: unread
+                  ? IconButton(
+                      icon: const Icon(Icons.check),
+                      onPressed: () => ref
+                          .read(socialServiceProvider)
+                          .markNotificationRead(n.id)
+                          .then((_) => ref.invalidate(notificationsProvider)),
+                    )
+                  : null,
+            );
+          },
         ),
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(

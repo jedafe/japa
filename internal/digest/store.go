@@ -214,6 +214,9 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

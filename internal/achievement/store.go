@@ -216,6 +216,9 @@ func (s *Store) ListAchievements(ctx context.Context, f ListAchievementsFilter) 
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	orderClause := "c.published_at DESC NULLS LAST, c.created_at DESC"
 	if f.Sort == "top" {
@@ -542,6 +545,9 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Achievement
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

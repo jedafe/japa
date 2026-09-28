@@ -245,7 +245,12 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	types, err := h.Service.ListComparisonTypesWithCounts(r.Context(), limit, offset)
+	var userID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		userID = user.UserID
+	}
+
+	types, err := h.Service.ListComparisonTypesWithCounts(r.Context(), userID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -599,6 +604,11 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, content.ErrMissingPrimarySpace) {
 			errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_primary_space", "Content requires a primary space before publishing or scheduling")
+			return
+		}
+
+		if errors.Is(err, errpkg.ErrForbidden) {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Your group cannot create comparisons of this type")
 			return
 		}
 

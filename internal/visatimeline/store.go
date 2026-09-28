@@ -535,6 +535,9 @@ func (s *Store) GetTrend(ctx context.Context, destSpaceID pgtype.UUID, visaCateg
 	conditions = append(conditions, fmt.Sprintf("period_start >= now() - interval '%d months'", months))
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	q := fmt.Sprintf(`
 SELECT period_start, sample_count, avg_days, median_days
@@ -631,6 +634,9 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Timeline, i
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

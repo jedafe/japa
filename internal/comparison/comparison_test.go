@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	gen "github.com/jedafe/japa/internal/db/gen"
 )
 
 // ---------------------------------------------------------------------------
@@ -215,5 +216,82 @@ func TestComparisonMatrixDimensionDefaults(t *testing.T) {
 
 	if md.ValueBoolean != nil {
 		t.Error("expected nil ValueBoolean")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Comparison type access (§30 — can_create grants)
+// ---------------------------------------------------------------------------
+
+func TestAccessGrantsCreate(t *testing.T) {
+	t.Parallel()
+
+	var groupA, groupB pgtype.UUID
+	if err := groupA.Scan("11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatal(err)
+	}
+	if err := groupB.Scan("22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatal(err)
+	}
+
+	memberSet := map[string]bool{groupA.String(): true}
+
+	tests := []struct {
+		name     string
+		access   []gen.ListComparisonTypeAccessRow
+		groupSet map[string]bool
+		want     bool
+	}{
+		{name: "no access rows is unrestricted", access: nil, groupSet: memberSet, want: true},
+		{
+			name:     "wildcard grant allows any caller",
+			access:   []gen.ListComparisonTypeAccessRow{{CanCreate: true}},
+			groupSet: memberSet,
+			want:     true,
+		},
+		{
+			// The seeded cost_of_living shape: a single NULL-group row with
+			// can_create=false (system/AI-managed type) must deny everyone.
+			name:     "wildcard deny-only row blocks all users",
+			access:   []gen.ListComparisonTypeAccessRow{{CanCreate: false}},
+			groupSet: memberSet,
+			want:     false,
+		},
+		{
+			name:     "wildcard deny-only row blocks anonymous callers",
+			access:   []gen.ListComparisonTypeAccessRow{{CanCreate: false}},
+			groupSet: nil,
+			want:     false,
+		},
+		{
+			name:     "matching group grant allows member",
+			access:   []gen.ListComparisonTypeAccessRow{{UserGroupID: groupA, CanCreate: true}},
+			groupSet: memberSet,
+			want:     true,
+		},
+		{
+			name:     "non-matching group grant denies member",
+			access:   []gen.ListComparisonTypeAccessRow{{UserGroupID: groupB, CanCreate: true}},
+			groupSet: memberSet,
+			want:     false,
+		},
+		{
+			name: "deny row for one group does not block a grant for another",
+			access: []gen.ListComparisonTypeAccessRow{
+				{UserGroupID: groupB, CanCreate: false},
+				{UserGroupID: groupA, CanCreate: true},
+			},
+			groupSet: memberSet,
+			want:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := accessGrantsCreate(tt.access, tt.groupSet); got != tt.want {
+				t.Errorf("accessGrantsCreate() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

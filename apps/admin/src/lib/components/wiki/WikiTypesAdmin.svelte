@@ -5,6 +5,8 @@
 	// category template (slug + category token + optional field-group binding).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import {
 		wikiAdminApi,
 		fieldGroupsAdminApiExtended,
@@ -14,8 +16,8 @@
 	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, Pencil, Trash2, FolderTree, X } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { Eye, Pencil, Trash2, FolderTree, X, CheckCircle, XCircle } from 'lucide-svelte';
+	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 
 	const canManage = $derived(hasPermission('wiki.manage'));
 
@@ -51,6 +53,31 @@
 		}
 	}
 
+	// ── Autocomplete adapters for the space-type / field-group pickers ─────
+	// Both lists are loaded once at mount and filtered client-side — the
+	// dropdown is a search box, so the fetcher just narrows the cached list.
+	function filterOptions(opts: { value: string; label: string }[], q: string): AutocompleteItem[] {
+		const needle = q.trim().toLowerCase();
+		return opts
+			.filter((o) => o.value)
+			.map((o) => ({ id: o.value, label: o.label }))
+			.filter((i) => !needle || i.label.toLowerCase().includes(needle));
+	}
+
+	async function spaceTypeFetcher(q: string): Promise<AutocompleteItem[]> {
+		return filterOptions(spaceTypeOptions, q);
+	}
+
+	async function groupFetcher(q: string): Promise<AutocompleteItem[]> {
+		return filterOptions(groupOptions, q);
+	}
+
+	function spaceTypeLabel(id: unknown): string | null {
+		const sid = String(id ?? '');
+		if (!sid) return null;
+		return spaceTypeOptions.find((o) => o.value === sid)?.label ?? sid;
+	}
+
 	// ── Types table ─────────────────────────────────────────────────────────
 	let typesController = $state<EntityPageController | undefined>(undefined);
 	let catsController = $state<EntityPageController | undefined>(undefined);
@@ -59,6 +86,48 @@
 	// Map a type row: EntityPage's id-based row actions need `id`.
 	function mapType(row: WikiTypeItem) {
 		return { ...row, id: row.space_type_id, parents: (row.parent_type_ids ?? []).length };
+	}
+
+	// ── Bulk enable/disable ────────────────────────────────────────────────
+	// BulkAction.onclick receives only ids — resolve them against a map of
+	// every row seen this session (BulkBar's selectedRows covers just the
+	// current page).
+	const typeRowMap = new Map<string, WikiTypeItem>();
+	const typeRowsFor = (ids: Set<string>): WikiTypeItem[] =>
+		Array.from(ids)
+			.map((id) => typeRowMap.get(id))
+			.filter((r): r is WikiTypeItem => !!r);
+
+	let pageError = $state('');
+	let bulkActing = $state(false);
+
+	// Sequential per-row PATCHes — no bulk route; per-row failures are
+	// collected (same rule as EntityPage's built-in bulk delete) and the
+	// scaffold reloads + clears the selection when this resolves.
+	async function bulkSetEnabled(ids: Set<string>, enabled: boolean) {
+		const rows = typeRowsFor(ids).filter((r) => r.enabled !== enabled);
+		if (bulkActing || rows.length === 0) return;
+		bulkActing = true;
+		pageError = '';
+		try {
+			let failed = 0;
+			let lastErr = '';
+			for (const row of rows) {
+				const res = await wikiAdminApi.updateType(row.space_type_id, { enabled });
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			if (failed > 0) {
+				pageError =
+					t('app.wiki.bulk_partial', '{failed} of {n} items could not be completed')
+						.replace('{failed}', String(failed))
+						.replace('{n}', String(rows.length)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+		} finally {
+			bulkActing = false;
+		}
 	}
 
 	const typeFields: FieldDef[] = [
@@ -104,7 +173,8 @@
 		}
 	];
 
-	const typeConfig: EntityPageConfig = {
+	// Derived so the canManage-gated bulk actions react once permissions load.
+	const typeConfig = $derived.by<EntityPageConfig>(() => ({
 		title: t('app.wiki.types_title', 'Wiki Types'),
 		description: t(
 			'app.wiki.types_desc',
@@ -131,12 +201,32 @@
 			{ key: 'parents', label: t('app.wiki.type_parents', 'Parents') }
 		],
 		actions: typeActions,
+		bulkActions: canManage
+			? [
+					{
+						label: t('app.wiki.bulk_enable', 'Enable Selected'),
+						icon: CheckCircle,
+						onclick: (ids: Set<string>) => bulkSetEnabled(ids, true),
+						disabled: (ids: Set<string>) =>
+							bulkActing || !typeRowsFor(ids).some((r) => !r.enabled)
+					},
+					{
+						label: t('app.wiki.bulk_disable', 'Disable Selected'),
+						icon: XCircle,
+						variant: 'destructive',
+						onclick: (ids: Set<string>) => bulkSetEnabled(ids, false),
+						disabled: (ids: Set<string>) =>
+							bulkActing || !typeRowsFor(ids).some((r) => r.enabled)
+					}
+				]
+			: [],
 		fields: typeFields,
 		formSnippet: TypeForm,
 		load: async ({ page, pageSize, q }) => {
 			const res = await wikiAdminApi.listTypes();
 			if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load wiki types'));
 			let rows = ((res.data as WikiTypeItem[]) ?? []).map(mapType);
+			for (const r of rows) typeRowMap.set(r.id, r);
 			knownTypes = res.data ?? [];
 			const query = (q ?? '').trim().toLowerCase();
 			if (query) {
@@ -181,7 +271,7 @@
 			const res = await wikiAdminApi.deleteType(id);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		}
-	};
+	}));
 
 	// ── Categories table (per selected type) ────────────────────────────────
 
@@ -207,8 +297,15 @@
 		{
 			key: 'field_group_id',
 			label: t('app.wiki.cat_group', 'Field group'),
-			type: 'select',
-			options: [],
+			type: 'autocomplete',
+			placeholder: t('app.wiki.cat_group_ph', 'Search field groups…'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: groupFetcher,
+			initialFetcher: async () => filterOptions(groupOptions, ''),
+			// The '' auto-create sentinel isn't a selectable item — clearing the
+			// picker means "auto-create a dedicated group" (create) or "leave
+			// the binding unchanged" (edit).
+			getSelectedLabel: (id: string) => groupOptions.find((o) => o.value === id)?.label ?? id,
 			help: t('app.wiki.cat_group_help', 'The bound group is the page’s shared structured schema — a dedicated group is created automatically when none is picked. Only pick an existing group to deliberately share a schema.')
 		},
 		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' }
@@ -263,15 +360,21 @@
 						{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), componentSnippet: BoolCell }
 					],
 					actions: catActions,
-					fields: catFields.map((f) =>
-						f.key === 'field_group_id' ? { ...f, options: groupOptions } : f
-					),
+					fields: catFields,
+					// Nested under the types table — keep its list state out of the
+					// URL so the two EntityPages don't fight over ?q/?page.
+					urlSync: false,
 					load: async ({ page, pageSize, q }) => {
 						const res = await wikiAdminApi.listTypeCategories(sel.space_type_id);
 						if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load categories'));
 						let rows = (res.data as WikiCategoryItem[]) ?? [];
 						const query = (q ?? '').trim().toLowerCase();
-						if (query) rows = rows.filter((r) => r.slug.includes(query) || r.label.toLowerCase().includes(query));
+						if (query)
+							rows = rows.filter(
+								(r) =>
+									r.slug.toLowerCase().includes(query) ||
+									r.label.toLowerCase().includes(query)
+							);
 						const total = rows.length;
 						const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
 						const start = page * pageSize;
@@ -308,6 +411,14 @@
 </script>
 
 <div class="space-y-6">
+	{#if pageError}
+		<div
+			class="rounded-lg p-3 text-sm"
+			style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+		>
+			{pageError}
+		</div>
+	{/if}
 	<EntityPage config={typeConfig} bind:controller={typesController} />
 
 	{#if selectedType && catConfig}
@@ -341,24 +452,30 @@
 			<label for="wt-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('app.wiki.type_space_type', 'Space type')} *
 			</label>
-			<select
-				id="wt-type"
-				class="w-full rounded-lg border p-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				disabled={editing}
-				value={String(value.space_type_id ?? '')}
-				onchange={(e) => (value.space_type_id = e.currentTarget.value)}
-			>
-				<option value="">{t('app.wiki.type_pick', 'Select a space type…')}</option>
-				{#each spaceTypeOptions as o (o.value)}
-					<option value={o.value}>{o.label}</option>
-				{/each}
-				{#if editing && value.space_type_id && !spaceTypeOptions.some((o) => o.value === value.space_type_id)}
-					<option value={String(value.space_type_id)}>{value.space_type_slug ?? value.space_type_id}</option>
-				{/if}
-			</select>
 			{#if editing}
+				<!-- space_type_id is immutable on edit — render the resolved
+				     label as a read-only field rather than a disabled dropdown. -->
+				<input
+					id="wt-type"
+					type="text"
+					disabled
+					class="w-full cursor-not-allowed rounded-lg border p-2 text-sm opacity-70"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					value={spaceTypeLabel(value.space_type_id) ?? ''}
+				/>
 				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('app.wiki.type_immutable', 'The space type cannot be changed.')}</p>
+			{:else}
+				<Autocomplete
+					id="wt-type"
+					placeholder={t('app.wiki.type_pick', 'Search space types…')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={spaceTypeFetcher}
+					initialFetcher={async () => filterOptions(spaceTypeOptions, '')}
+					selectedId={String(value.space_type_id ?? '') || null}
+					selectedLabel={spaceTypeLabel(value.space_type_id)}
+					onSelect={(item) => (value.space_type_id = item.id)}
+					onClear={() => (value.space_type_id = '')}
+				/>
 			{/if}
 		</div>
 		<div>

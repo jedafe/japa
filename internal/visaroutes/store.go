@@ -145,6 +145,9 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -430,6 +433,9 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]RouteRow, i
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

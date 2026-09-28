@@ -73,6 +73,14 @@ func (f *fakeFieldReader) ListVisibleFieldIDsForUser(_ context.Context, _ pgtype
 	return f.permSet(false), nil
 }
 
+func (f *fakeFieldReader) ListVisibleFieldIDsForGroupSlug(_ context.Context, _ string) ([]pgtype.UUID, error) {
+	if f.permErr != nil {
+		return nil, f.permErr
+	}
+
+	return f.permSet(false), nil
+}
+
 func (f *fakeFieldReader) ListEditableFieldIDsForUser(_ context.Context, _ pgtype.UUID) ([]pgtype.UUID, error) {
 	if f.permErr != nil {
 		return nil, f.permErr
@@ -224,14 +232,18 @@ func (f *fakeBuster) BustCachesForItemRef(_ context.Context, entityType, entityI
 func TestSubmitFieldOps_RejectsWhenCanEditFalse(t *testing.T) {
 	t.Parallel()
 
+	groupID := mustUUID(t, "00000000-0000-0000-0000-0000000000a1")
 	fieldID := mustUUID(t, "00000000-0000-0000-0000-0000000000a2")
 	entityID := mustUUID(t, "00000000-0000-0000-0000-0000000000bb")
 
 	svc := NewService(nil, nil)
 	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsEdit: true}})
 	svc.SetCustomFields(&fakeFieldReader{
-		fieldsByKey: map[string]gen.GetCustomFieldByKeyRow{
-			"tuition_ug": {ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber},
+		// The field is reachable only through the entity's assigned-group
+		// schema — a bare fieldsByKey entry no longer satisfies set_value.
+		assignments: []gen.CustomFieldGroupAssignment{{GroupID: groupID, EntityClass: "space_type"}},
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
+			groupID.String(): {{ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber}},
 		},
 		perms: map[string][2]bool{fieldID.String(): {true, false}}, // can_view yes, can_edit no
 	})
@@ -365,7 +377,7 @@ func TestSubmitFieldOps_SetValueOnProposedKeySkipsLookup(t *testing.T) {
 
 	// checkSetValueFields must pass without ever consulting the field store
 	// for the proposed key.
-	if err := svc.checkSetValueFields(t.Context(), mustUUID(t, "00000000-0000-0000-0000-0000000000c1"), ops, false); err != nil {
+	if err := svc.checkSetValueFields(t.Context(), mustUUID(t, "00000000-0000-0000-0000-0000000000c1"), ops, false, nil); err != nil {
 		t.Fatalf("set_value on proposed key should validate: %v", err)
 	}
 
@@ -457,9 +469,9 @@ func TestValueWithinOptions(t *testing.T) {
 	t.Parallel()
 
 	options := json.RawMessage(`[{"value":"fall","label":"Fall"},{"value":"spring","label":"Spring"}]`)
-	sel := gen.GetCustomFieldByKeyRow{Key: "intake", FieldType: customfields.FieldTypeSelect, Options: options}
-	multi := gen.GetCustomFieldByKeyRow{Key: "intakes", FieldType: customfields.FieldTypeMultiselect, Options: options}
-	text := gen.GetCustomFieldByKeyRow{Key: "name", FieldType: customfields.FieldTypeText}
+	sel := schemaField{key: "intake", fieldType: customfields.FieldTypeSelect, options: options}
+	multi := schemaField{key: "intakes", fieldType: customfields.FieldTypeMultiselect, options: options}
+	text := schemaField{key: "name", fieldType: customfields.FieldTypeText}
 
 	if err := valueWithinOptions(sel, json.RawMessage(`"fall"`)); err != nil {
 		t.Fatalf("valid select option rejected: %v", err)
@@ -482,7 +494,7 @@ func TestValueWithinOptions(t *testing.T) {
 	}
 
 	// Fields with no options configured impose no membership constraint.
-	noOpts := gen.GetCustomFieldByKeyRow{Key: "s", FieldType: customfields.FieldTypeSelect}
+	noOpts := schemaField{key: "s", fieldType: customfields.FieldTypeSelect}
 	if err := valueWithinOptions(noOpts, json.RawMessage(`"whatever"`)); err != nil {
 		t.Fatalf("options-less select should pass: %v", err)
 	}
@@ -499,6 +511,19 @@ type fieldFixture struct {
 	fieldID pgtype.UUID
 	slug    string
 	key     string
+}
+
+// assignFixtureGroup links a fixture group to an entity class so the
+// entity's field schema (entitySchemaFields) resolves its fields — field
+// keys are group-scoped, so set_value ops cannot reach an unassigned group.
+func assignFixtureGroup(t *testing.T, ctx context.Context, database *db.DB, groupID pgtype.UUID, entityClass string) {
+	t.Helper()
+
+	if _, err := database.Writer.Exec(ctx,
+		`INSERT INTO custom_field_group_assignments (group_id, entity_class, entity_id, position)
+		 VALUES ($1, $2, NULL, 0)`, groupID, entityClass); err != nil {
+		t.Fatalf("seed assignment: %v", err)
+	}
 }
 
 func seedFieldFixture(t *testing.T, ctx context.Context, database *db.DB, withField bool, fieldType string) fieldFixture {
@@ -547,6 +572,13 @@ func TestSubmitFieldOps_ManageTierAutoApproves(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeNumber)
+
+	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetSpaceTypeRef: %v", err)
+	}
+
+	assignFixtureGroup(t, ctx, database, ff.groupID, "space_type:"+spaceTypeID.String())
 
 	enq := &fakeEnqueuer{}
 	buster := &fakeBuster{}
@@ -621,13 +653,17 @@ func TestSuggestFields_Pageless(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 
+	groupID := mustUUID(t, "00000000-0000-0000-0000-0000000000a1")
 	fieldID := mustUUID(t, "00000000-0000-0000-0000-0000000000a2")
 
 	svc := NewService(store, nil)
 	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsEdit: true}})
 	svc.SetCustomFields(&fakeFieldReader{
-		fieldsByKey: map[string]gen.GetCustomFieldByKeyRow{
-			"tuition_ug": {ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber},
+		// visa_route resolves to entity_class jce_entity:visa_route; the
+		// schema map needs the assignment so set_value can find the field.
+		assignments: []gen.CustomFieldGroupAssignment{{GroupID: groupID, EntityClass: "jce_entity:visa_route"}},
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
+			groupID.String(): {{ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber}},
 		},
 		perms: map[string][2]bool{fieldID.String(): {true, true}},
 	})
@@ -684,9 +720,15 @@ func TestSuggestFields_AttachesHostPage(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database) // seeds an 'overview' page on fx.spaceID
 
+	groupID := mustUUID(t, "00000000-0000-0000-0000-0000000000a1")
+
 	svc := NewService(store, nil)
 	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsPropose: true}})
-	svc.SetCustomFields(&fakeFieldReader{})
+	svc.SetCustomFields(&fakeFieldReader{
+		// propose_field's group must exist at submit — a revision that can
+		// never apply is rejected instead of queuing.
+		groups: map[string]gen.CustomFieldGroup{groupID.String(): {ID: groupID, Slug: "g"}},
+	})
 	svc.SetEntityResolver(&fakeEntityResolver{item: resolver.ResolvedItem{
 		Type:     "university",
 		ID:       fx.spaceID.String(),
@@ -721,6 +763,13 @@ func TestApproveRevisionByID_AppliesOpsAndEnqueues(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
+
+	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetSpaceTypeRef: %v", err)
+	}
+
+	assignFixtureGroup(t, ctx, database, ff.groupID, "space_type:"+spaceTypeID.String())
 
 	targetType := "university"
 	opsJSON := []byte(`[{"op":"set_value","entity_type":"university","entity_id":"` + fx.spaceID.String() +
@@ -776,6 +825,13 @@ func TestApproveRevisionByID_DirectBustFallback(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
+
+	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetSpaceTypeRef: %v", err)
+	}
+
+	assignFixtureGroup(t, ctx, database, ff.groupID, "space_type:"+spaceTypeID.String())
 
 	targetType := "university"
 	opsJSON := []byte(`[{"op":"set_value","entity_type":"university","entity_id":"` + fx.spaceID.String() +
@@ -1084,13 +1140,24 @@ func TestSubmitFieldOps_MixedRevision(t *testing.T) {
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
 
+	// Submit-time schema resolves through s.fields (the fake); approve-time
+	// schema re-resolves inside the transaction against the real DB — both
+	// need to see the field under the entity's assigned groups.
+	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetSpaceTypeRef: %v", err)
+	}
+
+	assignFixtureGroup(t, ctx, database, ff.groupID, "space_type:"+spaceTypeID.String())
+
 	body := []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"new prose"}]}]}`)
 
 	svc := NewService(store, nil)
 	svc.SetPermissionChecker(fakePermChecker{granted: map[string]bool{PermFieldsEdit: true}})
 	svc.SetCustomFields(&fakeFieldReader{
-		fieldsByKey: map[string]gen.GetCustomFieldByKeyRow{
-			ff.key: {ID: ff.fieldID, Key: ff.key, FieldType: customfields.FieldTypeText},
+		assignments: []gen.CustomFieldGroupAssignment{{GroupID: ff.groupID, EntityClass: "space_type"}},
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
+			ff.groupID.String(): {{ID: ff.fieldID, Key: ff.key, FieldType: customfields.FieldTypeText}},
 		},
 		perms: map[string][2]bool{ff.fieldID.String(): {true, true}},
 	})
@@ -1161,6 +1228,13 @@ func TestApproveRevisionByID_ApplyFailureRecordsApplyError(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
+
+	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	if err != nil {
+		t.Fatalf("GetSpaceTypeRef: %v", err)
+	}
+
+	assignFixtureGroup(t, ctx, database, ff.groupID, "space_type:"+spaceTypeID.String())
 
 	targetType := "university"
 	opsJSON := []byte(`[{"op":"set_value","entity_type":"university","entity_id":"` + fx.spaceID.String() +

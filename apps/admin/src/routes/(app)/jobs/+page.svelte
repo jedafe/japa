@@ -168,7 +168,7 @@
 				render: (v: string) => `<span class="font-medium text-foreground">${v ?? '—'}</span>`
 			},
 			{
-				key: 'field_values',
+				key: 'field_company',
 				label: t('jobs.company', 'Company'),
 				render: (_v: string, row: JobListing) => {
 					const company = field(row, 'company_name');
@@ -176,7 +176,7 @@
 				}
 			},
 			{
-				key: 'field_values',
+				key: 'field_type',
 				label: t('jobs.job_type', 'Type'),
 				render: (_v: string, row: JobListing) => {
 					const jobType = field(row, 'job_type');
@@ -184,7 +184,7 @@
 				}
 			},
 			{
-				key: 'field_values',
+				key: 'field_location',
 				label: t('jobs.location', 'Location'),
 				render: (_v: string, row: JobListing) => {
 					const loc = locationStr(row);

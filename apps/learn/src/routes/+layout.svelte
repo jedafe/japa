@@ -60,9 +60,12 @@
 		return () => realtime.disconnect();
 	});
 
-	// Reconnect if the user logs in mid-session (e.g. after /login redirect).
+	// Reconnect if the user logs in mid-session (e.g. after /login redirect),
+	// and drop the socket on logout so a stale connection can't keep
+	// delivering notifications for the previous session.
 	$effect(() => {
 		if (data.user) realtime.connect();
+		else realtime.disconnect();
 	});
 
 	// Seed the realtime unread-notification counter from the SSR value, and

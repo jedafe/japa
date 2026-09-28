@@ -652,11 +652,11 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, _ pgtype.UUID, tags
 	// Build parameterized ILIKE clauses — each tag becomes its own $N placeholder.
 	// fmt.Sprintf is used only for the parenthetical OR grouping, not for values.
 	likePatterns := make([]string, 0, len(tags))
-	args := []any{pgtype.UUID{}}
+	args := []any{}
 
 	for i, tag := range tags {
 		args = append(args, "%"+strings.ToLower(tag)+"%")
-		likePatterns = append(likePatterns, fmt.Sprintf("(LOWER(s.name) LIKE $%d OR LOWER(s.description) LIKE $%d)", i+2, i+2))
+		likePatterns = append(likePatterns, fmt.Sprintf("(LOWER(s.name) LIKE $%d OR LOWER(s.description) LIKE $%d)", i+1, i+1))
 	}
 
 	query := fmt.Sprintf(`

@@ -114,7 +114,12 @@ export const load: PageServerLoad = async (event) => {
 			: [];
 	const series = seriesRes.status === 'fulfilled' ? seriesRes.value.items : [];
 	const organizations = orgsRes.status === 'fulfilled' ? orgsRes.value.items : [];
-	const comparisonTypes = compTypesRes.status === 'fulfilled' ? compTypesRes.value.items : [];
+	// §30 — only offer types the caller's group has can_create access to;
+	// system-managed types (e.g. cost_of_living) are filled by the platform.
+	const comparisonTypes =
+		compTypesRes.status === 'fulfilled'
+			? compTypesRes.value.items.filter((t) => t.can_create !== false)
+			: [];
 	const dimensionTypes = dimTypesRes.status === 'fulfilled' ? dimTypesRes.value.items : [];
 	const visibilityOptions =
 		visibilityRes.status === 'fulfilled' ? visibilityRes.value : [];

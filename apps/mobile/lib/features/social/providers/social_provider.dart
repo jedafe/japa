@@ -26,8 +26,8 @@ final conversationMessagesProvider = FutureProvider.autoDispose
 });
 
 /// Listens to [realtimeEventsProvider] and [pushServiceProvider.foregroundMessages]
-/// and invalidates the relevant providers for `notification` and `dm` events.
-/// For `dm` events, also invalidates the specific
+/// and invalidates the relevant providers for `notification` and `dm_message`
+/// events. For `dm_message` events, also invalidates the specific
 /// `conversationMessagesProvider(conversationId)` when the payload includes a
 /// `conversation_id`. The stream subscriptions are cancelled when this provider
 /// is disposed.
@@ -38,7 +38,8 @@ final socialRealtimeSyncProvider = Provider<void>((ref) {
         case 'notification':
           ref.invalidate(notificationsProvider);
           break;
-        case 'dm':
+        // Backend broadcast type for a new direct message (internal/websocket).
+        case 'dm_message':
           ref.invalidate(conversationsProvider);
           final conversationId = event.conversationId;
           if (conversationId != null) {

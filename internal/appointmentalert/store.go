@@ -124,6 +124,9 @@ func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]Emb
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	// Sort column whitelist (prevent SQL injection — never interpolate
 	// user input directly into ORDER BY).
@@ -424,6 +427,9 @@ func (s *Store) ListUserAlerts(ctx context.Context, f ListUserAlertsFilter) ([]A
 	conditions = append(conditions, "a.deleted_at IS NULL")
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

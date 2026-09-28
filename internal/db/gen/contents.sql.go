@@ -64,12 +64,11 @@ func (q *Queries) ArchiveContent(ctx context.Context, id pgtype.UUID) (int64, er
 }
 
 const contentSlugExists = `-- name: ContentSlugExists :one
-SELECT EXISTS(SELECT 1 FROM contents WHERE slug = $1)
+SELECT EXISTS(SELECT 1 FROM contents WHERE slug = $1 AND deleted_at IS NULL)
 `
 
-// Returns true if any contents row (including soft-deleted) in the platform
-// uses the given slug. The unique index on (slug) is not partial,
-// so a slug held by a deleted row is still unavailable.
+// Returns true if a live contents row uses the given slug. Mirrors the
+// partial unique index (000745): soft-deleted rows no longer occupy slugs.
 func (q *Queries) ContentSlugExists(ctx context.Context, slug string) (bool, error) {
 	row := q.db.QueryRow(ctx, contentSlugExists, slug)
 	var exists bool

@@ -433,6 +433,9 @@ func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]Calenda
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -678,6 +681,9 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

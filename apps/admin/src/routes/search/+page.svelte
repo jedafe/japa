@@ -8,6 +8,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { RefreshCw } from 'lucide-svelte';
 	import { LineChart, BarChart } from 'layerchart';
 	import { curveMonotoneX } from 'd3-shape';
@@ -46,7 +47,9 @@
 	let period = $state(page.url.searchParams.get('period') ?? '7d');
 	let from = $state(page.url.searchParams.get('from') ?? '');
 	let to = $state(page.url.searchParams.get('to') ?? '');
-	let activeTab = $state<'top' | 'zero' | 'volume'>('top');
+	const SEARCH_TABS = ['top', 'zero', 'volume'] as const;
+	let activeTab = $state<'top' | 'zero' | 'volume'>(initTabParam('top', { valid: SEARCH_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: SEARCH_TABS, preserve: ['period', 'from', 'to'] });
 	let loadAbortController: AbortController | null = null;
 
 	const timePeriods = $derived([

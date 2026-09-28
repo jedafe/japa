@@ -225,6 +225,9 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	// Resolve sort column (whitelisted to prevent SQL injection).
 	sortCol := allowedSortColumns[f.Sort]

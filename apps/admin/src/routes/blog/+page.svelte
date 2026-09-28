@@ -379,7 +379,7 @@
 />
 
 <div class="space-y-6">
-	<Tabs {tabs} bind:value={activeTab} />
+	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 	{#if error}
 		<div class="rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">

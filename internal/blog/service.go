@@ -131,8 +131,12 @@ func (s *Service) UpdateSeries(ctx context.Context, id pgtype.UUID, title, slug,
 	})
 }
 
-// DeleteSeries deletes a blog series.
-func (s *Service) DeleteSeries(ctx context.Context, id pgtype.UUID) error {
+// DeleteSeries deletes a blog series. force=true permanently removes an
+// already-soft-deleted row (ErrNotDeleted while live).
+func (s *Service) DeleteSeries(ctx context.Context, id pgtype.UUID, force bool) error {
+	if force {
+		return s.store.hardDeleteBlogSeries(ctx, id)
+	}
 	return s.store.deleteBlogSeries(ctx, id)
 }
 

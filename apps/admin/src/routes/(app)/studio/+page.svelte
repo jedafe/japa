@@ -578,7 +578,7 @@
 		{error}
 	</div>
 {:else}
-	<Tabs {tabs} bind:value={activeTab} />
+	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 	{#if activeTab === 'jobs'}
 		<div class="mb-4 flex flex-wrap items-end gap-3">

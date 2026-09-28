@@ -155,10 +155,10 @@ func (s *Store) ListJobs(ctx context.Context, f JobListFilter) ([]Job, int64, er
 	            ai_model, voice_id, status, draft_content_id,
 	            review_id, generated_at, reviewed_at, published_at, error_message,
 	            created_by, created_at
-	         FROM studio_jobs `
-	args := []interface{}{pgtype.UUID{}}
+	         FROM studio_jobs WHERE TRUE`
+	args := []interface{}{}
 
-	argIdx := 2
+	argIdx := 1
 	if f.Status != nil {
 		query += ` AND status = $` + fmtArg(argIdx)
 
@@ -226,9 +226,9 @@ func (s *Store) ListJobs(ctx context.Context, f JobListFilter) ([]Job, int64, er
 	// Count total (without limit/offset) for pagination.
 	var total int64
 
-	countArgs := []interface{}{pgtype.UUID{}}
-	countQuery := `SELECT count(*) FROM studio_jobs `
-	cIdx := 2
+	countArgs := []interface{}{}
+	countQuery := `SELECT count(*) FROM studio_jobs WHERE TRUE`
+	cIdx := 1
 
 	if f.Status != nil {
 		countQuery += ` AND status = $` + fmtArg(cIdx)

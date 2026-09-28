@@ -6,7 +6,6 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
-	import SuggestEdit from '$lib/components/wiki/SuggestEdit.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
@@ -391,6 +390,7 @@
 							entityType="space"
 							entityId={panelSpaceId}
 							groupId={data.page.field_group_id ?? undefined}
+							groupSlug={data.page.field_group_slug ?? undefined}
 						/>
 					{/if}
 
@@ -412,11 +412,8 @@
 							{:else}
 								<ul class="divide-y divide-[var(--color-border)]">
 									{#each childEntities as item (item.id)}
-										<li class="flex items-center justify-between gap-3 py-2">
-											<span class="min-w-0 truncate text-sm text-[var(--color-text)]">
-												{item.title}
-											</span>
-											<SuggestEdit entityType={dataEntityType} entityId={item.id} />
+										<li class="py-2 text-sm text-[var(--color-text)]">
+											{item.title}
 										</li>
 									{/each}
 								</ul>

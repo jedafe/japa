@@ -14,7 +14,9 @@ class SocialService {
 
   Future<List<Notification>> listNotifications() async {
     final response = await _client.get<List<Notification>>(
-      '/me/notifications',
+      // Max server page size (§35) — the screen has no pagination, so
+      // without this the list silently caps at the 20-row default.
+      '/me/notifications?page_size=100',
       parse: (json) =>
           (json as List).map((e) => Notification.fromJson(e as Map<String, dynamic>)).toList(),
     );

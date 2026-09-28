@@ -30,7 +30,7 @@ const ALLOWED_ATTRS = new Set([
  * literal that will be passed to `{@html}`.
  */
 export function escapeHtml(s: string): string {
-	return s
+	return String(s ?? '')
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
@@ -40,7 +40,7 @@ export function escapeHtml(s: string): string {
 
 export function sanitizeHtml(html: string): string {
 	// 1. Drop <script> / <style> blocks (including their content).
-	let out = html.replace(
+	let out = String(html ?? '').replace(
 		/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
 		''
 	);

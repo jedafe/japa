@@ -2,6 +2,8 @@
 	// /universities/course-catalog — canonical institutional course catalog
 	// (university_course_catalog, Section 39). EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { courseCatalogAdminApi, type CourseCatalogEntry } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
@@ -19,6 +21,55 @@
 			await Promise.all(idArr.map((id) => courseCatalogAdminApi.delete(id)));
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete courses');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	// ── Bulk force delete — single-row force delete is handled by the
+	// scaffold's built-in Hard Delete action (config.hardRemove). ──
+	// BulkAction.onclick receives only ids — resolve them against a map of
+	// every row seen this session so deleted-row filtering keeps working.
+	const catalogRowMap = new Map<string, CourseCatalogEntry>();
+	const catalogRowsFor = (ids: Set<string>): CourseCatalogEntry[] =>
+		Array.from(ids)
+			.map((id) => catalogRowMap.get(id))
+			.filter((r): r is CourseCatalogEntry => !!r);
+
+	let forceTargets = $state<CourseCatalogEntry[]>([]);
+	let showForceModal = $state(false);
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = catalogRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (bulkDeleting || forceTargets.length === 0) return;
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = '';
+			for (const row of targets) {
+				const res = await courseCatalogAdminApi.hardDelete(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t('common.bulkDeletePartial', '{failed} of {n} items could not be deleted')
+						.replace('{failed}', String(failed))
+						.replace('{n}', String(targets.length)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+			entityController?.reload();
 		} finally {
 			bulkDeleting = false;
 		}
@@ -53,7 +104,9 @@
 			{
 				key: 'is_published',
 				label: t('courses.status', 'Status'),
-				render: (v: boolean) => v
+				render: (v: boolean, row: CourseCatalogEntry) => row.deleted_at
+					? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-danger) 15%, transparent); color: var(--color-danger)">${t('common.filter_deleted', 'Deleted')}</span>`
+					: v
 					? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)">${t('courses.published', 'Published')}</span>`
 					: `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)">${t('courses.unpublished', 'Unpublished')}</span>`
 			}
@@ -66,6 +119,16 @@
 					{ value: 'true', label: t('courses.published', 'Published') },
 					{ value: 'false', label: t('courses.unpublished', 'Unpublished') }
 				]
+			},
+			// Soft-deleted courses are hidden by default — this filter surfaces
+			// them so the Hard Delete action has targets.
+			{
+				key: 'deleted',
+				label: t('common.filter_deleted', 'Deleted'),
+				options: [
+					{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		],
 		bulkActions: [
@@ -73,7 +136,16 @@
 				label: t('common.deleteSelected', 'Delete Selected'),
 				icon: Trash2,
 				variant: 'destructive',
-				onclick: bulkDelete
+				onclick: bulkDelete,
+				// Rows already soft-deleted can't be deleted again.
+				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
+			},
+			{
+				label: t('common.force_delete', 'Force Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openBulkForceDelete,
+				disabled: (ids) => bulkDeleting || !catalogRowsFor(ids).some((r) => !!r.deleted_at)
 			}
 		],
 		fields,
@@ -82,6 +154,7 @@
 			params.set('page', String(page + 1));
 			params.set('limit', String(pageSize));
 			if (filter.is_published) params.set('is_published', filter.is_published);
+			if (filter.deleted) params.set('deleted', filter.deleted);
 			if (q) params.set('q', q);
 			if (sort) {
 				const [key] = sort.split(':');
@@ -90,6 +163,7 @@
 			const result = await courseCatalogAdminApi.list(params.toString());
 			if (result.ok) {
 				const data = result.data.data ?? [];
+				for (const r of data) catalogRowMap.set(r.id, r);
 				const total = result.data.meta?.total ?? data.length;
 				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
 				return { data, total, totalPages };
@@ -128,6 +202,12 @@
 			const res = await courseCatalogAdminApi.delete(id);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
+		// Permanent removal — the scaffold shows "Hard Delete" only for rows
+		// where isDeleted(row) is true (default: deleted_at != null).
+		hardRemove: async (id) => {
+			const res = await courseCatalogAdminApi.hardDelete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
 		viewSnippet: CatalogView
 	});
 </script>
@@ -146,6 +226,19 @@
 {/if}
 
 <EntityPage {config} bind:controller={entityController} />
+
+<!-- Bulk Force Delete confirmation — permanent erasure of soft-deleted rows -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	{#if forceTargets.length > 0}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('common.force_delete_confirm_bulk', 'Permanently delete {count} selected items? This cannot be undone.').replace('{count}', String(forceTargets.length))}
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showForceModal = false)} disabled={bulkDeleting}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={bulkDeleting}>{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}</Button>
+	</div>
+</Modal>
 
 {#snippet CatalogView({ row }: { row: CourseCatalogEntry })}
 	<div class="space-y-4">

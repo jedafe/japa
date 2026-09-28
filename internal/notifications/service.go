@@ -224,7 +224,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	// sees it without a manual refresh. Ref: §35 L88, §11.
 	// BUG-005: include the real notification ID so the client can mark-as-read
 	// directly from the realtime push without a refetch.
-	s.broadcastNotification(ctx, window.RecipientID, map[string]any{
+	payload := map[string]any{
 		"id":                notifID,
 		"notification_type": window.NotificationType,
 		"actor_type":        ActorTypeUser,
@@ -235,7 +235,11 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 		"body":              "",
 		"action_url":        "",
 		"created_at":        time.Now().UTC().Format(time.RFC3339),
-	})
+	}
+	if label := s.notificationTypeLabel(ctx, window.NotificationType); label != "" {
+		payload["type_label"] = label
+	}
+	s.broadcastNotification(ctx, window.RecipientID, payload)
 
 	// BUG-013: invalidate the unread count cache so the badge updates.
 	s.invalidateUnreadCount(ctx, window.RecipientID)
@@ -350,7 +354,7 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 	// sees it without a manual refresh. Ref: §35 L88, §11.
 	// BUG-005: include the real notification ID so the client can mark-as-read
 	// directly from the realtime push without a refetch.
-	s.broadcastNotification(ctx, recipientID, map[string]any{
+	payload := map[string]any{
 		"id":                notifID,
 		"notification_type": nType,
 		"actor_type":        actorType,
@@ -361,7 +365,11 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 		"body":              body,
 		"action_url":        actionURL,
 		"created_at":        time.Now().UTC().Format(time.RFC3339),
-	})
+	}
+	if label := s.notificationTypeLabel(ctx, nType); label != "" {
+		payload["type_label"] = label
+	}
+	s.broadcastNotification(ctx, recipientID, payload)
 
 	// BUG-013: invalidate the unread count cache so the badge updates.
 	s.invalidateUnreadCount(ctx, recipientID)
@@ -404,6 +412,31 @@ func (s *Service) GetNotifications(ctx context.Context, recipientID pgtype.UUID,
 	}
 
 	return result, nil
+}
+
+// CountNotifications returns the total number of notifications matching the
+// same unread_only filter as GetNotifications, so the list endpoint can
+// report { total, has_more } instead of forcing clients to infer end-of-list
+// from a short page.
+func (s *Service) CountNotifications(ctx context.Context, recipientID pgtype.UUID, unreadOnly bool) (int32, error) {
+	count, err := s.store.countNotificationsByRecipient(ctx, recipientID, unreadOnly)
+	if err != nil {
+		return 0, fmt.Errorf("counting notifications: %w", err)
+	}
+
+	return count, nil
+}
+
+// notificationTypeLabel returns the human-readable label for a notification
+// type key, or "" if the type isn't registered. Best-effort — a missing
+// label must never block delivery.
+func (s *Service) notificationTypeLabel(ctx context.Context, nType string) string {
+	label, err := s.store.getNotificationTypeLabel(ctx, nType)
+	if err != nil {
+		return ""
+	}
+
+	return label
 }
 
 // GetUnreadCount returns the count of unread notifications.
@@ -570,6 +603,55 @@ func (s *Service) UpdatePreference(ctx context.Context, userID pgtype.UUID, nTyp
 		Email:            email,
 		Push:             push,
 	})
+}
+
+// UpdatePreferencePartial updates a single notification type preference,
+// treating nil fields as "keep the current value". Without this, a PATCH
+// body that omits a channel (e.g. {"in_app": true}) would silently reset
+// the omitted channels to false — JSON zero-value decode can't distinguish
+// "absent" from "explicit false".
+//
+// Base value resolution: the user's existing override row for the type wins;
+// otherwise the notification_types effective defaults; otherwise the §35
+// global defaults (in_app on, email/push off).
+func (s *Service) UpdatePreferencePartial(ctx context.Context, userID pgtype.UUID, nType string, inApp, email, push *bool) error {
+	base := effectivePref{InApp: true}
+
+	// Effective prefs already merge the user's override with the type
+	// defaults for enabled types.
+	found := false
+
+	if prefs, err := s.resolveEffectivePreferences(ctx, userID); err == nil {
+		if ep, ok := prefs[nType]; ok {
+			base = ep
+			found = true
+		}
+	}
+
+	// Disabled/unknown types are skipped by resolveEffectivePreferences —
+	// preserve the user's existing override row verbatim in that case.
+	if !found {
+		if rows, err := s.store.getNotificationPreferences(ctx, userID); err == nil {
+			for _, p := range rows {
+				if p.NotificationType == nType {
+					base = effectivePref{InApp: p.InApp, Email: p.Email, Push: p.Push}
+					break
+				}
+			}
+		}
+	}
+
+	if inApp != nil {
+		base.InApp = *inApp
+	}
+	if email != nil {
+		base.Email = *email
+	}
+	if push != nil {
+		base.Push = *push
+	}
+
+	return s.UpdatePreference(ctx, userID, nType, base.InApp, base.Email, base.Push)
 }
 
 // GetNotificationTypes returns all configured notification types.

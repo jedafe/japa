@@ -11,6 +11,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image as ImageIcon, FileText, Film, Music, Search, Download, Loader2, Check, RefreshCw, ZoomIn, ZoomOut, Maximize, Pencil, Save, X } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 
 	type MediaItem = {
 		id: string;
@@ -790,7 +791,9 @@
 	}
 
 	// ── Stock Providers management tab ────────────────────────────────────
-	let activeTab = $state<'media' | 'stock-providers'>('media');
+	const MEDIA_TABS = ['media', 'stock-providers'] as const;
+	let activeTab = $state<'media' | 'stock-providers'>(initTabParam('media', { valid: MEDIA_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: MEDIA_TABS, preserve: [] });
 	let stockProviders = $state<StockProviderAdmin[]>([]);
 	let stockProvidersLoading = $state(false);
 	let stockProvidersError = $state('');

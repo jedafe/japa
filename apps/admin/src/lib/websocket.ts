@@ -1,14 +1,18 @@
 import { browser } from '$app/environment';
 import { PUBLIC_JC_WS_URL } from '$env/static/public';
+import { getAccessToken } from '$lib/api/token';
 
-const WS_BASE_URL = PUBLIC_JC_WS_URL ?? 'ws://localhost:8080';
+// PUBLIC_JC_WS_URL is the WS *origin* (e.g. ws://localhost:8080); the
+// WebSocket endpoint lives under the API version prefix, /api/v1/ws.
+const WS_BASE_URL = (PUBLIC_JC_WS_URL ?? 'ws://localhost:8080').replace(/\/+$/, '');
 
 type EventCallback = (data: any) => void;
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
+// Backend envelope (internal/websocket WSEvent): { "type": ..., "payload": ... }
 interface WSMessage {
 	type: string;
-	data: any;
+	payload: any;
 }
 
 class AdminWebSocketClient {
@@ -39,25 +43,31 @@ class AdminWebSocketClient {
 		this.setState('connecting');
 
 		try {
-			// Use the token passed from server-side layout data.
-			// Falls back to reading from page data if not provided.
-			if (!token) {
+			// Use the token passed from server-side layout data, or the current
+			// in-memory access token. The fallback also fixes reconnects, which
+			// call connect() with no argument and previously stopped dead.
+			const bearer = token ?? getAccessToken();
+			if (!bearer) {
 				this.setState('disconnected');
 				return;
 			}
 
 			const ticketRes = await fetch('/api/v1/auth/ws-ticket', {
 				method: 'POST',
-				headers: { Authorization: `Bearer ${token}` }
+				headers: { Authorization: `Bearer ${bearer}` }
 			});
 			if (!ticketRes.ok) {
 				this.setState('disconnected');
 				return;
 			}
 			const { data } = await ticketRes.json();
-			this.ticket = data.ticket;
+			this.ticket = data?.ticket ?? null;
+			if (!this.ticket) {
+				this.setState('disconnected');
+				return;
+			}
 
-			const ws = new WebSocket(`${WS_BASE_URL}/ws?ticket=${this.ticket}`);
+			const ws = new WebSocket(`${WS_BASE_URL}/api/v1/ws?ticket=${this.ticket}`);
 			this.ws = ws;
 
 			ws.onopen = () => {
@@ -71,7 +81,7 @@ class AdminWebSocketClient {
 				try {
 					const msg: WSMessage = JSON.parse(event.data);
 					if (msg.type === 'pong') return;
-					this.emit(msg.type, msg.data);
+					this.emit(msg.type, msg.payload);
 				} catch {
 					// ignore malformed messages
 				}

@@ -744,6 +744,9 @@ export const spacesAdminApi = {
 		api(`/admin/spaces/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/spaces/${id}`, { method: 'DELETE' }),
+	// ?force=true hard delete — 409 not_deleted unless the space was soft-deleted first.
+	hardDelete: (id: string) =>
+		api(`/admin/spaces/${id}?force=true`, { method: 'DELETE' }),
 	suspend: (id: string, body: { status: string; reason?: string }) =>
 		api(`/admin/spaces/${id}/status`, { method: 'PATCH', body }),
 	assignModerator: (id: string, body: { username: string }) =>
@@ -796,6 +799,9 @@ export const organisationsAdminApi = {
 	create: (body: Record<string, unknown>) => api<unknown>('/admin/organizations', { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/organizations/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/organizations/${id}`, { method: 'DELETE' }),
+	// ?force=true hard delete — 409 not_deleted unless the org was soft-deleted first.
+	hardDelete: (id: string) =>
+		api(`/admin/organizations/${id}?force=true`, { method: 'DELETE' }),
 	listMembers: (id: string) => api<unknown>(`/admin/organizations/${id}/members`),
 	listInvitations: (id: string) => api<unknown>(`/admin/organizations/${id}/invitations`),
 	verify: (id: string, body: { verified: boolean }) =>
@@ -891,6 +897,7 @@ export type CourseCatalogEntry = {
 	default_duration_years?: number | null;
 	is_published: boolean;
 	offering_count: number;
+	deleted_at?: string | null;
 	created_at: string;
 	updated_at: string;
 };
@@ -908,6 +915,7 @@ export type CourseOffering = {
 	entry_requirements?: string | null;
 	accreditation?: string | null;
 	is_published: boolean;
+	deleted_at?: string | null;
 	created_at: string;
 	updated_at: string;
 	course: {
@@ -935,6 +943,10 @@ export const courseCatalogAdminApi = {
 		api<CourseCatalogEntry>(`/admin/course-catalog/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/course-catalog/${id}`, { method: 'DELETE' }),
+	// ?force=true hard delete — 409 not_deleted unless soft-deleted first,
+	// 409 in_use while any offering still references it.
+	hardDelete: (id: string) =>
+		api(`/admin/course-catalog/${id}?force=true`, { method: 'DELETE' }),
 };
 
 export const courseOfferingsAdminApi = {
@@ -949,6 +961,9 @@ export const courseOfferingsAdminApi = {
 		api<CourseOffering>(`/admin/course-offerings/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/course-offerings/${id}`, { method: 'DELETE' }),
+	// ?force=true hard delete — 409 not_deleted unless soft-deleted first.
+	hardDelete: (id: string) =>
+		api(`/admin/course-offerings/${id}?force=true`, { method: 'DELETE' }),
 	bulk: (action: 'publish' | 'unpublish' | 'delete', ids: string[]) =>
 		api<{ ok: boolean; affected: number }>('/admin/course-offerings/bulk', {
 			method: 'POST',
@@ -1977,7 +1992,6 @@ export type WikiCategoryItem = {
 };
 
 export const wikiAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/wiki${params ? `?${params}` : ''}`),
 	approveRevision: (pageId: string, revId: string) =>
 		api<unknown>(`/admin/wiki/${pageId}/revisions/${revId}/approve`, { method: 'POST', body: {} }),
 	rejectRevision: (pageId: string, revId: string, body?: { reason?: string }) =>
@@ -1999,6 +2013,13 @@ export const wikiAdminApi = {
 		api<WikiEntityFields>(`/wiki/entities/${entityType}/${entityId}/fields`),
 	update: (pageId: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/wiki/${pageId}`, { method: 'PATCH', body }),
+	// §80 soft delete — flips is_active so public readers drop the page.
+	deletePage: (pageId: string) =>
+		api<unknown>(`/admin/wiki/${pageId}`, { method: 'DELETE' }),
+	// ?force=true hard delete — 409 page_not_deleted unless the page was
+	// soft-deleted first.
+	hardDeletePage: (pageId: string) =>
+		api<unknown>(`/admin/wiki/${pageId}?force=true`, { method: 'DELETE' }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/wiki/generate`, { method: 'POST', body }),
 	// §80 Wiki Types & Field-Group Pages — managed wiki types over
@@ -2143,6 +2164,9 @@ export const jobsAdminApi = {
 
 export const intelReviewApi = {
 	queue: (params?: string) => apiRaw<{ data: unknown[] }>(`/intel/review/queue${params ? `?${params}` : ''}`),
+	// Full records browser — same filters as the queue plus an arbitrary
+	// ?status= (any valid intel_records status), ?q= search and ?sort=&dir=.
+	list: (params?: string) => apiRaw<{ data: unknown[] }>(`/intel/records${params ? `?${params}` : ''}`),
 	approve: (id: string) => api<unknown>(`/intel/review/${id}/approve`, { method: 'POST', body: {} }),
 	reject: (id: string) => api<unknown>(`/intel/review/${id}/reject`, { method: 'POST', body: {} }),
 	edit: (id: string, body: Record<string, unknown>) => api<unknown>(`/intel/review/${id}/edit`, { method: 'PATCH', body }),

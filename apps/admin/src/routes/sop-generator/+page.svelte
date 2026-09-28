@@ -5,6 +5,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
 
 	type Template = {
@@ -35,7 +36,9 @@
 
 	const canManage = $derived(hasPermission('sop_generator.manage'));
 
-	let activeTab = $state<'templates' | 'samples'>('templates');
+	const SOP_TABS = ['templates', 'samples'] as const;
+	let activeTab = $state<'templates' | 'samples'>(initTabParam('templates', { valid: SOP_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: SOP_TABS, preserve: [] });
 	let pageError = $state('');
 
 	// ── Templates tab ─────────────────────────────────────────────────────────

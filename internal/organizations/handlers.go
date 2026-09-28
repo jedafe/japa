@@ -883,10 +883,11 @@ func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request
 	countryCode := r.URL.Query().Get("country_code")
 	search := r.URL.Query().Get("q")
 	verified := r.URL.Query().Get("verified")
+	deleted := r.URL.Query().Get("deleted")
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	items, total, err := h.service.AdminListOrganizations(r.Context(), orgType, countryCode, search, verified, limit, offset)
+	items, total, err := h.service.AdminListOrganizations(r.Context(), orgType, countryCode, search, verified, deleted, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1016,7 +1017,8 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization updated"}})
 }
 
-// AdminDeleteOrganization handles DELETE /admin/organizations/{id}.
+// AdminDeleteOrganization handles DELETE /admin/organizations/{id} — soft
+// delete; ?force=true permanently removes an already-soft-deleted row.
 func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1024,7 +1026,8 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.service.AdminDeleteOrganization(r.Context(), id); err != nil {
+	force := r.URL.Query().Get("force") == "true"
+	if err := h.service.AdminDeleteOrganization(r.Context(), id, force); err != nil {
 		handleServiceError(w, err)
 		return
 	}

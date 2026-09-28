@@ -542,20 +542,30 @@ FROM spaces s
 LEFT JOIN space_members sm ON sm.space_id = s.id AND sm.role = 'owner'
 LEFT JOIN users u ON u.id = sm.user_id
 LEFT JOIN space_types st ON st.id = s.space_type_id
-WHERE s.deleted_at IS NULL
- AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+WHERE (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
  AND (@status::text = '' OR s.status = @status)
  AND (@visibility::text = '' OR s.visibility = @visibility)
+ -- Soft-deleted spaces are hidden by default; ?deleted=only|all surfaces
+ -- them so admins can force-delete (same contract as AdminListWikiPages).
+ AND CASE @deleted::text
+       WHEN 'only' THEN s.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE s.deleted_at IS NULL
+     END
 ORDER BY s.created_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: AdminListSpacesCount :one
 SELECT COUNT(*) AS total
 FROM spaces s
-WHERE s.deleted_at IS NULL
- AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+WHERE (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
  AND (@status::text = '' OR s.status = @status)
- AND (@visibility::text = '' OR s.visibility = @visibility);
+ AND (@visibility::text = '' OR s.visibility = @visibility)
+ AND CASE @deleted::text
+       WHEN 'only' THEN s.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE s.deleted_at IS NULL
+     END;
 
 -- name: ListSpacesByMemberUser :many
 -- Returns the lean fields the main-app nav, composer, and dashboard need
@@ -808,6 +818,25 @@ WHERE id = @id AND deleted_at IS NULL;
 -- The account:deletion_cleanup Asynq task may hard-delete after GDPR erasure.
 UPDATE spaces SET deleted_at = now(), status = 'deleted'
 WHERE id = @id AND deleted_at IS NULL;
+
+-- name: HardDeleteSpace :execrows
+-- Permanent delete — only for already-soft-deleted spaces (admin ?force=true).
+-- Space-owned children cascade via ON DELETE CASCADE, nullable references
+-- SET NULL. Child spaces are guarded: they are independent entities, not
+-- owned content, so the row must have no subspaces (admin deletes children
+-- first).
+DELETE FROM spaces s
+WHERE s.id = @id AND s.deleted_at IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM spaces c WHERE c.parent_id = s.id);
+
+-- name: SpaceExists :one
+-- Existence probe for the hard-delete path: distinguishes 404 not_found
+-- from 409 not_deleted/in_use when the guarded DELETE affects no row.
+SELECT EXISTS(SELECT 1 FROM spaces WHERE id = @id) AS exists;
+
+-- name: SpaceHasChildSpaces :one
+-- Dependency probe for the hard-delete path (subspaces must go first).
+SELECT EXISTS(SELECT 1 FROM spaces WHERE parent_id = @id) AS exists;
 
 -- name: IncrementSpaceCount :exec
 UPDATE spaces

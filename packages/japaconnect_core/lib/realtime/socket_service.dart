@@ -31,8 +31,10 @@ class SocketService {
         '/auth/ws-ticket',
         parse: (json) => json as Map<String, dynamic>,
       );
+      // POST /auth/ws-ticket responds { "data": { "ticket": "<uuid>" } } —
+      // the client unwraps `data`, so the key here is `ticket`.
       _socket = SocketClient(url: client.effectiveWsUrl);
-      _socket!.connect(ticket['token'] as String);
+      _socket!.connect(ticket['ticket'] as String);
       _socket!.events.listen(
         (event) {
           if (event is Map<String, dynamic>) {

@@ -3,7 +3,6 @@
 	import { t } from '$lib/i18n';
 	import { deleteDevice, deletePushToken, getVapidKey, getPushTokens, subscribePush } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import { invalidateAll } from '$app/navigation';
 	import type { DeviceInfo } from '$lib/types';
 
 	interface PushToken {
@@ -81,7 +80,14 @@
 			if (vapid.error || !vapid.data?.publicKey) throw new Error(vapid.error?.message ?? 'No VAPID key');
 			const reg = await navigator.serviceWorker.ready;
 			const existing = await reg.pushManager.getSubscription();
-			if (existing) await existing.unsubscribe();
+			if (existing) {
+				await existing.unsubscribe();
+				// Drop the stale endpoint server-side too — the browser
+				// subscription is dead, but the push_subscriptions row would
+				// otherwise linger until a failed delivery prunes it.
+				const stale = pushTokens.find((pt) => pt.endpoint === existing.endpoint);
+				if (stale) await deletePushToken(stale.id).catch(() => {});
+			}
 			const sub = await reg.pushManager.subscribe({
 				userVisibleOnly: true,
 				applicationServerKey: urlBase64ToUint8Array(vapid.data.publicKey) as BufferSource

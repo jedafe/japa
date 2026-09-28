@@ -52,6 +52,32 @@ func (s *Store) getNotificationsByRecipient(ctx context.Context, recipientID pgt
 	return rows, nil
 }
 
+// countNotificationsByRecipient returns the total number of notifications
+// matching the same unread_only filter as getNotificationsByRecipient, so
+// the list endpoint can report { total, has_more } (§35).
+func (s *Store) countNotificationsByRecipient(ctx context.Context, recipientID pgtype.UUID, unreadOnly bool) (int32, error) {
+	count, err := s.read.CountNotificationsByRecipient(ctx, gen.CountNotificationsByRecipientParams{
+		RecipientID: recipientID,
+		UnreadOnly:  unreadOnly,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting notifications: %w", err)
+	}
+
+	return count, nil
+}
+
+// getNotificationTypeLabel returns the human-readable label for a
+// notification type key (used to enrich WebSocket payloads).
+func (s *Store) getNotificationTypeLabel(ctx context.Context, key string) (string, error) {
+	label, err := s.read.GetNotificationTypeLabel(ctx, key)
+	if err != nil {
+		return "", fmt.Errorf("getting notification type label: %w", err)
+	}
+
+	return label, nil
+}
+
 // getUnreadCount returns the number of unread notifications.
 func (s *Store) getUnreadCount(ctx context.Context, recipientID pgtype.UUID) (int32, error) {
 	count, err := s.read.GetUnreadNotificationCount(ctx,

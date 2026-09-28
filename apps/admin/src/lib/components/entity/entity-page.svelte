@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission, getPermissionState } from '$lib/stores/permissions.svelte';
-	import { page as sveltekitPage } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -20,9 +19,10 @@
 	import { untrack } from 'svelte';
 	import type { Snippet } from 'svelte';
 
-	// URL params reserved for non-filter state (page/pageSize/q/sort/dir).
-	// Every other query param is treated as a filter key.
-	const RESERVED_PARAMS = new Set(['page', 'pageSize', 'q', 'sort', 'dir']);
+	// URL params reserved for non-filter state (page/pageSize/q/sort/dir plus
+	// `tab`, which parent pages use to track the active tab). Every other
+	// query param is treated as a filter key.
+	const RESERVED_PARAMS = new Set(['page', 'pageSize', 'q', 'sort', 'dir', 'tab']);
 	const DEFAULT_PAGE_SIZE = 25;
 
 	// EntityPageConfig — declarative config the scaffold turns into a full CRUD page.
@@ -78,12 +78,19 @@
 		restore?: (id: string) => Promise<{ ok: boolean; error?: string }>;
 		/** Predicate to detect soft-deleted rows. Default: `row.status === 'deleted' || row.deleted_at != null`. */
 		isDeleted?: (row: any) => boolean;
+		/** Set false to suppress the built-in "Delete Selected" bulk action that
+		 *  appears when `remove` is configured. Default: enabled when removable. */
+		bulkDelete?: boolean;
 		/** Show an Export button that downloads all filtered rows as CSV. */
 		exportable?: boolean;
 		/** Custom filename for the CSV export (without extension). Default: `${title}-export`. */
 		exportFilename?: string;
 		onCreated?: (id: string) => void;
 		viewSnippet?: Snippet<[{ row: any }]>;
+		/** Called whenever the view slide-over transitions from open to closed.
+		 *  Lets pages clear deep-link params (e.g. ?view=<id>) so re-clicking the
+		 *  same link re-opens the view. */
+		onViewClose?: () => void;
 		formSnippet?: Snippet<[{ value: Record<string, any>; editing: any | null }]>;
 		/** When provided, a grid/list view toggle appears in the header and the
 		 *  grid snippet is rendered instead of the DataTable when grid mode is
@@ -91,6 +98,10 @@
 		gridSnippet?: Snippet<[{ row: any }]>;
 		/** Default view mode when gridSnippet is provided ('list' | 'grid'). Default: 'list'. */
 		defaultViewMode?: 'list' | 'grid';
+		/** Set false to keep list state (q/page/pageSize/sort/filters) internal —
+		 *  use for secondary/nested tables where one URL cannot hold two
+		 *  tables' state (e.g. a per-row sub-table). Default: true. */
+		urlSync?: boolean;
 	}
 
 	let { config, controller = $bindable() }: { config: EntityPageConfig; controller?: EntityPageController } = $props();
@@ -98,7 +109,17 @@
 	// ── Owned UI state ──────────────────────────────────────────────────────
 	// Seeded from the URL once at init so a reload restores page/pageSize/q/sort/filters
 	// and the first `load` call uses the restored params (no double-fetch).
-	const initialParams = sveltekitPage.url.searchParams;
+	// Read window.location, not sveltekitPage.url — $app/state's page.url can
+	// lag behind the DataTable's replaceState writes when this component
+	// remounts (e.g. tab switches), leaving the seeded state out of sync with
+	// the address bar. Same workaround DataTable uses (data-table.svelte).
+	// When config.urlSync is false the table owns no URL state — seed empty.
+	// untrack: read once at init, like defaultViewMode below.
+	const urlSync = untrack(() => config.urlSync !== false);
+	const initialParams =
+		urlSync && typeof window !== 'undefined'
+			? new URL(window.location.href).searchParams
+			: new URLSearchParams();
 	const initialFilters: Record<string, string> = {};
 	for (const [key, value] of initialParams.entries()) {
 		if (!RESERVED_PARAMS.has(key) && value) initialFilters[key] = value;
@@ -225,9 +246,18 @@
 				totalRows = result.length;
 				totalPages = 1;
 			} else {
+				const tp = result.totalPages ?? 1;
+				// Out-of-range page (deep-linked ?page=99, or a filter/search that
+				// shrank the result set below the current page): clamp to the
+				// last page — the reactive effect re-fetches with the corrected
+				// page instead of showing an empty grid on a stale page number.
+				if (tp >= 1 && currentPage > tp - 1) {
+					currentPage = tp - 1;
+					return;
+				}
 				rows = result.data ?? [];
 				totalRows = result.total ?? rows.length;
-				totalPages = result.totalPages ?? 1;
+				totalPages = tp;
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('common.load_error', 'Failed to load');
@@ -274,9 +304,10 @@
 	});
 
 	function syncToUrl() {
-		if (typeof window === 'undefined') return;
-		// Build from the current URL so sort/dir/q (owned by the DataTable) are preserved.
-		const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
+		if (!urlSync || typeof window === 'undefined') return;
+		// Build from the live URL so sort/dir/q (owned by the DataTable's
+		// replaceState writes, which can lag in $app/state) are preserved.
+		const params = new URLSearchParams(window.location.search);
 		// Drop stale filter params (any non-reserved key) before re-writing current ones.
 		for (const key of [...params.keys()]) {
 			if (!RESERVED_PARAMS.has(key)) params.delete(key);
@@ -290,7 +321,7 @@
 			if (value) params.set(key, value);
 		}
 		const qs = params.toString();
-		const url = `${sveltekitPage.url.pathname}${qs ? `?${qs}` : ''}`;
+		const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
 		// Prefers SvelteKit's replaceState (updates $app/state's page.url so seed
 		// effects see new params), falling back to window.history.replaceState
 		// if the SvelteKit router isn't initialized (e.g. in test environments).
@@ -362,16 +393,46 @@
 	});
 
 	// Wrap bulk actions to auto-reload + clear selection after completion.
+	// Every table gets "Export Selected"; tables with a `remove` config get a
+	// confirm-gated "Delete Selected" (opt out via bulkDelete: false).
 	const wiredBulkActions = $derived.by<BulkAction[]>(() => {
-		if (!config.bulkActions) return [];
-		return config.bulkActions.map((a) => ({
-			...a,
-			onclick: async (ids: Set<string>) => {
-				await a.onclick(ids);
-				selectedIds = new Set();
-				await reload();
+		const acts: BulkAction[] = [
+			{
+				label: t('common.exportSelected', 'Export Selected'),
+				icon: Download,
+				onclick: exportSelectedCsv
 			}
-		}));
+		];
+		// A page-declared "Delete Selected" duplicates the built-in confirm-gated
+		// delete (the legacy Promise.all pattern) — drop it in favor of the
+		// built-in when the built-in is active.
+		const customDeleteLabel = t('common.deleteSelected', 'Delete Selected');
+		const isCustomDelete = (a: BulkAction) =>
+			a.variant === 'destructive' && a.label === customDeleteLabel;
+		const builtinDelete = canDelete && config.remove && config.bulkDelete !== false;
+		if (builtinDelete) {
+			acts.push({
+				label: customDeleteLabel,
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openBulkDelete,
+				// Rows already soft-deleted can't be deleted again — block the
+				// action when the selection contains one.
+				disabled: (_ids, rows) => (rows ?? []).some((r) => isRowDeleted(r))
+			});
+		}
+		for (const a of config.bulkActions ?? []) {
+			if (builtinDelete && isCustomDelete(a)) continue;
+			acts.push({
+				...a,
+				onclick: async (ids: Set<string>) => {
+					await a.onclick(ids);
+					selectedIds = new Set();
+					await reload();
+				}
+			});
+		}
+		return acts;
 	});
 
 	// Expose controller so page-local code (modals, etc.) can trigger reload/view/edit/delete.
@@ -383,6 +444,13 @@
 		viewTarget = row;
 		viewOpen = true;
 	}
+
+	// Notify on view slide-over close so pages can clear deep-link params.
+	let prevViewOpen = false;
+	$effect(() => {
+		if (prevViewOpen && !viewOpen) config.onViewClose?.();
+		prevViewOpen = viewOpen;
+	});
 
 	function openCreate() {
 		editing = null;
@@ -555,8 +623,9 @@
 				if (page + 1 >= tp) break;
 				page++;
 			}
-			// Build CSV from visible columns.
-			const cols = config.columns;
+			// Build CSV from visible columns. Label-less columns are UI-only
+			// cells (avatar stacks, action menus) — exclude them.
+			const cols = config.columns.filter((c) => c.key && c.label);
 			const header = cols.map((c) => csvEscape(c.label)).join(',');
 			const lines = allRows.map((row) =>
 				cols.map((c) => csvEscape(row[c.key])).join(',')
@@ -576,6 +645,76 @@
 			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 		} finally {
 			exporting = false;
+		}
+	}
+
+	// Export only the selected rows — uses the same column set as the full CSV
+	// export but skips the paginated fetch entirely (selection is page-scoped).
+	function exportSelectedCsv(ids: Set<string>) {
+		const selected = rows.filter((r) => ids.has(String(r?.id ?? '').split('::')[0]));
+		if (!selected.length) return;
+		const cols = config.columns.filter((c) => c.key && c.label);
+		const header = cols.map((c) => csvEscape(c.label)).join(',');
+		const lines = selected.map((row) => cols.map((c) => csvEscape(row[c.key])).join(','));
+		const csv = [header, ...lines].join('\n');
+		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${config.exportFilename ?? `${config.title}-export`}.csv`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+		success = t('common.exported', 'Exported {n} rows').replace('{n}', String(selected.length));
+	}
+
+	// ── Bulk delete (built-in when config.remove is set) ────────────────────
+	let bulkDeleteConfirmOpen = $state(false);
+	let bulkDeleteIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
+
+	function openBulkDelete(ids: Set<string>) {
+		bulkDeleteIds = new Set(ids);
+		bulkDeleteConfirmOpen = true;
+	}
+
+	// Sequential per-id deletes — the API has no bulk-delete route, and per-row
+	// failures (in-use, permissions) must be collected rather than aborting the
+	// whole batch on the first error.
+	async function confirmBulkDelete() {
+		if (!bulkDeleteIds.size || !config.remove) return;
+		bulkDeleting = true;
+		error = '';
+		try {
+			let failed = 0;
+			let lastErr = '';
+			for (const id of bulkDeleteIds) {
+				try {
+					const res = await config.remove(id);
+					if (!res?.ok) {
+						failed++;
+						lastErr = res?.error ?? '';
+					}
+				} catch (e) {
+					failed++;
+					lastErr = e instanceof Error ? e.message : '';
+				}
+			}
+			const total = bulkDeleteIds.size;
+			bulkDeleteConfirmOpen = false;
+			bulkDeleteIds = new Set();
+			selectedIds = new Set();
+			if (failed === 0) {
+				success = t('common.deletedN', 'Deleted {n} items').replace('{n}', String(total));
+			} else {
+				error = t('common.bulkDeletePartial', '{failed} of {n} items could not be deleted')
+					.replace('{failed}', String(failed))
+					.replace('{n}', String(total)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+			await reload();
+		} finally {
+			bulkDeleting = false;
 		}
 	}
 
@@ -730,6 +869,7 @@
 							bind:pageSize
 							pageSizeOptions={config.pageSizeOptions ?? [10, 25, 50, 100]}
 							urlSync={false}
+							defaultPageSize={config.pageSize ?? DEFAULT_PAGE_SIZE}
 						/>
 					</div>
 				{/if}
@@ -752,9 +892,10 @@
 					onfilterclear={handleFilterClear}
 					actions={rowActions}
 					bulkActionsList={wiredBulkActions}
-					selectable={!!config.bulkActions}
+					selectable={wiredBulkActions.length > 0}
 					bind:selectedIds
-					urlSync
+					{urlSync}
+					defaultPageSize={config.pageSize ?? DEFAULT_PAGE_SIZE}
 				/>
 			{/if}
 		{/if}
@@ -837,6 +978,21 @@
 			</Button>
 		</div>
 	{/if}
+</Modal>
+
+<!-- Bulk-delete confirm modal -->
+<Modal bind:open={bulkDeleteConfirmOpen} title={t('common.confirmDelete', 'Confirm Delete')}>
+	<p class="text-sm" style="color: var(--color-muted)">
+		{t('common.confirmBulkDelete', 'Delete {n} selected items? This cannot be undone.').replace('{n}', String(bulkDeleteIds.size))}
+	</p>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (bulkDeleteConfirmOpen = false)} disabled={bulkDeleting}>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={confirmBulkDelete} disabled={bulkDeleting}>
+			{bulkDeleting ? t('common.deleting', 'Deleting…') : t('common.delete', 'Delete')}
+		</Button>
+	</div>
 </Modal>
 
 <!-- Hard-delete confirm modal (permanent erasure) -->

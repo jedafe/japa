@@ -295,7 +295,7 @@
 	</div>
 {:else}
 	<div class="space-y-6">
-		<Tabs {tabs} bind:value={activeTab} />
+		<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={['period', 'from', 'to']} />
 
 		{#if activeTab === 'overview'}
 			<!-- KPI Stats -->
@@ -473,7 +473,7 @@
 					{#if topContent.length > 0}
 						<div class="space-y-3">
 							{#each topContent as item (item.content_id)}
-								<a href="/content/{item.content_id}" class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-[color-mix(in_srgb,var(--color-muted)_5%,transparent)]">
+								<a href="/content?view={item.content_id}" class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-[color-mix(in_srgb,var(--color-muted)_5%,transparent)]">
 									<div class="min-w-0 flex-1">
 										<p class="truncate text-sm font-medium" style="color: var(--color-foreground)">
 											{item.content_title || item.content_id.slice(0, 8)}
@@ -573,7 +573,7 @@
 
 	{#if activeTab === 'moderation'}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-			<a href="/moderation?tab=pending">
+			<a href="/moderation?status=pending">
 				<StatCard
 					label={t('dashboard.pending_reports', 'Pending Reports')}
 					value={(overview.pending_reports ?? 0).toLocaleString()}
@@ -585,7 +585,7 @@
 					value={(overview.pending_tickets ?? 0).toLocaleString()}
 				/>
 			</a>
-			<a href="/moderation?tab=spam">
+			<a href="/moderation?status=flagged">
 				<StatCard
 					label={t('dashboard.spam_queue', 'Spam Queue')}
 					value={(overview.spam_queue ?? 0).toLocaleString()}

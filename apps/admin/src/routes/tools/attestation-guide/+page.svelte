@@ -9,6 +9,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { useCountries } from '$lib/utils/countries.svelte';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
@@ -56,7 +57,9 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
-	let activeTab = $state<'pathways' | 'updates'>('pathways');
+	const ATTEST_TABS = ['pathways', 'updates'] as const;
+	let activeTab = $state<'pathways' | 'updates'>(initTabParam('pathways', { valid: ATTEST_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: ATTEST_TABS, preserve: [] });
 
 	// Generate modal state
 	let showGenerateModal = $state(false);
@@ -170,8 +173,17 @@
 
 	function onTabChange(tab: 'pathways' | 'updates') {
 		activeTab = tab;
-		if (tab === 'updates') loadUpdates(1);
 	}
+
+	// Lazy-load updates on first activation — covers clicks, ?tab=updates
+	// deep-links, and back/forward navigation.
+	let updatesLoaded = $state(false);
+	$effect(() => {
+		if (activeTab === 'updates' && !updatesLoaded) {
+			updatesLoaded = true;
+			void loadUpdates(1);
+		}
+	});
 
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {

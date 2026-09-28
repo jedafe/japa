@@ -216,7 +216,7 @@
 />
 
 <div class="space-y-6">
-	<Tabs {tabs} bind:value={activeTab} />
+	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 	<Card>
 		<CardContent class="p-0">

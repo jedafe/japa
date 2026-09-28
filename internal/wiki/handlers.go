@@ -17,6 +17,7 @@
 //	POST   /api/v1/admin/wiki/revisions/:id/approve        — revision-keyed approve (auth, wiki.review)
 //	POST   /api/v1/admin/wiki/revisions/:id/reject         — revision-keyed reject (auth, wiki.review)
 //	PATCH  /api/v1/admin/wiki/:page_id                     — lock/unlock, feature, entity bind (auth, wiki.manage)
+//	DELETE /api/v1/admin/wiki/:page_id                     — soft delete; ?force=true hard delete (auth, wiki.delete)
 //	POST   /api/v1/admin/wiki/generate                     — trigger Content Agent draft (auth, wiki.manage)
 //	GET    /api/v1/admin/wiki                              — admin list (auth, wiki.manage)
 //
@@ -545,8 +546,8 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 // HandleGetEntityFields handles GET /wiki/entities/:type/:id/fields — the
 // editable field schema for an entity (§80 community field ops, spec §8.1):
 // field groups assigned to its entity class, current values, and per-field
-// can_view/can_edit flags for the requesting user. Anonymous callers get the
-// schema with all permission flags false (fail-closed field RBAC, §06).
+// can_view/can_edit flags for the requesting user. Anonymous callers resolve
+// the guest user group's can_view grants (§06) — never can_edit.
 func (h *Handlers) HandleGetEntityFields(w http.ResponseWriter, r *http.Request) {
 	entityType := chi.URLParam(r, "type")
 	if entityType == "" {
@@ -994,8 +995,15 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 // HandleRejectRevision handles POST /admin/wiki/:page_id/revisions/:id/reject.
 // The frontend sends { "reason": "..." }; we accept both "reason" (UI field)
 // and "notes" (legacy/direct-API alias) and persist to hitl_review_notes (B2).
+// The revision must belong to page_id — the service returns pgx.ErrNoRows on
+// a mismatch, mapped to 404 like the approve route.
 func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	pageID, ok := scanUUIDParam(w, r, "page_id")
 	if !ok {
 		return
 	}
@@ -1017,7 +1025,17 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 		notes = body.Notes
 	}
 
-	if err := h.service.RejectRevision(r.Context(), revID, user.UserID, notes); err != nil {
+	if err := h.service.RejectRevision(r.Context(), revID, pageID, user.UserID, notes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "revision_not_found", "Revision not found for this page")
+			return
+		}
+
+		if errors.Is(err, ErrRevisionNotPending) {
+			errpkg.WriteError(w, http.StatusConflict, "revision_not_pending", "Revision is not pending review")
+			return
+		}
+
 		slog.Error("wiki: reject failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject revision")
 
@@ -1052,12 +1070,17 @@ func (h *Handlers) HandleAdminListRevisions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	q := r.URL.Query().Get("q")
+	// Whitelisted in the SQL CASE (created_at:asc|desc); unknown values
+	// fall through to the created_at DESC default.
+	sort := r.URL.Query().Get("sort")
+
 	page, limit := parsePageParams(r)
 	if limit > 200 {
 		limit = 200
 	}
 
-	revs, total, err := h.service.AdminListRevisions(r.Context(), kind, status, page, limit)
+	revs, total, err := h.service.AdminListRevisions(r.Context(), kind, status, q, sort, page, limit)
 	if err != nil {
 		slog.Error("wiki: admin list revisions failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list revisions")
@@ -1169,7 +1192,25 @@ func (h *Handlers) HandleRejectRevisionByID(w http.ResponseWriter, r *http.Reque
 		notes = body.Notes
 	}
 
+	// Load first so a missing row 404s cleanly (mirrors HandleApproveRevisionByID).
+	if _, err := h.service.GetRevision(r.Context(), revID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "revision_not_found", "Revision not found")
+			return
+		}
+
+		slog.Error("wiki: reject by id: load failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject revision")
+
+		return
+	}
+
 	if err := h.service.RejectRevisionByID(r.Context(), revID, user.UserID, notes); err != nil {
+		if errors.Is(err, ErrRevisionNotPending) {
+			errpkg.WriteError(w, http.StatusConflict, "revision_not_pending", "Revision is not pending review")
+			return
+		}
+
 		slog.Error("wiki: reject by id failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject revision")
 
@@ -1225,6 +1266,38 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+}
+
+// HandleDeletePage handles DELETE /admin/wiki/:page_id — soft delete (§80).
+// ?force=true permanently removes the page and cascades its revisions;
+// force requires a prior soft delete (409 page_not_deleted on a live page).
+// The route middleware enforces wiki.delete.
+func (h *Handlers) HandleDeletePage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	pageID, ok := scanUUIDParam(w, r, "page_id")
+	if !ok {
+		return
+	}
+
+	force := r.URL.Query().Get("force") == "true"
+	if err := h.service.DeletePage(r.Context(), pageID, force); err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+		case errors.Is(err, ErrPageNotDeleted):
+			errpkg.WriteError(w, http.StatusConflict, "page_not_deleted",
+				"Page must be soft-deleted before it can be permanently removed")
+		default:
+			slog.Error("wiki: delete page failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete wiki page")
+		}
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true, "force": force}})
 }
 
 // HandleGenerate handles POST /admin/wiki/generate — create a stub wiki page
@@ -1334,12 +1407,19 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// §80 soft delete: ?deleted=only|all surfaces deleted pages for the
+	// force-delete flow; any other value behaves like the default (exclude).
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "only" && deleted != "all" {
+		deleted = ""
+	}
+
 	page, limit := parsePageParams(r)
 	if limit > 200 {
 		limit = 200
 	}
 
-	pages, total, err := h.service.AdminListPages(r.Context(), spaceID, destSlug, category, q, sort, lockedPtr, page, limit)
+	pages, total, err := h.service.AdminListPages(r.Context(), spaceID, destSlug, category, q, sort, lockedPtr, deleted, page, limit)
 	if err != nil {
 		slog.Error("wiki: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list wiki pages")
