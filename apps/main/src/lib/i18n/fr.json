@@ -1763,6 +1763,8 @@
 	"learn_lesson.no_content": "Cette leçon n'a pas encore de contenu.",
 	"lists.description": "Listes classées et sélectionnées par la communauté",
 	"lists.empty": "Aucune liste pour le moment",
+	"lists.load_error": "Échec du chargement des listes. Veuillez réessayer plus tard.",
+	"lists.new_list": "Nouvelle liste",
 	"lists.sort.latest": "Récentes",
 	"lists.sort.popular": "Populaires",
 	"lists.tab.featured": "À la une",

@@ -1805,6 +1805,8 @@
 	"learn_lesson.no_content": "This lesson has no content yet.",
 	"lists.description": "Ranked and curated lists from the community",
 	"lists.empty": "No lists yet",
+	"lists.load_error": "Failed to load lists. Please try again later.",
+	"lists.new_list": "New list",
 	"lists.sort.latest": "Latest",
 	"lists.sort.popular": "Popular",
 	"lists.tab.featured": "Featured",
