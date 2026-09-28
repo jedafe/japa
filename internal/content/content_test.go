@@ -148,6 +148,27 @@ func TestContentTypeConstants(t *testing.T) {
 	}
 }
 
+func TestListContentTypeRegistered(t *testing.T) {
+	if !IsValidContentType(TypeList) {
+		t.Fatal("TypeList not in validContentTypes")
+	}
+	if TypeList != "list" {
+		t.Fatalf("TypeList = %q, want list", TypeList)
+	}
+	if got := ContentTypeLabels[TypeList]; got != "List" {
+		t.Fatalf("label = %q, want List", got)
+	}
+	found := false
+	for _, ct := range ContentTypes() {
+		if ct == TypeList {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("TypeList missing from ContentTypes()")
+	}
+}
+
 func TestVisibilityConstants(t *testing.T) {
 	t.Parallel()
 

@@ -697,6 +697,11 @@ var settingsCatalog = map[string]settingMeta{
 	"video.channel_sync.interval_minutes": {Type: "int", DefaultValue: "360", Description: "Minimum minutes between syncs of the same channel source.", Panel: "admin"},
 	"video.channel_sync.batch_size":       {Type: "int", DefaultValue: "50", Description: "Max channels processed per video:sync_channels run.", Panel: "admin"},
 	"video.channel_sync.auto_publish":     {Type: "bool", DefaultValue: "true", Description: "Publish synced videos as contents when the channel author has a default space.", Panel: "admin"},
+	// List (listicle) content type — §14 list amendment.
+	// Public: the /create composer and /lists index gate on this setting
+	// (same role as video.enabled). Missing = enabled.
+	"list.enabled":   {Type: "bool", DefaultValue: "true", Public: true, Description: "Killswitch for the list content type, /lists index, and /create composer.", Panel: "admin"},
+	"list.max_items": {Type: "int", DefaultValue: "50", Min: 1, Max: 500, Description: "Maximum number of items allowed in a list content.", Panel: "admin"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public
