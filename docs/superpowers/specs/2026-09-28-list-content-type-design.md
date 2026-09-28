@@ -241,7 +241,7 @@ Backend:
 - `internal/control/settings_catalog.go` (`list.enabled`, `list.max_items`)
 - `internal/ai/tools_content_bulk.go` + `internal/ai/agent.go` (add
   `agent.content_type.list` to the enumerated node family)
-- `migrations/000748_list_content_type.up.sql` + `.down.sql`
+- `migrations/000749_list_content_type.up.sql` + `.down.sql`
   (seed `list.create`, `agent.content_type.list`, grants, `ItemList` JSON-LD template)
 
 Frontend (apps/main):
