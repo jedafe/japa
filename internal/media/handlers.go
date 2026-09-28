@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -619,6 +620,8 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 
 // AdminDeleteMedia handles DELETE /admin/media/{id}.
 // Admin delete — no ownership filter, gated by media.delete_any.
+// ?force=true permanently removes an already-soft-deleted row, gated by
+// admin.hard_delete via rbac.RequireForceDelete.
 func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -627,6 +630,20 @@ func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 
 	mediaID, ok := parseMediaID(w, r)
 	if !ok {
+		return
+	}
+
+	if r.URL.Query().Get("force") == "true" {
+		err := h.service.HardDeleteMedia(r.Context(), mediaID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Media not found")
+			return
+		}
+		if err != nil {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
@@ -682,7 +699,13 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		flagged = &fl
 	}
 
-	items, total, err := h.service.ListMedia(r.Context(), uploaderID, mimeType, query, status, flagged, limit, offset)
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "" && deleted != "only" && deleted != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+
+	items, total, err := h.service.ListMedia(r.Context(), uploaderID, mimeType, query, status, flagged, deleted, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
@@ -734,7 +757,13 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 		flagged = &fl
 	}
 
-	items, total, err := h.service.ListMedia(r.Context(), &user.UserID, mimeType, query, status, flagged, limit, offset)
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "" && deleted != "only" && deleted != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+
+	items, total, err := h.service.ListMedia(r.Context(), &user.UserID, mimeType, query, status, flagged, deleted, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return

@@ -124,3 +124,11 @@ WHERE id = $1 AND deleted_at IS NULL;
 UPDATE calendar_entries
 SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: CalendarEntryExistsAny :one
+SELECT EXISTS(SELECT 1 FROM calendar_entries WHERE id = $1);
+
+-- name: CalendarAdminHardDeleteEntry :execrows
+-- Admin force-delete — only rows already soft-deleted are removed
+-- (gated by admin.hard_delete via ?force=true).
+DELETE FROM calendar_entries WHERE id = $1 AND deleted_at IS NOT NULL;

@@ -1765,8 +1765,11 @@ type ListComparisonsFilter struct {
 	Depth      string
 	Status     string
 	Visibility string
-	Limit      int32
-	Offset     int32
+	// Deleted selects the soft-delete view: "" = live only, "only" = deleted
+	// only, "all" = both. Only settable by admin list paths.
+	Deleted string
+	Limit   int32
+	Offset  int32
 }
 
 // ListComparisons returns a page of comparison content rows for the platform,
@@ -1810,6 +1813,7 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, f ListComparisonsFil
 		Depth:      f.Depth,
 		Status:     f.Status,
 		Visibility: f.Visibility,
+		Deleted:    f.Deleted,
 		Limit:      f.Limit,
 		Offset:     f.Offset,
 	})

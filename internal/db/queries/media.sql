@@ -17,6 +17,14 @@ RETURNING *;
 -- name: GetMediaByID :one
 SELECT * FROM media WHERE id = @id AND deleted_at IS NULL;
 
+-- name: GetMediaByIDAny :one
+SELECT * FROM media WHERE id = @id;
+
+-- name: HardDeleteMedia :execrows
+-- Admin force-delete — only rows already soft-deleted are removed
+-- (gated by admin.hard_delete via ?force=true).
+DELETE FROM media WHERE id = @id AND deleted_at IS NOT NULL;
+
 -- name: GetMediaByStoragePath :one
 SELECT * FROM media WHERE storage_path = @storage_path;
 
@@ -169,7 +177,13 @@ WHERE deleted_at IS NULL
 
 -- name: ListMediaFiltered :many
 SELECT * FROM media
-WHERE deleted_at IS NULL
+WHERE (
+ CASE @deleted::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
+ )
  AND (@uploader_user_id::uuid IS NULL OR uploader_user_id = @uploader_user_id)
  AND (@mime_pattern::text = '' OR mime_type LIKE @mime_pattern || '%')
  AND (@query::text = ''
@@ -189,7 +203,13 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountMediaFiltered :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE deleted_at IS NULL
+WHERE (
+ CASE @deleted::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
+ )
  AND (@uploader_user_id::uuid IS NULL OR uploader_user_id = @uploader_user_id)
  AND (@mime_pattern::text = '' OR mime_type LIKE @mime_pattern || '%')
  AND (@query::text = ''

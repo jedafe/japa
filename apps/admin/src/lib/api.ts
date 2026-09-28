@@ -388,6 +388,7 @@ export interface ComparisonEntry {
 	status: string;
 	depth?: string;
 	promoted_from_id?: string | null;
+	deleted_at?: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -457,6 +458,9 @@ export const comparisonAdminApi = {
 	) => api<ComparisonEntry>(`/jce/comparisons/${id}`, { method: 'PATCH', body }),
 	deleteComparison: (id: string) =>
 		api<unknown>(`/jce/comparisons/${id}`, { method: 'DELETE' }),
+	// Permanent delete of an already soft-deleted row — admin.hard_delete.
+	hardDeleteComparison: (id: string) =>
+		api<unknown>(`/jce/comparisons/${id}?force=true`, { method: 'DELETE' }),
 };
 
 export interface ComparisonProfileAdmin {
@@ -469,16 +473,20 @@ export interface ComparisonProfileAdmin {
 	demographics: Record<string, any>;
 	is_default: boolean;
 	is_template: boolean;
+	deleted_at?: string | null;
 }
 
 import type { ScoreFactorAdmin } from '$lib/types/jce';
 export type { ScoreFactorAdmin };
 
 export const jceAdminApi = {
-	listProfiles: () => api<ComparisonProfileAdmin[]>('/jce/profiles?all=true'),
+	listProfiles: (deleted?: string) =>
+		api<ComparisonProfileAdmin[]>(`/jce/profiles?all=true${deleted ? `&deleted=${deleted}` : ''}`),
 	createProfile: (body: Record<string, any>) => api<ComparisonProfileAdmin>('/jce/profiles', { method: 'POST', body }),
 	updateProfile: (id: string, body: Record<string, any>) => api<ComparisonProfileAdmin>(`/jce/profiles/${id}`, { method: 'PATCH', body }),
 	deleteProfile: (id: string) => api<unknown>(`/jce/profiles/${id}`, { method: 'DELETE' }),
+	// Permanent delete of an already soft-deleted row — admin.hard_delete.
+	hardDeleteProfile: (id: string) => api<unknown>(`/jce/profiles/${id}?force=true`, { method: 'DELETE' }),
 	listScoreFactors: (typeID: string) => api<ScoreFactorAdmin[]>(`/jce/comparison-types/${typeID}/score-factors`),
 	createScoreFactor: (typeID: string, body: Record<string, any>) => api<ScoreFactorAdmin>(`/jce/comparison-types/${typeID}/score-factors`, { method: 'POST', body }),
 	updateScoreFactor: (id: string, body: Record<string, any>) => api<ScoreFactorAdmin>(`/jce/score-factors/${id}`, { method: 'PATCH', body }),
@@ -1152,6 +1160,8 @@ export const contentAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/content${params ? `?${params}` : ''}`),
 	get: (id: string) => api<unknown>(`/admin/content/${id}`),
 	remove: (id: string, body?: { reason?: string }) => api<unknown>(`/admin/content/${id}/remove`, { method: 'POST', body: body ?? {} }),
+	// Permanent delete of an already soft-deleted row — admin.hard_delete.
+	forceRemove: (id: string) => api<unknown>(`/admin/content/${id}/remove?force=true`, { method: 'POST', body: {} }),
 	restore: (id: string) => api<unknown>(`/admin/content/${id}/restore`, { method: 'POST', body: {} }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/content/${id}`, { method: 'PATCH', body }),
@@ -1176,6 +1186,8 @@ export const mediaAdminApi = {
 	update: (id: string, body: { alt_text?: string; caption?: string; width?: number; height?: number; user_group_id?: string }) =>
 		api<unknown>(`/admin/media/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/media/${id}`, { method: 'DELETE' }),
+	// Permanent delete of an already soft-deleted row — admin.hard_delete.
+	hardDelete: (id: string) => api<unknown>(`/admin/media/${id}?force=true`, { method: 'DELETE' }),
 };
 
 export interface StockProviderAdmin {
@@ -1909,6 +1921,8 @@ export const storyAdminApi = {
 	verify: (id: string) => api<unknown>(`/admin/stories/${id}/verify`, { method: 'POST', body: {} }),
 	unverify: (id: string) => api<unknown>(`/admin/stories/${id}/unverify`, { method: 'POST', body: {} }),
 	delete: (id: string) => api<unknown>(`/admin/stories/${id}`, { method: 'DELETE' }),
+	// Permanent delete of an already soft-deleted row — admin.hard_delete.
+	hardDelete: (id: string) => api<unknown>(`/admin/stories/${id}?force=true`, { method: 'DELETE' }),
 };
 
 // WikiFieldOp is one entry in a fields/mixed revision's ops array (§80
@@ -2074,6 +2088,8 @@ export const calendarAdminApi = {
 		api<unknown>(`/admin/calendar/${id}`, { method: 'PATCH', body }),
 	// BUG-008: soft-delete (calendar.manage, admin+).
 	delete: (id: string) => api<unknown>(`/admin/calendar/${id}`, { method: 'DELETE' }),
+	// Permanent delete of an already soft-deleted row — admin.hard_delete.
+	hardDelete: (id: string) => api<unknown>(`/admin/calendar/${id}?force=true`, { method: 'DELETE' }),
 };
 
 export const achievementAdminApi = {
@@ -2176,6 +2192,8 @@ export const intelReviewApi = {
 export const processingTrackerAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/visa-timelines${params ? `?${params}` : ''}`),
 	delete: (id: string) => api<unknown>(`/admin/visa-timelines/${id}`, { method: 'DELETE' }),
+	// Permanent delete of an already soft-deleted row — admin.hard_delete.
+	hardDelete: (id: string) => api<unknown>(`/admin/visa-timelines/${id}?force=true`, { method: 'DELETE' }),
 };
 
 export const cvFormatterAdminApi = {

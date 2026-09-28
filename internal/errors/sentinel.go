@@ -4,7 +4,11 @@
 // error matching instead of fragile string containment checks.
 package errors
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/jackc/pgx/v5/pgconn"
+)
 
 // Domain errors — returned by service layers to indicate specific failure modes.
 var (
@@ -76,4 +80,12 @@ func WrapDuplicate(err error) error {
 	}
 	// Wrap with duplicate sentinel for backward compatibility
 	return errors.Join(ErrDuplicate, err)
+}
+
+// IsFKViolation reports whether err is a Postgres foreign-key violation
+// (SQLSTATE 23503). Force-delete paths use it to map dependent-row
+// conflicts to ErrInUse.
+func IsFKViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }

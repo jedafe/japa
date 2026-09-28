@@ -560,6 +560,12 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	filter.Outcome = r.URL.Query().Get("outcome")
 	filter.Q = r.URL.Query().Get("q")
 
+	filter.Deleted = r.URL.Query().Get("deleted")
+	if filter.Deleted != "" && filter.Deleted != "only" && filter.Deleted != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+
 	// Sort support (geo-aware tool pattern: "all admin tables must have
 	// filter + sort + paginate"). EntityPage sends sort as "column:dir"
 	// (e.g. "created_at:desc"); a bare "dir" query param is also accepted
@@ -608,6 +614,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 // HandleAdminDelete handles DELETE /admin/visa-timelines/:id — admin
 // soft-delete of any timeline. Admin-only (visa_timeline.manage_any permission
 // checked at route registration). Soft-delete per Rule 11.
+// ?force=true permanently removes an already-soft-deleted row, gated by
+// admin.hard_delete via rbac.RequireForceDelete.
 func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -620,6 +628,20 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "visa_timeline_unavailable", "Visa Timeline service not configured")
+		return
+	}
+
+	if r.URL.Query().Get("force") == "true" {
+		err := h.service.AdminHardDelete(r.Context(), id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
+			return
+		}
+		if err != nil {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 

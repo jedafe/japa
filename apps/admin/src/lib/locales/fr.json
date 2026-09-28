@@ -1538,6 +1538,7 @@
 	"common.filter_deleted_only": "Supprimés uniquement",
 	"common.forceDelete": "Supprimer quand même",
 	"common.forceDeleteWarning": "La suppression forcée supprimera définitivement cet enregistrement et toutes les valeurs stockées qui y font référence, et le détachera des types d'espaces ou catégories wiki qui y sont liés. Cette action est irréversible.",
+	"common.bulk_partial": "{failed} élément(s) sur {n} n'ont pas pu être traités",
 	"common.force_delete": "Supprimer définitivement",
 	"common.force_delete_confirm": "Supprimer définitivement « {name} » ? Cette action est irréversible.",
 	"common.force_delete_confirm_bulk": "Supprimer définitivement les {count} éléments sélectionnés ? Cette action est irréversible.",

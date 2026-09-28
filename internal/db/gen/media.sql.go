@@ -147,24 +147,31 @@ func (q *Queries) CountMediaByUploader(ctx context.Context, uploaderUserID pgtyp
 
 const countMediaFiltered = `-- name: CountMediaFiltered :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE deleted_at IS NULL
- AND ($1::uuid IS NULL OR uploader_user_id = $1)
- AND ($2::text = '' OR mime_type LIKE $2 || '%')
- AND ($3::text = ''
- OR original_filename ILIKE '%' || $3 || '%'
- OR alt_text ILIKE '%' || $3 || '%'
- OR caption ILIKE '%' || $3 || '%')
- AND (
- $4::text = '' OR
- ($4 = 'approved' AND confirmed = true) OR
- ($4 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
- ($4 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
- ($4 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
+WHERE (
+ CASE $1::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
  )
- AND ($5::text = '' OR flagged = ($5 = 'true'))
+ AND ($2::uuid IS NULL OR uploader_user_id = $2)
+ AND ($3::text = '' OR mime_type LIKE $3 || '%')
+ AND ($4::text = ''
+ OR original_filename ILIKE '%' || $4 || '%'
+ OR alt_text ILIKE '%' || $4 || '%'
+ OR caption ILIKE '%' || $4 || '%')
+ AND (
+ $5::text = '' OR
+ ($5 = 'approved' AND confirmed = true) OR
+ ($5 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
+ ($5 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
+ ($5 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
+ )
+ AND ($6::text = '' OR flagged = ($6 = 'true'))
 `
 
 type CountMediaFilteredParams struct {
+	Deleted        string      `json:"deleted"`
 	UploaderUserID pgtype.UUID `json:"uploader_user_id"`
 	MimePattern    string      `json:"mime_pattern"`
 	Query          string      `json:"query"`
@@ -174,6 +181,7 @@ type CountMediaFilteredParams struct {
 
 func (q *Queries) CountMediaFiltered(ctx context.Context, arg CountMediaFilteredParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countMediaFiltered,
+		arg.Deleted,
 		arg.UploaderUserID,
 		arg.MimePattern,
 		arg.Query,
@@ -288,6 +296,46 @@ func (q *Queries) GetMediaByID(ctx context.Context, id pgtype.UUID) (Medium, err
 	return i, err
 }
 
+const getMediaByIDAny = `-- name: GetMediaByIDAny :one
+SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE id = $1
+`
+
+func (q *Queries) GetMediaByIDAny(ctx context.Context, id pgtype.UUID) (Medium, error) {
+	row := q.db.QueryRow(ctx, getMediaByIDAny, id)
+	var i Medium
+	err := row.Scan(
+		&i.ID,
+		&i.UploaderUserID,
+		&i.OriginalFilename,
+		&i.MimeType,
+		&i.FileSizeBytes,
+		&i.WidthPx,
+		&i.HeightPx,
+		&i.DurationSecs,
+		&i.StoragePath,
+		&i.StorageBucket,
+		&i.AltText,
+		&i.Caption,
+		&i.Confirmed,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.QuarantineReason,
+		&i.QuarantinedAt,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.UserGroupID,
+		&i.SourcePlatform,
+		&i.SourcePhotographer,
+		&i.SourcePhotographerUrl,
+		&i.SourceLicense,
+		&i.SourceLicenseUrl,
+		&i.SourcePhotoID,
+		&i.RejectedAt,
+		&i.Flagged,
+	)
+	return i, err
+}
+
 const getMediaByStoragePath = `-- name: GetMediaByStoragePath :one
 SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE storage_path = $1
 `
@@ -326,6 +374,20 @@ func (q *Queries) GetMediaByStoragePath(ctx context.Context, storagePath string)
 		&i.Flagged,
 	)
 	return i, err
+}
+
+const hardDeleteMedia = `-- name: HardDeleteMedia :execrows
+DELETE FROM media WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Admin force-delete — only rows already soft-deleted are removed
+// (gated by admin.hard_delete via ?force=true).
+func (q *Queries) HardDeleteMedia(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteMedia, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertMedia = `-- name: InsertMedia :one
@@ -597,26 +659,33 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 const listMediaFiltered = `-- name: ListMediaFiltered :many
 
 SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
-WHERE deleted_at IS NULL
- AND ($1::uuid IS NULL OR uploader_user_id = $1)
- AND ($2::text = '' OR mime_type LIKE $2 || '%')
- AND ($3::text = ''
- OR original_filename ILIKE '%' || $3 || '%'
- OR alt_text ILIKE '%' || $3 || '%'
- OR caption ILIKE '%' || $3 || '%')
- AND (
- $4::text = '' OR
- ($4 = 'approved' AND confirmed = true) OR
- ($4 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
- ($4 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
- ($4 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
+WHERE (
+ CASE $1::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
  )
- AND ($5::text = '' OR flagged = ($5 = 'true'))
+ AND ($2::uuid IS NULL OR uploader_user_id = $2)
+ AND ($3::text = '' OR mime_type LIKE $3 || '%')
+ AND ($4::text = ''
+ OR original_filename ILIKE '%' || $4 || '%'
+ OR alt_text ILIKE '%' || $4 || '%'
+ OR caption ILIKE '%' || $4 || '%')
+ AND (
+ $5::text = '' OR
+ ($5 = 'approved' AND confirmed = true) OR
+ ($5 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
+ ($5 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
+ ($5 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
+ )
+ AND ($6::text = '' OR flagged = ($6 = 'true'))
 ORDER BY created_at DESC
-LIMIT $7 OFFSET $6
+LIMIT $8 OFFSET $7
 `
 
 type ListMediaFilteredParams struct {
+	Deleted        string      `json:"deleted"`
 	UploaderUserID pgtype.UUID `json:"uploader_user_id"`
 	MimePattern    string      `json:"mime_pattern"`
 	Query          string      `json:"query"`
@@ -633,6 +702,7 @@ type ListMediaFilteredParams struct {
 // =====================
 func (q *Queries) ListMediaFiltered(ctx context.Context, arg ListMediaFilteredParams) ([]Medium, error) {
 	rows, err := q.db.Query(ctx, listMediaFiltered,
+		arg.Deleted,
 		arg.UploaderUserID,
 		arg.MimePattern,
 		arg.Query,

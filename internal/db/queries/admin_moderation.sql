@@ -165,6 +165,49 @@ WHERE c.deleted_at IS NOT NULL
 ORDER BY c.deleted_at DESC NULLS LAST, c.updated_at DESC
 LIMIT $1;
 
+-- Admin list with soft-delete view selection: '' = live only (default),
+-- 'only' = deleted only, 'all' = both. Powers the /admin/content page's
+-- Deleted filter; kept separate from the public ListContents query so the
+-- deleted view can never leak to unauthenticated callers.
+-- name: AdminListContents :many
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body,
+ c.status, c.visibility, c.view_count, c.comment_count, c.published_at,
+ c.created_at, c.updated_at, c.deleted_at,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE (
+ CASE @deleted::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE c.deleted_at IS NULL
+ END
+ )
+ AND (@content_type::text = '' OR c.content_type = @content_type)
+ AND (@status::text = '' OR c.status = @status)
+ AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%')
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: AdminCountContents :one
+SELECT COUNT(*)::int AS count
+FROM contents c
+WHERE (
+ CASE @deleted::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE c.deleted_at IS NULL
+ END
+ )
+ AND (@content_type::text = '' OR c.content_type = @content_type)
+ AND (@status::text = '' OR c.status = @status)
+ AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%');
+
 -- =====================
 -- Broadcasts
 -- =====================

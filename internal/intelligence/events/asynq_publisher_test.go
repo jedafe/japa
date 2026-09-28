@@ -125,5 +125,59 @@ func TestAsynqEventPublisher_PublishDeadlineChanged(t *testing.T) {
 	}
 }
 
+func TestAsynqEventPublisher_SkipsDiscoveredEvents(t *testing.T) {
+	t.Parallel()
+	client, inspector := newTestClient(t)
+	pub := NewAsynqEventPublisher(client)
+
+	// A .discovered event is the notify_discoveries handler's own output —
+	// bridging it back onto the same task type would loop indefinitely.
+	evt := DomainEvent{
+		Type:       "scholarship.discovered",
+		EntityType: "scholarship",
+		EntityID:   uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+		Payload:    json.RawMessage(`{"scholarship_id":"33333333-3333-3333-3333-333333333333"}`),
+		OccurredAt: time.Now().UTC(),
+	}
+
+	if err := pub.Publish(t.Context(), evt); err != nil {
+		t.Fatalf("Publish returned error: %v", err)
+	}
+
+	// A skipped event enqueues nothing — the default queue never materializes.
+	queues, err := inspector.Queues()
+	if err != nil {
+		t.Fatalf("Queues: %v", err)
+	}
+	if len(queues) != 0 {
+		t.Fatalf("expected no queues for skipped .discovered event, got %v", queues)
+	}
+}
+
+func TestAsynqEventPublisher_SkipsEntityLessEvents(t *testing.T) {
+	t.Parallel()
+	client, inspector := newTestClient(t)
+	pub := NewAsynqEventPublisher(client)
+
+	evt := DomainEvent{
+		Type:       "scholarship.published",
+		EntityType: "scholarship",
+		EntityID:   uuid.Nil,
+		OccurredAt: time.Now().UTC(),
+	}
+
+	if err := pub.Publish(t.Context(), evt); err != nil {
+		t.Fatalf("Publish returned error: %v", err)
+	}
+
+	queues, err := inspector.Queues()
+	if err != nil {
+		t.Fatalf("Queues: %v", err)
+	}
+	if len(queues) != 0 {
+		t.Fatalf("expected no queues for entity-less event, got %v", queues)
+	}
+}
+
 // Compile-time check that AsynqEventPublisher satisfies the interface.
 var _ DomainEventPublisher = (*AsynqEventPublisher)(nil)

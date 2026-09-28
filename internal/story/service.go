@@ -34,6 +34,7 @@ type ContentService interface {
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	DeleteContent(ctx context.Context, id pgtype.UUID) error
+	HardDeleteContent(ctx context.Context, id pgtype.UUID) error
 }
 
 // FeatureChecker checks whether a feature flag is enabled for a platform.
@@ -72,6 +73,7 @@ type StoryDTO struct {
 	MostUsefulRes     string `json:"most_useful_resource,omitempty"`
 	BestAdvice        string `json:"best_advice,omitempty"`
 	Verified          bool   `json:"verified"`
+	DeletedAt         string `json:"deleted_at,omitempty"`
 	AuthorName        string `json:"author_name,omitempty"`
 	AuthorUsername    string `json:"author_username,omitempty"`
 	AuthorDisplayName string `json:"author_display_name,omitempty"`
@@ -546,6 +548,21 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, userID pgtype.UUID, 
 	return nil
 }
 
+// AdminHardDelete permanently removes a soft-deleted story's contents row
+// (admin ?force=true — gated by admin.hard_delete). Returns pgx.ErrNoRows
+// when missing and errpkg.ErrNotDeleted while live.
+func (s *Service) AdminHardDelete(ctx context.Context, contentID pgtype.UUID) error {
+	if err := s.content.HardDeleteContent(ctx, contentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("story: hard delete: %w", err)
+	}
+
+	return nil
+}
+
 // Verify marks a story as verified by an admin (story.verify permission).
 // Sets hitl_reviewed_by and hitl_reviewed_at per ADR-088 HITL review audit
 // trail.
@@ -579,7 +596,7 @@ func (s *Service) Unverify(ctx context.Context, contentID pgtype.UUID) error {
 // pageSize and pageOffset follow the conventions/api-response-format.md
 // offset pagination convention. sort may be "latest" (default), "oldest",
 // or "title". destSpaceID optionally filters by destination country.
-func (s *Service) AdminList(ctx context.Context, status, q string, verified *bool, sort string, destSpaceID pgtype.UUID, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, status, q string, verified *bool, sort string, destSpaceID pgtype.UUID, deleted string, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -595,6 +612,7 @@ func (s *Service) AdminList(ctx context.Context, status, q string, verified *boo
 		Q:           q,
 		Sort:        sort,
 		DestSpaceID: destSpaceID,
+		Deleted:     deleted,
 		Limit:       pageSize,
 		Offset:      pageOffset,
 	})
@@ -651,6 +669,9 @@ func rowToDTO(r StoryRow) StoryDTO {
 		CreatedAt:    formatTs(r.CreatedAt),
 		UpdatedAt:    formatTs(r.UpdatedAt),
 		Verified:     r.Verified,
+	}
+	if r.DeletedAt.Valid {
+		dto.DeletedAt = formatTs(r.DeletedAt)
 	}
 	if r.OriginSpaceID.Valid {
 		dto.OriginSpaceID = r.OriginSpaceID.String()

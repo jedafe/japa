@@ -32,6 +32,7 @@ type TimelineDTO struct {
 	AnonymisedAt       string         `json:"anonymised_at,omitempty"`
 	CreatedAt          string         `json:"created_at"`
 	UpdatedAt          string         `json:"updated_at"`
+	DeletedAt          string         `json:"deleted_at,omitempty"`
 	Milestones         []MilestoneDTO `json:"milestones,omitempty"`
 }
 
@@ -538,6 +539,21 @@ func (s *Service) AdminDelete(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
+// AdminHardDelete permanently removes a soft-deleted timeline (admin
+// ?force=true — gated by admin.hard_delete). Returns pgx.ErrNoRows when
+// missing and errpkg.ErrNotDeleted while live.
+func (s *Service) AdminHardDelete(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.HardDeleteTimeline(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("visatimeline: admin hard delete: %w", err)
+	}
+
+	return nil
+}
+
 // ErrNotOwner is returned when a user tries to modify a timeline they did not
 // create.
 var ErrNotOwner = errors.New("not the timeline owner")
@@ -557,6 +573,7 @@ func timelineToDTO(t Timeline) TimelineDTO {
 		AnonymisedAt:       formatTs(t.AnonymisedAt),
 		CreatedAt:          formatTs(t.CreatedAt),
 		UpdatedAt:          formatTs(t.UpdatedAt),
+		DeletedAt:          formatTs(t.DeletedAt),
 	}
 	if t.OriginSpaceID.Valid {
 		dto.OriginSpaceID = t.OriginSpaceID.String()

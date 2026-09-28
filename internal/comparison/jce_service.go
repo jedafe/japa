@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/content"
@@ -103,8 +104,12 @@ type JCEComparisonFilter struct {
 	UserID     pgtype.UUID
 	Query      string
 	Sort       string
-	Limit      int32
-	Offset     int32
+	// Deleted selects the soft-delete view: "" = live only, "only" = deleted
+	// only, "all" = both. Only settable by admin list paths — public callers
+	// never populate it.
+	Deleted string
+	Limit   int32
+	Offset  int32
 }
 
 // JCEComparisonListResult is the paged result of ListJCEComparisons.
@@ -605,7 +610,11 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 		f.Offset = 0
 	}
 
-	var depth, status, visibility, query, sort *string
+	var depth, status, visibility, query, sort, deleted *string
+	if f.Deleted != "" {
+		deleted = &f.Deleted
+	}
+
 	if f.Depth != "" && f.Depth != "all" {
 		depth = &f.Depth
 	}
@@ -635,6 +644,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 
 	items, err := s.store.listComparisonsWithFilters(ctx, gen.ListComparisonsWithFiltersParams{
 
+		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
 		Depth:      depth,
@@ -653,6 +663,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 
 	total, err := s.store.countComparisonsWithFilters(ctx, gen.CountComparisonsWithFiltersParams{
 
+		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
 		Depth:      depth,
@@ -796,6 +807,21 @@ func (s *Service) DeleteJCEComparison(ctx context.Context, id, userID pgtype.UUI
 
 	if err := s.contentSvc.DeleteContent(ctx, id); err != nil {
 		return fmt.Errorf("deleting comparison content: %w", err)
+	}
+
+	return nil
+}
+
+// HardDeleteJCEComparison permanently removes a soft-deleted comparison's
+// contents row (admin ?force=true — gated by admin.hard_delete). Returns
+// pgx.ErrNoRows when missing and errpkg.ErrNotDeleted while live.
+func (s *Service) HardDeleteJCEComparison(ctx context.Context, id pgtype.UUID) error {
+	if err := s.contentSvc.HardDeleteContent(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("hard deleting comparison content: %w", err)
 	}
 
 	return nil

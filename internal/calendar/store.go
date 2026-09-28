@@ -23,6 +23,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store is the data-access layer for calendar_entries, calendar_saves,
@@ -618,6 +619,7 @@ type AdminListEntriesFilter struct {
 	From               pgtype.Timestamptz
 	To                 pgtype.Timestamptz
 	Q                  string
+	Deleted            string
 	Sort               string
 	Order              string
 	Limit              int32
@@ -636,7 +638,13 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, "deleted_at IS NULL")
+	switch f.Deleted {
+	case "only":
+		conditions = append(conditions, "deleted_at IS NOT NULL")
+	case "all":
+	default:
+		conditions = append(conditions, "deleted_at IS NULL")
+	}
 
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("destination_space_id = $%d", argIdx))
@@ -804,6 +812,29 @@ func (s *Store) AdminSoftDeleteEntry(ctx context.Context, id pgtype.UUID) error 
 
 	if n == 0 {
 		return pgx.ErrNoRows
+	}
+
+	return nil
+}
+
+// AdminHardDeleteEntry permanently removes a soft-deleted calendar entry
+// (admin ?force=true — gated by admin.hard_delete). Returns pgx.ErrNoRows
+// when missing and errpkg.ErrNotDeleted while live.
+func (s *Store) AdminHardDeleteEntry(ctx context.Context, id pgtype.UUID) error {
+	n, err := s.write.CalendarAdminHardDeleteEntry(ctx, id)
+	if err != nil {
+		return fmt.Errorf("calendar: admin hard delete entry: %w", err)
+	}
+
+	if n == 0 {
+		exists, err := s.read.CalendarEntryExistsAny(ctx, id)
+		if err != nil {
+			return fmt.Errorf("calendar: check entry exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		return errpkg.ErrNotDeleted
 	}
 
 	return nil

@@ -18,6 +18,21 @@ FROM comparison_profiles
 WHERE deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC;
 
+-- name: ListComparisonProfilesAdmin :many
+-- Admin list (?all=true) — adds the soft-delete view: '' = live only,
+-- 'only' = deleted only, 'all' = both.
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+FROM comparison_profiles
+WHERE (
+ CASE @deleted::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
+ )
+ORDER BY is_default DESC, updated_at DESC;
+
 -- name: ListComparisonProfileTemplates :many
 SELECT id, user_id, title, source_space_id, target_space_ids,
  goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
@@ -51,6 +66,14 @@ RETURNING id, user_id, title, source_space_id, target_space_ids,
 UPDATE comparison_profiles
 SET deleted_at = now()
 WHERE id = @id AND deleted_at IS NULL;
+
+-- name: ComparisonProfileExistsAny :one
+SELECT EXISTS(SELECT 1 FROM comparison_profiles WHERE id = @id);
+
+-- name: HardDeleteComparisonProfile :execrows
+-- Admin force-delete — only rows already soft-deleted are removed
+-- (gated by admin.hard_delete via ?force=true).
+DELETE FROM comparison_profiles WHERE id = @id AND deleted_at IS NOT NULL;
 
 -- name: ClearDefaultProfileForUser :exec
 UPDATE comparison_profiles

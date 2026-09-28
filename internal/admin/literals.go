@@ -84,10 +84,16 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "only" && deleted != "all" {
+		deleted = ""
+	}
+
 	offset, limit := computePagination(page, pageSize)
 
 	rows, err := h.Queries.ListTemplateLiterals(r.Context(), gen.ListTemplateLiteralsParams{
 
+		Deleted:    deleted,
 		Search:     q,
 		IsActive:   isActive,
 		Kind:       kind,
@@ -103,6 +109,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 
 	total, err := h.Queries.CountTemplateLiterals(r.Context(), gen.CountTemplateLiteralsParams{
 
+		Deleted:  deleted,
 		Search:   q,
 		IsActive: isActive,
 		Kind:     kind,
@@ -416,6 +423,11 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Query().Get("force") == "true" {
+		h.forceDeleteLiteral(w, r, pgtype.UUID{Bytes: id, Valid: true})
+		return
+	}
+
 	existing, err := h.Queries.GetTemplateLiteral(r.Context(),
 
 		pgtype.UUID{Bytes: id, Valid: true},
@@ -441,6 +453,39 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 		pgtype.UUID{Bytes: id, Valid: true},
 	); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete literal")
+		return
+	}
+
+	h.invalidateLiteralCache(r.Context())
+
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+}
+
+// forceDeleteLiteral permanently removes an already-soft-deleted literal
+// (DELETE /admin/literals/{id}?force=true). Same contract as the wiki/space
+// force deletes: 404 missing, 403 system_literal, 409 not_deleted if live.
+func (h *Handlers) forceDeleteLiteral(w http.ResponseWriter, r *http.Request, id pgtype.UUID) {
+	row, err := h.Queries.GetTemplateLiteralAny(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
+			return
+		}
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load literal")
+		return
+	}
+
+	if row.IsSystem {
+		errpkg.WriteError(w, http.StatusForbidden, "system_literal", "Cannot delete system literals")
+		return
+	}
+	if !row.DeletedAt.Valid {
+		errpkg.WriteError(w, http.StatusConflict, "not_deleted", "Literal must be deleted before it can be permanently removed")
+		return
+	}
+
+	if _, err := h.Queries.HardDeleteTemplateLiteral(r.Context(), id); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to permanently delete literal")
 		return
 	}
 

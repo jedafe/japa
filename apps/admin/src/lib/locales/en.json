@@ -1538,6 +1538,7 @@
 	"common.filter_deleted_only": "Deleted only",
 	"common.forceDelete": "Delete Anyway",
 	"common.forceDeleteWarning": "Deleting anyway permanently removes this record and every stored value referencing it, and detaches it from any bound space types or wiki categories. This cannot be undone.",
+	"common.bulk_partial": "{failed} of {n} items could not be completed",
 	"common.force_delete": "Force Delete",
 	"common.force_delete_confirm": "Permanently delete \"{name}\"? This cannot be undone.",
 	"common.force_delete_confirm_bulk": "Permanently delete {count} selected items? This cannot be undone.",

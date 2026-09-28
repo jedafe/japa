@@ -709,6 +709,15 @@ WHERE id = @id AND deleted_at IS NULL;
 -- name: DeleteContent :exec
 UPDATE contents SET deleted_at = now(), updated_at = now() WHERE id = @id AND deleted_at IS NULL;
 
+-- name: ContentExistsAny :one
+SELECT EXISTS(SELECT 1 FROM contents WHERE id = @id);
+
+-- name: HardDeleteContent :execrows
+-- Admin force-delete — only rows already soft-deleted are removed
+-- (gated by admin.hard_delete via ?force=true). Children cascade via
+-- ON DELETE CASCADE; NO ACTION dependents surface as FK violations.
+DELETE FROM contents WHERE id = @id AND deleted_at IS NOT NULL;
+
 -- =====================
 -- Content Revisions
 -- =====================

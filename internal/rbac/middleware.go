@@ -98,6 +98,41 @@ func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler)
 	}
 }
 
+// RequireForceDelete is middleware that enforces the admin.hard_delete node
+// only when the request asks for permanent deletion (?force=true); plain
+// requests pass through untouched. Stack it after RequireAuth alongside the
+// route's normal permission check on soft-delete endpoints that also support
+// hard delete (amended Rule 11).
+func RequireForceDelete(resolver *RBAC) func(http.Handler) http.Handler {
+	const forcePerm = "admin.hard_delete"
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("force") != "true" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			user := auth.FromContext(r.Context())
+			if user == nil || !user.UserID.Valid {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+				return
+			}
+
+			if !resolver.IsSuperAdmin(r.Context(), user.UserID) &&
+				!resolver.HasPermission(r.Context(), user.UserID, forcePerm) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RequirePermissionWithInvalidation is middleware that checks permission for
 // routes that modify group/role assignments (grant, revoke, moderate).
 // // Note: This middleware does NOT invalidate the requesting user's cache —

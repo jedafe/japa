@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store is the data-access layer for visa_timelines, visa_timeline_milestones,
@@ -296,6 +297,37 @@ WHERE id = $1 AND deleted_at IS NULL
 
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
+	}
+
+	return nil
+}
+
+// HardDeleteTimeline permanently removes a soft-deleted timeline (admin
+// ?force=true — gated by admin.hard_delete). Milestones cascade via
+// ON DELETE CASCADE. Returns pgx.ErrNoRows when missing and
+// errpkg.ErrNotDeleted while live.
+func (s *Store) HardDeleteTimeline(ctx context.Context, id pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `
+DELETE FROM visa_timelines WHERE id = $1 AND deleted_at IS NOT NULL
+`, id)
+	if err != nil {
+		if errpkg.IsFKViolation(err) {
+			return errpkg.ErrInUse
+		}
+		return fmt.Errorf("visatimeline: hard delete timeline: %w", err)
+	}
+
+	if cmd.RowsAffected() == 0 {
+		var exists bool
+		if err := s.pool.Reader.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM visa_timelines WHERE id = $1)`, id,
+		).Scan(&exists); err != nil {
+			return fmt.Errorf("visatimeline: check timeline exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		return errpkg.ErrNotDeleted
 	}
 
 	return nil
@@ -577,6 +609,7 @@ type AdminListFilter struct {
 	VisaCategory       string      // optional
 	Outcome            string      // optional
 	Q                  string      // optional: search visa_category/consulate
+	Deleted            string      // "": live only, "only": deleted only, "all": both
 	Sort               string      // optional: sort column (created_at|updated_at|visa_category|outcome)
 	Order              string      // optional: asc|desc (default desc)
 	Limit              int32
@@ -601,7 +634,13 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Timeline, i
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, "deleted_at IS NULL")
+	switch f.Deleted {
+	case "only":
+		conditions = append(conditions, "t.deleted_at IS NOT NULL")
+	case "all":
+	default:
+		conditions = append(conditions, "t.deleted_at IS NULL")
+	}
 
 	if f.UserID.Valid {
 		conditions = append(conditions, fmt.Sprintf("user_id = $%d", argIdx))
@@ -719,7 +758,7 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, fmt.Errorf("visatimeline: admin iterate timelines: %w", err)
 	}
 
-	countQ := "SELECT COUNT(*) FROM visa_timelines WHERE " + whereClause
+	countQ := "SELECT COUNT(*) FROM visa_timelines t WHERE " + whereClause
 	countArgs := args[:len(args)-2]
 
 	var total int64

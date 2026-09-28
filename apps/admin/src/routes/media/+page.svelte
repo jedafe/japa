@@ -26,6 +26,7 @@
 		flagged?: boolean;
 		uploader?: string;
 		uploader_username?: string;
+		deleted_at?: string;
 		created_at: string;
 		url?: string;
 		user_group_id?: string;
@@ -36,6 +37,8 @@
 	const canManageMedia = $derived(hasPermission('media.quarantine.manage') || hasPermission('media.delete_any'));
 	const canDeleteMedia = $derived(hasPermission('media.delete_any'));
 	const canEditMedia = $derived(hasPermission('media.edit_any'));
+	// Rule 11 amendment: permanent delete requires the dedicated node.
+	const canHardDelete = $derived(hasPermission('admin.hard_delete'));
 
 	// ── EntityPage controller + page error ─────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -196,6 +199,59 @@
 		}
 	}
 
+	// Row map so bulk actions can resolve ids → rows after EntityPage clears
+	// the selection.
+	const mediaRowMap = new Map<string, MediaItem>();
+	const mediaRowsFor = (ids: Set<string>): MediaItem[] =>
+		Array.from(ids)
+			.map((id) => mediaRowMap.get(id))
+			.filter((r): r is MediaItem => !!r);
+
+	// ── Force delete (admin.hard_delete) — single + bulk share one modal ──
+	let forceTargets = $state<MediaItem[]>([]);
+	let showForceModal = $state(false);
+
+	function openForceDelete(row: MediaItem) {
+		forceTargets = [row];
+		showForceModal = true;
+	}
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = mediaRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (bulkActing || forceTargets.length === 0) return;
+		bulkActing = true;
+		pageError = '';
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = '';
+			for (const row of targets) {
+				const res = await mediaAdminApi.hardDelete(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t('common.bulk_partial', '{failed} of {n} items could not be completed')
+						.replace('{failed}', String(failed))
+						.replace('{n}', String(targets.length)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+			entityController?.reload();
+		} finally {
+			bulkActing = false;
+		}
+	}
+
 	// ── Row actions: custom actions replace defaults, so View/Delete are included explicitly ──
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -205,7 +261,8 @@
 			acts.push({
 				label: t('common.edit', 'Edit'),
 				icon: Pencil,
-				onclick: (row: MediaItem) => openEditModal(row)
+				onclick: (row: MediaItem) => openEditModal(row),
+				show: (row: MediaItem) => !row.deleted_at
 			});
 		}
 		if (canManageMedia) {
@@ -213,21 +270,21 @@
 				label: t('app.media.action_approve', 'Approve'),
 				icon: CheckCircle,
 				onclick: openApprove,
-				show: (row: MediaItem) => row.status === 'pending' || !!row.flagged
+				show: (row: MediaItem) => (row.status === 'pending' || !!row.flagged) && !row.deleted_at
 			});
 			acts.push({
 				label: t('app.media.action_reject', 'Reject'),
 				icon: XCircle,
 				variant: 'destructive',
 				onclick: openReject,
-				show: (row: MediaItem) => row.status === 'pending' || !!row.flagged
+				show: (row: MediaItem) => (row.status === 'pending' || !!row.flagged) && !row.deleted_at
 			});
 			acts.push({
 				label: t('app.media.action_quarantine', 'Quarantine'),
 				icon: Shield,
 				variant: 'destructive',
 				onclick: openQuarantine,
-				show: (row: MediaItem) => row.status !== 'quarantined'
+				show: (row: MediaItem) => row.status !== 'quarantined' && !row.deleted_at
 			});
 		}
 		if (canDeleteMedia) {
@@ -235,7 +292,18 @@
 				label: t('common.delete', 'Delete'),
 				icon: Trash2,
 				variant: 'destructive',
-				onclick: (_row, ctx) => ctx?.openDelete(_row)
+				onclick: (_row, ctx) => ctx?.openDelete(_row),
+				show: (row: MediaItem) => !row.deleted_at
+			});
+		}
+		if (canHardDelete) {
+			// Permanent removal — only for already-soft-deleted rows.
+			acts.push({
+				label: t('common.force_delete', 'Force Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openForceDelete,
+				show: (row: MediaItem) => !!row.deleted_at
 			});
 		}
 		return acts;
@@ -307,7 +375,10 @@
 				key: 'status',
 				label: t('app.media.col_status', 'Status'),
 				sortable: true,
-				render: (v: string) => {
+				render: (v: string, row: MediaItem) => {
+					if (row.deleted_at) {
+						return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-danger/15 text-danger">${t('common.filter_deleted', 'Deleted')}</span>`;
+					}
 					const variants: Record<string, string> = {
 						approved: 'bg-success/15 text-success',
 						pending: 'bg-warning/15 text-warning',
@@ -349,16 +420,40 @@
 					{ value: 'true', label: t('app.media.flagged_yes', 'Flagged') },
 					{ value: 'false', label: t('app.media.flagged_no', 'Not Flagged') }
 				]
+			},
+			// Soft-deleted media is hidden by default — this filter surfaces it
+			// so the Force Delete action has targets.
+			{
+				key: 'deleted',
+				label: t('common.filter_deleted', 'Deleted'),
+				options: [
+					{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		],
 		actions: rowActions,
-		bulkActions: canManageMedia
-			? [
-					{ label: t('app.media.action_approve', 'Approve'), icon: CheckCircle, onclick: bulkApprove },
-					{ label: t('app.media.action_reject', 'Reject'), icon: XCircle, variant: 'destructive', onclick: bulkReject },
-					{ label: t('common.deleteSelected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }
-				]
-			: undefined,
+		bulkActions: [
+			...(canManageMedia
+				? [
+						{ label: t('app.media.action_approve', 'Approve'), icon: CheckCircle, onclick: bulkApprove, disabled: (_ids: Set<string>, rows?: MediaItem[]) => (rows ?? []).some((r) => !!r.deleted_at) },
+						{ label: t('app.media.action_reject', 'Reject'), icon: XCircle, variant: 'destructive' as const, onclick: bulkReject, disabled: (_ids: Set<string>, rows?: MediaItem[]) => (rows ?? []).some((r) => !!r.deleted_at) },
+						{ label: t('common.deleteSelected', 'Delete Selected'), icon: Trash2, variant: 'destructive' as const, onclick: bulkDelete, disabled: (_ids: Set<string>, rows?: MediaItem[]) => (rows ?? []).some((r) => !!r.deleted_at) }
+					]
+				: []),
+			...(canHardDelete
+				? [
+						{
+							label: t('common.force_delete', 'Force Delete Selected'),
+							icon: Trash2,
+							variant: 'destructive' as const,
+							onclick: openBulkForceDelete,
+							disabled: (ids: Set<string>) =>
+								bulkActing || !mediaRowsFor(ids).some((r) => !!r.deleted_at)
+						}
+					]
+				: [])
+		],
 		fields,
 		defaultViewMode: 'grid',
 		gridSnippet: MediaGridCard,
@@ -374,11 +469,13 @@
 			if (filter.status) params.set('status', filter.status);
 			if (filter.mime_type) params.set('type', filter.mime_type);
 			if (filter.flagged) params.set('flagged', filter.flagged);
+			if (filter.deleted) params.set('deleted', filter.deleted);
 			// Use apiRaw to access top-level total/total_pages alongside data.
 			const result = await apiRaw<{ data?: MediaItem[]; items?: MediaItem[]; total?: number; total_pages?: number }>(`/admin/media?${params.toString()}`);
 			if (result.ok) {
 				const d = result.data;
-				const items = d.data ?? d.items ?? [];
+				const items = (d.data ?? d.items ?? []) as MediaItem[];
+				for (const r of items) mediaRowMap.set(r.id, r);
 				return {
 					data: items,
 					total: d.total ?? items.length,
@@ -1453,6 +1550,19 @@
 			</Button>
 		</div>
 	{/if}
+</Modal>
+
+<!-- ── Force Delete confirmation (admin.hard_delete — permanent) ─────────── -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t('common.force_delete_confirm_bulk', 'Permanently delete {n} item(s)? This cannot be undone.').replace('{n}', String(forceTargets.length))}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showForceModal = false; forceTargets = []; }}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={bulkActing}>
+			{bulkActing ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}
+		</Button>
+	</div>
 </Modal>
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->

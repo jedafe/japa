@@ -1518,6 +1518,34 @@ func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
+// HardDeleteContent permanently removes a content row that is already
+// soft-deleted (admin ?force=true — gated by admin.hard_delete). Children
+// cascade via ON DELETE CASCADE; NO ACTION dependents surface as
+// errpkg.ErrInUse. Returns pgx.ErrNoRows when missing and
+// errpkg.ErrNotDeleted while live.
+func (s *Service) HardDeleteContent(ctx context.Context, id pgtype.UUID) error {
+	affected, err := s.write.HardDeleteContent(ctx, id)
+	if err != nil {
+		if errpkg.IsFKViolation(err) {
+			return errpkg.ErrInUse
+		}
+		return fmt.Errorf("hard deleting content: %w", err)
+	}
+
+	if affected == 0 {
+		exists, err := s.read.ContentExistsAny(ctx, id)
+		if err != nil {
+			return fmt.Errorf("check content exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		return errpkg.ErrNotDeleted
+	}
+
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Content Revisions
 // ---------------------------------------------------------------------------

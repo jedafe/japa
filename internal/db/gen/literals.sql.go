@@ -13,20 +13,30 @@ import (
 
 const countTemplateLiterals = `-- name: CountTemplateLiterals :one
 SELECT COUNT(*) FROM template_literals
-WHERE deleted_at IS NULL
- AND ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%')
- AND ($2::boolean IS NULL OR is_active = $2::boolean)
- AND ($3::text = '' OR kind = $3::text)
+WHERE CASE $1::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
+ AND ($2::text = '' OR key ILIKE '%' || $2 || '%' OR label ILIKE '%' || $2 || '%')
+ AND ($3::boolean IS NULL OR is_active = $3::boolean)
+ AND ($4::text = '' OR kind = $4::text)
 `
 
 type CountTemplateLiteralsParams struct {
+	Deleted  string `json:"deleted"`
 	Search   string `json:"search"`
 	IsActive *bool  `json:"is_active"`
 	Kind     string `json:"kind"`
 }
 
 func (q *Queries) CountTemplateLiterals(ctx context.Context, arg CountTemplateLiteralsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countTemplateLiterals, arg.Search, arg.IsActive, arg.Kind)
+	row := q.db.QueryRow(ctx, countTemplateLiterals,
+		arg.Deleted,
+		arg.Search,
+		arg.IsActive,
+		arg.Kind,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -119,6 +129,35 @@ func (q *Queries) GetTemplateLiteral(ctx context.Context, id pgtype.UUID) (Templ
 	return i, err
 }
 
+const getTemplateLiteralAny = `-- name: GetTemplateLiteralAny :one
+SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+FROM template_literals
+WHERE id = $1
+`
+
+// Includes soft-deleted rows — used by the admin ?force=true path to
+// distinguish 404 (missing) from 409 not_deleted (still live).
+func (q *Queries) GetTemplateLiteralAny(ctx context.Context, id pgtype.UUID) (TemplateLiteral, error) {
+	row := q.db.QueryRow(ctx, getTemplateLiteralAny, id)
+	var i TemplateLiteral
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Kind,
+		&i.Value,
+		&i.Fallback,
+		&i.Label,
+		&i.Description,
+		&i.Category,
+		&i.IsSystem,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getTemplateLiteralByKey = `-- name: GetTemplateLiteralByKey :one
 SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
@@ -147,23 +186,42 @@ func (q *Queries) GetTemplateLiteralByKey(ctx context.Context, key string) (Temp
 	return i, err
 }
 
+const hardDeleteTemplateLiteral = `-- name: HardDeleteTemplateLiteral :execrows
+DELETE FROM template_literals WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Permanent delete — only for already-soft-deleted literals (admin ?force=true).
+// Zero rows → still live (409 not_deleted) or missing (404).
+func (q *Queries) HardDeleteTemplateLiteral(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteTemplateLiteral, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listTemplateLiterals = `-- name: ListTemplateLiterals :many
 SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
-WHERE deleted_at IS NULL
- AND ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%')
- AND ($2::boolean IS NULL OR is_active = $2::boolean)
- AND ($3::text = '' OR kind = $3::text)
+WHERE CASE $1::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
+ AND ($2::text = '' OR key ILIKE '%' || $2 || '%' OR label ILIKE '%' || $2 || '%')
+ AND ($3::boolean IS NULL OR is_active = $3::boolean)
+ AND ($4::text = '' OR kind = $4::text)
 ORDER BY
- CASE WHEN $4::text = 'key' AND $5::text = 'asc' THEN key END ASC,
- CASE WHEN $4::text = 'key' AND $5::text = 'desc' THEN key END DESC,
- CASE WHEN $4::text = 'created_at' AND $5::text = 'asc' THEN created_at END ASC,
- CASE WHEN $4::text = 'created_at' AND $5::text = 'desc' THEN created_at END DESC,
- CASE WHEN $4::text = '' OR $4::text NOT IN ('key', 'created_at') THEN created_at END DESC
-LIMIT $7 OFFSET $6
+ CASE WHEN $5::text = 'key' AND $6::text = 'asc' THEN key END ASC,
+ CASE WHEN $5::text = 'key' AND $6::text = 'desc' THEN key END DESC,
+ CASE WHEN $5::text = 'created_at' AND $6::text = 'asc' THEN created_at END ASC,
+ CASE WHEN $5::text = 'created_at' AND $6::text = 'desc' THEN created_at END DESC,
+ CASE WHEN $5::text = '' OR $5::text NOT IN ('key', 'created_at') THEN created_at END DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListTemplateLiteralsParams struct {
+	Deleted    string `json:"deleted"`
 	Search     string `json:"search"`
 	IsActive   *bool  `json:"is_active"`
 	Kind       string `json:"kind"`
@@ -174,8 +232,11 @@ type ListTemplateLiteralsParams struct {
 }
 
 // Returns all template literals for a platform with optional search and active filter.
+// ?deleted=only|all surfaces soft-deleted rows for admin force-delete
+// (same contract as AdminListWikiPages).
 func (q *Queries) ListTemplateLiterals(ctx context.Context, arg ListTemplateLiteralsParams) ([]TemplateLiteral, error) {
 	rows, err := q.db.Query(ctx, listTemplateLiterals,
+		arg.Deleted,
 		arg.Search,
 		arg.IsActive,
 		arg.Kind,

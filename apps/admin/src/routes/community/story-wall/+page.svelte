@@ -17,6 +17,7 @@
 		author_id: string;
 		status: string;
 		is_verified?: boolean;
+		deleted_at?: string;
 		created_at: string;
 		body?: string;
 		body_html?: string;
@@ -28,6 +29,8 @@
 	};
 
 	const canManage = $derived(hasPermission('story.verify'));
+	// Rule 11 amendment: permanent delete requires the dedicated node.
+	const canHardDelete = $derived(hasPermission('admin.hard_delete'));
 
 	// ── Country selector (250 primary geo space countries) ───────────────────
 	const countryUtils = useCountries();
@@ -41,6 +44,9 @@
 	let acting = $state(false);
 	let actionTarget = $state<StoryItem | null>(null);
 	let showDeleteModal = $state(false);
+	// Force-delete (admin.hard_delete) — permanent removal of soft-deleted rows.
+	let showForceModal = $state(false);
+	let forceTarget = $state<StoryItem | null>(null);
 
 	let storyWallStatusOptions = $state<CatalogOption[]>([
 		{ value: 'draft', label: t('app.story.status_draft', 'Draft') },
@@ -68,6 +74,33 @@
 			const result = await storyAdminApi.delete(actionTarget.id);
 			if (result.ok) {
 				showDeleteModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	// Force delete — admin.hard_delete-gated ?force=true on the same endpoint;
+	// the backend rejects rows that are not already soft-deleted.
+	function openForceDelete(item: StoryItem) {
+		forceTarget = item;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (!forceTarget) return;
+		acting = true;
+		pageError = '';
+		try {
+			const result = await storyAdminApi.hardDelete(forceTarget.id);
+			if (result.ok) {
+				showForceModal = false;
+				forceTarget = null;
 				entityController?.reload();
 			} else {
 				pageError = result.error ?? t('common.error', 'An error occurred');
@@ -128,20 +161,30 @@
 				label: t('app.story.verify', 'Verify'),
 				icon: CheckCircle,
 				onclick: verifyStory,
-				show: (row: StoryItem) => row.is_verified !== true
+				show: (row: StoryItem) => row.is_verified !== true && !row.deleted_at
 			});
 			acts.push({
 				label: t('app.story.unverify', 'Unverify'),
 				icon: CheckCircle,
 				onclick: unverifyStory,
-				show: (row: StoryItem) => row.is_verified === true
+				show: (row: StoryItem) => row.is_verified === true && !row.deleted_at
 			});
 			acts.push({
 				label: t('common.delete', 'Delete'),
 				icon: Trash2,
 				variant: 'destructive',
 				onclick: openDelete,
-				show: () => true
+				show: (row: StoryItem) => !row.deleted_at
+			});
+		}
+		if (canHardDelete) {
+			// Permanent removal — only for already-soft-deleted rows.
+			acts.push({
+				label: t('common.force_delete', 'Force Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openForceDelete,
+				show: (row: StoryItem) => !!row.deleted_at
 			});
 		}
 		return acts;
@@ -179,6 +222,16 @@
 				fetcher: countryUtils.fetcher,
 				initialFetcher: countryUtils.initialFetcher,
 				getSelectedLabel: countryUtils.getSelectedLabel
+			},
+			// Soft-deleted stories are hidden by default — this filter surfaces
+			// them so the Force Delete action has targets.
+			{
+				key: 'deleted',
+				label: t('common.filter_deleted', 'Deleted'),
+				options: [
+					{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		];
 	});
@@ -201,7 +254,10 @@
 				key: 'status',
 				label: t('app.story.col_status', 'Status'),
 				sortable: true,
-				render: (value: string) => value || '—'
+				render: (value: string, row: StoryItem) =>
+					row.deleted_at
+						? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-danger/15 text-danger">${t('common.filter_deleted', 'Deleted')}</span>`
+						: value || '—'
 			},
 			{
 				key: 'created_at',
@@ -227,6 +283,7 @@
 			if (params.filter?.dest) qp.set('dest', params.filter.dest);
 			if (params.filter?.status) qp.set('status', params.filter.status);
 			if (params.filter?.verified) qp.set('verified', params.filter.verified);
+			if (params.filter?.deleted) qp.set('deleted', params.filter.deleted);
 			const result = await apiRaw<{ data: StoryItem[]; pagination: { total: number } }>(
 				`/admin/stories${qp.toString() ? `?${qp.toString()}` : ''}`
 			);
@@ -268,6 +325,21 @@
 		<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={confirmDelete} disabled={acting}>
 			{acting ? t('app.story.deleting', 'Deleting...') : t('common.delete', 'Delete')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Force Delete confirmation (admin.hard_delete — permanent) ─────────── -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('common.force_delete_confirm', 'Permanently delete "{name}"? This cannot be undone.').replace('{name}', forceTarget?.title ?? '')}
+		</p>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showForceModal = false; forceTarget = null; }}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={acting}>
+			{acting ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}
 		</Button>
 	</div>
 </Modal>

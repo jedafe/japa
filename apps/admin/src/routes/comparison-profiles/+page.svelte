@@ -2,11 +2,15 @@
 	// /comparison-profiles — admin management for comparison profile templates and user profiles.
 	// Uses the EntityPage scaffold with a custom formSnippet because the JSON fields
 	// (goals, preferences, demographics) cannot be edited by the basic EntityForm.
-	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { jceAdminApi, type ComparisonProfileAdmin } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { parseJson, JsonParseError } from '$lib/utils/json';
+	import { Trash2 } from 'lucide-svelte';
+	import type { BulkAction } from '$lib/components/ui/data-table';
 import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 
 	type Profile = ComparisonProfileAdmin;
@@ -79,8 +83,61 @@ import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 	const canEdit = $derived(hasPermission('jce.profile.update'));
 	const canDelete = $derived(hasPermission('jce.profile.delete'));
 	const canCreateTemplate = $derived(hasPermission('comparison.edit_any'));
+	// Rule 11 amendment: permanent delete requires the dedicated node.
+	const canHardDelete = $derived(hasPermission('admin.hard_delete'));
 
 	let profileStats = $state<{ source_space_id: string; profile_count: number }[]>([]);
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let bulkDeleting = $state(false);
+
+	// Row map so bulk actions can resolve ids → rows after EntityPage clears
+	// the selection.
+	const profileRowMap = new Map<string, Profile>();
+	const profileRowsFor = (ids: Set<string>): Profile[] =>
+		Array.from(ids)
+			.map((id) => profileRowMap.get(id))
+			.filter((r): r is Profile => !!r);
+
+	// ── Force delete (admin.hard_delete) — bulk shares one confirm modal ──
+	let forceTargets = $state<Profile[]>([]);
+	let showForceModal = $state(false);
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = profileRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (bulkDeleting || forceTargets.length === 0) return;
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = '';
+			for (const row of targets) {
+				const res = await jceAdminApi.hardDeleteProfile(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t('common.bulk_partial', '{failed} of {n} items could not be completed')
+						.replace('{failed}', String(failed))
+						.replace('{n}', String(targets.length)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+			entityController?.reload();
+		} finally {
+			bulkDeleting = false;
+		}
+	}
 
 	// `fields` is required by EntityPage to seed the edit form from a row.
 	const fields: FieldDef[] = [
@@ -94,13 +151,14 @@ import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 		{ key: 'is_template', label: t('comparison_profiles.is_template', 'Template'), type: 'checkbox' }
 	];
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t('comparison_profiles.title', 'Comparison Profiles'),
 		description: t('comparison_profiles.description', 'Manage comparison profile templates and user profiles'),
 		createLabel: t('comparison_profiles.add', 'Add Comparison Profile'),
 		createPermission: 'jce.profile.create',
 		editPermission: 'jce.profile.update',
 		deletePermission: 'jce.profile.delete',
+		hardDeletePermission: 'admin.hard_delete',
 		pageSize: 25,
 		columns: [
 			{ key: 'title', label: t('comparison_profiles.name', 'Title'), sortable: true },
@@ -123,6 +181,14 @@ import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 				key: 'is_default',
 				label: t('comparison_profiles.is_default', 'Default'),
 				render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-primary/15 text-primary' : 'bg-muted/15 text-muted'}">${v ? t('common.yes', 'Yes') : t('common.no', 'No')}</span>`
+			},
+			{
+				key: 'deleted_at',
+				label: t('common.filter_deleted', 'Deleted'),
+				render: (v: string | null) =>
+					v
+						? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-danger/15 text-danger">${t('common.filter_deleted', 'Deleted')}</span>`
+						: `<span style="color: var(--color-muted)">—</span>`
 			}
 		],
 		filters: [
@@ -133,14 +199,36 @@ import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 					{ value: 'true', label: t('common.yes', 'Yes') },
 					{ value: 'false', label: t('common.no', 'No') }
 				]
+			},
+			// Soft-deleted profiles are hidden by default — this filter surfaces
+			// them so the Hard Delete action has targets.
+			{
+				key: 'deleted',
+				label: t('common.filter_deleted', 'Deleted'),
+				options: [
+					{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		],
+		bulkActions: canHardDelete
+			? [
+					{
+						label: t('common.force_delete', 'Force Delete Selected'),
+						icon: Trash2,
+						variant: 'destructive',
+						onclick: openBulkForceDelete,
+						disabled: (ids) => bulkDeleting || !profileRowsFor(ids).some((r) => !!r.deleted_at)
+					}
+				]
+			: undefined,
 		fields,
+		isDeleted: (row: Profile) => !!row.deleted_at,
 		load: async ({ page, pageSize, q, sort, filter }) => {
 			// The backend returns every profile without pagination, so fetch a large
 			// window and apply client-side search/filter/pagination/sort.
 			const [result, statsResult] = await Promise.all([
-				jceAdminApi.listProfiles(),
+				jceAdminApi.listProfiles(filter?.deleted || undefined),
 				jceAdminApi.getProfileStats()
 			]);
 			if (statsResult.ok) {
@@ -148,6 +236,13 @@ import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 			}
 			if (result.ok) {
 				let data = (result.data as Profile[]) ?? [];
+				// The platform list always appends live templates — re-apply the
+				// deleted view client-side so it can't leak into 'only'.
+				if (filter?.deleted === 'only') {
+					data = data.filter((p) => !!p.deleted_at);
+				} else if (!filter?.deleted) {
+					data = data.filter((p) => !p.deleted_at);
+				}
 				const query = (q ?? '').trim().toLowerCase();
 				if (query) {
 					data = data.filter((p) =>
@@ -156,15 +251,23 @@ import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 						)
 					);
 				}
-				// Default to template-only; user can switch filter to see user profiles.
-				const showTemplates = filter?.is_template !== 'false';
-				data = data.filter((p) => p.is_template === showTemplates);
+				// Default to template-only in the live view; in a deleted view show
+				// everything unless is_template was explicitly chosen.
+				if (filter?.deleted) {
+					if (filter?.is_template === 'true') data = data.filter((p) => p.is_template);
+					else if (filter?.is_template === 'false') data = data.filter((p) => !p.is_template);
+				} else {
+					const showTemplates = filter?.is_template !== 'false';
+					data = data.filter((p) => p.is_template === showTemplates);
+				}
 				data = applySort(data, sort);
 				const size = pageSize || 25;
 				const offset = (page || 0) * size;
 				const total = data.length;
 				const totalPages = Math.max(1, Math.ceil(total / size));
-				return { data: data.slice(offset, offset + size), total, totalPages };
+				const pageRows = data.slice(offset, offset + size);
+				for (const r of pageRows) profileRowMap.set(r.id, r);
+				return { data: pageRows, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load comparison profiles'));
 		},
@@ -196,14 +299,28 @@ import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 			const res = await jceAdminApi.deleteProfile(id);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
+		hardRemove: async (id) => {
+			if (!canHardDelete) return { ok: false, error: t('common.permission_denied', 'Permission denied') };
+			const res = await jceAdminApi.hardDeleteProfile(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
 		viewSnippet: ProfileView,
 		formSnippet: ProfileForm
-	};
+	});
 </script>
 
 <svelte:head>
 	<title>{t('comparison_profiles.title', 'Comparison Profiles')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
 </svelte:head>
+
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
+	</div>
+{/if}
 
 {#if profileStats.length > 0}
 	<div class="mb-4 rounded-[var(--radius-card)] border p-4 text-sm" style="background-color: var(--color-surface); border-color: var(--color-border)">
@@ -222,7 +339,26 @@ import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 	</div>
 {/if}
 
-<EntityPage {config} />
+<EntityPage {config} bind:controller={entityController} />
+
+<!-- ── Force Delete confirmation (bulk) — permanent erasure of soft-deleted rows ── -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{#if forceTargets.length === 1}
+				{t('common.force_delete_confirm', 'Permanently delete "{name}"? This cannot be undone.').replace('{name}', forceTargets[0].title)}
+			{:else}
+				{t('common.force_delete_confirm_bulk', 'Permanently delete {count} selected items? This cannot be undone.').replace('{count}', String(forceTargets.length))}
+			{/if}
+		</p>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showForceModal = false; forceTargets = []; }}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={bulkDeleting}>
+			{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}
+		</Button>
+	</div>
+</Modal>
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 

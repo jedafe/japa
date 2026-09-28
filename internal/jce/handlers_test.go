@@ -168,7 +168,7 @@ type fakeService struct {
 	advisorResult AdvisorResult
 }
 
-func (f *fakeService) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
+func (f *fakeService) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool, deleted string) ([]ComparisonProfile, error) {
 	return append([]ComparisonProfile(nil), f.profiles...), nil
 }
 

@@ -27,30 +27,36 @@ SELECT count(*)::int
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
 WHERE c.content_type = 'comparison'
- AND c.deleted_at IS NULL
- AND c.auto_hidden = false
- AND ($1::uuid IS NULL OR c.space_id = $1)
  AND (
- $2::uuid IS NULL
+ CASE $1::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
+ END
+ )
+ AND ($2::uuid IS NULL OR c.space_id = $2)
+ AND (
+ $3::uuid IS NULL
  OR EXISTS (
  SELECT 1 FROM comparison_items ci
  WHERE ci.content_id = c.id
- AND ci.type_id = $2
+ AND ci.type_id = $3
  AND ci.deleted_at IS NULL
  )
  )
- AND ($3::text IS NULL OR m.depth = $3)
- AND ($4::text IS NULL OR c.status = $4)
- AND ($5::text IS NULL OR c.visibility = $5)
- AND ($6::boolean IS NOT TRUE OR c.author_id = $7)
+ AND ($4::text IS NULL OR m.depth = $4)
+ AND ($5::text IS NULL OR c.status = $5)
+ AND ($6::text IS NULL OR c.visibility = $6)
+ AND ($7::boolean IS NOT TRUE OR c.author_id = $8)
  AND (
- $8::text IS NULL OR $8 = ''
- OR c.title ILIKE '%' || $8 || '%'
- OR c.slug ILIKE '%' || $8 || '%'
+ $9::text IS NULL OR $9 = ''
+ OR c.title ILIKE '%' || $9 || '%'
+ OR c.slug ILIKE '%' || $9 || '%'
  )
 `
 
 type CountComparisonsWithFiltersParams struct {
+	Deleted    *string     `json:"deleted"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	Depth      *string     `json:"depth"`
@@ -64,6 +70,7 @@ type CountComparisonsWithFiltersParams struct {
 // Count of comparisons matching the same filters as ListComparisonsWithFilters.
 func (q *Queries) CountComparisonsWithFilters(ctx context.Context, arg CountComparisonsWithFiltersParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countComparisonsWithFilters,
+		arg.Deleted,
 		arg.SpaceID,
 		arg.TypeID,
 		arg.Depth,
@@ -1308,40 +1315,46 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count,
- c.publish_at, c.published_at, c.created_at, c.updated_at,
+ c.publish_at, c.published_at, c.created_at, c.updated_at, c.deleted_at,
  m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
 WHERE c.content_type = 'comparison'
- AND c.deleted_at IS NULL
- AND c.auto_hidden = false
- AND ($1::uuid IS NULL OR c.space_id = $1)
  AND (
- $2::uuid IS NULL
+ CASE $1::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
+ END
+ )
+ AND ($2::uuid IS NULL OR c.space_id = $2)
+ AND (
+ $3::uuid IS NULL
  OR EXISTS (
  SELECT 1 FROM comparison_items ci
  WHERE ci.content_id = c.id
- AND ci.type_id = $2
+ AND ci.type_id = $3
  AND ci.deleted_at IS NULL
  )
  )
- AND ($3::text IS NULL OR m.depth = $3)
- AND ($4::text IS NULL OR c.status = $4)
- AND ($5::text IS NULL OR c.visibility = $5)
- AND ($6::boolean IS NOT TRUE OR c.author_id = $7)
+ AND ($4::text IS NULL OR m.depth = $4)
+ AND ($5::text IS NULL OR c.status = $5)
+ AND ($6::text IS NULL OR c.visibility = $6)
+ AND ($7::boolean IS NOT TRUE OR c.author_id = $8)
  AND (
- $8::text IS NULL OR $8 = ''
- OR c.title ILIKE '%' || $8 || '%'
- OR c.slug ILIKE '%' || $8 || '%'
+ $9::text IS NULL OR $9 = ''
+ OR c.title ILIKE '%' || $9 || '%'
+ OR c.slug ILIKE '%' || $9 || '%'
  )
 ORDER BY
- CASE WHEN $9::text = 'title' THEN c.title END ASC,
- CASE WHEN $9::text = 'popularity' THEN c.view_count END DESC,
+ CASE WHEN $10::text = 'title' THEN c.title END ASC,
+ CASE WHEN $10::text = 'popularity' THEN c.view_count END DESC,
  c.created_at DESC, c.id DESC
-LIMIT $11 OFFSET $10
+LIMIT $12 OFFSET $11
 `
 
 type ListComparisonsWithFiltersParams struct {
+	Deleted    *string     `json:"deleted"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	Depth      *string     `json:"depth"`
@@ -1387,6 +1400,7 @@ type ListComparisonsWithFiltersRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	Depth           string             `json:"depth"`
 	PromotedFromID  pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt      pgtype.Timestamptz `json:"promoted_at"`
@@ -1401,6 +1415,7 @@ type ListComparisonsWithFiltersRow struct {
 // Supports public directory, mine=true, depth filters, status, visibility, q, sort.
 func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListComparisonsWithFiltersParams) ([]ListComparisonsWithFiltersRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsWithFilters,
+		arg.Deleted,
 		arg.SpaceID,
 		arg.TypeID,
 		arg.Depth,
@@ -1452,6 +1467,7 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.Depth,
 			&i.PromotedFromID,
 			&i.PromotedAt,

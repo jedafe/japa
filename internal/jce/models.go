@@ -1,6 +1,10 @@
 package jce
 
-import "github.com/jackc/pgx/v5/pgtype"
+import (
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 // ProfileGoal is a single weighted goal inside a comparison profile.
 type ProfileGoal struct {
@@ -32,6 +36,7 @@ type ComparisonProfile struct {
 	Demographics   ProfileDemographics `json:"demographics"`
 	IsDefault      bool                `json:"is_default"`
 	IsTemplate     bool                `json:"is_template"`
+	DeletedAt      *string             `json:"deleted_at,omitempty"`
 	CreatedAt      string              `json:"created_at"`
 	UpdatedAt      string              `json:"updated_at"`
 }
@@ -209,6 +214,18 @@ func uuidPtr(u pgtype.UUID) *string {
 	}
 
 	s := u.String()
+
+	return &s
+}
+
+// timestamptzPtr returns a *string RFC3339 timestamp for a valid
+// pgtype.Timestamptz, or nil when invalid.
+func timestamptzPtr(t pgtype.Timestamptz) *string {
+	if !t.Valid {
+		return nil
+	}
+
+	s := t.Time.Format(time.RFC3339)
 
 	return &s
 }

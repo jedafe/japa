@@ -337,6 +337,13 @@ func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "" && deleted != "only" && deleted != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+	filter.Deleted = deleted
+
 	comparisons, err := h.Service.ListComparisonsAdmin(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
