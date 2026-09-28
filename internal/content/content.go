@@ -123,6 +123,9 @@ const (
 	// (migration 000636; ADR-077 lists it among eligible content types).
 	// Threads are authored through the forum composer, not POST /content.
 	TypeForumThread = "forum_thread"
+	// List (listicle) content type — BuzzFeed-style numbered/countdown/
+	// unnumbered item lists with per-item embeds. §14 list amendment.
+	TypeList = "list"
 )
 
 // Visibility values stored in the contents.visibility column.
@@ -173,6 +176,9 @@ var validContentTypes = map[string]bool{
 	// Forum thread — system-managed backing type (ADR-077); kept out of the
 	// /create composer via the frontend CREATE_ALLOWED_TYPES whitelist.
 	TypeForumThread: true,
+	// List (listicle) — §14 list amendment. Creation gated by the
+	// list.create RBAC node and the public list.enabled setting.
+	TypeList: true,
 }
 
 // IsValidStatus reports whether s is a valid contents.status value.
@@ -220,6 +226,8 @@ var ContentTypeLabels = map[string]string{
 	TypeArticle: "Article",
 	// Forum thread — backing type for forum_threads rows.
 	TypeForumThread: "Forum Thread",
+	// List (listicle) — §14 list amendment.
+	TypeList: "List",
 }
 
 // ContentTypeHasCategory reports whether a content type uses admin-configurable
