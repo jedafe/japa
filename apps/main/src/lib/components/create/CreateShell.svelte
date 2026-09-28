@@ -23,7 +23,8 @@
 		ComposerOrganization,
 		GuideCategory,
 		ComparisonDetail,
-		ComparisonType
+		ComparisonType,
+		ListFieldValues
 	} from '$lib/types';
 	import type { TypeEntry } from './contentTypeRegistry';
 	import SaveBar from './SaveBar.svelte';
@@ -32,6 +33,7 @@
 	import PostEditor from './editors/PostEditor.svelte';
 	import type { EditorMode } from './editors/PostEditor.svelte';
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
+	import ListBuilder from './editors/ListBuilder.svelte';
 	import VideoField from './VideoField.svelte';
 	import type { VideoSource } from '$lib/types';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
@@ -166,6 +168,24 @@
 	let items = $state<{ label: string }[]>([]);
 	let dimensions = $state<{ label: string }[]>([]);
 
+	// list-only (§14 list amendment) — field_values is the editing source for
+	// the list composer. list_mode/items/intro_html are not custom-field keys,
+	// so they bypass activeFieldValues via a direct snapshot spread (same
+	// mechanism as the guide dimension/purpose keys). field_values is typed
+	// Record<string, unknown> — the double cast is required because
+	// ListFieldValues has no index signature (plain `as` fails typecheck).
+	let listFieldValues = $state<ListFieldValues>(
+		untrack(() =>
+			draft?.content_type === 'list'
+				? ((draft.field_values as unknown as ListFieldValues | null) ?? {
+						list_mode: 'numbered',
+						items: []
+					})
+				: { list_mode: 'numbered', items: [] }
+		)
+	);
+	let listItemCount = $state(untrack(() => listFieldValues.items?.length ?? 0));
+
 	// AI drafting panel (Task 7)
 	let aiPanelOpen = $state(false);
 
@@ -230,6 +250,7 @@
 
 	const isGuide = $derived(selectedType.value === 'guide');
 	const isVideo = $derived(selectedType.value === 'video');
+	const isList = $derived(selectedType.value === 'list');
 	const snapshot = $derived({
 		content_type: selectedType.value,
 		title,
@@ -238,7 +259,8 @@
 		field_values: {
 			...activeFieldValues,
 			...(isGuide && roadmapDimension ? { dimension: roadmapDimension } : {}),
-			...(isGuide && roadmapPurpose ? { purpose: roadmapPurpose } : {})
+			...(isGuide && roadmapPurpose ? { purpose: roadmapPurpose } : {}),
+			...(isList ? listFieldValues : {})
 		},
 		canonical_url: canonicalUrl || null,
 		featured_image_id: featuredImageId,
@@ -287,7 +309,7 @@
 			primarySpaceId: spaceIds[0] ?? null,
 			requiredFieldsFilled,
 			formKind: selectedType.formKind,
-			itemCount: items.length,
+			itemCount: isList ? listItemCount : items.length,
 			dimensionCount: dimensions.length
 		})
 	);
@@ -529,6 +551,15 @@
 				oncounts={(n, d) => { items = new Array(n).fill({ label: '' }); dimensions = new Array(d).fill({ label: '' }); }}
 				onedit={markDirty}
 				aiTrigger={aiButtonSnippet}
+			/>
+		{:else if selectedType.formKind === 'list'}
+			<ListBuilder
+				initial={draft?.content_type === 'list' ? (draft.field_values as unknown as ListFieldValues) : null}
+				defaultEditor={defaultEditor}
+				onvalues={(fv) => { listFieldValues = fv; }}
+				onhtml={(v) => { bodyHtml = v; }}
+				oncounts={(n) => { listItemCount = n; }}
+				onedit={markDirty}
 			/>
 		{:else}
 			<PostEditor
