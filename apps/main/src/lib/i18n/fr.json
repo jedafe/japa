@@ -893,6 +893,8 @@
 	"create.list.mode.countdown": "Compte à rebours",
 	"create.list.mode.numbered": "Numérotée",
 	"create.list.mode.unnumbered": "Non numérotée",
+	"create.list.move_down": "Descendre",
+	"create.list.move_up": "Monter",
 	"create.list.remove_item": "Supprimer l'élément",
 	"create.list.source_url": "URL source",
 	"create.panel.guide": "Guide",
