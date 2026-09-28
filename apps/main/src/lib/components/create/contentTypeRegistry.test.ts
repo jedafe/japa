@@ -11,6 +11,12 @@ describe('resolveType', () => {
 		expect(resolveType('comparison').formKind).toBe('comparison');
 		expect(resolveType('comparison').featureFlag).toBe('feature.comparison');
 	});
+	it('maps list to the list form, public setting, and RBAC node', () => {
+		const entry = resolveType('list');
+		expect(entry.formKind).toBe('list');
+		expect(entry.featureFlag).toBe('list.enabled');
+		expect(entry.requiredPermission).toBe('list.create');
+	});
 	it('uses sensible defaults for unknown types', () => {
 		expect(resolveType('nonsense').value).toBe('nonsense');
 		expect(resolveType('nonsense').formKind).toBe('standard');
@@ -66,13 +72,18 @@ describe('createAvailableTypes', () => {
 		{ value: 'guide', label: 'Guide' },
 		{ value: 'story', label: 'Story' },
 		{ value: 'video', label: 'Video' },
+		{ value: 'list', label: 'List' },
 		{ value: 'news', label: 'News' }
 	];
+	const listCaller = { permissions: ['list.create'] };
 
 	it('exposes only the allowed /create types', () => {
-		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true }).map(
-			(t) => t.value
-		);
+		const vals = createAvailableTypes(
+			all,
+			{ 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true },
+			undefined,
+			listCaller
+		).map((t) => t.value);
 		expect(vals).toEqual(CREATE_ALLOWED_TYPES);
 	});
 
@@ -84,17 +95,23 @@ describe('createAvailableTypes', () => {
 	});
 
 	it('follows the CREATE_ALLOWED_TYPES order', () => {
-		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true }).map(
-			(t) => t.value
-		);
-		expect(vals).toEqual(['blog_post', 'comparison', 'guide', 'story', 'video', 'news']);
+		const vals = createAvailableTypes(
+			all,
+			{ 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true },
+			undefined,
+			listCaller
+		).map((t) => t.value);
+		expect(vals).toEqual(['blog_post', 'comparison', 'guide', 'story', 'video', 'list', 'news']);
 	});
 
 	it('hides comparison when feature.comparison is off', () => {
-		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': false, 'video.enabled': true }).map(
-			(t) => t.value
-		);
-		expect(vals).toEqual(['blog_post', 'guide', 'story', 'video', 'news']);
+		const vals = createAvailableTypes(
+			all,
+			{ 'feature.blog': true, 'feature.comparison': false, 'video.enabled': true },
+			undefined,
+			listCaller
+		).map((t) => t.value);
+		expect(vals).toEqual(['blog_post', 'guide', 'story', 'video', 'list', 'news']);
 	});
 
 	it('hides video when video.enabled is off', () => {
@@ -132,5 +149,31 @@ describe('createAvailableTypes', () => {
 	it('maps video to the standard composer and its feature flag', () => {
 		expect(resolveType('video').formKind).toBe('standard');
 		expect(resolveType('video').featureFlag).toBe('video.enabled');
+	});
+
+	it('includes list when the caller holds the list.create node', () => {
+		const vals = createAvailableTypes(all, {}, undefined, listCaller).map((t) => t.value);
+		expect(vals).toContain('list');
+	});
+
+	it('hides list when the caller lacks the list.create node', () => {
+		const vals = createAvailableTypes(all, {}, undefined, { permissions: ['blog.create'] }).map(
+			(t) => t.value
+		);
+		expect(vals).not.toContain('list');
+		// No caller at all behaves the same.
+		expect(createAvailableTypes(all, {}).map((t) => t.value)).not.toContain('list');
+	});
+
+	it('shows list to a super admin without the explicit node', () => {
+		const vals = createAvailableTypes(all, {}, undefined, { isSuperAdmin: true }).map((t) => t.value);
+		expect(vals).toContain('list');
+	});
+
+	it('hides list when the list.enabled public setting is false, even with permission', () => {
+		const vals = createAvailableTypes(all, {}, { 'list.enabled': false }, listCaller).map(
+			(t) => t.value
+		);
+		expect(vals).not.toContain('list');
 	});
 });

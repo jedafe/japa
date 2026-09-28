@@ -20,6 +20,10 @@ describe('evaluatePublish', () => {
 		expect(evaluatePublish({ ...base, formKind: 'comparison', itemCount: 2, dimensionCount: 0 }).reason).toBe('create.gate.dimensions');
 		expect(evaluatePublish({ ...base, formKind: 'comparison', itemCount: 2, dimensionCount: 1 }).ok).toBe(true);
 	});
+	it('requires >=1 item for a list', () => {
+		expect(evaluatePublish({ ...base, formKind: 'list', itemCount: 0 }).reason).toBe('create.gate.list_items');
+		expect(evaluatePublish({ ...base, formKind: 'list', itemCount: 1 }).ok).toBe(true);
+	});
 });
 
 describe('statusLabel', () => {
@@ -46,6 +50,9 @@ describe('isExceptionRoute', () => {
 	});
 	it('matches the video single route (§106)', () => {
 		expect(isExceptionRoute('/(app)/video/[slug]')).toBe(true);
+	});
+	it('matches the list single route (§14 list amendment)', () => {
+		expect(isExceptionRoute('/(app)/list/[slug]')).toBe(true);
 	});
 	it('does not match the home route', () => {
 		expect(isExceptionRoute('/(app)')).toBe(false);
