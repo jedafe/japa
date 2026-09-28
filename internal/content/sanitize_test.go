@@ -287,6 +287,22 @@ func TestSanitizeHTML_CouponEmbedDivPreserved(t *testing.T) {
 	}
 }
 
+func TestSanitizeHTMLKeepsContentEmbedAttrs(t *testing.T) {
+	in := `<div data-type="content-embed" data-content-slug="my-guide"><a href="/guide/my-guide">card</a></div>`
+	out := SanitizeHTML(in)
+	if !strings.Contains(out, `data-content-slug="my-guide"`) {
+		t.Fatalf("data-content-slug stripped: %s", out)
+	}
+}
+
+func TestSanitizeHTMLKeepsVideoEmbedSourceID(t *testing.T) {
+	in := `<div class="video-embed" data-video-source-id="123e4567-e89b-12d3-a456-426614174000"></div>`
+	out := SanitizeHTML(in)
+	if !strings.Contains(out, `data-video-source-id=`) {
+		t.Fatalf("data-video-source-id stripped: %s", out)
+	}
+}
+
 func TestSanitizeHTML_LinkPreviewDataURLXSSBlocked(t *testing.T) {
 	t.Parallel()
 

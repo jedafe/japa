@@ -46,6 +46,12 @@ var allowedAttributes = map[string]map[string]bool{
 	"div": {
 		"data-type": true, "data-url": true, "data-coupon-id": true,
 		"data-display-mode": true,
+		// §14 list amendment: internal content embed placeholder target.
+		"data-content-slug": true,
+		// §106 video: hydrateVideoEmbeds selects .video-embed[data-video-source-id]
+		// — without this the attr is stripped and video embeds in rich text
+		// bodies (including list items) render as dead placeholders.
+		"data-video-source-id": true,
 	},
 	"span": {
 		// Mention nodes (Section 15): data-type, data-id, data-label,
