@@ -916,6 +916,37 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// §14 list amendment: list creation requires the list.create node
+	// (super_admin wildcard or explicit grant) and respects the public
+	// list.enabled killswitch.
+	if input.ContentType == TypeList {
+		if h.settings != nil && !h.settings.GetBoolOr(r.Context(), "list.enabled", true) {
+			errpkg.WriteError(w, http.StatusForbidden, "list_feature_disabled",
+				"List creation is currently disabled")
+			return
+		}
+		allowed := false
+		if resolver := rbac.FromContext(r.Context()); resolver != nil {
+			allowed = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+				resolver.HasPermission(r.Context(), user.UserID, "list.create")
+		}
+		if !allowed {
+			errpkg.WriteError(w, http.StatusForbidden, "list_permission_required",
+				"You do not have permission to create lists")
+			return
+		}
+		maxItems := listDefaultMaxItems
+		if h.settings != nil {
+			maxItems = h.settings.GetIntOr(r.Context(), "list.max_items", listDefaultMaxItems)
+		}
+		fv, vErr := validateListFieldValues(input.FieldValues, maxItems)
+		if vErr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, vErr.Code, vErr.Message)
+			return
+		}
+		input.FieldValues = fv
+	}
+
 	if !IsValidStatus(input.Status) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
 			fmt.Sprintf("Invalid status: %q", input.Status))
@@ -1384,6 +1415,12 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	// template or resolution error degrades to no json_ld field. Emitted as
 	// a sibling of `data` for frontend consumption.
 	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), content.ContentType, contentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
+		// §14 list amendment: the {{field}} interpolator only emits strings,
+		// so itemListElement/numberOfItems are injected from
+		// field_values.items after template resolution.
+		if content.ContentType == TypeList {
+			jsonLd = injectListItemListElements(jsonLd, content.FieldValues)
+		}
 		resp["json_ld"] = json.RawMessage(jsonLd)
 	} else if jErr != nil {
 		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", content.ContentType, "error", jErr)
@@ -1629,6 +1666,22 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	if input.Visibility == "" {
 		input.Visibility = prevContent.Visibility
+	}
+
+	// §14 list amendment: re-validate field_values on list edits — the
+	// composer resubmits the full items array, so the mode/item/embed rules
+	// and the list.max_items cap apply to PATCHes the same as creates.
+	if prevContent.ContentType == TypeList && len(input.FieldValues) > 0 {
+		maxItems := listDefaultMaxItems
+		if h.settings != nil {
+			maxItems = h.settings.GetIntOr(r.Context(), "list.max_items", listDefaultMaxItems)
+		}
+		fv, vErr := validateListFieldValues(input.FieldValues, maxItems)
+		if vErr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, vErr.Code, vErr.Message)
+			return
+		}
+		input.FieldValues = fv
 	}
 
 	// Derive plain-text body from body_html when the client sends only
