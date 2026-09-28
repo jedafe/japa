@@ -25,6 +25,8 @@
 1. `field_values` gains `intro_html` (spec schema lists `list_mode` + `items` only; "intro from `body`" would lose rich formatting on draft restore — `field_values` is the editing source of truth, so intro lives there).
 2. `agent.content_type.list` needs **no** Go change — `allowedContentTypes` derives the node name dynamically from the type catalog (`internal/ai/tools_content.go:66`). Only the seed migration + §03 doc are required. The spec's file list naming `tools_content_bulk.go`/`agent.go` is a no-op.
 3. ItemList `itemListElement` cannot come from the flat `{{field}}` interpolator (string values only, no arrays) — the plan adds a post-interpolation injection step in `GetContent` that builds `itemListElement` + `numberOfItems` from `field_values.items`.
+4. **`embed.resolved.embed_url` is dormant in v1.** `GET /link-preview` returns `{url,title,description,image,site_name,favicon}` — no oEmbed/`embed_url` — and `customfields.EmbedResolver` (oEmbed for Twitter/Vimeo/Spotify/CodePen) has no HTTP route. Since the spec mandates no new API routes, `kind:'url'` embeds always serialize as `link-preview` placeholders. NOTE: a raw `<iframe src>` in `body_html` does **not** survive `SanitizeHTML` today — `allowedAttributes` has no `iframe` entry, so `src` is stripped even for `isApprovedIframe` hosts (pre-existing gap; nothing in the platform emits raw iframes into body — all rich embeds use hydrated divs). The serializer still emits `<iframe>` when `resolved.embed_url` is set so a future `GET /embed/resolve` + `allowedAttributes["iframe"]` whitelist amendment can light it up without a schema change; until then the composer never populates `embed_url`. oEmbed-capable video platforms (YouTube/TikTok/Instagram/Vimeo per `video.import.allowed_platforms`) are covered by the Video embed tab via `POST /videos/resolve`.
+5. `/lists` is modeled on **`/guides`**, not `/stories` — `/guides` consumes the identical `GET /content?type=` endpoint with `GuideListItem` rows, `apiGetEnvelope` (the response is `{data:[]}` with **no** `meta.total`), cursor (`created_at|id`) pagination for `latest`, `page_offset` for `popular`, single-page `featured` tab, and `attachAuthorUsernames`.
 
 ---
 
@@ -73,11 +75,11 @@ git commit -m "docs(§14/§03): List content type JEOS amendments"
 
 ---
 
-### Task 2: Migration 000748 — permissions + ItemList template
+### Task 2: Migration 000749 — permissions + ItemList template
 
 **Files:**
-- Create: `migrations/000748_list_content_type.up.sql`
-- Create: `migrations/000748_list_content_type.down.sql`
+- Create: `migrations/000749_list_content_type.up.sql`
+- Create: `migrations/000749_list_content_type.down.sql`
 
 **Interfaces:**
 - Produces: permission keys `list.create`, `agent.content_type.list`; role grants; active `content_type_jsonld_templates` row for `content_type='list'`.
@@ -86,7 +88,7 @@ git commit -m "docs(§14/§03): List content type JEOS amendments"
 - [ ] **Step 1: Write the up migration**
 
 ```sql
--- 000748_list_content_type.up.sql
+-- 000749_list_content_type.up.sql
 -- List (listicle) content type — §14 amendment.
 -- Seeds list.create (super_admin only; admins opt other groups in via the
 -- RBAC admin UI) and agent.content_type.list (granted to every role that
@@ -133,7 +135,7 @@ COMMIT;
 - [ ] **Step 2: Write the down migration**
 
 ```sql
--- 000748_list_content_type.down.sql
+-- 000749_list_content_type.down.sql
 BEGIN;
 DELETE FROM role_permissions
 WHERE permission_id IN (SELECT id FROM permissions WHERE key IN ('list.create','agent.content_type.list'));
@@ -149,14 +151,14 @@ make migrate
 ```
 Expected: applies cleanly. Verify:
 ```bash
-psql $DATABASE_URL -c "SELECT key FROM permissions WHERE key LIKE 'list%' OR key='agent.content_type.list';"
+psql $JC_DATABASE_URL -c "SELECT key FROM permissions WHERE key LIKE 'list%' OR key='agent.content_type.list';"
 ```
 Expected: two rows (`list.create`, `agent.content_type.list`).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add migrations/000748_list_content_type.up.sql migrations/000748_list_content_type.down.sql
+git add migrations/000749_list_content_type.up.sql migrations/000749_list_content_type.down.sql
 git commit -m "Seed list.create + agent.content_type.list permissions and ItemList JSON-LD template"
 ```
 
@@ -443,7 +445,7 @@ In `internal/content/handlers.go` `CreateContent`, immediately after the existin
 
 - [ ] **Step 4: Wire validation into `UpdateContent`**
 
-In `UpdateContent` (handlers.go ~line 1547), after `prevContent` is loaded and edit permission is established, add:
+In `UpdateContent` (handlers.go ~line 1547): `prevContent` is loaded at ~line 1612 (`h.Service.GetContent`) and `updateInput` is built at ~line 1656 — the edit-permission check happens later (~1754), so insert the block **after the prevContent default-fill block (~line 1633) and before `updateInput`**:
 
 ```go
 	if prevContent.ContentType == TypeList && len(input.FieldValues) > 0 {
@@ -555,11 +557,19 @@ func TestSanitizeHTMLKeepsContentEmbedAttrs(t *testing.T) {
 		t.Fatalf("data-content-slug stripped: %s", out)
 	}
 }
+
+func TestSanitizeHTMLKeepsVideoEmbedSourceID(t *testing.T) {
+	in := `<div class="video-embed" data-video-source-id="123e4567-e89b-12d3-a456-426614174000"></div>`
+	out := SanitizeHTML(in)
+	if !strings.Contains(out, `data-video-source-id=`) {
+		t.Fatalf("data-video-source-id stripped: %s", out)
+	}
+}
 ```
 
-Run: `go test ./internal/content/ -run TestSanitizeHTMLKeepsContentEmbedAttrs -v` → FAIL.
+Run: `go test ./internal/content/ -run 'TestSanitizeHTMLKeeps' -v` → FAIL.
 
-- [ ] **Step 2: Add the attribute**
+- [ ] **Step 2: Add the attributes**
 
 In `sanitize.go` (~line 46-48), the div attr map:
 
@@ -569,8 +579,14 @@ In `sanitize.go` (~line 46-48), the div attr map:
 		"data-display-mode": true,
 		// §14 list amendment: internal content embed placeholder target.
 		"data-content-slug": true,
+		// §106 video: hydrateVideoEmbeds selects .video-embed[data-video-source-id]
+		// — without this the attr is stripped and video embeds in rich text
+		// bodies (including list items) render as dead placeholders.
+		"data-video-source-id": true,
 	},
 ```
+
+NOTE: `data-video-source-id` is NOT currently whitelisted — the VideoNode comment ("the sanitizer strips the data-* attributes… node degrades to an empty .video-embed div") documents it, so TipTap video embeds inside rich-text bodies are dead placeholders today (the `/video/{slug}` page renders from `content.video_source_id`, not hydration). Whitelisting it is required for the list video embed AND repairs the existing dead path. Do NOT whitelist `data-embed-html`/`data-source-type` — hydration only reads the id.
 
 - [ ] **Step 3: Verify + commit**
 
@@ -589,11 +605,12 @@ git commit -m "Allow data-content-slug on div for list content-embed placeholder
 
 - [ ] **Step 1: Mirror the existing `story.create` test**
 
-Locate the test that exercises the story permission gate in `CreateContent` and duplicate its harness for `list`:
+Locate a test exercising `CreateContent` with an RBAC resolver (check `internal/content/handlers_autoassign_test.go`, `publish_at_test.go`, `engagement_test.go` for the request/httptest harness — there is no dedicated `story.create` gate test today, so reuse whichever harness builds a `Handlers` + `auth.AuthenticatedUser` context + a stub `rbac` resolver) and cover `list`:
 - `content_type=list` without `list.create` → 403 `list_permission_required`.
 - `content_type=list` with `list.create` → proceeds past the gate.
-- `content_type=list` with `list.enabled=false` in settings → 403 `list_feature_disabled`.
 - PATCH on a list with oversized `items` → 400 `too_many_items`.
+
+**Caveat — `list.enabled` disabled path:** `h.settings` is a concrete `*config.Settings`; `&config.Settings{}` has nil internals and `GetBoolOr`/`GetIntOr` panic on a zero value (no DB). The handler code guards `h.settings != nil`, so handler tests must construct `Handlers` with **nil** settings — meaning `list_feature_disabled` is NOT unit-testable without a test DB. Cover it in the Task 13 manual smoke step instead; note this in the test file comment.
 
 Run: `go test ./internal/content/ -v` → all PASS.
 
@@ -610,6 +627,7 @@ git commit -m "Cover list.create gate, list.enabled killswitch, and item validat
 
 **Files:**
 - Modify: `apps/main/src/lib/types/index.ts`
+- Modify: `apps/main/src/lib/types/content.ts` — add `meta_description?: string | null` to `GuideListItem` (the `ListContentsByTypeRow` already serializes `meta_description`; the interface just doesn't declare it — needed for list-card excerpts)
 - Modify: `apps/main/src/lib/components/create/contentTypeRegistry.ts`
 - Modify: `apps/main/src/lib/components/create/gate.ts`
 - Modify: `apps/main/src/lib/utils/contentLink.ts`
@@ -714,11 +732,11 @@ In `apps/main/src/lib/utils/contentLink.ts` type map add `list: '/list'`.
 - [ ] **Step 4: gate.ts**
 
 - `isExceptionRoute`: add `|| routeId === '/(app)/list/[slug]'` (ADR-058 Exception #1 — CPT singles collapse the left nav).
-- `evaluatePublish`: after the comparison branch add:
+- `evaluatePublish`: after the comparison branch add (NOTE: do NOT reuse `create.gate.items` — its en.json copy says "Add at least 2 items"; lists require ≥1, so use a distinct key `create.gate.list_items` added in Task 12):
 
 ```ts
 	if (i.formKind === 'list') {
-		if (i.itemCount < 1) return { ok: false, reason: 'create.gate.items' };
+		if (i.itemCount < 1) return { ok: false, reason: 'create.gate.list_items' };
 	}
 ```
 
@@ -734,7 +752,7 @@ Run: `cd apps/main && bunx vitest run src/lib/components/create/contentTypeRegis
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/main/src/lib/types/index.ts apps/main/src/lib/components/create/contentTypeRegistry.ts apps/main/src/lib/components/create/gate.ts apps/main/src/lib/utils/contentLink.ts apps/main/src/lib/components/create/contentTypeRegistry.test.ts
+git add apps/main/src/lib/types/index.ts apps/main/src/lib/types/content.ts apps/main/src/lib/components/create/contentTypeRegistry.ts apps/main/src/lib/components/create/gate.ts apps/main/src/lib/utils/contentLink.ts apps/main/src/lib/components/create/contentTypeRegistry.test.ts
 git commit -m "Register list composer metadata, route map, and publish gate"
 ```
 
@@ -768,7 +786,7 @@ then `types: createAvailableTypes(rawTypes, flags, siteSettings, callerPerms)`.
 
 In `CreateShell.svelte`:
 - `const isList = $derived(selectedType.value === 'list');`
-- `let listFieldValues = $state<ListFieldValues>(untrack(() => draft?.content_type === 'list' ? (draft.field_values as ListFieldValues ?? { list_mode: 'numbered', items: [] }) : { list_mode: 'numbered', items: [] }));`
+- `let listFieldValues = $state<ListFieldValues>(untrack(() => draft?.content_type === 'list' ? ((draft.field_values as unknown as ListFieldValues | null) ?? { list_mode: 'numbered', items: [] }) : { list_mode: 'numbered', items: [] }));` — `field_values` is `Record<string, unknown> | null`; the double cast is required because interfaces have no index signature (plain `as` fails typecheck).
 - `let listItemCount = $state(0);` — seeded from `listFieldValues.items.length`.
 - In the `snapshot` `$derived`, `field_values` gains: `...(isList ? listFieldValues : {})` (same spread mechanism as the guide dimension/purpose keys at line ~240).
 - `gate`: `itemCount: isList ? listItemCount : items.length`.
@@ -777,7 +795,7 @@ In `CreateShell.svelte`:
 ```svelte
 		{:else if selectedType.formKind === 'list'}
 			<ListBuilder
-				initial={draft?.content_type === 'list' ? (draft.field_values as ListFieldValues) : null}
+				initial={draft?.content_type === 'list' ? (draft.field_values as unknown as ListFieldValues) : null}
 				defaultEditor={defaultEditor}
 				onvalues={(fv) => { listFieldValues = fv; }}
 				onhtml={(v) => { bodyHtml = v; }}
@@ -820,7 +838,7 @@ git commit -m "Pass caller permissions to the create type selector (list.create 
 - `embed.kind='content'` → `<div data-type="content-embed" data-content-slug="X">` with the snapshot card markup inside (title + excerpt + image `<a>` link).
 - `embed.kind='url'` → `<div data-type="link-preview" data-url="…">`; when `resolved.embed_url` present → `<iframe src="…">` instead.
 - `embed.kind='video'` → `<div class="video-embed" data-video-source-id="…">` with thumbnail `<img>` child.
-- `media_id` → `<img src="{mediaUrls[id]}" loading="lazy">` inside the item.
+- `media_id` → `<img src="{mediaUrls[id]}" alt="">` inside the item (`loading` is not whitelisted — it is stripped on save; don't emit it).
 - `source_url`/`credit` → `<p class="li-credit">` with `<a href>` when source_url set.
 - HTML escaping: heading text is escaped (`&<>`), item `body_html` is embedded raw (it is sanitized server-side).
 - `intro_html` precedes the first `.list-item`.
@@ -841,7 +859,9 @@ export function displayNumber(mode: ListMode, index: number, total: number): num
 
 function embedHtml(item: ListItem, mediaUrls: Record<string, string>): string {
 	if (item.media_id && mediaUrls[item.media_id]) {
-		return `<img src="${esc(mediaUrls[item.media_id])}" alt="" loading="lazy">`;
+		// NOTE: `loading` is not in the img attr whitelist (sanitize.go) — it
+		// would be stripped on save. Only src/alt/title/width/height survive.
+		return `<img src="${esc(mediaUrls[item.media_id])}" alt="">`;
 	}
 	const e = item.embed;
 	if (!e) return '';
@@ -861,7 +881,12 @@ function embedHtml(item: ListItem, mediaUrls: Record<string, string>): string {
 		return `<div data-type="link-preview" data-url="${esc(e.url)}"></div>`;
 	}
 	if (e.kind === 'video' && e.video_source_id) {
-		return `<div class="video-embed" data-video-source-id="${esc(e.video_source_id)}"></div>`;
+		// Poster child gives a no-JS preview; hydrateVideoEmbeds replaces
+		// children with the player. Thumbnail rides in resolved.image_url.
+		const poster = e.resolved?.image_url
+			? `<img src="${esc(e.resolved.image_url)}" alt="" class="video-embed-thumb">`
+			: '';
+		return `<div class="video-embed" data-video-source-id="${esc(e.video_source_id)}">${poster}</div>`;
 	}
 	return '';
 }
@@ -903,10 +928,11 @@ Component shape (Svelte 5 runes, match sibling editors' style — look at `Compa
 <script lang="ts">
 	// Ref: docs/superpowers/specs/2026-09-28-list-content-type-design.md (§14 list)
 	import type { ListFieldValues, ListItem, ListMode } from '$lib/types';
-	import PostEditor from '../PostEditor.svelte';
+	import PostEditor from './PostEditor.svelte';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import Autocomplete, { type AutocompleteItem } from '../Autocomplete.svelte';
 	import { api } from '$lib/api/client';
+	import { resolveVideo } from '$lib/api/videos';
 	import { serializeListBodyHtml } from './listSerialize';
 	import { t } from '$lib/i18n';
 
@@ -932,16 +958,16 @@ Component shape (Svelte 5 runes, match sibling editors' style — look at `Compa
 UI structure:
 - Intro `PostEditor` bound to `introHtml` (`onhtml={(v)=>{introHtml=v; emit()}}`).
 - Mode segmented control (three buttons or `<select>` — check existing UI primitives under `$lib/components/ui`).
-- `{#each items as item, i (itemKey(item))}` item card: position badge showing `displayNumber(mode,i,items.length)`; heading `<input>`; compact body editor (reuse `PostEditor` with a smaller toolbar config if it supports one — check PostEditor props; else a `<textarea>` is NOT acceptable per "rich item body" — use PostEditor); **one visual slot** tab control: `Image | JapaConnect | Link | Video`.
+- `{#each items as item, i (itemKey(item))}` item card: position badge showing `displayNumber(mode,i,items.length)`; heading `<input>`; per-item body editor (reuse `PostEditor` without `aiTrigger` — its Props are `{html, onedit, onhtml, onjson?, onfocus?, defaultMode?, aiTrigger?}`); **one visual slot** tab control: `Image | JapaConnect | Link | Video`.
   - Image tab → opens `MediaLibraryModal` (`onSelect={(m)=>{ item.media_id=m.id; mediaUrls[m.id]=m.url; item.embed=null }}`); when an embed exists it is cleared (XOR).
-  - JapaConnect tab → `Autocomplete` with fetcher `async (q) => api.get(`/content?q=${encodeURIComponent(q)}&page_size=10`)` mapping results to `{id: c.id, label: c.title}`; on select → `api.get(`/content/${picked.slug}`)` to build the snapshot `{title, excerpt, image_url: featured_image_url, content_type}` and store `embed={kind:'content', content_id, content_slug, snapshot}`.
-  - Link tab → URL input + "Fetch" button → `api.get('/link-preview?url='+encodeURIComponent(url))` → store `embed={kind:'url', url, resolved}`.
-  - Video tab → URL input → `api.post('/videos/resolve',{url})` (needs `video.import.single`; on 403 show the i18n'd error string) → `embed={kind:'video', video_source_id: data.id}`.
+  - JapaConnect tab → `Autocomplete` (`fetcher: (q: string) => Promise<AutocompleteItem[]>`) with fetcher `async (q) => { const res = await api.get<GuideListItem[]>(`/content?q=${encodeURIComponent(q)}&page_size=10`); return (res.data ?? []).map((c) => ({ id: c.id, label: c.title })); }` — **do not pass `type=`** (in `ListContent`'s branch order the `type` branch swallows `q`; search must go out bare). Keep the picked row so `onSelect` can `api.get(`/content/${row.slug}`)` → snapshot `{title, excerpt, image_url: dto.featured_image_url, content_type}` and store `embed={kind:'content', content_id: row.id, content_slug: row.slug, snapshot}`.
+  - Link tab → URL input + "Fetch" button → `api.get('/link-preview?url='+encodeURIComponent(url))` → response `{data:{url,title,description,image,site_name,favicon}}` → store `embed={kind:'url', url, resolved:{title, description, image_url: preview.image, site_name}}` (map `image`→`image_url`; no `embed_url` is returned — see reconciliation 4).
+  - Video tab → URL input → `resolveVideo(url)` from `$lib/api/videos` → `{data:{source, embed_json}}` → `embed={kind:'video', video_source_id: res.data.source.id, resolved: {image_url: res.data.source.thumbnail_url ?? undefined}}` — the thumbnail lands in `resolved.image_url` and the serializer emits it as the poster `<img>` child. Requires `video.import.single` — on 403 show the i18n'd `create.list.embed.video_denied` string. `POST /videos/resolve` is auth-gated, which is fine (composer is authed).
 - Per item: `source_url` input, `credit` input, remove button, up/down reorder buttons (minimum per spec; drag is optional).
 - "Add item" button (appends empty item).
-- `emit()` — single function that calls `onvalues({list_mode: mode, intro_html: introHtml, items})`, `onhtml(serializeListBodyHtml(mode, introHtml, items, mediaUrls))`, `oncounts(items.length)`, `onedit()`; invoked from every mutation + once on mount via `$effect` so restored drafts regenerate `body_html`.
+- `emit(markDirty = true)` — calls `onvalues({list_mode: mode, intro_html: introHtml, items})`, `onhtml(serializeListBodyHtml(mode, introHtml, items, mediaUrls))`, `oncounts(items.length)`, and `onedit()` only when `markDirty` is true. **Mount-time emit passes `markDirty=false`** — otherwise restoring a draft immediately schedules an autosave PATCH identical to stored data (noisy revision).
 
-Give each `ListItem` a stable client-side `_key` for the keyed each — store it in component-local wrapper state, NOT in `field_values` (strip before emitting, or track via a parallel `itemKeys` array — simplest: keep `items` elements as `{key: string, item: ListItem}` internally and map to `ListItem[]` on emit).
+Give each `ListItem` a stable client-side key for the keyed each — keep `items` elements as `{key: string, item: ListItem}` internally and map to `ListItem[]` on emit so no `_key` leaks into `field_values`.
 
 - [ ] **Step 4: Wire check**
 
@@ -1030,6 +1056,11 @@ git commit -m "Hydrate list content-embed placeholders into live content cards"
 `+page.server.ts` — mirror `guide/[slug]/+page.server.ts` minus the scholarship block, plus the settings gate:
 
 ```ts
+import { error, redirect } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
+import { loadContentArticle } from '$lib/server/content-article';
+import { contentHref } from '$lib/utils/contentLink';
+
 export const load: PageServerLoad = async (event) => {
 	const parent = await event.parent();
 	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
@@ -1048,31 +1079,72 @@ export const load: PageServerLoad = async (event) => {
 
 `/content/[slug]` needs no change — `contentHref` now returns `/list/{slug}` for list items so the generic route 301s automatically.
 
-- [ ] **Step 2: Index route**
+- [ ] **Step 2: Index route — model on `/guides` exactly**
 
-`+page.server.ts` — modeled on `stories/+page.server.ts` but simpler (no country filters, no series tab — the spec only calls for sort + pagination + optional featured tab):
+`GET /content?type=list` returns `{data: GuideListItem[]}` with **no `meta.total`** — `ListContentsByTypeRow` serializes directly (title/slug/body/meta_description/author_username/author_display_name/space_name/counts/`featured_image_id` — but NOT `featured_image_url`/`header_image_url`, which are detail-DTO-only; cards render without covers, same as `/guides`). Pagination: composite cursor `created_at|id` for `latest`, `page_offset` for `popular` (view_count order has no cursor), single page for `featured`.
+
+`+page.server.ts` — copy `guides/+page.server.ts` structure minus categories/series/roadmap:
 
 ```ts
-const PAGE_SIZE = 20;
+import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
+import { apiContext, apiGetEnvelope } from '$lib/server/api';
+import { attachAuthorUsernames } from '$lib/server/users';
+import type { GuideListItem } from '$lib/types/content';
+
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (List amendment)
+const PAGE_SIZE = 24;
+
 export const load: PageServerLoad = async (event) => {
+	// list.enabled is a PUBLIC system setting (video.enabled pattern) — the
+	// root layout exposes it via siteSettings. Missing = enabled.
 	const parent = await event.parent();
 	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
 	if (siteSettings['list.enabled'] === false) {
 		throw error(404, { code: 'feature_disabled', message: 'Lists are not available' });
 	}
+
 	const ctx = apiContext(event);
-	const sort = event.url.searchParams.get('sort') ?? 'latest';   // 'latest' | 'popular'
-	const tab = event.url.searchParams.get('tab') ?? '';            // '' | 'featured'
-	const pageOffset = Number(event.url.searchParams.get('page') ?? '0') || 0;
-	// featured tab → GET /content?type=list&featured=1&page_size=...
-	// default → GET /content?type=list&sort={popular|''}&page_offset=...
-	// apiList<GuideListItem> — verify the DTO keys ListContents emits match
-	// GuideListItem (title/slug/excerpt/author/counts); adjust to the actual
-	// row shape used by other /content?type= consumers (stories featured uses GuideListItem).
+	const authed = !!event.locals.user;
+	const tab = event.url.searchParams.get('tab') ?? 'latest'; // 'latest' | 'popular' | 'featured'
+	const cursor = event.url.searchParams.get('cursor') ?? '';
+	const offset = parseInt(event.url.searchParams.get('offset') ?? '0', 10) || 0;
+
+	const params = new URLSearchParams();
+	params.set('type', 'list');
+	params.set('page_size', String(PAGE_SIZE));
+	if (tab === 'featured') {
+		params.set('featured', '1');
+	} else if (tab === 'popular') {
+		params.set('sort', 'popular');
+		if (offset > 0) params.set('page_offset', String(offset));
+	} else if (cursor) {
+		params.set('cursor', cursor);
+	}
+
+	let items: GuideListItem[] = [];
+	let loadError = false;
+	try {
+		const res = await apiGetEnvelope<GuideListItem[]>(ctx, `/content?${params.toString()}`);
+		items = res.data ?? [];
+		await attachAuthorUsernames(ctx, items);
+	} catch {
+		loadError = true;
+	}
+
+	const last = items[items.length - 1];
+	const nextCursor =
+		tab === 'popular'
+			? items.length >= PAGE_SIZE ? `offset:${offset + items.length}` : null
+			: tab === 'latest' && items.length >= PAGE_SIZE && last
+				? `${last.created_at}|${last.id}`
+				: null;
+
+	return { items, tab, authed, pageSize: PAGE_SIZE, nextCursor, loadError };
 };
 ```
 
-`+page.svelte` — modeled on `stories/+page.svelte`: `ListPageBar` header + `UrlTabs` (`latest`/`popular`/`featured`), `ContentGridCard` grid, "load more" pagination via `page` param + `apiList` client-side. Degrade to `loadError` empty state on API failure. All chrome strings via `t('lists.*')`.
+`+page.svelte` — copy `guides/+page.svelte` structure minus the category Autocomplete/series/roadmap panels: `ListPageBar` header, `UrlTabs` (`latest`/`popular`/`featured`), `items.map(toFeedItem)` → `ContentGridCard` grid (`toFeedItem` with `content_type: 'list'`, `excerpt: g.meta_description ?? undefined` — check `GuideListItem` exposes `meta_description`; if not, leave `excerpt` undefined like guides' `purpose` usage), "Load more" button navigating with `?cursor=`/`?offset=` per `nextCursor` (the `offset:N` pseudo-cursor convention the guides page already parses). Empty → `EmptyState`; failure → `loadError` state. All chrome strings via `t('lists.*')`.
 
 - [ ] **Step 3: Verify**
 
@@ -1120,6 +1192,7 @@ create.list.embed.video_denied "You don't have permission to resolve videos" / "
 create.list.source_url       "Source URL" / "URL source"
 create.list.credit           "Credit" / "Crédit"
 create.list.remove_item      "Remove item" / "Supprimer l'élément"
+create.gate.list_items       "Add at least 1 item" / "Ajoutez au moins 1 élément"
 lists.title                  "Lists" / "Listes"
 lists.description            "Ranked and curated lists from the community" / "Listes classées et sélectionnées par la communauté"
 lists.empty                  "No lists yet" / "Aucune liste pour le moment"
@@ -1158,11 +1231,16 @@ Expected: typecheck clean, tests pass.
 
 - [ ] **Step 3: Migration down/up round-trip**
 
+The migrator is forward-only — `.down.sql` files are never run by `ListMigrationFiles` (AUDIT-BE-003) and there is no `migrate-down` Make target. Rollback is manual via `psql`; to round-trip, run the down file, clear the tracking row, then re-apply:
+
 ```bash
-make migrate-down  # or the repo's down command — check Makefile
+psql $JC_DATABASE_URL -f migrations/000749_list_content_type.down.sql
+psql $JC_DATABASE_URL -c "DELETE FROM schema_migrations WHERE filename = '000749_list_content_type.up.sql';"
+psql $JC_DATABASE_URL -c "SELECT key FROM permissions WHERE key = 'list.create';"  # expect: 0 rows
 make migrate
+psql $JC_DATABASE_URL -c "SELECT key FROM permissions WHERE key = 'list.create';"  # expect: 1 row
 ```
-Expected: both directions apply cleanly; `list.create`/`agent.content_type.list`/`ItemList` template re-seeded.
+Expected: down removes the seeds cleanly; up re-seeds `list.create`/`agent.content_type.list`/`ItemList` template.
 
 - [ ] **Step 4: Manual smoke (if a dev environment is available)**
 
@@ -1183,3 +1261,5 @@ Expected: both directions apply cleanly; `list.create`/`agent.content_type.list`
 - `body` plain-text derives server-side (`SanitizeText(body_html)`, handlers.go ~936-939) so item text flows into `content_hash`, `read_time_minutes`, and Meilisearch with no extra work.
 - `content_revisions` snapshots `field_values` on every save — item edit history is free.
 - The `/lists` nav menu item (if admins add one) is NOT flag-hidden — `routeFeatureFlags` only reads the `features` map and `list.enabled` is a public setting, not a feature flag. Documented limitation matching the `video.enabled` precedent.
+- **Sitemap needs no change** — `internal/seo/sitemap.go` emits `/content/{slug}` for every content type (guides, stories, videos included); those URLs 301 to the canonical route. Lists inherit the same behavior — do not "fix" it per-type in this feature.
+- `img` attrs that survive the sanitizer are only `src/alt/title/width/height` — do not emit `loading`/`class`-only decorators expecting them to persist. `iframe` has NO whitelist entry at all (even `src` is stripped), which is why the `resolved.embed_url` iframe path stays dormant.
