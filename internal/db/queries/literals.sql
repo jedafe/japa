@@ -1,8 +1,14 @@
 -- name: ListTemplateLiterals :many
 -- Returns all template literals for a platform with optional search and active filter.
+-- ?deleted=only|all surfaces soft-deleted rows for admin force-delete
+-- (same contract as AdminListWikiPages).
 SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
-WHERE deleted_at IS NULL
+WHERE CASE @deleted::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
  AND (@search::text = '' OR key ILIKE '%' || @search || '%' OR label ILIKE '%' || @search || '%')
  AND (sqlc.narg(is_active)::boolean IS NULL OR is_active = sqlc.narg(is_active)::boolean)
  AND (@kind::text = '' OR kind = @kind::text)
@@ -16,7 +22,11 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountTemplateLiterals :one
 SELECT COUNT(*) FROM template_literals
-WHERE deleted_at IS NULL
+WHERE CASE @deleted::text
+ WHEN 'only' THEN deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE deleted_at IS NULL
+ END
  AND (@search::text = '' OR key ILIKE '%' || @search || '%' OR label ILIKE '%' || @search || '%')
  AND (sqlc.narg(is_active)::boolean IS NULL OR is_active = sqlc.narg(is_active)::boolean)
  AND (@kind::text = '' OR kind = @kind::text);
@@ -26,6 +36,13 @@ SELECT id, key, kind, value, fallback, label, description, category, is_system, 
 FROM template_literals
 WHERE id = @id
  AND deleted_at IS NULL;
+
+-- name: GetTemplateLiteralAny :one
+-- Includes soft-deleted rows — used by the admin ?force=true path to
+-- distinguish 404 (missing) from 409 not_deleted (still live).
+SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+FROM template_literals
+WHERE id = @id;
 
 -- name: GetTemplateLiteralByKey :one
 SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
@@ -57,3 +74,8 @@ UPDATE template_literals
 SET deleted_at = now(), updated_at = now()
 WHERE id = @id
  AND deleted_at IS NULL;
+
+-- name: HardDeleteTemplateLiteral :execrows
+-- Permanent delete — only for already-soft-deleted literals (admin ?force=true).
+-- Zero rows → still live (409 not_deleted) or missing (404).
+DELETE FROM template_literals WHERE id = @id AND deleted_at IS NOT NULL;

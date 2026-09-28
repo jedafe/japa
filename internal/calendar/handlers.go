@@ -611,6 +611,12 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
 
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "" && deleted != "only" && deleted != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+
 	order := r.URL.Query().Get("order")
 	if order == "" {
 		order = r.URL.Query().Get("dir")
@@ -643,7 +649,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	entries, total, err := h.service.AdminList(r.Context(), destSpaceID, originSpaceID, category, status, q, from, to, sort, order, page, limit)
+	entries, total, err := h.service.AdminList(r.Context(), destSpaceID, originSpaceID, category, status, q, deleted, from, to, sort, order, page, limit)
 	if err != nil {
 		slog.Error("calendar: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list calendar entries")
@@ -723,6 +729,8 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminDelete handles DELETE /admin/calendar/:id — soft-deletes a
 // calendar entry (Rule 11). Gated by calendar.manage (admin+).
+// ?force=true permanently removes an already-soft-deleted row, gated by
+// admin.hard_delete via rbac.RequireForceDelete.
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 // Ref: japaconnect-engineering/AGENTS.md Rule 11.
 func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
@@ -732,6 +740,20 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 
 	entryID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
+		return
+	}
+
+	if r.URL.Query().Get("force") == "true" {
+		err := h.service.AdminHardDelete(r.Context(), entryID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
+			return
+		}
+		if err != nil {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 

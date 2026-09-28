@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { comparisonAdminApi, type ComparisonEntry, type ComparisonType } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -24,6 +26,8 @@
 	const canDeleteComparison = $derived(
 		hasPermission('comparison.delete_any') || hasPermission('comparison.delete_own')
 	);
+	// Rule 11 amendment: permanent delete requires the dedicated node.
+	const canHardDelete = $derived(hasPermission('admin.hard_delete'));
 
 	async function loadOptions() {
 		const [typesResult, visResult, statusResult] = await Promise.all([
@@ -127,6 +131,16 @@
 				{ value: 'quick', label: t('comparisons.depth_quick', 'Quick') },
 				{ value: 'detailed', label: t('comparisons.depth_detailed', 'Detailed') }
 			]
+		},
+		// Soft-deleted comparisons are hidden by default — this filter
+		// surfaces them so the Hard Delete action has targets.
+		{
+			key: 'deleted',
+			label: t('common.filter_deleted', 'Deleted'),
+			options: [
+				{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+				{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+			]
 		}
 	]);
 
@@ -146,6 +160,54 @@
 		}
 	}
 
+	// Row map so bulk actions can resolve ids → rows after EntityPage clears
+	// the selection.
+	const comparisonRowMap = new Map<string, Comparison>();
+	const comparisonRowsFor = (ids: Set<string>): Comparison[] =>
+		Array.from(ids)
+			.map((id) => comparisonRowMap.get(id))
+			.filter((r): r is Comparison => !!r);
+
+	// ── Force delete (admin.hard_delete) — bulk shares one confirm modal ──
+	let forceTargets = $state<Comparison[]>([]);
+	let showForceModal = $state(false);
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = comparisonRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (bulkDeleting || forceTargets.length === 0) return;
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = '';
+			for (const row of targets) {
+				const res = await comparisonAdminApi.hardDeleteComparison(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t('common.bulk_partial', '{failed} of {n} items could not be completed')
+						.replace('{failed}', String(failed))
+						.replace('{n}', String(targets.length)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+			entityController?.reload();
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
 	const config = $derived<EntityPageConfig>({
 		title: t('comparisons.title', 'Comparisons'),
 		description: t('comparisons.subtitle', 'Manage comparison content entries'),
@@ -153,6 +215,7 @@
 		createPermission: canCreateComparison ? 'comparison.create' : undefined,
 		editPermission: canEditComparison ? 'comparison.edit_any' : undefined,
 		deletePermission: canDeleteComparison ? 'comparison.delete_any' : undefined,
+		hardDeletePermission: 'admin.hard_delete',
 		pageSize: 100,
 		columns: [
 			{ key: 'title', label: t('comparisons.col_title', 'Title') },
@@ -212,6 +275,14 @@
 				label: t('comparisons.col_created', 'Created'),
 				render: (v: string) =>
 					`<span class="text-xs" style="color: var(--color-muted)">${v ? new Date(v).toLocaleDateString() : '—'}</span>`
+			},
+			{
+				key: 'deleted_at',
+				label: t('common.filter_deleted', 'Deleted'),
+				render: (v: string | null) =>
+					v
+						? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-danger/15 text-danger">${t('common.filter_deleted', 'Deleted')}</span>`
+						: `<span style="color: var(--color-muted)">—</span>`
 			}
 		],
 		filters,
@@ -220,15 +291,31 @@
 				label: t('common.deleteSelected', 'Delete Selected'),
 				icon: Trash2,
 				variant: 'destructive',
-				onclick: bulkDelete
-			}
+				onclick: bulkDelete,
+				// Rows already soft-deleted can't be deleted again.
+				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
+			},
+			...(canHardDelete
+				? [
+						{
+							label: t('common.force_delete', 'Force Delete Selected'),
+							icon: Trash2,
+							variant: 'destructive' as const,
+							onclick: openBulkForceDelete,
+							disabled: (ids: Set<string>) =>
+								bulkDeleting || !comparisonRowsFor(ids).some((r) => !!r.deleted_at)
+						}
+					]
+				: [])
 		],
 		fields,
+		isDeleted: (row: Comparison) => !!row.deleted_at,
 		load: async ({ q, filter }) => {
 			const params = new URLSearchParams({ page_size: '100' });
 			if (filter.depth) params.set('depth', filter.depth);
 			if (filter.status) params.set('status', filter.status);
 			if (filter.visibility) params.set('visibility', filter.visibility);
+			if (filter.deleted) params.set('deleted', filter.deleted);
 
 			const result = await comparisonAdminApi.listComparisonsAdmin(params.toString());
 			if (!result.ok) {
@@ -236,6 +323,7 @@
 			}
 
 			let rows = (result.data as Comparison[]) ?? [];
+			for (const r of rows) comparisonRowMap.set(r.id, r);
 
 			if (q) {
 				const qLower = q.toLowerCase();
@@ -287,6 +375,10 @@
 			const res = await comparisonAdminApi.deleteComparison(id);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
+		hardRemove: async (id) => {
+			const res = await comparisonAdminApi.hardDeleteComparison(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
 		viewSnippet: ComparisonView
 	});
 </script>
@@ -305,6 +397,25 @@
 {/if}
 
 <EntityPage {config} bind:controller={entityController} />
+
+<!-- ── Force Delete confirmation (bulk) — permanent erasure of soft-deleted rows ── -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{#if forceTargets.length === 1}
+				{t('common.force_delete_confirm', 'Permanently delete "{name}"? This cannot be undone.').replace('{name}', forceTargets[0].title)}
+			{:else}
+				{t('common.force_delete_confirm_bulk', 'Permanently delete {count} selected items? This cannot be undone.').replace('{count}', String(forceTargets.length))}
+			{/if}
+		</p>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showForceModal = false; forceTargets = []; }}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={bulkDeleting}>
+			{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}
+		</Button>
+	</div>
+</Modal>
 
 <!-- View slide-over body -->
 {#snippet ComparisonView({ row }: { row: Comparison })}

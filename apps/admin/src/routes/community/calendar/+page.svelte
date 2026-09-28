@@ -21,6 +21,7 @@
 		destination_space_id?: string;
 		origin_space_id?: string;
 		source_url?: string;
+		deleted_at?: string;
 		// ADR-088 AI generation columns
 		ai_generated?: boolean;
 		ai_model?: string;
@@ -32,6 +33,8 @@
 	const canManage = $derived(hasPermission('calendar.review'));
 	// BUG-001/BUG-008: calendar.manage (admin+) gates the soft-delete action.
 	const canDelete = $derived(hasPermission('calendar.manage'));
+	// Rule 11 amendment: permanent delete requires the dedicated node.
+	const canHardDelete = $derived(hasPermission('admin.hard_delete'));
 
 	// ── Country selector (250 primary geo space countries) ───────────────────
 	const countryUtils = useCountries();
@@ -52,6 +55,9 @@
 	// BUG-008: soft-delete confirm modal state.
 	let showDeleteModal = $state(false);
 	let deleteTarget = $state<CalendarItem | null>(null);
+	// Force-delete (admin.hard_delete) — permanent removal of soft-deleted rows.
+	let showForceModal = $state(false);
+	let forceTarget = $state<CalendarItem | null>(null);
 
 	function openReject(item: CalendarItem) {
 		actionTarget = item;
@@ -148,6 +154,33 @@
 		}
 	}
 
+	// Force delete — admin.hard_delete-gated ?force=true on the same endpoint;
+	// the backend rejects rows that are not already soft-deleted.
+	function openForceDelete(item: CalendarItem) {
+		forceTarget = item;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (!forceTarget) return;
+		acting = true;
+		pageError = '';
+		try {
+			const result = await calendarAdminApi.hardDelete(forceTarget.id);
+			if (result.ok) {
+				showForceModal = false;
+				forceTarget = null;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -158,14 +191,14 @@
 				label: t('app.calendar.approve', 'Approve'),
 				icon: CheckCircle,
 				onclick: openApprove,
-				show: () => true
+				show: (row: CalendarItem) => !row.deleted_at
 			});
 			acts.push({
 				label: t('app.calendar.reject', 'Reject'),
 				icon: XCircle,
 				variant: 'destructive',
 				onclick: openReject,
-				show: () => true
+				show: (row: CalendarItem) => !row.deleted_at
 			});
 		}
 		// BUG-008: soft-delete (calendar.manage, admin+).
@@ -175,7 +208,17 @@
 				icon: Trash2,
 				variant: 'destructive',
 				onclick: openDelete,
-				show: () => true
+				show: (row: CalendarItem) => !row.deleted_at
+			});
+		}
+		if (canHardDelete) {
+			// Permanent removal — only for already-soft-deleted rows.
+			acts.push({
+				label: t('common.force_delete', 'Force Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openForceDelete,
+				show: (row: CalendarItem) => !!row.deleted_at
 			});
 		}
 		return acts;
@@ -203,6 +246,16 @@
 				fetcher: countryUtils.fetcher,
 				initialFetcher: countryUtils.initialFetcher,
 				getSelectedLabel: countryUtils.getSelectedLabel
+			},
+			// Soft-deleted events are hidden by default — this filter surfaces
+			// them so the Force Delete action has targets.
+			{
+				key: 'deleted',
+				label: t('common.filter_deleted', 'Deleted'),
+				options: [
+					{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		];
 	});
@@ -231,7 +284,10 @@
 				key: 'status',
 				label: t('app.calendar.col_status', 'Status'),
 				sortable: true,
-				render: (value: string) => value || '—'
+				render: (value: string, row: CalendarItem) =>
+					row.deleted_at
+						? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-danger/15 text-danger">${t('common.filter_deleted', 'Deleted')}</span>`
+						: value || '—'
 			},
 			{
 				key: 'category',
@@ -363,6 +419,21 @@
 		<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={confirmDelete} disabled={acting}>
 			{acting ? t('app.calendar.deleting', 'Deleting...') : t('common.delete', 'Delete')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Force Delete confirmation (admin.hard_delete — permanent) ─────────── -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('common.force_delete_confirm', 'Permanently delete "{name}"? This cannot be undone.').replace('{name}', forceTarget?.title ?? '')}
+		</p>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showForceModal = false; forceTarget = null; }}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={acting}>
+			{acting ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}
 		</Button>
 	</div>
 </Modal>

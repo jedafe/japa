@@ -27,6 +27,148 @@ func (q *Queries) AddUserGroupMembership(ctx context.Context, arg AddUserGroupMe
 	return err
 }
 
+const adminCountContents = `-- name: AdminCountContents :one
+SELECT COUNT(*)::int AS count
+FROM contents c
+WHERE (
+ CASE $1::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE c.deleted_at IS NULL
+ END
+ )
+ AND ($2::text = '' OR c.content_type = $2)
+ AND ($3::text = '' OR c.status = $3)
+ AND ($4::text = '' OR c.title ILIKE '%' || $4 || '%' OR c.slug ILIKE '%' || $4 || '%' OR c.body ILIKE '%' || $4 || '%')
+`
+
+type AdminCountContentsParams struct {
+	Deleted     string `json:"deleted"`
+	ContentType string `json:"content_type"`
+	Status      string `json:"status"`
+	Q           string `json:"q"`
+}
+
+func (q *Queries) AdminCountContents(ctx context.Context, arg AdminCountContentsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, adminCountContents,
+		arg.Deleted,
+		arg.ContentType,
+		arg.Status,
+		arg.Q,
+	)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const adminListContents = `-- name: AdminListContents :many
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body,
+ c.status, c.visibility, c.view_count, c.comment_count, c.published_at,
+ c.created_at, c.updated_at, c.deleted_at,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE (
+ CASE $1::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE c.deleted_at IS NULL
+ END
+ )
+ AND ($2::text = '' OR c.content_type = $2)
+ AND ($3::text = '' OR c.status = $3)
+ AND ($4::text = '' OR c.title ILIKE '%' || $4 || '%' OR c.slug ILIKE '%' || $4 || '%' OR c.body ILIKE '%' || $4 || '%')
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $6 OFFSET $5
+`
+
+type AdminListContentsParams struct {
+	Deleted     string `json:"deleted"`
+	ContentType string `json:"content_type"`
+	Status      string `json:"status"`
+	Q           string `json:"q"`
+	PageOffset  int32  `json:"page_offset"`
+	PageLimit   int32  `json:"page_limit"`
+}
+
+type AdminListContentsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	IsFeatured        bool               `json:"is_featured"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	SpaceName         *string            `json:"space_name"`
+}
+
+// Admin list with soft-delete view selection: ” = live only (default),
+// 'only' = deleted only, 'all' = both. Powers the /admin/content page's
+// Deleted filter; kept separate from the public ListContents query so the
+// deleted view can never leak to unauthenticated callers.
+func (q *Queries) AdminListContents(ctx context.Context, arg AdminListContentsParams) ([]AdminListContentsRow, error) {
+	rows, err := q.db.Query(ctx, adminListContents,
+		arg.Deleted,
+		arg.ContentType,
+		arg.Status,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListContentsRow
+	for rows.Next() {
+		var i AdminListContentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.Status,
+			&i.Visibility,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.IsFeatured,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.SpaceName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminUpdateReviewStatus = `-- name: AdminUpdateReviewStatus :exec
 UPDATE reviews
 SET status = $1, updated_at = now()

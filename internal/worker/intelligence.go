@@ -424,12 +424,6 @@ type intelPostPublishPayload struct {
 	EntityType string `json:"entity_type"`
 }
 
-type intelNotifyPayload struct {
-	Version    string `json:"version"`
-	DomainID   string `json:"domain_id"`
-	EntityType string `json:"entity_type"`
-}
-
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -2994,15 +2988,6 @@ func HandleIntelPostPublish(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:intel:post_publish: event published", "entity_type", p.EntityType, "domain_id", domainID.String())
 
-	payload := marshalPayload(intelNotifyPayload{
-		Version:    intelPayloadVersion,
-		DomainID:   p.DomainID,
-		EntityType: p.EntityType,
-	})
-	if payload != nil {
-		enqueueIntel(TypeIntelNotifyDiscoveries, payload)
-	}
-
 	return nil
 }
 
@@ -3037,14 +3022,40 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	var p intelNotifyPayload
+	// Two payload shapes arrive on this task type:
+	//   - legacy direct-enqueue tasks {domain_id, entity_type}
+	//   - DomainEvent {entity_id, entity_type, type} — the AsynqEventPublisher
+	//     bridge translates every published domain event into a notify task
+	// The handler resolves the domain id from whichever field is populated.
+	var p struct {
+		DomainID   string `json:"domain_id"`
+		EntityID   string `json:"entity_id"`
+		EntityType string `json:"entity_type"`
+		EventType  string `json:"type"`
+	}
 	if err := parsePayloadOrSkip(t, &p); err != nil {
 		return err
 	}
+	// .discovered events are this handler's own output — re-fanning them
+	// out would loop the task on itself. Skip them.
+	if strings.HasSuffix(p.EventType, ".discovered") {
+		return nil
+	}
 
-	domainID, err := scanUUID(p.DomainID)
+	domainIDStr := p.DomainID
+	if domainIDStr == "" {
+		domainIDStr = p.EntityID
+	}
+	if domainIDStr == "" {
+		// An entity-less event has nothing to resolve — nothing a retry
+		// can heal, so this is a skip, not a failure.
+		slog.Warn("task:intel:notify_discoveries: payload has no domain_id/entity_id, skipping")
+		return nil
+	}
+
+	domainID, err := scanUUID(domainIDStr)
 	if err != nil {
-		return fmt.Errorf("task:intel:notify_discoveries: domain_id: %w", err)
+		return fmt.Errorf("task:intel:notify_discoveries: domain_id: %w: %w", err, asynq.SkipRetry)
 	}
 	// Resolve the geo space id for the promoted entity. For scholarships
 	// (and other domains with a country_space_id column), load the row
@@ -3060,6 +3071,12 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 	case "scholarship":
 		s, err := intelStores.GetScholarship(ctx, domainID)
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// Entity was deleted between publish and notify — nothing
+				// to fan out on, and retries won't heal it.
+				slog.Warn("task:intel:notify_discoveries: scholarship no longer exists, skipping", "domain_id", domainID.String())
+				return nil
+			}
 			return fmt.Errorf("task:intel:notify_discoveries: load scholarship: %w", err)
 		}
 

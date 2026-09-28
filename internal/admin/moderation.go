@@ -1717,7 +1717,73 @@ func (h *Handlers) callStudioHook(ctx context.Context, id, reviewerID pgtype.UUI
 
 // ─── Content Moderation ───────────────────────────────────────────────────
 
+// ListContent handles GET /admin/content — the admin moderation list.
+// Unlike the public /content handler, this supports a soft-delete view via
+// ?deleted=only|all ("" = live only) plus type/status/q filters. Kept
+// separate so deleted rows can never leak to the public route.
+func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
+
+	limit := int32(50)
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 200 {
+			limit = int32(parsed) //nolint:gosec // G115: bounded by 200 check
+		}
+	}
+
+	var offset int32
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+			offset = int32(parsed) //nolint:gosec // G115: bounded above
+		}
+	}
+
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "" && deleted != "only" && deleted != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+
+	params := gen.AdminListContentsParams{
+		Deleted:     deleted,
+		ContentType: r.URL.Query().Get("type"),
+		Status:      r.URL.Query().Get("status"),
+		Q:           r.URL.Query().Get("q"),
+		PageLimit:   limit,
+		PageOffset:  offset,
+	}
+
+	rows, err := h.Queries.AdminListContents(r.Context(), params)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list content")
+		return
+	}
+
+	total, err := h.Queries.AdminCountContents(r.Context(), gen.AdminCountContentsParams{
+		Deleted:     params.Deleted,
+		ContentType: params.ContentType,
+		Status:      params.Status,
+		Q:           params.Q,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count content")
+		return
+	}
+
+	totalPages := int32(1)
+	if limit > 0 && total > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":        rows,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
 // RemoveContent handles POST /admin/content/:id/remove.
+// ?force=true permanently removes an already-soft-deleted row, gated by
+// admin.hard_delete via rbac.RequireForceDelete.
 func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 
 	id := chi.URLParam(r, "id")
@@ -1726,6 +1792,33 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 
 	if err := cid.Scan(id); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		return
+	}
+
+	if r.URL.Query().Get("force") == "true" {
+		affected, err := h.Queries.HardDeleteContent(r.Context(), cid)
+		if err != nil {
+			if errpkg.IsFKViolation(err) {
+				errpkg.WriteError(w, http.StatusConflict, "in_use", "Content is referenced by other records and cannot be permanently deleted")
+				return
+			}
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete content")
+			return
+		}
+		if affected == 0 {
+			exists, err := h.Queries.ContentExistsAny(r.Context(), cid)
+			if err != nil {
+				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete content")
+				return
+			}
+			if !exists {
+				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+				return
+			}
+			errpkg.WriteError(w, http.StatusConflict, "not_deleted", "Content must be removed (soft-deleted) before it can be permanently deleted")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 

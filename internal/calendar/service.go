@@ -516,7 +516,9 @@ func (s *Service) Unsubscribe(ctx context.Context, userID, destSpaceID pgtype.UU
 }
 
 // AdminList returns all calendar entries (any status) for admin management.
-func (s *Service) AdminList(ctx context.Context, destSpaceID, originSpaceID pgtype.UUID, category, status, q string, from, to pgtype.Timestamptz, sort, order string, page, limit int32) ([]CalendarEntryDTO, int64, error) {
+// deleted selects the soft-delete view: "" = live only, "only" = deleted only,
+// "all" = both.
+func (s *Service) AdminList(ctx context.Context, destSpaceID, originSpaceID pgtype.UUID, category, status, q, deleted string, from, to pgtype.Timestamptz, sort, order string, page, limit int32) ([]CalendarEntryDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -536,6 +538,7 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID, originSpaceID pgty
 		From:               from,
 		To:                 to,
 		Q:                  q,
+		Deleted:            deleted,
 		Sort:               sort,
 		Order:              order,
 		Limit:              limit,
@@ -616,6 +619,21 @@ func (s *Service) AdminSoftDelete(ctx context.Context, id pgtype.UUID) error {
 		}
 
 		return fmt.Errorf("calendar: admin soft delete: %w", err)
+	}
+
+	return nil
+}
+
+// AdminHardDelete permanently removes a soft-deleted calendar entry (admin
+// ?force=true — gated by admin.hard_delete). Returns pgx.ErrNoRows when
+// missing and errpkg.ErrNotDeleted while live.
+func (s *Service) AdminHardDelete(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.AdminHardDeleteEntry(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("calendar: admin hard delete: %w", err)
 	}
 
 	return nil

@@ -3,6 +3,8 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { Eye, Pencil, Trash2 } from 'lucide-svelte';
 
 	type TemplateLiteral = {
@@ -16,6 +18,7 @@
 		category: string | null;
 		is_system: boolean;
 		is_active: boolean;
+		deleted_at?: string | null;
 		created_at: string;
 		updated_at: string;
 	};
@@ -38,6 +41,59 @@
 			await Promise.all(idArr.map((id) => api(`/admin/literals/${id}`, { method: 'DELETE' })));
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete template literals');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	// ── Force delete — single + bulk share one confirm modal ──
+	// BulkAction.onclick receives only ids — resolve them against a map of
+	// every row seen this session so deleted-row filtering keeps working.
+	const literalRowMap = new Map<string, TemplateLiteral>();
+	const literalRowsFor = (ids: Set<string>): TemplateLiteral[] =>
+		Array.from(ids)
+			.map((id) => literalRowMap.get(id))
+			.filter((r): r is TemplateLiteral => !!r);
+
+	let forceTargets = $state<TemplateLiteral[]>([]);
+	let showForceModal = $state(false);
+
+	function openForceDelete(row: TemplateLiteral) {
+		forceTargets = [row];
+		showForceModal = true;
+	}
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = literalRowsFor(ids).filter((r) => !!r.deleted_at && !r.is_system);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (bulkDeleting || forceTargets.length === 0) return;
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = '';
+			for (const row of targets) {
+				const res = await api(`/admin/literals/${row.id}?force=true`, { method: 'DELETE' });
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t('common.bulkDeletePartial', '{failed} of {n} items could not be deleted')
+						.replace('{failed}', String(failed))
+						.replace('{n}', String(targets.length)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+			entityController?.reload();
 		} finally {
 			bulkDeleting = false;
 		}
@@ -130,6 +186,16 @@
 					{ value: 'expression', label: t('literals.kind_expression', 'Expression') },
 					{ value: 'static', label: t('literals.kind_static', 'Static') }
 				]
+			},
+			{
+				// Soft-deleted literals are hidden by default — this filter
+				// surfaces them so admins can force-delete.
+				key: 'deleted',
+				label: t('common.filter_deleted', 'Deleted'),
+				options: [
+					{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		],
 		bulkActions: [
@@ -137,7 +203,17 @@
 				label: t('common.deleteSelected', 'Delete Selected'),
 				icon: Trash2,
 				variant: 'destructive',
-				onclick: bulkDelete
+				onclick: bulkDelete,
+				// Rows already soft-deleted can't be deleted again.
+				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
+			},
+			{
+				label: t('common.force_delete', 'Force Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openBulkForceDelete,
+				disabled: (ids, rows) =>
+					bulkDeleting || !(rows ?? literalRowsFor(ids)).some((r) => !!r.deleted_at && !r.is_system)
 			}
 		],
 		fields,
@@ -148,6 +224,7 @@
 			if (q) params.set('q', q);
 			if (filter.is_active) params.set('is_active', filter.is_active);
 			if (filter.kind) params.set('kind', filter.kind);
+			if (filter.deleted) params.set('deleted', filter.deleted);
 			if (sort) {
 				const [sortKey, sortDir] = sort.split(':');
 				if (sortKey) params.set('sort', sortKey);
@@ -159,6 +236,7 @@
 			if (result.ok) {
 				const body = result.data;
 				const items = (body.data as TemplateLiteral[]) ?? [];
+				for (const row of items) literalRowMap.set(row.id, row);
 				return {
 					data: items.map(mapLiteral),
 					total: body.total ?? items.length,
@@ -208,14 +286,22 @@
 				label: t('common.edit', 'Edit'),
 				icon: Pencil,
 				onclick: (row: TemplateLiteral, ctx) => ctx?.openEdit(row),
-				show: (row: TemplateLiteral) => !row.is_system
+				show: (row: TemplateLiteral) => !row.is_system && !row.deleted_at
 			},
 			{
 				label: t('common.delete', 'Delete'),
 				icon: Trash2,
 				variant: 'destructive',
 				onclick: (row: TemplateLiteral, ctx) => ctx?.openDelete(row),
-				show: (row: TemplateLiteral) => !row.is_system
+				show: (row: TemplateLiteral) => !row.is_system && !row.deleted_at
+			},
+			{
+				// Permanent removal — only for already-soft-deleted rows.
+				label: t('common.force_delete', 'Force Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row: TemplateLiteral) => openForceDelete(row),
+				show: (row: TemplateLiteral) => !!row.deleted_at && !row.is_system
 			}
 		],
 		viewSnippet: LiteralView
@@ -237,6 +323,23 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
+<!-- Force Delete confirmation (single + bulk) — permanent erasure of soft-deleted rows -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	{#if forceTargets.length > 0}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{#if forceTargets.length === 1}
+				{t('common.force_delete_confirm', 'Permanently delete "{name}"? This cannot be undone.').replace('{name}', forceTargets[0].key)}
+			{:else}
+				{t('common.force_delete_confirm_bulk', 'Permanently delete {count} selected items? This cannot be undone.').replace('{count}', String(forceTargets.length))}
+			{/if}
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showForceModal = false)} disabled={bulkDeleting}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={bulkDeleting}>{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}</Button>
+	</div>
+</Modal>
+
 <!-- ── Cell snippets ─────────────────────────────────────────────────────── -->
 {#snippet KindCell({ value }: { value: string })}
 	<span
@@ -252,14 +355,20 @@
 	<span class="font-mono text-xs" style="color: var(--color-muted)">{value ?? ''}</span>
 {/snippet}
 
-{#snippet StatusCell({ value }: { value: boolean })}
-	<span
-		class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {value
-			? 'bg-success/15 text-success'
-			: 'bg-muted/15 text-muted'}"
-	>
-		{value ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}
-	</span>
+{#snippet StatusCell({ value, row }: { value: boolean; row: TemplateLiteral })}
+	{#if row.deleted_at}
+		<span class="inline-block rounded-full bg-danger/15 px-2 py-0.5 text-xs font-medium text-danger">
+			{t('common.filter_deleted', 'Deleted')}
+		</span>
+	{:else}
+		<span
+			class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {value
+				? 'bg-success/15 text-success'
+				: 'bg-muted/15 text-muted'}"
+		>
+			{value ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}
+		</span>
+	{/if}
 {/snippet}
 
 {#snippet SystemCell({ value }: { value: boolean })}

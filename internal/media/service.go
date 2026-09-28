@@ -394,6 +394,14 @@ func (s *Service) DeleteMedia(ctx context.Context, mediaID pgtype.UUID) error {
 	return s.store.SoftDeleteMedia(ctx, mediaID)
 }
 
+// HardDeleteMedia permanently removes a media item that is already
+// soft-deleted (admin force-delete path — gated by admin.hard_delete).
+// Returns errpkg.ErrNotFound when the media does not exist and
+// errpkg.ErrNotDeleted when it is not soft-deleted.
+func (s *Service) HardDeleteMedia(ctx context.Context, mediaID pgtype.UUID) error {
+	return s.store.HardDeleteMedia(ctx, mediaID)
+}
+
 // DeleteMediaOwn soft-deletes a media item scoped to the uploader (gated by media.delete_own).
 // Returns ErrMediaNotFound if the media belongs to a different user.
 func (s *Service) DeleteMediaOwn(ctx context.Context, uploaderID, mediaID pgtype.UUID) error {
@@ -404,7 +412,7 @@ func (s *Service) DeleteMediaOwn(ctx context.Context, uploaderID, mediaID pgtype
 // search query, status, and flagged state, along with the total count matching
 // the filter. The total is used by callers to compute total_pages. Empty/zero
 // filter values mean "no filter on this field".
-func (s *Service) ListMedia(ctx context.Context, uploaderID *pgtype.UUID, mimeType, query, status, flagged *string, limit, offset int32) ([]gen.Medium, int32, error) {
+func (s *Service) ListMedia(ctx context.Context, uploaderID *pgtype.UUID, mimeType, query, status, flagged *string, deleted string, limit, offset int32) ([]gen.Medium, int32, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -438,12 +446,12 @@ func (s *Service) ListMedia(ctx context.Context, uploaderID *pgtype.UUID, mimeTy
 		flaggedFilter = *flagged
 	}
 
-	items, err := s.store.ListMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, limit, offset)
+	items, err := s.store.ListMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, deleted, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter)
+	total, err := s.store.CountMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, deleted)
 	if err != nil {
 		return nil, 0, err
 	}

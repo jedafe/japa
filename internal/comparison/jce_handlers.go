@@ -173,6 +173,13 @@ func (h *Handlers) ListJCEComparisonsAdmin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "" && deleted != "only" && deleted != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+	filter.Deleted = deleted
+
 	comparisons, err := h.Service.ListComparisonsAdmin(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
@@ -475,6 +482,23 @@ func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bypass := hasAnyPermission(r, user, "comparison.delete_any")
+
+	// ?force=true permanently removes an already-soft-deleted comparison —
+	// gated by admin.hard_delete via rbac.RequireForceDelete.
+	if r.URL.Query().Get("force") == "true" {
+		err := h.Service.HardDeleteJCEComparison(r.Context(), id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
+			return
+		}
+		if err != nil {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	if err := h.Service.DeleteJCEComparison(r.Context(), id, user.UserID, bypass); err != nil {
 		if errors.Is(err, errpkg.ErrForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only delete your own comparisons")

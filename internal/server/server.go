@@ -3570,7 +3570,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/course-catalog/{id}", universityCourseHandlers.AdminGetCatalog)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.update")).
 				Patch("/admin/course-catalog/{id}", universityCourseHandlers.AdminUpdateCatalog)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.delete"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/course-catalog/{id}", universityCourseHandlers.AdminDeleteCatalog)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.list")).
 				Get("/admin/course-offerings", universityCourseHandlers.AdminListOfferings)
@@ -3582,7 +3582,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/course-offerings/{id}", universityCourseHandlers.AdminGetOffering)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.update")).
 				Patch("/admin/course-offerings/{id}", universityCourseHandlers.AdminUpdateOffering)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.delete"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/course-offerings/{id}", universityCourseHandlers.AdminDeleteOffering)
 
 			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
@@ -3716,7 +3716,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin media listing and deletion (P5.6 — Task 9)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.view_all")).
 				Get("/admin/media", mediaHandlers.ListMedia)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.delete_any")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.delete_any"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/media/{id}", mediaHandlers.AdminDeleteMedia)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
 				Patch("/admin/media/{id}", mediaHandlers.AdminUpdateMetadata)
@@ -3931,7 +3931,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/blog/series/{slug}", blogHandlers.GetSeries)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
 					Patch("/blog/series/{id}", blogHandlers.UpdateSeries)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.delete")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.delete"), rbac.RequireForceDelete(rbacResolver)).
 					Delete("/blog/series/{id}", blogHandlers.DeleteSeries)
 
 				// Series post routes
@@ -4017,7 +4017,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparisons/{id}/matrix", comparisonHandlers.GetJCEComparisonMatrix)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
 					Patch("/jce/comparisons/{id}", comparisonHandlers.UpdateJCEComparison)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.delete_own", "comparison.delete_any")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.delete_own", "comparison.delete_any"), rbac.RequireForceDelete(rbacResolver)).
 					Delete("/jce/comparisons/{id}", comparisonHandlers.DeleteJCEComparison)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
 					Post("/jce/comparisons/{id}/promote", comparisonHandlers.PromoteJCEComparison)
@@ -4073,7 +4073,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/jce/profiles/{id}", jceHandlers.GetProfile)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.update")).
 					Patch("/jce/profiles/{id}", jceHandlers.UpdateProfile)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.delete")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.delete"), rbac.RequireForceDelete(rbacResolver)).
 					Delete("/jce/profiles/{id}", jceHandlers.DeleteProfile)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.update")).
 					Post("/jce/profiles/{id}/default", jceHandlers.SetDefaultProfile)
@@ -5801,7 +5801,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/literals/{id}", adminHandlers.GetLiteral)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
 				Patch("/admin/literals/{id}", adminHandlers.UpdateLiteral)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/literals/{id}", adminHandlers.DeleteLiteral)
 
 			// RBAC Management routes (admin)
@@ -5943,7 +5943,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/organizations", orgHandlers.AdminCreateOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Patch("/admin/organizations/{id}", orgHandlers.AdminUpdateOrganization)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/organizations/{id}", orgHandlers.AdminDeleteOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/organizations/{id}/members", orgHandlers.AdminListMembers)
@@ -5963,7 +5963,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/spaces", spaceHandlers.CreateSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
 				Patch("/admin/spaces/{id}", spaceHandlers.UpdateSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/spaces/{id}", spaceHandlers.DeleteSpace)
 			// Per-space join-request queue — RequireSpacePermission resolves
 			// spaces.moderate per space so the space owner and assigned
@@ -6105,14 +6105,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Task 23: Content admin moderation
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-				Get("/admin/content", contentHandlers.ListContent)
+				Get("/admin/content", adminHandlers.ListContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/content/{id}", contentHandlers.GetAdminContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_any")).
 				Patch("/admin/content/{id}", contentHandlers.UpdateContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any"), rbac.RequireForceDelete(rbacResolver)).
 				Get("/admin/content/{id}/remove", adminHandlers.RemoveContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any"), rbac.RequireForceDelete(rbacResolver)).
 				Post("/admin/content/{id}/remove", adminHandlers.RemoveContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any")).
 				Post("/admin/content/{id}/restore", adminHandlers.RestoreContent)
@@ -6466,7 +6466,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/stories/{id}/unverify", storyHandlers.HandleUnverify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.verify")).
 					Get("/admin/stories", storyHandlers.HandleAdminList)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.delete_any")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.delete_any"), rbac.RequireForceDelete(rbacResolver)).
 					Delete("/admin/stories/{id}", storyHandlers.HandleAdminDelete)
 			})
 
@@ -6497,7 +6497,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/wiki/{page_id}", wikiHandlers.HandleUpdatePage)
 				// Admin: delete pages (wiki.delete permission) — soft delete;
 				// ?force=true permanently removes an already-soft-deleted page.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.delete")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.delete"), rbac.RequireForceDelete(rbacResolver)).
 					Delete("/admin/wiki/{page_id}", wikiHandlers.HandleDeletePage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Post("/admin/wiki/generate", wikiHandlers.HandleGenerate)
@@ -6626,7 +6626,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/me/visa-timelines/{id}/milestones/{mid}", visaTimelineHandlers.HandleUpdateMilestone)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_timeline.manage_any")).
 					Get("/admin/visa-timelines", visaTimelineHandlers.HandleAdminList)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_timeline.manage_any")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_timeline.manage_any"), rbac.RequireForceDelete(rbacResolver)).
 					Delete("/admin/visa-timelines/{id}", visaTimelineHandlers.HandleAdminDelete)
 			})
 
@@ -6698,7 +6698,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/calendar/{id}", calendarHandlers.HandleAdminUpdate)
 					// BUG-001/BUG-008: soft-delete admin endpoint gated by calendar.manage (admin+).
 					// Per Rule 11, user content is soft-deleted, never hard-deleted.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.manage")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.manage"), rbac.RequireForceDelete(rbacResolver)).
 					Delete("/admin/calendar/{id}", calendarHandlers.HandleAdminDelete)
 			})
 

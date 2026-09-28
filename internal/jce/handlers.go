@@ -19,11 +19,12 @@ import (
 // Defining it as an interface makes the handler package testable without
 // requiring a real database or a fully wired Service.
 type service interface {
-	ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error)
+	ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool, deleted string) ([]ComparisonProfile, error)
 	CreateComparisonProfile(ctx context.Context, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
 	GetComparisonProfile(ctx context.Context, id, userID pgtype.UUID) (ComparisonProfile, error)
 	UpdateComparisonProfile(ctx context.Context, id, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
 	DeleteComparisonProfile(ctx context.Context, id, userID pgtype.UUID) error
+	HardDeleteComparisonProfile(ctx context.Context, id pgtype.UUID) error
 	SetDefaultComparisonProfile(ctx context.Context, id, userID pgtype.UUID) error
 	GetProfileStats(ctx context.Context, userID pgtype.UUID, all bool) ([]ProfileStat, error)
 
@@ -162,7 +163,15 @@ func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request) {
 
 	all := r.URL.Query().Get("all") == "true"
 
-	profiles, err := h.service.ListComparisonProfiles(r.Context(), user.UserID, true, all)
+	deleted := r.URL.Query().Get("deleted")
+	switch deleted {
+	case "", "only", "all":
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_deleted", "deleted must be one of: only, all")
+		return
+	}
+
+	profiles, err := h.service.ListComparisonProfiles(r.Context(), user.UserID, true, all, deleted)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -246,7 +255,9 @@ func (h *Handlers) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
-// DeleteProfile handles DELETE /api/v1/jce/profiles/{id}.
+// DeleteProfile handles DELETE /api/v1/jce/profiles/{id}. With
+// ?force=true it permanently removes an already soft-deleted profile
+// (requires admin.hard_delete — enforced by RequireForceDelete middleware).
 func (h *Handlers) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -256,6 +267,16 @@ func (h *Handlers) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	if r.URL.Query().Get("force") == "true" {
+		if err := h.service.HardDeleteComparisonProfile(r.Context(), id); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		errpkg.WriteJSON(w, http.StatusNoContent, nil)
 		return
 	}
 

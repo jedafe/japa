@@ -683,8 +683,10 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, userID pgtype.UUI
 
 // ListComparisonProfiles returns the caller's profiles plus platform templates.
 // When all is true and the caller has comparison.edit_any, it returns all
-// non-deleted platform profiles (excluding templates) plus templates.
-func (s *Service) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
+// platform profiles in the requested deleted view (” = live only, 'only' =
+// deleted, 'all' = both) plus templates. Callers without comparison.edit_any
+// always get their own live profiles regardless of deleted.
+func (s *Service) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool, deleted string) ([]ComparisonProfile, error) {
 	if !s.featureEnabled(ctx, "feature.jce.profiles") {
 		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
@@ -697,7 +699,7 @@ func (s *Service) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID
 
 	var err error
 	if all && s.permissionChecker(ctx, userID)("comparison.edit_any") {
-		owned, err = s.profiles.listByPlatform(ctx)
+		owned, err = s.profiles.listByPlatform(ctx, deleted)
 	} else {
 		owned, err = s.profiles.listByUser(ctx, userID)
 	}
@@ -845,6 +847,22 @@ func (s *Service) DeleteComparisonProfile(ctx context.Context, id, userID pgtype
 
 	if err := s.profiles.delete(ctx, id); err != nil {
 		return fmt.Errorf("deleting comparison profile: %w", err)
+	}
+
+	return nil
+}
+
+// HardDeleteComparisonProfile permanently removes a profile that has already
+// been soft-deleted. Callers must hold admin.hard_delete (enforced on the
+// ?force=true route). Returns pgx.ErrNoRows when the profile does not exist
+// and ErrNotDeleted when it is still live.
+func (s *Service) HardDeleteComparisonProfile(ctx context.Context, id pgtype.UUID) error {
+	if !s.featureEnabled(ctx, "feature.jce.profiles") {
+		return fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
+	}
+
+	if err := s.profiles.hardDelete(ctx, id); err != nil {
+		return err
 	}
 
 	return nil

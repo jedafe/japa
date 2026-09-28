@@ -528,12 +528,18 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	deleted := r.URL.Query().Get("deleted")
+	if deleted != "" && deleted != "only" && deleted != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+
 	pageSize, pageOffset := parsePageParams(r)
 	if pageSize > 200 {
 		pageSize = 200
 	}
 
-	stories, total, err := h.service.AdminList(r.Context(), status, q, verifiedPtr, sort, destSpaceID, pageSize, pageOffset)
+	stories, total, err := h.service.AdminList(r.Context(), status, q, verifiedPtr, sort, destSpaceID, deleted, pageSize, pageOffset)
 	if err != nil {
 		slog.Error("story: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list stories")
@@ -555,7 +561,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminDelete handles DELETE /admin/stories/:id — admin deletion of any
 // story (story.delete_any permission checked at route registration). Soft-deletes
-// per Rule 11.
+// per Rule 11. ?force=true permanently removes an already-soft-deleted row,
+// gated by admin.hard_delete via rbac.RequireForceDelete.
 func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -574,6 +581,20 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 
 	if !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		return
+	}
+
+	if r.URL.Query().Get("force") == "true" {
+		err := h.service.AdminHardDelete(r.Context(), contentID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			return
+		}
+		if err != nil {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 

@@ -277,13 +277,18 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count,
- c.publish_at, c.published_at, c.created_at, c.updated_at,
+ c.publish_at, c.published_at, c.created_at, c.updated_at, c.deleted_at,
  m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
 WHERE c.content_type = 'comparison'
- AND c.deleted_at IS NULL
- AND c.auto_hidden = false
+ AND (
+ CASE sqlc.narg(deleted)::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
+ END
+ )
  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
  AND (
  sqlc.narg(type_id)::uuid IS NULL
@@ -315,8 +320,13 @@ SELECT count(*)::int
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
 WHERE c.content_type = 'comparison'
- AND c.deleted_at IS NULL
- AND c.auto_hidden = false
+ AND (
+ CASE sqlc.narg(deleted)::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
+ END
+ )
  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
  AND (
  sqlc.narg(type_id)::uuid IS NULL

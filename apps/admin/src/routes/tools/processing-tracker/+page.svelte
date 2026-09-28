@@ -32,6 +32,7 @@
 		outcome?: string;
 		is_shared: boolean;
 		anonymised_at?: string;
+		deleted_at?: string;
 		created_at: string;
 		updated_at: string;
 		milestones?: Milestone[];
@@ -44,6 +45,8 @@
 	};
 
 	const canManage = $derived(hasPermission('visa_timeline.manage_any'));
+	// Rule 11 amendment: permanent delete requires the dedicated node.
+	const canHardDelete = $derived(hasPermission('admin.hard_delete'));
 
 	// ── State ───────────────────────────────────────────────────────────────
 	
@@ -58,6 +61,9 @@
 	let acting = $state(false);
 	let actionTarget = $state<TimelineDTO | null>(null);
 	let showDeleteModal = $state(false);
+	// Force-delete (admin.hard_delete) — permanent removal of soft-deleted rows.
+	let showForceModal = $state(false);
+	let forceTarget = $state<TimelineDTO | null>(null);
 
 	function openDelete(item: TimelineDTO) {
 		actionTarget = item;
@@ -72,6 +78,33 @@
 			const result = await processingTrackerAdminApi.delete(actionTarget.id);
 			if (result.ok) {
 				showDeleteModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	// Force delete — admin.hard_delete-gated ?force=true on the same endpoint;
+	// the backend rejects rows that are not already soft-deleted.
+	function openForceDelete(item: TimelineDTO) {
+		forceTarget = item;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (!forceTarget) return;
+		acting = true;
+		pageError = '';
+		try {
+			const result = await processingTrackerAdminApi.hardDelete(forceTarget.id);
+			if (result.ok) {
+				showForceModal = false;
+				forceTarget = null;
 				entityController?.reload();
 			} else {
 				pageError = result.error ?? t('common.error', 'An error occurred');
@@ -111,7 +144,17 @@
 				icon: Trash2,
 				variant: 'destructive',
 				onclick: openDelete,
-				show: () => true
+				show: (row: TimelineDTO) => !row.deleted_at
+			});
+		}
+		if (canHardDelete) {
+			// Permanent removal — only for already-soft-deleted rows.
+			acts.push({
+				label: t('common.force_delete', 'Force Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openForceDelete,
+				show: (row: TimelineDTO) => !!row.deleted_at
 			});
 		}
 		return acts;
@@ -139,6 +182,16 @@
 				fetcher: countryUtils.fetcher,
 				initialFetcher: countryUtils.initialFetcher,
 				getSelectedLabel: countryUtils.getSelectedLabel
+			},
+			// Soft-deleted timelines are hidden by default — this filter
+			// surfaces them so the Force Delete action has targets.
+			{
+				key: 'deleted',
+				label: t('common.filter_deleted', 'Deleted'),
+				options: [
+					{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		];
 	});
@@ -168,7 +221,10 @@
 				key: 'outcome',
 				label: t('app.tools.col_status', 'Status'),
 				sortable: true,
-				render: (value: string) => value || 'pending'
+				render: (value: string, row: TimelineDTO) =>
+					row.deleted_at
+						? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-danger/15 text-danger">${t('common.filter_deleted', 'Deleted')}</span>`
+						: value || 'pending'
 			},
 			{
 				key: 'is_shared',
@@ -195,6 +251,7 @@
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) qs.set('sort', params.sort);
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
+			if (params.filter?.deleted) qs.set('deleted', params.filter.deleted);
 			const result = await processingTrackerAdminApi.list(qs.toString());
 			if (result.ok) {
 				const envelope = result.data as AdminListResponse;
@@ -244,6 +301,21 @@
 		<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={confirmDelete} disabled={acting}>
 			{acting ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Force Delete confirmation (admin.hard_delete — permanent) ─────────── -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('common.force_delete_confirm', 'Permanently delete "{name}"? This cannot be undone.').replace('{name}', forceTarget?.visa_category ?? '')}
+		</p>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showForceModal = false; forceTarget = null; }}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={acting}>
+			{acting ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}
 		</Button>
 	</div>
 </Modal>

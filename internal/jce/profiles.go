@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // profileStore provides persistence for comparison profiles.
@@ -81,9 +83,11 @@ func (s *profileStore) listByUser(ctx context.Context, userID pgtype.UUID) ([]Co
 	return profiles, nil
 }
 
-// listByPlatform returns all non-deleted profiles for the platform, ordered by default first, then updated_at desc.
-func (s *profileStore) listByPlatform(ctx context.Context) ([]ComparisonProfile, error) {
-	rows, err := s.read.ListComparisonProfiles(ctx)
+// listByPlatform returns profiles for the platform filtered by the deleted
+// view (” = live only, 'only' = deleted, 'all' = both), ordered by default
+// first, then updated_at desc.
+func (s *profileStore) listByPlatform(ctx context.Context, deleted string) ([]ComparisonProfile, error) {
+	rows, err := s.read.ListComparisonProfilesAdmin(ctx, deleted)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison profiles by platform: %w", err)
 	}
@@ -168,6 +172,35 @@ func (s *profileStore) delete(ctx context.Context, id pgtype.UUID) error {
 		id,
 	); err != nil {
 		return fmt.Errorf("deleting comparison profile: %w", err)
+	}
+
+	return nil
+}
+
+// hardDelete permanently removes a profile that has already been
+// soft-deleted. Returns pgx.ErrNoRows when the profile does not exist and
+// errpkg.ErrNotDeleted when it exists but is still live.
+func (s *profileStore) hardDelete(ctx context.Context, id pgtype.UUID) error {
+	rows, err := s.write.HardDeleteComparisonProfile(ctx, id)
+	if err != nil {
+		if errpkg.IsFKViolation(err) {
+			return fmt.Errorf("%w: comparison profile has dependent records", errpkg.ErrInUse)
+		}
+
+		return fmt.Errorf("hard deleting comparison profile: %w", err)
+	}
+
+	if rows == 0 {
+		exists, err := s.read.ComparisonProfileExistsAny(ctx, id)
+		if err != nil {
+			return fmt.Errorf("checking comparison profile existence: %w", err)
+		}
+
+		if !exists {
+			return pgx.ErrNoRows
+		}
+
+		return errpkg.ErrNotDeleted
 	}
 
 	return nil
@@ -291,6 +324,7 @@ func profileFromRow(row gen.ComparisonProfile) (ComparisonProfile, error) {
 		Demographics:   demographics,
 		IsDefault:      row.IsDefault,
 		IsTemplate:     row.IsTemplate,
+		DeletedAt:      timestamptzPtr(row.DeletedAt),
 		CreatedAt:      row.CreatedAt.Time.Format(time.RFC3339),
 		UpdatedAt:      row.UpdatedAt.Time.Format(time.RFC3339),
 	}, nil

@@ -24,6 +24,7 @@
 		space_name?: string;
 		created_at: string;
 		removed_at?: string;
+		deleted_at?: string;
 		view_count?: number;
 		url?: string;
 		slug?: string;
@@ -35,6 +36,8 @@
 	// content.delete_any, and blog feature/unfeature on blog.feature.
 	const canModerate = $derived(hasPermission("content.delete_any"));
 	const canEditContent = $derived(hasPermission("blog.feature") || hasPermission("content.edit_any"));
+	// Rule 11 amendment: permanent delete requires the dedicated node.
+	const canHardDelete = $derived(hasPermission("admin.hard_delete"));
 
 	// ── Filter options ──────────────────────────────────────────────────────
 	// BUG-007 (Rule 16): status options are loaded from GET /content/status-options
@@ -45,7 +48,17 @@
 	let contentTypeOptions = $state<{ value: string; label: string }[]>([]);
 	const filterDefs = $derived<FilterDef[]>([
 		{ key: "content_type", label: t("content.type", "Type"), options: contentTypeOptions },
-		{ key: "status", label: t("common.status", "Status"), options: statusOptions }
+		{ key: "status", label: t("common.status", "Status"), options: statusOptions },
+		// Soft-deleted content is hidden by default — this filter surfaces it
+		// so the Force Delete action has targets.
+		{
+			key: "deleted",
+			label: t("common.filter_deleted", "Deleted"),
+			options: [
+				{ value: "only", label: t("common.filter_deleted_only", "Deleted only") },
+				{ value: "all", label: t("common.filter_deleted_all", "Include deleted") }
+			]
+		}
 	]);
 
 	$effect(() => {
@@ -122,6 +135,59 @@
 			pageError = e instanceof Error ? e.message : t("common.error", "Failed to remove content");
 		} finally {
 			bulkRemoving = false;
+		}
+	}
+
+	// Row map so bulk actions can resolve ids → rows after EntityPage clears
+	// the selection.
+	const contentRowMap = new Map<string, ContentItem>();
+	const contentRowsFor = (ids: Set<string>): ContentItem[] =>
+		Array.from(ids)
+			.map((id) => contentRowMap.get(id))
+			.filter((r): r is ContentItem => !!r);
+
+	// ── Force delete (admin.hard_delete) — single + bulk share one modal ──
+	let forceTargets = $state<ContentItem[]>([]);
+	let showForceModal = $state(false);
+
+	function openForceDelete(row: ContentItem) {
+		forceTargets = [row];
+		showForceModal = true;
+	}
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = contentRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (acting || forceTargets.length === 0) return;
+		acting = true;
+		pageError = "";
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = "";
+			for (const row of targets) {
+				const res = await contentAdminApi.forceRemove(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? "";
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t("common.bulk_partial", "{failed} of {n} items could not be completed")
+						.replace("{failed}", String(failed))
+						.replace("{n}", String(targets.length)) + (lastErr ? ` — ${lastErr}` : "");
+			}
+			entityController?.reload();
+		} finally {
+			acting = false;
 		}
 	}
 
@@ -230,13 +296,23 @@
 				icon: Trash2,
 				variant: "destructive",
 				onclick: openRemove,
-				show: (row: ContentItem) => row.status !== "removed" && !row.removed_at
+				show: (row: ContentItem) => row.status !== "removed" && !row.removed_at && !row.deleted_at
 			});
 			acts.push({
 				label: t("content.restore", "Restore"),
 				icon: RotateCcw,
 				onclick: openRestore,
-				show: (row: ContentItem) => row.status === "removed" || !!row.removed_at
+				show: (row: ContentItem) => row.status === "removed" || !!row.removed_at || !!row.deleted_at
+			});
+		}
+		if (canHardDelete) {
+			// Permanent removal — only for already-soft-deleted rows.
+			acts.push({
+				label: t("common.force_delete", "Force Delete"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: openForceDelete,
+				show: (row: ContentItem) => !!row.deleted_at
 			});
 		}
 		return acts;
@@ -282,7 +358,10 @@
 				key: "status",
 				label: t("common.status", "Status"),
 				sortable: true,
-				render: (v: string) => {
+				render: (v: string, row: ContentItem) => {
+					if (row.deleted_at) {
+						return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-danger/15 text-danger dark:text-danger">${t("common.filter_deleted", "Deleted")}</span>`;
+					}
 					if (!v) return "—";
 					const colors =
 						v === "published"
@@ -312,16 +391,33 @@
 		],
 		filters: filterDefs,
 		actions: rowActions,
-		bulkActions: canModerate
-			? [
-					{
-						label: t("content.remove_selected", "Remove Selected"),
-						icon: Trash2,
-						variant: "destructive",
-						onclick: bulkRemove
-					}
-				]
-			: undefined,
+		bulkActions: [
+			...(canModerate
+				? [
+						{
+							label: t("content.remove_selected", "Remove Selected"),
+							icon: Trash2,
+							variant: "destructive" as const,
+							onclick: bulkRemove,
+							// Rows already soft-deleted can't be removed again.
+							disabled: (_ids: Set<string>, rows?: ContentItem[]) =>
+								(rows ?? []).some((r) => !!r.deleted_at)
+						}
+					]
+				: []),
+			...(canHardDelete
+				? [
+						{
+							label: t("common.force_delete", "Force Delete Selected"),
+							icon: Trash2,
+							variant: "destructive" as const,
+							onclick: openBulkForceDelete,
+							disabled: (ids: Set<string>) =>
+								acting || !contentRowsFor(ids).some((r) => !!r.deleted_at)
+						}
+					]
+				: [])
+		],
 		fields,
 		load: async ({ page, pageSize, q, filter }) => {
 			const params = new URLSearchParams({
@@ -331,14 +427,16 @@
 			if (q) params.set("q", q);
 			if (filter.content_type) params.set("type", filter.content_type);
 			if (filter.status) params.set("status", filter.status);
+			if (filter.deleted) params.set("deleted", filter.deleted);
 			// Use apiRaw to access top-level total/total_pages alongside data.
 			const result = await apiRaw<{ data?: ContentItem[]; items?: ContentItem[]; total?: number; total_pages?: number }>(`/admin/content?${params.toString()}`);
 			if (result.ok) {
 				const d = result.data;
 				// API returns null when no items match the filter.
-				const allItems = d?.data ?? d?.items ?? [];
+				const allItems = (d?.data ?? d?.items ?? []) as ContentItem[];
+				for (const r of allItems) contentRowMap.set(r.id, r);
 				return {
-					data: allItems as ContentItem[],
+					data: allItems,
 					total: d?.total ?? allItems.length,
 					totalPages: d?.total_pages ?? Math.max(1, Math.ceil((d?.total ?? allItems.length) / pageSize))
 				};
@@ -397,6 +495,25 @@
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showRestoreModal = false)}>{t("common.cancel", "Cancel")}</Button>
 		<Button variant="default" onclick={confirmRestore} disabled={acting}>{t("content.restore", "Restore")}</Button>
+	</div>
+</Modal>
+
+<!-- Force Delete (single + bulk) — permanent erasure of soft-deleted rows (admin.hard_delete) -->
+<Modal bind:open={showForceModal} title={t("common.force_delete", "Force Delete")} size="sm">
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{#if forceTargets.length === 1}
+				{t("common.force_delete_confirm", 'Permanently delete "{name}"? This cannot be undone.').replace("{name}", forceTargets[0].title || "Untitled")}
+			{:else}
+				{t("common.force_delete_confirm_bulk", "Permanently delete {count} selected items? This cannot be undone.").replace("{count}", String(forceTargets.length))}
+			{/if}
+		</p>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showForceModal = false; forceTargets = []; }}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={acting}>
+			{acting ? t("common.deleting", "Deleting...") : t("common.force_delete", "Force Delete")}
+		</Button>
 	</div>
 </Modal>
 

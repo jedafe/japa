@@ -63,6 +63,17 @@ func (q *Queries) ArchiveContent(ctx context.Context, id pgtype.UUID) (int64, er
 	return result.RowsAffected(), nil
 }
 
+const contentExistsAny = `-- name: ContentExistsAny :one
+SELECT EXISTS(SELECT 1 FROM contents WHERE id = $1)
+`
+
+func (q *Queries) ContentExistsAny(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, contentExistsAny, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const contentSlugExists = `-- name: ContentSlugExists :one
 SELECT EXISTS(SELECT 1 FROM contents WHERE slug = $1 AND deleted_at IS NULL)
 `
@@ -1783,6 +1794,21 @@ func (q *Queries) GetSlugRedirect(ctx context.Context, arg GetSlugRedirectParams
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const hardDeleteContent = `-- name: HardDeleteContent :execrows
+DELETE FROM contents WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Admin force-delete — only rows already soft-deleted are removed
+// (gated by admin.hard_delete via ?force=true). Children cascade via
+// ON DELETE CASCADE; NO ACTION dependents surface as FK violations.
+func (q *Queries) HardDeleteContent(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteContent, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const incrementContentCommentCount = `-- name: IncrementContentCommentCount :exec

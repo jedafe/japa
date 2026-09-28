@@ -11,6 +11,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const calendarAdminHardDeleteEntry = `-- name: CalendarAdminHardDeleteEntry :execrows
+DELETE FROM calendar_entries WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Admin force-delete — only rows already soft-deleted are removed
+// (gated by admin.hard_delete via ?force=true).
+func (q *Queries) CalendarAdminHardDeleteEntry(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, calendarAdminHardDeleteEntry, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const calendarAdminSoftDeleteEntry = `-- name: CalendarAdminSoftDeleteEntry :execrows
 UPDATE calendar_entries
 SET deleted_at = now(), updated_at = now()
@@ -114,6 +128,17 @@ func (q *Queries) CalendarCreateEntry(ctx context.Context, arg CalendarCreateEnt
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const calendarEntryExistsAny = `-- name: CalendarEntryExistsAny :one
+SELECT EXISTS(SELECT 1 FROM calendar_entries WHERE id = $1)
+`
+
+func (q *Queries) CalendarEntryExistsAny(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, calendarEntryExistsAny, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const calendarFlagStaleEntries = `-- name: CalendarFlagStaleEntries :execrows

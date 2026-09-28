@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store provides low-level database access for media.
@@ -106,6 +108,25 @@ func (s *Store) SoftDeleteMediaOwn(ctx context.Context, id, uploaderID pgtype.UU
 		UploaderUserID: uploaderID,
 	}); err != nil {
 		return fmt.Errorf("soft-deleting own media: %w", err)
+	}
+
+	return nil
+}
+
+// HardDeleteMedia permanently removes a soft-deleted media item (admin
+// ?force=true — gated by admin.hard_delete). Returns pgx.ErrNoRows when
+// missing and errpkg.ErrNotDeleted while live.
+func (s *Store) HardDeleteMedia(ctx context.Context, id pgtype.UUID) error {
+	affected, err := s.write.HardDeleteMedia(ctx, id)
+	if err != nil {
+		return fmt.Errorf("hard deleting media: %w", err)
+	}
+
+	if affected == 0 {
+		if _, err := s.read.GetMediaByIDAny(ctx, id); err != nil {
+			return pgx.ErrNoRows
+		}
+		return errpkg.ErrNotDeleted
 	}
 
 	return nil
@@ -238,13 +259,14 @@ func (s *Store) CountSearchMedia(ctx context.Context, query string) (int32, erro
 // ListMediaFiltered returns paginated media matching the given filters
 // (uploader, mime type, search query, status, flagged). Empty/zero values mean
 // "no filter on this field". Used by the admin media list endpoint.
-func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged string, limit, offset int32) ([]gen.Medium, error) {
+func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged, deleted string, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	items, err := s.read.ListMediaFiltered(ctx, gen.ListMediaFilteredParams{
 
+		Deleted:        deleted,
 		UploaderUserID: uploaderID,
 		MimePattern:    mimePattern,
 		Query:          query,
@@ -262,9 +284,10 @@ func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, m
 
 // CountMediaFiltered returns the count of media matching the given filters,
 // ignoring limit/offset. Used to compute total_pages for the admin list.
-func (s *Store) CountMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged string) (int32, error) {
+func (s *Store) CountMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged, deleted string) (int32, error) {
 	count, err := s.read.CountMediaFiltered(ctx, gen.CountMediaFilteredParams{
 
+		Deleted:        deleted,
 		UploaderUserID: uploaderID,
 		MimePattern:    mimePattern,
 		Query:          query,

@@ -89,6 +89,7 @@ type StoryRow struct {
 	MostUsefulResource *string
 	BestAdvice         *string
 	Verified           bool
+	DeletedAt          pgtype.Timestamptz
 	AuthorName         *string
 	AuthorUsername     *string
 	AuthorDisplayName  *string
@@ -621,6 +622,7 @@ type AdminListStoriesFilter struct {
 	Q           string      // optional: search title
 	Sort        string      // "latest" (default), "oldest", "title"
 	DestSpaceID pgtype.UUID // optional: filter by destination country
+	Deleted     string      // "": live only, "only": deleted only, "all": both
 	Limit       int32
 	Offset      int32
 }
@@ -637,7 +639,13 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 	args = append(args, "story")
 	argIdx++
 
-	conditions = append(conditions, "c.deleted_at IS NULL")
+	switch f.Deleted {
+	case "only":
+		conditions = append(conditions, "c.deleted_at IS NOT NULL")
+	case "all":
+	default:
+		conditions = append(conditions, "c.deleted_at IS NULL")
+	}
 
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("c.status = $%d", argIdx))
@@ -702,6 +710,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.relocation_year, sm.visa_category, sm.profession,
        sm.biggest_challenge, sm.most_useful_resource, sm.best_advice,
        sm.verified,
+       c.deleted_at,
        u.username AS author_name, u.username AS author_username, up.display_name AS author_display_name, up.avatar_url AS author_avatar
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id
@@ -735,6 +744,7 @@ LIMIT $%d OFFSET $%d
 			&r.RelocationYear, &r.VisaCategory, &r.Profession,
 			&r.BiggestChallenge, &r.MostUsefulResource, &r.BestAdvice,
 			&r.Verified,
+			&r.DeletedAt,
 			&r.AuthorName, &r.AuthorUsername, &r.AuthorDisplayName, &r.AuthorAvatar,
 		); err != nil {
 			return nil, 0, fmt.Errorf("story: admin scan story row: %w", err)
