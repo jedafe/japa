@@ -17,6 +17,7 @@
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
+	import { hydrateContentEmbeds } from '$lib/tiptap/hydrateContentEmbeds';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '$lib/types/content';
@@ -355,7 +356,7 @@
 		{/if}
 
 		<!-- Article body: prose TipTap HTML with serif reading font -->
-		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
+		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds>
 			{@html sanitizedBody}
 		</div>
 
