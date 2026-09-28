@@ -256,7 +256,10 @@
 		row.item.embed = {
 			kind: 'video',
 			video_source_id: res.data.source.id,
-			resolved: { image_url: res.data.source.thumbnail_url ?? undefined }
+			resolved: {
+				title: res.data.source.title ?? undefined,
+				image_url: res.data.source.thumbnail_url ?? undefined
+			}
 		};
 		row.item.media_id = null;
 		emit();
