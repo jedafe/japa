@@ -4,6 +4,8 @@
 	// course + university selects are hydrated from the API on mount (Rule 16 —
 	// no hardcoded option lists).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { courseCatalogAdminApi, courseOfferingsAdminApi, universitiesAdminApi, type CourseOffering } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { CheckCircle, EyeOff, Trash2 } from 'lucide-svelte';
@@ -42,6 +44,55 @@
 			if (!res.ok) pageError = res.error ?? t('common.error', 'Bulk action failed');
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('common.error', 'Bulk action failed');
+		} finally {
+			bulkBusy = false;
+		}
+	}
+
+	// ── Bulk force delete — single-row force delete is handled by the
+	// scaffold's built-in Hard Delete action (config.hardRemove). ──
+	// BulkAction.onclick receives only ids — resolve them against a map of
+	// every row seen this session so deleted-row filtering keeps working.
+	const offeringRowMap = new Map<string, CourseOffering>();
+	const offeringRowsFor = (ids: Set<string>): CourseOffering[] =>
+		Array.from(ids)
+			.map((id) => offeringRowMap.get(id))
+			.filter((r): r is CourseOffering => !!r);
+
+	let forceTargets = $state<CourseOffering[]>([]);
+	let showForceModal = $state(false);
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = offeringRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (bulkBusy || forceTargets.length === 0) return;
+		bulkBusy = true;
+		pageError = '';
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = '';
+			for (const row of targets) {
+				const res = await courseOfferingsAdminApi.hardDelete(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) {
+				pageError =
+					t('common.bulkDeletePartial', '{failed} of {n} items could not be deleted')
+						.replace('{failed}', String(failed))
+						.replace('{n}', String(targets.length)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+			entityController?.reload();
 		} finally {
 			bulkBusy = false;
 		}
@@ -94,7 +145,9 @@
 			{
 				key: 'is_published',
 				label: t('courses.status', 'Status'),
-				render: (v: boolean) => v
+				render: (v: boolean, row: CourseOffering) => row.deleted_at
+					? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-danger) 15%, transparent); color: var(--color-danger)">${t('common.filter_deleted', 'Deleted')}</span>`
+					: v
 					? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)">${t('courses.published', 'Published')}</span>`
 					: `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)">${t('courses.unpublished', 'Unpublished')}</span>`
 			}
@@ -107,24 +160,45 @@
 					{ value: 'true', label: t('courses.published', 'Published') },
 					{ value: 'false', label: t('courses.unpublished', 'Unpublished') }
 				]
+			},
+			// Soft-deleted offerings are hidden by default — this filter surfaces
+			// them so the Hard Delete action has targets.
+			{
+				key: 'deleted',
+				label: t('common.filter_deleted', 'Deleted'),
+				options: [
+					{ value: 'only', label: t('common.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('common.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		],
 		bulkActions: [
 			{
 				label: t('courses.bulk_publish', 'Publish'),
 				icon: CheckCircle,
-				onclick: (ids) => bulkAction('publish', ids)
+				onclick: (ids) => bulkAction('publish', ids),
+				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
 			},
 			{
 				label: t('courses.bulk_unpublish', 'Unpublish'),
 				icon: EyeOff,
-				onclick: (ids) => bulkAction('unpublish', ids)
+				onclick: (ids) => bulkAction('unpublish', ids),
+				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
 			},
 			{
 				label: t('common.deleteSelected', 'Delete Selected'),
 				icon: Trash2,
 				variant: 'destructive',
-				onclick: (ids) => bulkAction('delete', ids)
+				onclick: (ids) => bulkAction('delete', ids),
+				// Rows already soft-deleted can't be deleted again.
+				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
+			},
+			{
+				label: t('common.force_delete', 'Force Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openBulkForceDelete,
+				disabled: (ids) => bulkBusy || !offeringRowsFor(ids).some((r) => !!r.deleted_at)
 			}
 		],
 		fields,
@@ -133,6 +207,7 @@
 			params.set('page', String(page + 1));
 			params.set('limit', String(pageSize));
 			if (filter.is_published) params.set('is_published', filter.is_published);
+			if (filter.deleted) params.set('deleted', filter.deleted);
 			if (q) params.set('q', q);
 			if (sort) {
 				const [key] = sort.split(':');
@@ -142,6 +217,7 @@
 			const result = await courseOfferingsAdminApi.list(params.toString());
 			if (result.ok) {
 				const rows = result.data.data ?? [];
+				for (const r of rows) offeringRowMap.set(r.id, r);
 				const data = rows.map((o) => ({
 					...o,
 					course_title: o.course?.title ?? '',
@@ -194,6 +270,12 @@
 			const res = await courseOfferingsAdminApi.delete(id);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
+		// Permanent removal — the scaffold shows "Hard Delete" only for rows
+		// where isDeleted(row) is true (default: deleted_at != null).
+		hardRemove: async (id) => {
+			const res = await courseOfferingsAdminApi.hardDelete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
 		viewSnippet: OfferingView
 	});
 </script>
@@ -212,6 +294,19 @@
 {/if}
 
 <EntityPage {config} bind:controller={entityController} />
+
+<!-- Bulk Force Delete confirmation — permanent erasure of soft-deleted rows -->
+<Modal bind:open={showForceModal} title={t('common.force_delete', 'Force Delete')} size="sm">
+	{#if forceTargets.length > 0}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('common.force_delete_confirm_bulk', 'Permanently delete {count} selected items? This cannot be undone.').replace('{count}', String(forceTargets.length))}
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showForceModal = false)} disabled={bulkBusy}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={bulkBusy}>{bulkBusy ? t('common.deleting', 'Deleting...') : t('common.force_delete', 'Force Delete')}</Button>
+	</div>
+</Modal>
 
 {#snippet OfferingView({ row }: { row: CourseOffering & { course_title?: string; university_name?: string } })}
 	<div class="space-y-4">

@@ -5,6 +5,7 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 
 	type FieldDef = {
 		id: string;
@@ -36,7 +37,9 @@
 	let form = $state<FormDef | null>(null);
 	let submissions = $state<Submission[]>([]);
 	let loading = $state(true);
-	let activeTab = $state<'edit' | 'submissions'>('edit');
+	const FORM_TABS = ['edit', 'submissions'] as const;
+	let activeTab = $state<'edit' | 'submissions'>(initTabParam('edit', { valid: FORM_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: FORM_TABS, preserve: [] });
 	let errorMessage = $state('');
 	let saveMsg = $state('');
 

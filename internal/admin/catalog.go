@@ -251,12 +251,22 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "acknowledged", Label: "Acknowledged"},
 		{Value: "resolved", Label: "Resolved"},
 	},
+	// Mirrors the intel_records.status CHECK constraint (migration 000428 +
+	// baseline schema) so the review table's status filter can browse every
+	// pipeline stage, not just the four originally listed.
 	"intelligence.review.status": {
 		{Value: "review_required", Label: "Review Required"},
 		{Value: "extracted", Label: "Extracted"},
+		{Value: "deduped", Label: "Deduped"},
+		{Value: "auto_published", Label: "Auto Published"},
 		{Value: "approved", Label: "Approved"},
 		{Value: "rejected", Label: "Rejected"},
+		{Value: "published", Label: "Published"},
+		{Value: "stale", Label: "Stale"},
+		{Value: "off_topic", Label: "Off Topic"},
 	},
+	// Mirrors the extractor schema registry (internal/intelligence/extractor/
+	// schemas/registry.go) — every registered entity_type is filterable.
 	"intelligence.review.entity_type": {
 		{Value: "scholarship", Label: "Scholarship"},
 		{Value: "job", Label: "Job"},
@@ -271,6 +281,13 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "work_career", Label: "Work & Career"},
 		{Value: "health_insurance", Label: "Health Insurance"},
 		{Value: "culture_lifestyle", Label: "Culture & Lifestyle"},
+		{Value: "internship", Label: "Internship"},
+		{Value: "import_export", Label: "Import & Export"},
+		{Value: "credential_pathway", Label: "Credential Pathway"},
+		{Value: "news", Label: "News"},
+		{Value: "article", Label: "Article"},
+		{Value: "event", Label: "Event"},
+		{Value: "dataset", Label: "Dataset"},
 		{Value: "wiki_page", Label: "Wiki Page"},
 		{Value: "language_test_requirement", Label: "Language Test Requirement"},
 		{Value: "tax_obligation_guide", Label: "Tax Obligation Guide"},

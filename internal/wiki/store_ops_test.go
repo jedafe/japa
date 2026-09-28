@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -113,6 +114,73 @@ func mustUUID(t *testing.T, s string) pgtype.UUID {
 	return id
 }
 
+// TestCreatePage_SoftDeletedSlugReusable covers 000744: the (space_id, slug)
+// unique index is partial (deleted_at IS NULL), so a soft-deleted page no
+// longer blocks recreating its slug while live duplicates still conflict
+// and other spaces are unaffected.
+func TestCreatePage_SoftDeletedSlugReusable(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+
+	slug := "wop-" + strings.ReplaceAll(genUUID(t, ctx, database), "-", "")
+
+	pageID, err := store.CreatePage(ctx, fx.spaceID, fx.userID, slug, "First", "overview")
+	if err != nil {
+		t.Fatalf("create first page: %v", err)
+	}
+	t.Cleanup(func() {
+		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE space_id = $1 AND slug = $2`, fx.spaceID, slug)
+	})
+
+	// A second live page with the same slug still conflicts.
+	if _, err := store.CreatePage(ctx, fx.spaceID, fx.userID, slug, "Second", "overview"); !errors.Is(err, ErrPageExists) {
+		t.Fatalf("live duplicate: want ErrPageExists, got %v", err)
+	}
+
+	// Soft-delete the page — the slug frees up.
+	if err := store.DeleteWikiPage(ctx, pageID); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	newID, err := store.CreatePage(ctx, fx.spaceID, fx.userID, slug, "Recreated", "overview")
+	if err != nil {
+		t.Fatalf("recreate after soft delete: %v", err)
+	}
+	if newID == pageID {
+		t.Fatal("recreate returned the deleted page id")
+	}
+
+	// The recreated page occupies the slug again.
+	if _, err := store.CreatePage(ctx, fx.spaceID, fx.userID, slug, "Third", "overview"); !errors.Is(err, ErrPageExists) {
+		t.Fatalf("duplicate of recreated page: want ErrPageExists, got %v", err)
+	}
+
+	// The same slug in another space never conflicts.
+	spaceTypeID := mustIDF(t, ctx, database, `SELECT id FROM space_types LIMIT 1`)
+	otherSpace := mustIDF(t, ctx, database, `INSERT INTO spaces (id,space_type_id,name,slug,level,visibility,status,created_at,updated_at)
+		VALUES (gen_random_uuid(),$1,'wop_'||gen_random_uuid()::text,'wop-'||replace(gen_random_uuid()::text,'-',''),'custom','public','active',now(),now()) RETURNING id`, spaceTypeID)
+	t.Cleanup(func() {
+		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE space_id = $1`, otherSpace)
+		database.Writer.Exec(context.Background(), `DELETE FROM spaces WHERE id = $1`, otherSpace)
+	})
+
+	if _, err := store.CreatePage(ctx, otherSpace, fx.userID, slug, "Other Space", "overview"); err != nil {
+		t.Fatalf("same slug in other space: %v", err)
+	}
+}
+
+func mustIDF(t *testing.T, ctx context.Context, database *db.DB, query string, args ...any) pgtype.UUID {
+	t.Helper()
+
+	var id pgtype.UUID
+	if err := database.Writer.QueryRow(ctx, query, args...).Scan(&id); err != nil {
+		t.Fatalf("fixture insert: %v", err)
+	}
+
+	return id
+}
+
 // TestSubmitRevision_PageLessFieldsRevision covers the §80 ops-revision
 // shape: kind='fields', a JSON ops payload, a polymorphic target, and a NULL
 // wiki_page_id — then round-trips through GetRevision.
@@ -209,7 +277,7 @@ func TestAdminListRevisions_KindFilter(t *testing.T) {
 	}
 
 	// kind=fields → only the fields revision.
-	fieldsOnly, total, err := store.AdminListRevisions(ctx, "fields", "", 50, 0)
+	fieldsOnly, total, err := store.AdminListRevisions(ctx, "fields", "", "", "", 50, 0)
 	if err != nil {
 		t.Fatalf("AdminListRevisions kind=fields: %v", err)
 	}
@@ -231,7 +299,7 @@ func TestAdminListRevisions_KindFilter(t *testing.T) {
 	}
 
 	// No filter → both revisions present.
-	all, _, err := store.AdminListRevisions(ctx, "", "", 50, 0)
+	all, _, err := store.AdminListRevisions(ctx, "", "", "", "", 50, 0)
 	if err != nil {
 		t.Fatalf("AdminListRevisions unfiltered: %v", err)
 	}
@@ -253,7 +321,7 @@ func TestAdminListRevisions_KindFilter(t *testing.T) {
 	}
 
 	// status filter composes with kind.
-	pendingFields, _, err := store.AdminListRevisions(ctx, "fields", "pending", 50, 0)
+	pendingFields, _, err := store.AdminListRevisions(ctx, "fields", "pending", "", "", 50, 0)
 	if err != nil {
 		t.Fatalf("AdminListRevisions kind+status: %v", err)
 	}

@@ -20,11 +20,14 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 
 	let notifications: Notification[] = [];
+	let total: number | null = null;
 	let unreadCount = 0;
 	try {
-		notifications = (
-			await apiList<Notification>(ctx, `/me/notifications?page_size=${PAGE_SIZE}`)
-		).items;
+		const res = await apiList<Notification>(ctx, `/me/notifications?page_size=${PAGE_SIZE}`);
+		notifications = res.items;
+		// §35: the list endpoint reports { total, has_more } alongside `data`
+		// so clients can stop paginating deterministically.
+		total = res.meta?.total ?? null;
 	} catch {
 		notifications = [];
 	}
@@ -36,5 +39,5 @@ export const load: PageServerLoad = async (event) => {
 		unreadCount = 0;
 	}
 
-	return { notifications, unreadCount, pageSize: PAGE_SIZE };
+	return { notifications, total, unreadCount, pageSize: PAGE_SIZE };
 };

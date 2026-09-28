@@ -415,7 +415,7 @@
 		</div>
 	{/if}
 
-	<Tabs {tabs} bind:value={activeTab} />
+	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 	{#if loading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>

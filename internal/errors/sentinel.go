@@ -48,6 +48,10 @@ var (
 	// referenced by other records (e.g. a field group with existing values).
 	ErrInUse = errors.New("in use")
 
+	// ErrNotDeleted indicates a hard delete was attempted on a row that is
+	// not soft-deleted yet — force-delete requires a prior soft delete.
+	ErrNotDeleted = errors.New("not soft-deleted")
+
 	// ErrNotImplemented indicates the operation is recognized but not yet
 	// implemented (e.g. a provider integration that is still pending).
 	ErrNotImplemented = errors.New("not implemented")

@@ -9,6 +9,7 @@
 	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { initTabParam, bindTabParam } from "$lib/utils/url-sync.svelte";
 
 	type GeoContext = {
 		country_code: string;
@@ -30,7 +31,9 @@
 		member_count?: number;
 	};
 
-	let activeTab = $state<'lookup' | 'hierarchy'>('lookup');
+	const GEO_TABS = ['lookup', 'hierarchy'] as const;
+	let activeTab = $state<'lookup' | 'hierarchy'>(initTabParam('lookup', { valid: GEO_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: GEO_TABS, preserve: [] });
 
 	// IP Lookup
 	let ipQuery = $state('');

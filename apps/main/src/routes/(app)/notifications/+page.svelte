@@ -21,8 +21,20 @@
 	let notifications = $state<Notification[]>(untrack(() => data.notifications));
 	let unreadCount = $state<number>(untrack(() => data.unreadCount));
 	let pageSize = $state<number>(untrack(() => data.pageSize));
+	// Server-side offset tracking: `notifications` also holds live-prepended
+	// WS rows, so notifications.length would over-count and silently skip
+	// server rows. fetchedOffset counts only rows the API has served.
+	let fetchedOffset = $state<number>(untrack(() => data.notifications.length));
 	let loadingMore = $state(false);
-	let hasMore = $state(untrack(() => data.notifications.length === data.pageSize));
+	// Prefer the server's `total`/`has_more` sidecars when present; fall back
+	// to the short-page heuristic for older backends without them.
+	let hasMore = $state(
+		untrack(() =>
+			data.total != null
+				? data.notifications.length < data.total
+				: data.notifications.length === data.pageSize
+		)
+	);
 	let markingAll = $state(false);
 
 	// Re-seed on SSR payload change.
@@ -30,7 +42,11 @@
 		notifications = data.notifications;
 		unreadCount = data.unreadCount;
 		pageSize = data.pageSize;
-		hasMore = data.notifications.length === data.pageSize;
+		fetchedOffset = data.notifications.length;
+		hasMore =
+			data.total != null
+				? data.notifications.length < data.total
+				: data.notifications.length === data.pageSize;
 		realtime.setUnreadCount(data.unreadCount);
 	});
 
@@ -64,6 +80,9 @@
 	onMount(() => {
 		const handler = (n: Partial<Notification> & { id?: string }) => {
 			if (!n.id) return;
+			// Skip events for rows already shown (reconnect replay, double
+			// delivery) so the keyed each-block never sees a duplicate key.
+			if (notifications.some((x) => x.id === n.id)) return;
 			const row: Notification = {
 				id: n.id,
 				notification_type: n.notification_type ?? 'system',
@@ -100,19 +119,25 @@
 	async function loadMore() {
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
-		const offset = notifications.length;
-		const res = await api.get<Notification[]>(`/me/notifications?page_size=${pageSize}&page_offset=${offset}`);
+		const res = await api.getEnvelope<Notification[]>(
+			`/me/notifications?page_size=${pageSize}&page_offset=${fetchedOffset}`
+		);
 		loadingMore = false;
 		if (res.error || !res.data) {
 			hasMore = false;
 			return;
 		}
+		// The offset window was consumed regardless of dedupe — advance it by
+		// the number of rows the server returned, then drop rows already shown
+		// (live prepends can overlap the window).
+		fetchedOffset += res.data.length;
 		if (res.data.length) {
-			notifications = [...notifications, ...res.data];
+			const seen = new Set(notifications.map((x) => x.id));
+			const fresh = res.data.filter((x) => !seen.has(x.id));
+			notifications = [...notifications, ...fresh];
 		}
-		if (res.data.length < pageSize) {
-			hasMore = false;
-		}
+		const serverHasMore = res.envelope?.['has_more'];
+		hasMore = typeof serverHasMore === 'boolean' ? serverHasMore : res.data.length >= pageSize;
 	}
 
 	/** Svelte action that triggers loadMore when the sentinel scrolls into view. */
@@ -161,7 +186,8 @@
 		if (!n.read_at) {
 			void markRead(n.id);
 		}
-		if (n.action_url) {
+		// Only navigate to in-app paths — goto() throws on absolute URLs.
+		if (n.action_url && n.action_url.startsWith('/')) {
 			goto(n.action_url);
 		}
 	}

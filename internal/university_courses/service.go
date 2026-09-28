@@ -132,6 +132,12 @@ func (s *Service) SoftDeleteCatalog(ctx context.Context, id pgtype.UUID) error {
 	return mapStoreError(s.store.SoftDeleteCatalog(ctx, id))
 }
 
+// HardDeleteCatalog permanently removes a soft-deleted catalog row.
+// Offerings must be force-deleted first (ErrInUse when any remain).
+func (s *Service) HardDeleteCatalog(ctx context.Context, id pgtype.UUID) error {
+	return mapStoreError(s.store.HardDeleteCatalog(ctx, id))
+}
+
 // ListOfferingsAdmin returns offering rows for the admin DataTable.
 func (s *Service) ListOfferingsAdmin(ctx context.Context, f OfferingListFilters) ([]CourseOffering, error) {
 	return s.store.ListOfferingsAdmin(ctx, f)
@@ -165,6 +171,11 @@ func (s *Service) UpdateOffering(ctx context.Context, p gen.UpdateCourseOffering
 // SoftDeleteOffering marks an offering row deleted.
 func (s *Service) SoftDeleteOffering(ctx context.Context, id pgtype.UUID) error {
 	return mapStoreError(s.store.SoftDeleteOffering(ctx, id))
+}
+
+// HardDeleteOffering permanently removes a soft-deleted offering.
+func (s *Service) HardDeleteOffering(ctx context.Context, id pgtype.UUID) error {
+	return mapStoreError(s.store.HardDeleteOffering(ctx, id))
 }
 
 // BulkSetOfferingsPublished sets is_published on a set of offering ids.

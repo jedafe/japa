@@ -139,6 +139,9 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -694,6 +697,9 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, [
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -782,7 +788,7 @@ LEFT JOIN spaces ds ON ds.id = t.destination_space_id
 ORDER BY t.updated_at DESC
 `
 
-	tRows, err := s.pool.Reader.Query(ctx, treatyQuery, (pgtype.UUID{}))
+	tRows, err := s.pool.Reader.Query(ctx, treatyQuery)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("taxcalculator: admin list treaties: %w", err)
 	}

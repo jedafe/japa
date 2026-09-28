@@ -24,24 +24,34 @@ SELECT * FROM organizations
 WHERE slug = $1 AND deleted_at IS NULL;
 
 -- name: ListOrganizations :many
+-- Soft-deleted orgs are hidden by default; $7 'only'|'all' surfaces them so
+-- admins can force-delete (same contract as AdminListWikiPages).
 SELECT o.*, u.username AS owner_username
 FROM organizations o
 LEFT JOIN users u ON u.id = o.owner_user_id
-WHERE o.deleted_at IS NULL
- AND ($1::text = '' OR o.org_type = $1)
+WHERE ($1::text = '' OR o.org_type = $1)
  AND ($2::text = '' OR o.country_code = $2)
  AND ($3::text = '' OR o.name ILIKE '%' || $3 || '%' OR o.slug ILIKE '%' || $3 || '%')
  AND ($4::text = '' OR o.verified = ($4 = 'true'))
+ AND CASE $7::text
+       WHEN 'only' THEN o.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE o.deleted_at IS NULL
+     END
 ORDER BY o.created_at DESC
 LIMIT $5 OFFSET $6;
 
 -- name: CountOrganizations :one
 SELECT COUNT(*) FROM organizations
-WHERE deleted_at IS NULL
- AND ($1::text = '' OR org_type = $1)
+WHERE ($1::text = '' OR org_type = $1)
  AND ($2::text = '' OR country_code = $2)
  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
- AND ($4::text = '' OR verified = ($4 = 'true'));
+ AND ($4::text = '' OR verified = ($4 = 'true'))
+ AND CASE $5::text
+       WHEN 'only' THEN deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE deleted_at IS NULL
+     END;
 
 -- name: UpdateOrganization :exec
 -- Partial update: COALESCE preserves the existing column value when the
@@ -63,6 +73,23 @@ WHERE id = @id AND deleted_at IS NULL;
 UPDATE organizations
 SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: HardDeleteOrganization :execrows
+-- Permanent delete — only for already-soft-deleted organisations (admin
+-- ?force=true). Members/invitations/boosts cascade; ownership claims must
+-- be cleared first (NO ACTION FK), so they are guarded here.
+DELETE FROM organizations o
+WHERE o.id = $1 AND o.deleted_at IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM ownership_claims c WHERE c.organization_id = o.id);
+
+-- name: OrganizationExists :one
+-- Existence probe for the hard-delete path: distinguishes 404 not_found
+-- from 409 not_deleted/in_use when the guarded DELETE affects no row.
+SELECT EXISTS(SELECT 1 FROM organizations WHERE id = $1) AS exists;
+
+-- name: OrganizationHasOwnershipClaims :one
+-- Dependency probe for the hard-delete path (claims must be cleared first).
+SELECT EXISTS(SELECT 1 FROM ownership_claims WHERE organization_id = $1) AS exists;
 
 -- name: AddOrganizationMember :exec
 INSERT INTO organization_members (organization_id, user_id, role, invited_by) VALUES ($1, $2, $3, $4)

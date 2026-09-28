@@ -9,12 +9,25 @@
 		id: string; // mapped from `key` so EntityPage's id-based update/remove + bulk selection work
 		key: string;
 		label: string;
+		category: string;
 		description: string;
 		enabled: boolean;
 		default_in_app: boolean;
 		default_email: boolean;
 		default_push: boolean;
 	};
+
+	// The backend requires `category` on create AND update (it sets the
+	// column unconditionally). These values mirror the seeded categories in
+	// migration 000564 (notification_types.category backfill).
+	const CATEGORY_OPTIONS = [
+		{ value: 'social', label: 'Social' },
+		{ value: 'content', label: 'Content' },
+		{ value: 'messages', label: 'Messages' },
+		{ value: 'account', label: 'Account' },
+		{ value: 'billing', label: 'Billing' },
+		{ value: 'system', label: 'System' }
+	];
 
 	// Normalize an API row: copy `key` into `id` so the scaffold's id-based mutations and bulk selection work.
 	function mapType(raw: any): NotificationType {
@@ -47,6 +60,7 @@
 	const fields: FieldDef[] = [
 		{ key: 'key', label: t('notification_types.key', 'Key'), type: 'text', placeholder: 'new_comment', required: true, readonlyInEdit: true },
 		{ key: 'label', label: t('notification_types.label', 'Label'), type: 'text', placeholder: 'New Comment', required: true },
+		{ key: 'category', label: t('notification_types.category', 'Category'), type: 'select', options: CATEGORY_OPTIONS, required: true },
 		{ key: 'description', label: t('common.description', 'Description'), type: 'textarea' },
 		{ key: 'enabled', label: t('notification_types.enabled', 'Enabled'), type: 'checkbox' },
 		{ key: 'default_in_app', label: t('notification-types.in_app', 'In-App'), type: 'checkbox' },
@@ -68,6 +82,11 @@
 				render: (v: string) => `<span class="font-mono text-xs">${v}</span>`
 			},
 			{ key: 'label', label: t('notification_types.label', 'Label'), sortable: true },
+			{
+				key: 'category',
+				label: t('notification_types.category', 'Category'),
+				render: (v: string) => `<span class="text-xs">${v || '-'}</span>`
+			},
 			{
 				key: 'description',
 				label: t('common.description', 'Description'),
@@ -138,6 +157,7 @@
 				body: {
 					key: String(body.key ?? '').trim(),
 					label: String(body.label ?? '').trim(),
+					category: String(body.category ?? 'system'),
 					description: body.description ? String(body.description) : null,
 					enabled: body.enabled === undefined ? true : !!body.enabled,
 					default_in_app: body.default_in_app === undefined ? true : !!body.default_in_app,
@@ -153,6 +173,7 @@
 				method: 'PATCH',
 				body: {
 					label: String(body.label ?? '').trim(),
+					category: String(body.category ?? 'system'),
 					description: body.description ? String(body.description) : null,
 					enabled: !!body.enabled,
 					default_in_app: !!body.default_in_app,
@@ -234,6 +255,12 @@
 				{t('notification_types.label', 'Label')}
 			</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.label}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('notification_types.category', 'Category')}
+			</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.category || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">

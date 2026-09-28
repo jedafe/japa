@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
-	import { clearUser } from '$lib/stores/auth.svelte';
+	import { clearUser, user } from '$lib/stores/auth.svelte';
 	import { getPermissions } from '$lib/stores/permissions.svelte';
 	import { restoreSession } from '$lib/stores/session.svelte';
 
@@ -234,18 +234,22 @@
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
 	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_ADMIN);
 
-	// Connect WebSocket after user is loaded
+	// Connect WebSocket + start the notification poller only once an
+	// authenticated session exists — on /login (or post-logout) there is no
+	// session and the calls would just 401 on a timer.
 	$effect(() => {
-		if (!loading) {
+		if (!loading && user.current) {
 			const unsubNotifications = initNotifications();
 			wsClient.connect();
 
 			const unsubNotification = wsClient.on('notification', (msg: any) => {
+				// Backend payload fields: title, body, notification_type,
+				// action_url, id, created_at (§35).
 				addNotification({
 					title: msg.title ?? t('layout.ws.notification_title', 'Notification'),
 					body: msg.body ?? '',
-					type: msg.type ?? 'info',
-					link: msg.link
+					type: 'info',
+					link: msg.action_url
 				});
 			});
 

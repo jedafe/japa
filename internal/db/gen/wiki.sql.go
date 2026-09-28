@@ -20,6 +20,11 @@ WHERE ($1::uuid IS NULL OR wp.space_id = $1::uuid)
   AND ($3::text = '' OR wp.category = $3)
   AND ($4::bool IS NULL OR wp.is_locked = $4::bool)
   AND ($5::text = '' OR wp.title ILIKE '%' || $5 || '%')
+  AND CASE $6::text
+        WHEN 'only' THEN wp.deleted_at IS NOT NULL
+        WHEN 'all'  THEN true
+        ELSE wp.deleted_at IS NULL
+      END
 `
 
 type AdminCountWikiPagesParams struct {
@@ -28,6 +33,7 @@ type AdminCountWikiPagesParams struct {
 	Category string      `json:"category"`
 	IsLocked *bool       `json:"is_locked"`
 	Q        string      `json:"q"`
+	Deleted  string      `json:"deleted"`
 }
 
 func (q *Queries) AdminCountWikiPages(ctx context.Context, arg AdminCountWikiPagesParams) (int64, error) {
@@ -37,6 +43,7 @@ func (q *Queries) AdminCountWikiPages(ctx context.Context, arg AdminCountWikiPag
 		arg.Category,
 		arg.IsLocked,
 		arg.Q,
+		arg.Deleted,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -45,17 +52,21 @@ func (q *Queries) AdminCountWikiPages(ctx context.Context, arg AdminCountWikiPag
 
 const adminCountWikiRevisions = `-- name: AdminCountWikiRevisions :one
 SELECT COUNT(*) FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
 WHERE ($1::text = '' OR wr.kind = $1)
   AND ($2::text = '' OR wr.status = $2)
+  AND ($3::text = '' OR wr.summary ILIKE '%' || $3 || '%'
+       OR u.username ILIKE '%' || $3 || '%')
 `
 
 type AdminCountWikiRevisionsParams struct {
 	Kind   string `json:"kind"`
 	Status string `json:"status"`
+	Q      string `json:"q"`
 }
 
 func (q *Queries) AdminCountWikiRevisions(ctx context.Context, arg AdminCountWikiRevisionsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountWikiRevisions, arg.Kind, arg.Status)
+	row := q.db.QueryRow(ctx, adminCountWikiRevisions, arg.Kind, arg.Status, arg.Q)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -66,7 +77,7 @@ const adminListWikiPages = `-- name: AdminListWikiPages :many
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       wp.data_entity_type,
+       wp.data_entity_type, wp.deleted_at,
        sp.slug AS space_slug, sp.name AS space_name,
        lr.id AS latest_revision_id,
        COALESCE(lr.status, '') AS latest_revision_status,
@@ -75,9 +86,15 @@ FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
 LEFT JOIN LATERAL (
     SELECT wr.id, wr.status,
-           COALESCE(wr.summary, left(btrim(regexp_replace(
-               wr.content::text, '<[^>]+>', '', 'g')), 200), '') AS excerpt
+           -- content is TipTap JSONB; regexp_replace left raw JSON in the
+           -- excerpt. Extract the text nodes instead (mirrors the admin
+           -- UI's extractContentText walk).
+           COALESCE(wr.summary, left(btrim(COALESCE(x.excerpt_text, '')), 200), '') AS excerpt
     FROM wiki_revisions wr
+    LEFT JOIN LATERAL (
+        SELECT string_agg(t.txt #>> '{}', ' ') AS excerpt_text
+        FROM jsonb_path_query(wr.content, '$.**.text ? (@.type() == "string")') AS t(txt)
+    ) x ON true
     WHERE wr.wiki_page_id = wp.id
     ORDER BY wr.created_at DESC
     LIMIT 1
@@ -87,21 +104,30 @@ WHERE ($1::uuid IS NULL OR wp.space_id = $1::uuid)
   AND ($3::text = '' OR wp.category = $3)
   AND ($4::bool IS NULL OR wp.is_locked = $4::bool)
   AND ($5::text = '' OR wp.title ILIKE '%' || $5 || '%')
+  -- Soft-deleted pages are excluded by default; ?deleted=only|all surfaces
+  -- them so admins can force-delete (§80).
+  AND CASE $6::text
+        WHEN 'only' THEN wp.deleted_at IS NOT NULL
+        WHEN 'all'  THEN true
+        ELSE wp.deleted_at IS NULL
+      END
 ORDER BY
-  CASE WHEN $6 = 'title:asc'       THEN wp.title END ASC NULLS LAST,
-  CASE WHEN $6 = 'title:desc'      THEN wp.title END DESC NULLS LAST,
-  CASE WHEN $6 = 'space_slug:asc'  THEN sp.slug END ASC NULLS LAST,
-  CASE WHEN $6 = 'space_slug:desc' THEN sp.slug END DESC NULLS LAST,
-  CASE WHEN $6 = 'status:asc'      THEN lr.status END ASC NULLS LAST,
-  CASE WHEN $6 = 'status:desc'     THEN lr.status END DESC NULLS LAST,
-  CASE WHEN $6 = 'is_locked:asc'   THEN wp.is_locked::int END ASC NULLS LAST,
-  CASE WHEN $6 = 'is_locked:desc'  THEN wp.is_locked::int END DESC NULLS LAST,
-  CASE WHEN $6 = 'is_active:asc'   THEN wp.is_active::int END ASC NULLS LAST,
-  CASE WHEN $6 = 'is_active:desc'  THEN wp.is_active::int END DESC NULLS LAST,
-  CASE WHEN $6 = 'created_at:asc'  THEN wp.created_at END ASC NULLS LAST,
-  CASE WHEN $6 = 'created_at:desc' THEN wp.created_at END DESC NULLS LAST,
+  CASE WHEN $7 = 'title:asc'       THEN wp.title END ASC NULLS LAST,
+  CASE WHEN $7 = 'title:desc'      THEN wp.title END DESC NULLS LAST,
+  CASE WHEN $7 = 'space_slug:asc'  THEN sp.slug END ASC NULLS LAST,
+  CASE WHEN $7 = 'space_slug:desc' THEN sp.slug END DESC NULLS LAST,
+  CASE WHEN $7 = 'status:asc'      THEN lr.status END ASC NULLS LAST,
+  CASE WHEN $7 = 'status:desc'     THEN lr.status END DESC NULLS LAST,
+  CASE WHEN $7 = 'is_locked:asc'   THEN wp.is_locked::int END ASC NULLS LAST,
+  CASE WHEN $7 = 'is_locked:desc'  THEN wp.is_locked::int END DESC NULLS LAST,
+  CASE WHEN $7 = 'is_active:asc'   THEN wp.is_active::int END ASC NULLS LAST,
+  CASE WHEN $7 = 'is_active:desc'  THEN wp.is_active::int END DESC NULLS LAST,
+  CASE WHEN $7 = 'created_at:asc'  THEN wp.created_at END ASC NULLS LAST,
+  CASE WHEN $7 = 'created_at:desc' THEN wp.created_at END DESC NULLS LAST,
+  CASE WHEN $7 = 'updated_at:asc'  THEN wp.updated_at END ASC NULLS LAST,
+  CASE WHEN $7 = 'updated_at:desc' THEN wp.updated_at END DESC NULLS LAST,
   wp.updated_at DESC
-LIMIT $8 OFFSET $7
+LIMIT $9 OFFSET $8
 `
 
 type AdminListWikiPagesParams struct {
@@ -110,6 +136,7 @@ type AdminListWikiPagesParams struct {
 	Category  string      `json:"category"`
 	IsLocked  *bool       `json:"is_locked"`
 	Q         string      `json:"q"`
+	Deleted   string      `json:"deleted"`
 	Sort      interface{} `json:"sort"`
 	OffsetVal int32       `json:"offset_val"`
 	LimitVal  int32       `json:"limit_val"`
@@ -129,6 +156,7 @@ type AdminListWikiPagesRow struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 	DataEntityType       *string            `json:"data_entity_type"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 	SpaceSlug            string             `json:"space_slug"`
 	SpaceName            string             `json:"space_name"`
 	LatestRevisionID     pgtype.UUID        `json:"latest_revision_id"`
@@ -150,6 +178,7 @@ func (q *Queries) AdminListWikiPages(ctx context.Context, arg AdminListWikiPages
 		arg.Category,
 		arg.IsLocked,
 		arg.Q,
+		arg.Deleted,
 		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,
@@ -175,6 +204,7 @@ func (q *Queries) AdminListWikiPages(ctx context.Context, arg AdminListWikiPages
 			&i.UpdatedAt,
 			&i.IsJapabotIndexed,
 			&i.DataEntityType,
+			&i.DeletedAt,
 			&i.SpaceSlug,
 			&i.SpaceName,
 			&i.LatestRevisionID,
@@ -206,15 +236,22 @@ LEFT JOIN users u ON u.id = wr.submitted_by
 LEFT JOIN users ru ON ru.id = wr.reviewed_by
 WHERE ($1::text = '' OR wr.kind = $1)
   AND ($2::text = '' OR wr.status = $2)
-ORDER BY wr.created_at DESC
-LIMIT $4 OFFSET $3
+  AND ($3::text = '' OR wr.summary ILIKE '%' || $3 || '%'
+       OR u.username ILIKE '%' || $3 || '%')
+ORDER BY
+  CASE WHEN $4 = 'created_at:asc'  THEN wr.created_at END ASC NULLS LAST,
+  CASE WHEN $4 = 'created_at:desc' THEN wr.created_at END DESC NULLS LAST,
+  wr.created_at DESC
+LIMIT $6 OFFSET $5
 `
 
 type AdminListWikiRevisionsParams struct {
-	Kind      string `json:"kind"`
-	Status    string `json:"status"`
-	OffsetVal int32  `json:"offset_val"`
-	LimitVal  int32  `json:"limit_val"`
+	Kind      string      `json:"kind"`
+	Status    string      `json:"status"`
+	Q         string      `json:"q"`
+	Sort      interface{} `json:"sort"`
+	OffsetVal int32       `json:"offset_val"`
+	LimitVal  int32       `json:"limit_val"`
 }
 
 type AdminListWikiRevisionsRow struct {
@@ -242,10 +279,14 @@ type AdminListWikiRevisionsRow struct {
 	ReviewedByName   string             `json:"reviewed_by_name"`
 }
 
+// The admin UI's search box sends ?q= — matched against the revision
+// summary and the submitter's username (§80 review queue).
 func (q *Queries) AdminListWikiRevisions(ctx context.Context, arg AdminListWikiRevisionsParams) ([]AdminListWikiRevisionsRow, error) {
 	rows, err := q.db.Query(ctx, adminListWikiRevisions,
 		arg.Kind,
 		arg.Status,
+		arg.Q,
+		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,
 	)
@@ -441,7 +482,7 @@ func (q *Queries) CountWikiRevisionsByTarget(ctx context.Context, arg CountWikiR
 const createWikiPage = `-- name: CreateWikiPage :one
 INSERT INTO wiki_pages (space_id, slug, title, category, created_by)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (space_id, slug) DO NOTHING
+ON CONFLICT (space_id, slug) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id
 `
 
@@ -453,6 +494,9 @@ type CreateWikiPageParams struct {
 	CreatedBy pgtype.UUID `json:"created_by"`
 }
 
+// ON CONFLICT carries the partial-index predicate (deleted_at IS NULL) so
+// inference matches wiki_pages_space_id_slug_key — a soft-deleted page no
+// longer blocks the slug (000744).
 func (q *Queries) CreateWikiPage(ctx context.Context, arg CreateWikiPageParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createWikiPage,
 		arg.SpaceID,
@@ -763,6 +807,20 @@ func (q *Queries) GetWikiSpaceBySlug(ctx context.Context, slug string) (GetWikiS
 	var i GetWikiSpaceBySlugRow
 	err := row.Scan(&i.ID, &i.Level)
 	return i, err
+}
+
+const hardDeleteWikiPage = `-- name: HardDeleteWikiPage :execrows
+DELETE FROM wiki_pages WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Permanent delete — only for already-soft-deleted pages. Revisions cascade
+// via wiki_revisions_wiki_page_id_fkey (ON DELETE CASCADE).
+func (q *Queries) HardDeleteWikiPage(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteWikiPage, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertInitialWikiRevision = `-- name: InsertInitialWikiRevision :one
@@ -1304,7 +1362,7 @@ func (q *Queries) ListWikiSeedSpaceIDs(ctx context.Context) ([]pgtype.UUID, erro
 	return items, nil
 }
 
-const rejectWikiRevision = `-- name: RejectWikiRevision :exec
+const rejectWikiRevision = `-- name: RejectWikiRevision :execrows
 UPDATE wiki_revisions
 SET status = 'rejected', reviewed_by = $1, reviewed_at = now(),
     hitl_reviewed_by = $1, hitl_reviewed_at = now(),
@@ -1318,9 +1376,14 @@ type RejectWikiRevisionParams struct {
 	ID              pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) RejectWikiRevision(ctx context.Context, arg RejectWikiRevisionParams) error {
-	_, err := q.db.Exec(ctx, rejectWikiRevision, arg.ReviewedBy, arg.HitlReviewNotes, arg.ID)
-	return err
+// Rows-affected variant (was :exec): a non-pending or missing revision must
+// surface ErrRevisionNotPending to the caller instead of a false 200.
+func (q *Queries) RejectWikiRevision(ctx context.Context, arg RejectWikiRevisionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rejectWikiRevision, arg.ReviewedBy, arg.HitlReviewNotes, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setWikiRevisionApplyError = `-- name: SetWikiRevisionApplyError :exec
@@ -1337,6 +1400,23 @@ type SetWikiRevisionApplyErrorParams struct {
 func (q *Queries) SetWikiRevisionApplyError(ctx context.Context, arg SetWikiRevisionApplyErrorParams) error {
 	_, err := q.db.Exec(ctx, setWikiRevisionApplyError, arg.ApplyError, arg.ID)
 	return err
+}
+
+const softDeleteWikiPage = `-- name: SoftDeleteWikiPage :execrows
+UPDATE wiki_pages
+SET deleted_at = now(), is_active = false, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+// Soft delete (§80): marks deleted_at and deactivates — every is_active=true
+// reader (public GETs, destination page counts, is_japabot_indexed) excludes
+// the row without a schema-wide predicate change.
+func (q *Queries) SoftDeleteWikiPage(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteWikiPage, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateWikiPage = `-- name: UpdateWikiPage :execrows
@@ -1387,8 +1467,21 @@ func (q *Queries) UpdateWikiPageTouched(ctx context.Context, id pgtype.UUID) err
 	return err
 }
 
+const wikiPageExists = `-- name: WikiPageExists :one
+SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE id = $1) AS exists
+`
+
+// Existence probe used by the hard-delete path to distinguish 404 from
+// 409 page_not_deleted.
+func (q *Queries) WikiPageExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, wikiPageExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const wikiPageSlugExists = `-- name: WikiPageSlugExists :one
-SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE space_id = $1 AND slug = $2) AS exists
+SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE space_id = $1 AND slug = $2 AND deleted_at IS NULL) AS exists
 `
 
 type WikiPageSlugExistsParams struct {
@@ -1398,7 +1491,8 @@ type WikiPageSlugExistsParams struct {
 
 // Slug uniqueness probe scoped to (space_id, slug) — used by the intel
 // promoter's suffix loop before inserting a promoted page (§80 Intel
-// ingestion → wiki_pages).
+// ingestion → wiki_pages). Mirrors the partial unique index: soft-deleted
+// pages no longer occupy their slug (000744).
 func (q *Queries) WikiPageSlugExists(ctx context.Context, arg WikiPageSlugExistsParams) (bool, error) {
 	row := q.db.QueryRow(ctx, wikiPageSlugExists, arg.SpaceID, arg.Slug)
 	var exists bool

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/wallet"
 )
 
@@ -261,12 +262,13 @@ func (s *Service) CountSpaces(ctx context.Context, viewerUserID pgtype.UUID, sea
 // AdminListSpaces returns paginated spaces for the admin view with owner and
 // space_type name resolved via JOINs. Search, status, and visibility filters
 // are applied at the SQL level — pass "" for no filter.
-func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibility string, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
+func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibility, deleted string, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
 	rows, err := s.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
 
 		Search:     search,
 		Status:     status,
 		Visibility: visibility,
+		Deleted:    deleted,
 		LimitVal:   limit,
 		OffsetVal:  offset,
 	})
@@ -278,13 +280,15 @@ func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibilit
 }
 
 // AdminListSpacesCount returns the total number of spaces for the platform,
-// respecting the same search/status/visibility filters as AdminListSpaces.
-func (s *Service) AdminListSpacesCount(ctx context.Context, search, status, visibility string) (int64, error) {
+// respecting the same search/status/visibility/deleted filters as
+// AdminListSpaces.
+func (s *Service) AdminListSpacesCount(ctx context.Context, search, status, visibility, deleted string) (int64, error) {
 	count, err := s.read.AdminListSpacesCount(ctx, gen.AdminListSpacesCountParams{
 
 		Search:     search,
 		Status:     status,
 		Visibility: visibility,
+		Deleted:    deleted,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("admin counting spaces: %w", err)
@@ -1096,6 +1100,37 @@ func (s *Service) DeleteSpace(ctx context.Context, id pgtype.UUID) error {
 		id,
 	); err != nil {
 		return fmt.Errorf("deleting space: %w", err)
+	}
+
+	return nil
+}
+
+// HardDeleteSpace permanently removes a soft-deleted space (admin
+// ?force=true). Space-owned children cascade via ON DELETE CASCADE; child
+// spaces are independent entities and must be deleted first (ErrInUse).
+// Returns pgx.ErrNoRows when missing and errpkg.ErrNotDeleted while live.
+func (s *Service) HardDeleteSpace(ctx context.Context, id pgtype.UUID) error {
+	affected, err := s.write.HardDeleteSpace(ctx, id)
+	if err != nil {
+		return fmt.Errorf("hard deleting space: %w", err)
+	}
+
+	if affected == 0 {
+		exists, err := s.read.SpaceExists(ctx, id)
+		if err != nil {
+			return fmt.Errorf("check space exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		hasChildren, err := s.read.SpaceHasChildSpaces(ctx, id)
+		if err != nil {
+			return fmt.Errorf("check space children: %w", err)
+		}
+		if hasChildren {
+			return errpkg.ErrInUse
+		}
+		return errpkg.ErrNotDeleted
 	}
 
 	return nil

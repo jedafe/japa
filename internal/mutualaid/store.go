@@ -255,6 +255,9 @@ func (s *Store) ListPosts(ctx context.Context, f ListPostsFilter) ([]PostRow, in
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -459,6 +462,9 @@ func (s *Store) AdminListPosts(ctx context.Context, f AdminListPostsFilter) ([]P
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

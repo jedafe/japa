@@ -397,6 +397,9 @@ func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRo
 	argIdx += 3
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	orderClause := "c.published_at DESC NULLS LAST, c.created_at DESC"
 	if f.Sort == "top" {
@@ -661,6 +664,9 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	// Sort clause — admin list must support sort per the geo-aware tool pattern.
 	// "oldest" → created_at ASC; "title" → title ASC; default "latest" → created_at DESC.

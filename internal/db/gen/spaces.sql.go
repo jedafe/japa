@@ -98,18 +98,25 @@ FROM spaces s
 LEFT JOIN space_members sm ON sm.space_id = s.id AND sm.role = 'owner'
 LEFT JOIN users u ON u.id = sm.user_id
 LEFT JOIN space_types st ON st.id = s.space_type_id
-WHERE s.deleted_at IS NULL
- AND ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 || '%')
+WHERE ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR s.status = $2)
  AND ($3::text = '' OR s.visibility = $3)
+ -- Soft-deleted spaces are hidden by default; ?deleted=only|all surfaces
+ -- them so admins can force-delete (same contract as AdminListWikiPages).
+ AND CASE $4::text
+       WHEN 'only' THEN s.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE s.deleted_at IS NULL
+     END
 ORDER BY s.created_at DESC, s.id DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type AdminListSpacesParams struct {
 	Search     string `json:"search"`
 	Status     string `json:"status"`
 	Visibility string `json:"visibility"`
+	Deleted    string `json:"deleted"`
 	OffsetVal  int32  `json:"offset_val"`
 	LimitVal   int32  `json:"limit_val"`
 }
@@ -149,6 +156,7 @@ func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams
 		arg.Search,
 		arg.Status,
 		arg.Visibility,
+		arg.Deleted,
 		arg.OffsetVal,
 		arg.LimitVal,
 	)
@@ -201,20 +209,30 @@ func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams
 const adminListSpacesCount = `-- name: AdminListSpacesCount :one
 SELECT COUNT(*) AS total
 FROM spaces s
-WHERE s.deleted_at IS NULL
- AND ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 || '%')
+WHERE ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR s.status = $2)
  AND ($3::text = '' OR s.visibility = $3)
+ AND CASE $4::text
+       WHEN 'only' THEN s.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE s.deleted_at IS NULL
+     END
 `
 
 type AdminListSpacesCountParams struct {
 	Search     string `json:"search"`
 	Status     string `json:"status"`
 	Visibility string `json:"visibility"`
+	Deleted    string `json:"deleted"`
 }
 
 func (q *Queries) AdminListSpacesCount(ctx context.Context, arg AdminListSpacesCountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminListSpacesCount, arg.Search, arg.Status, arg.Visibility)
+	row := q.db.QueryRow(ctx, adminListSpacesCount,
+		arg.Search,
+		arg.Status,
+		arg.Visibility,
+		arg.Deleted,
+	)
 	var total int64
 	err := row.Scan(&total)
 	return total, err
@@ -1801,6 +1819,25 @@ func (q *Queries) GetUserMaxSpacesCreatable(ctx context.Context, userID pgtype.U
 	var max_spaces_creatable int32
 	err := row.Scan(&max_spaces_creatable)
 	return max_spaces_creatable, err
+}
+
+const hardDeleteSpace = `-- name: HardDeleteSpace :execrows
+DELETE FROM spaces s
+WHERE s.id = $1 AND s.deleted_at IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM spaces c WHERE c.parent_id = s.id)
+`
+
+// Permanent delete — only for already-soft-deleted spaces (admin ?force=true).
+// Space-owned children cascade via ON DELETE CASCADE, nullable references
+// SET NULL. Child spaces are guarded: they are independent entities, not
+// owned content, so the row must have no subspaces (admin deletes children
+// first).
+func (q *Queries) HardDeleteSpace(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteSpace, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const incrementSpaceCount = `-- name: IncrementSpaceCount :exec
@@ -4050,6 +4087,31 @@ type RemoveSpaceModeratorParams struct {
 func (q *Queries) RemoveSpaceModerator(ctx context.Context, arg RemoveSpaceModeratorParams) error {
 	_, err := q.db.Exec(ctx, removeSpaceModerator, arg.SpaceID, arg.UserID)
 	return err
+}
+
+const spaceExists = `-- name: SpaceExists :one
+SELECT EXISTS(SELECT 1 FROM spaces WHERE id = $1) AS exists
+`
+
+// Existence probe for the hard-delete path: distinguishes 404 not_found
+// from 409 not_deleted/in_use when the guarded DELETE affects no row.
+func (q *Queries) SpaceExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, spaceExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const spaceHasChildSpaces = `-- name: SpaceHasChildSpaces :one
+SELECT EXISTS(SELECT 1 FROM spaces WHERE parent_id = $1) AS exists
+`
+
+// Dependency probe for the hard-delete path (subspaces must go first).
+func (q *Queries) SpaceHasChildSpaces(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, spaceHasChildSpaces, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const suggestParentSpaces = `-- name: SuggestParentSpaces :many

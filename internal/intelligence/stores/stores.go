@@ -412,6 +412,43 @@ func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateInt
 	return nil
 }
 
+// UpdateIntelRecordExtracted replaces the extracted payload of an intel
+// record and stamps last_verified_at to now(). Used by the review-edit
+// endpoint so reviewer edits persist on records that have no domain
+// projection row yet (INTEL-009 fix).
+func (s *Store) UpdateIntelRecordExtracted(ctx context.Context, arg gen.UpdateIntelRecordExtractedParams) error {
+	if err := s.queries.UpdateIntelRecordExtracted(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update intel record extracted: %w", err)
+	}
+
+	return nil
+}
+
+// ListIntelRecordsFiltered returns a page of intel records filtered by
+// status (required) plus optional entity_type and free-text search, ordered
+// by a whitelisted CASE sort key (or extracted_at DESC by default). Used by
+// the review queue and records list handlers.
+func (s *Store) ListIntelRecordsFiltered(ctx context.Context, arg gen.ListIntelRecordsFilteredParams) ([]gen.IntelRecord, error) {
+	rows, err := s.queries.ListIntelRecordsFiltered(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list intel records filtered: %w", err)
+	}
+
+	return rows, nil
+}
+
+// CountIntelRecordsFiltered returns the total number of intel records
+// matching the same status/entity_type/search filters as
+// ListIntelRecordsFiltered, so list pagination can be computed.
+func (s *Store) CountIntelRecordsFiltered(ctx context.Context, arg gen.CountIntelRecordsFilteredParams) (int64, error) {
+	n, err := s.queries.CountIntelRecordsFiltered(ctx, arg)
+	if err != nil {
+		return 0, fmt.Errorf("stores: count intel records filtered: %w", err)
+	}
+
+	return n, nil
+}
+
 // ListStaleIntelRecords returns up to limit published intel records whose
 // freshness score has decayed to 40 or below, for re-verification by the
 // freshness worker.

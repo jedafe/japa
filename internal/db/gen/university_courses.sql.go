@@ -41,20 +41,30 @@ func (q *Queries) BulkSoftDeleteCourseOfferings(ctx context.Context, ids []pgtyp
 const countCourseCatalogAdmin = `-- name: CountCourseCatalogAdmin :one
 SELECT count(*) AS total
 FROM university_course_catalog c
-WHERE c.deleted_at IS NULL
- AND ($1::text = '' OR c.title ILIKE '%' || $1 || '%' OR c.slug ILIKE '%' || $1 || '%')
+WHERE ($1::text = '' OR c.title ILIKE '%' || $1 || '%' OR c.slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR c.degree_type = $2)
  AND ($3::bool IS NULL OR c.is_published = $3)
+ AND CASE $4::text
+       WHEN 'only' THEN c.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE c.deleted_at IS NULL
+     END
 `
 
 type CountCourseCatalogAdminParams struct {
 	Search      string `json:"search"`
 	DegreeType  string `json:"degree_type"`
 	IsPublished *bool  `json:"is_published"`
+	Deleted     string `json:"deleted"`
 }
 
 func (q *Queries) CountCourseCatalogAdmin(ctx context.Context, arg CountCourseCatalogAdminParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countCourseCatalogAdmin, arg.Search, arg.DegreeType, arg.IsPublished)
+	row := q.db.QueryRow(ctx, countCourseCatalogAdmin,
+		arg.Search,
+		arg.DegreeType,
+		arg.IsPublished,
+		arg.Deleted,
+	)
 	var total int64
 	err := row.Scan(&total)
 	return total, err
@@ -63,13 +73,17 @@ func (q *Queries) CountCourseCatalogAdmin(ctx context.Context, arg CountCourseCa
 const countCourseOfferingsAdmin = `-- name: CountCourseOfferingsAdmin :one
 SELECT count(*) AS total
 FROM university_course_offerings o
-JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
-JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
-WHERE o.deleted_at IS NULL
- AND ($1::text = '' OR c.title ILIKE '%' || $1 || '%' OR o.slug ILIKE '%' || $1 || '%' OR s.name ILIKE '%' || $1 || '%')
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+WHERE ($1::text = '' OR c.title ILIKE '%' || $1 || '%' OR o.slug ILIKE '%' || $1 || '%' OR s.name ILIKE '%' || $1 || '%')
  AND ($2::uuid IS NULL OR o.university_id = $2)
  AND ($3::uuid IS NULL OR o.course_id = $3)
  AND ($4::bool IS NULL OR o.is_published = $4)
+ AND CASE $5::text
+       WHEN 'only' THEN o.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE o.deleted_at IS NULL
+     END
 `
 
 type CountCourseOfferingsAdminParams struct {
@@ -77,6 +91,7 @@ type CountCourseOfferingsAdminParams struct {
 	UniversityID pgtype.UUID `json:"university_id"`
 	CourseID     pgtype.UUID `json:"course_id"`
 	IsPublished  *bool       `json:"is_published"`
+	Deleted      string      `json:"deleted"`
 }
 
 func (q *Queries) CountCourseOfferingsAdmin(ctx context.Context, arg CountCourseOfferingsAdminParams) (int64, error) {
@@ -85,6 +100,7 @@ func (q *Queries) CountCourseOfferingsAdmin(ctx context.Context, arg CountCourse
 		arg.UniversityID,
 		arg.CourseID,
 		arg.IsPublished,
+		arg.Deleted,
 	)
 	var total int64
 	err := row.Scan(&total)
@@ -114,6 +130,44 @@ func (q *Queries) CountCourseOfferingsByUniversity(ctx context.Context, arg Coun
 	var total int64
 	err := row.Scan(&total)
 	return total, err
+}
+
+const courseCatalogExists = `-- name: CourseCatalogExists :one
+SELECT EXISTS(SELECT 1 FROM university_course_catalog WHERE id = $1) AS exists
+`
+
+// Existence probe for the hard-delete path: distinguishes 404 not_found
+// from 409 not_deleted/in_use when the guarded DELETE affects no row.
+func (q *Queries) CourseCatalogExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, courseCatalogExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const courseCatalogHasOfferings = `-- name: CourseCatalogHasOfferings :one
+SELECT EXISTS(SELECT 1 FROM university_course_offerings WHERE course_id = $1) AS exists
+`
+
+// Dependency probe for the hard-delete path (offerings must go first).
+func (q *Queries) CourseCatalogHasOfferings(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, courseCatalogHasOfferings, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const courseOfferingExists = `-- name: CourseOfferingExists :one
+SELECT EXISTS(SELECT 1 FROM university_course_offerings WHERE id = $1) AS exists
+`
+
+// Existence probe for the hard-delete path: distinguishes 404 not_found
+// from 409 not_deleted when the DELETE affects no row.
+func (q *Queries) CourseOfferingExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, courseOfferingExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const createCourseCatalog = `-- name: CreateCourseCatalog :one
@@ -539,29 +593,67 @@ func (q *Queries) GetPublishedCourseOfferingBySlugs(ctx context.Context, arg Get
 	return i, err
 }
 
+const hardDeleteCourseCatalog = `-- name: HardDeleteCourseCatalog :execrows
+DELETE FROM university_course_catalog c
+WHERE c.id = $1 AND c.deleted_at IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM university_course_offerings o WHERE o.course_id = c.id)
+`
+
+// Permanent delete — only for already-soft-deleted catalog rows (admin
+// ?force=true). Offerings FK-cascade, so the row must have no offerings at
+// all (live or deleted): force-delete the offerings first rather than
+// silently cascading live children.
+func (q *Queries) HardDeleteCourseCatalog(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteCourseCatalog, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const hardDeleteCourseOffering = `-- name: HardDeleteCourseOffering :execrows
+DELETE FROM university_course_offerings WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Permanent delete — only for already-soft-deleted offerings (admin
+// ?force=true). Nothing references offerings as a parent FK.
+func (q *Queries) HardDeleteCourseOffering(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteCourseOffering, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listCourseCatalogAdmin = `-- name: ListCourseCatalogAdmin :many
 
 SELECT c.id, c.title, c.slug, c.description, c.degree_type, c.department,
  c.field_of_study, c.language, c.default_duration_years, c.is_published,
- c.created_at, c.updated_at,
+ c.created_at, c.updated_at, c.deleted_at,
  (SELECT count(*) FROM university_course_offerings o
   WHERE o.course_id = c.id AND o.deleted_at IS NULL) AS offering_count
 FROM university_course_catalog c
-WHERE c.deleted_at IS NULL
- AND ($1::text = '' OR c.title ILIKE '%' || $1 || '%' OR c.slug ILIKE '%' || $1 || '%')
+WHERE ($1::text = '' OR c.title ILIKE '%' || $1 || '%' OR c.slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR c.degree_type = $2)
  AND ($3::bool IS NULL OR c.is_published = $3)
+ -- ?deleted=only|all surfaces soft-deleted rows for admin force-delete.
+ AND CASE $4::text
+       WHEN 'only' THEN c.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE c.deleted_at IS NULL
+     END
 ORDER BY
- CASE WHEN $4::text = 'title' THEN c.title END ASC NULLS LAST,
- CASE WHEN $4::text = 'oldest' THEN c.created_at END ASC NULLS LAST,
+ CASE WHEN $5::text = 'title' THEN c.title END ASC NULLS LAST,
+ CASE WHEN $5::text = 'oldest' THEN c.created_at END ASC NULLS LAST,
  c.created_at DESC
-LIMIT $6 OFFSET $5
+LIMIT $7 OFFSET $6
 `
 
 type ListCourseCatalogAdminParams struct {
 	Search      string `json:"search"`
 	DegreeType  string `json:"degree_type"`
 	IsPublished *bool  `json:"is_published"`
+	Deleted     string `json:"deleted"`
 	Sort        string `json:"sort"`
 	OffsetVal   int32  `json:"offset_val"`
 	LimitVal    int32  `json:"limit_val"`
@@ -580,6 +672,7 @@ type ListCourseCatalogAdminRow struct {
 	IsPublished          bool               `json:"is_published"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 	OfferingCount        int64              `json:"offering_count"`
 }
 
@@ -589,6 +682,7 @@ func (q *Queries) ListCourseCatalogAdmin(ctx context.Context, arg ListCourseCata
 		arg.Search,
 		arg.DegreeType,
 		arg.IsPublished,
+		arg.Deleted,
 		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,
@@ -613,6 +707,7 @@ func (q *Queries) ListCourseCatalogAdmin(ctx context.Context, arg ListCourseCata
 			&i.IsPublished,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.OfferingCount,
 		); err != nil {
 			return nil, err
@@ -630,22 +725,27 @@ const listCourseOfferingsAdmin = `-- name: ListCourseOfferingsAdmin :many
 SELECT o.id, o.course_id, o.university_id, o.slug,
  o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
  o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
+ o.deleted_at,
  c.title AS course_title, c.slug AS course_slug, c.degree_type,
  s.name AS university_name, s.slug AS university_slug
 FROM university_course_offerings o
-JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
-JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
-WHERE o.deleted_at IS NULL
- AND ($1::text = '' OR c.title ILIKE '%' || $1 || '%' OR o.slug ILIKE '%' || $1 || '%' OR s.name ILIKE '%' || $1 || '%')
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+WHERE ($1::text = '' OR c.title ILIKE '%' || $1 || '%' OR o.slug ILIKE '%' || $1 || '%' OR s.name ILIKE '%' || $1 || '%')
  AND ($2::uuid IS NULL OR o.university_id = $2)
  AND ($3::uuid IS NULL OR o.course_id = $3)
  AND ($4::bool IS NULL OR o.is_published = $4)
+ AND CASE $5::text
+       WHEN 'only' THEN o.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE o.deleted_at IS NULL
+     END
 ORDER BY
- CASE WHEN $5::text = 'title' THEN c.title END ASC NULLS LAST,
- CASE WHEN $5::text = 'university' THEN s.name END ASC NULLS LAST,
- CASE WHEN $5::text = 'oldest' THEN o.created_at END ASC NULLS LAST,
+ CASE WHEN $6::text = 'title' THEN c.title END ASC NULLS LAST,
+ CASE WHEN $6::text = 'university' THEN s.name END ASC NULLS LAST,
+ CASE WHEN $6::text = 'oldest' THEN o.created_at END ASC NULLS LAST,
  o.created_at DESC
-LIMIT $7 OFFSET $6
+LIMIT $8 OFFSET $7
 `
 
 type ListCourseOfferingsAdminParams struct {
@@ -653,6 +753,7 @@ type ListCourseOfferingsAdminParams struct {
 	UniversityID pgtype.UUID `json:"university_id"`
 	CourseID     pgtype.UUID `json:"course_id"`
 	IsPublished  *bool       `json:"is_published"`
+	Deleted      string      `json:"deleted"`
 	Sort         string      `json:"sort"`
 	OffsetVal    int32       `json:"offset_val"`
 	LimitVal     int32       `json:"limit_val"`
@@ -673,6 +774,7 @@ type ListCourseOfferingsAdminRow struct {
 	IsPublished       bool               `json:"is_published"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	CourseTitle       string             `json:"course_title"`
 	CourseSlug        string             `json:"course_slug"`
 	DegreeType        *string            `json:"degree_type"`
@@ -681,12 +783,16 @@ type ListCourseOfferingsAdminRow struct {
 }
 
 // Admin: course offerings CRUD (universities.course_offering.* RBAC nodes)
+// ?deleted=only|all surfaces soft-deleted rows for admin force-delete.
+// The catalog/university JOINs drop their deleted_at filter so deleted
+// offerings still resolve their parent names in the admin list.
 func (q *Queries) ListCourseOfferingsAdmin(ctx context.Context, arg ListCourseOfferingsAdminParams) ([]ListCourseOfferingsAdminRow, error) {
 	rows, err := q.db.Query(ctx, listCourseOfferingsAdmin,
 		arg.Search,
 		arg.UniversityID,
 		arg.CourseID,
 		arg.IsPublished,
+		arg.Deleted,
 		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,
@@ -713,6 +819,7 @@ func (q *Queries) ListCourseOfferingsAdmin(ctx context.Context, arg ListCourseOf
 			&i.IsPublished,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.CourseTitle,
 			&i.CourseSlug,
 			&i.DegreeType,

@@ -343,7 +343,7 @@
 	<title>{t('spam.title', 'Spam Management')} — JapaConnect Admin</title>
 </svelte:head>
 
-<Tabs {tabs} bind:value={activeTab} class="mb-4" />
+<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} class="mb-4" />
 
 {#if activeTab === 'ip-blocks'}
 	{#if ipPageError}

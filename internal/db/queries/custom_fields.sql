@@ -85,6 +85,16 @@ SELECT id, group_id, label, key, field_type, options, embed_platforms,
 FROM custom_fields
 WHERE key = @key;
 
+-- name: GetCustomFieldByGroupAndKey :one
+-- §80 community field ops: field keys are unique only per group
+-- (custom_fields group_id+key), so ops must resolve field_key inside the
+-- target group — a same-named key in another group must never be touched.
+SELECT id, group_id, label, key, field_type, options, embed_platforms,
+ placeholder, default_value, is_required, is_system, show_in_frontend,
+ filterable, sortable, searchable, position, created_at
+FROM custom_fields
+WHERE group_id = @group_id AND key = @key;
+
 -- name: CreateCustomField :one
 INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position) VALUES (@group_id, @label, @key, @field_type, @options, @embed_platforms, @placeholder, @default_value, @is_required, @is_system, @show_in_frontend, @filterable, @sortable, @searchable, @position)
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
@@ -161,6 +171,23 @@ INSERT INTO custom_field_permissions (field_id, user_group_id, can_view, can_edi
 
 ON CONFLICT (field_id, user_group_id) DO UPDATE
 SET can_view = EXCLUDED.can_view, can_edit = EXCLUDED.can_edit;
+
+-- name: SeedFieldPermissions :exec
+-- §80 §8.1a runtime twin of the 000733 bootstrap: a field created by an
+-- approved community proposal is viewable by every user group and editable
+-- by non-guest groups when its group is assigned to an entity class
+-- (assignment is the opt-in to community editing). Without these rows the
+-- fail-closed field-permission check would leave approved fields
+-- permanently invisible and uneditable. ON CONFLICT preserves any
+-- pre-existing grants or denials.
+INSERT INTO custom_field_permissions (field_id, user_group_id, can_view, can_edit)
+SELECT @field_id::uuid, ug.id, true,
+       ug.slug <> 'guest'
+           AND EXISTS (SELECT 1
+                       FROM custom_field_group_assignments a
+                       WHERE a.group_id = @group_id::uuid)
+FROM user_groups ug
+ON CONFLICT (field_id, user_group_id) DO NOTHING;
 
 -- name: DeleteFieldPermission :exec
 DELETE FROM custom_field_permissions
@@ -296,3 +323,14 @@ FROM custom_field_permissions cfp
 JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
 WHERE ugm.user_id = @user_id
  AND cfp.can_edit = true;
+
+-- name: ListVisibleFieldIDsForGroupSlug :many
+-- Returns the field_ids a user group (by slug, e.g. 'guest') is allowed
+-- to view. Used by the §80 wiki entity-fields schema for anonymous
+-- callers, who have no user_group_memberships row but still hold the
+-- guest group's can_view grants (Section 06 field-level RBAC).
+SELECT cfp.field_id
+FROM custom_field_permissions cfp
+JOIN user_groups ug ON ug.id = cfp.user_group_id
+WHERE ug.slug = @group_slug
+ AND cfp.can_view = true;

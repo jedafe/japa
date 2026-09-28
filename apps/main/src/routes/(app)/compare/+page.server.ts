@@ -72,11 +72,16 @@ export const load: PageServerLoad = async (event) => {
 	const searchParams = event.url.searchParams;
 
 	let types: ComparisonType[] = [];
+	// Full type list retained for labeling existing comparisons — a user's
+	// quick comparison may reference a system-managed type (e.g.
+	// cost_of_living) that the picker must not offer (§30 can_create).
+	let allTypes: ComparisonType[] = [];
 	let loadError = '';
 	let loadErrorParams: Record<string, string> = {};
 	try {
 		const res = await apiGet<ComparisonType[]>(ctx, '/jce/comparison-types');
-		types = enrichTypes(res ?? []);
+		allTypes = enrichTypes(res ?? []);
+		types = allTypes.filter((t) => t.can_create !== false);
 	} catch (err) {
 		if (err instanceof ApiError) {
 			if (err.status === 403) {
@@ -259,7 +264,7 @@ export const load: PageServerLoad = async (event) => {
 	if (event.locals.user) {
 		try {
 			const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?mine=true&filter_depth=quick&page_size=${defaultPageSize}&sort=created_at`);
-			myComparisons = mapComparisonTypes(res.items, types);
+			myComparisons = mapComparisonTypes(res.items, allTypes);
 			myMeta = res.meta ?? myMeta;
 		} catch (err) {
 			if (err instanceof ApiError && err.status !== 404) {

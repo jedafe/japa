@@ -103,6 +103,27 @@ func (q *Queries) AdminListNotificationTypes(ctx context.Context, arg AdminListN
 	return items, nil
 }
 
+const countNotificationsByRecipient = `-- name: CountNotificationsByRecipient :one
+SELECT COUNT(*)::int AS count
+FROM notifications
+WHERE recipient_id = $1
+ AND ($2::bool = false OR read_at IS NULL)
+`
+
+type CountNotificationsByRecipientParams struct {
+	RecipientID pgtype.UUID `json:"recipient_id"`
+	UnreadOnly  bool        `json:"unread_only"`
+}
+
+// Total matching the same unread_only filter as GetNotificationsByRecipient,
+// so the list endpoint can return { data, total, has_more } (§35).
+func (q *Queries) CountNotificationsByRecipient(ctx context.Context, arg CountNotificationsByRecipientParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countNotificationsByRecipient, arg.RecipientID, arg.UnreadOnly)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBatchWindow = `-- name: CreateBatchWindow :exec
 INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at) VALUES ($1, $2, $3, $4, ARRAY[$5::uuid], 1, $5, now() + make_interval(mins => $6))
 `
@@ -243,6 +264,19 @@ func (q *Queries) GetNotificationPreferences(ctx context.Context, userID pgtype.
 		return nil, err
 	}
 	return items, nil
+}
+
+const getNotificationTypeLabel = `-- name: GetNotificationTypeLabel :one
+SELECT label FROM notification_types WHERE key = $1
+`
+
+// Label lookup for a single type — used to enrich WebSocket `notification`
+// payloads with type_label so clients don't fall back to a generic label.
+func (q *Queries) GetNotificationTypeLabel(ctx context.Context, key string) (string, error) {
+	row := q.db.QueryRow(ctx, getNotificationTypeLabel, key)
+	var label string
+	err := row.Scan(&label)
+	return label, err
 }
 
 const getNotificationTypes = `-- name: GetNotificationTypes :many

@@ -222,6 +222,9 @@ func (s *Store) ListGroups(ctx context.Context, f ListGroupsFilter) ([]PlanningG
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -712,6 +715,9 @@ func (s *Store) AdminListGroups(ctx context.Context, f AdminListGroupsFilter) ([
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

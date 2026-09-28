@@ -193,7 +193,7 @@ func TestValueToUpsertParams(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			field := gen.GetCustomFieldByKeyRow{ID: fieldID, Key: "k", FieldType: tc.fieldType}
+			field := schemaField{id: fieldID, key: "k", fieldType: tc.fieldType}
 
 			p, err := valueToUpsertParams(field, "organization", entityID, tc.value)
 
@@ -246,9 +246,9 @@ func TestApplyOps_ExecutesOpsInOrder(t *testing.T) {
 
 	tx := &fakeTx{
 		responses: []func(dest ...any) error{
-			scanGroupRow(groupID, "org_fields"), // propose_field: GetCustomFieldGroupBySlug
-			scanNoop(),                          // propose_field: CreateCustomField
-			scanFieldRow(fieldID, "headcount", customfields.FieldTypeNumber), // set_value: GetCustomFieldByKey
+			scanGroupRow(groupID, "org_fields"),                            // propose_field: GetCustomFieldGroupBySlug
+			scanFieldRow(fieldID, "headcount", customfields.FieldTypeNumber), // propose_field: CreateCustomField
+			// propose_field: SeedFieldPermissions is an Exec, not a QueryRow
 			scanNoop(),                          // set_value: UpsertCustomFieldValue
 			scanGroupRow(groupID, "org_fields"), // assign_group: GetCustomFieldGroupBySlug
 			scanNoop(),                          // assign_group: CreateAssignment
@@ -275,7 +275,7 @@ func TestApplyOps_ExecutesOpsInOrder(t *testing.T) {
 		},
 	}
 
-	if err := (&Service{}).applyOps(t.Context(), tx, ops); err != nil {
+	if err := (&Service{}).applyOps(t.Context(), tx, ops, nil); err != nil {
 		t.Fatalf("applyOps: %v", err)
 	}
 
@@ -285,8 +285,8 @@ func TestApplyOps_ExecutesOpsInOrder(t *testing.T) {
 	}{
 		{"queryrow", "FROM custom_field_groups"},                   // propose_field group lookup
 		{"queryrow", "INSERT INTO custom_fields ("},                // propose_field field insert
-		{"queryrow", "WHERE key = $1"},                             // set_value field lookup
-		{"queryrow", "INSERT INTO custom_field_values"},            // set_value cfv upsert
+		{"exec", "INSERT INTO custom_field_permissions"},           // propose_field §8.1a permission seed
+		{"queryrow", "INSERT INTO custom_field_values"},            // set_value cfv upsert (schema-registered key — no lookup)
 		{"exec", "UPDATE organizations SET field_values"},          // set_value denorm merge
 		{"queryrow", "FROM custom_field_groups"},                   // assign_group group lookup
 		{"queryrow", "INSERT INTO custom_field_group_assignments"}, // assign_group assignment
@@ -332,9 +332,12 @@ func TestApplyOps_SetValueNormalizesEntityType(t *testing.T) {
 
 	tx := &fakeTx{
 		responses: []func(dest ...any) error{
-			scanFieldRow(fieldID, "tuition_ug", customfields.FieldTypeText),
-			scanNoop(),
+			scanNoop(), // set_value: UpsertCustomFieldValue — the field resolves via the schema map, no lookup
 		},
+	}
+
+	schema := map[string]schemaField{
+		"tuition_ug": {id: fieldID, key: "tuition_ug", fieldType: customfields.FieldTypeText},
 	}
 
 	ops := []FieldOp{{
@@ -345,12 +348,12 @@ func TestApplyOps_SetValueNormalizesEntityType(t *testing.T) {
 		Value:      json.RawMessage(`"12000 USD"`),
 	}}
 
-	if err := (&Service{}).applyOps(t.Context(), tx, ops); err != nil {
+	if err := (&Service{}).applyOps(t.Context(), tx, ops, schema); err != nil {
 		t.Fatalf("applyOps: %v", err)
 	}
 
-	if len(tx.calls) != 2 {
-		t.Fatalf("expected 2 calls (lookup + upsert, no denorm), got %d: %#v", len(tx.calls), tx.calls)
+	if len(tx.calls) != 1 {
+		t.Fatalf("expected 1 call (upsert only — no lookup, no denorm), got %d: %#v", len(tx.calls), tx.calls)
 	}
 
 	for _, c := range tx.calls {
@@ -359,10 +362,49 @@ func TestApplyOps_SetValueNormalizesEntityType(t *testing.T) {
 		}
 	}
 
-	// UpsertCustomFieldValue arg[1] is entity_type — 'university' must
-	// normalize to 'space'.
-	if tx.calls[1].args[1] != "space" {
-		t.Fatalf("cfv entity_type: got %v want space", tx.calls[1].args[1])
+	// UpsertCustomFieldValue arg[0] is field_id — it must come from the
+	// schema entry, and arg[1] entity_type must normalize 'university' →
+	// 'space'.
+	if gotFieldID, ok := tx.calls[0].args[0].(pgtype.UUID); !ok || gotFieldID != fieldID {
+		t.Fatalf("upsert field_id: %#v", tx.calls[0].args[0])
+	}
+
+	if tx.calls[0].args[1] != "space" {
+		t.Fatalf("cfv entity_type: got %v want space", tx.calls[0].args[1])
+	}
+}
+
+// TestApplyOps_SetValueMissingFromSchema proves a set_value whose field_key
+// is not in the entity's assigned-group schema fails — even when another
+// group owns a field of the same key. This is the group-scoped key lookup:
+// field keys are unique per group, never globally.
+func TestApplyOps_SetValueMissingFromSchema(t *testing.T) {
+	t.Parallel()
+
+	otherGroupFieldID := mustUUID(t, "00000000-0000-0000-0000-0000000000a9")
+
+	tx := &fakeTx{}
+	schema := map[string]schemaField{
+		// The entity's schema has a DIFFERENT field under a different key;
+		// a same-keyed field in an unassigned group must not be reachable.
+		"other_key": {id: otherGroupFieldID, key: "other_key", fieldType: customfields.FieldTypeText},
+	}
+
+	ops := []FieldOp{{
+		Op:         OpSetValue,
+		EntityType: "organization",
+		EntityID:   "00000000-0000-0000-0000-0000000000bb",
+		FieldKey:   "acceptance_rate",
+		Value:      json.RawMessage(`0.5`),
+	}}
+
+	err := (&Service{}).applyOps(t.Context(), tx, ops, schema)
+	if err == nil || !strings.Contains(err.Error(), "does not exist in the entity's field schema") {
+		t.Fatalf("expected schema-scope error, got %v", err)
+	}
+
+	if len(tx.calls) != 0 {
+		t.Fatalf("no SQL must run for an out-of-schema field_key: %#v", tx.calls)
 	}
 }
 
@@ -382,7 +424,7 @@ func TestApplyOps_StopsOnFirstError(t *testing.T) {
 		{Op: OpAssignGroup, GroupSlug: "g2", EntityClass: "organization"},
 	}
 
-	err := (&Service{}).applyOps(t.Context(), tx, ops)
+	err := (&Service{}).applyOps(t.Context(), tx, ops, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -411,19 +453,25 @@ func TestApplyOps_UpsertFieldCreateAndUpdate(t *testing.T) {
 
 		tx := &fakeTx{responses: []func(dest ...any) error{
 			scanGroupRow(groupID, "org_fields"),
-			scanFieldRow(fieldID, "intake", customfields.FieldTypeText),
+			scanFieldRow(fieldID, "intake", customfields.FieldTypeText), // GetCustomFieldByGroupAndKey
 			scanNoop(), // UpdateCustomField RETURNING
 		}}
 
 		err := (&Service{}).applyOps(t.Context(), tx, []FieldOp{
 			{Op: OpUpsertField, GroupSlug: "org_fields", Field: field},
-		})
+		}, nil)
 		if err != nil {
 			t.Fatalf("applyOps: %v", err)
 		}
 
 		if len(tx.calls) != 3 || !strings.Contains(tx.calls[2].sql, "UPDATE custom_fields") {
 			t.Fatalf("expected group lookup + field lookup + UPDATE, got %#v", tx.calls)
+		}
+
+		// The field lookup must be scoped to the group — a global key lookup
+		// could hit a same-keyed field in an unrelated group.
+		if !strings.Contains(tx.calls[1].sql, "group_id") {
+			t.Fatalf("field lookup must filter by group_id: %q", tx.calls[1].sql)
 		}
 	})
 
@@ -432,19 +480,23 @@ func TestApplyOps_UpsertFieldCreateAndUpdate(t *testing.T) {
 
 		tx := &fakeTx{responses: []func(dest ...any) error{
 			scanGroupRow(groupID, "org_fields"),
-			scanFail(pgx.ErrNoRows), // GetCustomFieldByKey misses
+			scanFail(pgx.ErrNoRows), // GetCustomFieldByGroupAndKey misses
 			scanNoop(),              // CreateCustomField RETURNING
+			// SeedFieldPermissions is an Exec, not a QueryRow
 		}}
 
 		err := (&Service{}).applyOps(t.Context(), tx, []FieldOp{
 			{Op: OpUpsertField, GroupSlug: "org_fields", Field: field},
-		})
+		}, nil)
 		if err != nil {
 			t.Fatalf("applyOps: %v", err)
 		}
 
-		if len(tx.calls) != 3 || !strings.Contains(tx.calls[2].sql, "INSERT INTO custom_fields (") {
-			t.Fatalf("expected group lookup + field lookup + INSERT, got %#v", tx.calls)
+		if len(tx.calls) != 4 ||
+			!strings.Contains(tx.calls[2].sql, "INSERT INTO custom_fields (") ||
+			tx.calls[3].kind != "exec" ||
+			!strings.Contains(tx.calls[3].sql, "INSERT INTO custom_field_permissions") {
+			t.Fatalf("expected group lookup + field lookup + INSERT + permission seed, got %#v", tx.calls)
 		}
 	})
 }
@@ -457,9 +509,10 @@ func TestApplyOps_ProposeGroup(t *testing.T) {
 
 	tx := &fakeTx{responses: []func(dest ...any) error{
 		scanGroupRow(groupID, "visa_outcomes"), // CreateCustomFieldGroup RETURNING
+		scanNoop(),                             // CreateAssignment — runs before field inserts so §8.1a seeding sees the assignment
 		scanNoop(),                             // CreateCustomField field[0]
 		scanNoop(),                             // CreateCustomField field[1]
-		scanNoop(),                             // CreateAssignment
+		// SeedFieldPermissions after each field insert is an Exec, not a QueryRow
 	}}
 
 	ops := []FieldOp{{
@@ -475,15 +528,20 @@ func TestApplyOps_ProposeGroup(t *testing.T) {
 		},
 	}}
 
-	if err := (&Service{}).applyOps(t.Context(), tx, ops); err != nil {
+	if err := (&Service{}).applyOps(t.Context(), tx, ops, nil); err != nil {
 		t.Fatalf("applyOps: %v", err)
 	}
 
-	want := []string{
-		"INSERT INTO custom_field_groups",
-		"INSERT INTO custom_fields (",
-		"INSERT INTO custom_fields (",
-		"INSERT INTO custom_field_group_assignments",
+	want := []struct {
+		kind        string
+		sqlContains string
+	}{
+		{"queryrow", "INSERT INTO custom_field_groups"},
+		{"queryrow", "INSERT INTO custom_field_group_assignments"},
+		{"queryrow", "INSERT INTO custom_fields ("},
+		{"exec", "INSERT INTO custom_field_permissions"},
+		{"queryrow", "INSERT INTO custom_fields ("},
+		{"exec", "INSERT INTO custom_field_permissions"},
 	}
 
 	if len(tx.calls) != len(want) {
@@ -491,13 +549,13 @@ func TestApplyOps_ProposeGroup(t *testing.T) {
 	}
 
 	for i, w := range want {
-		if !strings.Contains(tx.calls[i].sql, w) {
-			t.Fatalf("call[%d]: got %q want containing %q", i, tx.calls[i].sql, w)
+		if tx.calls[i].kind != w.kind || !strings.Contains(tx.calls[i].sql, w.sqlContains) {
+			t.Fatalf("call[%d]: got %s %q want %s containing %q", i, tx.calls[i].kind, tx.calls[i].sql, w.kind, w.sqlContains)
 		}
 	}
 
 	// The assignment binds the new group to the op's entity_class.
-	assign := tx.calls[3]
+	assign := tx.calls[1]
 	if gotGroupID, ok := assign.args[0].(pgtype.UUID); !ok || gotGroupID != groupID {
 		t.Fatalf("assignment group_id: %#v", assign.args[0])
 	}

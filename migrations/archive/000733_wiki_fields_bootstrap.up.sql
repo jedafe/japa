@@ -15,11 +15,10 @@
 ALTER TABLE wiki_revisions ADD COLUMN apply_error text;
 
 INSERT INTO custom_field_permissions (field_id, user_group_id, can_view, can_edit)
-SELECT DISTINCT cf.id, ug.id, true, true
+SELECT DISTINCT cf.id, ug.id, true, ug.slug <> 'guest'
 FROM custom_fields cf
 JOIN custom_field_group_assignments a ON a.group_id = cf.group_id
-JOIN user_groups ug ON ug.slug <> 'guest'
-WHERE cf.is_system = false
+CROSS JOIN user_groups ug
 ON CONFLICT (field_id, user_group_id) DO NOTHING;
 
 INSERT INTO custom_field_permissions (field_id, user_group_id, can_view, can_edit)

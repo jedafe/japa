@@ -325,6 +325,11 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 		TargetCountry: body.TargetCountry,
 	})
 	if err != nil {
+		if errors.Is(err, errpkg.ErrForbidden) {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Your group cannot create comparisons of this type")
+			return
+		}
+
 		handleServiceError(w, err)
 		return
 	}

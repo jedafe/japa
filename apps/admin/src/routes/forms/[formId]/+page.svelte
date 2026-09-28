@@ -515,13 +515,15 @@
 		}
 	}
 
-	function switchTab(tab: string) {
-		activeTab = tab;
-		if (tab === 'fields' && !fieldsLoaded && !loadingFields) { fieldsLoaded = true; loadFields(); }
-		if (tab === 'submissions' && !submissionsLoaded && !loadingSubmissions) { submissionsLoaded = true; loadSubmissions(); }
-		if (tab === 'triggers' && !triggersLoaded && !loadingTriggers) { triggersLoaded = true; loadTriggers(); }
-		if (tab === 'metadata' && form?.is_multi_step && !stepsLoaded && !loadingSteps) { stepsLoaded = true; loadSteps(); }
-	}
+	// Lazy-load a tab's data on activation — reactive so it also covers
+	// ?tab= deep-links and back/forward (Tabs binds `activeTab` directly).
+	$effect(() => {
+		const tab = activeTab;
+		if (tab === 'fields' && !fieldsLoaded && !loadingFields) { fieldsLoaded = true; void loadFields(); }
+		if (tab === 'submissions' && !submissionsLoaded && !loadingSubmissions) { submissionsLoaded = true; void loadSubmissions(); }
+		if (tab === 'triggers' && !triggersLoaded && !loadingTriggers) { triggersLoaded = true; void loadTriggers(); }
+		if (tab === 'metadata' && form?.is_multi_step && !stepsLoaded && !loadingSteps) { stepsLoaded = true; void loadSteps(); }
+	});
 
 	// === Metadata Actions ===
 
@@ -787,7 +789,7 @@
 	]}
 />
 
-<Tabs {tabs} bind:value={activeTab} />
+<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 {#if loading}
 	<TableSkeleton />

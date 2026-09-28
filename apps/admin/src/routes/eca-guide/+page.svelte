@@ -6,6 +6,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
 
 	type Provider = {
@@ -46,7 +47,9 @@
 
 	const canManage = $derived(hasPermission('eca_guide.manage'));
 
-	let activeTab = $state<'providers' | 'guides' | 'updates'>('providers');
+	const ECA_TABS = ['providers', 'guides', 'updates'] as const;
+	let activeTab = $state<'providers' | 'guides' | 'updates'>(initTabParam('providers', { valid: ECA_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: ECA_TABS, preserve: [] });
 	let pageError = $state('');
 
 	// ── Providers tab ─────────────────────────────────────────────────────────

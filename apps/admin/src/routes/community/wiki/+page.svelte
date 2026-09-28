@@ -4,14 +4,17 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Tabs } from '$lib/components/ui/tabs';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import RevisionDiff from '$lib/components/wiki/RevisionDiff.svelte';
 	import WikiTypesAdmin from '$lib/components/wiki/WikiTypesAdmin.svelte';
 	import { wikiAdminApi, apiRaw, type WikiRevisionItem } from '$lib/api';
 	import { useCountries } from '$lib/utils/countries.svelte';
+	import { initTabParam } from '$lib/utils/url-sync.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, XCircle, Sparkles, Lock, Unlock, Star, FileDiff } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { Eye, CheckCircle, XCircle, Sparkles, Lock, LockOpen, Star, StarOff, FileDiff, Trash2 } from 'lucide-svelte';
+	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
 
 	type WikiItem = {
 		id: string;
@@ -24,6 +27,8 @@
 		is_locked?: boolean;
 		is_featured?: boolean;
 		is_active?: boolean;
+		created_at?: string;
+		deleted_at?: string | null;
 		data_entity_type?: string | null;
 		// ADR-088 AI generation columns
 		ai_generated?: boolean;
@@ -35,6 +40,7 @@
 	const canReview = $derived(hasPermission('wiki.review'));
 	const canManage = $derived(hasPermission('wiki.manage'));
 	const canLock = $derived(hasPermission('wiki.lock'));
+	const canDelete = $derived(hasPermission('wiki.delete'));
 
 	// ── Country selector (250 primary geo space countries) ───────────────────
 	const countryUtils = useCountries();
@@ -45,7 +51,11 @@
 	// ── View switcher: Pages (existing page-scoped queue) vs Revisions (§80
 	// flat revision queue with kind/status filters + field-ops diff) vs
 	// Types (§80 Wiki Types — managed types + category templates) ──────────
-	let view = $state<'pages' | 'revisions' | 'types'>('pages');
+	// The active tab is deep-linkable via ?tab= (handled by the shared Tabs
+	// component's tabParam prop; the 'types' tab is permission-gated so it is
+	// validated against the tabs array once permissions resolve). List state
+	// (q/page/sort/filters) is per-tab, so tabPreserve=[] wipes it on switch.
+	let view = $state<'pages' | 'revisions' | 'types'>(initTabParam('pages', { valid: ['pages', 'revisions'] }));
 
 	// ── State-action confirmation modal (reject with optional reason) ────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -56,6 +66,11 @@
 	let revisionActionTarget = $state<WikiRevisionItem | null>(null);
 	let showRejectModal = $state(false);
 	let rejectReason = $state('');
+	// Bulk-reject path: rows captured at click time so the modal can outlive
+	// the table selection (EntityPage clears it when the onclick returns).
+	let bulkReject = $state<
+		{ kind: 'page'; rows: WikiItem[] } | { kind: 'revision'; rows: WikiRevisionItem[] } | null
+	>(null);
 
 	const rejectTargetLabel = $derived(
 		actionTarget?.title ?? revisionActionTarget?.summary ?? revisionActionTarget?.id ?? ''
@@ -64,6 +79,7 @@
 	function openReject(item: WikiItem) {
 		actionTarget = item;
 		revisionActionTarget = null;
+		bulkReject = null;
 		rejectReason = '';
 		showRejectModal = true;
 	}
@@ -71,8 +87,16 @@
 	function openRevisionReject(rev: WikiRevisionItem) {
 		revisionActionTarget = rev;
 		actionTarget = null;
+		bulkReject = null;
 		rejectReason = '';
 		showRejectModal = true;
+	}
+
+	function bulkPartialError(failed: number, total: number, lastErr: string) {
+		pageError =
+			t('app.wiki.bulk_partial', '{failed} of {n} items could not be completed')
+				.replace('{failed}', String(failed))
+				.replace('{n}', String(total)) + (lastErr ? ` — ${lastErr}` : '');
 	}
 
 	async function confirmReject() {
@@ -80,7 +104,30 @@
 		acting = true;
 		pageError = '';
 		try {
-			if (revisionActionTarget) {
+			if (bulkReject) {
+				// Bulk path: same shared reason applied to every captured row.
+				const target = bulkReject;
+				let failed = 0;
+				let lastErr = '';
+				for (const row of target.rows) {
+					const res =
+						target.kind === 'page'
+							? await wikiAdminApi.rejectRevision(row.id, (row as WikiItem).latest_revision_id ?? '', {
+									reason: rejectReason
+								})
+							: await wikiAdminApi.rejectWikiRevision(row.id, { reason: rejectReason });
+					if (!res.ok) {
+						failed++;
+						lastErr = res.error ?? '';
+					}
+				}
+				showRejectModal = false;
+				bulkReject = null;
+				if (failed > 0) bulkPartialError(failed, target.rows.length, lastErr);
+				// The scaffold already reloaded when the bulk onclick returned;
+				// reload again so post-reject state is reflected.
+				(target.kind === 'page' ? entityController : revisionsController)?.reload();
+			} else if (revisionActionTarget) {
 				// Revision-keyed route (§80): works for page-less ops revisions too.
 				const result = await wikiAdminApi.rejectWikiRevision(revisionActionTarget.id, { reason: rejectReason });
 				if (result.ok) {
@@ -195,6 +242,221 @@
 		}
 	}
 
+	// ── Bulk actions ──────────────────────────────────────────────────────
+	// BulkAction.onclick receives only ids, and BulkBar's selectedRows covers
+	// just the current page — resolve ids against a map of every row seen this
+	// session so cross-page selections (and approve's latest_revision_id)
+	// keep working.
+	const pageRowMap = new Map<string, WikiItem>();
+	const revisionRowMap = new Map<string, WikiRevisionItem>();
+
+	const pageRowsFor = (ids: Set<string>): WikiItem[] =>
+		Array.from(ids)
+			.map((id) => pageRowMap.get(id))
+			.filter((r): r is WikiItem => !!r);
+	const revisionRowsFor = (ids: Set<string>): WikiRevisionItem[] =>
+		Array.from(ids)
+			.map((id) => revisionRowMap.get(id))
+			.filter((r): r is WikiRevisionItem => !!r);
+	const approvablePages = (ids: Set<string>): WikiItem[] =>
+		pageRowsFor(ids).filter((r) => r.status === 'pending' && !!r.latest_revision_id);
+	const pendingRevisions = (ids: Set<string>): WikiRevisionItem[] =>
+		revisionRowsFor(ids).filter((r) => r.status === 'pending');
+
+	// Sequential per-row ops — the API has no bulk routes, and per-row failures
+	// are collected rather than aborting the batch (same rule as EntityPage's
+	// built-in bulk delete). The scaffold reloads + clears the selection after
+	// this resolves.
+	async function bulkEach<T extends { id: string }>(
+		rows: T[],
+		fn: (row: T) => Promise<{ ok: boolean; error?: string }>
+	) {
+		if (acting || rows.length === 0) return;
+		acting = true;
+		pageError = '';
+		try {
+			let failed = 0;
+			let lastErr = '';
+			for (const row of rows) {
+				const res = await fn(row);
+				if (!res?.ok) {
+					failed++;
+					lastErr = res?.error ?? '';
+				}
+			}
+			if (failed > 0) bulkPartialError(failed, rows.length, lastErr);
+		} finally {
+			acting = false;
+		}
+	}
+
+	function openBulkRejectPages(ids: Set<string>) {
+		const rows = approvablePages(ids);
+		if (rows.length === 0) return;
+		bulkReject = { kind: 'page', rows };
+		actionTarget = null;
+		revisionActionTarget = null;
+		rejectReason = '';
+		showRejectModal = true;
+	}
+
+	function openBulkRejectRevisions(ids: Set<string>) {
+		const rows = pendingRevisions(ids);
+		if (rows.length === 0) return;
+		bulkReject = { kind: 'revision', rows };
+		actionTarget = null;
+		revisionActionTarget = null;
+		rejectReason = '';
+		showRejectModal = true;
+	}
+
+	// ── Force delete (wiki.delete) — single + bulk share one confirm modal ──
+	// Targets are captured at click time so the modal can outlive the table
+	// selection (EntityPage clears it when the bulk onclick returns).
+	let forceTargets = $state<WikiItem[]>([]);
+	let showForceModal = $state(false);
+
+	function openForceDelete(row: WikiItem) {
+		forceTargets = [row];
+		showForceModal = true;
+	}
+
+	function openBulkForceDelete(ids: Set<string>) {
+		const rows = pageRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		forceTargets = rows;
+		showForceModal = true;
+	}
+
+	async function confirmForceDelete() {
+		if (acting || forceTargets.length === 0) return;
+		acting = true;
+		pageError = '';
+		try {
+			const targets = forceTargets;
+			let failed = 0;
+			let lastErr = '';
+			for (const row of targets) {
+				const res = await wikiAdminApi.hardDeletePage(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			showForceModal = false;
+			forceTargets = [];
+			if (failed > 0) bulkPartialError(failed, targets.length, lastErr);
+			entityController?.reload();
+		} finally {
+			acting = false;
+		}
+	}
+
+	const pageBulkActions = $derived.by<BulkAction[]>(() => {
+		const acts: BulkAction[] = [];
+		if (canReview) {
+			acts.push(
+				{
+					label: t('app.wiki.bulk_approve', 'Approve Selected'),
+					icon: CheckCircle,
+					onclick: (ids) =>
+						bulkEach(approvablePages(ids), (r) =>
+							wikiAdminApi.approveRevision(r.id, r.latest_revision_id!)
+						),
+					disabled: (ids) => acting || approvablePages(ids).length === 0
+				},
+				{
+					label: t('app.wiki.bulk_reject', 'Reject Selected'),
+					icon: XCircle,
+					variant: 'destructive',
+					onclick: openBulkRejectPages,
+					disabled: (ids) => acting || approvablePages(ids).length === 0
+				}
+			);
+		}
+		if (canManage && canLock) {
+			acts.push(
+				{
+					label: t('app.wiki.bulk_lock', 'Lock Selected'),
+					icon: Lock,
+					onclick: (ids) =>
+						bulkEach(
+							pageRowsFor(ids).filter((r) => !r.is_locked),
+							(r) => wikiAdminApi.update(r.id, { is_locked: true })
+						),
+					disabled: (ids) => acting || !pageRowsFor(ids).some((r) => !r.is_locked)
+				},
+				{
+					label: t('app.wiki.bulk_unlock', 'Unlock Selected'),
+					icon: LockOpen,
+					onclick: (ids) =>
+						bulkEach(
+							pageRowsFor(ids).filter((r) => !!r.is_locked),
+							(r) => wikiAdminApi.update(r.id, { is_locked: false })
+						),
+					disabled: (ids) => acting || !pageRowsFor(ids).some((r) => !!r.is_locked)
+				}
+			);
+		}
+		if (canManage) {
+			acts.push(
+				{
+					label: t('app.wiki.bulk_feature', 'Feature Selected'),
+					icon: Star,
+					onclick: (ids) =>
+						bulkEach(
+							pageRowsFor(ids).filter((r) => !r.is_featured),
+							(r) => wikiAdminApi.update(r.id, { is_featured: true })
+						),
+					disabled: (ids) => acting || !pageRowsFor(ids).some((r) => !r.is_featured)
+				},
+				{
+					label: t('app.wiki.bulk_unfeature', 'Unfeature Selected'),
+					icon: StarOff,
+					onclick: (ids) =>
+						bulkEach(
+							pageRowsFor(ids).filter((r) => !!r.is_featured),
+							(r) => wikiAdminApi.update(r.id, { is_featured: false })
+						),
+					disabled: (ids) => acting || !pageRowsFor(ids).some((r) => !!r.is_featured)
+				},
+				{
+					label: t('app.wiki.bulk_activate', 'Activate Selected'),
+					icon: CheckCircle,
+					onclick: (ids) =>
+						bulkEach(
+							pageRowsFor(ids).filter((r) => !(r.is_active ?? true)),
+							(r) => wikiAdminApi.update(r.id, { is_active: true })
+						),
+					disabled: (ids) => acting || !pageRowsFor(ids).some((r) => !(r.is_active ?? true))
+				},
+				{
+					label: t('app.wiki.bulk_deactivate', 'Deactivate Selected'),
+					icon: XCircle,
+					variant: 'destructive',
+					onclick: (ids) =>
+						bulkEach(
+							pageRowsFor(ids).filter((r) => r.is_active ?? true),
+							(r) => wikiAdminApi.update(r.id, { is_active: false })
+						),
+					disabled: (ids) => acting || !pageRowsFor(ids).some((r) => r.is_active ?? true)
+				}
+			);
+		}
+		if (canDelete) {
+			// Permanent removal — only for already-soft-deleted rows (the
+			// built-in "Delete Selected" above covers the soft delete).
+			acts.push({
+				label: t('app.wiki.bulk_force_delete', 'Force Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openBulkForceDelete,
+				disabled: (ids) => acting || !pageRowsFor(ids).some((r) => !!r.deleted_at)
+			});
+		}
+		return acts;
+	});
+
 	// data_entity_type binds the page to a child entity class (e.g.
 	// 'visa_route') so §80 field ops target that entity — PATCHed from the
 	// view slide-over (wiki.manage).
@@ -229,10 +491,12 @@
 	// ── AI generate draft modal (wiki.manage) ───────────────────────────────
 	let showGenerateModal = $state(false);
 	let genSpaceSlug = $state('');
+	let genSpaceLabel = $state('');
 	let genPageTitle = $state('');
 	let genPageSlug = $state('');
 	let genSlugTouched = $state(false);
 	let genCategory = $state('overview');
+	let genCategoryLabel = $state('');
 	let genCategories = $state<Array<{ value: string; label: string }>>([]);
 	let generating = $state(false);
 
@@ -269,20 +533,53 @@
 		}
 	}
 
+	// Destination space picker — GET /wiki/destinations?q= searches active
+	// spaces; has_wiki=false so brand-new spaces (no pages yet) are included.
+	async function genSpaceFetcher(q: string): Promise<AutocompleteItem[]> {
+		const res = await apiRaw<{ data?: Array<{ slug: string; name: string; level?: string }> }>(
+			`/wiki/destinations?q=${encodeURIComponent(q)}&has_wiki=false`
+		);
+		if (!res.ok || !Array.isArray(res.data?.data)) return [];
+		return res.data.data.map((d) => ({ id: d.slug, label: d.name, sublabel: d.level ?? '' }));
+	}
+
+	async function selectGenSpace(item: AutocompleteItem) {
+		genSpaceSlug = item.id;
+		genSpaceLabel = item.label;
+		await loadGenCategories(item.id);
+		// Re-default when the previous pick isn't in the space's template.
+		if (!genCategories.some((c) => c.value === genCategory)) {
+			genCategory = genCategories[0]?.value ?? 'overview';
+			genCategoryLabel = genCategories[0]?.label ?? '';
+		}
+	}
+
+	function clearGenSpace() {
+		genSpaceSlug = '';
+		genSpaceLabel = '';
+		genCategories = [];
+		genCategory = 'overview';
+		genCategoryLabel = '';
+	}
+
+	async function genCategoryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.trim().toLowerCase();
+		return genCategories
+			.map((c) => ({ id: c.value, label: c.label }))
+			.filter((i) => !needle || i.label.toLowerCase().includes(needle) || i.id.includes(needle));
+	}
+
 	function openGenerate() {
 		genSpaceSlug = '';
+		genSpaceLabel = '';
 		genPageTitle = '';
 		genPageSlug = '';
 		genSlugTouched = false;
 		genCategory = 'overview';
+		genCategoryLabel = t('wiki.category_overview', 'Overview');
 		genCategories = [];
 		showGenerateModal = true;
 		void loadGenCategories('');
-	}
-
-	async function onGenSpaceChange() {
-		genCategory = 'overview';
-		await loadGenCategories(genSpaceSlug.trim());
 	}
 
 	async function confirmGenerate() {
@@ -294,7 +591,7 @@
 				space_slug: genSpaceSlug.trim(),
 				page_slug: genPageSlug.trim(),
 				title: genPageTitle.trim(),
-				category: genCategory
+				category: genCategory || 'overview'
 			});
 			if (result.ok) {
 				showGenerateModal = false;
@@ -315,21 +612,23 @@
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: WikiItem, ctx) => ctx?.openView(_row) }
 		];
 		if (canReview) {
+			// row.status is the latest revision's status — gate on 'pending'
+			// like the Revisions tab so reviewed rows don't offer dead actions.
 			acts.push({
 				label: t('app.wiki.approve_revision', 'Approve Revision'),
 				icon: CheckCircle,
 				onclick: approveRevision,
-				show: (row: WikiItem) => !!row.latest_revision_id
+				show: (row: WikiItem) => row.status === 'pending' && !!row.latest_revision_id
 			});
 			acts.push({
 				label: t('app.wiki.reject_revision', 'Reject Revision'),
 				icon: XCircle,
 				variant: 'destructive',
 				onclick: openReject,
-				show: (row: WikiItem) => !!row.latest_revision_id
+				show: (row: WikiItem) => row.status === 'pending' && !!row.latest_revision_id
 			});
 		}
-		if (canLock) {
+		if (canManage && canLock) {
 			acts.push({
 				label: t('app.wiki.toggle_lock', 'Toggle Lock'),
 				icon: Lock,
@@ -348,6 +647,24 @@
 				onclick: toggleActive
 			});
 		}
+		if (canDelete) {
+			// Delete → built-in confirm → config.remove (soft). Force Delete →
+			// page-local modal → hardDeletePage; only for soft-deleted rows.
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row: WikiItem, ctx) => ctx?.openDelete(row),
+				show: (row: WikiItem) => !row.deleted_at
+			});
+			acts.push({
+				label: t('app.wiki.force_delete', 'Force Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openForceDelete,
+				show: (row: WikiItem) => !!row.deleted_at
+			});
+		}
 		return acts;
 	});
 
@@ -358,8 +675,48 @@
 		{ key: 'excerpt', label: t('app.wiki.detail_excerpt', 'Excerpt'), type: 'textarea' }
 	];
 
+	// ── Dropdown helpers — every dropdown field uses the shared Autocomplete
+	// component; small static option sets get a client-side-filtered fetcher. ──
+	function enumFetcher(items: AutocompleteItem[]) {
+		return async (q: string): Promise<AutocompleteItem[]> => {
+			const needle = q.trim().toLowerCase();
+			return needle ? items.filter((i) => i.label.toLowerCase().includes(needle)) : items;
+		};
+	}
+	const enumInitial = (items: AutocompleteItem[]) => async () => items;
+	const enumLabel =
+		(items: AutocompleteItem[]) => (id: string) => items.find((i) => i.id === id)?.label ?? id;
+
+	const LOCKED_OPTIONS = $derived<AutocompleteItem[]>([
+		{ id: 'true', label: t('app.wiki.filter_locked_yes', 'Locked') },
+		{ id: 'false', label: t('app.wiki.filter_locked_no', 'Unlocked') }
+	]);
+
+	// Category filter options — the union of every enabled wiki type's
+	// category template (GET /wiki/categories without ?space=), cached once.
+	let wikiCategories = $state<AutocompleteItem[]>([]);
+	let catsLoaded = false;
+	async function loadWikiCategories(): Promise<AutocompleteItem[]> {
+		if (catsLoaded) return wikiCategories;
+		const res = await apiRaw<{ data?: Array<{ category?: string; slug?: string; label?: string; label_key?: string }> }>(
+			'/wiki/categories'
+		);
+		if (res.ok && Array.isArray(res.data?.data)) {
+			wikiCategories = res.data.data
+				.map((c) => {
+					const token = (c.category ?? c.slug ?? '').trim();
+					if (!token) return null;
+					return { id: token, label: c.label_key ? t(c.label_key, c.label ?? token) : (c.label ?? token) };
+				})
+				.filter((c): c is AutocompleteItem => c !== null);
+			catsLoaded = true;
+		}
+		return wikiCategories;
+	}
+
 	const filters = $derived.by<FilterDef[]>(() => {
 		countryUtils.ready;
+		void wikiCategories;
 		return [
 			{
 				key: 'dest',
@@ -370,6 +727,43 @@
 				fetcher: countryUtils.fetcher,
 				initialFetcher: countryUtils.initialFetcher,
 				getSelectedLabel: countryUtils.getSelectedLabel
+			},
+			{
+				key: 'category',
+				label: t('app.wiki.gen_category', 'Category'),
+				type: 'autocomplete',
+				placeholder: t('app.wiki.filter_category_ph', 'Search categories…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: async (q: string) => {
+					const cats = await loadWikiCategories();
+					const needle = q.trim().toLowerCase();
+					return needle
+						? cats.filter((c) => c.label.toLowerCase().includes(needle) || c.id.includes(needle))
+						: cats;
+				},
+				initialFetcher: loadWikiCategories,
+				getSelectedLabel: (id: string) => wikiCategories.find((c) => c.id === id)?.label ?? id
+			},
+			{
+				key: 'locked',
+				label: t('app.wiki.col_locked', 'Locked'),
+				type: 'autocomplete',
+				placeholder: t('app.wiki.filter_locked_ph', 'Lock state…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: enumFetcher(LOCKED_OPTIONS),
+				initialFetcher: enumInitial(LOCKED_OPTIONS),
+				getSelectedLabel: enumLabel(LOCKED_OPTIONS)
+			},
+			// Soft-deleted pages are hidden by default — this filter surfaces
+			// them so the Force Delete action has targets (§80).
+			{
+				key: 'deleted',
+				label: t('app.wiki.filter_deleted', 'Deleted'),
+				type: 'select',
+				options: [
+					{ value: 'only', label: t('app.wiki.filter_deleted_only', 'Deleted only') },
+					{ value: 'all', label: t('app.wiki.filter_deleted_all', 'Include deleted') }
+				]
 			}
 		];
 	});
@@ -397,6 +791,18 @@
 				render: (value: boolean) => (value ? '🔒' : '—')
 			},
 			{
+				key: 'is_active',
+				label: t('app.wiki.col_active', 'Active'),
+				sortable: true,
+				render: (value: boolean) => ((value ?? true) ? '✓' : '—')
+			},
+			{
+				key: 'created_at',
+				label: t('app.wiki.col_created_at', 'Created'),
+				sortable: true,
+				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
+			},
+			{
 				key: 'updated_at',
 				label: t('app.wiki.col_updated', 'Updated'),
 				sortable: true,
@@ -404,6 +810,12 @@
 			}
 		],
 		actions: rowActions,
+		bulkActions: pageBulkActions,
+		deletePermission: 'wiki.delete',
+		remove: async (id) => {
+			const res = await wikiAdminApi.deletePage(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
 		fields,
 		load: async (params) => {
 			const qs = new URLSearchParams();
@@ -413,12 +825,16 @@
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) qs.set('sort', params.sort);
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
+			if (params.filter?.category) qs.set('category', params.filter.category);
+			if (params.filter?.locked) qs.set('locked', params.filter.locked);
+			if (params.filter?.deleted) qs.set('deleted', params.filter.deleted);
 			const result = await apiRaw<{ data: WikiItem[]; pagination: { total: number } }>(
 				`/admin/wiki${qs.toString() ? `?${qs.toString()}` : ''}`
 			);
 			if (result.ok) {
 				const body = result.data as { data: WikiItem[]; pagination: { total: number } };
 				const data = body.data ?? [];
+				for (const row of data) pageRowMap.set(row.id, row);
 				const total = body.pagination?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
 				return { data, total, totalPages };
@@ -432,28 +848,37 @@
 	// Content revisions belong to a page; fields/mixed revisions carry an ops
 	// array and may be page-less. Approve/reject use the revision-keyed routes.
 
+	const KIND_OPTIONS = $derived<AutocompleteItem[]>([
+		{ id: 'content', label: t('app.wiki.kind_content', 'Content') },
+		{ id: 'fields', label: t('app.wiki.kind_fields', 'Fields') },
+		{ id: 'mixed', label: t('app.wiki.kind_mixed', 'Mixed') }
+	]);
+	const STATUS_OPTIONS = $derived<AutocompleteItem[]>([
+		{ id: 'pending', label: t('app.wiki.status_pending', 'Pending') },
+		{ id: 'approved', label: t('app.wiki.status_approved', 'Approved') },
+		{ id: 'rejected', label: t('app.wiki.status_rejected', 'Rejected') }
+	]);
+
 	const revisionFilters = $derived.by<FilterDef[]>(() => [
 		{
 			key: 'kind',
 			label: t('app.wiki.filter_kind', 'Kind'),
-			type: 'select',
-			options: [
-				{ value: 'all', label: t('common.all', 'All') },
-				{ value: 'content', label: t('app.wiki.kind_content', 'Content') },
-				{ value: 'fields', label: t('app.wiki.kind_fields', 'Fields') },
-				{ value: 'mixed', label: t('app.wiki.kind_mixed', 'Mixed') }
-			]
+			type: 'autocomplete',
+			placeholder: t('app.wiki.filter_kind', 'Kind'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: enumFetcher(KIND_OPTIONS),
+			initialFetcher: enumInitial(KIND_OPTIONS),
+			getSelectedLabel: enumLabel(KIND_OPTIONS)
 		},
 		{
 			key: 'status',
 			label: t('app.wiki.col_status', 'Status'),
-			type: 'select',
-			options: [
-				{ value: 'all', label: t('common.all', 'All') },
-				{ value: 'pending', label: t('app.wiki.status_pending', 'Pending') },
-				{ value: 'approved', label: t('app.wiki.status_approved', 'Approved') },
-				{ value: 'rejected', label: t('app.wiki.status_rejected', 'Rejected') }
-			]
+			type: 'autocomplete',
+			placeholder: t('app.wiki.col_status', 'Status'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: enumFetcher(STATUS_OPTIONS),
+			initialFetcher: enumInitial(STATUS_OPTIONS),
+			getSelectedLabel: enumLabel(STATUS_OPTIONS)
 		}
 	]);
 
@@ -495,6 +920,25 @@
 		{ key: 'summary', label: t('app.wiki.col_summary', 'Summary'), type: 'text' }
 	];
 
+	const revisionBulkActions = $derived.by<BulkAction[]>(() => {
+		if (!canReview) return [];
+		return [
+			{
+				label: t('app.wiki.bulk_approve', 'Approve Selected'),
+				icon: CheckCircle,
+				onclick: (ids) => bulkEach(pendingRevisions(ids), (r) => wikiAdminApi.approveWikiRevision(r.id)),
+				disabled: (ids) => acting || pendingRevisions(ids).length === 0
+			},
+			{
+				label: t('app.wiki.bulk_reject', 'Reject Selected'),
+				icon: XCircle,
+				variant: 'destructive',
+				onclick: openBulkRejectRevisions,
+				disabled: (ids) => acting || pendingRevisions(ids).length === 0
+			}
+		];
+	});
+
 	const revisionConfig = $derived<EntityPageConfig>({
 		title: t('app.wiki.revisions_heading', 'Revision Queue'),
 		description: t('app.wiki.revisions_desc', 'Review pending wiki revisions, including community field ops'),
@@ -528,17 +972,20 @@
 			{
 				key: 'created_at',
 				label: t('app.wiki.col_created', 'Submitted'),
-				sortable: false,
+				sortable: true,
 				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
 			}
 		],
 		actions: revisionActions,
+		bulkActions: revisionBulkActions,
 		fields: revisionFields,
 		load: async (params) => {
 			const qs = new URLSearchParams();
 			// EntityPage's params.page is 0-based; the backend page param is 1-based.
 			qs.set('page', String(params.page + 1));
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
+			if (params.q) qs.set('q', params.q);
+			if (params.sort) qs.set('sort', params.sort);
 			const kind = params.filter?.kind;
 			if (kind && kind !== 'all') qs.set('kind', kind);
 			const status = params.filter?.status;
@@ -546,6 +993,7 @@
 			const result = await wikiAdminApi.listWikiRevisions(qs.toString());
 			if (result.ok) {
 				const data = result.data.data ?? [];
+				for (const row of data) revisionRowMap.set(row.id, row);
 				const total = result.data.pagination?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
 				return { data, total, totalPages };
@@ -593,6 +1041,8 @@
 		...(canManage ? [{ value: 'types', label: t('app.wiki.tab_types', 'Types & Categories') }] : [])
 	]}
 	bind:value={view}
+	tabParam="tab"
+	tabPreserve={[]}
 />
 
 {#if view === 'pages'}
@@ -616,7 +1066,11 @@
 <Modal bind:open={showRejectModal} title={t('app.wiki.modal_reject_revision', 'Reject Revision')}>
 	<div class="space-y-4">
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{t('app.wiki.reject_confirm', 'Are you sure you want to reject the revision for "{title}"?').replace('{title}', rejectTargetLabel)}
+			{#if bulkReject}
+				{t('app.wiki.bulk_reject_confirm', 'Are you sure you want to reject {count} selected revisions?').replace('{count}', String(bulkReject.rows.length))}
+			{:else}
+				{t('app.wiki.reject_confirm', 'Are you sure you want to reject the revision for "{title}"?').replace('{title}', rejectTargetLabel)}
+			{/if}
 		</p>
 		<div>
 			<label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.reason_optional', 'Reason (optional)')}</label>
@@ -629,11 +1083,46 @@
 				placeholder={t('app.wiki.reject_placeholder', 'Explain why this revision was rejected...')}
 			></textarea>
 		</div>
+		{#if pageError}
+			<div
+				class="rounded-lg p-3 text-sm"
+				style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			>
+				{pageError}
+			</div>
+		{/if}
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showRejectModal = false)}>{t('app.wiki.cancel', 'Cancel')}</Button>
+		<Button variant="ghost" onclick={() => { showRejectModal = false; bulkReject = null; }}>{t('app.wiki.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={confirmReject} disabled={acting}>
 			{acting ? t('app.wiki.rejecting', 'Rejecting...') : t('app.wiki.reject', 'Reject')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Force delete confirmation modal (wiki.delete) ─────────────────────── -->
+<Modal bind:open={showForceModal} title={t('app.wiki.force_delete', 'Force Delete')}>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{#if forceTargets.length === 1}
+				{t('app.wiki.force_delete_confirm', 'Permanently delete "{title}"? The page and all its revisions will be removed. This cannot be undone.').replace('{title}', forceTargets[0]?.title ?? '')}
+			{:else}
+				{t('app.wiki.force_delete_confirm_bulk', 'Permanently delete {count} selected pages? The pages and all their revisions will be removed. This cannot be undone.').replace('{count}', String(forceTargets.length))}
+			{/if}
+		</p>
+		{#if pageError}
+			<div
+				class="rounded-lg p-3 text-sm"
+				style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			>
+				{pageError}
+			</div>
+		{/if}
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showForceModal = false; forceTargets = []; }}>{t('app.wiki.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmForceDelete} disabled={acting}>
+			{acting ? t('app.wiki.force_deleting', 'Deleting...') : t('app.wiki.force_delete', 'Force Delete')}
 		</Button>
 	</div>
 </Modal>
@@ -645,15 +1134,16 @@
 			{t('app.wiki.generate_desc', 'Generate a wiki page draft using the Content Agent. The draft will be created as a pending revision for HITL review.')}
 		</p>
 		<div>
-			<label for="gen-space-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.gen_space_slug', 'Space slug')}</label>
-			<input
+			<label for="gen-space-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.gen_space', 'Space')}</label>
+			<Autocomplete
 				id="gen-space-slug"
-				type="text"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				placeholder="e.g. japan"
-				bind:value={genSpaceSlug}
-				onblur={onGenSpaceChange}
+				placeholder={t('app.wiki.gen_space_ph', 'Search destination spaces…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={genSpaceFetcher}
+				selectedId={genSpaceSlug || null}
+				selectedLabel={genSpaceLabel}
+				onSelect={selectGenSpace}
+				onClear={clearGenSpace}
 			/>
 		</div>
 		<div>
@@ -682,21 +1172,32 @@
 		</div>
 		<div>
 			<label for="gen-category" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.gen_category', 'Category')}</label>
-			<select
+			<Autocomplete
 				id="gen-category"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={genCategory}
-			>
-				{#if genCategories.length === 0}
-					<option value="overview">{t('wiki.category_overview', 'Overview')}</option>
-				{:else}
-					{#each genCategories as c (c.value)}
-						<option value={c.value}>{c.label}</option>
-					{/each}
-				{/if}
-			</select>
+				placeholder={t('app.wiki.gen_category_ph', 'Search categories…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={genCategoryFetcher}
+				initialFetcher={async () => genCategories.map((c) => ({ id: c.value, label: c.label }))}
+				selectedId={genCategory || null}
+				selectedLabel={genCategories.find((c) => c.value === genCategory)?.label ?? genCategoryLabel}
+				onSelect={(item) => {
+					genCategory = item.id;
+					genCategoryLabel = item.label;
+				}}
+				onClear={() => {
+					genCategory = '';
+					genCategoryLabel = '';
+				}}
+			/>
 		</div>
+		{#if pageError}
+			<div
+				class="rounded-lg p-3 text-sm"
+				style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			>
+				{pageError}
+			</div>
+		{/if}
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('app.wiki.cancel', 'Cancel')}</Button>
@@ -747,6 +1248,12 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_active', 'Active')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(row.is_active ?? true) ? t('app.wiki.active_yes', 'Yes') : t('app.wiki.active_no', 'No')}</p>
 		</div>
+		{#if row.deleted_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_deleted', 'Deleted')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-danger)">{new Date(row.deleted_at).toLocaleString()}</p>
+			</div>
+		{/if}
 		{#if canManage}
 			<div>
 				<label

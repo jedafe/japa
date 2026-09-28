@@ -38,6 +38,7 @@ type WikiPageDTO struct {
 	IsFeatured     bool    `json:"is_featured"`
 	IsLocked       bool    `json:"is_locked"`
 	IsActive       bool    `json:"is_active"`
+	CreatedAt      string  `json:"created_at,omitempty"`
 	UpdatedAt      string  `json:"updated_at"`
 	SpaceSlug      string  `json:"space_slug,omitempty"`
 	SpaceName      string  `json:"space_name,omitempty"`
@@ -53,6 +54,9 @@ type AdminWikiPageDTO struct {
 	LatestRevisionID     string `json:"latest_revision_id,omitempty"`
 	LatestRevisionStatus string `json:"status,omitempty"`
 	Excerpt              string `json:"excerpt,omitempty"`
+	// DeletedAt marks soft-deleted pages (§80) — the admin queue surfaces
+	// them via ?deleted=only|all for force delete.
+	DeletedAt string `json:"deleted_at,omitempty"`
 }
 
 // WikiPageDetailDTO is the full wiki page with current approved revision.
@@ -76,7 +80,12 @@ type WikiPageDetailDTO struct {
 	// panel unscoped (showing every class-assigned group on a prose page).
 	Fields        *EntityFieldGroupDTO `json:"fields,omitempty"`
 	FieldGroupID  string               `json:"field_group_id,omitempty"`
-	CategoryLabel string               `json:"category_label,omitempty"`
+	// FieldGroupSlug mirrors FieldGroupID for ops submissions — the
+	// propose_field op targets groups by slug, and the bound group's slug
+	// must reach the client even when the group has no fields (then
+	// Fields is nil).
+	FieldGroupSlug string `json:"field_group_slug,omitempty"`
+	CategoryLabel  string `json:"category_label,omitempty"`
 }
 
 // WikiDestinationDTO is the API response shape for a destination with wikis.
@@ -458,6 +467,11 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 		dto.CategoryLabel = cat.Label
 		if cat.FieldGroupID.Valid {
 			dto.FieldGroupID = cat.FieldGroupID.String()
+			if s.fields != nil {
+				if g, gerr := s.fields.GetFieldGroup(ctx, cat.FieldGroupID); gerr == nil {
+					dto.FieldGroupSlug = g.Slug
+				}
+			}
 			if grp, ferr := s.GetPageFields(ctx, userID, spaceID, cat.FieldGroupID); ferr == nil && grp != nil {
 				dto.Fields = grp
 			} else if ferr != nil {
@@ -672,9 +686,21 @@ func (s *Service) ApproveRevision(ctx context.Context, revID, pageID, reviewerID
 	return rev.Content, nil
 }
 
-// RejectRevision rejects a pending revision (moderator+).
-func (s *Service) RejectRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error {
-	if err := s.store.RejectRevision(ctx, revID, reviewerID, notes); err != nil {
+// RejectRevision rejects a pending revision (moderator+) via the
+// page-scoped route. Mirrors ApproveRevision: the revision must be bound to
+// pageID — a mismatch returns pgx.ErrNoRows ("not found for this page").
+// Page-less ops revisions go through the revision-keyed route (§80).
+func (s *Service) RejectRevision(ctx context.Context, revID, pageID, reviewerID pgtype.UUID, notes string) error {
+	rev, err := s.store.GetRevision(ctx, revID)
+	if err != nil {
+		return fmt.Errorf("wiki: reject: %w", err)
+	}
+
+	if !rev.WikiPageID.Valid || rev.WikiPageID != pageID {
+		return pgx.ErrNoRows
+	}
+
+	if err := s.RejectRevisionByID(ctx, revID, reviewerID, notes); err != nil {
 		return fmt.Errorf("wiki: reject: %w", err)
 	}
 
@@ -697,7 +723,7 @@ func (s *Service) UpdatePage(ctx context.Context, pageID pgtype.UUID, input Upda
 
 // AdminListPages returns all wiki pages for admin management (paginated).
 // Each row includes the latest revision metadata for the review queue (B1).
-func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destSlug, category, q, sort string, isLocked *bool, page, limit int32) ([]AdminWikiPageDTO, int64, error) {
+func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destSlug, category, q, sort string, isLocked *bool, deleted string, page, limit int32) ([]AdminWikiPageDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -716,6 +742,7 @@ func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destS
 		IsLocked: isLocked,
 		Q:        q,
 		Sort:     sort,
+		Deleted:  deleted,
 		Limit:    limit,
 		Offset:   offset,
 	})
@@ -741,10 +768,34 @@ func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destS
 			dto.Excerpt = *p.Excerpt
 		}
 
+		if p.DeletedAt.Valid {
+			dto.DeletedAt = formatTs(p.DeletedAt)
+		}
+
 		dtos = append(dtos, dto)
 	}
 
 	return dtos, total, nil
+}
+
+// DeletePage soft-deletes a wiki page, or permanently removes it when
+// force=true — force requires a prior soft delete (ErrPageNotDeleted → 409).
+// Soft delete also flips is_active=false so every public reader drops the
+// page (§80).
+func (s *Service) DeletePage(ctx context.Context, pageID pgtype.UUID, force bool) error {
+	var err error
+	if force {
+		err = s.store.HardDeleteWikiPage(ctx, pageID)
+	} else {
+		err = s.store.DeleteWikiPage(ctx, pageID)
+	}
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrPageNotDeleted) {
+			return err
+		}
+		return fmt.Errorf("wiki: delete page: %w", err)
+	}
+	return nil
 }
 
 // ErrPageLocked is returned when a wiki page is locked and cannot accept
@@ -804,6 +855,7 @@ func pageToDTO(p WikiPageWithSpace) WikiPageDTO {
 		IsFeatured:     p.IsFeatured,
 		IsLocked:       p.IsLocked,
 		IsActive:       p.IsActive,
+		CreatedAt:      formatTs(p.CreatedAt),
 		UpdatedAt:      formatTs(p.UpdatedAt),
 		SpaceSlug:      p.SpaceSlug,
 		SpaceName:      p.SpaceName,

@@ -6,6 +6,7 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
 
 	type Ruleset = {
@@ -42,7 +43,9 @@
 
 	const canManage = $derived(hasPermission('crs_calculator.manage'));
 
-	let activeTab = $state<'rulesets' | 'draws'>('rulesets');
+	const CRS_TABS = ['rulesets', 'draws'] as const;
+	let activeTab = $state<'rulesets' | 'draws'>(initTabParam('rulesets', { valid: CRS_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: CRS_TABS, preserve: [] });
 	let pageError = $state('');
 
 	// ── Rulesets tab ─────────────────────────────────────────────────────────

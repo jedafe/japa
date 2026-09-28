@@ -1838,6 +1838,25 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
+// GetAdminContent handles GET /api/v1/admin/content/{id} — returns a single
+// content row for the admin detail view (view slide-over, dashboard deep links).
+// Ref: .jeos/conventions/api-routes-catalog.md (Admin — Content)
+func (h *Handlers) GetAdminContent(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	content, err := h.Service.GetContent(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
+}
+
 // DeleteContent handles DELETE /api/v1/content/{id}.
 func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

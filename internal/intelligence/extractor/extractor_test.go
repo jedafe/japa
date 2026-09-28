@@ -158,6 +158,15 @@ func TestConfidenceOverall(t *testing.T) {
 	}{
 		{"empty", Extraction{}, 0},
 		{"all null", Extraction{"title": {Value: nil, Confidence: 0}, "country": {Value: nil, Confidence: 0}}, 0},
+		{"all null with conf 1 must score 0", Extraction{
+			"title":   {Value: nil, Confidence: 1},
+			"country": {Value: nil, Confidence: 1},
+		}, 0},
+		{"null conf 1 does not inflate mean", Extraction{
+			"title":    {Value: "A", Confidence: 0.6},
+			"country":  {Value: nil, Confidence: 1},
+			"deadline": {Value: nil, Confidence: 0},
+		}, 0.6},
 		{"mixed", Extraction{
 			"title":    {Value: "A", Confidence: 0.9},
 			"country":  {Value: nil, Confidence: 0},

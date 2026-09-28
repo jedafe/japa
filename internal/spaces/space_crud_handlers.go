@@ -309,14 +309,15 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("q")
 	status := r.URL.Query().Get("status")
 	visibility := r.URL.Query().Get("visibility")
+	deleted := r.URL.Query().Get("deleted")
 
-	spaces, err := h.Service.AdminListSpaces(r.Context(), search, status, visibility, limit, offset)
+	spaces, err := h.Service.AdminListSpaces(r.Context(), search, status, visibility, deleted, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.AdminListSpacesCount(r.Context(), search, status, visibility)
+	total, err := h.Service.AdminListSpacesCount(r.Context(), search, status, visibility, deleted)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1110,11 +1111,31 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !isOwner {
-		isAdmin := false
-		if resolver := rbac.FromContext(r.Context()); resolver != nil {
-			isAdmin = resolver.HasPermission(r.Context(), user.UserID, "spaces.admin")
+	isAdmin := false
+	if resolver := rbac.FromContext(r.Context()); resolver != nil {
+		isAdmin = resolver.HasPermission(r.Context(), user.UserID, "spaces.admin")
+	}
+
+	// ?force=true permanently removes an already-soft-deleted space
+	// (admin-only). The guarded query refuses while subspaces exist and
+	// returns 409 not_deleted on a live row.
+	if r.URL.Query().Get("force") == "true" {
+		if !isAdmin {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden",
+				"Permanent delete requires the spaces.admin permission")
+			return
 		}
+		if err := h.Service.HardDeleteSpace(r.Context(), id); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		h.Service.EnqueueSearchIndex(r.Context(), id, "delete")
+		h.purgeSpaceRAG(r.Context(), id)
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted", "force": "true"}})
+		return
+	}
+
+	if !isOwner {
 		if !isAdmin {
 			errpkg.WriteError(w, http.StatusForbidden, "not_space_owner",
 				"Only the space creator can delete this space")

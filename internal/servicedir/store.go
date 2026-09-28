@@ -341,6 +341,9 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	orderClause := "c.published_at DESC NULLS LAST, c.created_at DESC"
 	if f.Sort == "top" {
@@ -559,6 +562,9 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]ServiceRow,
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

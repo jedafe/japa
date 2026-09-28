@@ -2086,6 +2086,8 @@ export interface ComparisonType {
 	created_at: string;
 	field_count: number;
 	item_count: number;
+	/** Whether the requesting user's group may create comparisons of this type (§30). */
+	can_create?: boolean;
 }
 
 /* ------------------------------------------------------------------ *
@@ -3038,6 +3040,8 @@ export interface WikiPage extends WikiPageIndex {
 	/** The bound group's id — present even when the group has no fields so
 	 *  the entity-fields panel can scope itself (absent = unscoped). */
 	field_group_id?: string;
+	/** The bound group's slug — propose_field ops target groups by slug. */
+	field_group_slug?: string;
 	/** Admin-set label from the wiki type's category template. */
 	category_label?: string;
 }

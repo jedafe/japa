@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/SherClockHolmes/webpush-go"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // PushDelivery sends web push notifications via the Web Push API (VAPID).
@@ -152,8 +153,11 @@ func (p *PushDelivery) Send(_ context.Context, endpoint, p256dh, auth string, pa
 	defer func() { _ = resp.Body.Close() }()
 
 	// 410 Gone: subscription expired or revoked — caller should remove it.
+	// Wrapped in errpkg.ErrExpired so worker.HandlePushDelivery's
+	// isSubscriptionExpired check actually matches (a bare errors.New never
+	// did, so stale subscriptions were retried forever).
 	if resp.StatusCode == http.StatusGone {
-		return errors.New("subscription expired (410 Gone)")
+		return fmt.Errorf("%w: web push subscription expired (410 Gone)", errpkg.ErrExpired)
 	}
 
 	if resp.StatusCode >= 400 {

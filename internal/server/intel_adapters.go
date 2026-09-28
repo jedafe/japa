@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -45,6 +46,55 @@ func (a *intelSchedulerSourceAdapter) ListDue(ctx context.Context, limit int32) 
 // Phase 1 scheduling unit is the channel, not the source.
 func (a *intelSchedulerSourceAdapter) ListDueChannels(ctx context.Context, limit int32) ([]gen.IntelSourceChannel, error) {
 	return a.store.ListDueChannels(ctx, limit)
+}
+
+// intelUsageRecorder meters worker-side AI calls (LLM extraction, relevance
+// classification) into ai_usage_log. These calls bypass the HTTP handlers —
+// the only place usage was previously recorded — so pipeline spend and
+// per-provider failure behaviour were invisible to ops.
+type intelUsageRecorder struct {
+	store *ai.Store
+	costs *ai.CostEstimator
+}
+
+// record inserts one usage row. Errors are logged and swallowed — metering
+// must never break the pipeline it observes.
+func (r *intelUsageRecorder) record(ctx context.Context, taskType, provider, model, requestRef string, usage ai.TokenUsage) {
+	if r == nil || r.store == nil {
+		return
+	}
+
+	cost := 0.0
+	if r.costs != nil {
+		cost = r.costs.Estimate(ctx, provider, model, usage.TotalTokens)
+	}
+
+	if err := r.store.RecordAIUsage(ctx, pgtype.UUID{}, provider, model, taskType, requestRef,
+		int32(usage.PromptTokens), int32(usage.CompletionTokens), int32(usage.TotalTokens), cost); err != nil {
+		slog.Warn("intel: record ai usage failed", "task_type", taskType, "provider", provider, "error", err)
+	}
+}
+
+// intelMeteredAIGateway wraps the dispatcher handed to the extractor so every
+// successful extraction call is metered. Extraction is the highest-volume AI
+// consumer in the platform (one call per crawled document per entity type);
+// leaving it unmetered hid the heaviest spend.
+type intelMeteredAIGateway struct {
+	inner extractor.AIGateway
+	usage *intelUsageRecorder
+}
+
+func (g *intelMeteredAIGateway) ChatWithTools(ctx context.Context, category string, req ai.ChatWithToolsRequest) (ai.ChatWithToolsResponse, error) {
+	resp, err := g.inner.ChatWithTools(ctx, category, req)
+	if err == nil {
+		model := resp.Model
+		if model == "" {
+			model = req.Model
+		}
+		g.usage.record(ctx, "intel_"+category, resp.ProviderName, model, resp.ProviderRef, resp.Usage)
+	}
+
+	return resp, err
 }
 
 // intelExtractorPortAdapter wraps *extractor.Extractor so it satisfies the
@@ -193,6 +243,7 @@ func (a *intelCuratorPortAdapter) Curate(ctx context.Context, body []byte, conte
 type intelRelevanceClassifierAdapter struct {
 	d        *ai.Dispatcher
 	settings *config.Settings
+	usage    *intelUsageRecorder
 }
 
 // Classify returns true when the item is topically relevant to the
@@ -241,6 +292,12 @@ func (a *intelRelevanceClassifierAdapter) Classify(ctx context.Context, item rel
 	if err != nil {
 		return false, fmt.Errorf("intel: relevance classification dispatch: %w", err)
 	}
+
+	// Provider Raw shapes don't split prompt/completion tokens uniformly —
+	// record the total so the call is at least visible in ai_usage_log.
+	total := ai.ExtractTokens(resp)
+	a.usage.record(ctx, "intel_classification", resp.ProviderName, ai.ExtractModel(resp), resp.ProviderRef,
+		ai.TokenUsage{TotalTokens: total})
 
 	return parseClassifierVerdict(intelClassifierText(resp.Raw))
 }

@@ -2,7 +2,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
   import { page as sveltekitPage } from '$app/state';
   import { replaceState } from '$app/navigation';
-  import { ChevronUp, ChevronDown, ChevronsUpDown, Plus, Columns3 } from "lucide-svelte";
+  import { ChevronUp, ChevronDown, ChevronsUpDown, Plus, Columns3, Download } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
   import { untrack } from "svelte";
   import type { Component, Snippet } from "svelte";
@@ -87,6 +87,7 @@
       onpagechange,
       onpagesizechange,
       pageSizeOptions = [10, 25, 50, 100],
+      defaultPageSize = 10,
       // Built-in action column.
       actions,
       actionsLabel = t("common.actions", "Actions"),
@@ -97,6 +98,12 @@
       onfilterclear,
       // Typed bulk actions.
       bulkActionsList,
+      // Built-in "Export Selected" bulk action — on by default for every
+      // table that doesn't already define its own bulk actions. Opt out with
+      // bulkExport={false} (e.g. inline/detail tables where selection is
+      // meaningless).
+      bulkExport = true,
+      exportFilename = "export-selected",
       // Create button slot.
       createLabel,
       onCreate
@@ -131,6 +138,7 @@
       onpagechange?: (page: number) => void;
       onpagesizechange?: (size: number) => void;
       pageSizeOptions?: number[];
+      defaultPageSize?: number;
       actions?: ActionItem[];
       actionsLabel?: string;
       filters?: FilterDef[];
@@ -138,6 +146,8 @@
       onfilterapply?: () => void;
       onfilterclear?: () => void;
       bulkActionsList?: BulkAction[];
+      bulkExport?: boolean;
+      exportFilename?: string;
       createLabel?: string;
       onCreate?: () => void;
     } = $props();
@@ -347,9 +357,11 @@
    }
    function applySearch() {
      const q = searchInput.trim();
-     const params = new URLSearchParams(window.location.search);
-     if (q) params.set(searchParam, q); else params.delete(searchParam);
-     replaceUrl(params);
+     if (urlSync) {
+       const params = new URLSearchParams(window.location.search);
+       if (q) params.set(searchParam, q); else params.delete(searchParam);
+       replaceUrl(params);
+     }
      onsearch?.(q);
    }
    function clearSearch() {
@@ -374,9 +386,11 @@
      if (!filterParam) return;
      const v = singleFilterValue; // track reactivity
      if (!filterPersistReady) { filterPersistReady = true; return; }
-     const params = new URLSearchParams(window.location.search);
-     if (v) params.set(filterParam, v); else params.delete(filterParam);
-     replaceUrl(params);
+     if (urlSync) {
+       const params = new URLSearchParams(window.location.search);
+       if (v) params.set(filterParam, v); else params.delete(filterParam);
+       replaceUrl(params);
+     }
      onfilterchange?.(v);
    });
 
@@ -394,8 +408,49 @@
      }
    });
 
+   // ── Bulk selection ────────────────────────────────────────────────────
+   // CSV export of the currently selected rows — the universal built-in bulk
+   // action. Skips label-less columns (avatar stacks, action cells).
+   function csvEscape(v: any): string {
+     const s = v == null ? "" : String(v);
+     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+   }
+   function exportSelectedCsv(ids: Set<string>) {
+     const selected = sortedData.filter((r) => ids.has(extractId(r)));
+     if (!selected.length) return;
+     const cols = visibleColumns.filter((c) => c.key && c.label);
+     const header = cols.map((c) => csvEscape(c.label)).join(",");
+     const lines = selected.map((row) => cols.map((c) => csvEscape(row[c.key])).join(","));
+     const csv = [header, ...lines].join("\n");
+     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+     const url = URL.createObjectURL(blob);
+     const a = document.createElement("a");
+     a.href = url;
+     a.download = `${exportFilename}.csv`;
+     document.body.appendChild(a);
+     a.click();
+     document.body.removeChild(a);
+     URL.revokeObjectURL(url);
+   }
+   const exportSelectedAction: BulkAction = {
+     label: t("common.exportSelected", "Export Selected"),
+     icon: Download,
+     onclick: exportSelectedCsv,
+   };
+   // Tables using the legacy snippet path (bulkActions snippet / defaultBulkActions)
+   // keep their own bar — the built-in export is not injected for them. For the
+   // typed path, the built-in "Export Selected" is prepended unless the caller
+   // already supplies an action with the same label or opts out via bulkExport.
+   const resolvedBulkActions = $derived.by<BulkAction[]>(() => {
+     if (bulkActionsSnippet || defaultBulkActions) return bulkActionsList ?? [];
+     const custom = bulkActionsList ?? [];
+     const hasExport = custom.some((a) => a.label === exportSelectedAction.label);
+     return bulkExport && !hasExport ? [exportSelectedAction, ...custom] : custom;
+   });
+   // Row selection is on when explicitly requested or any bulk action exists.
+   const canSelect = $derived(selectable || resolvedBulkActions.length > 0);
    // Whether to show the built-in BulkBar (typed bulkActionsList path).
-   const showBulkBar = $derived(!!bulkActionsList && selectable);
+   const showBulkBar = $derived(resolvedBulkActions.length > 0);
    // Whether to show the legacy inline bulk bar (snippet path).
    const showLegacyBulkBar = $derived(selectable && !bulkActionsList && (bulkActionsSnippet || defaultBulkActions));
    // Rows matching the current selection — passed to BulkBar for disabled predicates.
@@ -483,7 +538,7 @@
     <table class="w-full caption-bottom text-sm">
       <thead>
         <tr style="border-color: var(--color-border)">
-          {#if selectable}
+          {#if canSelect}
             <th class="h-12 w-12 px-4 text-left align-middle font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
               <input
                 type="checkbox"
@@ -551,7 +606,7 @@
             style="border-color: var(--color-border)"
             onclick={() => onrowclick?.(row)}
           >
-            {#if selectable}
+            {#if canSelect}
               <td class="w-12 p-4 align-middle" style="border-color: var(--color-border)">
                 <input
                   type="checkbox"
@@ -585,7 +640,7 @@
           </tr>
         {:else}
           <tr>
-            <td colspan={visibleColumns.length + (selectable ? 1 : 0) + (actions ? 1 : 0)} class="h-24 text-center">
+            <td colspan={visibleColumns.length + (canSelect ? 1 : 0) + (actions ? 1 : 0)} class="h-24 text-center">
               <div class="flex flex-col items-center justify-center" style="color: var(--color-muted)">
                 <p>{emptyMessage}</p>
               </div>
@@ -604,6 +659,7 @@
         bind:pageSize
         {pageSizeOptions}
         {urlSync}
+        {defaultPageSize}
       />
     {:else}
       <Pagination
@@ -613,11 +669,12 @@
         bind:pageSize
         {pageSizeOptions}
         {urlSync}
+        {defaultPageSize}
       />
     {/if}
   {/if}
   {#if showBulkBar}
-    <BulkBar {selectedIds} {selectedRows} actions={bulkActionsList ?? []} onclear={clearSelection} />
+    <BulkBar {selectedIds} {selectedRows} actions={resolvedBulkActions} onclear={clearSelection} />
   {/if}
   {#if showLegacyBulkBar}
     <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg p-3" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent); opacity: {selectedIds.size > 0 ? '1' : '0.5'}">

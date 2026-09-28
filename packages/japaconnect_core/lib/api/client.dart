@@ -51,11 +51,13 @@ class JcApiClient {
 
   String get effectiveWsUrl {
     if (wsUrl.isNotEmpty) return wsUrl;
-    final base = Uri.parse(baseUrl).resolve('/').toString();
-    return base
+    // baseUrl already includes the API prefix (e.g. .../api/v1) — the WS
+    // endpoint lives at <base>/ws.
+    final base = baseUrl
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://')
-        .replaceFirst(RegExp(r'/?$'), '/ws');
+        .replaceFirst(RegExp(r'/+$'), '');
+    return '$base/ws';
   }
 
   String? get accessToken => _accessToken;

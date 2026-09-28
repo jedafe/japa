@@ -9,7 +9,6 @@ DELETE FROM custom_field_permissions cfp
 USING custom_fields cf, user_groups ug
 WHERE cfp.field_id = cf.id
   AND cfp.user_group_id = ug.id
-  AND cf.is_system = false
   AND ug.slug <> 'guest'
   AND cfp.can_edit = true
   AND EXISTS (

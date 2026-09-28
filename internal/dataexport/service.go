@@ -390,7 +390,7 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 			p.display_name, p.bio` + meta + `
 			FROM users u
 			LEFT JOIN user_profiles p ON p.user_id = u.id
-			 ORDER BY u.created_at DESC`, []any{pgtype.UUID{}}
+			 ORDER BY u.created_at DESC`, nil
 
 	case TypePosts:
 		meta := ""
@@ -403,7 +403,7 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 			FROM contents c
 			JOIN users u ON u.id = c.author_id
 			WHERE c.deleted_at IS NULL
-			ORDER BY c.created_at DESC`, []any{pgtype.UUID{}}
+			ORDER BY c.created_at DESC`, nil
 
 	case TypeComments:
 		// comments table uses author_user_id (not user_id) and has no status column.
@@ -418,7 +418,7 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 			JOIN users u ON u.id = cm.author_user_id
 			JOIN contents c ON c.id = cm.content_id
 			WHERE cm.deleted_at IS NULL
-			ORDER BY cm.created_at DESC`, []any{pgtype.UUID{}}
+			ORDER BY cm.created_at DESC`, nil
 
 	case TypeOrders:
 		// The orders table is `payments` in JapaConnect.
@@ -432,7 +432,7 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 			FROM payments p
 			JOIN users u ON u.id = p.user_id
 			
-			ORDER BY p.created_at DESC`, []any{pgtype.UUID{}}
+			ORDER BY p.created_at DESC`, nil
 
 	case TypeTransactions:
 		// The wallet transactions table is `wallet_ledger`. It has no
@@ -447,7 +447,7 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 			FROM wallet_ledger w
 			JOIN users u ON u.id = w.user_id
 			
-			ORDER BY w.created_at DESC`, []any{pgtype.UUID{}}
+			ORDER BY w.created_at DESC`, nil
 
 	case TypeAnalytics:
 		// The analytics events table is `platform_events`. The query is
@@ -463,7 +463,7 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 			FROM platform_events
 			
 			GROUP BY event_type, entity_type, entity_id, day
-			ORDER BY day DESC`, []any{pgtype.UUID{}}
+			ORDER BY day DESC`, nil
 
 	case TypeModeration:
 		// The moderation reports table is `content_reports`. It has no
@@ -478,7 +478,7 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 			FROM content_reports cr
 			LEFT JOIN users u ON u.id = cr.reporter_user_id
 			
-			ORDER BY cr.created_at DESC`, []any{pgtype.UUID{}}
+			ORDER BY cr.created_at DESC`, nil
 	}
 
 	return "", nil

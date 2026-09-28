@@ -248,6 +248,9 @@ func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAsses
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	// Build ORDER BY from whitelisted sort column + direction.
 	sortCol := adminAssessmentSortColumns[f.Sort]

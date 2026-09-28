@@ -10,10 +10,10 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Admin Routes)
 	// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 10, task 10.06)
 
-	import { onMount } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { apiFetch } from '$lib/api';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -80,7 +80,9 @@
 	type Tab = 'sessions' | 'tool-stats' | 'cost-report';
 
 	// ─── State ────────────────────────────────────────────────────────
-	let activeTab = $state<Tab>('sessions');
+	const AGENT_TABS: Tab[] = ['sessions', 'tool-stats', 'cost-report'];
+	let activeTab = $state<Tab>(initTabParam('sessions', { valid: AGENT_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: AGENT_TABS, preserve: [] });
 	let loading = $state(false);
 	let error = $state('');
 
@@ -180,10 +182,18 @@
 	function switchTab(tab: Tab) {
 		activeTab = tab;
 		error = '';
-		if (tab === 'sessions' && sessions.length === 0) loadSessions();
-		if (tab === 'tool-stats' && toolStats.length === 0) loadToolStats();
-		if (tab === 'cost-report' && costReport.length === 0) loadCostReport();
 	}
+
+	// Lazy-load the active tab's data once permissions have resolved and
+	// the tab is visited — covers clicks, deep-links, and back/forward.
+	const loadedTabs = new Set<Tab>();
+	$effect(() => {
+		if (!canView || loadedTabs.has(activeTab)) return;
+		loadedTabs.add(activeTab);
+		if (activeTab === 'sessions') void loadSessions();
+		else if (activeTab === 'tool-stats') void loadToolStats();
+		else void loadCostReport();
+	});
 
 	function applyStatusFilter() {
 		sessionsPage = 1;
@@ -272,9 +282,8 @@
 
 	const totalPages = $derived(Math.max(1, Math.ceil(sessionsTotal / sessionsPageSize)));
 
-	onMount(() => {
-		if (canView) loadSessions();
-	});
+	// (initial tab data loads via the lazy-load effect above — safe against
+	// async permission resolution and ?tab= deep-links)
 </script>
 
 <svelte:head>

@@ -3,6 +3,7 @@
 	import type { FieldDef } from './index';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		fields,
@@ -53,19 +54,28 @@
 					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
 				></textarea>
 			{:else if field.type === 'select'}
-				<select
-					id={field.key}
-					aria-label={field.label}
-					disabled={disabled}
-					value={value[field.key] ?? ''}
-					onchange={(e) => value[field.key] = e.currentTarget.value}
-					class="rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
-					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
-				>
-					{#each field.options ?? [] as option (option.value)}
-						<option value={option.value}>{option.label}</option>
-					{/each}
-				</select>
+				<!-- Select fields render through Autocomplete (static options filtered
+				     client-side) — every dropdown uses the shared Autocomplete. -->
+				{@const opts = field.options ?? []}
+				{@const selVal = (value[field.key] ?? '') as string}
+				<div class:opacity-50={disabled} class:pointer-events-none={disabled}>
+					<Autocomplete
+						id={field.key}
+						placeholder={field.placeholder ?? field.label}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={async (q: string) => {
+							const needle = q.trim().toLowerCase();
+							return opts
+								.filter((o) => !needle || o.label.toLowerCase().includes(needle) || o.value.toLowerCase().includes(needle))
+								.map((o) => ({ id: o.value, label: o.label }));
+						}}
+						initialFetcher={async () => opts.map((o) => ({ id: o.value, label: o.label }))}
+						selectedId={selVal || null}
+						selectedLabel={selVal ? (opts.find((o) => o.value === selVal)?.label ?? selVal) : null}
+						onSelect={(item: AutocompleteItem) => { value[field.key] = item.id; }}
+						onClear={() => { value[field.key] = ''; }}
+					/>
+				</div>
 			{:else if field.type === 'autocomplete'}
 				{@const acVal = value[field.key] as string | undefined}
 				<Autocomplete

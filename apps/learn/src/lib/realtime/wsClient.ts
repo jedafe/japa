@@ -29,20 +29,26 @@ export type WSEventType =
 type EventHandler = (payload: unknown) => void;
 
 const MAX_RECONNECT_DELAY = 30_000;
+const MAX_RECONNECT_ATTEMPTS = 10;
+// A connection must stay open this long before the backoff counter resets.
+const STABLE_CONNECTION_MS = 15_000;
+
+type MintResult = { ticket: string | null; status: number };
 
 /** Mint a short-lived WS ticket via POST /api/v1/auth/ws-ticket. */
-async function mintTicket(): Promise<string | null> {
+async function mintTicket(): Promise<MintResult> {
 	try {
 		const res = await fetch('/api/v1/auth/ws-ticket', {
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'content-type': 'application/json' }
 		});
-		if (!res.ok) return null;
-		const body = (await res.json()) as { ticket?: string };
-		return body.ticket ?? null;
+		if (!res.ok) return { ticket: null, status: res.status };
+		// Standard envelope: { "data": { "ticket": "..." } }
+		const body = (await res.json()) as { data?: { ticket?: string } };
+		return { ticket: body.data?.ticket ?? null, status: res.status };
 	} catch {
-		return null;
+		return { ticket: null, status: 0 };
 	}
 }
 
@@ -58,21 +64,35 @@ class WsClient {
 	private socket: WebSocket | null = null;
 	private handlers = new Map<string, Set<EventHandler>>();
 	private reconnectAttempts = 0;
+	private lastOpenedAt = 0;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private shouldReconnect = false;
 	private isConnecting = false;
 
-	/** Open a connection by minting a fresh ticket. */
+	/** Open a connection by minting a fresh ticket. Idempotent. */
 	async connect(): Promise<void> {
 		this.shouldReconnect = true;
-		const ticket = await mintTicket();
+		this.clearReconnect();
+		// Prevent concurrent mint/open cycles while a connect is in progress
+		// or an open socket already exists.
+		if (this.isConnecting || this.socket) return;
+		this.isConnecting = true;
+		const { ticket, status } = await mintTicket();
 		if (!ticket) {
-			// Ticket minting failed (feature.dm off, auth lost, network). Schedule
-			// a retry so we reconnect if the backend comes back online.
+			// Ticket minting failed (auth lost, network, feature gate).
+			// A 404 means the realtime route/flag is off — retrying is
+			// pointless until it changes. Other failures use bounded
+			// exponential backoff (cap keeps a dead session from minting
+			// forever).
+			this.isConnecting = false;
+			if (status === 404) {
+				this.shouldReconnect = false;
+				return;
+			}
 			this.scheduleReconnect();
 			return;
 		}
-		this.open(ticket);
+		await this.open(ticket);
 	}
 
 	/** Gracefully close the connection and stop reconnecting. */
@@ -161,12 +181,17 @@ class WsClient {
 
 		socket.onopen = () => {
 			this.isConnecting = false;
-			this.reconnectAttempts = 0;
+			this.lastOpenedAt = Date.now();
 		};
 
 		socket.onclose = () => {
 			this.isConnecting = false;
 			this.socket = null;
+			// Only a connection that survived the stability window resets the
+			// backoff; a socket closed right after open keeps counting attempts.
+			if (Date.now() - this.lastOpenedAt >= STABLE_CONNECTION_MS) {
+				this.reconnectAttempts = 0;
+			}
 			if (this.shouldReconnect) this.scheduleReconnect();
 		};
 
@@ -201,6 +226,12 @@ class WsClient {
 
 	private scheduleReconnect(): void {
 		if (!this.shouldReconnect) return;
+		// Cap attempts so a permanently-down backend doesn't mint tickets
+		// forever; realtime.connect() re-arms the client when called again.
+		if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+			this.shouldReconnect = false;
+			return;
+		}
 		this.clearReconnect();
 		const delay = Math.min(1000 * 2 ** this.reconnectAttempts, MAX_RECONNECT_DELAY);
 		this.reconnectAttempts++;

@@ -255,6 +255,9 @@ func (s *Store) ListReports(ctx context.Context, f ListReportsFilter) ([]ScamRep
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -476,6 +479,9 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

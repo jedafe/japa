@@ -598,6 +598,9 @@ func findScholarshipsQuery(filters ScholarshipFilters, now time.Time) (string, [
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	fieldValueKeys := []string{
 		"'eligibility_criteria'",

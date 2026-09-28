@@ -10,12 +10,17 @@ class RealtimeEvent {
   });
 
   factory RealtimeEvent.fromJson(Map<String, dynamic> json) {
+    // Backend WSEvent envelope: { "type": "<event>", "payload": <any> } —
+    // event data (e.g. conversation_id for dm_message) lives in `payload`,
+    // not at the top level.
+    final payload = json['payload'];
+    final payloadMap = payload is Map<String, dynamic> ? payload : null;
     return RealtimeEvent(
       type: json['type'] as String? ?? 'unknown',
-      conversationId: json['conversation_id'] as String?,
-      payload: json,
+      conversationId: payloadMap?['conversation_id'] as String?,
+      payload: payloadMap,
     );
   }
 
-  Map<String, dynamic> toJson() => payload ?? {'type': type};
+  Map<String, dynamic> toJson() => {'type': type, 'payload': payload};
 }

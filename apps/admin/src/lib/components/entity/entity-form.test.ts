@@ -25,7 +25,7 @@ describe('EntityForm', () => {
 		expect(el.tagName).toBe('TEXTAREA');
 	});
 
-	it('renders a native select with options for type=select', () => {
+	it('renders an autocomplete for type=select', () => {
 		render(EntityForm, {
 			fields: [{
 				key: 'status',
@@ -38,11 +38,11 @@ describe('EntityForm', () => {
 			}] as FieldDef[],
 			value: { status: 'draft' }
 		});
-		const select = screen.getByLabelText('Status') as HTMLSelectElement;
-		expect(select.tagName).toBe('SELECT');
-		expect(select.options.length).toBe(2);
-		expect(select.options[0].value).toBe('draft');
-		expect(select.options[1].textContent).toBe('Published');
+		const input = screen.getByLabelText('Status') as HTMLInputElement;
+		expect(input.tagName).toBe('INPUT');
+		expect(input.getAttribute('role')).toBe('combobox');
+		// The selected option's label is shown as the autocomplete chip.
+		expect(screen.getByText('Draft')).toBeTruthy();
 	});
 
 	it('renders a checkbox for type=checkbox', () => {
@@ -75,7 +75,7 @@ describe('EntityForm', () => {
 		expect(value.active).toBe(true);
 	});
 
-	it('binds select change back into value', async () => {
+	it('binds autocomplete selection back into value for type=select', async () => {
 		const value: Record<string, any> = { status: 'draft' };
 		render(EntityForm, {
 			fields: [{
@@ -89,8 +89,10 @@ describe('EntityForm', () => {
 			}] as FieldDef[],
 			value
 		});
-		const select = screen.getByLabelText('Status') as HTMLSelectElement;
-		await fireEvent.change(select, { target: { value: 'published' } });
+		await fireEvent.focus(screen.getByLabelText('Status'));
+		// Autocomplete options are picked via mousedown (before input blur).
+		const option = await screen.findByText('Published');
+		await fireEvent.mouseDown(option);
 		expect(value.status).toBe('published');
 	});
 

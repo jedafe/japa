@@ -20,7 +20,7 @@ are migrated via the recipe in the next section.
 |---|---|---|
 | `EntityPage` | `src/lib/components/entity/entity-page.svelte` | Mandatory scaffold for every entity list page. Composes PageHeader + DataTable + SlideOver + confirm Modal into a declarative CRUD page driven by an `EntityPageConfig`. |
 | `EntityForm` | `src/lib/components/entity/entity-form.svelte` | Declarative form renderer driven by a `FieldDef[]`. Used by `EntityPage` when no `formSnippet` is supplied. |
-| `DataTable` | `src/lib/components/ui/data-table/data-table.svelte` | Table with server-side pagination, search, sort, filters, bulk selection, and row actions. Use `serverSide` for all server-paginated lists. |
+| `DataTable` | `src/lib/components/ui/data-table/data-table.svelte` | Table with server-side pagination, search, sort, filters, bulk selection, and row actions. Use `serverSide` for all server-paginated lists. Every table gets a built-in "Export Selected" bulk action (row checkboxes appear automatically) unless it uses the legacy `bulkActions` snippet path or sets `bulkExport={false}`; use `exportFilename` to name the CSV. |
 | `ActionMenu` | `src/lib/components/ui/data-table/action-menu.svelte` | The ⋮ dropdown for row actions. Do not render inline action buttons — wire actions through the `actions` config. |
 | `FilterPanel` | `src/lib/components/ui/data-table/filter-panel.svelte` | Accordion-based multi-filter UI. Do not use `<FilterBar>` for new pages (legacy pages keep it until migrated). |
 | `BulkBar` | `src/lib/components/ui/data-table/bulk-bar.svelte` | Bulk-action bar shown when rows are selected. Driven by `bulkActionsList` / `BulkAction[]`. |
@@ -92,7 +92,10 @@ interface EntityPageConfig {
   columns: Column[];              // data-table/types.ts
   filters?: FilterDef[];          // data-table/types.ts
   actions?: ActionItem[];         // omit → default View/Edit/Delete/Restore/HardDelete (permission-gated)
-  bulkActions?: BulkAction[];     // presence enables row selection + BulkBar
+  bulkActions?: BulkAction[];     // custom actions appended to the built-ins
+  bulkDelete?: boolean;           // default true — set false to opt out of the
+                                  // confirm-gated built-in "Delete Selected"
+                                  // (added automatically when `remove` is set)
   createLabel?: string;
   createPermission?: string;      // edit/delete fall back to this when omitted
   editPermission?: string;
@@ -281,6 +284,15 @@ No per-page work is needed; the scaffold handles this for every `<EntityPage>`.
 ---
 
 ## Bulk-delete in-flight guard pattern
+
+> **Superseded for the standard case.** `EntityPage` now ships a built-in,
+> confirm-gated "Delete Selected" action that runs `config.remove` per selected
+> row, collects per-row failures, clears the selection, and reloads. A
+> page-declared `bulkActions` entry labeled "Delete Selected" with
+> `variant: 'destructive'` is replaced by the built-in automatically, so most
+> pages can simply delete their custom bulk-delete handler. Opt out of the
+> built-in with `bulkDelete: false`. The guard pattern below still applies to
+> *custom* bulk actions that call APIs directly.
 
 Learned during the `/tags` migration: without a guard, a user can trigger bulk delete
 twice (e.g. double-click) and fire duplicate API calls. Every bulk-action

@@ -161,7 +161,9 @@ RETURNING id, wiki_page_id, content, summary,
 -- name: UpdateWikiPageTouched :exec
 UPDATE wiki_pages SET updated_at = now() WHERE id = @id;
 
--- name: RejectWikiRevision :exec
+-- name: RejectWikiRevision :execrows
+-- Rows-affected variant (was :exec): a non-pending or missing revision must
+-- surface ErrRevisionNotPending to the caller instead of a false 200.
 UPDATE wiki_revisions
 SET status = 'rejected', reviewed_by = @reviewed_by, reviewed_at = now(),
     hitl_reviewed_by = @reviewed_by, hitl_reviewed_at = now(),
@@ -212,6 +214,8 @@ WHERE target_entity_type = @target_entity_type
   AND target_entity_id = @target_entity_id;
 
 -- name: AdminListWikiRevisions :many
+-- The admin UI's search box sends ?q= — matched against the revision
+-- summary and the submitter's username (§80 review queue).
 SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
@@ -226,13 +230,21 @@ LEFT JOIN users u ON u.id = wr.submitted_by
 LEFT JOIN users ru ON ru.id = wr.reviewed_by
 WHERE (@kind::text = '' OR wr.kind = @kind)
   AND (@status::text = '' OR wr.status = @status)
-ORDER BY wr.created_at DESC
+  AND (@q::text = '' OR wr.summary ILIKE '%' || @q || '%'
+       OR u.username ILIKE '%' || @q || '%')
+ORDER BY
+  CASE WHEN @sort = 'created_at:asc'  THEN wr.created_at END ASC NULLS LAST,
+  CASE WHEN @sort = 'created_at:desc' THEN wr.created_at END DESC NULLS LAST,
+  wr.created_at DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: AdminCountWikiRevisions :one
 SELECT COUNT(*) FROM wiki_revisions wr
+LEFT JOIN users u ON u.id = wr.submitted_by
 WHERE (@kind::text = '' OR wr.kind = @kind)
-  AND (@status::text = '' OR wr.status = @status);
+  AND (@status::text = '' OR wr.status = @status)
+  AND (@q::text = '' OR wr.summary ILIKE '%' || @q || '%'
+       OR u.username ILIKE '%' || @q || '%');
 
 -- name: CountPendingRevisionsByTarget :one
 SELECT COUNT(*) FROM wiki_revisions
@@ -272,6 +284,24 @@ SET is_locked = COALESCE(sqlc.narg(is_locked), is_locked),
     updated_at = now()
 WHERE id = @id;
 
+-- name: SoftDeleteWikiPage :execrows
+-- Soft delete (§80): marks deleted_at and deactivates — every is_active=true
+-- reader (public GETs, destination page counts, is_japabot_indexed) excludes
+-- the row without a schema-wide predicate change.
+UPDATE wiki_pages
+SET deleted_at = now(), is_active = false, updated_at = now()
+WHERE id = @id AND deleted_at IS NULL;
+
+-- name: HardDeleteWikiPage :execrows
+-- Permanent delete — only for already-soft-deleted pages. Revisions cascade
+-- via wiki_revisions_wiki_page_id_fkey (ON DELETE CASCADE).
+DELETE FROM wiki_pages WHERE id = @id AND deleted_at IS NOT NULL;
+
+-- name: WikiPageExists :one
+-- Existence probe used by the hard-delete path to distinguish 404 from
+-- 409 page_not_deleted.
+SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE id = @id) AS exists;
+
 -- name: GetWikiSpaceBySlug :one
 -- Resolves a wiki-bearing space slug: the space's type must have an enabled
 -- wiki_type_configs row (§80 Wiki Types amendment).
@@ -304,9 +334,12 @@ WHERE sp.slug = @slug AND sp.status = 'active'
 LIMIT 1;
 
 -- name: CreateWikiPage :one
+-- ON CONFLICT carries the partial-index predicate (deleted_at IS NULL) so
+-- inference matches wiki_pages_space_id_slug_key — a soft-deleted page no
+-- longer blocks the slug (000744).
 INSERT INTO wiki_pages (space_id, slug, title, category, created_by)
 VALUES (@space_id, @slug, @title, @category, sqlc.narg(created_by))
-ON CONFLICT (space_id, slug) DO NOTHING
+ON CONFLICT (space_id, slug) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id;
 
 -- name: InsertInitialWikiRevision :one
@@ -331,7 +364,7 @@ RETURNING id;
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       wp.data_entity_type,
+       wp.data_entity_type, wp.deleted_at,
        sp.slug AS space_slug, sp.name AS space_name,
        lr.id AS latest_revision_id,
        COALESCE(lr.status, '') AS latest_revision_status,
@@ -340,9 +373,15 @@ FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
 LEFT JOIN LATERAL (
     SELECT wr.id, wr.status,
-           COALESCE(wr.summary, left(btrim(regexp_replace(
-               wr.content::text, '<[^>]+>', '', 'g')), 200), '') AS excerpt
+           -- content is TipTap JSONB; regexp_replace left raw JSON in the
+           -- excerpt. Extract the text nodes instead (mirrors the admin
+           -- UI's extractContentText walk).
+           COALESCE(wr.summary, left(btrim(COALESCE(x.excerpt_text, '')), 200), '') AS excerpt
     FROM wiki_revisions wr
+    LEFT JOIN LATERAL (
+        SELECT string_agg(t.txt #>> '{}', ' ') AS excerpt_text
+        FROM jsonb_path_query(wr.content, '$.**.text ? (@.type() == "string")') AS t(txt)
+    ) x ON true
     WHERE wr.wiki_page_id = wp.id
     ORDER BY wr.created_at DESC
     LIMIT 1
@@ -352,6 +391,13 @@ WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
   AND (@category::text = '' OR wp.category = @category)
   AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
   AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%')
+  -- Soft-deleted pages are excluded by default; ?deleted=only|all surfaces
+  -- them so admins can force-delete (§80).
+  AND CASE @deleted::text
+        WHEN 'only' THEN wp.deleted_at IS NOT NULL
+        WHEN 'all'  THEN true
+        ELSE wp.deleted_at IS NULL
+      END
 ORDER BY
   CASE WHEN @sort = 'title:asc'       THEN wp.title END ASC NULLS LAST,
   CASE WHEN @sort = 'title:desc'      THEN wp.title END DESC NULLS LAST,
@@ -365,6 +411,8 @@ ORDER BY
   CASE WHEN @sort = 'is_active:desc'  THEN wp.is_active::int END DESC NULLS LAST,
   CASE WHEN @sort = 'created_at:asc'  THEN wp.created_at END ASC NULLS LAST,
   CASE WHEN @sort = 'created_at:desc' THEN wp.created_at END DESC NULLS LAST,
+  CASE WHEN @sort = 'updated_at:asc'  THEN wp.updated_at END ASC NULLS LAST,
+  CASE WHEN @sort = 'updated_at:desc' THEN wp.updated_at END DESC NULLS LAST,
   wp.updated_at DESC
 LIMIT @limit_val OFFSET @offset_val;
 
@@ -376,10 +424,16 @@ WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
   AND (@dest_slug::text = '' OR sp.slug = @dest_slug)
   AND (@category::text = '' OR wp.category = @category)
   AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
-  AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%');
+  AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%')
+  AND CASE @deleted::text
+        WHEN 'only' THEN wp.deleted_at IS NOT NULL
+        WHEN 'all'  THEN true
+        ELSE wp.deleted_at IS NULL
+      END;
 
 -- name: WikiPageSlugExists :one
 -- Slug uniqueness probe scoped to (space_id, slug) — used by the intel
 -- promoter's suffix loop before inserting a promoted page (§80 Intel
--- ingestion → wiki_pages).
-SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE space_id = @space_id AND slug = @slug) AS exists;
+-- ingestion → wiki_pages). Mirrors the partial unique index: soft-deleted
+-- pages no longer occupy their slug (000744).
+SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE space_id = @space_id AND slug = @slug AND deleted_at IS NULL) AS exists;

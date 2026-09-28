@@ -697,10 +697,12 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
-// DeleteSeries handles DELETE /api/v1/blog/series/{id}.
+// DeleteSeries handles DELETE /api/v1/blog/series/{id} — soft delete;
+// ?force=true permanently removes an already-soft-deleted row.
 func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
+	force := r.URL.Query().Get("force") == "true"
 	deleteEntity(w, r, h, "id", "series", func(ctx context.Context, id pgtype.UUID) error {
-		return h.Service.DeleteSeries(ctx, id)
+		return h.Service.DeleteSeries(ctx, id, force)
 	})
 }
 

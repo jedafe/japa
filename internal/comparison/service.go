@@ -210,6 +210,10 @@ type ComparisonTypeListItem struct {
 	gen.ListComparisonTypesRow
 	FieldCount int32 `json:"field_count"`
 	ItemCount  int32 `json:"item_count"`
+	// CanCreate reports whether the requesting user may create comparisons of
+	// this type (§30 — pickers must only offer types where the caller's group
+	// has can_create). Computed with no group membership for anonymous callers.
+	CanCreate bool `json:"can_create"`
 }
 
 // MarshalJSON decodes the JSONB `config` column before serialization so the
@@ -237,6 +241,7 @@ func (i ComparisonTypeListItem) MarshalJSON() ([]byte, error) {
 		"created_at":     i.CreatedAt,
 		"field_count":    i.FieldCount,
 		"item_count":     i.ItemCount,
+		"can_create":     i.CanCreate,
 	})
 }
 
@@ -244,10 +249,27 @@ func (i ComparisonTypeListItem) MarshalJSON() ([]byte, error) {
 // each enriched with its field count (dimensions) and item count.
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
-func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, limit, offset int32) ([]ComparisonTypeListItem, error) {
+func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]ComparisonTypeListItem, error) {
 	types, err := s.store.listComparisonTypesByPlatform(ctx, limit, offset)
 	if err != nil {
 		return nil, err
+	}
+
+	// Resolve the caller's groups once so every type can be annotated with a
+	// can_create flag (§30 — pickers only offer types the caller may create).
+	var groupSet map[string]bool
+
+	if userID.Valid {
+		groupIDs, err := s.store.listUserGroupIDsForUser(ctx, userID)
+		if err != nil {
+			return nil, fmt.Errorf("getting caller groups: %w", err)
+		}
+
+		groupSet = make(map[string]bool, len(groupIDs))
+
+		for _, id := range groupIDs {
+			groupSet[id] = true
+		}
 	}
 
 	items := make([]ComparisonTypeListItem, 0, len(types))
@@ -269,10 +291,16 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, limit, offs
 			return nil, fmt.Errorf("counting items for type %s: %w", td.Slug, err)
 		}
 
+		access, err := s.store.listComparisonTypeAccess(ctx, td.ID)
+		if err != nil {
+			return nil, fmt.Errorf("listing access for type %s: %w", td.Slug, err)
+		}
+
 		items = append(items, ComparisonTypeListItem{
 			ListComparisonTypesRow: td,
 			FieldCount:             fieldCount,
 			ItemCount:              itemCount,
+			CanCreate:              accessGrantsCreate(access, groupSet),
 		})
 	}
 
@@ -407,10 +435,6 @@ func (s *Service) canCreateComparisonForType(ctx context.Context, typeID, userID
 		return false, fmt.Errorf("listing comparison type access: %w", err)
 	}
 
-	if len(access) == 0 {
-		return true, nil
-	}
-
 	groupIDs, err := s.store.listUserGroupIDsForUser(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("getting user groups: %w", err)
@@ -421,21 +445,32 @@ func (s *Service) canCreateComparisonForType(ctx context.Context, typeID, userID
 		groupSet[id] = true
 	}
 
+	return accessGrantsCreate(access, groupSet), nil
+}
+
+// accessGrantsCreate reports whether a caller may create comparisons of a type
+// given its access rows: no rows means unrestricted, and a row with a NULL
+// user_group_id is a wildcard grant. A nil groupSet matches nothing.
+func accessGrantsCreate(access []gen.ListComparisonTypeAccessRow, groupSet map[string]bool) bool {
+	if len(access) == 0 {
+		return true
+	}
+
 	for _, a := range access {
 		if !a.CanCreate {
 			continue
 		}
 
 		if !a.UserGroupID.Valid {
-			return true, nil
+			return true
 		}
 
 		if groupSet[a.UserGroupID.String()] {
-			return true, nil
+			return true
 		}
 	}
 
-	return false, nil
+	return false
 }
 
 // CreateComparison creates a comparison by inserting a content row with

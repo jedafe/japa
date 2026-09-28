@@ -4426,6 +4426,7 @@ type WikiPage struct {
 	OverrideSource     string             `json:"override_source"`
 	EditorialOverrides []byte             `json:"editorial_overrides"`
 	DataEntityType     *string            `json:"data_entity_type"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type WikiRevision struct {

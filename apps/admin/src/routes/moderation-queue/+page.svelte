@@ -10,6 +10,7 @@
 	import { user } from '$lib/stores/auth.svelte';
 	import { Eye, UserPlus, CheckCircle, XCircle, MessageSquare, AlertTriangle, Check, Ban } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 
 	type ModerationQueueItem = {
 		id: string;
@@ -40,7 +41,9 @@
 	// and would brick the page for non-super-admins, so the real legacy node is kept.
 	const canModerate = $derived(hasPermission('admin.moderation'));
 
-	let activeTab = $state<'queue' | 'alerts'>('queue');
+	const MQ_TABS = ['queue', 'alerts'] as const;
+	let activeTab = $state<'queue' | 'alerts'>(initTabParam('queue', { valid: MQ_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: MQ_TABS, preserve: [] });
 
 	// ── Controllers + page-local error state ─────────────────────────────────
 	let queueController = $state<EntityPageController | undefined>(undefined);

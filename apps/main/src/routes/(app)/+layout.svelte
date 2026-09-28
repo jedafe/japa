@@ -76,13 +76,11 @@
 	}
 
 	// Phase 23 — Real-Time WebSocket: connect when an authenticated session is
-	// present AND the feature.dm flag is enabled. The backend gates the
-	// /auth/ws-ticket route behind feature.dm, so without this guard the client
-	// would fire a doomed POST (404 when off, 502 when the backend is down) and
-	// enter an infinite reconnect loop. The store is a no-op during SSR;
-	// onMount guarantees a browser-only connect.
-	// Ref: sections/10-realtime-websockets.md, sections/42-feature-flags.md
-	const dmEnabled = $derived(data.features?.['feature.dm'] === true);
+	// present. The /ws + /auth/ws-ticket transport is ungated server-side
+	// (Section 35 — notifications, presence and feed updates share the socket
+	// with DM events), so DM being off must not kill realtime notifications.
+	// The store is a no-op during SSR; onMount guarantees a browser-only connect.
+	// Ref: sections/10-realtime-websockets.md, sections/35-notification-system.md
 
 	// §23 — JapaBot floating action button: links to /ai/chat from every
 	// app-shell page, gated by the same feature.japabot flag as the route.
@@ -93,7 +91,7 @@
 			!page.route.id?.startsWith('/(app)/ai/chat')
 	);
 	onMount(() => {
-		if (data.user && dmEnabled) realtime.connect();
+		if (data.user) realtime.connect();
 		// Register the PWA service worker so push subscriptions can be created.
 		// Ref: japaconnect-engineering/sections/35-notification-system.md
 		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
@@ -126,10 +124,12 @@
 		return () => realtime.disconnect();
 	});
 
-	// Reconnect if the user logs in mid-session (e.g. after /login redirect)
-	// or if the feature flag is toggled on while the page is open.
+	// Reconnect if the user logs in mid-session (e.g. after /login redirect),
+	// and drop the socket on logout so a stale connection can't keep
+	// delivering notifications for the previous session.
 	$effect(() => {
-		if (data.user && dmEnabled) realtime.connect();
+		if (data.user) realtime.connect();
+		else realtime.disconnect();
 	});
 
 	// Seed the realtime unread-notification counter from the SSR value, and

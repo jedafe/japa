@@ -22,7 +22,8 @@
 		entityType,
 		entityId,
 		title = undefined,
-		groupId = undefined
+		groupId = undefined,
+		groupSlug = undefined
 	}: {
 		entityType: string;
 		entityId: string;
@@ -30,6 +31,10 @@
 		/** §80 Wiki Types: when set (a bound wiki category), the panel renders
 		 *  only that group instead of every group assigned to the entity. */
 		groupId?: string;
+		/** The bound group's slug — forwarded to SuggestEdit so field
+		 *  proposals land in the category's group even when it has no
+		 *  fields yet (empty groups are absent from the schema). */
+		groupSlug?: string;
 	} = $props();
 
 	const flagOn = $derived(page.data?.features?.['wiki.structured_edits'] === true);
@@ -134,6 +139,8 @@
 					{entityType}
 					{entityId}
 					fieldsData={scopedSchema}
+					proposeGroupSlug={groupSlug ??
+						(scopedSchema.groups.length === 1 ? scopedSchema.groups[0].slug : undefined)}
 					bind:open={editOpen}
 					onsubmitted={() => (reloadToken += 1)}
 				/>

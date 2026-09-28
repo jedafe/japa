@@ -220,6 +220,9 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -614,6 +617,9 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, i
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	if whereClause == "" {
+		whereClause = "TRUE"
+	}
 
 	limit := f.Limit
 	if limit <= 0 {

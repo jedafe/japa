@@ -86,11 +86,15 @@ func (q *Queries) ApproveOwnershipClaim(ctx context.Context, arg ApproveOwnershi
 
 const countOrganizations = `-- name: CountOrganizations :one
 SELECT COUNT(*) FROM organizations
-WHERE deleted_at IS NULL
- AND ($1::text = '' OR org_type = $1)
+WHERE ($1::text = '' OR org_type = $1)
  AND ($2::text = '' OR country_code = $2)
  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
  AND ($4::text = '' OR verified = ($4 = 'true'))
+ AND CASE $5::text
+       WHEN 'only' THEN deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE deleted_at IS NULL
+     END
 `
 
 type CountOrganizationsParams struct {
@@ -98,6 +102,7 @@ type CountOrganizationsParams struct {
 	Column2 string `json:"column_2"`
 	Column3 string `json:"column_3"`
 	Column4 string `json:"column_4"`
+	Column5 string `json:"column_5"`
 }
 
 func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error) {
@@ -106,6 +111,7 @@ func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizations
 		arg.Column2,
 		arg.Column3,
 		arg.Column4,
+		arg.Column5,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -709,6 +715,23 @@ func (q *Queries) GetPublicOrganizationBySlug(ctx context.Context, slug string) 
 	return i, err
 }
 
+const hardDeleteOrganization = `-- name: HardDeleteOrganization :execrows
+DELETE FROM organizations o
+WHERE o.id = $1 AND o.deleted_at IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM ownership_claims c WHERE c.organization_id = o.id)
+`
+
+// Permanent delete — only for already-soft-deleted organisations (admin
+// ?force=true). Members/invitations/boosts cascade; ownership claims must
+// be cleared first (NO ACTION FK), so they are guarded here.
+func (q *Queries) HardDeleteOrganization(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteOrganization, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const incrementOrganizationMemberCount = `-- name: IncrementOrganizationMemberCount :exec
 UPDATE organizations
 SET member_count = member_count + $2, updated_at = now()
@@ -837,11 +860,15 @@ const listOrganizations = `-- name: ListOrganizations :many
 SELECT o.id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, u.username AS owner_username
 FROM organizations o
 LEFT JOIN users u ON u.id = o.owner_user_id
-WHERE o.deleted_at IS NULL
- AND ($1::text = '' OR o.org_type = $1)
+WHERE ($1::text = '' OR o.org_type = $1)
  AND ($2::text = '' OR o.country_code = $2)
  AND ($3::text = '' OR o.name ILIKE '%' || $3 || '%' OR o.slug ILIKE '%' || $3 || '%')
  AND ($4::text = '' OR o.verified = ($4 = 'true'))
+ AND CASE $7::text
+       WHEN 'only' THEN o.deleted_at IS NOT NULL
+       WHEN 'all'  THEN true
+       ELSE o.deleted_at IS NULL
+     END
 ORDER BY o.created_at DESC
 LIMIT $5 OFFSET $6
 `
@@ -853,6 +880,7 @@ type ListOrganizationsParams struct {
 	Column4 string `json:"column_4"`
 	Limit   int32  `json:"limit"`
 	Offset  int32  `json:"offset"`
+	Column7 string `json:"column_7"`
 }
 
 type ListOrganizationsRow struct {
@@ -881,6 +909,8 @@ type ListOrganizationsRow struct {
 	OwnerUsername    *string            `json:"owner_username"`
 }
 
+// Soft-deleted orgs are hidden by default; $7 'only'|'all' surfaces them so
+// admins can force-delete (same contract as AdminListWikiPages).
 func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error) {
 	rows, err := q.db.Query(ctx, listOrganizations,
 		arg.Column1,
@@ -889,6 +919,7 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 		arg.Column4,
 		arg.Limit,
 		arg.Offset,
+		arg.Column7,
 	)
 	if err != nil {
 		return nil, err
@@ -1355,6 +1386,31 @@ func (q *Queries) ListPublicOrganizations(ctx context.Context, arg ListPublicOrg
 		return nil, err
 	}
 	return items, nil
+}
+
+const organizationExists = `-- name: OrganizationExists :one
+SELECT EXISTS(SELECT 1 FROM organizations WHERE id = $1) AS exists
+`
+
+// Existence probe for the hard-delete path: distinguishes 404 not_found
+// from 409 not_deleted/in_use when the guarded DELETE affects no row.
+func (q *Queries) OrganizationExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, organizationExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const organizationHasOwnershipClaims = `-- name: OrganizationHasOwnershipClaims :one
+SELECT EXISTS(SELECT 1 FROM ownership_claims WHERE organization_id = $1) AS exists
+`
+
+// Dependency probe for the hard-delete path (claims must be cleared first).
+func (q *Queries) OrganizationHasOwnershipClaims(ctx context.Context, organizationID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, organizationHasOwnershipClaims, organizationID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const removeOrganizationMember = `-- name: RemoveOrganizationMember :exec

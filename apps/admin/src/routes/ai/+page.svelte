@@ -10,6 +10,8 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { page as pageState } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { Switch } from 'bits-ui';
 
 	const canGenerate = $derived(hasPermission('ai.generate'));
@@ -31,8 +33,15 @@
 		{ value: '', label: t('ai.model.default', 'Default') }
 	]);
 
-	// Tab navigation (usage is in-memory only, generate/tools follow URL)
-	let displayTab = $state<'generate' | 'tools' | 'usage' | 'models'>('generate');
+	// Tab navigation (generate/tools are path-scoped routes — /ai and
+	// /ai/tools — while usage/models are in-memory tabs on /ai). The in-memory
+	// tabs are deep-linkable via ?tab=; ?tab=tools redirects to /ai/tools.
+	const AI_TABS = ['generate', 'tools', 'usage', 'models'] as const;
+	let displayTab = $state<'generate' | 'tools' | 'usage' | 'models'>(initTabParam('generate', { valid: AI_TABS }));
+	bindTabParam(() => displayTab, (v) => (displayTab = v), { valid: AI_TABS });
+	$effect(() => {
+		if (displayTab === 'tools' && pageState.url.pathname === '/ai') void goto('/ai/tools');
+	});
 	let activeTab = $derived.by(() => {
 		const path = pageState.url.pathname;
 		if (path === '/ai') {
@@ -434,6 +443,20 @@
 		}
 	}
 
+	// Lazy-load the in-memory tabs on activation — covers clicks, ?tab=
+	// deep-links, and back/forward navigation.
+	let usageLoaded = false;
+	let modelsLoaded = false;
+	$effect(() => {
+		if (displayTab === 'usage' && !usageLoaded) {
+			usageLoaded = true;
+			void loadUsage();
+		} else if (displayTab === 'models' && !modelsLoaded) {
+			modelsLoaded = true;
+			void loadModels();
+		}
+	});
+
 	$effect(() => {
 		(async () => {
 			categoriesLoading = true;
@@ -492,7 +515,7 @@
 	</a>
 	<button
 		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		onclick={() => { displayTab = 'usage'; loadUsage(); }}
+		onclick={() => { displayTab = 'usage'; }}
 		style={activeTab === 'usage' ? 'background-color: var(--color-primary); color: white' : ''}
 	>
 		<Activity class="h-4 w-4" />
@@ -500,7 +523,7 @@
 	</button>
 	<button
 		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		onclick={() => { displayTab = 'models'; loadModels(); }}
+		onclick={() => { displayTab = 'models'; }}
 		style={activeTab === 'models' ? 'background-color: var(--color-primary); color: white' : ''}
 	>
 		<Settings class="h-4 w-4" />

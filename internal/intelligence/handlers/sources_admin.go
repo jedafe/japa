@@ -635,12 +635,23 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// HandleReviewEdit saves admin-edited extraction fields to the scholarship's
-// editorial_overrides JSONB. The body carries a map of field-name → edited
-// value; these are merged into the existing editorial_overrides and the
-// override_source is flipped to 'editorial' (or 'mixed'). An audit entry is
-// written to intel_review_log. The record is then ready for promotion via
-// intel:promote (triggered by the subsequent approve action or automatically).
+// HandleReviewEdit saves admin-edited extraction fields on an intel record.
+// The body carries a map of field-name → edited value.
+//
+// Two write targets:
+//  1. intel_records.extracted — always merged. Review-queue records have no
+//     domain projection yet (projections are created by intel:promote after
+//     approval), so the extracted payload is the only place an edit can
+//     persist such that promotion respects it. This also makes the endpoint
+//     work for every entity type, not just scholarships (INTEL-009 fix: the
+//     prior implementation required a scholarships projection row and 404'd
+//     for every unprojected record).
+//  2. scholarships.editorial_overrides — additionally merged when a
+//     scholarship projection already exists for the record, preserving the
+//     BUG-011 override semantics (override_source flips to
+//     'editorial'/'mixed') so re-crawl does not overwrite the edited fields.
+//
+// An audit entry is written to intel_review_log either way.
 // // PATCH /api/v1/intel/review/{record_id}/edit
 // // Requires: intel.review.edit.
 func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
@@ -674,28 +685,67 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scholarship, ok := h.lookupScholarshipForReview(w, r, recordID)
-	if !ok {
+	record, err := h.intelStores.GetIntelRecord(r.Context(), recordID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
+			return
+		}
+
+		slog.Error("intel: review edit record lookup failed", "record_id", recordID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
+
 		return
 	}
 
-	merged := mergeEditorialOverrides(scholarship.EditorialOverrides, body.Fields)
+	// Merge the edited fields into the record's extracted payload so the
+	// change persists for records without a projection row and promotion
+	// (intel:promote) picks up the reviewer edits.
+	mergedExtracted := mergeEditorialOverrides(record.Extracted, body.Fields)
 
-	if err := h.intelStores.UpdateScholarshipEditorialOverrides(r.Context(), scholarship.ID, merged); err != nil {
-		slog.Error("intel: review edit apply failed", "scholarship_id", pgUUIDString(scholarship.ID), "error", err)
+	if err := h.intelStores.UpdateIntelRecordExtracted(r.Context(), gen.UpdateIntelRecordExtractedParams{
+		ID:        recordID,
+		Extracted: mergedExtracted,
+	}); err != nil {
+		slog.Error("intel: review edit apply failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to apply editorial edits")
 
 		return
 	}
 
-	// BUG-011 fix: mirror the SQL CASE in UpdateScholarshipEditorialOverrides
-	// (scholarships_intel.sql:51-55) so the response reports the real
-	// override_source rather than a hardcoded "editorial". When the row was
-	// 'ingestion' (no prior overrides) → 'editorial'; when it already had
-	// overrides ('editorial' or 'mixed') → 'mixed'.
-	overrideSource := "editorial"
-	if scholarship.OverrideSource == "editorial" || scholarship.OverrideSource == "mixed" {
-		overrideSource = "mixed"
+	// When a scholarship projection already exists for this record, mirror
+	// the edit into its editorial_overrides so the published projection is
+	// corrected too and re-crawl does not overwrite the edited fields.
+	var scholarshipID string
+	var overrideSource string
+
+	if record.EntityType == "scholarship" {
+		scholarship, err := h.intelStores.GetScholarshipByIntelRecord(r.Context(), recordID)
+		if err == nil {
+			merged := mergeEditorialOverrides(scholarship.EditorialOverrides, body.Fields)
+			if err := h.intelStores.UpdateScholarshipEditorialOverrides(r.Context(), scholarship.ID, merged); err != nil {
+				slog.Error("intel: review edit scholarship override apply failed", "scholarship_id", pgUUIDString(scholarship.ID), "error", err)
+				errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to apply editorial edits")
+
+				return
+			}
+
+			scholarshipID = pgUUIDString(scholarship.ID)
+			// BUG-011: mirror the SQL CASE in UpdateScholarshipEditorialOverrides
+			// (scholarships_intel.sql) so the response reports the real
+			// override_source rather than a hardcoded "editorial".
+			overrideSource = "editorial"
+			if scholarship.OverrideSource == "editorial" || scholarship.OverrideSource == "mixed" {
+				overrideSource = "mixed"
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("intel: review edit scholarship lookup failed", "record_id", recordID.String(), "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
+
+			return
+		}
+		// pgx.ErrNoRows → no projection yet; the extracted write above is
+		// sufficient and promotion will carry the edits into the projection.
 	}
 
 	// Write the audit entry to the review log.
@@ -721,44 +771,11 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"record_id":       recordID.String(),
-			"scholarship_id":  pgUUIDString(scholarship.ID),
+			"scholarship_id":  scholarshipID,
 			"edited_fields":   body.Fields,
 			"override_source": overrideSource,
 		},
 	})
-}
-
-// lookupScholarshipForReview resolves the intel record → its promoted
-// scholarship projection row, writing the appropriate 404/500 error response
-// on failure. Returns ok=false when an error response was written.
-func (h *Handlers) lookupScholarshipForReview(w http.ResponseWriter, r *http.Request, recordID pgtype.UUID) (gen.Scholarship, bool) {
-	if _, err := h.intelStores.GetIntelRecord(r.Context(), recordID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
-			return gen.Scholarship{}, false
-		}
-
-		slog.Error("intel: review edit record lookup failed", "record_id", recordID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
-
-		return gen.Scholarship{}, false
-	}
-
-	// Load the existing editorial_overrides so we merge rather than replace.
-	scholarship, err := h.intelStores.GetScholarshipByIntelRecord(r.Context(), recordID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship projection not found for this record")
-			return gen.Scholarship{}, false
-		}
-
-		slog.Error("intel: review edit scholarship lookup failed", "record_id", recordID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
-
-		return gen.Scholarship{}, false
-	}
-
-	return scholarship, true
 }
 
 // mergeEditorialOverrides merges the admin-edited fields into the existing

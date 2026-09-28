@@ -28,7 +28,7 @@
         String(selectedIds.size),
       )}
     </span>
-    {#each actions as action (action.label)}
+    {#each actions as action, i (i)}
       <Button
         size="sm"
         variant={action.variant === "destructive" ? "destructive" : "default"}

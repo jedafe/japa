@@ -309,6 +309,9 @@ func splitRecords(ext Extraction) []Extraction {
 }
 
 // ConfidenceOverall returns the mean of per-field confidence values.
+// Null fields never contribute to the mean — a model that answers
+// {value: null, confidence: 1} ("confidently nothing here") must not push
+// an empty record over the auto-publish threshold.
 func ConfidenceOverall(ext Extraction) float32 {
 	if len(ext) == 0 {
 		return 0
@@ -319,8 +322,8 @@ func ConfidenceOverall(ext Extraction) float32 {
 	var n int
 
 	for _, f := range ext {
-		if f.Confidence == 0 && f.Value == nil {
-			continue // skip null fields from mean
+		if f.Value == nil {
+			continue // skip null fields from mean, whatever their confidence
 		}
 
 		sum += f.Confidence

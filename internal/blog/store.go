@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store provides low-level database access for blog operations. The Service
@@ -127,6 +129,29 @@ func (s *Store) updateBlogSeries(ctx context.Context, p gen.UpdateBlogSeriesPara
 func (s *Store) deleteBlogSeries(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteBlogSeries(ctx, id); err != nil {
 		return fmt.Errorf("deleting blog series: %w", err)
+	}
+
+	return nil
+}
+
+// hardDeleteBlogSeries permanently removes a soft-deleted series; its
+// blog_series_posts join rows cascade. Returns pgx.ErrNoRows when missing
+// and errpkg.ErrNotDeleted while live.
+func (s *Store) hardDeleteBlogSeries(ctx context.Context, id pgtype.UUID) error {
+	affected, err := s.write.HardDeleteBlogSeries(ctx, id)
+	if err != nil {
+		return fmt.Errorf("hard deleting blog series: %w", err)
+	}
+
+	if affected == 0 {
+		exists, err := s.read.BlogSeriesExists(ctx, id)
+		if err != nil {
+			return fmt.Errorf("check blog series exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		return errpkg.ErrNotDeleted
 	}
 
 	return nil

@@ -18,7 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -1097,7 +1097,7 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, userID pgtyp
 
 	data, err := s.vk.Get(ctx, selectionTokenKey(token)).Bytes()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
+		if valkey.IsValkeyNil(err) {
 			return JCEComparisonResult{}, errors.New("selection token not found or expired")
 		}
 

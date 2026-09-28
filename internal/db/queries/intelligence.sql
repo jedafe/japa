@@ -199,6 +199,50 @@ UPDATE intel_records SET freshness_score = $2, status = CASE WHEN $2 <= 40 THEN 
 -- name: UpdateIntelRecordPromoted :exec
 UPDATE intel_records SET promoted_record_id = $2, status = 'published' WHERE id = $1;
 
+-- name: UpdateIntelRecordExtracted :exec
+-- Merges reviewer-edited fields into the record's extracted payload. Used by
+-- the review-edit endpoint when the record has no domain projection row yet
+-- (projections are only created by intel:promote after approval), so edits
+-- must land on the intel_record itself for promotion to respect them.
+UPDATE intel_records SET extracted = $2, last_verified_at = now() WHERE id = $1;
+
+-- name: ListIntelRecordsFiltered :many
+-- Filtered intel records list for the admin review queue / records browser:
+-- status is required; entity_type and search are optional ('' disables).
+-- search matches external_key, entity_type, and the extracted payload.
+-- ORDER BY uses whitelisted CASE keys — only the active (sort_key, sort_dir)
+-- pair produces non-NULL values, so each inactive key is a no-op; the final
+-- extracted_at DESC keeps the default newest-first ordering.
+SELECT * FROM intel_records
+WHERE status = @status
+  AND (@entity_type::text = '' OR entity_type = @entity_type)
+  AND (@search::text = '' OR external_key ILIKE '%' || @search || '%'
+       OR entity_type ILIKE '%' || @search || '%'
+       OR extracted::text ILIKE '%' || @search || '%')
+ORDER BY
+  CASE WHEN @sort_key::text = 'entity_type'        AND @sort_dir::text = 'asc'  THEN entity_type        END ASC,
+  CASE WHEN @sort_key::text = 'entity_type'        AND @sort_dir::text = 'desc' THEN entity_type        END DESC,
+  CASE WHEN @sort_key::text = 'external_key'       AND @sort_dir::text = 'asc'  THEN external_key       END ASC,
+  CASE WHEN @sort_key::text = 'external_key'       AND @sort_dir::text = 'desc' THEN external_key       END DESC,
+  CASE WHEN @sort_key::text = 'status'             AND @sort_dir::text = 'asc'  THEN status             END ASC,
+  CASE WHEN @sort_key::text = 'status'             AND @sort_dir::text = 'desc' THEN status             END DESC,
+  CASE WHEN @sort_key::text = 'confidence_overall' AND @sort_dir::text = 'asc'  THEN confidence_overall END ASC,
+  CASE WHEN @sort_key::text = 'confidence_overall' AND @sort_dir::text = 'desc' THEN confidence_overall END DESC,
+  CASE WHEN @sort_key::text = 'freshness_score'    AND @sort_dir::text = 'asc'  THEN freshness_score    END ASC,
+  CASE WHEN @sort_key::text = 'freshness_score'    AND @sort_dir::text = 'desc' THEN freshness_score    END DESC,
+  CASE WHEN @sort_key::text = 'extracted_at'       AND @sort_dir::text = 'asc'  THEN extracted_at       END ASC,
+  CASE WHEN @sort_key::text = 'extracted_at'       AND @sort_dir::text = 'desc' THEN extracted_at       END DESC,
+  extracted_at DESC
+LIMIT @row_limit OFFSET @row_offset;
+
+-- name: CountIntelRecordsFiltered :one
+SELECT count(*) FROM intel_records
+WHERE status = @status
+  AND (@entity_type::text = '' OR entity_type = @entity_type)
+  AND (@search::text = '' OR external_key ILIKE '%' || @search || '%'
+       OR entity_type ILIKE '%' || @search || '%'
+       OR extracted::text ILIKE '%' || @search || '%');
+
 -- name: ListStaleIntelRecords :many
 SELECT * FROM intel_records WHERE freshness_score <= 40 AND status = 'published' LIMIT $1;
 

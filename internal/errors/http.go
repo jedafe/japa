@@ -106,6 +106,7 @@ func stripSentinelPrefix(err, sentinel error) string {
 //	ErrExpired                         → 401 expired
 //	ErrMaxDepth                        → 400 depth_exceeded
 //	ErrInvalidStatusTransition         → 409 invalid_status_transition
+//	ErrNotDeleted                      → 409 not_deleted
 //	ErrInsufficientBalance             → 422 insufficient_balance
 //	ErrRateLimited                     → 429 rate_limit_exceeded
 //	ErrNotImplemented                  → 501 not_implemented
@@ -125,6 +126,9 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 		WriteError(w, http.StatusConflict, "invalid_status_transition", stripSentinelPrefix(err, ErrInvalidStatusTransition))
 	case errors.Is(err, ErrInUse):
 		WriteError(w, http.StatusConflict, "in_use", stripSentinelPrefix(err, ErrInUse))
+	case errors.Is(err, ErrNotDeleted):
+		WriteError(w, http.StatusConflict, "not_deleted",
+			"Resource must be deleted before it can be permanently removed")
 
 	// --- 400 Bad Request ---
 	case errors.Is(err, ErrRequired):

@@ -110,6 +110,15 @@ func uuidString(id pgtype.UUID) string {
 	return strings.Trim(string(b), `"`)
 }
 
+// nullableTime emits a Timestamptz as RFC3339 (or null) — used for
+// deleted_at so the admin table can tell live from soft-deleted rows.
+func nullableTime(t pgtype.Timestamptz) any {
+	if !t.Valid {
+		return nil
+	}
+	return t.Time
+}
+
 func numericString(n pgtype.Numeric) any {
 	if !n.Valid {
 		return nil
@@ -137,6 +146,7 @@ func offeringToJSON(o CourseOffering) map[string]any {
 		"entry_requirements": o.EntryRequirements,
 		"accreditation":     o.Accreditation,
 		"is_published":      o.IsPublished,
+		"deleted_at":        nullableTime(o.DeletedAt),
 		"created_at":        o.CreatedAt.Time,
 		"updated_at":        o.UpdatedAt.Time,
 		"course": map[string]any{
@@ -170,6 +180,7 @@ func catalogToJSON(c CourseCatalog) map[string]any {
 		"default_duration_years": numericString(c.DefaultDurationYears),
 		"is_published":           c.IsPublished,
 		"offering_count":         c.OfferingCount,
+		"deleted_at":             nullableTime(c.DeletedAt),
 		"created_at":             c.CreatedAt.Time,
 		"updated_at":             c.UpdatedAt.Time,
 	}
@@ -277,6 +288,7 @@ func (h *Handlers) AdminListCatalog(w http.ResponseWriter, r *http.Request) {
 		Search:      strings.TrimSpace(r.URL.Query().Get("q")),
 		DegreeType:  strings.TrimSpace(r.URL.Query().Get("degree_type")),
 		IsPublished: parseBoolPtr(r.URL.Query().Get("is_published")),
+		Deleted:     strings.TrimSpace(r.URL.Query().Get("deleted")),
 		Sort:        strings.TrimSpace(r.URL.Query().Get("sort")),
 		Limit:       int32(limit), // #nosec
 		Offset:      int32((page - 1) * limit), // #nosec
@@ -454,7 +466,9 @@ func (h *Handlers) AdminUpdateCatalog(w http.ResponseWriter, r *http.Request) {
 
 // AdminDeleteCatalog handles DELETE /api/v1/admin/course-catalog/{id} —
 // soft delete. Offerings referencing the catalog row stay admin-visible but
-// drop out of public joins (Section 39). [admin: universities.course_catalog.delete]
+// drop out of public joins (Section 39). ?force=true permanently removes an
+// already-soft-deleted row (409 not_deleted while live, 409 in_use while
+// offerings still reference it). [admin: universities.course_catalog.delete]
 func (h *Handlers) AdminDeleteCatalog(w http.ResponseWriter, r *http.Request) {
 	id, ok := scanUUID(chi.URLParam(r, "id"))
 	if !ok {
@@ -462,7 +476,13 @@ func (h *Handlers) AdminDeleteCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.SoftDeleteCatalog(r.Context(), id); err != nil {
+	var err error
+	if r.URL.Query().Get("force") == "true" {
+		err = h.svc.HardDeleteCatalog(r.Context(), id)
+	} else {
+		err = h.svc.SoftDeleteCatalog(r.Context(), id)
+	}
+	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
@@ -490,6 +510,7 @@ func (h *Handlers) AdminListOfferings(w http.ResponseWriter, r *http.Request) {
 	f := OfferingListFilters{
 		Search:      strings.TrimSpace(r.URL.Query().Get("q")),
 		IsPublished: parseBoolPtr(r.URL.Query().Get("is_published")),
+		Deleted:     strings.TrimSpace(r.URL.Query().Get("deleted")),
 		Sort:        strings.TrimSpace(r.URL.Query().Get("sort")),
 		Limit:       int32(limit), // #nosec
 		Offset:      int32((page - 1) * limit), // #nosec
@@ -722,7 +743,8 @@ func (h *Handlers) AdminUpdateOffering(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminDeleteOffering handles DELETE /api/v1/admin/course-offerings/{id} —
-// soft delete. [admin: universities.course_offering.delete]
+// soft delete. ?force=true permanently removes an already-soft-deleted row
+// (409 not_deleted while live). [admin: universities.course_offering.delete]
 func (h *Handlers) AdminDeleteOffering(w http.ResponseWriter, r *http.Request) {
 	id, ok := scanUUID(chi.URLParam(r, "id"))
 	if !ok {
@@ -730,7 +752,13 @@ func (h *Handlers) AdminDeleteOffering(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.SoftDeleteOffering(r.Context(), id); err != nil {
+	var err error
+	if r.URL.Query().Get("force") == "true" {
+		err = h.svc.HardDeleteOffering(r.Context(), id)
+	} else {
+		err = h.svc.SoftDeleteOffering(r.Context(), id)
+	}
+	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
 	}

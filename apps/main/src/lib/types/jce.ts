@@ -22,6 +22,8 @@ export interface ComparisonType {
 	item_count?: number;
 	field_count?: number;
 	config?: ComparisonTypeConfig | null;
+	/** Whether the requesting user may create comparisons of this type (§30). */
+	can_create?: boolean;
 }
 
 export interface ResolvedItem {
