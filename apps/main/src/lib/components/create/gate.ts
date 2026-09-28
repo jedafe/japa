@@ -17,6 +17,9 @@ export function evaluatePublish(i: PublishInput): { ok: boolean; reason: string 
 		if (i.itemCount < 2) return { ok: false, reason: 'create.gate.items' };
 		if (i.dimensionCount < 1) return { ok: false, reason: 'create.gate.dimensions' };
 	}
+	if (i.formKind === 'list') {
+		if (i.itemCount < 1) return { ok: false, reason: 'create.gate.list_items' };
+	}
 	if (!i.requiredFieldsFilled) return { ok: false, reason: 'create.gate.fields' };
 	return { ok: true, reason: null };
 }
@@ -43,5 +46,5 @@ export function isExceptionRoute(routeId: string | null): boolean {
 	// full-bleed surface in composer chrome — no left rail, no right
 	// sidebar, no mobile tab bar. (The /create route 308-redirects to
 	// /studio/create but is kept here for safety.)
-	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]' || routeId === '/(app)/video/[slug]' || routeId?.startsWith('/(app)/studio') === true;
+	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]' || routeId === '/(app)/video/[slug]' || routeId === '/(app)/list/[slug]' || routeId?.startsWith('/(app)/studio') === true;
 }

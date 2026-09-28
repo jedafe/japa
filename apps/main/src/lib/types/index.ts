@@ -210,6 +210,7 @@ export type ContentType =
 	| 'question'
 	| 'forum_thread'
 	| 'comparison'
+	| 'list'
 	| string;
 
 export interface FeedItem {
@@ -2088,6 +2089,55 @@ export interface ComparisonType {
 	item_count: number;
 	/** Whether the requesting user's group may create comparisons of this type (§30). */
 	can_create?: boolean;
+}
+
+/* ------------------------------------------------------------------ *
+ * List (listicle) — §14 list amendment
+ * field_values schema for content_type='list'; the composer serializes
+ * items into body/body_html while field_values stays the editing source.
+ * ------------------------------------------------------------------ */
+
+export type ListMode = 'numbered' | 'countdown' | 'unnumbered';
+export type ListEmbedKind = 'content' | 'url' | 'video';
+
+export interface ListEmbedSnapshot {
+	title?: string;
+	excerpt?: string;
+	image_url?: string;
+	content_type?: string;
+}
+
+export interface ListEmbedResolved {
+	title?: string;
+	description?: string;
+	image_url?: string;
+	site_name?: string;
+	embed_url?: string;
+}
+
+export interface ListItemEmbed {
+	kind: ListEmbedKind;
+	content_id?: string;
+	content_slug?: string;
+	snapshot?: ListEmbedSnapshot;
+	url?: string;
+	resolved?: ListEmbedResolved;
+	video_source_id?: string;
+}
+
+export interface ListItem {
+	heading?: string;
+	body_html?: string;
+	media_id?: string | null;
+	embed?: ListItemEmbed | null;
+	source_url?: string;
+	credit?: string;
+}
+
+export interface ListFieldValues {
+	list_mode: ListMode;
+	intro_html?: string;
+	items: ListItem[];
 }
 
 /* ------------------------------------------------------------------ *

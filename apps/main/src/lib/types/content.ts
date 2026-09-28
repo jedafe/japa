@@ -108,6 +108,8 @@ export interface GuideListItem {
 	vote_score?: number;
 	published_at?: string | null;
 	created_at: string;
+	/** Serialized by ListContentsByTypeRow; used for list-card excerpts. */
+	meta_description?: string | null;
 	header_image_url?: string | null;
 	featured_image_url?: string | null;
 	/** Raw contents.body — TipTap JSON text for forum threads; used to derive

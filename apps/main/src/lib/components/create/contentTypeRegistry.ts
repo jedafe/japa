@@ -1,6 +1,6 @@
 import type { ContentTypeMeta, GuideCategory } from '$lib/types';
 
-export type FormKind = 'standard' | 'comparison';
+export type FormKind = 'standard' | 'comparison' | 'list';
 
 export interface TypeEntry {
 	value: string;
@@ -14,6 +14,8 @@ export interface TypeEntry {
 	hasCategory?: boolean;
 	/** Admin-configured sub-categories (loaded from GET /content-types). */
 	categories?: GuideCategory[];
+	/** RBAC node required for this type to appear in /create. */
+	requiredPermission?: string;
 }
 
 /**
@@ -65,6 +67,14 @@ const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 		formKind: 'standard',
 		supportsSeries: false,
 		featureFlag: 'video.enabled'
+	},
+	// §14 list amendment — dedicated item builder; gated by list.create RBAC
+	// node and the list.enabled public setting.
+	list: {
+		formKind: 'list',
+		supportsSeries: false,
+		featureFlag: 'list.enabled',
+		requiredPermission: 'list.create'
 	},
 	// News — pipeline-extracted articles AND user-authored news posts share
 	// the same content_type. No dedicated flag exists; always available like
@@ -125,7 +135,7 @@ export function availableTypes(
 }
 
 /** Content types that can be created through the /create page composer. */
-export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story', 'video', 'news'] as const;
+export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story', 'video', 'list', 'news'] as const;
 
 const CREATE_TYPE_ORDER = Object.fromEntries(
 	CREATE_ALLOWED_TYPES.map((value, index) => [value, index])
@@ -142,10 +152,14 @@ const CREATE_TYPE_ORDER = Object.fromEntries(
 export function createAvailableTypes(
 	types: ContentTypeMeta[],
 	flags: Record<string, boolean>,
-	settings?: Record<string, unknown>
+	settings?: Record<string, unknown>,
+	caller?: { permissions?: string[]; isSuperAdmin?: boolean }
 ): TypeEntry[] {
 	const allowed = new Set<string>(CREATE_ALLOWED_TYPES);
+	const perms = new Set(caller?.permissions ?? []);
+	const canSee = (entry: TypeEntry) =>
+		!entry.requiredPermission || caller?.isSuperAdmin === true || perms.has(entry.requiredPermission);
 	return availableTypes(types, flags, settings)
-		.filter((entry) => allowed.has(entry.value))
+		.filter((entry) => allowed.has(entry.value) && canSee(entry))
 		.sort((a, b) => (CREATE_TYPE_ORDER[a.value] ?? 0) - (CREATE_TYPE_ORDER[b.value] ?? 0));
 }

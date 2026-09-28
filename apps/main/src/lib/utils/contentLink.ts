@@ -19,7 +19,8 @@ const CONTENT_ROUTE_PREFIX: Record<string, string> = {
 	page: '/pages',
 	job_listing: '/jobs',
 	service_listing: '/services',
-	video: '/video' // §106 video posts live at /video/{slug}
+	video: '/video', // §106 video posts live at /video/{slug}
+	list: '/list' // §14 list amendment — listicles live at /list/{slug}
 };
 
 /** Canonical detail href for a content item, keyed by content_type. */
