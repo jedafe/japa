@@ -813,6 +813,8 @@
 		title: t('app.wiki.review_queue_heading', 'Wiki Review Queue'),
 		description: t('app.wiki.review_queue_desc', 'Review and approve pending wiki page revisions'),
 		readonly: true,
+		// Tabbed page — keep table state out of the shared URL (admin AGENTS).
+		urlSync: false,
 		pageSize: 25,
 		columns: [
 			{ key: 'title', label: t('app.wiki.col_title', 'Title'), sortable: true },
@@ -874,6 +876,9 @@
 			if (result.ok) {
 				const body = result.data as { data: WikiItem[]; pagination: { total: number } };
 				const data = body.data ?? [];
+				// Clear before repopulating — deleted rows must not stay
+				// addressable via a stale selection after a reload.
+				pageRowMap.clear();
 				for (const row of data) pageRowMap.set(row.id, row);
 				const total = body.pagination?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
@@ -1026,6 +1031,7 @@
 		title: t('app.wiki.revisions_heading', 'Revision Queue'),
 		description: t('app.wiki.revisions_desc', 'Review pending wiki revisions, including community field ops'),
 		readonly: true,
+		urlSync: false,
 		pageSize: 25,
 		filters: revisionFilters,
 		columns: [
@@ -1088,6 +1094,7 @@
 			const result = await wikiAdminApi.listWikiRevisions(qs.toString());
 			if (result.ok) {
 				const data = result.data.data ?? [];
+				revisionRowMap.clear();
 				for (const row of data) revisionRowMap.set(row.id, row);
 				const total = result.data.pagination?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
@@ -1421,6 +1428,12 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_status', 'Status')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status || '—'}</p>
 		</div>
+		{#if row.deleted_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.filter_deleted', 'Deleted')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-danger)">{new Date(row.deleted_at).toLocaleString()}</p>
+			</div>
+		{/if}
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_summary', 'Summary')}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.summary || '—'}</p>
