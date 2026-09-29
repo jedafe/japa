@@ -1364,6 +1364,8 @@
 	"app.wiki.force_delete": "Force Delete",
 	"app.wiki.force_delete_confirm": "Permanently delete \"{title}\"? The page and all its revisions will be removed. This cannot be undone.",
 	"app.wiki.force_delete_confirm_bulk": "Permanently delete {count} selected pages? The pages and all their revisions will be removed. This cannot be undone.",
+	"app.wiki.force_delete_revision": "Permanently delete revision \"{title}\"? This cannot be undone.",
+	"app.wiki.force_delete_revision_bulk": "Permanently delete {count} selected revisions? This cannot be undone.",
 	"app.wiki.force_deleting": "Deleting...",
 	"app.wiki.gen_category": "Category",
 	"app.wiki.gen_category_ph": "Search categories…",

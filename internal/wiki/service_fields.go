@@ -780,9 +780,10 @@ func (s *Service) GetRevision(ctx context.Context, revID pgtype.UUID) (WikiRevis
 
 // AdminListRevisions returns revisions for the admin review queue
 // (GET /admin/wiki/revisions) with optional kind/status filters, a q
-// search term matched against summary and submitter username, and a
-// whitelisted sort key ("created_at:asc|desc") (§80).
-func (s *Service) AdminListRevisions(ctx context.Context, kind, status, q, sort string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
+// search term matched against summary and submitter username, a
+// whitelisted sort key ("created_at:asc|desc"), and a deleted toggle
+// ("only|all"; default excludes soft-deleted rows) (§80).
+func (s *Service) AdminListRevisions(ctx context.Context, kind, status, q, sort, deleted string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -793,7 +794,7 @@ func (s *Service) AdminListRevisions(ctx context.Context, kind, status, q, sort 
 
 	offset := (page - 1) * limit
 
-	revs, total, err := s.store.AdminListRevisions(ctx, kind, status, q, sort, limit, offset)
+	revs, total, err := s.store.AdminListRevisions(ctx, kind, status, q, sort, deleted, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin list revisions: %w", err)
 	}

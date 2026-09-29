@@ -34,7 +34,7 @@ WHERE wp.category = $1 AND sp.space_type_id = $2
   AND EXISTS (
       SELECT 1 FROM wiki_revisions wr
       WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
-        AND wr.kind IN ('content', 'mixed')
+        AND wr.kind IN ('content', 'mixed') AND wr.deleted_at IS NULL
   )
 `
 
@@ -72,6 +72,7 @@ WHERE wp.page_template_id = $1 AND wp.deleted_at IS NULL
       EXISTS (
           SELECT 1 FROM wiki_revisions wr
           WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
+            AND wr.deleted_at IS NULL
       )
       OR EXISTS (
           SELECT 1

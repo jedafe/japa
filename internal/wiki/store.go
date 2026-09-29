@@ -136,6 +136,10 @@ type WikiRevision struct {
 	HitlReviewedAt  pgtype.Timestamptz
 	HitlReviewNotes *string
 	CreatedAt       pgtype.Timestamptz
+	// DeletedAt marks an admin-soft-deleted revision (§80) — populated only
+	// by AdminListRevisions, the one query that selects the column; every
+	// other reader predicates deleted_at IS NULL.
+	DeletedAt       pgtype.Timestamptz
 	SubmittedByName *string
 	ReviewedByName  *string
 }
@@ -278,11 +282,13 @@ func revisionFromByTargetRow(r gen.ListWikiRevisionsByTargetRow) WikiRevision {
 }
 
 func revisionFromAdminRow(r gen.AdminListWikiRevisionsRow) WikiRevision {
-	return mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
+	rev := mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
 		r.TargetEntityType, r.TargetEntityID, r.Status, r.SubmittedBy,
 		r.ReviewedBy, r.ReviewedAt, r.ApplyError, r.AiGenerated, r.AiModel,
 		r.AiPromptHash, r.HitlReviewedBy, r.HitlReviewedAt, r.HitlReviewNotes,
 		r.CreatedAt, r.SubmittedByName, r.ReviewedByName)
+	rev.DeletedAt = r.DeletedAt
+	return rev
 }
 
 func revisionFromApproveRow(r gen.ApproveWikiRevisionByIDRow) WikiRevision {
@@ -781,7 +787,7 @@ func (s *Store) ListRevisionsByTarget(ctx context.Context, entityType string, en
 // sort is a whitelisted "key:dir" token ("created_at:asc|desc"); anything
 // else falls through to the created_at DESC default (§80 community field
 // ops review).
-func (s *Store) AdminListRevisions(ctx context.Context, kind, status, q, sort string, limit, offset int32) ([]WikiRevision, int64, error) {
+func (s *Store) AdminListRevisions(ctx context.Context, kind, status, q, sort, deleted string, limit, offset int32) ([]WikiRevision, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -799,6 +805,7 @@ func (s *Store) AdminListRevisions(ctx context.Context, kind, status, q, sort st
 		Status:    status,
 		Q:         q,
 		Sort:      sort,
+		Deleted:   deleted,
 		OffsetVal: offset,
 		LimitVal:  limit,
 	})
@@ -812,9 +819,10 @@ func (s *Store) AdminListRevisions(ctx context.Context, kind, status, q, sort st
 	}
 
 	total, err := s.read.AdminCountWikiRevisions(ctx, gen.AdminCountWikiRevisionsParams{
-		Kind:   kind,
-		Status: status,
-		Q:      q,
+		Kind:    kind,
+		Status:  status,
+		Q:       q,
+		Deleted: deleted,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin count revisions: %w", err)
@@ -941,6 +949,48 @@ func (s *Store) HardDeleteWikiPage(ctx context.Context, pageID pgtype.UUID) erro
 			return pgx.ErrNoRows
 		}
 		return ErrPageNotDeleted
+	}
+
+	return nil
+}
+
+// ErrRevisionNotDeleted is returned by HardDeleteWikiRevision when the
+// revision exists but is still live — force delete only applies to
+// already-soft-deleted rows (Rule 11).
+var ErrRevisionNotDeleted = errors.New("wiki revision is not soft-deleted")
+
+// DeleteWikiRevision marks a revision deleted_at. Rows-affected zero means
+// the row is missing or already deleted — the caller maps pgx.ErrNoRows to
+// 404; a double-delete is treated as not found like SoftDeleteWikiPage.
+func (s *Store) DeleteWikiRevision(ctx context.Context, revID pgtype.UUID) error {
+	affected, err := s.write.SoftDeleteWikiRevision(ctx, revID)
+	if err != nil {
+		return fmt.Errorf("wiki: soft delete revision: %w", err)
+	}
+	if affected == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// HardDeleteWikiRevision permanently removes a soft-deleted revision. It
+// returns pgx.ErrNoRows when the revision does not exist and
+// ErrRevisionNotDeleted when it exists but is still live.
+func (s *Store) HardDeleteWikiRevision(ctx context.Context, revID pgtype.UUID) error {
+	affected, err := s.write.HardDeleteWikiRevision(ctx, revID)
+	if err != nil {
+		return fmt.Errorf("wiki: hard delete revision: %w", err)
+	}
+
+	if affected == 0 {
+		exists, err := s.read.WikiRevisionExists(ctx, revID)
+		if err != nil {
+			return fmt.Errorf("wiki: check revision exists: %w", err)
+		}
+		if !exists {
+			return pgx.ErrNoRows
+		}
+		return ErrRevisionNotDeleted
 	}
 
 	return nil

@@ -541,6 +541,14 @@ export interface UserSession {
 	expires_at: string;
 }
 
+export interface UserRestriction {
+	id: string;
+	operation: string;
+	reason: string | null;
+	expires_at: string | null;
+	created_at: string;
+}
+
 export interface UserGroup {
 	id: string;
 	name: string;
@@ -594,8 +602,10 @@ export const userManagementApi = {
 		api(`/admin/users/${userId}/restrict/${operation}`, { method: 'DELETE' }),
 	liftAllRestrictions: (userId: string) =>
 		api(`/admin/users/${userId}/restrict`, { method: 'DELETE' }),
+	// api() already unwraps the {data: [...]} envelope — the response is the
+	// restrictions array itself.
 	listRestrictions: (userId: string) =>
-		api<{ data: Array<{ id: string; operation: string; reason: string | null; expires_at: string | null; created_at: string }> }>(`/admin/users/${userId}/restrictions`),
+		api<UserRestriction[]>(`/admin/users/${userId}/restrictions`),
 	suspendUserFull: (userId: string, body: { reason: string }) =>
 		api(`/admin/users/${userId}/suspend`, { method: 'POST', body }),
 	warnUserTyped: (userId: string, body: { reason: string; violation_type: string }) =>
@@ -616,7 +626,7 @@ export const userManagementApi = {
 		api(`/admin/users/${userId}/hard`, { method: 'DELETE' }),
 
 	listGroups: (params?: string) =>
-		api<{ groups: UserGroup[]; total: number }>(`/admin/user-groups${params ? `?${params}` : ''}`),
+		api<{ groups: UserGroup[]; total: number; page?: number; total_pages?: number }>(`/admin/user-groups${params ? `?${params}` : ''}`),
 	createGroup: (body: { name: string; description: string; permissions: string[] }) =>
 		api<UserGroup>('/admin/user-groups', { method: 'POST', body }),
 	updateGroup: (id: string, body: { name?: string; description?: string; permissions?: string[] }) =>
@@ -1841,8 +1851,9 @@ export const aiModelsAdminApi = {
 export const spacesModeratorsAdminApi = {
 	add: (id: string, body: { user_id?: string; username?: string }) =>
 		api<unknown>(`/admin/spaces/${id}/moderators`, { method: 'POST', body }),
-	remove: (id: string, moderatorId: string) =>
-		api<{ removed: boolean }>(`/admin/spaces/${id}/moderators/${moderatorId}`, { method: 'DELETE' }),
+	// The {moderator_id} path segment is resolved as a user_id server-side.
+	remove: (id: string, userId: string) =>
+		api<{ removed: boolean }>(`/admin/spaces/${id}/moderators/${userId}`, { method: 'DELETE' }),
 };
 
 export const tagsModeratorsAdminApi = {
@@ -1857,8 +1868,17 @@ export const profilesAdminApiV2 = {
 		api<unknown>(`/admin/profiles/${id}/verify`, { method: 'DELETE' }),
 };
 
+export interface UserWarning {
+	id: string;
+	reason: string;
+	violation_type: string;
+	created_at: string;
+}
+
 export const usersWarningsAdminApi = {
-	list: (id: string) => api<unknown>(`/admin/users/${id}/warnings`),
+	list: (id: string) => api<UserWarning[]>(`/admin/users/${id}/warnings`),
+	delete: (id: string, warningId: string) =>
+		api<unknown>(`/admin/users/${id}/warnings/${warningId}`, { method: 'DELETE' }),
 };
 
 export interface PermissionPreset {
@@ -1961,6 +1981,9 @@ export type WikiRevisionItem = {
 	// shown in the queue so reviewers see why an approve attempt rolled back.
 	apply_error?: string;
 	created_at?: string;
+	// §80 revision deletion — set on soft-deleted rows when the queue lists
+	// them via ?deleted=only|all.
+	deleted_at?: string | null;
 };
 
 // WikiEntityFields is the response of GET /wiki/entities/:type/:id/fields —
@@ -2039,6 +2062,13 @@ export const wikiAdminApi = {
 		api<unknown>(`/admin/wiki/revisions/${revId}/approve`, { method: 'POST', body: body ?? {} }),
 	rejectWikiRevision: (revId: string, body?: { reason?: string }) =>
 		api<unknown>(`/admin/wiki/revisions/${revId}/reject`, { method: 'POST', body: body ?? {} }),
+	// §80 revision deletion — soft delete marks the row deleted_at; ?force=true
+	// permanently removes an already-soft-deleted row (409 revision_not_deleted
+	// on a live one; requires admin.hard_delete).
+	deleteWikiRevision: (revId: string) =>
+		api<unknown>(`/admin/wiki/revisions/${revId}`, { method: 'DELETE' }),
+	hardDeleteWikiRevision: (revId: string) =>
+		api<unknown>(`/admin/wiki/revisions/${revId}?force=true`, { method: 'DELETE' }),
 	// Current field values for an entity — used to render current → proposed
 	// diffs for set_value ops in the review queue.
 	getEntityFields: (entityType: string, entityId: string) =>

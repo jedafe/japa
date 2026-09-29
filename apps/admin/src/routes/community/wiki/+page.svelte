@@ -261,7 +261,7 @@
 	const approvablePages = (ids: Set<string>): WikiItem[] =>
 		pageRowsFor(ids).filter((r) => r.status === 'pending' && !!r.latest_revision_id);
 	const pendingRevisions = (ids: Set<string>): WikiRevisionItem[] =>
-		revisionRowsFor(ids).filter((r) => r.status === 'pending');
+		revisionRowsFor(ids).filter((r) => r.status === 'pending' && !r.deleted_at);
 
 	// Sequential per-row ops — the API has no bulk routes, and per-row failures
 	// are collected rather than aborting the batch (same rule as EntityPage's
@@ -347,6 +347,46 @@
 			forceTargets = [];
 			if (failed > 0) bulkPartialError(failed, targets.length, lastErr);
 			entityController?.reload();
+		} finally {
+			acting = false;
+		}
+	}
+
+	// ── Revision force delete — same single+bulk modal pattern as pages ────
+	let revForceTargets = $state<WikiRevisionItem[]>([]);
+	let showRevForceModal = $state(false);
+
+	function openRevisionForceDelete(row: WikiRevisionItem) {
+		revForceTargets = [row];
+		showRevForceModal = true;
+	}
+
+	function openBulkForceDeleteRevisions(ids: Set<string>) {
+		const rows = revisionRowsFor(ids).filter((r) => !!r.deleted_at);
+		if (rows.length === 0) return;
+		revForceTargets = rows;
+		showRevForceModal = true;
+	}
+
+	async function confirmRevisionForceDelete() {
+		if (acting || revForceTargets.length === 0) return;
+		acting = true;
+		pageError = '';
+		try {
+			const targets = revForceTargets;
+			let failed = 0;
+			let lastErr = '';
+			for (const row of targets) {
+				const res = await wikiAdminApi.hardDeleteWikiRevision(row.id);
+				if (!res.ok) {
+					failed++;
+					lastErr = res.error ?? '';
+				}
+			}
+			showRevForceModal = false;
+			revForceTargets = [];
+			if (failed > 0) bulkPartialError(failed, targets.length, lastErr);
+			revisionsController?.reload();
 		} finally {
 			acting = false;
 		}
@@ -879,6 +919,15 @@
 			fetcher: enumFetcher(STATUS_OPTIONS),
 			initialFetcher: enumInitial(STATUS_OPTIONS),
 			getSelectedLabel: enumLabel(STATUS_OPTIONS)
+		},
+		{
+			key: 'deleted',
+			label: t('app.wiki.filter_deleted', 'Deleted'),
+			type: 'select',
+			options: [
+				{ value: 'only', label: t('app.wiki.filter_deleted_only', 'Deleted only') },
+				{ value: 'all', label: t('app.wiki.filter_deleted_all', 'Include deleted') }
+			]
 		}
 	]);
 
@@ -902,14 +951,33 @@
 				label: t('app.wiki.approve_revision', 'Approve Revision'),
 				icon: CheckCircle,
 				onclick: approveRevisionById,
-				show: (row: WikiRevisionItem) => row.status === 'pending'
+				show: (row: WikiRevisionItem) => row.status === 'pending' && !row.deleted_at
 			});
 			acts.push({
 				label: t('app.wiki.reject_revision', 'Reject Revision'),
 				icon: XCircle,
 				variant: 'destructive',
 				onclick: openRevisionReject,
-				show: (row: WikiRevisionItem) => row.status === 'pending'
+				show: (row: WikiRevisionItem) => row.status === 'pending' && !row.deleted_at
+			});
+		}
+		if (canDelete) {
+			// Delete → built-in confirm → revisionConfig.remove (soft).
+			// Force Delete → page-local modal → hardDeleteWikiRevision; only
+			// for soft-deleted rows (mirrors the Pages tab).
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row: WikiRevisionItem, ctx) => ctx?.openDelete(row),
+				show: (row: WikiRevisionItem) => !row.deleted_at
+			});
+			acts.push({
+				label: t('app.wiki.force_delete', 'Force Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openRevisionForceDelete,
+				show: (row: WikiRevisionItem) => !!row.deleted_at
 			});
 		}
 		return acts;
@@ -921,22 +989,37 @@
 	];
 
 	const revisionBulkActions = $derived.by<BulkAction[]>(() => {
-		if (!canReview) return [];
-		return [
-			{
-				label: t('app.wiki.bulk_approve', 'Approve Selected'),
-				icon: CheckCircle,
-				onclick: (ids) => bulkEach(pendingRevisions(ids), (r) => wikiAdminApi.approveWikiRevision(r.id)),
-				disabled: (ids) => acting || pendingRevisions(ids).length === 0
-			},
-			{
-				label: t('app.wiki.bulk_reject', 'Reject Selected'),
-				icon: XCircle,
+		const acts: BulkAction[] = [];
+		if (canReview) {
+			acts.push(
+				{
+					label: t('app.wiki.bulk_approve', 'Approve Selected'),
+					icon: CheckCircle,
+					onclick: (ids) => bulkEach(pendingRevisions(ids), (r) => wikiAdminApi.approveWikiRevision(r.id)),
+					disabled: (ids) => acting || pendingRevisions(ids).length === 0
+				},
+				{
+					label: t('app.wiki.bulk_reject', 'Reject Selected'),
+					icon: XCircle,
+					variant: 'destructive',
+					onclick: openBulkRejectRevisions,
+					disabled: (ids) => acting || pendingRevisions(ids).length === 0
+				}
+			);
+		}
+		if (canDelete) {
+			// Bulk soft delete is EntityPage's built-in "Delete Selected"
+			// (config.remove); this adds the bulk hard-delete counterpart for
+			// soft-deleted rows.
+			acts.push({
+				label: t('app.wiki.bulk_force_delete', 'Force Delete Selected'),
+				icon: Trash2,
 				variant: 'destructive',
-				onclick: openBulkRejectRevisions,
-				disabled: (ids) => acting || pendingRevisions(ids).length === 0
-			}
-		];
+				onclick: openBulkForceDeleteRevisions,
+				disabled: (ids) => acting || !revisionRowsFor(ids).some((r) => !!r.deleted_at)
+			});
+		}
+		return acts;
 	});
 
 	const revisionConfig = $derived<EntityPageConfig>({
@@ -968,7 +1051,13 @@
 				sortable: false,
 				render: (value: string) => value || '—'
 			},
-			{ key: 'status', label: t('app.wiki.col_status', 'Status'), sortable: false },
+			{
+				key: 'status',
+				label: t('app.wiki.col_status', 'Status'),
+				sortable: false,
+				render: (value: string, row: WikiRevisionItem) =>
+					row.deleted_at ? `${value} · ${t('app.wiki.filter_deleted', 'Deleted')}` : value
+			},
 			{
 				key: 'created_at',
 				label: t('app.wiki.col_created', 'Submitted'),
@@ -978,6 +1067,11 @@
 		],
 		actions: revisionActions,
 		bulkActions: revisionBulkActions,
+		deletePermission: 'wiki.delete',
+		remove: async (id) => {
+			const res = await wikiAdminApi.deleteWikiRevision(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
 		fields: revisionFields,
 		load: async (params) => {
 			const qs = new URLSearchParams();
@@ -990,6 +1084,7 @@
 			if (kind && kind !== 'all') qs.set('kind', kind);
 			const status = params.filter?.status;
 			if (status && status !== 'all') qs.set('status', status);
+			if (params.filter?.deleted) qs.set('deleted', params.filter.deleted);
 			const result = await wikiAdminApi.listWikiRevisions(qs.toString());
 			if (result.ok) {
 				const data = result.data.data ?? [];
@@ -1122,6 +1217,33 @@
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => { showForceModal = false; forceTargets = []; }}>{t('app.wiki.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={confirmForceDelete} disabled={acting}>
+			{acting ? t('app.wiki.force_deleting', 'Deleting...') : t('app.wiki.force_delete', 'Force Delete')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Revision force delete (wiki.delete + admin.hard_delete) ──────────── -->
+<Modal bind:open={showRevForceModal} title={t('app.wiki.force_delete', 'Force Delete')}>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{#if revForceTargets.length === 1}
+				{t('app.wiki.force_delete_revision', 'Permanently delete revision "{title}"? This cannot be undone.').replace('{title}', revForceTargets[0]?.summary ?? revForceTargets[0]?.id ?? '')}
+			{:else}
+				{t('app.wiki.force_delete_revision_bulk', 'Permanently delete {count} selected revisions? This cannot be undone.').replace('{count}', String(revForceTargets.length))}
+			{/if}
+		</p>
+		{#if pageError}
+			<div
+				class="rounded-lg p-3 text-sm"
+				style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			>
+				{pageError}
+			</div>
+		{/if}
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showRevForceModal = false; revForceTargets = []; }}>{t('app.wiki.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmRevisionForceDelete} disabled={acting}>
 			{acting ? t('app.wiki.force_deleting', 'Deleting...') : t('app.wiki.force_delete', 'Force Delete')}
 		</Button>
 	</div>
