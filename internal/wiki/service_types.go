@@ -653,8 +653,8 @@ func (s *Service) DeleteWikiTypeCategory(ctx context.Context, idStr string) erro
 var validRollupMetrics = map[string]bool{"min": true, "avg": true, "max": true}
 
 // validateRollupInput checks a rollup JSONB payload: null/empty clears,
-// otherwise {enabled bool, metrics ⊆ {min,avg,max}, levels []slug,
-// section_limit ≥ 0}.
+// otherwise {enabled bool, mode ∈ {"", "directory"}, metrics ⊆ {min,avg,max},
+// levels []slug, section_limit ≥ 0}.
 // Returns the canonical bytes to store (nil when clearing).
 func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 	if len(raw) == 0 || string(raw) == "null" {
@@ -666,6 +666,12 @@ func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 		return nil, fmt.Errorf("%w: rollup must be an object", ErrInvalidInput)
 	}
 
+	// mode selects the renderer: empty = fold-up aggregation (default),
+	// "directory" = child-space list (§80). Anything else is a typo the
+	// frontend would silently ignore — reject it.
+	if cfg.Mode != "" && cfg.Mode != rollupModeDirectory {
+		return nil, fmt.Errorf("%w: unknown rollup mode %q", ErrInvalidInput, cfg.Mode)
+	}
 	for _, m := range cfg.Metrics {
 		if !validRollupMetrics[m] {
 			return nil, fmt.Errorf("%w: unknown rollup metric %q", ErrInvalidInput, m)

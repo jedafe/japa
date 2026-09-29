@@ -257,6 +257,18 @@ func TestParseRollupConfig(t *testing.T) {
 	}
 }
 
+func TestParseRollupConfig_DirectoryMode(t *testing.T) {
+	cfg := parseRollupConfig([]byte(`{"enabled":true,"mode":"directory","levels":["state"]}`))
+	if cfg == nil || cfg.Mode != "directory" || len(cfg.Levels) != 1 {
+		t.Fatalf("directory config misparsed: %+v", cfg)
+	}
+	// Aggregate stays the default mode when absent.
+	cfg = parseRollupConfig([]byte(`{"enabled":true,"metrics":["min"]}`))
+	if cfg == nil || cfg.Mode != "" {
+		t.Fatalf("absent mode should parse as empty, got %+v", cfg)
+	}
+}
+
 func TestValidateRollupInput(t *testing.T) {
 	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"section_limit":-1}`)); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("negative section_limit: want ErrInvalidInput, got %v", err)
@@ -271,6 +283,13 @@ func TestValidateRollupInput(t *testing.T) {
 	out, err = validateRollupInput(json.RawMessage(`null`))
 	if err != nil || out != nil {
 		t.Fatalf("null should clear config: out=%s err=%v", out, err)
+	}
+
+	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"sidebar"}`)); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("unknown mode: want ErrInvalidInput, got %v", err)
+	}
+	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"directory","levels":["state","university"]}`)); err != nil {
+		t.Fatalf("directory config rejected: %v", err)
 	}
 }
 
