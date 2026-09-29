@@ -343,6 +343,10 @@ type wikiCategoryItem struct {
 	FieldGroupID string `json:"field_group_id,omitempty"`
 	Position     int32  `json:"position"`
 	IsSystem     bool   `json:"is_system"`
+	// Directory marks a category whose rollup config sets
+	// mode:"directory" — its stub page is the child-space listing, so
+	// the frontend must link page_slug even with no materialized pages.
+	Directory bool `json:"directory,omitempty"`
 	// PageTemplates lists the category's declared sibling pages — lazy
 	// template pages the frontend links into (§80); empty when the
 	// category declares none or the request has no space context.
@@ -361,6 +365,9 @@ func categoryItem(c WikiCategory) wikiCategoryItem {
 	}
 	if c.FieldGroupID.Valid {
 		item.FieldGroupID = c.FieldGroupID.String()
+	}
+	if rcfg := parseRollupConfig(c.Rollup); rcfg != nil && rcfg.Mode == rollupModeDirectory {
+		item.Directory = true
 	}
 
 	return item
