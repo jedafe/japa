@@ -8,6 +8,7 @@
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
 	import WikiItemTables from '$lib/components/wiki/WikiItemTables.svelte';
 	import WikiRollupPanel from '$lib/components/wiki/WikiRollupPanel.svelte';
+	import WikiDirectoryPanel from '$lib/components/wiki/WikiDirectoryPanel.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
@@ -411,7 +412,10 @@
 						<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]">
 							{@html htmlContent}
 						</div>
-					{:else}
+					{:else if !data.page.directory}
+						<!-- Directory pages have no prose by design — the child
+						     listing below IS the content; the empty-state box
+						     would read as a missing page. -->
 						<div class="rounded-[12px] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-6 text-center">
 							<p class="text-sm text-[var(--color-muted)]">
 								{t('wiki.empty_content', 'This page has no content yet.')}
@@ -429,11 +433,15 @@
 					{/if}
 
 					<!-- §80 Hierarchical UX — the read-facing structured render: the
-					     descendant rollup (country/state category pages) and the bound
-					     group's itemized sections (city prices pages). The
+					     descendant rollup (country/state category pages), the
+					     child-space directory (directory-mode categories), and the
+					     bound group's itemized sections (city prices pages). The
 					     EntityFieldsPanel below stays the edit surface. -->
 					{#if data.page.rollup}
 						<WikiRollupPanel rollup={data.page.rollup} spaceSlug={spaceName} />
+					{/if}
+					{#if data.page.directory}
+						<WikiDirectoryPanel directory={data.page.directory} spaceSlug={data.spaceSlug} />
 					{/if}
 					{#if data.page.fields}
 						<div class="mt-6">

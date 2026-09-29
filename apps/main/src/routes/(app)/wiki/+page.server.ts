@@ -7,51 +7,36 @@ import type { WikiDestination, WikiTypeItem } from '$lib/types';
 import { wikiDrillChain } from '$lib/utils/wikiTypeChain';
 
 /**
- * §80 Hierarchical UX: the drill-down chain (country → state → city today)
- * derives from the declared wiki_type_parents edges on GET /wiki/types, not
- * a hardcoded type set — enabling a new child type extends the chooser
- * without code. Enabled types outside the chain keep their own search +
- * browse sections.
+ * §80 Hierarchical UX + directories: the landing is a root-grid +
+ * all-types search. The root grid lists the first root type's spaces
+ * (country today) — children live on each parent's directory category
+ * pages (/wiki/{country}/states), so the landing needs only the root
+ * level and a search that spans every enabled type.
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 
 	let destinations: WikiDestination[] = [];
-	let typeWikis: Record<string, WikiDestination[]> = {};
 	let types: WikiTypeItem[] = [];
 	let chain: WikiTypeItem[] = [];
-	let extraTypes: WikiTypeItem[] = [];
 	try {
 		const typesRes = await apiList<WikiTypeItem>(ctx, '/wiki/types');
 		types = (typesRes.items ?? [])
 			.filter((t) => t.enabled !== false)
 			.sort((a, b) => a.position - b.position);
 		chain = wikiDrillChain(types);
-		const chainIds = new Set(chain.map((c) => c.space_type_id));
-		extraTypes = types.filter((t) => !chainIds.has(t.space_type_id));
 
 		const rootSlug = chain[0]?.space_type_slug ?? '';
-		const [rootDest, ...perType] = await Promise.all([
-			rootSlug
-				? apiList<WikiDestination>(
-						ctx,
-						`/wiki/destinations?level=${encodeURIComponent(rootSlug)}&has_wiki=false`
-					)
-				: Promise.resolve(null),
-			...extraTypes.map((t) =>
-				apiList<WikiDestination>(
-					ctx,
-					`/wiki/destinations?level=${encodeURIComponent(t.space_type_slug)}&has_wiki=true`
-				).catch(() => null)
-			)
-		]);
-		destinations = rootDest?.items ?? [];
-		for (let i = 0; i < extraTypes.length; i++) {
-			typeWikis[extraTypes[i].space_type_slug] = perType[i]?.items ?? [];
+		if (rootSlug) {
+			const rootDest = await apiList<WikiDestination>(
+				ctx,
+				`/wiki/destinations?level=${encodeURIComponent(rootSlug)}&has_wiki=false`
+			);
+			destinations = rootDest?.items ?? [];
 		}
 	} catch {
 		/* degrade to empty list */
 	}
 
-	return { destinations, types, chain, extraTypes, typeWikis };
+	return { destinations, types, chain };
 };

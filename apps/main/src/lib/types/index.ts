@@ -3134,6 +3134,28 @@ export interface WikiRollup {
 	spaces: number;
 }
 
+/** §80 directories — one card in a directory-mode listing: the descendant
+ *  space's identity plus geo_code and its active wiki page count. */
+export interface WikiDirectoryChild {
+	slug: string;
+	name: string;
+	level: string;
+	type_slug?: string;
+	geo_code?: string;
+	page_count: number;
+	depth: number;
+}
+
+/** §80 directories — read-time child-space listing on a directory-mode
+ *  category page. total counts every matching descendant (pre-cap);
+ *  children is capped — the full set stays reachable via
+ *  GET /wiki/destinations?within={slug}&level={level}. */
+export interface WikiDirectory {
+	levels: string[];
+	children: WikiDirectoryChild[];
+	total: number;
+}
+
 export interface WikiPage extends WikiPageIndex {
 	space_slug: string;
 	space_name: string;
@@ -3165,6 +3187,10 @@ export interface WikiPage extends WikiPageIndex {
 	/** §80 Hierarchical UX: read-time descendant aggregate — present only on
 	 *  a rollup-enabled category's canonical page. */
 	rollup?: WikiRollup;
+	/** §80 directories: read-time child-space listing — present only on a
+	 *  directory-mode category's canonical page (which is always its lazy
+	 *  or materialized stub page). */
+	directory?: WikiDirectory;
 	/** §80 Hierarchical UX: the page template the page was created from —
 	 *  echoed so UIs can link sibling template pages. */
 	page_template_id?: string;

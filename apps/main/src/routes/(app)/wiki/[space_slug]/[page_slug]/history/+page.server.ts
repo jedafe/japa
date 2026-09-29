@@ -4,7 +4,15 @@ import { apiContext, apiList, apiGet, apiGetEnvelope } from '$lib/server/api';
 import type { WikiRevision, WikiPageIndex, SpaceDetail } from '$lib/types';
 
 type ListMeta = { total: number; page: number; limit: number };
-type WikiApiCategory = { slug: string; label_key: string; label: string };
+type WikiApiCategory = {
+	slug: string;
+	label_key: string;
+	label: string;
+	/** Stub page slug for /wiki/{space}/{page_slug} links. */
+	page_slug?: string;
+	/** §80 directories — the stub page is the child-space listing. */
+	directory?: boolean;
+};
 
 /**
  * Revision history for a wiki page at /wiki/{space_slug}/{page_slug}/history —

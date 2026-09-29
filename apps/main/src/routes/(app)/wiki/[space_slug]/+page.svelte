@@ -43,6 +43,10 @@
 		 *  category ({name} substituted server-side). Present only on
 		 *  ?space= requests. */
 		page_templates?: { slug: string; label: string; position: number }[];
+		/** Stub page slug for /wiki/{space}/{page_slug} links. */
+		page_slug?: string;
+		/** §80 directories — the stub page is the child-space listing. */
+		directory?: boolean;
 	};
 	// svelte-ignore state_referenced_locally
 	const apiCategories: ApiCategory[] = data.apiCategories ?? [];
@@ -118,6 +122,12 @@
 		/** §80 lazy template pages — declared slugs with no materialized
 		 *  page yet, rendered as discoverable sub-links. */
 		templates: { slug: string; label: string }[];
+		/** §80 lazy categories — the stub page slug, when the canonical
+		 *  category declares one. */
+		pageSlug?: string;
+		/** §80 directories — the stub is the child listing; the card links
+		 *  it rather than a sibling page. */
+		directory: boolean;
 	}
 	const cardGroups = $derived.by<CardGroup[]>(() => {
 		const order = new Map(apiCategories.map((c, i) => [c.slug, i]));
@@ -127,11 +137,11 @@
 			if (arr) arr.push(p);
 			else groups.set(p.category, [p]);
 		}
-		// Lazy template pages: a category with only unmaterialized template
-		// pages still gets a card so the links are reachable.
+		// Lazy template pages and directory categories: a stub-only
+		// category still gets a card so its listing/links stay reachable.
 		const cats = new Set(groups.keys());
 		for (const c of apiCategories) {
-			if ((c.page_templates?.length ?? 0) > 0) cats.add(c.slug);
+			if ((c.page_templates?.length ?? 0) > 0 || c.directory) cats.add(c.slug);
 		}
 		return [...cats]
 			.map((category) => {
@@ -139,10 +149,18 @@
 					(a, b) => Number(b.is_featured) - Number(a.is_featured)
 				);
 				const materialized = new Set(pages.map((p) => p.slug));
-				const templates = (apiCategories.find((c) => c.slug === category)?.page_templates ?? [])
+				const apiCat = apiCategories.find((c) => c.slug === category);
+				const templates = (apiCat?.page_templates ?? [])
 					.filter((tm) => !materialized.has(tm.slug))
 					.map((tm) => ({ slug: tm.slug, label: tm.label }));
-				return { category, label: categoryLabel(category), pages, templates };
+				return {
+					category,
+					label: categoryLabel(category),
+					pages,
+					templates,
+					pageSlug: apiCat?.page_slug,
+					directory: apiCat?.directory ?? false
+				};
 			})
 			.sort((a, b) => {
 				const ca = order.get(a.category) ?? Number.MAX_SAFE_INTEGER;
@@ -368,7 +386,11 @@
 					{@const Icon = categoryIcon(group.category)}
 					{@const tint = categoryTint(group.category)}
 					{@const first = group.pages[0]}
-					{@const firstSlug = first?.slug ?? group.templates[0]?.slug ?? ''}
+					<!-- Directory cards link the stub (the child listing); others
+					     prefer a materialized page, then the first lazy template. -->
+					{@const firstSlug = group.directory && group.pageSlug
+						? group.pageSlug
+						: first?.slug ?? group.templates[0]?.slug ?? group.pageSlug ?? ''}
 					<div>
 						<a
 							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(firstSlug)}"
