@@ -51,13 +51,22 @@ type WikiSiblingDTO struct {
 // closure of wiki_type_parents); metrics selects which aggregates render.
 // SectionLimit caps the rows table (§7 cardinality guard); zero or absent
 // falls back to defaultRollupRowsLimit.
+// Mode "directory" switches the category page from metric aggregation to a
+// child-space list (§80).
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiRollupConfig struct {
 	Enabled      bool     `json:"enabled"`
+	Mode         string   `json:"mode,omitempty"`
 	Metrics      []string `json:"metrics"`
 	Levels       []string `json:"levels"`
 	SectionLimit int      `json:"section_limit,omitempty"`
 }
+
+// rollupModeDirectory switches a category rollup from metric aggregation
+// to a child-space directory: instead of fold-up sections the page lists
+// every linked descendant wiki space (with geo_code + page_count), no
+// field-value requirement.
+const rollupModeDirectory = "directory"
 
 // defaultRollupRowsLimit bounds the descendants table when the category
 // config sets no section_limit — the full set remains reachable through
