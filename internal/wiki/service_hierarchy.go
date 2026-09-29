@@ -177,8 +177,15 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 		}
 	}
 
+	// Omitted levels means "every declared descendant type" — normalize to
+	// an empty array so the JSON contract stays `levels: string[]`.
+	levels := cfg.Levels
+	if levels == nil {
+		levels = []string{}
+	}
+
 	return &WikiDirectoryDTO{
-		Levels:   cfg.Levels,
+		Levels:   levels,
 		Children: directoryChildRows(children, limit),
 		Total:    len(children),
 	}

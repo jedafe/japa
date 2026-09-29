@@ -665,8 +665,13 @@ func TestGetWikiPage_LazyTemplatePage(t *testing.T) {
 	if !page.Lazy {
 		t.Fatal("want lazy=true on an unmaterialized template page")
 	}
-	if !strings.HasPrefix(page.Title, "Prices in ") || strings.Contains(page.Title, "{name}") {
-		t.Fatalf("title not substituted: %q", page.Title)
+	// {name} must expand to the space's display name — not its level
+	// ('custom' for seeded spaces). Loose prefix checks once let
+	// "Prices in custom" pass when GetSpaceBySlug returned the level.
+	wantName := "lazy " + spaceSlug
+	if page.Title != "Prices in "+wantName || page.SpaceName != wantName {
+		t.Fatalf("display name not substituted: title=%q space_name=%q want_name=%q",
+			page.Title, page.SpaceName, wantName)
 	}
 	if page.Category != "cost_of_living" {
 		t.Fatalf("category: got %q want cost_of_living", page.Category)
