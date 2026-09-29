@@ -112,6 +112,109 @@ type WikiRollupDTO struct {
 	Spaces int                  `json:"spaces"`
 }
 
+// WikiDirectoryChildDTO is one card in a directory-mode listing — the
+// space's identity plus geo_code and its active wiki page count.
+// //nolint:revive // exported: DTO naming follows package convention
+type WikiDirectoryChildDTO struct {
+	Slug      string  `json:"slug"`
+	Name      string  `json:"name"`
+	Level     string  `json:"level"`
+	TypeSlug  string  `json:"type_slug,omitempty"`
+	GeoCode   *string `json:"geo_code,omitempty"`
+	PageCount int64   `json:"page_count"`
+	Depth     int32   `json:"depth"`
+}
+
+// WikiDirectoryDTO is the read-time child-space listing attached to a
+// directory-mode category page. Total counts every matching descendant
+// (pre-cap); Children is capped for the card grid — the frontend reaches
+// the full set via GET /wiki/destinations?within={slug}&level={level}.
+// //nolint:revive // exported: DTO naming follows package convention
+type WikiDirectoryDTO struct {
+	Levels   []string                `json:"levels"`
+	Children []WikiDirectoryChildDTO `json:"children"`
+	Total    int                     `json:"total"`
+}
+
+// defaultDirectoryLimit caps the directory card grid — the full set stays
+// reachable through the destinations endpoint.
+const defaultDirectoryLimit = 200
+
+// computeDirectory lists a space's linked wiki-type descendants for a
+// directory-mode category page (§80): eligible types come from
+// rollup.levels or the declared descendant-type closure; children come
+// from space_parent_spaces ∪ parent_id gated to enabled wiki types. Nil
+// for non-directory configs, unresolvable levels, or no matching
+// descendants — a category that lists nothing shouldn't render the panel.
+func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgtype.UUID, cfg *WikiRollupConfig) *WikiDirectoryDTO {
+	if cfg.Mode != rollupModeDirectory {
+		return nil
+	}
+
+	typeIDs, err := s.rollupTypeIDs(ctx, spaceTypeID, cfg.Levels)
+	if err != nil {
+		slog.Warn("wiki: directory: type scope failed", "error", err)
+		return nil
+	}
+	if len(typeIDs) == 0 {
+		return nil
+	}
+
+	children, err := s.store.ListDirectoryChildren(ctx, spaceID, typeIDs)
+	if err != nil {
+		slog.Warn("wiki: directory: children failed",
+			"space_id", spaceID.String(), "error", err)
+		return nil
+	}
+	if len(children) == 0 {
+		return nil
+	}
+
+	limit := defaultDirectoryLimit
+	if s.settings != nil {
+		if n := s.settings.GetIntOr(ctx, "wiki.directory_default_limit", defaultDirectoryLimit); n > 0 {
+			limit = n
+		}
+	}
+
+	return &WikiDirectoryDTO{
+		Levels:   cfg.Levels,
+		Children: directoryChildRows(children, limit),
+		Total:    len(children),
+	}
+}
+
+// directoryChildRows maps directory children to DTOs, ordered by depth
+// then name (slug tie-break) and capped at limit — deterministic so the
+// truncated tail is always the same spaces, not an arbitrary subset.
+// limit <= 0 means uncapped.
+func directoryChildRows(children []WikiDirectoryChild, limit int) []WikiDirectoryChildDTO {
+	sort.SliceStable(children, func(i, j int) bool {
+		if children[i].Depth != children[j].Depth {
+			return children[i].Depth < children[j].Depth
+		}
+		if children[i].Name != children[j].Name {
+			return children[i].Name < children[j].Name
+		}
+		return children[i].Slug < children[j].Slug
+	})
+
+	n := len(children)
+	if limit > 0 && n > limit {
+		n = limit
+	}
+
+	out := make([]WikiDirectoryChildDTO, 0, n)
+	for _, c := range children[:n] {
+		out = append(out, WikiDirectoryChildDTO{
+			Slug: c.Slug, Name: c.Name, Level: c.Level,
+			TypeSlug: c.SpaceTypeSlug, GeoCode: c.GeoCode,
+			PageCount: c.PageCount, Depth: c.Depth,
+		})
+	}
+	return out
+}
+
 // parseRollupConfig decodes a category's rollup JSONB; nil on absent or
 // malformed config (rollups are strictly opt-in).
 func parseRollupConfig(raw []byte) *WikiRollupConfig {
