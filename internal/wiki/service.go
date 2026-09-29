@@ -530,7 +530,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 				return WikiPageDetailDTO{}, pgx.ErrNoRows
 			}
 
-			return s.getLazyTemplatePage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
+			return s.getLazyPage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
 		}
 
 		return WikiPageDetailDTO{}, fmt.Errorf("wiki: get page: %w", err)
@@ -701,6 +701,85 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 	return dto, nil
 }
 
+// getLazyPage resolves a slug with no wiki_pages row: first the space
+// type's page templates (existing rule — a template slug colliding with a
+// category stub shadows it), then the type's category stubs (§80 —
+// category pages are lazy like template pages; directory-mode categories
+// need no materialized row). pgx.ErrNoRows → real 404.
+func (s *Service) getLazyPage(ctx context.Context, userID, spaceID pgtype.UUID, spaceSlug, spaceName, pageSlug string) (WikiPageDetailDTO, error) {
+	dto, err := s.getLazyTemplatePage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return dto, err // rendered, or a real lookup error
+	}
+
+	cat, cerr := s.store.GetCategoryForSpace(ctx, spaceID, pageSlug)
+	if cerr != nil {
+		if errors.Is(cerr, ErrWikiCategoryNotFound) {
+			return WikiPageDetailDTO{}, pgx.ErrNoRows
+		}
+
+		return WikiPageDetailDTO{}, fmt.Errorf("wiki: lazy page: resolve category: %w", cerr)
+	}
+
+	return s.lazyCategoryPage(ctx, userID, spaceID, spaceSlug, spaceName, cat)
+}
+
+// lazyCategoryPage renders a category's stub page with no wiki_pages row —
+// the directory-mode list page needs no materialization to work. Carries
+// the category's label, bound group, template links, ancestors/siblings,
+// and rollup/directory payload like the materialized path.
+func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.UUID, spaceSlug, spaceName string, cat WikiCategory) (WikiPageDetailDTO, error) {
+	dto := WikiPageDetailDTO{
+		WikiPageDTO: WikiPageDTO{
+			SpaceID:   spaceID.String(),
+			Slug:      cat.Slug,
+			Title:     substituteTemplateLabel(cat.Label, spaceName),
+			Category:  cat.Category,
+			IsActive:  true,
+			SpaceSlug: spaceSlug,
+			SpaceName: spaceName,
+			Position:  cat.Position,
+		},
+		SpaceSlug: spaceSlug,
+		SpaceName: spaceName,
+		Lazy:      true,
+	}
+	dto.CategoryLabel = cat.Label
+
+	if cat.FieldGroupID.Valid {
+		dto.FieldGroupID = cat.FieldGroupID.String()
+		if cat.FieldGroupSlug != nil {
+			dto.FieldGroupSlug = *cat.FieldGroupSlug
+		}
+		if s.fields != nil {
+			if grp, ferr := s.GetPageFields(ctx, userID, spaceID, cat.FieldGroupID); ferr == nil && grp != nil {
+				dto.Fields = grp
+			} else if ferr != nil {
+				slog.Warn("wiki: lazy category fields load failed",
+					"space_id", spaceID.String(), "group_id", cat.FieldGroupID.String(), "error", ferr)
+			}
+		}
+	}
+
+	if tmpls, terr := s.store.ListPageTemplates(ctx, cat.ID); terr == nil {
+		dto.PageTemplates = pageTemplateItems(tmpls, spaceName)
+	}
+
+	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
+		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil {
+			if rcfg.Mode == rollupModeDirectory {
+				dto.Directory = s.computeDirectory(ctx, spaceID, spaceTypeID, rcfg)
+			} else {
+				dto.Rollup = s.computeRollup(ctx, userID, spaceID, spaceTypeID, rcfg, cat.Category)
+			}
+		}
+	}
+	dto.Siblings = s.getSiblings(ctx, spaceID, cat.Category, cat.Slug)
+
+	return dto, nil
+}
+
 // GetRevisionHistory returns the revision history for a wiki page. Pending
 // revisions are still listed for transparency, but their bodies (content,
 // ops, summary — all unmoderated user text) are redacted unless the viewer
@@ -791,10 +870,10 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// §80 lazy template pages: the first prose submission
-			// materializes the row (bound to the resolved page template),
-			// then the revision attaches normally.
-			page, err = s.materializeTemplatePage(ctx, spaceID, spaceSlug, spaceName, userID, pageSlug)
+			// §80 lazy pages: the first prose submission materializes
+			// the row (bound to the resolved page template or category
+			// stub), then the revision attaches normally.
+			page, err = s.materializeLazyPage(ctx, spaceID, spaceSlug, spaceName, userID, pageSlug)
 		}
 		if err != nil {
 			return "", err
@@ -838,12 +917,13 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 	return revID.String(), nil
 }
 
-// materializeTemplatePage creates the wiki_pages row for a lazy template
-// page (§80): the slug must resolve to a page template on the space's
-// type — untemplated slugs keep returning pgx.ErrNoRows. Returns the
+// materializeLazyPage creates the wiki_pages row for a lazy page (§80):
+// the slug must resolve to a page template or a category stub on the
+// space's type — unresolved slugs keep returning pgx.ErrNoRows. Templates
+// win on a slug collision (same precedence as getLazyPage). Returns the
 // synthesized page for callers that need the row id (revision attach,
 // edit lock).
-func (s *Service) materializeTemplatePage(ctx context.Context, spaceID pgtype.UUID, spaceSlug, spaceName string, createdBy pgtype.UUID, pageSlug string) (WikiPageWithSpace, error) {
+func (s *Service) materializeLazyPage(ctx context.Context, spaceID pgtype.UUID, spaceSlug, spaceName string, createdBy pgtype.UUID, pageSlug string) (WikiPageWithSpace, error) {
 	// Deliberately no WikiPageRowExists check here (unlike GetWikiPage's
 	// lazy-render guard): an inactive row still occupies the partial unique
 	// index, so createPageBound returns ErrPageExists → re-resolve → 404 —
@@ -851,21 +931,40 @@ func (s *Service) materializeTemplatePage(ctx context.Context, spaceID pgtype.UU
 	// (migration 000744), so its slug is legitimately re-creatable. The
 	// asymmetry is intended — do not "fix" it by gating on row existence.
 	tmpl, err := s.store.GetPageTemplateBySlug(ctx, spaceID, pageSlug)
-	if err != nil {
-		if errors.Is(err, ErrWikiPageTemplateNotFound) {
-			return WikiPageWithSpace{}, pgx.ErrNoRows
-		}
-
+	if err == nil {
+		title := substituteTemplateLabel(tmpl.Label, spaceName)
+		return s.createLazyBoundPage(ctx, spaceID, spaceSlug, spaceName, createdBy,
+			pageSlug, title, tmpl.CategoryToken, tmpl.ID, tmpl.FieldGroupID, tmpl.Position)
+	}
+	if !errors.Is(err, ErrWikiPageTemplateNotFound) {
 		return WikiPageWithSpace{}, fmt.Errorf("wiki: materialize page: resolve template: %w", err)
 	}
 
-	title := substituteTemplateLabel(tmpl.Label, spaceName)
-	pageID, err := s.store.createPageBound(ctx, s.store.write, spaceID, createdBy, pageSlug, title, tmpl.CategoryToken, tmpl.ID, tmpl.FieldGroupID, tmpl.Position)
+	// Category stub: binds the category token/group, no page_template_id.
+	cat, cerr := s.store.GetCategoryForSpace(ctx, spaceID, pageSlug)
+	if cerr != nil {
+		if errors.Is(cerr, ErrWikiCategoryNotFound) {
+			return WikiPageWithSpace{}, pgx.ErrNoRows
+		}
+
+		return WikiPageWithSpace{}, fmt.Errorf("wiki: materialize page: resolve category: %w", cerr)
+	}
+
+	title := substituteTemplateLabel(cat.Label, spaceName)
+	return s.createLazyBoundPage(ctx, spaceID, spaceSlug, spaceName, createdBy,
+		cat.Slug, title, cat.Category, pgtype.UUID{}, cat.FieldGroupID, cat.Position)
+}
+
+// createLazyBoundPage is the shared create-race tail of
+// materializeLazyPage — ErrPageExists means a concurrent first submission
+// won the unique index; re-resolve the row and return it.
+func (s *Service) createLazyBoundPage(ctx context.Context, spaceID pgtype.UUID, spaceSlug, spaceName string, createdBy pgtype.UUID, slug, title, category string, tmplID, groupID pgtype.UUID, position int32) (WikiPageWithSpace, error) {
+	pageID, err := s.store.createPageBound(ctx, s.store.write, spaceID, createdBy, slug, title, category, tmplID, groupID, position)
 	if err != nil {
 		if errors.Is(err, ErrPageExists) {
 			// Concurrent first submission lost the create race — the page
 			// row exists now; re-resolve and continue.
-			page, rerr := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
+			page, rerr := s.store.GetWikiPageBySlug(ctx, spaceSlug, slug)
 			if rerr != nil {
 				return WikiPageWithSpace{}, pgx.ErrNoRows
 			}
@@ -880,13 +979,13 @@ func (s *Service) materializeTemplatePage(ctx context.Context, spaceID pgtype.UU
 		WikiPage: WikiPage{
 			ID:             pageID,
 			SpaceID:        spaceID,
-			Slug:           pageSlug,
+			Slug:           slug,
 			Title:          title,
-			Category:       tmpl.CategoryToken,
+			Category:       category,
 			IsActive:       true,
-			PageTemplateID: tmpl.ID,
-			FieldGroupID:   tmpl.FieldGroupID,
-			Position:       tmpl.Position,
+			PageTemplateID: tmplID,
+			FieldGroupID:   groupID,
+			Position:       position,
 		},
 		SpaceSlug: spaceSlug,
 		SpaceName: spaceName,

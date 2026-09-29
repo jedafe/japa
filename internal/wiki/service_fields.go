@@ -762,7 +762,7 @@ func (s *Service) GetPageEntityTarget(ctx context.Context, userID pgtype.UUID, s
 	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			page, err = s.materializeTemplatePage(ctx, resolvedSpaceID, spaceSlug, spaceName, userID, pageSlug)
+			page, err = s.materializeLazyPage(ctx, resolvedSpaceID, spaceSlug, spaceName, userID, pageSlug)
 		}
 		if err != nil {
 			return pgtype.UUID{}, pgtype.UUID{}, false, err

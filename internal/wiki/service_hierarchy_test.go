@@ -1084,6 +1084,136 @@ func TestComputeDirectory_ListsValuelessChildren(t *testing.T) {
 	}
 }
 
+// TestGetWikiPage_LazyCategoryStubPage — a category's stub slug resolves
+// without a wiki_pages row (§80: category pages are lazy like template
+// pages); a directory-mode category carries the descendant list. A
+// template slug colliding with a category stub keeps template precedence.
+func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+	uniq := strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:8]
+
+	mk := func(q string, args ...any) pgtype.UUID { return mustIDF(t, ctx, database, q, args...) }
+	childTypeID := mk(`INSERT INTO space_types (id,name,slug) VALUES (gen_random_uuid(),$1,$1) RETURNING id`, "wop-child-"+uniq)
+	mk(`INSERT INTO wiki_type_configs (space_type_id,enabled,label) VALUES ($1,true,$2) RETURNING space_type_id`,
+		childTypeID, "Wop Child "+uniq)
+	t.Cleanup(func() {
+		cctx := context.Background()
+		database.Writer.Exec(cctx, `DELETE FROM wiki_type_configs WHERE space_type_id = $1`, childTypeID)
+		database.Writer.Exec(cctx, `DELETE FROM space_types WHERE id = $1`, childTypeID)
+	})
+
+	parentSpace, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "dirlazy")
+	childSpace, childSlug := seedSpaceOfType(t, ctx, database, childTypeID, "dirchild")
+	if _, err := database.Writer.Exec(ctx,
+		`UPDATE spaces SET parent_id = $1 WHERE id = $2`, parentSpace, childSpace); err != nil {
+		t.Fatalf("link child: %v", err)
+	}
+	_ = childSlug
+
+	// catA ('cost-of-living') becomes a directory over the child type.
+	if _, err := database.Writer.Exec(ctx,
+		`UPDATE wiki_type_categories SET rollup = $1 WHERE id = $2`,
+		[]byte(`{"enabled":true,"mode":"directory","levels":["wop-child-`+uniq+`"]}`), hf.catAID); err != nil {
+		t.Fatalf("set directory rollup: %v", err)
+	}
+
+	svc := NewService(store, nil)
+	svc.SetPermissionChecker(allowAllPerms{})
+	svc.SetCustomFields(customfields.NewService(database))
+
+	page, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "cost-of-living")
+	if err != nil {
+		t.Fatalf("lazy category page: %v", err)
+	}
+	if !page.Lazy || page.Directory == nil {
+		t.Fatalf("want lazy directory page, got lazy=%v dir=%v", page.Lazy, page.Directory)
+	}
+	if page.Category != "cost_of_living" || page.CategoryLabel != "Cost of Living" {
+		t.Fatalf("category identity: %+v", page.WikiPageDTO)
+	}
+	if len(page.Directory.Children) != 1 || page.Directory.Total != 1 {
+		t.Fatalf("directory children: %+v", page.Directory)
+	}
+	var slug string
+	if err := database.Reader.QueryRow(ctx, `SELECT slug FROM spaces WHERE id = $1`, childSpace).Scan(&slug); err != nil {
+		t.Fatalf("child slug: %v", err)
+	}
+	if page.Directory.Children[0].Slug != slug {
+		t.Fatalf("wrong child: %+v", page.Directory.Children[0])
+	}
+
+	// A plain (non-directory) category stub still resolves lazily — with
+	// no directory payload — and unknown slugs still 404.
+	plain, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "other")
+	if err != nil || !plain.Lazy || plain.Directory != nil {
+		t.Fatalf("plain lazy category: page=%+v err=%v", plain, err)
+	}
+	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "no-such-slug"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("unknown slug: want pgx.ErrNoRows, got %v", err)
+	}
+
+	// Template precedence: a page template named after a category stub
+	// slug resolves as the template, not the category.
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catBID, "other", "Template {name}", hf.groupIDs[1], 0, false)
+	if err != nil {
+		t.Fatalf("create colliding template: %v", err)
+	}
+	t.Cleanup(func() {
+		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
+	})
+	collide, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "other")
+	if err != nil {
+		t.Fatalf("colliding slug: %v", err)
+	}
+	if !strings.HasPrefix(collide.Title, "Template ") {
+		t.Fatalf("template precedence broken — category stub won: title=%q", collide.Title)
+	}
+}
+
+// TestSubmitRevision_MaterializesLazyCategoryPage — first prose submission
+// on a lazy category stub persists a wiki_pages row bound to the
+// category's token/group with NULL page_template_id.
+func TestSubmitRevision_MaterializesLazyCategoryPage(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+	fx := seedOpsFixture(t, ctx, database)
+
+	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "lazycat")
+	t.Cleanup(func() {
+		cctx := context.Background()
+		database.Writer.Exec(cctx, `DELETE FROM wiki_revisions WHERE wiki_page_id IN (SELECT id FROM wiki_pages WHERE space_id = $1 AND slug = 'other')`, spaceID)
+		database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE space_id = $1 AND slug = 'other'`, spaceID)
+	})
+
+	svc := NewService(store, nil)
+	revID, err := svc.SubmitRevision(ctx, fx.userID, spaceSlug, "other", SubmitRevisionInput{
+		Content: []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Notes."}]}]}`),
+	})
+	if err != nil {
+		t.Fatalf("submit on lazy category: %v", err)
+	}
+	if revID == "" {
+		t.Fatal("empty revision id")
+	}
+
+	var tmplID, groupID pgtype.UUID
+	var category string
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT page_template_id, field_group_id, category FROM wiki_pages WHERE space_id = $1 AND slug = 'other'`, spaceID).
+		Scan(&tmplID, &groupID, &category); err != nil {
+		t.Fatalf("materialized row: %v", err)
+	}
+	if tmplID.Valid {
+		t.Fatalf("category-stub page must not bind a template, got %v", tmplID)
+	}
+	if groupID != hf.groupIDs[1] || category != "other" {
+		t.Fatalf("binding: group=%v want %v, category=%q want other", groupID, hf.groupIDs[1], category)
+	}
+}
+
 // TestDeleteWikiPageTemplate_ValuesGuard — a bound page whose space holds
 // a stored value in the template's group (admin SetFieldValue writes carry
 // no revision) must still block deletion (§80: "prose/values").
