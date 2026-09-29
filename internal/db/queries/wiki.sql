@@ -78,21 +78,52 @@ WHERE sp.status = 'active'
   AND (@search::text = '' OR sp.name ILIKE '%' || @search || '%')
   AND (@parent::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = @parent))
   AND (@within::text = '' OR EXISTS (
+        -- §80 directories: ancestor walk (≤3 hops) over
+        -- space_parent_spaces ∪ parent_id — the same edges
+        -- ListWikiDirectoryChildren descends, so ?within= search and the
+        -- embedded directory listing agree (the old form followed
+        -- parent_id only past hop 1, silently missing junction-only
+        -- grandchildren). Every hop's ancestor must be non-deleted;
+        -- any linked ancestor slug scopes the list — the former
+        -- geo-level guard excluded directory parents like university
+        -- or custom types.
         SELECT 1
         FROM (
-            SELECT parent_space_id AS pid
-            FROM space_parent_spaces
-            WHERE space_id = sp.id
-            UNION ALL
+            SELECT sps.parent_space_id AS pid
+            FROM space_parent_spaces sps
+            WHERE sps.space_id = sp.id
+            UNION
             SELECT sp.parent_id
             WHERE sp.parent_id IS NOT NULL
-        ) links
-        JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
-        LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
-        LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
-        WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
-           OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
-           OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+        ) l1
+        JOIN spaces g ON g.id = l1.pid AND g.deleted_at IS NULL
+        WHERE g.slug = @within
+           OR EXISTS (
+               SELECT 1
+               FROM (
+                   SELECT sps2.parent_space_id AS pid
+                   FROM space_parent_spaces sps2
+                   WHERE sps2.space_id = g.id
+                   UNION
+                   SELECT g.parent_id
+                   WHERE g.parent_id IS NOT NULL
+               ) l2
+               JOIN spaces gp ON gp.id = l2.pid AND gp.deleted_at IS NULL
+               WHERE gp.slug = @within
+                  OR EXISTS (
+                      SELECT 1
+                      FROM (
+                          SELECT sps3.parent_space_id AS pid
+                          FROM space_parent_spaces sps3
+                          WHERE sps3.space_id = gp.id
+                          UNION
+                          SELECT gp.parent_id
+                          WHERE gp.parent_id IS NOT NULL
+                      ) l3
+                      JOIN spaces ggp ON ggp.id = l3.pid AND ggp.deleted_at IS NULL
+                      WHERE ggp.slug = @within
+                  )
+           )
       ))
 GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
 HAVING (NOT @has_wiki::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
