@@ -16,28 +16,76 @@
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	const canCreate = $derived(data.authed && data.userPermissions?.includes('wiki.edit'));
 
+	interface CatItem {
+		slug: WikiCategory;
+		label: string;
+		/** §80 page templates — the category's admin-defined lazy pages
+		 *  ({name} substituted server-side). Picking one binds the created
+		 *  page to the template via matching (category, slug). */
+		page_templates?: { slug: string; label: string; position: number }[];
+	}
+
+	const CUSTOM_PAGE = '__custom';
+
 	let title = $state('');
 	let slug = $state('');
 	let category = $state<WikiCategory | ''>('');
+	let pageChoice = $state<string>(CUSTOM_PAGE);
 	let summary = $state('');
 	let bodyHtml = $state('');
 	let bodyJson = $state<unknown>(null);
-	let categories = $state<{ slug: WikiCategory; label: string }[]>([]);
+	let categories = $state<CatItem[]>([]);
 	const categoryOptions = $derived(categories.map((c) => ({ value: c.slug, label: c.label })));
 	let catLoading = $state(false);
 	let loading = $state(false);
 	let errorKey = $state<string | null>(null);
 	let fieldErrors = $state<Record<string, string>>({});
 
+	const catTemplates = $derived(
+		(categories.find((c) => c.slug === category)?.page_templates ?? [])
+			.slice()
+			.sort((a, b) => a.position - b.position)
+	);
+	// A category with declared templates offers them first; the custom
+	// free-form page stays as an explicit last option.
+	const pageOptions = $derived([
+		...catTemplates.map((tm) => ({ value: tm.slug, label: tm.label })),
+		{ value: CUSTOM_PAGE, label: t('wiki.create_custom_page', 'Custom page…') }
+	]);
+	const templateLocked = $derived(catTemplates.length > 0 && pageChoice !== CUSTOM_PAGE);
+
+	function onCategoryChange(v: WikiCategory) {
+		category = v;
+		const tpls = categories
+			.find((c) => c.slug === v)
+			?.page_templates?.slice()
+			.sort((a, b) => a.position - b.position) ?? [];
+		onPageChoice(tpls.length ? tpls[0].slug : CUSTOM_PAGE);
+	}
+
+	// Template pick locks title+slug to the template's label/slug — the
+	// member fills in a predefined page, so both stay aligned with the
+	// admin-defined identity ({name} already substituted in the label).
+	function onPageChoice(v: string) {
+		pageChoice = v;
+		const tpl = catTemplates.find((tm) => tm.slug === v);
+		if (tpl) {
+			title = tpl.label;
+			slug = tpl.slug;
+		} else {
+			title = '';
+			slug = '';
+		}
+	}
+
 	$effect(() => {
 		catLoading = true;
 		(async () => {
 			try {
-				const catRes = await api.get<{ slug: WikiCategory; label_key: string; label: string }[]>(`/wiki/categories?space=${encodeURIComponent(data.spaceSlug)}`);
-				const catItems = catRes.data ?? [];
-				categories = catItems.map((c: { slug: WikiCategory; label: string }) => ({ slug: c.slug, label: c.label }));
+				const catRes = await api.get<CatItem[]>(`/wiki/categories?space=${encodeURIComponent(data.spaceSlug)}`);
+				categories = catRes.data ?? [];
 				if (categories.length > 0 && category === '') {
-					category = categories[0].slug;
+					onCategoryChange(categories[0].slug);
 				}
 			} catch {
 				/* keep empty */
@@ -154,6 +202,41 @@
 	{:else}
 		<form onsubmit={submit} class="space-y-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<div>
+				<label for="wiki-create-category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+					{t('wiki.create_category_label', 'Category')}
+				</label>
+				<SelectField
+					id="wiki-create-category"
+					value={category}
+					options={categoryOptions}
+					disabled={catLoading}
+					onValueChange={(v) => onCategoryChange(v as WikiCategory)}
+				/>
+				{#if fieldErrors.category}
+					<p class="mt-1 text-xs text-red-500">{fieldErrors.category}</p>
+				{/if}
+			</div>
+
+			{#if catTemplates.length > 0}
+				<div>
+					<label for="wiki-create-page" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('wiki.create_page_label', 'Page')}
+					</label>
+					<SelectField
+						id="wiki-create-page"
+						value={pageChoice}
+						options={pageOptions}
+						onValueChange={(v) => onPageChoice(v)}
+					/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">
+						{templateLocked
+							? t('wiki.create_template_hint', 'This is a predefined wiki page — its title and URL are fixed; you fill in the content for this space.')
+							: t('wiki.create_custom_hint', 'A one-off page with your own title and URL slug.')}
+					</p>
+				</div>
+			{/if}
+
+			<div>
 				<label for="wiki-create-title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_title_label', 'Page title')}
 				</label>
@@ -162,8 +245,9 @@
 					type="text"
 					bind:value={title}
 					oninput={onTitleInput}
+					disabled={templateLocked}
 					placeholder={t('wiki.create_title_placeholder', 'e.g. Cost of Living')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-70"
 				/>
 				{#if fieldErrors.title}
 					<p class="mt-1 text-xs text-red-500">{fieldErrors.title}</p>
@@ -178,27 +262,12 @@
 					id="wiki-create-slug"
 					type="text"
 					bind:value={slug}
+					disabled={templateLocked}
 					placeholder={t('wiki.create_slug_placeholder', 'cost-of-living')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-70"
 				/>
 				{#if fieldErrors.slug}
 					<p class="mt-1 text-xs text-red-500">{fieldErrors.slug}</p>
-				{/if}
-			</div>
-
-			<div>
-				<label for="wiki-create-category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-					{t('wiki.create_category_label', 'Category')}
-				</label>
-				<SelectField
-					id="wiki-create-category"
-					value={category}
-					options={categoryOptions}
-					disabled={catLoading}
-					onValueChange={(v) => (category = v as WikiCategory)}
-				/>
-				{#if fieldErrors.category}
-					<p class="mt-1 text-xs text-red-500">{fieldErrors.category}</p>
 				{/if}
 			</div>
 

@@ -18,6 +18,8 @@ import {
 	Coffee,
 	FileText
 } from 'lucide-svelte';
+import { Circle } from 'lucide-svelte';
+import { resolveIcon } from '$lib/components/ui/icons';
 import type { IconComponent } from '$lib/components/ui/icons';
 
 const ICONS: Record<string, IconComponent> = {
@@ -69,6 +71,20 @@ const TINT_BY_SLUG: Record<string, number> = {
 
 export function categoryIcon(slug: string): IconComponent {
 	return ICONS[slug] ?? FileText;
+}
+
+/**
+ * Category icon honoring the admin-configured icon name (§80 — the
+ * `icon` field on GET /wiki/categories). A recognized lucide name wins
+ * over the slug map; unknown names fall back to the slug map rather
+ * than resolveIcon's Circle so a typo never degrades to a blank dot.
+ */
+export function categoryIconResolved(slug: string, icon?: string | null): IconComponent {
+	if (icon) {
+		const resolved = resolveIcon(icon);
+		if (resolved !== Circle) return resolved;
+	}
+	return categoryIcon(slug);
 }
 
 export function categoryTint(slug: string): { bg: string; fg: string } {

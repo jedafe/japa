@@ -300,6 +300,13 @@
 		},
 		{ key: 'label', label: t('app.wiki.cat_label', 'Label'), type: 'text', required: true },
 		{
+			key: 'icon',
+			label: t('app.wiki.cat_icon', 'Icon'),
+			type: 'text',
+			placeholder: 'wallet',
+			help: t('app.wiki.cat_icon_help', 'Lucide icon name (kebab-case) shown on the category tab and card — e.g. wallet, globe, landmark. Blank falls back to the default category icon.')
+		},
+		{
 			key: 'field_group_id',
 			label: t('app.wiki.cat_group', 'Field group'),
 			type: 'autocomplete',
@@ -314,31 +321,69 @@
 			help: t('app.wiki.cat_group_help', 'The bound group is the page’s shared structured schema — a dedicated group is created automatically when none is picked. Only pick an existing group to deliberately share a schema.')
 		},
 		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' },
-		// §80 Hierarchical UX: descendant-aggregation config, edited as a
-		// JSON document — {enabled, mode?, metrics[], levels[]?}. Empty =
-		// disabled. mode:"directory" turns the category's page into a
-		// child-space listing instead of metric aggregation.
-		{
-			key: 'rollup_json',
-			label: t('app.wiki.cat_rollup', 'Rollup config (JSON)'),
-			type: 'textarea',
-			placeholder: '{"enabled": true, "metrics": ["min","avg","max"], "levels": ["city"]}',
-			help: t('app.wiki.cat_rollup_help', 'Aggregates descendant spaces’ numeric/price_range field values onto this category’s page — or add "mode":"directory" to list child wiki spaces instead (e.g. {"enabled":true,"mode":"directory","levels":["state"]}). levels omitted = every declared child type.')
-		}
+		// Seed-only keys: EntityPage seeds the edit form from fields keys and
+		// the CategoryForm snippet owns the rollup rendering — same pattern
+		// as the types table's parent_type_ids.
+		{ key: 'rollup_enabled', label: t('app.wiki.cat_rollup', 'Rollup'), type: 'checkbox' },
+		{ key: 'rollup_mode', label: t('app.wiki.rollup_mode', 'Rollup mode'), type: 'text' },
+		{ key: 'rollup_metrics', label: t('app.wiki.rollup_metrics', 'Metrics'), type: 'text' },
+		{ key: 'rollup_levels', label: t('app.wiki.rollup_levels', 'Levels'), type: 'text' },
+		{ key: 'rollup_section_limit', label: t('app.wiki.rollup_section_limit', 'Section limit'), type: 'number' }
 	];
 
-	// Parse the rollup textarea into the PATCH payload — empty clears the
-	// config, valid JSON object sets it, anything else fails the submit.
-	function parseRollupJson(raw: unknown): { ok: boolean; value?: Record<string, unknown> | null; error?: string } {
-		const s = String(raw ?? '').trim();
-		if (!s) return { ok: true, value: null };
-		try {
-			const v = JSON.parse(s) as unknown;
-			if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new Error('not object');
-			return { ok: true, value: v as Record<string, unknown> };
-		} catch {
-			return { ok: false, error: t('app.wiki.cat_rollup_bad', 'Rollup config must be a JSON object — e.g. {"enabled":true,"metrics":["min","avg","max"]}') };
+	const ROLLUP_METRICS = ['min', 'avg', 'max'] as const;
+
+	// The type's declared child wiki types — the valid `levels` choices for a
+	// rollup on this type (empty selection = every declared child type).
+	function childTypesOf(type: WikiTypeItem | null): WikiTypeItem[] {
+		if (!type) return [];
+		return knownTypes.filter((pt) => (pt.parent_type_ids ?? []).includes(type.space_type_id));
+	}
+
+	function toggleRollupList(value: Record<string, unknown>, key: string, item: string, checked: boolean) {
+		const cur = (value[key] as string[]) ?? [];
+		value[key] = checked ? [...cur, item] : cur.filter((x) => x !== item);
+	}
+
+	// Assemble the JSONB payload from the flat form keys — disabled clears
+	// the config (null), enabled emits {enabled, mode?, metrics[], levels?,
+	// section_limit?} matching validateRollupInput's accepted shape.
+	function rollupFromForm(body: Record<string, unknown>): Record<string, unknown> | null {
+		if (!body.rollup_enabled) return null;
+		const directory = String(body.rollup_mode ?? '') === 'directory';
+		const cfg: Record<string, unknown> = { enabled: true, metrics: [] };
+		if (directory) {
+			cfg.mode = 'directory';
+		} else {
+			cfg.metrics = ((body.rollup_metrics as string[]) ?? []).filter((m) =>
+				(ROLLUP_METRICS as readonly string[]).includes(m)
+			);
+			const lim = Number(body.rollup_section_limit ?? 0);
+			if (lim > 0) cfg.section_limit = lim;
 		}
+		const levels = (body.rollup_levels as string[]) ?? [];
+		if (levels.length) cfg.levels = levels;
+		return cfg;
+	}
+
+	// Flatten a row's stored rollup JSONB into the form's seed keys.
+	function flattenRollup(r: WikiCategoryItem) {
+		const cfg = (r.rollup ?? null) as {
+			enabled?: boolean;
+			mode?: string;
+			metrics?: string[];
+			levels?: string[];
+			section_limit?: number;
+		} | null;
+		return {
+			...r,
+			icon: r.icon ?? '',
+			rollup_enabled: !!cfg?.enabled,
+			rollup_mode: cfg?.mode === 'directory' ? 'directory' : 'aggregate',
+			rollup_metrics: cfg?.metrics ?? [],
+			rollup_levels: cfg?.levels ?? [],
+			rollup_section_limit: cfg?.section_limit ?? 0
+		};
 	}
 
 	const catActions: ActionItem[] = [
@@ -412,18 +457,16 @@
 					],
 					actions: catActions,
 					fields: catFields,
+					formSnippet: CategoryForm,
 					// Nested under the types table — keep its list state out of the
 					// URL so the two EntityPages don't fight over ?q/?page.
 					urlSync: false,
 					load: async ({ page, pageSize, q }) => {
 						const res = await wikiAdminApi.listTypeCategories(sel.space_type_id);
 						if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load categories'));
-						// The rollup JSONB edits as a JSON document — flatten it
-						// into a string field the textarea can bind.
-						let rows = ((res.data as WikiCategoryItem[]) ?? []).map((r) => ({
-							...r,
-							rollup_json: r.rollup ? JSON.stringify(r.rollup) : ''
-						}));
+						// Flatten the rollup JSONB into the form's seed keys —
+						// CategoryForm renders it as structured controls.
+						let rows = ((res.data as WikiCategoryItem[]) ?? []).map(flattenRollup);
 						const query = (q ?? '').trim().toLowerCase();
 						if (query)
 							rows = rows.filter(
@@ -437,32 +480,31 @@
 						return { data: rows.slice(start, start + pageSize), total, totalPages };
 					},
 					create: async (body) => {
-						const rollup = parseRollupJson(body.rollup_json);
-						if (!rollup.ok) return { ok: false, error: rollup.error };
+						const rollup = rollupFromForm(body);
 						const res = await wikiAdminApi.createCategory(sel.space_type_id, {
 							slug: String(body.slug ?? '').trim(),
 							category: String(body.category ?? '').trim(),
 							label: String(body.label ?? '').trim(),
+							icon: String(body.icon ?? '').trim() || null,
 							field_group_id: String(body.field_group_id ?? ''),
 							position: Number(body.position ?? 0),
-							...(rollup.value !== null ? { rollup: rollup.value } : {})
+							...(rollup !== null ? { rollup } : {})
 						});
 						return res.ok ? { ok: true } : { ok: false, error: res.error };
 					},
 					update: async (id, body) => {
 						// Slug/category are immutable — the PATCH contract carries
-						// label, position, and the group binding. The binding is
-						// mandatory (NOT NULL), so an empty selection is omitted —
-						// the server rejects "" rather than clearing. Rollup is
-						// three-state: the seeded textarea round-trips the stored
-						// config, an emptied field clears it (null).
-						const rollup = parseRollupJson(body.rollup_json);
-						if (!rollup.ok) return { ok: false, error: rollup.error };
+						// label, icon, position, and the group binding. The binding
+						// is mandatory (NOT NULL), so an empty selection is
+						// omitted — the server rejects "" rather than clearing.
+						// Rollup and icon are three-state: the seeded controls
+						// round-trip the stored values, disabling/emptying clears.
 						const res = await wikiAdminApi.updateCategory(id, {
 							label: String(body.label ?? '').trim(),
+							icon: String(body.icon ?? '').trim() || null,
 							position: Number(body.position ?? 0),
 							field_group_id: String(body.field_group_id ?? '').trim() || undefined,
-							rollup: rollup.value
+							rollup: rollupFromForm(body)
 						});
 						return res.ok ? { ok: true } : { ok: false, error: res.error };
 					},
@@ -733,6 +775,193 @@
 							<span class="font-mono text-xs" style="color: var(--color-muted)">{pt.space_type_slug}</span>
 						</label>
 					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
+<!-- Category create/edit form: the rollup JSONB is edited as structured
+	 controls (enabled → mode → metrics/levels/section_limit), so all inputs
+	 are rendered here rather than via EntityForm. -->
+{#snippet CategoryForm({ value, editing }: { value: Record<string, unknown>; editing: boolean })}
+	{@const kids = childTypesOf(selectedType)}
+	<div class="space-y-4">
+		<div>
+			<label for="wc-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.wiki.cat_slug', 'Page slug')} *
+			</label>
+			<input
+				id="wc-slug" type="text" required disabled={editing} placeholder="cost-of-living"
+				class="w-full rounded-lg border p-2 text-sm {editing ? 'cursor-not-allowed opacity-70' : ''}"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={String(value.slug ?? '')} oninput={(e) => (value.slug = e.currentTarget.value)}
+			/>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('app.wiki.cat_slug_help', 'URL segment — /wiki/{entity}/{slug}. Lowercase, hyphenated; immutable once created.')}
+			</p>
+		</div>
+		<div>
+			<label for="wc-token" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.wiki.cat_token', 'Category token')}
+			</label>
+			<input
+				id="wc-token" type="text" disabled={editing} placeholder="cost_of_living"
+				class="w-full rounded-lg border p-2 text-sm {editing ? 'cursor-not-allowed opacity-70' : ''}"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={String(value.category ?? '')} oninput={(e) => (value.category = e.currentTarget.value)}
+			/>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('app.wiki.cat_token_help', 'wiki_pages.category token (lowercase, underscored). Blank = derived from the slug.')}
+			</p>
+		</div>
+		<div>
+			<label for="wc-label" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.wiki.cat_label', 'Label')} *
+			</label>
+			<input
+				id="wc-label" type="text" required
+				class="w-full rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={String(value.label ?? '')} oninput={(e) => (value.label = e.currentTarget.value)}
+			/>
+		</div>
+		<div>
+			<label for="wc-icon" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.wiki.cat_icon', 'Icon')}
+			</label>
+			<input
+				id="wc-icon" type="text" placeholder="wallet"
+				class="w-full rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={String(value.icon ?? '')} oninput={(e) => (value.icon = e.currentTarget.value)}
+			/>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('app.wiki.cat_icon_help', 'Lucide icon name (kebab-case) shown on the category tab and card — e.g. wallet, globe, landmark. Blank falls back to the default category icon.')}
+			</p>
+		</div>
+		<div>
+			<label for="wc-group" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.wiki.cat_group', 'Field group')}
+			</label>
+			<Autocomplete
+				id="wc-group"
+				placeholder={t('app.wiki.cat_group_ph', 'Search field groups…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={groupFetcher}
+				initialFetcher={async () => filterOptions(groupOptions, '')}
+				selectedId={String(value.field_group_id ?? '') || null}
+				selectedLabel={groupOptions.find((o) => o.value === value.field_group_id)?.label}
+				onSelect={(item) => (value.field_group_id = item.id)}
+				onClear={() => (value.field_group_id = '')}
+			/>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('app.wiki.cat_group_help', 'The bound group is the page’s shared structured schema — a dedicated group is created automatically when none is picked. Only pick an existing group to deliberately share a schema.')}
+			</p>
+		</div>
+		<div>
+			<label for="wc-position" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.wiki.cat_position', 'Position')}
+			</label>
+			<input
+				id="wc-position" type="number"
+				class="w-full rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={Number(value.position ?? 0)} oninput={(e) => (value.position = Number(e.currentTarget.value))}
+			/>
+		</div>
+		<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
+			<label class="flex items-center gap-2 text-sm font-medium" style="color: var(--color-foreground)">
+				<input
+					type="checkbox" class="h-4 w-4 rounded"
+					checked={!!value.rollup_enabled}
+					onchange={(e) => (value.rollup_enabled = e.currentTarget.checked)}
+				/>
+				{t('app.wiki.rollup_enabled', 'Roll up child wikis onto this category’s page')}
+			</label>
+			{#if value.rollup_enabled}
+				<div class="mt-3 space-y-3 pl-6">
+					<div>
+						<label for="wc-rollup-mode" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+							{t('app.wiki.rollup_mode', 'Mode')}
+						</label>
+						<select
+							id="wc-rollup-mode"
+							class="w-full rounded-lg border p-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							value={String(value.rollup_mode ?? 'aggregate')}
+							onchange={(e) => (value.rollup_mode = e.currentTarget.value)}
+						>
+							<option value="aggregate">{t('app.wiki.rollup_mode_aggregate', 'Aggregate field values')}</option>
+							<option value="directory">{t('app.wiki.rollup_mode_directory', 'Directory — list child wiki spaces')}</option>
+						</select>
+						<p class="mt-1 text-xs" style="color: var(--color-muted)">
+							{value.rollup_mode === 'directory'
+								? t('app.wiki.rollup_mode_directory_help', 'The category page lists child wiki spaces (e.g. a country’s states) with scoped search.')
+								: t('app.wiki.rollup_mode_aggregate_help', 'Descendant spaces’ numeric/price-range field values fold up onto this category’s page.')}
+						</p>
+					</div>
+					{#if value.rollup_mode !== 'directory'}
+						<div>
+							<p class="mb-1 text-sm font-medium" style="color: var(--color-foreground)">
+								{t('app.wiki.rollup_metrics', 'Metrics')}
+							</p>
+							<div class="flex gap-4">
+								{#each ROLLUP_METRICS as m (m)}
+									<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
+										<input
+											type="checkbox" class="h-4 w-4 rounded"
+											checked={((value.rollup_metrics as string[]) ?? []).includes(m)}
+											onchange={(e) => toggleRollupList(value, 'rollup_metrics', m, e.currentTarget.checked)}
+										/>
+										{m}
+									</label>
+								{/each}
+							</div>
+						</div>
+						<div>
+							<label for="wc-rollup-limit" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+								{t('app.wiki.rollup_section_limit', 'Section limit')}
+							</label>
+							<input
+								id="wc-rollup-limit" type="number" min="0"
+								class="w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								value={Number(value.rollup_section_limit ?? 0)}
+								oninput={(e) => (value.rollup_section_limit = Number(e.currentTarget.value))}
+							/>
+							<p class="mt-1 text-xs" style="color: var(--color-muted)">
+								{t('app.wiki.rollup_section_limit_help', 'Max rows per field section on the page — 0 = no cap.')}
+							</p>
+						</div>
+					{/if}
+					<div>
+						<p class="mb-1 text-sm font-medium" style="color: var(--color-foreground)">
+							{t('app.wiki.rollup_levels', 'Child levels')}
+						</p>
+						{#if kids.length === 0}
+							<p class="text-xs" style="color: var(--color-muted)">
+								{t('app.wiki.rollup_no_levels', 'This type has no declared child wiki types — every descendant type is included.')}
+							</p>
+						{:else}
+							<div class="space-y-1.5">
+								{#each kids as kid (kid.space_type_id)}
+									<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
+										<input
+											type="checkbox" class="h-4 w-4 rounded"
+											checked={((value.rollup_levels as string[]) ?? []).includes(kid.space_type_slug)}
+											onchange={(e) => toggleRollupList(value, 'rollup_levels', kid.space_type_slug, e.currentTarget.checked)}
+										/>
+										{kid.label || kid.space_type_name}
+										<span class="font-mono text-xs" style="color: var(--color-muted)">{kid.space_type_slug}</span>
+									</label>
+								{/each}
+							</div>
+							<p class="mt-1 text-xs" style="color: var(--color-muted)">
+								{t('app.wiki.rollup_levels_help', 'Restrict which descendant types fold in — none checked = every declared child type.')}
+							</p>
+						{/if}
+					</div>
 				</div>
 			{/if}
 		</div>

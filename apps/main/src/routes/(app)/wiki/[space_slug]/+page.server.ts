@@ -15,6 +15,8 @@ type WikiApiCategory = {
 	page_slug?: string;
 	/** §80 directories — the stub page is the child-space listing. */
 	directory?: boolean;
+	/** §80 category icon — admin-configured lucide name. */
+	icon?: string;
 };
 /** §80 Hierarchical UX — the index envelope gains ancestors[] alongside
  *  the page list for the space-level breadcrumb, and ancestors_alt[]

@@ -78,6 +78,9 @@ type WikiCategoryDTO struct {
 	// Hierarchical UX) — passed through verbatim so the admin editor and
 	// public readers share the shape.
 	Rollup json.RawMessage `json:"rollup,omitempty"`
+	// Icon is an optional lucide icon name rendered on the category's tab
+	// and card; nil falls back to the frontend's slug→icon map.
+	Icon *string `json:"icon,omitempty"`
 }
 
 func wikiTypeToDTO(t WikiType) WikiTypeDTO {
@@ -117,6 +120,7 @@ func wikiCategoryToDTO(c WikiCategory) WikiCategoryDTO {
 	if len(c.Rollup) > 0 {
 		d.Rollup = json.RawMessage(c.Rollup)
 	}
+	d.Icon = c.Icon
 
 	return d
 }
@@ -387,6 +391,24 @@ func (s *Service) ListWikiTypeCategories(ctx context.Context, spaceTypeIDStr str
 // matching the existing stub-page convention (visa-routes, cost-of-living).
 var wikiSlugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+// validateIconName checks an optional lucide icon name — kebab-case, same
+// charset as a page slug. nil stays nil (no icon); a present-but-empty
+// string clears to nil.
+func validateIconName(icon *string) (*string, error) {
+	if icon == nil {
+		return nil, nil
+	}
+	v := strings.TrimSpace(strings.ToLower(*icon))
+	if v == "" {
+		return nil, nil
+	}
+	if !wikiSlugPattern.MatchString(v) {
+		return nil, fmt.Errorf("%w: invalid icon name", ErrInvalidInput)
+	}
+
+	return &v, nil
+}
+
 // wikiCategoryPattern constrains the wiki_pages.category token: lowercase,
 // underscored (cost_of_living). The admin may omit it; it is then derived
 // from the slug (hyphens → underscores).
@@ -403,6 +425,9 @@ type CreateWikiCategoryRequest struct {
 	// Rollup opts the category into descendant aggregation (§80); validated
 	// by parseWikiRollup — omitted leaves the category prose/fields only.
 	Rollup json.RawMessage `json:"rollup"`
+	// Icon is an optional lucide icon name (kebab-case) for the category's
+	// tab/card.
+	Icon *string `json:"icon"`
 }
 
 // CreateWikiTypeCategory adds a category to a type's template. Every
@@ -455,7 +480,12 @@ func (s *Service) CreateWikiTypeCategory(ctx context.Context, spaceTypeIDStr str
 		return WikiCategoryDTO{}, err
 	}
 
-	c, err := s.store.CreateWikiTypeCategory(ctx, spaceTypeID, slug, category, label, fgID, req.Position, false, rollup)
+	icon, err := validateIconName(req.Icon)
+	if err != nil {
+		return WikiCategoryDTO{}, err
+	}
+
+	c, err := s.store.CreateWikiTypeCategory(ctx, spaceTypeID, slug, category, label, fgID, req.Position, false, rollup, icon)
 	if err != nil {
 		return WikiCategoryDTO{}, err
 	}
@@ -575,6 +605,9 @@ type UpdateWikiCategoryRequest struct {
 	// Rollup is three-state (§80): absent leaves the config untouched, an
 	// explicit null clears it, an object replaces it (validated).
 	Rollup json.RawMessage `json:"rollup"`
+	// Icon is three-state like Rollup: absent leaves it, null clears it,
+	// a string sets the lucide icon name.
+	Icon json.RawMessage `json:"icon"`
 }
 
 // UpdateWikiTypeCategory patches a category's label, group binding, and
@@ -612,7 +645,25 @@ func (s *Service) UpdateWikiTypeCategory(ctx context.Context, idStr string, req 
 		rollup = v
 	}
 
-	return s.store.UpdateWikiTypeCategory(ctx, id, req.Label, updateFG, fgID, req.Position, updateRollup, rollup)
+	var icon *string
+	updateIcon := len(req.Icon) > 0
+	if updateIcon {
+		var v *string
+		if strings.TrimSpace(string(req.Icon)) != "null" {
+			var s string
+			if err := json.Unmarshal(req.Icon, &s); err != nil {
+				return fmt.Errorf("%w: invalid icon", ErrInvalidInput)
+			}
+			v = &s
+		}
+		v, err := validateIconName(v)
+		if err != nil {
+			return err
+		}
+		icon = v
+	}
+
+	return s.store.UpdateWikiTypeCategory(ctx, id, req.Label, updateFG, fgID, req.Position, updateRollup, rollup, updateIcon, icon)
 }
 
 // DeleteWikiTypeCategory removes a non-system category. Blocked while pages

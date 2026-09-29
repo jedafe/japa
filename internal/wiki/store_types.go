@@ -52,7 +52,10 @@ type WikiCategory struct {
 	// Rollup is the category's descendant-aggregation config (§80
 	// Hierarchical UX): {"enabled":true,"metrics":[...],"levels":[...]} —
 	// nil when the category does not roll up.
-	Rollup    []byte
+	Rollup []byte
+	// Icon is an optional lucide icon name for the category's tab/card —
+	// nil falls back to the frontend's slug→icon map.
+	Icon      *string
 	CreatedAt pgtype.Timestamptz
 }
 
@@ -126,6 +129,7 @@ func (s *Store) ListCategoriesBySpaceSlug(ctx context.Context, spaceSlug string)
 			Position:      r.Position,
 			IsSystem:      r.IsSystem,
 			Rollup:        r.Rollup,
+			Icon:          r.Icon,
 		})
 	}
 
@@ -151,6 +155,7 @@ func (s *Store) ListAllCategories(ctx context.Context) ([]WikiCategory, error) {
 			Position:      r.Position,
 			IsSystem:      r.IsSystem,
 			Rollup:        r.Rollup,
+			Icon:          r.Icon,
 		})
 	}
 
@@ -186,6 +191,7 @@ func (s *Store) GetCategoryForSpace(ctx context.Context, spaceID pgtype.UUID, sl
 		Position:       r.Position,
 		IsSystem:       r.IsSystem,
 		Rollup:         r.Rollup,
+		Icon:           r.Icon,
 		CreatedAt:      r.CreatedAt,
 	}, nil
 }
@@ -448,6 +454,7 @@ func (s *Store) ListWikiTypeCategories(ctx context.Context, spaceTypeID pgtype.U
 			Position:       r.Position,
 			IsSystem:       r.IsSystem,
 			Rollup:         r.Rollup,
+			Icon:           r.Icon,
 			CreatedAt:      r.CreatedAt,
 		})
 	}
@@ -477,12 +484,13 @@ func (s *Store) GetWikiTypeCategory(ctx context.Context, id pgtype.UUID) (WikiCa
 		Position:     r.Position,
 		IsSystem:     r.IsSystem,
 		Rollup:       r.Rollup,
+		Icon:         r.Icon,
 		CreatedAt:    r.CreatedAt,
 	}, nil
 }
 
 // CreateWikiTypeCategory adds a category to a type's template.
-func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.UUID, slug, category, label string, fieldGroupID pgtype.UUID, position int32, isSystem bool, rollup []byte) (WikiCategory, error) {
+func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.UUID, slug, category, label string, fieldGroupID pgtype.UUID, position int32, isSystem bool, rollup []byte, icon *string) (WikiCategory, error) {
 	r, err := s.write.CreateWikiTypeCategory(ctx, gen.CreateWikiTypeCategoryParams{
 		SpaceTypeID:  spaceTypeID,
 		Slug:         slug,
@@ -492,6 +500,7 @@ func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.U
 		Position:     position,
 		IsSystem:     isSystem,
 		Rollup:       rollup,
+		Icon:         icon,
 	})
 	if err != nil {
 		// Unique collision on (space_type_id, slug|category) → 409, not 500.
@@ -513,16 +522,17 @@ func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.U
 		Position:     r.Position,
 		IsSystem:     r.IsSystem,
 		Rollup:       r.Rollup,
+		Icon:         r.Icon,
 		CreatedAt:    r.CreatedAt,
 	}, nil
 }
 
-// UpdateWikiTypeCategory patches label, bound group, and position — slug and
-// category are immutable (page URLs are /wiki/{entity}/{slug}).
+// UpdateWikiTypeCategory patches label, bound group, position, and icon —
+// slug and category are immutable (page URLs are /wiki/{entity}/{slug}).
 // updateFieldGroup distinguishes "don't touch" from "rebind": when true,
 // fieldGroupID replaces the binding (the column is NOT NULL — callers must
 // pass a validated group id, never a zero UUID).
-func (s *Store) UpdateWikiTypeCategory(ctx context.Context, id pgtype.UUID, label *string, updateFieldGroup bool, fieldGroupID pgtype.UUID, position *int32, updateRollup bool, rollup []byte) error {
+func (s *Store) UpdateWikiTypeCategory(ctx context.Context, id pgtype.UUID, label *string, updateFieldGroup bool, fieldGroupID pgtype.UUID, position *int32, updateRollup bool, rollup []byte, updateIcon bool, icon *string) error {
 	affected, err := s.write.UpdateWikiTypeCategory(ctx, gen.UpdateWikiTypeCategoryParams{
 		Label:            label,
 		UpdateFieldGroup: updateFieldGroup,
@@ -530,6 +540,8 @@ func (s *Store) UpdateWikiTypeCategory(ctx context.Context, id pgtype.UUID, labe
 		Position:         position,
 		UpdateRollup:     updateRollup,
 		Rollup:           rollup,
+		UpdateIcon:       updateIcon,
+		Icon:             icon,
 		ID:               id,
 	})
 	if err != nil {
@@ -818,6 +830,7 @@ func (s *Store) ResolveCategoryToken(ctx context.Context, spaceTypeID pgtype.UUI
 		Position:     r.Position,
 		IsSystem:     r.IsSystem,
 		Rollup:       r.Rollup,
+		Icon:         r.Icon,
 		CreatedAt:    r.CreatedAt,
 	}, nil
 }

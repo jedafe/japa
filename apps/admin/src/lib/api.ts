@@ -2029,6 +2029,8 @@ export type WikiCategoryItem = {
 	/** §80 Hierarchical UX — descendant-aggregation config
 	 *  ({enabled, metrics[], levels[]?}); absent = no rollup. */
 	rollup?: Record<string, unknown> | null;
+	/** Optional lucide icon name (kebab-case) for the category tab/card. */
+	icon?: string | null;
 };
 
 // WikiPageTemplateItem is one row of a category's page-template list —

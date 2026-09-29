@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -273,7 +274,7 @@ func TestDeleteWikiTypeCategory_SystemGuard(t *testing.T) {
 	svc := &Service{store: store}
 
 	sysSlug := "t-sys-" + genUUIDText(t)[:8]
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, sysSlug, strings.ReplaceAll(sysSlug, "-", "_"), "System Cat", groupID, 90, true, nil)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, sysSlug, strings.ReplaceAll(sysSlug, "-", "_"), "System Cat", groupID, 90, true, nil, nil)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -302,7 +303,7 @@ func TestDeleteWikiTypeCategory_ProseGuard(t *testing.T) {
 	groupID := seedTestGroup(t, ctx, database, "t-grp-"+genUUIDText(t)[:8])
 	proseSlug := "t-prose-" + genUUIDText(t)[:8]
 	proseCat := strings.ReplaceAll(proseSlug, "-", "_")
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, proseSlug, proseCat, "Guarded", groupID, 91, false, nil)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, proseSlug, proseCat, "Guarded", groupID, 91, false, nil, nil)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -429,7 +430,7 @@ func TestUpdateWikiTypeCategory_PatchesMutableFields(t *testing.T) {
 	svc.SetCustomFields(customfields.NewService(database))
 
 	updSlug := "t-upd-" + genUUIDText(t)[:8]
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, updSlug, strings.ReplaceAll(updSlug, "-", "_"), "Before", groupID, 92, false, nil)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, updSlug, strings.ReplaceAll(updSlug, "-", "_"), "Before", groupID, 92, false, nil, nil)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -460,6 +461,33 @@ func TestUpdateWikiTypeCategory_PatchesMutableFields(t *testing.T) {
 	// request; confirm the row is unchanged.
 	if got.Slug != cat.Slug || got.Category != cat.Category {
 		t.Fatalf("immutable fields changed: %+v vs %+v", got, cat)
+	}
+
+	// Icon is three-state: a string sets it (normalized lowercase kebab),
+	// an absent key keeps it, explicit null clears it.
+	if err := svc.UpdateWikiTypeCategory(ctx, cat.ID.String(), UpdateWikiCategoryRequest{Icon: json.RawMessage(`"Wallet"`)}); err != nil {
+		t.Fatalf("set icon: %v", err)
+	}
+	got, _ = store.GetWikiTypeCategory(ctx, cat.ID)
+	if got.Icon == nil || *got.Icon != "wallet" {
+		t.Fatalf("icon set: want wallet, got %v", got.Icon)
+	}
+	if err := svc.UpdateWikiTypeCategory(ctx, cat.ID.String(), UpdateWikiCategoryRequest{}); err != nil {
+		t.Fatalf("no-op patch: %v", err)
+	}
+	got, _ = store.GetWikiTypeCategory(ctx, cat.ID)
+	if got.Icon == nil || *got.Icon != "wallet" {
+		t.Fatalf("icon must survive an absent-key patch, got %v", got.Icon)
+	}
+	if err := svc.UpdateWikiTypeCategory(ctx, cat.ID.String(), UpdateWikiCategoryRequest{Icon: json.RawMessage(`null`)}); err != nil {
+		t.Fatalf("clear icon: %v", err)
+	}
+	got, _ = store.GetWikiTypeCategory(ctx, cat.ID)
+	if got.Icon != nil {
+		t.Fatalf("icon clear: want nil, got %v", *got.Icon)
+	}
+	if err := svc.UpdateWikiTypeCategory(ctx, cat.ID.String(), UpdateWikiCategoryRequest{Icon: json.RawMessage(`"Bad Icon!"`)}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("bad icon: want ErrInvalidInput, got %v", err)
 	}
 }
 
@@ -563,7 +591,7 @@ func TestDeleteFieldGroup_BlockedWhileCategoryBound(t *testing.T) {
 	cfSvc := customfields.NewService(database)
 
 	catSlug := "t-fg-" + genUUIDText(t)[:8]
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, catSlug, strings.ReplaceAll(catSlug, "-", "_"), "Bound", groupID, 93, false, nil)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, catSlug, strings.ReplaceAll(catSlug, "-", "_"), "Bound", groupID, 93, false, nil, nil)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
