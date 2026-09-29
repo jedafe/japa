@@ -187,6 +187,8 @@
 		),
 		createLabel: t('app.wiki.type_create', 'New wiki type'),
 		createPermission: 'wiki.manage',
+		// Nested under the page's tabs — keep table state out of the shared URL.
+		urlSync: false,
 		pageSize: 25,
 		columns: [
 			{
