@@ -315,13 +315,15 @@
 		},
 		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' },
 		// §80 Hierarchical UX: descendant-aggregation config, edited as a
-		// JSON document — {enabled, metrics[], levels[]?}. Empty = disabled.
+		// JSON document — {enabled, mode?, metrics[], levels[]?}. Empty =
+		// disabled. mode:"directory" turns the category's page into a
+		// child-space listing instead of metric aggregation.
 		{
 			key: 'rollup_json',
 			label: t('app.wiki.cat_rollup', 'Rollup config (JSON)'),
 			type: 'textarea',
 			placeholder: '{"enabled": true, "metrics": ["min","avg","max"], "levels": ["city"]}',
-			help: t('app.wiki.cat_rollup_help', 'Aggregates descendant spaces’ numeric/price_range field values onto this category’s page. levels omitted = every declared child type.')
+			help: t('app.wiki.cat_rollup_help', 'Aggregates descendant spaces’ numeric/price_range field values onto this category’s page — or add "mode":"directory" to list child wiki spaces instead (e.g. {"enabled":true,"mode":"directory","levels":["state"]}). levels omitted = every declared child type.')
 		}
 	];
 
@@ -394,10 +396,16 @@
 						{
 							key: 'rollup',
 							label: t('app.wiki.cat_rollup_col', 'Rollup'),
-							render: (v: unknown) =>
-								v && (v as { enabled?: boolean }).enabled
-									? `<span class="text-xs font-medium" style="color: var(--color-primary)">${t('app.wiki.rollup_on', 'on')}</span>`
-									: `<span class="text-xs" style="color: var(--color-muted)">—</span>`
+							render: (v: unknown) => {
+								const cfg = v as { enabled?: boolean; mode?: string } | null;
+								if (!cfg?.enabled) {
+									return `<span class="text-xs" style="color: var(--color-muted)">—</span>`;
+								}
+								const label = cfg.mode === 'directory'
+									? t('app.wiki.rollup_directory', 'directory')
+									: t('app.wiki.rollup_on', 'on');
+								return `<span class="text-xs font-medium" style="color: var(--color-primary)">${label}</span>`;
+							}
 						},
 						{ key: 'position', label: t('app.wiki.cat_position', 'Pos'), width: 64 },
 						{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), componentSnippet: BoolCell }
