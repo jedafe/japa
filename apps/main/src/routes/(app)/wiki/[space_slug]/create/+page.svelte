@@ -79,19 +79,28 @@
 	}
 
 	async function createTemplate() {
-		const catId = categories.find((c) => c.slug === category)?.id;
+		// Capture the category — if the user switches category mid-flight the
+		// template must land under the category it was created for, and the
+		// follow-up selection only applies while that category is current.
+		const catSlug = category;
+		const catId = categories.find((c) => c.slug === catSlug)?.id;
 		const label = tplLabel.trim();
 		const tplSlugVal = tplSlug.trim();
-		if (!catId || !label || !/^[a-z0-9-]+$/.test(tplSlugVal)) {
+		// Same charset as the backend's wikiSlugPattern — rejects leading/
+		// trailing/double hyphens before the round-trip.
+		if (!catId || !label || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(tplSlugVal)) {
 			tplError = t('wiki.new_template_invalid', 'A label and a lowercase-hyphen slug are required.');
 			return;
 		}
+		// Positions are 1-based in the seeded data; append after the max so
+		// gaps or duplicates can't collide on an existing position.
+		const tplPosition = Math.max(0, ...catTemplates.map((tm) => tm.position)) + 1;
 		tplSaving = true;
 		tplError = null;
 		try {
 			const res = await api.post<{ slug: string }>(
 				`/admin/wiki/categories/${catId}/page-templates`,
-				{ slug: tplSlugVal, label, position: catTemplates.length }
+				{ slug: tplSlugVal, label, position: tplPosition }
 			);
 			if (res.error) {
 				tplError = res.error.message;
@@ -99,22 +108,32 @@
 			}
 			// Re-fetch so the new template arrives with {name} substituted
 			// server-side — the raw label would render the token literally.
-			// On failure, push the raw shape so the picker still selects it.
 			const catRes = await api.get<CatItem[]>(`/wiki/categories?space=${encodeURIComponent(data.spaceSlug)}`);
 			if (catRes.data) {
 				categories = catRes.data;
 			} else {
+				// Fallback: the lazy page stub's title carries the resolved
+				// {name} — push it so the locked title never stores the token.
+				let resolvedLabel = label;
+				const pg = await api.get<{ title?: string }>(
+					`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(tplSlugVal)}`
+				);
+				if (pg.data?.title) resolvedLabel = pg.data.title;
 				categories = categories.map((c) =>
-					c.slug === category
-						? { ...c, page_templates: [...(c.page_templates ?? []), { slug: tplSlugVal, label, position: catTemplates.length }] }
+					c.slug === catSlug
+						? { ...c, page_templates: [...(c.page_templates ?? []), { slug: tplSlugVal, label: resolvedLabel, position: tplPosition }] }
 						: c
 				);
 			}
-			tplOpen = false;
 			tplLabel = '';
 			tplSlug = '';
 			tplSlugEdited = false;
-			onPageChoice(res.data?.slug ?? tplSlugVal);
+			// Only auto-select the new template while its category is still
+			// current — a mid-flight category switch keeps the user's form.
+			if (category === catSlug) {
+				tplOpen = false;
+				onPageChoice(res.data?.slug ?? tplSlugVal);
+			}
 		} catch {
 			tplError = t('wiki.new_template_failed', 'Could not create the template.');
 		} finally {
@@ -296,7 +315,11 @@
 						{#if canManageTemplates}
 							<button
 								type="button"
-								onclick={() => (tplOpen = !tplOpen)}
+								onclick={() => {
+									tplOpen = !tplOpen;
+									if (tplOpen) tplError = null;
+								}}
+								aria-expanded={tplOpen}
 								class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] transition hover:opacity-80"
 							>
 								<Plus size={12} />
@@ -334,7 +357,7 @@
 									bind:value={tplSlug}
 									oninput={() => (tplSlugEdited = true)}
 									placeholder={t('wiki.new_template_slug', 'template-slug')}
-									aria-label={t('wiki.new_template_slug', 'template-slug')}
+									aria-label={t('wiki.create_slug_label', 'URL slug')}
 									class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 								/>
 							</div>
