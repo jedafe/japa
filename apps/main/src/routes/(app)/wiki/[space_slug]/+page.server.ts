@@ -11,6 +11,10 @@ type WikiApiCategory = {
 	/** §80 lazy template pages — declared sibling links ({name}
 	 *  substituted server-side); present only on ?space= requests. */
 	page_templates?: { slug: string; label: string; position: number }[];
+	/** Stub page slug for /wiki/{space}/{page_slug} links. */
+	page_slug?: string;
+	/** §80 directories — the stub page is the child-space listing. */
+	directory?: boolean;
 };
 /** §80 Hierarchical UX — the index envelope gains ancestors[] alongside
  *  the page list for the space-level breadcrumb, and ancestors_alt[]

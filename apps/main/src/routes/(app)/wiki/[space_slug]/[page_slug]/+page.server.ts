@@ -11,6 +11,10 @@ type WikiApiCategory = {
 	/** §80 lazy template pages — sibling page links under this category,
 	 *  {name} already substituted. Present only on ?space= requests. */
 	page_templates?: { slug: string; label: string; position: number }[];
+	/** Stub page slug for /wiki/{space}/{page_slug} links. */
+	page_slug?: string;
+	/** §80 directories — the stub page is the child-space listing. */
+	directory?: boolean;
 };
 
 /**
