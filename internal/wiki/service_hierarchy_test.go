@@ -944,6 +944,146 @@ func TestAggregateRollupValues_AvgStandinMixed(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Directory mode (§80 child-type directories)
+// ---------------------------------------------------------------------------
+
+// TestDirectoryChildRows_SortAndCap — the listing helper orders by depth
+// then name (slug tie-break) and truncates at the limit, deterministically
+// dropping the tail rather than an arbitrary subset.
+func TestDirectoryChildRows_SortAndCap(t *testing.T) {
+	mkID := func(b byte) pgtype.UUID {
+		var u pgtype.UUID
+		u.Valid = true
+		u.Bytes[15] = b
+		return u
+	}
+	strPtr := func(s string) *string { return &s }
+
+	children := []WikiDirectoryChild{
+		{ID: mkID(4), Slug: "b-city", Name: "B City", Level: "city", SpaceTypeSlug: "city", Depth: 2},
+		{ID: mkID(1), Slug: "z-state", Name: "Z State", Level: "state", SpaceTypeSlug: "state", Depth: 1},
+		{ID: mkID(2), Slug: "a-state", Name: "A State", Level: "state", SpaceTypeSlug: "state", Depth: 1, GeoCode: strPtr("LA"), PageCount: 3},
+		{ID: mkID(3), Slug: "a-city", Name: "A City", Level: "city", SpaceTypeSlug: "city", Depth: 2},
+	}
+
+	rows := directoryChildRows(children, 3)
+	if len(rows) != 3 {
+		t.Fatalf("cap: got %d want 3", len(rows))
+	}
+	if rows[0].Slug != "a-state" || rows[1].Slug != "z-state" || rows[2].Slug != "a-city" {
+		t.Fatalf("order: got %q %q %q want a-state, z-state, a-city",
+			rows[0].Slug, rows[1].Slug, rows[2].Slug)
+	}
+	if rows[0].GeoCode == nil || *rows[0].GeoCode != "LA" || rows[0].PageCount != 3 {
+		t.Fatalf("geo/page_count not carried: %+v", rows[0])
+	}
+
+	// limit <= 0 and over-length limits are no-ops on the slice bound.
+	if got := directoryChildRows(children, 0); len(got) != len(children) {
+		t.Fatalf("zero limit: got %d want %d", len(got), len(children))
+	}
+	if got := directoryChildRows(children, 99); len(got) != len(children) {
+		t.Fatalf("over limit: got %d want %d", len(got), len(children))
+	}
+}
+
+// TestComputeDirectory_ListsValuelessChildren — the directory lists every
+// linked wiki-type descendant even with no field values or wiki_pages rows
+// (the rollup would emit nothing here). Unlinked, wrong-type, and
+// non-wiki-type children are excluded; page_count and geo_code ride along.
+func TestComputeDirectory_ListsValuelessChildren(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+	uniq := strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:8]
+
+	mk := func(q string, args ...any) pgtype.UUID { return mustIDF(t, ctx, database, q, args...) }
+
+	// A wiki-enabled child type, plus a non-wiki type that must never
+	// appear even when linked.
+	childTypeID := mk(`INSERT INTO space_types (id,name,slug) VALUES (gen_random_uuid(),$1,$1) RETURNING id`, "wop-child-"+uniq)
+	mk(`INSERT INTO wiki_type_configs (space_type_id,enabled,label) VALUES ($1,true,$2) RETURNING space_type_id`,
+		childTypeID, "Wop Child "+uniq)
+	nonWikiTypeID := mk(`INSERT INTO space_types (id,name,slug) VALUES (gen_random_uuid(),$1,$1) RETURNING id`, "wop-plain-"+uniq)
+	t.Cleanup(func() {
+		cctx := context.Background()
+		database.Writer.Exec(cctx, `DELETE FROM wiki_type_configs WHERE space_type_id = $1`, childTypeID)
+		database.Writer.Exec(cctx, `DELETE FROM space_types WHERE id IN ($1,$2)`, childTypeID, nonWikiTypeID)
+	})
+
+	parentSpace, _ := seedSpaceOfType(t, ctx, database, hf.typeID, "dirp")
+	childA, childASlug := seedSpaceOfType(t, ctx, database, childTypeID, "dira")
+	childB, _ := seedSpaceOfType(t, ctx, database, childTypeID, "dirb")
+	nonWiki, _ := seedSpaceOfType(t, ctx, database, nonWikiTypeID, "dirnw")
+	stray, _ := seedSpaceOfType(t, ctx, database, hf.typeID, "dirstray") // same type, unlinked
+
+	link := func(kid pgtype.UUID) {
+		t.Helper()
+		if _, err := database.Writer.Exec(ctx,
+			`UPDATE spaces SET parent_id = $1 WHERE id = $2`, parentSpace, kid); err != nil {
+			t.Fatalf("link %v: %v", kid, err)
+		}
+	}
+	link(childA)
+	link(nonWiki)
+	// Junction-only link for childB — exercises the space_parent_spaces arm.
+	mk(`INSERT INTO space_parent_spaces (parent_space_id,space_id) VALUES ($1,$2) RETURNING space_id`,
+		parentSpace, childB)
+	_ = stray
+
+	// childA gets a geo_code and two pages (one active, one inactive) —
+	// the directory card must count only active pages.
+	if _, err := database.Writer.Exec(ctx, `UPDATE spaces SET geo_code = 'LA' WHERE id = $1`, childA); err != nil {
+		t.Fatalf("geo_code: %v", err)
+	}
+	pg := func(slug string, active bool) {
+		mk(`INSERT INTO wiki_pages (id,space_id,slug,title,category,is_active)
+			VALUES (gen_random_uuid(),$1,$2,$2,'stub',$3) RETURNING id`, childA, slug, active)
+	}
+	pg("p1", true)
+	pg("p2", false)
+	t.Cleanup(func() {
+		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE space_id = $1`, childA)
+	})
+
+	svc := NewService(store, nil)
+	cfg := &WikiRollupConfig{Enabled: true, Mode: "directory", Levels: []string{"wop-child-" + uniq}}
+	dir := svc.computeDirectory(ctx, parentSpace, hf.typeID, cfg)
+	if dir == nil {
+		t.Fatal("directory is nil")
+	}
+	if dir.Total != 2 || len(dir.Children) != 2 {
+		t.Fatalf("children: got total=%d len=%d want 2/2: %+v", dir.Total, len(dir.Children), dir.Children)
+	}
+	// name order: dira < dirb.
+	got := map[string]WikiDirectoryChildDTO{}
+	for _, c := range dir.Children {
+		got[c.Slug] = c
+	}
+	a, ok := got[childASlug]
+	if !ok {
+		t.Fatalf("childA missing: %+v", dir.Children)
+	}
+	if a.PageCount != 1 || a.GeoCode == nil || *a.GeoCode != "LA" {
+		t.Fatalf("childA card: %+v", a)
+	}
+	if a.TypeSlug != "wop-child-"+uniq {
+		t.Fatalf("childA type slug: %q", a.TypeSlug)
+	}
+
+	// A non-directory config still produces nil via this path's contract
+	// (callers gate on mode, but the helper itself is defensive).
+	if d := svc.computeDirectory(ctx, parentSpace, hf.typeID, &WikiRollupConfig{Enabled: true}); d != nil {
+		t.Fatalf("aggregate config produced a directory: %+v", d)
+	}
+	// Unknown level slugs resolve to no types → nil.
+	if d := svc.computeDirectory(ctx, parentSpace, hf.typeID,
+		&WikiRollupConfig{Enabled: true, Mode: "directory", Levels: []string{"no-such-type"}}); d != nil {
+		t.Fatalf("unresolvable levels produced a directory: %+v", d)
+	}
+}
+
 // TestDeleteWikiPageTemplate_ValuesGuard — a bound page whose space holds
 // a stored value in the template's group (admin SetFieldValue writes carry
 // no revision) must still block deletion (§80: "prose/values").

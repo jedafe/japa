@@ -103,6 +103,9 @@ type WikiPageDetailDTO struct {
 	AncestorsAlt []WikiSpaceRefDTO `json:"ancestors_alt,omitempty"`
 	Siblings     []WikiSiblingDTO  `json:"siblings,omitempty"`
 	Rollup       *WikiRollupDTO    `json:"rollup,omitempty"`
+	// Directory is the read-time child-space listing when the category's
+	// rollup config sets mode:"directory" (§80) — nil otherwise.
+	Directory *WikiDirectoryDTO `json:"directory,omitempty"`
 	// PageTemplates lists the page's category's declared sibling template
 	// pages (§80 lazy pages) — labels carry the space's name substituted
 	// for the {name} token. The frontend links them for discovery; lazy
@@ -595,11 +598,16 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 			}
 		}
 
-		// Rollup: only on the category's own page (sibling template pages
-		// render their bound group's items, not the aggregate).
+		// Rollup/directory: only on the category's own page (sibling
+		// template pages render their bound group's items, not the
+		// aggregate or child list).
 		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && page.Slug == cat.Slug {
 			if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
-				dto.Rollup = s.computeRollup(ctx, userID, spaceID, spaceTypeID, rcfg, cat.Category)
+				if rcfg.Mode == rollupModeDirectory {
+					dto.Directory = s.computeDirectory(ctx, spaceID, spaceTypeID, rcfg)
+				} else {
+					dto.Rollup = s.computeRollup(ctx, userID, spaceID, spaceTypeID, rcfg, cat.Category)
+				}
 			}
 		}
 	}
