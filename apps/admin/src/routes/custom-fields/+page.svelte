@@ -67,64 +67,11 @@
 		return entityTypeOptions.find((o) => o.value === value)?.label ?? value;
 	}
 
-	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
-	// Two-phase: plain delete first; groups that come back in_use are offered a
-	// force-delete confirmation (?force=true) since bulk actions have no
-	// built-in confirm dialog.
+	// Bulk delete is fully scaffold-driven: EntityPage's built-in "Delete
+	// Selected" runs config.remove per row and, when rows come back inUse and
+	// config.forceRemove is declared, offers a second force-delete confirm
+	// (DELETE ?force=true) — no page-local bulk handler needed.
 	let entityController = $state<EntityPageController | undefined>(undefined);
-	let pageError = $state('');
-	let bulkDeleting = $state(false);
-	let showBulkForceConfirm = $state(false);
-	let bulkForceTargets = $state<string[]>([]);
-
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0) return;
-		if (bulkDeleting) return; // in-flight guard
-		bulkDeleting = true;
-		pageError = '';
-		try {
-			const results = await Promise.all(
-				idArr.map(async (id) => ({ id, res: await fieldGroupsAdminApiExtended.delete(id) }))
-			);
-			const failures = results.filter((r) => !r.res.ok);
-			const inUseIds = failures.filter((r) => !r.res.ok && r.res.code === 'in_use').map((r) => r.id);
-			const others = failures.filter((r) => !r.res.ok && r.res.code !== 'in_use');
-			if (others.length > 0) {
-				pageError = others.map((r) => (!r.res.ok ? r.res.error : '')).join('; ');
-			}
-			if (inUseIds.length > 0) {
-				bulkForceTargets = inUseIds;
-				showBulkForceConfirm = true;
-			}
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete field groups');
-		} finally {
-			bulkDeleting = false;
-		}
-	}
-
-	async function confirmBulkForceDelete() {
-		if (bulkForceTargets.length === 0 || bulkDeleting) return;
-		bulkDeleting = true;
-		showBulkForceConfirm = false;
-		pageError = '';
-		try {
-			const results = await Promise.all(
-				bulkForceTargets.map(async (id) => ({ id, res: await fieldGroupsAdminApiExtended.delete(id, true) }))
-			);
-			const failures = results.filter((r) => !r.res.ok);
-			if (failures.length > 0) {
-				pageError = failures.map((r) => (!r.res.ok ? r.res.error : '')).join('; ');
-			}
-			bulkForceTargets = [];
-			entityController?.reload();
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete field groups');
-		} finally {
-			bulkDeleting = false;
-		}
-	}
 
 	// ── Entity type autocomplete helpers (filter pre-loaded options client-side) ──
 	function fetchEntityTypeOptions(q: string): Promise<{ id: string; label: string }[]> {
@@ -221,14 +168,6 @@
 				variant: 'destructive',
 				onclick: (_row: FieldGroup, ctx) => ctx?.openDelete(_row),
 				show: (row: FieldGroup) => !row.is_system
-			}
-		],
-		bulkActions: [
-			{
-				label: t('common.deleteSelected', 'Delete Selected'),
-				icon: Trash2,
-				variant: 'destructive',
-				onclick: bulkDelete
 			}
 		],
 		fields,
@@ -539,15 +478,6 @@
 	<title>{t('custom_fields.title', 'Custom Fields')} — JapaConnect Admin</title>
 </svelte:head>
 
-{#if pageError}
-	<div
-		class="mb-4 rounded-lg p-3 text-sm"
-		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
-	>
-		{pageError}
-	</div>
-{/if}
-
 <EntityPage {config} bind:controller={entityController} />
 
 <!-- Field-editor SlideOver (page-local sub-flow) -->
@@ -807,27 +737,6 @@
 		</Button>
 		<Button variant="destructive" onclick={executeDeleteField}>
 			{t('common.delete', 'Delete')}
-		</Button>
-	</div>
-</Modal>
-
-<!-- Bulk force-delete confirmation (groups still holding stored values) -->
-<Modal bind:open={showBulkForceConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
-	<p class="text-sm" style="color: var(--color-muted)">
-		{t('fieldGroups.bulk_force_confirm', '{count} selected group(s) contain stored values. Deleting them permanently removes the groups, their fields, and all stored values.').replace('{count}', String(bulkForceTargets.length))}
-	</p>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button
-			variant="outline"
-			onclick={() => {
-				showBulkForceConfirm = false;
-				bulkForceTargets = [];
-			}}
-		>
-			{t('common.cancel', 'Cancel')}
-		</Button>
-		<Button variant="destructive" onclick={confirmBulkForceDelete} disabled={bulkDeleting}>
-			{t('common.forceDelete', 'Delete Anyway')}
 		</Button>
 	</div>
 </Modal>

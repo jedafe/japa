@@ -68,7 +68,9 @@
 		remove?: (id: string) => Promise<{ ok: boolean; error?: string; inUse?: boolean }>;
 		/** Second-chance delete when `remove` reports the row is still referenced
 		 *  (returns `{ ok: false, inUse: true }`). The confirm modal then offers a
-		 *  "Delete Anyway" button that calls this callback (e.g. ?force=true). */
+		 *  "Delete Anyway" button that calls this callback (e.g. ?force=true).
+		 *  Bulk "Delete Selected" uses the same two-phase flow: rows that come
+		 *  back inUse are gathered into a second force-delete confirm. */
 		forceRemove?: (id: string) => Promise<{ ok: boolean; error?: string }>;
 		/** Permanently delete a soft-deleted row. When provided, a "Hard Delete" action
 		 *  appears for rows where `isDeleted(row)` returns true. */
@@ -681,7 +683,9 @@
 
 	// Sequential per-id deletes — the API has no bulk-delete route, and per-row
 	// failures (in-use, permissions) must be collected rather than aborting the
-	// whole batch on the first error.
+	// whole batch on the first error. Rows that come back `inUse` are gathered
+	// for a second, force-delete confirm when the page declares `forceRemove`
+	// (same two-phase flow as the single-row delete).
 	async function confirmBulkDelete() {
 		if (!bulkDeleteIds.size || !config.remove) return;
 		bulkDeleting = true;
@@ -689,9 +693,82 @@
 		try {
 			let failed = 0;
 			let lastErr = '';
+			const inUseIds: string[] = [];
 			for (const id of bulkDeleteIds) {
 				try {
 					const res = await config.remove(id);
+					if (!res?.ok) {
+						if (res?.inUse && config.forceRemove) {
+							inUseIds.push(id);
+						} else {
+							failed++;
+							lastErr = res?.error ?? '';
+						}
+					}
+				} catch (e) {
+					failed++;
+					lastErr = e instanceof Error ? e.message : '';
+				}
+			}
+			const total = bulkDeleteIds.size;
+			const succeeded = total - failed - inUseIds.length;
+			bulkDeleteConfirmOpen = false;
+			if (inUseIds.length > 0) {
+				bulkForceIds = new Set(inUseIds);
+				bulkForceConfirmOpen = true;
+			} else {
+				bulkDeleteIds = new Set();
+				selectedIds = new Set();
+			}
+			// reload() clears `error` on entry — it must run before the
+			// result banners are assigned or partial failures never render.
+			await reload();
+			// Report deletions independently of failures/force phase — rows
+			// that did delete must never vanish silently while the force
+			// modal is up.
+			if (succeeded > 0) {
+				success = t('common.deletedN', 'Deleted {n} items').replace('{n}', String(succeeded));
+			}
+			if (failed > 0) {
+				error = t('common.bulkDeletePartial', '{failed} of {n} items could not be deleted')
+					.replace('{failed}', String(failed))
+					.replace('{n}', String(total)) + (lastErr ? ` — ${lastErr}` : '');
+			}
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	// Bulk force-delete: second confirm stage for rows whose plain delete came
+	// back `inUse`. Calls config.forceRemove per id — permanent.
+	let bulkForceConfirmOpen = $state(false);
+	let bulkForceIds = $state<Set<string>>(new Set());
+	let bulkForceDeleting = $state(false);
+
+	// Escape/backdrop/X close on the bits-ui Dialog flips `open` without
+	// running the Cancel button's onclick — mirror its cleanup on any
+	// close transition so stale force/bulk selections can't linger.
+	let bulkForceWasOpen = false;
+	$effect(() => {
+		const open = bulkForceConfirmOpen;
+		if (bulkForceWasOpen && !open && bulkForceIds.size > 0 && !bulkForceDeleting) {
+			bulkForceIds = new Set();
+			bulkDeleteIds = new Set();
+			selectedIds = new Set();
+		}
+		bulkForceWasOpen = open;
+	});
+
+	async function confirmBulkForceDelete() {
+		if (!bulkForceIds.size || !config.forceRemove) return;
+		bulkForceDeleting = true;
+		error = '';
+		try {
+			let failed = 0;
+			let lastErr = '';
+			for (const id of bulkForceIds) {
+				try {
+					const res = await config.forceRemove(id);
 					if (!res?.ok) {
 						failed++;
 						lastErr = res?.error ?? '';
@@ -701,10 +778,14 @@
 					lastErr = e instanceof Error ? e.message : '';
 				}
 			}
-			const total = bulkDeleteIds.size;
-			bulkDeleteConfirmOpen = false;
+			const total = bulkForceIds.size;
+			bulkForceConfirmOpen = false;
+			bulkForceIds = new Set();
 			bulkDeleteIds = new Set();
 			selectedIds = new Set();
+			// Same ordering as confirmBulkDelete: reload() clears `error`,
+			// so the failure banner must be assigned after it resolves.
+			await reload();
 			if (failed === 0) {
 				success = t('common.deletedN', 'Deleted {n} items').replace('{n}', String(total));
 			} else {
@@ -712,9 +793,8 @@
 					.replace('{failed}', String(failed))
 					.replace('{n}', String(total)) + (lastErr ? ` — ${lastErr}` : '');
 			}
-			await reload();
 		} finally {
-			bulkDeleting = false;
+			bulkForceDeleting = false;
 		}
 	}
 
@@ -991,6 +1071,30 @@
 		</Button>
 		<Button variant="destructive" onclick={confirmBulkDelete} disabled={bulkDeleting}>
 			{bulkDeleting ? t('common.deleting', 'Deleting…') : t('common.delete', 'Delete')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- Bulk force-delete confirm modal (rows still in use after plain delete) -->
+<Modal bind:open={bulkForceConfirmOpen} title={t('common.confirmDelete', 'Confirm Delete')}>
+	<p class="text-sm" style="color: var(--color-muted)">
+		{t('common.bulkForceConfirm', '{n} selected item(s) are still in use. Force-deleting them is permanent and removes their stored data.').replace('{n}', String(bulkForceIds.size))}
+	</p>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button
+			variant="outline"
+			onclick={() => {
+				bulkForceConfirmOpen = false;
+				bulkForceIds = new Set();
+				bulkDeleteIds = new Set();
+				selectedIds = new Set();
+			}}
+			disabled={bulkForceDeleting}
+		>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={confirmBulkForceDelete} disabled={bulkForceDeleting}>
+			{bulkForceDeleting ? t('common.deleting', 'Deleting…') : t('common.forceDelete', 'Delete Anyway')}
 		</Button>
 	</div>
 </Modal>

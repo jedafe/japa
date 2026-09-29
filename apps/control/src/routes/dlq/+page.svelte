@@ -134,11 +134,25 @@
 	async function discardAll() {
 		deleting = '__all__';
 		try {
-			const result = await api('/control/queue/dlq/discard-all', { method: 'POST' });
+			const result = await api<{ discarded?: number; errors?: string[] }>(
+				'/control/queue/dlq/discard-all',
+				{
+					method: 'POST',
+					body: { confirm: true }
+				}
+			);
 			if (result.ok) {
-				entries = [];
 				selectedIds = new Set();
-				showSuccess(t('dlq.discard_all_success'));
+				// Re-fetch rather than clearing locally — a per-queue partial
+				// failure (data.errors) leaves tasks server-side that must
+				// stay visible in the list.
+				await load();
+				const errs = result.data?.errors ?? [];
+				if (errs.length > 0) {
+					showError(errs.join('; '));
+				} else {
+					showSuccess(t('dlq.discard_all_success'));
+				}
 			} else {
 				showError(result.error || t('dlq.discard_all_error'));
 			}
@@ -156,13 +170,15 @@
 
 	async function bulkDiscard(ids: string[]) {
 		const taskIds = ids.map(extractTaskId);
-		let failed = 0;
+		const deleted = new Set<string>();
 		for (const taskId of taskIds) {
 			const result = await api(`/control/queue/dlq/${taskId}`, { method: 'DELETE' });
-			if (!result.ok) failed++;
+			if (result.ok) deleted.add(taskId);
 		}
-		entries = entries.filter((e) => !taskIds.includes(e.task_id));
+		// Remove only confirmed deletions — failed ids stay in the list.
+		entries = entries.filter((e) => !deleted.has(e.task_id));
 		selectedIds = new Set();
+		const failed = taskIds.length - deleted.size;
 		if (failed > 0) {
 			showError(t('dlq.discard_partial_error', '{count} tasks could not be discarded.').replace('{count}', String(failed)));
 		} else {

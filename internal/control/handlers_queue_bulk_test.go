@@ -3,8 +3,10 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -40,7 +42,15 @@ func enqueue(t *testing.T, client *asynq.Client, taskType, queue string, opts ..
 
 func callBulkHandler(t *testing.T, h *Handlers, method, queueName, suffix string) (int, map[string]int) {
 	t.Helper()
-	req := httptest.NewRequest(method, "/control/queue/"+queueName+"/"+suffix, nil)
+
+	var reqBody io.Reader
+
+	if suffix == "purge" {
+		// Purge is irreversible — the handler requires {"confirm":true}.
+		reqBody = strings.NewReader(`{"confirm":true}`)
+	}
+
+	req := httptest.NewRequest(method, "/control/queue/"+queueName+"/"+suffix, reqBody)
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("queue_name", queueName)
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
@@ -105,6 +115,23 @@ func TestQueueBulkHandlers_Purge(t *testing.T) {
 	enqueue(t, client, "test:a", "low")
 	callBulkHandler(t, h, http.MethodPost, "low", "archive")
 
+	// Irreversible without an explicit {"confirm":true} body — a bare POST
+	// must be refused and leave the archived task untouched.
+	req := httptest.NewRequest(http.MethodPost, "/control/queue/low/purge", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("queue_name", "low")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rec := httptest.NewRecorder()
+	h.PurgeQueueTasks(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("purge without confirm: code=%d", rec.Code)
+	}
+
+	if qi, _ := inspector.GetQueueInfo("low"); qi.Archived != 1 {
+		t.Fatalf("unconfirmed purge deleted tasks: archived=%d", qi.Archived)
+	}
+
 	code, data := callBulkHandler(t, h, http.MethodPost, "low", "purge")
 	if code != http.StatusOK || data["purged"] != 1 {
 		t.Fatalf("purge: code=%d data=%v", code, data)
@@ -135,5 +162,131 @@ func TestQueueBulkHandlers_AllQueuesAndValidation(t *testing.T) {
 	code, _ = callBulkHandler(t, h, http.MethodPost, "bogus", "archive")
 	if code != http.StatusBadRequest {
 		t.Fatalf("bad queue: want 400, got %d", code)
+	}
+}
+
+// TestQueueBulkHandlers_DiscardAllDLQRequiresConfirm — discard-all drains
+// every dead-letter queue permanently, so it must carry the same
+// {"confirm":true} gate as purge; a bare POST refuses.
+func TestQueueBulkHandlers_DiscardAllDLQRequiresConfirm(t *testing.T) {
+	t.Parallel()
+
+	_, client, inspector := startQueueTestRedis(t)
+	h := &Handlers{Inspector: inspector}
+
+	enqueue(t, client, "test:dlq", "low")
+	callBulkHandler(t, h, http.MethodPost, "low", "archive")
+
+	req := httptest.NewRequest(http.MethodPost, "/control/queue/dlq/discard-all", nil)
+	rec := httptest.NewRecorder()
+	h.DiscardAllDLQ(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("discard-all without confirm: code=%d", rec.Code)
+	}
+
+	if qi, _ := inspector.GetQueueInfo("low"); qi.Archived != 1 {
+		t.Fatalf("unconfirmed discard deleted tasks: archived=%d", qi.Archived)
+	}
+
+	// Confirmed run drains the queue.
+	req = httptest.NewRequest(http.MethodPost, "/control/queue/dlq/discard-all",
+		strings.NewReader(`{"confirm":true}`))
+	rec = httptest.NewRecorder()
+	h.DiscardAllDLQ(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirmed discard-all: code=%d", rec.Code)
+	}
+
+	if qi, _ := inspector.GetQueueInfo("low"); qi.Archived != 0 {
+		t.Fatalf("after discard-all: archived=%d", qi.Archived)
+	}
+}
+
+// TestQueueBulkHandlers_DiscardAllDLQDrainsBeyondPage — discard-all must
+// drain more than asynq's 30-task list page. Regresses the bug where the
+// handler listed the first page of archived tasks and deleted only those,
+// silently leaving the remainder while reporting success.
+func TestQueueBulkHandlers_DiscardAllDLQDrainsBeyondPage(t *testing.T) {
+	t.Parallel()
+
+	_, client, inspector := startQueueTestRedis(t)
+	h := &Handlers{Inspector: inspector}
+
+	const total = 35
+	for range total {
+		enqueue(t, client, "test:dlq", "low")
+	}
+
+	callBulkHandler(t, h, http.MethodPost, "low", "archive")
+
+	if qi, _ := inspector.GetQueueInfo("low"); qi.Archived != total {
+		t.Fatalf("fixture: archived=%d, want %d", qi.Archived, total)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/control/queue/dlq/discard-all",
+		strings.NewReader(`{"confirm":true}`))
+	rec := httptest.NewRecorder()
+	h.DiscardAllDLQ(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("discard-all: code=%d", rec.Code)
+	}
+
+	var body struct {
+		Data struct {
+			Discarded int `json:"discarded"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if body.Data.Discarded != total {
+		t.Fatalf("discarded=%d, want %d — DLQ page cap still truncates", body.Data.Discarded, total)
+	}
+
+	if qi, _ := inspector.GetQueueInfo("low"); qi.Archived != 0 {
+		t.Fatalf("after discard-all: archived=%d", qi.Archived)
+	}
+}
+
+// TestQueueBulkHandlers_ListDLQPaginatesPastThirty — the DLQ listing must
+// return every archived task, not just asynq's default 30-row page.
+func TestQueueBulkHandlers_ListDLQPaginatesPastThirty(t *testing.T) {
+	t.Parallel()
+
+	_, client, inspector := startQueueTestRedis(t)
+	h := &Handlers{Inspector: inspector}
+
+	const total = 35
+	for range total {
+		enqueue(t, client, "test:dlq", "low")
+	}
+
+	callBulkHandler(t, h, http.MethodPost, "low", "archive")
+
+	req := httptest.NewRequest(http.MethodGet, "/control/queue/dlq", nil)
+	rec := httptest.NewRecorder()
+	h.ListDLQ(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list dlq: code=%d", rec.Code)
+	}
+
+	var body struct {
+		Data []struct {
+			TaskID string `json:"task_id"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(body.Data) != total {
+		t.Fatalf("listed %d archived tasks, want %d — pagination truncates", len(body.Data), total)
 	}
 }

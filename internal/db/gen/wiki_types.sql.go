@@ -935,7 +935,10 @@ SELECT DISTINCT s.id, s.slug, s.name, s.level, s.space_type_id,
        COALESCE(st.slug, '') AS space_type_slug,
        COALESCE(st.name, '') AS space_type_name,
        COALESCE(wtc.label, st.name, '') AS space_type_label,
-       (s.id = (SELECT sp2.parent_id FROM spaces sp2 WHERE sp2.id = $1)) AS is_primary
+       -- COALESCE+cast: a junction-only child has spaces.parent_id NULL →
+       -- the scalar subquery is NULL → s.id = NULL is NULL, not false; the
+       -- cast pins sqlc's column type to bool.
+       COALESCE(s.id = (SELECT sp2.parent_id FROM spaces sp2 WHERE sp2.id = $1), false)::bool AS is_primary
 FROM (
     SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = $1
     UNION

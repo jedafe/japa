@@ -25,8 +25,18 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
 WHERE sp.slug = @space_slug AND wp.slug = @page_slug
-  AND wp.is_active = true
+  AND wp.is_active = true AND wp.deleted_at IS NULL
 LIMIT 1;
+
+-- name: WikiPageRowExistsBySlug :one
+-- Filter-free existence check (§80 lazy pages): distinguishes "no row —
+-- eligible for lazy template render" from "row exists but is inactive or
+-- soft-deleted — real 404, the lazy path must not resurrect it".
+SELECT EXISTS (
+    SELECT 1 FROM wiki_pages wp
+    JOIN spaces sp ON sp.id = wp.space_id
+    WHERE sp.slug = @space_slug AND wp.slug = @page_slug
+) AS exists;
 
 -- name: ListWikiPagesBySpaceSlug :many
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,

@@ -291,8 +291,12 @@ No per-page work is needed; the scaffold handles this for every `<EntityPage>`.
 > page-declared `bulkActions` entry labeled "Delete Selected" with
 > `variant: 'destructive'` is replaced by the built-in automatically, so most
 > pages can simply delete their custom bulk-delete handler. Opt out of the
-> built-in with `bulkDelete: false`. The guard pattern below still applies to
-> *custom* bulk actions that call APIs directly.
+> built-in with `bulkDelete: false`. When `config.forceRemove` is set, the
+> built-in bulk delete is two-phase like the single-row flow: rows whose
+> `remove` returns `{ ok: false, inUse: true }` are gathered into a second
+> confirm modal that runs `config.forceRemove` per row (e.g. `?force=true`).
+> The guard pattern below still applies to *custom* bulk actions that call
+> APIs directly.
 
 Learned during the `/tags` migration: without a guard, a user can trigger bulk delete
 twice (e.g. double-click) and fire duplicate API calls. Every bulk-action

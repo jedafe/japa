@@ -986,3 +986,219 @@ func TestDeleteWikiPageTemplate_ValuesGuard(t *testing.T) {
 		t.Fatalf("contentless bound template should delete: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// §80 review round 2 fixes: junction-only parent links, lazy-render
+// resurrection guard, and create-path slug/category canonicalization.
+// ---------------------------------------------------------------------------
+
+// TestListSpaceParentLinks_JunctionOnlyParent — a child whose
+// spaces.parent_id is NULL but which carries a space_parent_spaces junction
+// row must scan is_primary=false, not SQL NULL (was a pgx scan error that
+// silently killed ancestors/ancestors_alt on ~21k spaces).
+func TestListSpaceParentLinks_JunctionOnlyParent(t *testing.T) {
+	t.Parallel()
+
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+
+	parentID, _ := seedSpaceOfType(t, ctx, database, hf.typeID, "jpar")
+	childID, _ := seedSpaceOfType(t, ctx, database, hf.typeID, "jchild")
+
+	// Junction edge only — the child's spaces.parent_id stays NULL.
+	if _, err := database.Writer.Exec(ctx,
+		`INSERT INTO space_parent_spaces (space_id, parent_space_id) VALUES ($1,$2)`,
+		childID, parentID); err != nil {
+		t.Fatalf("junction insert: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = database.Writer.Exec(context.WithoutCancel(t.Context()),
+			`DELETE FROM space_parent_spaces WHERE space_id = $1`, childID)
+	})
+
+	links, err := store.ListSpaceParentLinks(ctx, childID)
+	if err != nil {
+		t.Fatalf("ListSpaceParentLinks must not scan-error on junction-only parents: %v", err)
+	}
+
+	if len(links) != 1 {
+		t.Fatalf("links: got %d want 1: %+v", len(links), links)
+	}
+
+	if links[0].IsPrimary {
+		t.Fatal("junction-only parent must report is_primary=false")
+	}
+
+	if links[0].ID != parentID {
+		t.Fatalf("wrong parent: got %v want %v", links[0].ID, parentID)
+	}
+}
+
+// TestGetWikiPage_LazyRespectsTombstones — a template-matching slug whose
+// wiki_pages row exists but is inactive or soft-deleted must 404, not
+// resurrect as a lazy render.
+func TestGetWikiPage_LazyRespectsTombstones(t *testing.T) {
+	t.Parallel()
+
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+	fx := seedOpsFixture(t, ctx, database)
+
+	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "tomb")
+
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], 0, false)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cctx := context.WithoutCancel(t.Context())
+		_, _ = database.Writer.Exec(cctx, `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
+		_, _ = database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID)
+	})
+
+	svc := NewService(store, nil)
+	svc.SetPermissionChecker(allowAllPerms{})
+	svc.SetCustomFields(customfields.NewService(database))
+
+	mk := func(isActive, deleted bool) {
+		_, err := database.Writer.Exec(ctx,
+			`INSERT INTO wiki_pages (id,space_id,slug,title,category,created_by,is_active,deleted_at)
+			 VALUES (gen_random_uuid(),$1,'prices','Prices','cost_of_living',$2,$3,
+			         CASE WHEN $4 THEN now() ELSE NULL END)`,
+			spaceID, fx.userID, isActive, deleted)
+		if err != nil {
+			t.Fatalf("insert tombstone: %v", err)
+		}
+	}
+
+	// Deactivated row → 404, no lazy render.
+	mk(false, false)
+
+	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "prices"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("deactivated page: want pgx.ErrNoRows, got %v", err)
+	}
+
+	// Soft-deleted row → 404 too.
+	if _, err := database.Writer.Exec(ctx,
+		`DELETE FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID); err != nil {
+		t.Fatalf("clear deactivated row: %v", err)
+	}
+
+	mk(false, true)
+
+	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "prices"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("soft-deleted page: want pgx.ErrNoRows, got %v", err)
+	}
+
+	// And with the row gone entirely the lazy path still works.
+	if _, err := database.Writer.Exec(ctx,
+		`DELETE FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID); err != nil {
+		t.Fatalf("clear tombstone: %v", err)
+	}
+
+	page, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "prices")
+	if err != nil || !page.Lazy {
+		t.Fatalf("absent row should lazy-render: page=%+v err=%v", page, err)
+	}
+}
+
+// TestCreatePageWithRevision_Canonicalizes — community creates must store
+// the canonical category token and a validated slug so sibling bucketing
+// and template binding don't fragment on input spelling.
+func TestCreatePageWithRevision_Canonicalizes(t *testing.T) {
+	t.Parallel()
+
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+	fx := seedOpsFixture(t, ctx, database)
+
+	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "canon")
+
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], 0, false)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cctx := context.WithoutCancel(t.Context())
+		_, _ = database.Writer.Exec(cctx, `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
+		_, _ = database.Writer.Exec(cctx, `DELETE FROM wiki_revisions WHERE submitted_by = $1`, fx.userID)
+		_, _ = database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE space_id = $1`, spaceID)
+	})
+
+	svc := NewService(store, nil)
+	content := json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`)
+
+	// Dash-form + uppercase category → canonical token; capitalized slug →
+	// lowercased; the template binds.
+	pageID, _, slug, err := svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
+		SpaceSlug: spaceSlug,
+		Slug:      "Prices",
+		Title:     "Prices",
+		Category:  "Cost-of-Living",
+		Content:   content,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if slug != "prices" {
+		t.Fatalf("slug not normalized: %q", slug)
+	}
+
+	var (
+		cat    string
+		tmplID pgtype.UUID
+	)
+
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT category, page_template_id FROM wiki_pages WHERE id = $1`, pageID).Scan(&cat, &tmplID); err != nil {
+		t.Fatalf("read stored page: %v", err)
+	}
+
+	if cat != "cost_of_living" {
+		t.Fatalf("category not canonicalized: %q", cat)
+	}
+
+	if tmplID != tmpl.ID {
+		t.Fatalf("template not bound: got %v want %v", tmplID, tmpl.ID)
+	}
+
+	// A dash-form category on a *different* slug lands in the same sibling
+	// bucket as the canonical-token page.
+	_, _, _, err = svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
+		SpaceSlug: spaceSlug,
+		Slug:      "markets",
+		Title:     "Markets",
+		Category:  "cost-of-living",
+		Content:   content,
+	})
+	if err != nil {
+		t.Fatalf("create sibling: %v", err)
+	}
+
+	sibs, err := store.ListPageSiblings(ctx, spaceID, "cost_of_living")
+	if err != nil {
+		t.Fatalf("siblings: %v", err)
+	}
+
+	if len(sibs) != 2 {
+		t.Fatalf("sibling bucket fragmented: got %d want 2: %+v", len(sibs), sibs)
+	}
+
+	// Slugs outside the canonical pattern are rejected.
+	if _, _, _, err := svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
+		SpaceSlug: spaceSlug,
+		Slug:      "Bad Slug!",
+		Title:     "Bad",
+		Category:  "cost_of_living",
+		Content:   content,
+	}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("invalid slug: want ErrInvalidInput, got %v", err)
+	}
+}

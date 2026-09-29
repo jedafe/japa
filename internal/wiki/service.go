@@ -515,7 +515,18 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 			// §80 lazy template pages: a slug matching the space type's
 			// (category-scoped) page templates renders without a
 			// wiki_pages row — the page materializes on the first
-			// prose/ops submission.
+			// prose/ops submission. A row that exists but is inactive or
+			// soft-deleted must stay dead — existence check first so the
+			// lazy path can't resurrect a deactivated/vandalized page.
+			exists, xerr := s.store.WikiPageRowExists(ctx, spaceSlug, pageSlug)
+			if xerr != nil {
+				return WikiPageDetailDTO{}, fmt.Errorf("wiki: get page: existence check: %w", xerr)
+			}
+
+			if exists {
+				return WikiPageDetailDTO{}, pgx.ErrNoRows
+			}
+
 			return s.getLazyTemplatePage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
 		}
 
@@ -764,7 +775,7 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 	// validate it parses as JSON. Ref: §5.1 XSS, §14 Tiptap sanitize.
 	normalizedContent, err := normalizeWikiContent(input.Content)
 	if err != nil {
-		return "", fmt.Errorf("wiki: submit: invalid content: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	input.Content = normalizedContent
@@ -825,6 +836,12 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 // synthesized page for callers that need the row id (revision attach,
 // edit lock).
 func (s *Service) materializeTemplatePage(ctx context.Context, spaceID pgtype.UUID, spaceSlug, spaceName string, createdBy pgtype.UUID, pageSlug string) (WikiPageWithSpace, error) {
+	// Deliberately no WikiPageRowExists check here (unlike GetWikiPage's
+	// lazy-render guard): an inactive row still occupies the partial unique
+	// index, so createPageBound returns ErrPageExists → re-resolve → 404 —
+	// deactivated pages stay dead; a soft-deleted row is outside the index
+	// (migration 000744), so its slug is legitimately re-creatable. The
+	// asymmetry is intended — do not "fix" it by gating on row existence.
 	tmpl, err := s.store.GetPageTemplateBySlug(ctx, spaceID, pageSlug)
 	if err != nil {
 		if errors.Is(err, ErrWikiPageTemplateNotFound) {
@@ -868,57 +885,121 @@ func (s *Service) materializeTemplatePage(ctx context.Context, spaceID pgtype.UU
 	}, nil
 }
 
+// canonicalizePageInput trims and validates the create payload: slug must
+// match the canonical hyphenated form (lowercased here); the category token
+// normalizes dash→underscore so 'Cost-of-Living'/'cost-of-living' resolve
+// identically downstream.
+func canonicalizePageInput(input CreateWikiPageInput) (slug, category, title string, err error) {
+	slug = strings.TrimSpace(strings.ToLower(input.Slug))
+	category = strings.ReplaceAll(strings.TrimSpace(strings.ToLower(input.Category)), "-", "_")
+	title = strings.TrimSpace(input.Title)
+
+	if title == "" || slug == "" || category == "" {
+		return "", "", "", fmt.Errorf("%w: title, slug, and category are required", ErrInvalidInput)
+	}
+
+	if !wikiSlugPattern.MatchString(slug) {
+		return "", "", "", fmt.Errorf("%w: invalid page slug", ErrInvalidInput)
+	}
+
+	if !wikiCategoryPattern.MatchString(category) {
+		return "", "", "", fmt.Errorf("%w: invalid category", ErrInvalidInput)
+	}
+
+	return slug, category, title, nil
+}
+
+// canonicalCategory resolves a normalized category token to the space type's
+// managed category row — §80 materialization writes the canonical
+// tmpl.CategoryToken, so community creates must store the same token or
+// sibling bucketing fragments on 'Cost-of-Living'/'cost-of-living'
+// spellings. Not-found falls through to the normalized form (freeform
+// category); real DB errors propagate — writing the wrong bucket is worse
+// than failing.
+func (s *Service) canonicalCategory(ctx context.Context, spaceID pgtype.UUID, category string) (string, error) {
+	spaceTypeID, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return category, nil
+		}
+
+		return "", fmt.Errorf("wiki: create page: resolve space type: %w", err)
+	}
+
+	cat, cerr := s.store.ResolveCategoryToken(ctx, spaceTypeID, category)
+	if cerr != nil {
+		if errors.Is(cerr, ErrWikiCategoryNotFound) {
+			return category, nil
+		}
+
+		return "", fmt.Errorf("wiki: create page: resolve category: %w", cerr)
+	}
+
+	return cat.Category, nil
+}
+
 // CreatePageWithRevision creates a new wiki page for the given space slug and
 // immediately submits an initial pending revision. The caller (handler) is
 // responsible for permission and reputation checks.
-func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, input CreateWikiPageInput) (string, string, error) {
-	if input.Title == "" || input.Slug == "" || input.Category == "" {
-		return "", "", errors.New("title, slug, and category are required")
+func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, input CreateWikiPageInput) (string, string, string, error) {
+	slug, category, title, err := canonicalizePageInput(input)
+	if err != nil {
+		return "", "", "", err
 	}
 
 	if len(input.Content) == 0 {
-		return "", "", errors.New("content is required")
+		return "", "", "", fmt.Errorf("%w: content is required", ErrInvalidInput)
 	}
 
 	normalizedContent, err := normalizeWikiContent(input.Content)
 	if err != nil {
-		return "", "", fmt.Errorf("wiki: create page: invalid content: %w", err)
+		return "", "", "", fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	spaceID, _, err := s.store.GetSpaceBySlug(ctx, input.SpaceSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", "", ErrSpaceNotFound
+			return "", "", "", ErrSpaceNotFound
 		}
 
-		return "", "", fmt.Errorf("wiki: create page: resolve space: %w", err)
+		return "", "", "", fmt.Errorf("wiki: create page: resolve space: %w", err)
+	}
+
+	category, err = s.canonicalCategory(ctx, spaceID, category)
+	if err != nil {
+		return "", "", "", err
 	}
 
 	// §80 Hierarchical UX: when a page template declares this (category,
 	// slug) pair on the space's type, the page row stores the resolved
 	// binding — the group survives a later template deletion (effective
 	// group falls back to the category's when absent).
-	var tmplID, tmplGroupID pgtype.UUID
-	if t, terr := s.store.GetPageTemplateForSpace(ctx, spaceID, input.Category, input.Slug); terr == nil {
+	var (
+		tmplID, tmplGroupID pgtype.UUID
+		tmplPosition        int32
+	)
+
+	if t, terr := s.store.GetPageTemplateForSpace(ctx, spaceID, category, slug); terr == nil {
 		tmplID = t.ID
 		tmplGroupID = t.FieldGroupID
+		tmplPosition = t.Position
 	}
 
-	var position int32
+	position := tmplPosition
 	if input.Position != nil {
 		position = *input.Position
 	}
 
-	pageID, revID, err := s.store.CreatePageWithRevision(ctx, spaceID, userID, input.Slug, input.Title, input.Category, normalizedContent, input.Summary, tmplID, tmplGroupID, position)
+	pageID, revID, err := s.store.CreatePageWithRevision(ctx, spaceID, userID, slug, title, category, normalizedContent, input.Summary, tmplID, tmplGroupID, position)
 	if err != nil {
 		if errors.Is(err, ErrPageExists) {
-			return "", "", ErrPageExists
+			return "", "", "", ErrPageExists
 		}
 
-		return "", "", fmt.Errorf("wiki: create page: %w", err)
+		return "", "", "", fmt.Errorf("wiki: create page: %w", err)
 	}
 
-	return pageID.String(), revID.String(), nil
+	return pageID.String(), revID.String(), slug, nil
 }
 
 // ApproveRevision approves a pending revision (moderator+). Returns the

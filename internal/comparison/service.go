@@ -285,6 +285,10 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, userID pgty
 				return nil, fmt.Errorf("listing fields for type %s: %w", td.Slug, err)
 			}
 
+			// §80: honor config.sections — a section-scoped type must not
+			// report the shared group's full field count.
+			fields = filterFieldsByConfigSections(fields, td.Config)
+
 			fieldCount = toInt32(len(fields))
 		}
 

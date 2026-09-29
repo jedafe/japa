@@ -310,6 +310,22 @@ func (s *Store) GetWikiPageBySlug(ctx context.Context, spaceSlug, pageSlug strin
 	return pageFromSlugRow(r), nil
 }
 
+// WikiPageRowExists reports whether a wiki_pages row exists for
+// (space_slug, page_slug) regardless of is_active/deleted_at — the lazy
+// template path uses it to keep tombstoned/deactivated pages dead instead
+// of resurrecting them as lazy renders.
+func (s *Store) WikiPageRowExists(ctx context.Context, spaceSlug, pageSlug string) (bool, error) {
+	exists, err := s.read.WikiPageRowExistsBySlug(ctx, gen.WikiPageRowExistsBySlugParams{
+		SpaceSlug: spaceSlug,
+		PageSlug:  pageSlug,
+	})
+	if err != nil {
+		return false, fmt.Errorf("wiki: page row exists: %w", err)
+	}
+
+	return exists, nil
+}
+
 // ListWikiPagesBySpace returns all active wiki pages for a space, with the
 // associated space slug and name (Rule 16 — avoid a second API round-trip).
 func (s *Store) ListWikiPagesBySpace(ctx context.Context, spaceSlug string) ([]WikiPageWithSpace, error) {
