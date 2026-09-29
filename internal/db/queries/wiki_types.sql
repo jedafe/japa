@@ -407,7 +407,9 @@ SELECT DISTINCT ON (s.id) s.id, s.slug, s.name, s.level, s.space_type_id,
 FROM descendants d
 JOIN spaces s ON s.id = d.id
 LEFT JOIN space_types st ON st.id = s.space_type_id
-WHERE s.deleted_at IS NULL AND s.status = 'active'
+-- The root excludes itself — a cyclic junction edge must not list a space
+-- as its own descendant.
+WHERE s.id <> @space_id AND s.deleted_at IS NULL AND s.status = 'active'
   AND (cardinality(@type_ids::uuid[]) = 0 OR s.space_type_id = ANY(@type_ids::uuid[]))
 ORDER BY s.id, d.depth;
 
@@ -444,7 +446,9 @@ JOIN spaces s ON s.id = d.id
 JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id AND wtc.enabled = true
 LEFT JOIN space_types st ON st.id = s.space_type_id
 LEFT JOIN wiki_pages wp ON wp.space_id = s.id
-WHERE s.deleted_at IS NULL AND s.status = 'active'
+-- The root excludes itself — a cyclic junction edge must not list a space
+-- as its own descendant.
+WHERE s.id <> @space_id AND s.deleted_at IS NULL AND s.status = 'active'
   AND (cardinality(@type_ids::uuid[]) = 0 OR s.space_type_id = ANY(@type_ids::uuid[]))
 GROUP BY s.id, s.slug, s.name, s.level, s.space_type_id, st.slug, s.geo_code
 ORDER BY MIN(d.depth), s.name, s.slug;

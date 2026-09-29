@@ -1175,6 +1175,42 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 	if !strings.HasPrefix(collide.Title, "Template ") {
 		t.Fatalf("template precedence broken — category stub won: title=%q", collide.Title)
 	}
+
+	// Token-form URL (category token vs canonical page slug): resolves the
+	// canonical page — first the lazy stub, then the materialized row, so
+	// submitted prose is never shadowed by an empty token-URL stub.
+	stub, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "cost_of_living")
+	if err != nil || !stub.Lazy || stub.Slug != "cost-of-living" {
+		t.Fatalf("token URL stub: slug=%q lazy=%v err=%v", stub.Slug, stub.Lazy, err)
+	}
+
+	if _, err := store.CreatePage(ctx, parentSpace, pgtype.UUID{}, "cost-of-living", "Cost of Living", "cost_of_living"); err != nil {
+		t.Fatalf("materialize category page: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.Writer.Exec(context.WithoutCancel(t.Context()),
+			`DELETE FROM wiki_pages WHERE space_id = $1`, parentSpace)
+	})
+
+	// The materialized category page carries the directory (its own page,
+	// not a sibling's).
+	mat, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "cost-of-living")
+	if err != nil || mat.Lazy || mat.Directory == nil {
+		t.Fatalf("materialized directory page: lazy=%v dir=%v err=%v", mat.Lazy, mat.Directory, err)
+	}
+	matViaToken, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "cost_of_living")
+	if err != nil || matViaToken.Lazy || matViaToken.Slug != "cost-of-living" || matViaToken.Directory == nil {
+		t.Fatalf("token URL after materialization: slug=%q lazy=%v dir=%v err=%v",
+			matViaToken.Slug, matViaToken.Lazy, matViaToken.Directory, err)
+	}
+
+	if _, err := store.CreatePage(ctx, parentSpace, pgtype.UUID{}, "col-sibling", "Sibling", "cost_of_living"); err != nil {
+		t.Fatalf("create sibling: %v", err)
+	}
+	sib, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "col-sibling")
+	if err != nil || sib.Directory != nil {
+		t.Fatalf("sibling must not carry directory: dir=%v err=%v", sib.Directory, err)
+	}
 }
 
 // TestSubmitRevision_MaterializesLazyCategoryPage — first prose submission
@@ -1327,6 +1363,49 @@ func TestListSpaceParentLinks_JunctionOnlyParent(t *testing.T) {
 
 	if links[0].ID != parentID {
 		t.Fatalf("wrong parent: got %v want %v", links[0].ID, parentID)
+	}
+}
+
+// TestListWikiDestinations_WithinJunctionDescendants — ?within= must reach
+// junction-only descendants at every hop (space_parent_spaces edges past
+// hop 1), matching the directory listing's edge set; the within target
+// itself is never listed.
+func TestListWikiDestinations_WithinJunctionDescendants(t *testing.T) {
+	t.Parallel()
+
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+
+	parentID, parentSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "wpar")
+	childID, _ := seedSpaceOfType(t, ctx, database, hf.typeID, "wchild")
+	grandID, _ := seedSpaceOfType(t, ctx, database, hf.typeID, "wgchild")
+
+	// Junction-only edges — spaces.parent_id stays NULL on both links.
+	if _, err := database.Writer.Exec(ctx,
+		`INSERT INTO space_parent_spaces (space_id, parent_space_id)
+		 VALUES ($1,$2),($3,$4)`, childID, parentID, grandID, childID); err != nil {
+		t.Fatalf("junction insert: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.Writer.Exec(context.WithoutCancel(t.Context()),
+			`DELETE FROM space_parent_spaces WHERE space_id IN ($1,$2)`, childID, grandID)
+	})
+
+	dests, err := store.ListWikiDestinations(ctx, "", "", "", "", parentSlug, false)
+	if err != nil {
+		t.Fatalf("within destinations: %v", err)
+	}
+
+	got := make(map[pgtype.UUID]bool, len(dests))
+	for _, d := range dests {
+		got[d.SpaceID] = true
+	}
+	if !got[childID] || !got[grandID] {
+		t.Fatalf("junction descendants missing: child=%v grandchild=%v", got[childID], got[grandID])
+	}
+	if got[parentID] {
+		t.Fatal("within target must not appear in its own descendant list")
 	}
 }
 

@@ -721,6 +721,14 @@ func (s *Service) getLazyPage(ctx context.Context, userID, spaceID pgtype.UUID, 
 		return WikiPageDetailDTO{}, fmt.Errorf("wiki: lazy page: resolve category: %w", cerr)
 	}
 
+	// Token-form URL (e.g. cost_of_living vs the canonical page slug
+	// cost-of-living): materialized prose lives at the canonical slug —
+	// re-enter the normal page flow so a submitted page renders here
+	// instead of an empty token-URL stub shadowing it.
+	if cat.Slug != pageSlug {
+		return s.GetWikiPage(ctx, userID, spaceSlug, cat.Slug)
+	}
+
 	return s.lazyCategoryPage(ctx, userID, spaceID, spaceSlug, spaceName, cat)
 }
 

@@ -129,6 +129,9 @@ type WikiDirectoryChildDTO struct {
 // directory-mode category page. Total counts every matching descendant
 // (pre-cap); Children is capped for the card grid — the frontend reaches
 // the full set via GET /wiki/destinations?within={slug}&level={level}.
+// Levels lists the distinct child type slugs across the full (pre-cap)
+// listing, so type filters stay complete even when the cap truncates
+// Children.
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiDirectoryDTO struct {
 	Levels   []string                `json:"levels"`
@@ -177,11 +180,17 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 		}
 	}
 
-	// Omitted levels means "every declared descendant type" — normalize to
-	// an empty array so the JSON contract stays `levels: string[]`.
-	levels := cfg.Levels
-	if levels == nil {
-		levels = []string{}
+	// Levels reports the distinct child type slugs across the full listing
+	// — a type whose children fall entirely past the cap still gets a
+	// filter chip because scoped search (?within=&level=) reaches it.
+	seen := make(map[string]bool, 4)
+	levels := make([]string, 0, 4)
+	for _, c := range children {
+		if c.SpaceTypeSlug == "" || seen[c.SpaceTypeSlug] {
+			continue
+		}
+		seen[c.SpaceTypeSlug] = true
+		levels = append(levels, c.SpaceTypeSlug)
 	}
 
 	return &WikiDirectoryDTO{

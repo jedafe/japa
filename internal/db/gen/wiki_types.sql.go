@@ -741,9 +741,9 @@ const listWikiDescendantSpaces = `-- name: ListWikiDescendantSpaces :many
 WITH RECURSIVE descendants AS (
     SELECT kid.id, 1 AS depth
     FROM (
-        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = $2
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = $1
         UNION
-        SELECT s.id FROM spaces s WHERE s.parent_id = $2
+        SELECT s.id FROM spaces s WHERE s.parent_id = $1
     ) kid
     UNION
     SELECT kid.id, d.depth + 1
@@ -760,14 +760,14 @@ SELECT DISTINCT ON (s.id) s.id, s.slug, s.name, s.level, s.space_type_id,
 FROM descendants d
 JOIN spaces s ON s.id = d.id
 LEFT JOIN space_types st ON st.id = s.space_type_id
-WHERE s.deleted_at IS NULL AND s.status = 'active'
-  AND (cardinality($1::uuid[]) = 0 OR s.space_type_id = ANY($1::uuid[]))
+WHERE s.id <> $1 AND s.deleted_at IS NULL AND s.status = 'active'
+  AND (cardinality($2::uuid[]) = 0 OR s.space_type_id = ANY($2::uuid[]))
 ORDER BY s.id, d.depth
 `
 
 type ListWikiDescendantSpacesParams struct {
-	TypeIds []pgtype.UUID `json:"type_ids"`
 	SpaceID pgtype.UUID   `json:"space_id"`
+	TypeIds []pgtype.UUID `json:"type_ids"`
 }
 
 type ListWikiDescendantSpacesRow struct {
@@ -787,8 +787,10 @@ type ListWikiDescendantSpacesRow struct {
 // Postgres allows a single recursive self-reference: the seed and step
 // terms each union the two link sources (junction ∪ parent_id) inside one
 // recursive arm.
+// The root excludes itself — a cyclic junction edge must not list a space
+// as its own descendant.
 func (q *Queries) ListWikiDescendantSpaces(ctx context.Context, arg ListWikiDescendantSpacesParams) ([]ListWikiDescendantSpacesRow, error) {
-	rows, err := q.db.Query(ctx, listWikiDescendantSpaces, arg.TypeIds, arg.SpaceID)
+	rows, err := q.db.Query(ctx, listWikiDescendantSpaces, arg.SpaceID, arg.TypeIds)
 	if err != nil {
 		return nil, err
 	}
@@ -819,9 +821,9 @@ const listWikiDirectoryChildren = `-- name: ListWikiDirectoryChildren :many
 WITH RECURSIVE descendants AS (
     SELECT kid.id, 1 AS depth
     FROM (
-        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = $2
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = $1
         UNION
-        SELECT s.id FROM spaces s WHERE s.parent_id = $2
+        SELECT s.id FROM spaces s WHERE s.parent_id = $1
     ) kid
     UNION
     SELECT kid.id, d.depth + 1
@@ -842,15 +844,15 @@ JOIN spaces s ON s.id = d.id
 JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id AND wtc.enabled = true
 LEFT JOIN space_types st ON st.id = s.space_type_id
 LEFT JOIN wiki_pages wp ON wp.space_id = s.id
-WHERE s.deleted_at IS NULL AND s.status = 'active'
-  AND (cardinality($1::uuid[]) = 0 OR s.space_type_id = ANY($1::uuid[]))
+WHERE s.id <> $1 AND s.deleted_at IS NULL AND s.status = 'active'
+  AND (cardinality($2::uuid[]) = 0 OR s.space_type_id = ANY($2::uuid[]))
 GROUP BY s.id, s.slug, s.name, s.level, s.space_type_id, st.slug, s.geo_code
 ORDER BY MIN(d.depth), s.name, s.slug
 `
 
 type ListWikiDirectoryChildrenParams struct {
-	TypeIds []pgtype.UUID `json:"type_ids"`
 	SpaceID pgtype.UUID   `json:"space_id"`
+	TypeIds []pgtype.UUID `json:"type_ids"`
 }
 
 type ListWikiDirectoryChildrenRow struct {
@@ -871,8 +873,10 @@ type ListWikiDirectoryChildrenRow struct {
 // wiki type (a configured level that isn't a wiki type produces dead
 // links). LEFT JOIN wiki_pages so children with zero pages still list —
 // unlike rollup rows, directories don't require field values.
+// The root excludes itself — a cyclic junction edge must not list a space
+// as its own descendant.
 func (q *Queries) ListWikiDirectoryChildren(ctx context.Context, arg ListWikiDirectoryChildrenParams) ([]ListWikiDirectoryChildrenRow, error) {
-	rows, err := q.db.Query(ctx, listWikiDirectoryChildren, arg.TypeIds, arg.SpaceID)
+	rows, err := q.db.Query(ctx, listWikiDirectoryChildren, arg.SpaceID, arg.TypeIds)
 	if err != nil {
 		return nil, err
 	}
