@@ -803,7 +803,7 @@ func (q *Queries) GetWikiSpaceByID(ctx context.Context, id pgtype.UUID) (GetWiki
 }
 
 const getWikiSpaceBySlug = `-- name: GetWikiSpaceBySlug :one
-SELECT sp.id, sp.level
+SELECT sp.id, sp.name
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
 WHERE sp.slug = $1 AND sp.status = 'active'
@@ -811,16 +811,17 @@ LIMIT 1
 `
 
 type GetWikiSpaceBySlugRow struct {
-	ID    pgtype.UUID `json:"id"`
-	Level string      `json:"level"`
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
 }
 
 // Resolves a wiki-bearing space slug: the space's type must have an enabled
-// wiki_type_configs row (§80 Wiki Types amendment).
+// wiki_type_configs row (§80 Wiki Types amendment). Returns the display name —
+// lazy template/category labels substitute it for the {name} token.
 func (q *Queries) GetWikiSpaceBySlug(ctx context.Context, slug string) (GetWikiSpaceBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getWikiSpaceBySlug, slug)
 	var i GetWikiSpaceBySlugRow
-	err := row.Scan(&i.ID, &i.Level)
+	err := row.Scan(&i.ID, &i.Name)
 	return i, err
 }
 
