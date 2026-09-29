@@ -1,9 +1,9 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	// Global wiki landing at /wiki — the root type's grid (countries today)
-	// plus a single search spanning every enabled wiki type. Child-type
-	// exploration lives on each parent's directory category pages
-	// (/wiki/{country}/states) — the landing deliberately stays shallow.
+	// plus a country-only search. Child-type exploration lives on each
+	// parent's directory category pages (/wiki/{country}/states) — the
+	// landing deliberately stays shallow.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -40,13 +40,17 @@
 		return t(`wiki.type_${wt.space_type_slug}`, wt.label ?? wt.space_type_name);
 	}
 
-	// One search across every enabled wiki type — countries, states,
-	// cities, universities, and future types all resolve here.
+	// Country search only — states/cities/universities are reached via
+	// the parent directories, so the landing search mirrors the grid.
 	async function searchAll(q: string): Promise<AutocompleteItem[]> {
 		const query = q.trim();
 		if (!query) return [];
 		try {
-			const usp = new URLSearchParams({ has_wiki: 'false', q: query });
+			const usp = new URLSearchParams({
+				has_wiki: 'false',
+				q: query,
+				...(rootType ? { level: rootType.space_type_slug } : {})
+			});
 			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${usp.toString()}`);
 			return (res.data ?? []).map(toAutocompleteItem);
 		} catch {
@@ -106,7 +110,7 @@
 			</div>
 			<Autocomplete
 				id="wiki-destination-search"
-				placeholder={t('wiki.destination_search_hint', 'Search any destination wiki…')}
+				placeholder={t('wiki.destination_search_hint', 'Search a country…')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={searchAll}
 				selectedId={null}
