@@ -357,8 +357,9 @@ SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE id = @id) AS exists;
 
 -- name: GetWikiSpaceBySlug :one
 -- Resolves a wiki-bearing space slug: the space's type must have an enabled
--- wiki_type_configs row (§80 Wiki Types amendment).
-SELECT sp.id, sp.level
+-- wiki_type_configs row (§80 Wiki Types amendment). Returns the display name —
+-- lazy template/category labels substitute it for the {name} token.
+SELECT sp.id, sp.name
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
 WHERE sp.slug = @slug AND sp.status = 'active'

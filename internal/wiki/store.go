@@ -946,10 +946,11 @@ func (s *Store) HardDeleteWikiPage(ctx context.Context, pageID pgtype.UUID) erro
 	return nil
 }
 
-// GetSpaceBySlug resolves a wiki-bearing space slug to its ID and level —
-// the space's type must have an enabled wiki_type_configs row (§80 Wiki
-// Types amendment). Returns pgx.ErrNoRows if the space does not exist or
-// its type has no wiki.
+// GetSpaceBySlug resolves a wiki-bearing space slug to its ID and display
+// name — the space's type must have an enabled wiki_type_configs row
+// (§80 Wiki Types amendment). The name feeds the {name} token in lazy
+// template/category labels. Returns pgx.ErrNoRows if the space does not
+// exist or its type has no wiki.
 func (s *Store) GetSpaceBySlug(ctx context.Context, spaceSlug string) (pgtype.UUID, string, error) {
 	r, err := s.read.GetWikiSpaceBySlug(ctx, spaceSlug)
 	if err != nil {
@@ -960,7 +961,7 @@ func (s *Store) GetSpaceBySlug(ctx context.Context, spaceSlug string) (pgtype.UU
 		return pgtype.UUID{}, "", fmt.Errorf("wiki: get space by slug: %w", err)
 	}
 
-	return r.ID, r.Level, nil
+	return r.ID, r.Name, nil
 }
 
 // ListSeedSpaceIDs returns the IDs of all active spaces whose wiki type
