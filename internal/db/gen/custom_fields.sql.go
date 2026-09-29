@@ -95,10 +95,10 @@ func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentPara
 }
 
 const createCustomField = `-- name: CreateCustomField :one
-INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, section) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 `
 
 type CreateCustomFieldParams struct {
@@ -117,6 +117,7 @@ type CreateCustomFieldParams struct {
 	Sortable       bool        `json:"sortable"`
 	Searchable     bool        `json:"searchable"`
 	Position       int32       `json:"position"`
+	Section        *string     `json:"section"`
 }
 
 type CreateCustomFieldRow struct {
@@ -136,6 +137,7 @@ type CreateCustomFieldRow struct {
 	Sortable       bool               `json:"sortable"`
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
+	Section        *string            `json:"section"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -156,6 +158,7 @@ func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldPa
 		arg.Sortable,
 		arg.Searchable,
 		arg.Position,
+		arg.Section,
 	)
 	var i CreateCustomFieldRow
 	err := row.Scan(
@@ -175,6 +178,7 @@ func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldPa
 		&i.Sortable,
 		&i.Searchable,
 		&i.Position,
+		&i.Section,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -310,7 +314,7 @@ func (q *Queries) GetAssignmentByEntity(ctx context.Context, arg GetAssignmentBy
 const getCustomFieldByGroupAndKey = `-- name: GetCustomFieldByGroupAndKey :one
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 WHERE group_id = $1 AND key = $2
 `
@@ -337,6 +341,7 @@ type GetCustomFieldByGroupAndKeyRow struct {
 	Sortable       bool               `json:"sortable"`
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
+	Section        *string            `json:"section"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -363,6 +368,7 @@ func (q *Queries) GetCustomFieldByGroupAndKey(ctx context.Context, arg GetCustom
 		&i.Sortable,
 		&i.Searchable,
 		&i.Position,
+		&i.Section,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -371,7 +377,7 @@ func (q *Queries) GetCustomFieldByGroupAndKey(ctx context.Context, arg GetCustom
 const getCustomFieldByID = `-- name: GetCustomFieldByID :one
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 WHERE id = $1
 `
@@ -393,6 +399,7 @@ type GetCustomFieldByIDRow struct {
 	Sortable       bool               `json:"sortable"`
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
+	Section        *string            `json:"section"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -416,6 +423,7 @@ func (q *Queries) GetCustomFieldByID(ctx context.Context, id pgtype.UUID) (GetCu
 		&i.Sortable,
 		&i.Searchable,
 		&i.Position,
+		&i.Section,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -424,7 +432,7 @@ func (q *Queries) GetCustomFieldByID(ctx context.Context, id pgtype.UUID) (GetCu
 const getCustomFieldByKey = `-- name: GetCustomFieldByKey :one
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 WHERE key = $1
 `
@@ -446,6 +454,7 @@ type GetCustomFieldByKeyRow struct {
 	Sortable       bool               `json:"sortable"`
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
+	Section        *string            `json:"section"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -472,6 +481,7 @@ func (q *Queries) GetCustomFieldByKey(ctx context.Context, key string) (GetCusto
 		&i.Sortable,
 		&i.Searchable,
 		&i.Position,
+		&i.Section,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -562,7 +572,7 @@ func (q *Queries) GetCustomFieldValue(ctx context.Context, arg GetCustomFieldVal
 const listAllCustomFields = `-- name: ListAllCustomFields :many
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 
 ORDER BY group_id, position ASC, created_at ASC
@@ -585,6 +595,7 @@ type ListAllCustomFieldsRow struct {
 	Sortable       bool               `json:"sortable"`
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
+	Section        *string            `json:"section"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -616,6 +627,7 @@ func (q *Queries) ListAllCustomFields(ctx context.Context) ([]ListAllCustomField
 			&i.Sortable,
 			&i.Searchable,
 			&i.Position,
+			&i.Section,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -879,7 +891,8 @@ SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
  cfv.created_at, cfv.updated_at,
  cf.label AS field_label, cf.key AS field_key, cf.field_type,
- cf.options AS field_options, cf.position AS field_position
+ cf.options AS field_options, cf.position AS field_position,
+ cf.group_id AS field_group_id, cf.section AS field_section
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.entity_type = $1 AND cfv.entity_id = $2
@@ -909,6 +922,8 @@ type ListCustomFieldValuesWithDefsByEntityRow struct {
 	FieldType     string             `json:"field_type"`
 	FieldOptions  []byte             `json:"field_options"`
 	FieldPosition int32              `json:"field_position"`
+	FieldGroupID  pgtype.UUID        `json:"field_group_id"`
+	FieldSection  *string            `json:"field_section"`
 }
 
 // Display-ready field values: joins custom_field_values with their
@@ -944,6 +959,8 @@ func (q *Queries) ListCustomFieldValuesWithDefsByEntity(ctx context.Context, arg
 			&i.FieldType,
 			&i.FieldOptions,
 			&i.FieldPosition,
+			&i.FieldGroupID,
+			&i.FieldSection,
 		); err != nil {
 			return nil, err
 		}
@@ -960,7 +977,8 @@ SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
  cfv.created_at, cfv.updated_at,
  cf.label AS field_label, cf.key AS field_key, cf.field_type,
- cf.options AS field_options, cf.position AS field_position
+ cf.options AS field_options, cf.position AS field_position,
+ cf.group_id AS field_group_id, cf.section AS field_section
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.entity_type = $1 AND cfv.entity_id = ANY($2::uuid[])
@@ -990,6 +1008,8 @@ type ListCustomFieldValuesWithDefsForEntitiesRow struct {
 	FieldType     string             `json:"field_type"`
 	FieldOptions  []byte             `json:"field_options"`
 	FieldPosition int32              `json:"field_position"`
+	FieldGroupID  pgtype.UUID        `json:"field_group_id"`
+	FieldSection  *string            `json:"field_section"`
 }
 
 // Batched counterpart of ListCustomFieldValuesWithDefsByEntity — one query
@@ -1022,6 +1042,8 @@ func (q *Queries) ListCustomFieldValuesWithDefsForEntities(ctx context.Context, 
 			&i.FieldType,
 			&i.FieldOptions,
 			&i.FieldPosition,
+			&i.FieldGroupID,
+			&i.FieldSection,
 		); err != nil {
 			return nil, err
 		}
@@ -1037,7 +1059,7 @@ const listCustomFieldsByGroup = `-- name: ListCustomFieldsByGroup :many
 
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 WHERE group_id = $1
 ORDER BY position ASC, created_at ASC
@@ -1060,6 +1082,7 @@ type ListCustomFieldsByGroupRow struct {
 	Sortable       bool               `json:"sortable"`
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
+	Section        *string            `json:"section"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -1092,6 +1115,7 @@ func (q *Queries) ListCustomFieldsByGroup(ctx context.Context, groupID pgtype.UU
 			&i.Sortable,
 			&i.Searchable,
 			&i.Position,
+			&i.Section,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -1268,11 +1292,14 @@ SET label = $1, field_type = $2, options = $3,
  embed_platforms = $4, placeholder = $5,
  default_value = $6, is_required = $7,
  show_in_frontend = $8, filterable = $9,
- sortable = $10, searchable = $11, position = $12
-WHERE id = $13 AND is_system = false
+ sortable = $10, searchable = $11, position = $12,
+ section = CASE WHEN $13::bool
+           THEN NULLIF($14::text, '')
+           ELSE section END
+WHERE id = $15 AND is_system = false
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 `
 
 type UpdateCustomFieldParams struct {
@@ -1288,6 +1315,8 @@ type UpdateCustomFieldParams struct {
 	Sortable       bool        `json:"sortable"`
 	Searchable     bool        `json:"searchable"`
 	Position       int32       `json:"position"`
+	UpdateSection  bool        `json:"update_section"`
+	Section        string      `json:"section"`
 	ID             pgtype.UUID `json:"id"`
 }
 
@@ -1308,6 +1337,7 @@ type UpdateCustomFieldRow struct {
 	Sortable       bool               `json:"sortable"`
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
+	Section        *string            `json:"section"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -1325,6 +1355,8 @@ func (q *Queries) UpdateCustomField(ctx context.Context, arg UpdateCustomFieldPa
 		arg.Sortable,
 		arg.Searchable,
 		arg.Position,
+		arg.UpdateSection,
+		arg.Section,
 		arg.ID,
 	)
 	var i UpdateCustomFieldRow
@@ -1345,6 +1377,7 @@ func (q *Queries) UpdateCustomField(ctx context.Context, arg UpdateCustomFieldPa
 		&i.Sortable,
 		&i.Searchable,
 		&i.Position,
+		&i.Section,
 		&i.CreatedAt,
 	)
 	return i, err

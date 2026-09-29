@@ -246,7 +246,7 @@ func TestApplyOps_ExecutesOpsInOrder(t *testing.T) {
 
 	tx := &fakeTx{
 		responses: []func(dest ...any) error{
-			scanGroupRow(groupID, "org_fields"),                            // propose_field: GetCustomFieldGroupBySlug
+			scanGroupRow(groupID, "org_fields"),                              // propose_field: GetCustomFieldGroupBySlug
 			scanFieldRow(fieldID, "headcount", customfields.FieldTypeNumber), // propose_field: CreateCustomField
 			// propose_field: SeedFieldPermissions is an Exec, not a QueryRow
 			scanNoop(),                          // set_value: UpsertCustomFieldValue

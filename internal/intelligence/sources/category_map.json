@@ -1,6 +1,10 @@
 {
   "job":        {"entity_types": ["job"],          "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
                  "topics": ["job","hiring","vacancy","career","remote work","recruitment"]},
+  "internship": {"entity_types": ["job","internship"],       "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
+                 "topics": ["internship","placement","co-op","graduate program","industrial attachment","trainee"]},
+  "work_career":{"entity_types": ["job","work_career"],      "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
+                 "topics": ["career","employment","work abroad","skilled worker","job seeker","labour market"]},
   "news":       {"entity_types": ["news"],          "methods": ["rss","jsonld","render","static"],         "pipeline": "curate",
                  "topics": ["migration","immigration","japa","diaspora","visa","relocation","travel"]},
   "blog":       {"entity_types": ["article"],       "methods": ["rss","render","static"],                  "pipeline": "curate",

@@ -1223,6 +1223,141 @@ func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
+// queueBulkTargetQueues resolves {queue_name} into the concrete Asynq
+// queue list — "all" expands to every managed queue. Returns nil for an
+// unknown queue name so callers can 400.
+func queueBulkTargetQueues(name string) []string {
+	switch name {
+	case "critical", "default", "low":
+		return []string{name}
+	case "all":
+		return []string{"critical", "default", "low"}
+	}
+	return nil
+}
+
+// ArchiveAllQueueTasks bulk-archives every pending, scheduled, and retry
+// task in {queue_name} — "clear the queue" without losing the tasks (they
+// land in archived/DLQ and can be requeued). Wired at
+// POST /control/queue/{queue_name}/archive; queue_name may be "all".
+func (h *Handlers) ArchiveAllQueueTasks(w http.ResponseWriter, r *http.Request) {
+	if h.Inspector == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	queues := queueBulkTargetQueues(chi.URLParam(r, "queue_name"))
+	if queues == nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_queue", "queue_name must be critical, default, low, or all")
+		return
+	}
+
+	archived := 0
+	var failures []string
+	for _, queueName := range queues {
+		for _, fn := range []func(string) (int, error){
+			h.Inspector.ArchiveAllPendingTasks,
+			h.Inspector.ArchiveAllScheduledTasks,
+			h.Inspector.ArchiveAllRetryTasks,
+		} {
+			n, err := fn(queueName)
+			if err != nil {
+				slog.Warn("queue archive-all: partial failure", "queue", queueName, "error", err)
+				failures = append(failures, queueName+": "+err.Error())
+				continue
+			}
+			archived += n
+		}
+	}
+
+	if archived == 0 && len(failures) > 0 {
+		errpkg.WriteError(w, http.StatusInternalServerError, "queue_op_failed", "Archive failed: "+strings.Join(failures, "; "))
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"archived": archived,
+		"errors":   failures,
+	}})
+}
+
+// RequeueAllQueueTasks bulk-runs every scheduled, retry, and archived task
+// in {queue_name} back to pending so workers process them immediately.
+// Wired at POST /control/queue/{queue_name}/requeue; queue_name may be "all".
+func (h *Handlers) RequeueAllQueueTasks(w http.ResponseWriter, r *http.Request) {
+	if h.Inspector == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	queues := queueBulkTargetQueues(chi.URLParam(r, "queue_name"))
+	if queues == nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_queue", "queue_name must be critical, default, low, or all")
+		return
+	}
+
+	requeued := 0
+	var failures []string
+	for _, queueName := range queues {
+		for _, fn := range []func(string) (int, error){
+			h.Inspector.RunAllScheduledTasks,
+			h.Inspector.RunAllRetryTasks,
+			h.Inspector.RunAllArchivedTasks,
+		} {
+			n, err := fn(queueName)
+			if err != nil {
+				slog.Warn("queue requeue-all: partial failure", "queue", queueName, "error", err)
+				failures = append(failures, queueName+": "+err.Error())
+				continue
+			}
+			requeued += n
+		}
+	}
+
+	if requeued == 0 && len(failures) > 0 {
+		errpkg.WriteError(w, http.StatusInternalServerError, "queue_op_failed", "Requeue failed: "+strings.Join(failures, "; "))
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"requeued": requeued, "errors": failures}})
+}
+
+// PurgeQueueTasks permanently deletes every archived (dead-letter) task in
+// {queue_name} — irreversible; the recoverable alternative is
+// ArchiveAllQueueTasks followed by RequeueAllQueueTasks. Wired at
+// POST /control/queue/{queue_name}/purge; queue_name may be "all".
+func (h *Handlers) PurgeQueueTasks(w http.ResponseWriter, r *http.Request) {
+	if h.Inspector == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	queues := queueBulkTargetQueues(chi.URLParam(r, "queue_name"))
+	if queues == nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_queue", "queue_name must be critical, default, low, or all")
+		return
+	}
+
+	purged := 0
+	var failures []string
+	for _, queueName := range queues {
+		n, err := h.Inspector.DeleteAllArchivedTasks(queueName)
+		if err != nil {
+			slog.Warn("queue purge: partial failure", "queue", queueName, "error", err)
+			failures = append(failures, queueName+": "+err.Error())
+			continue
+		}
+		purged += n
+	}
+
+	if purged == 0 && len(failures) > 0 {
+		errpkg.WriteError(w, http.StatusInternalServerError, "queue_op_failed", "Purge failed: "+strings.Join(failures, "; "))
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"purged": purged, "errors": failures}})
+}
+
 // DiscardAllDLQ discards every task across the dead-letter queues.
 func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {

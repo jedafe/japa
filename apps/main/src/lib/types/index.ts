@@ -3075,6 +3075,63 @@ export interface WikiTypeItem {
 	label?: string | null;
 	icon?: string | null;
 	position: number;
+	/** §80 Hierarchical UX: declared parent space_type ids — the landing
+	 *  chooser's drill-down levels derive from these edges. */
+	parent_type_ids?: string[];
+}
+
+/** §80 Hierarchical UX — one node in a page's ancestor chain (breadcrumb)
+ *  or a descendant row reference (rollup table). */
+export interface WikiSpaceRef {
+	slug: string;
+	name: string;
+	level: string;
+	type_slug?: string;
+	/** §80 Hierarchical UX: the ancestor's wiki-type display label
+	 *  (wiki_type_configs.label, falling back to the space_types name). */
+	type_label?: string;
+}
+
+/** §80 Hierarchical UX — one sibling page for Prev/Next navigation. */
+export interface WikiSibling {
+	slug: string;
+	title: string;
+	position: number;
+	current?: boolean;
+}
+
+/** Aggregated metric values for one rollup field — absent members are
+ *  metrics the category's rollup config didn't request. */
+export interface WikiRollupMetric {
+	min?: number;
+	avg?: number;
+	max?: number;
+}
+
+/** One aggregated field in a category rollup (e.g. a price_range item's
+ *  min-of-mins / avg-of-avgs / max-of-maxes across descendant spaces). */
+export interface WikiRollupField {
+	key: string;
+	label: string;
+	field_type: string;
+	section?: string;
+	metrics: WikiRollupMetric;
+	samples: number;
+}
+
+/** One contributing descendant space and its values — a row in the
+ *  "Cost of Living by City" table on a country/state page. */
+export interface WikiRollupRow {
+	space: WikiSpaceRef;
+	values: Record<string, unknown>;
+}
+
+/** Read-time descendant aggregate attached to a rollup-enabled category
+ *  page (§80). Never persisted — recomputed per request. */
+export interface WikiRollup {
+	fields: WikiRollupField[];
+	rows: WikiRollupRow[];
+	spaces: number;
 }
 
 export interface WikiPage extends WikiPageIndex {
@@ -3094,6 +3151,39 @@ export interface WikiPage extends WikiPageIndex {
 	field_group_slug?: string;
 	/** Admin-set label from the wiki type's category template. */
 	category_label?: string;
+	/** §80 Hierarchical UX: the space's ancestor chain (root-first) for the
+	 *  breadcrumb — resolved from actual space links, arbitrated by the
+	 *  declared type edges. */
+	ancestors?: WikiSpaceRef[];
+	/** §80 Hierarchical UX: multi-parent links not picked into the
+	 *  breadcrumb chain — undeclared junction parents and declared
+	 *  runners-up — rendered as "also under X". */
+	ancestors_alt?: WikiSpaceRef[];
+	/** §80 Hierarchical UX: ordered sibling pages in this page's category
+	 *  (Prev/Next derives from neighbors; the current page is flagged). */
+	siblings?: WikiSibling[];
+	/** §80 Hierarchical UX: read-time descendant aggregate — present only on
+	 *  a rollup-enabled category's canonical page. */
+	rollup?: WikiRollup;
+	/** §80 Hierarchical UX: the page template the page was created from —
+	 *  echoed so UIs can link sibling template pages. */
+	page_template_id?: string;
+	/** §80 Hierarchical UX: intra-category ordering. */
+	position?: number;
+	/** §80 lazy template pages: the category's declared sibling template
+	 *  links ({name} substituted by the backend) — discovery targets for
+	 *  pages that render without a wiki_pages row. */
+	page_templates?: WikiPageTemplateLink[];
+	/** §80 lazy template pages: the page rendered straight from its
+	 *  template — no wiki_pages row until the first submission. */
+	lazy?: boolean;
+}
+
+/** One page-template discovery link on a wiki page (§80 lazy pages). */
+export interface WikiPageTemplateLink {
+	slug: string;
+	label: string;
+	position: number;
 }
 
 export type WikiRevisionStatus = 'approved' | 'rejected' | 'pending';

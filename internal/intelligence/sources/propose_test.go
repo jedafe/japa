@@ -403,6 +403,10 @@ func TestPropose_ValidationBeforeStore(t *testing.T) {
 		{"missing categories", ProposeInput{Name: "X", SourceURL: "https://example.com"}, errpkg.ErrRequired},
 		{"unknown kind", ProposeInput{Name: "X", SourceURL: "https://example.com", Categories: []string{"news"}, SourceKind: "bot"}, errpkg.ErrInvalid},
 		{"bad snapshot", ProposeInput{Name: "X", SourceURL: "https://example.com", Categories: []string{"news"}, ProbeSnapshot: []byte(`[1]`)}, errpkg.ErrInvalid},
+		// Non-submittable categories are rejected — the domain has no
+		// deterministic path to content until AI extraction is configured.
+		{"non-submittable category", ProposeInput{Name: "X", SourceURL: "https://example.com", Categories: []string{"scholarship"}}, errpkg.ErrInvalid},
+		{"mixed submittable + blocked", ProposeInput{Name: "X", SourceURL: "https://example.com", Categories: []string{"job", "visa"}}, errpkg.ErrInvalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

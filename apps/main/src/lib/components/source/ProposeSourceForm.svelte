@@ -45,9 +45,11 @@
 	let probeSeq = 0;
 
 	const kindOptions = $derived(meta.submittable_source_kinds ?? meta.source_kinds ?? []);
-	// Categories are the shared canonical list (curated catalog ∪ full
-	// taxonomy) — the same set the /sources directory filter offers.
-	const categoryOptions = $derived(sourceCategoryOptions(meta));
+	// The propose picker is the backend's submittable subset — domains
+	// whose channels reach content without AI extraction (job-family,
+	// news/article, video). Older backends without the field fall back to
+	// the shared canonical list the /sources directory filter offers.
+	const categoryOptions = $derived(meta.submittable_categories ?? sourceCategoryOptions(meta));
 	// Options already picked are removed from the autocomplete list so a
 	// category cannot be selected twice.
 	const categoryItems = $derived<AutocompleteItem[]>(
@@ -59,6 +61,46 @@
 	const probeMethods = $derived(probeReport?.methods ?? []);
 	const probeChannels = $derived(probeReport?.channels ?? []);
 	const probeWarnings = $derived(probeReport?.warnings ?? []);
+
+	// One proposed channel exists per discovered endpoint, so a site
+	// declaring 4 sitemaps returns 4 same-method rows. Group by method+label
+	// (RSS and Atom feeds both map to the `rss` method but keep distinct
+	// labels) into a single row that lists its endpoint URLs.
+	interface ChannelGroup {
+		key: string;
+		label: string;
+		method: string;
+		pipeline?: string;
+		entityTypes: string[];
+		entryUrls: string[];
+	}
+
+	const probeChannelGroups = $derived.by<ChannelGroup[]>(() => {
+		const groups: ChannelGroup[] = [];
+		const byKey = new Map<string, ChannelGroup>();
+		for (const ch of probeChannels) {
+			const key = `${ch.crawl_method}|${ch.label}`;
+			let g = byKey.get(key);
+			if (!g) {
+				g = {
+					key,
+					label: ch.label,
+					method: ch.crawl_method,
+					pipeline: ch.pipeline,
+					entityTypes: [],
+					entryUrls: []
+				};
+				byKey.set(key, g);
+				groups.push(g);
+			}
+			if (!g.pipeline && ch.pipeline) g.pipeline = ch.pipeline;
+			if (ch.entry_url && !g.entryUrls.includes(ch.entry_url)) g.entryUrls.push(ch.entry_url);
+			for (const et of ch.entity_types ?? []) {
+				if (!g.entityTypes.includes(et)) g.entityTypes.push(et);
+			}
+		}
+		return groups;
+	});
 	const probeJsonldTypes = $derived(probeReport?.jsonld_types ?? []);
 	const robotsBlocked = $derived(!!probeReport?.robots?.fetched && !probeReport.robots.allowed);
 
@@ -289,26 +331,42 @@
 						</div>
 					{/if}
 
-					{#if probeChannels.length > 0}
+					{#if probeChannelGroups.length > 0}
 						<div>
 							<p class="mb-1 text-xs font-medium text-[var(--color-muted)]">
 								{t('sources.submit.probe.channels', 'Proposed channels')}
 							</p>
 							<ul class="flex flex-col gap-1.5">
-								{#each probeChannels as ch (ch.crawl_method + ch.entry_url)}
+								{#each probeChannelGroups as g (g.key)}
 									<li class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
 										<div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-											<span class="text-xs font-medium text-[var(--color-text)]">{ch.label}</span>
+											<span class="text-xs font-medium text-[var(--color-text)]">{g.label}</span>
 											<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] text-[var(--color-muted)]">
-												{methodLabel(ch.crawl_method)}
+												{methodLabel(g.method)}
 											</span>
-											{#if ch.pipeline}
-												<span class="text-[10px] text-[var(--color-muted)]">{ch.pipeline}</span>
+											{#if g.pipeline}
+												<span class="text-[10px] text-[var(--color-muted)]">{g.pipeline}</span>
 											{/if}
 										</div>
-										{#if ch.entity_types && ch.entity_types.length > 0}
+										{#if g.entryUrls.length === 1}
+											<p class="mt-0.5 truncate text-[10px] text-[var(--color-muted)]" title={g.entryUrls[0]}>
+												{g.entryUrls[0]}
+											</p>
+										{:else if g.entryUrls.length > 1}
+											<details class="mt-0.5">
+												<summary class="cursor-pointer text-[10px] text-[var(--color-muted)] transition hover:text-[var(--color-text)]">
+													{t('sources.submit.probe.endpoint_count', '{count} endpoints', { count: g.entryUrls.length })}
+												</summary>
+												<ul class="mt-0.5 flex flex-col gap-0.5 pl-3">
+													{#each g.entryUrls as u (u)}
+														<li class="truncate text-[10px] text-[var(--color-muted)]" title={u}>{u}</li>
+													{/each}
+												</ul>
+											</details>
+										{/if}
+										{#if g.entityTypes.length > 0}
 											<div class="mt-1 flex flex-wrap gap-1">
-												{#each ch.entity_types as et (et)}
+												{#each g.entityTypes as et (et)}
 													<span class="rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-subtle)]">
 														{et}
 													</span>

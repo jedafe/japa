@@ -50,6 +50,18 @@ describe('ChannelEditor.svelte', () => {
 		expect(screen.getByText('Relevance mode')).toBeTruthy();
 	});
 
+	it('shows relevance topics and URL patterns in filtered mode', () => {
+		render(ChannelEditor, {
+			props: {
+				open: true,
+				channel: { id: 'ch-1', relevance_mode: 'filtered', relevance_topics: ['job', 'career'] },
+				onSubmit: vi.fn()
+			}
+		});
+		expect(screen.getByLabelText(/Relevance topics/)).toBeTruthy();
+		expect(screen.getByLabelText(/Relevance URL patterns/)).toBeTruthy();
+	});
+
 	it('rejects invalid provider_config JSON instead of submitting', async () => {
 		const onSubmit = vi.fn();
 		render(ChannelEditor, {

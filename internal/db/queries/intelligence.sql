@@ -199,6 +199,19 @@ UPDATE intel_records SET freshness_score = $2, status = CASE WHEN $2 <= 40 THEN 
 -- name: UpdateIntelRecordPromoted :exec
 UPDATE intel_records SET promoted_record_id = $2, status = 'published' WHERE id = $1;
 
+-- name: PurgeRejectedIntelRecords :execrows
+-- Retention sweep (intel:prune_rejected_records): permanently deletes
+-- records whose status is 'rejected' and whose last_verified_at — stamped
+-- by UpdateIntelRecordStatus on every status transition — is older than
+-- $1 days (intel.rejected_retention_days). Rejected records are terminal:
+-- they can never promote, so retention is bounded for auditability only.
+-- $1 <= 0 deletes nothing — the guard makes "retention disabled" safe even
+-- if a caller forgets the check (the task handler already guards).
+-- Returns the deleted row count.
+DELETE FROM intel_records
+WHERE status = 'rejected' AND $1::int > 0
+  AND last_verified_at < now() - make_interval(days => $1);
+
 -- name: UpdateIntelRecordExtracted :exec
 -- Merges reviewer-edited fields into the record's extracted payload. Used by
 -- the review-edit endpoint when the record has no domain projection row yet

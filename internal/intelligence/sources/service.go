@@ -486,6 +486,17 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: categories", errpkg.ErrRequired)
 	}
 
+	// Only the submittable category subset is open to public proposals —
+	// domains whose channels reach content without AI extraction
+	// (job-family, news/article feeds, video). Other taxonomy values are
+	// rejected until an extraction provider is configured, mirroring the
+	// source_kind IsSubmittable gate below.
+	for _, c := range categories {
+		if !Category(c).IsSubmittable() {
+			return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: category %q is not open for proposals", errpkg.ErrInvalid, c)
+		}
+	}
+
 	// source_kind drives probe/verify defaults. Absent an explicit kind, a
 	// legacy 'video'/'youtube' source_type still implies channel_profile so
 	// old clients keep landing on the §106 video-channel path; anything else

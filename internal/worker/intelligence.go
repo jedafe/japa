@@ -1135,15 +1135,12 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
-	// A derived child of a manifest channel (sitemap/wayback) fetched via
-	// the static adapter can never match a curator — the registry
-	// dispatches on crawl_method and no curator handles 'sitemap'/'wayback'
-	// — so a curate/hybrid pipeline would burn a dead task hop before the
-	// extract fallback. Route derived docs straight to extract.
-	if derived && chResolved && intelManifestMethod(ch.CrawlMethod) {
-		pipeline = sources.PipelineExtract
-	}
-
+	// Derived children of manifest channels (sitemap/wayback/spider) keep
+	// the channel's declared pipeline: they're fetched via the static
+	// adapter and HandleIntelCurateChannel re-dispatches the curator on
+	// that effective method, so curate/hybrid channels get deterministic
+	// extraction (e.g. JobPosting ld+json on listing pages) while extract
+	// channels keep their LLM path.
 	channelIDStr := p.ChannelID
 	if channelIDStr == "" && chResolved {
 		channelIDStr = ch.ID.String()
@@ -1969,7 +1966,25 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		contentType = *rawDoc.ContentType
 	}
 
-	records, err := intelCurator.Curate(ctx, rawDoc.Body, contentType, ch)
+	// Manifest-channel derived children are fetched via the static adapter
+	// (intelFetchChannel's default URLOverride path), but the curator
+	// registry dispatches on the channel's crawl_method — 'sitemap',
+	// 'wayback', and 'spider' have no curator. Re-dispatch on the effective
+	// fetch method so StaticHTML picks up embedded ld+json (JobPosting,
+	// Article, …) deterministically instead of burning the extract
+	// fallback. Nested-manifest children never reach this handler —
+	// detect_changes returns before pipeline dispatch for manifest docs.
+	curateCh := ch
+	if rawDoc.ParentDocumentID.Valid && intelManifestMethod(ch.CrawlMethod) {
+		curateCh.CrawlMethod = string(sources.CrawlMethodStatic)
+		// The channel's entry_url is the manifest URL — derived docs must
+		// key off the page actually fetched, or every child page without
+		// its own canonical/article_url would share one external_key and
+		// dedup into a single record.
+		curateCh.EntryUrl = rawDoc.Url
+	}
+
+	records, err := intelCurator.Curate(ctx, rawDoc.Body, contentType, curateCh)
 	if err != nil {
 		if errors.Is(err, ErrIntelNoCurator) {
 			// A manifest doc's body is a url<TAB>stamp list —

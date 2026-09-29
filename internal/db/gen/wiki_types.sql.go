@@ -52,10 +52,98 @@ func (q *Queries) CountCategoryProsePages(ctx context.Context, arg CountCategory
 	return count, err
 }
 
+const countPagesByPageTemplate = `-- name: CountPagesByPageTemplate :one
+SELECT COUNT(*) FROM wiki_pages wp
+WHERE wp.page_template_id = $1 AND wp.deleted_at IS NULL
+`
+
+func (q *Queries) CountPagesByPageTemplate(ctx context.Context, id pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPagesByPageTemplate, id)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTemplateContentPages = `-- name: CountTemplateContentPages :one
+SELECT COUNT(*)
+FROM wiki_pages wp
+WHERE wp.page_template_id = $1 AND wp.deleted_at IS NULL
+  AND (
+      EXISTS (
+          SELECT 1 FROM wiki_revisions wr
+          WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
+      )
+      OR EXISTS (
+          SELECT 1
+          FROM wiki_type_page_templates t
+          JOIN custom_fields cf ON cf.group_id = t.field_group_id
+          JOIN custom_field_values cfv
+            ON cfv.field_id = cf.id
+           AND cfv.entity_type = 'space'
+           AND cfv.entity_id = wp.space_id
+          WHERE t.id = $1 AND t.field_group_id IS NOT NULL
+            AND (cfv.value_text IS NOT NULL OR cfv.value_number IS NOT NULL
+                 OR cfv.value_bool IS NOT NULL OR cfv.value_date IS NOT NULL
+                 OR cfv.value_json IS NOT NULL)
+      )
+  )
+`
+
+// Delete-template guard (§80: "blocked while bound pages carry
+// prose/values"). Counts pages bound to this template (any space) that
+// carry an approved revision of any kind — prose (content/mixed) or field
+// ops (fields/mixed) — OR whose space holds a stored value for any field
+// in the template's bound group (admin SetFieldValue writes bypass
+// revisions entirely).
+func (q *Queries) CountTemplateContentPages(ctx context.Context, id pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countTemplateContentPages, id)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createWikiPageTemplate = `-- name: CreateWikiPageTemplate :one
+INSERT INTO wiki_type_page_templates (category_id, slug, label, field_group_id, position, is_system)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, category_id, slug, label, field_group_id, position, is_system, created_at
+`
+
+type CreateWikiPageTemplateParams struct {
+	CategoryID   pgtype.UUID `json:"category_id"`
+	Slug         string      `json:"slug"`
+	Label        string      `json:"label"`
+	FieldGroupID pgtype.UUID `json:"field_group_id"`
+	Position     int32       `json:"position"`
+	IsSystem     bool        `json:"is_system"`
+}
+
+func (q *Queries) CreateWikiPageTemplate(ctx context.Context, arg CreateWikiPageTemplateParams) (WikiTypePageTemplate, error) {
+	row := q.db.QueryRow(ctx, createWikiPageTemplate,
+		arg.CategoryID,
+		arg.Slug,
+		arg.Label,
+		arg.FieldGroupID,
+		arg.Position,
+		arg.IsSystem,
+	)
+	var i WikiTypePageTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.CategoryID,
+		&i.Slug,
+		&i.Label,
+		&i.FieldGroupID,
+		&i.Position,
+		&i.IsSystem,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createWikiTypeCategory = `-- name: CreateWikiTypeCategory :one
-INSERT INTO wiki_type_categories (space_type_id, slug, category, label, field_group_id, position, is_system)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, space_type_id, slug, category, label, field_group_id, position, is_system, created_at
+INSERT INTO wiki_type_categories (space_type_id, slug, category, label, field_group_id, position, is_system, rollup)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, space_type_id, slug, category, label, field_group_id, position, is_system, rollup, created_at
 `
 
 type CreateWikiTypeCategoryParams struct {
@@ -66,9 +154,23 @@ type CreateWikiTypeCategoryParams struct {
 	FieldGroupID pgtype.UUID `json:"field_group_id"`
 	Position     int32       `json:"position"`
 	IsSystem     bool        `json:"is_system"`
+	Rollup       []byte      `json:"rollup"`
 }
 
-func (q *Queries) CreateWikiTypeCategory(ctx context.Context, arg CreateWikiTypeCategoryParams) (WikiTypeCategory, error) {
+type CreateWikiTypeCategoryRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	SpaceTypeID  pgtype.UUID        `json:"space_type_id"`
+	Slug         string             `json:"slug"`
+	Category     string             `json:"category"`
+	Label        string             `json:"label"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	Position     int32              `json:"position"`
+	IsSystem     bool               `json:"is_system"`
+	Rollup       []byte             `json:"rollup"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CreateWikiTypeCategory(ctx context.Context, arg CreateWikiTypeCategoryParams) (CreateWikiTypeCategoryRow, error) {
 	row := q.db.QueryRow(ctx, createWikiTypeCategory,
 		arg.SpaceTypeID,
 		arg.Slug,
@@ -77,8 +179,9 @@ func (q *Queries) CreateWikiTypeCategory(ctx context.Context, arg CreateWikiType
 		arg.FieldGroupID,
 		arg.Position,
 		arg.IsSystem,
+		arg.Rollup,
 	)
-	var i WikiTypeCategory
+	var i CreateWikiTypeCategoryRow
 	err := row.Scan(
 		&i.ID,
 		&i.SpaceTypeID,
@@ -88,9 +191,25 @@ func (q *Queries) CreateWikiTypeCategory(ctx context.Context, arg CreateWikiType
 		&i.FieldGroupID,
 		&i.Position,
 		&i.IsSystem,
+		&i.Rollup,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const deleteWikiPageTemplate = `-- name: DeleteWikiPageTemplate :execrows
+DELETE FROM wiki_type_page_templates
+WHERE id = $1 AND is_system = false
+`
+
+// Non-system templates only; the service blocks deletion while bound pages
+// carry approved prose or field values (CountTemplateContentPages).
+func (q *Queries) DeleteWikiPageTemplate(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteWikiPageTemplate, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteWikiTypeCategory = `-- name: DeleteWikiTypeCategory :execrows
@@ -159,7 +278,7 @@ func (q *Queries) GetSpaceTypeIDBySlug(ctx context.Context, slug string) (pgtype
 
 const getWikiCategoryForSpace = `-- name: GetWikiCategoryForSpace :one
 SELECT wtc.id, wtc.space_type_id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id,
-       wtc.position, wtc.is_system, wtc.created_at,
+       wtc.position, wtc.is_system, wtc.rollup, wtc.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
@@ -182,6 +301,7 @@ type GetWikiCategoryForSpaceRow struct {
 	FieldGroupID   pgtype.UUID        `json:"field_group_id"`
 	Position       int32              `json:"position"`
 	IsSystem       bool               `json:"is_system"`
+	Rollup         []byte             `json:"rollup"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	FieldGroupSlug *string            `json:"field_group_slug"`
 	FieldGroupName *string            `json:"field_group_name"`
@@ -202,6 +322,7 @@ func (q *Queries) GetWikiCategoryForSpace(ctx context.Context, arg GetWikiCatego
 		&i.FieldGroupID,
 		&i.Position,
 		&i.IsSystem,
+		&i.Rollup,
 		&i.CreatedAt,
 		&i.FieldGroupSlug,
 		&i.FieldGroupName,
@@ -209,16 +330,150 @@ func (q *Queries) GetWikiCategoryForSpace(ctx context.Context, arg GetWikiCatego
 	return i, err
 }
 
+const getWikiPageTemplate = `-- name: GetWikiPageTemplate :one
+SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.is_system, t.created_at
+FROM wiki_type_page_templates t
+WHERE t.id = $1
+`
+
+func (q *Queries) GetWikiPageTemplate(ctx context.Context, id pgtype.UUID) (WikiTypePageTemplate, error) {
+	row := q.db.QueryRow(ctx, getWikiPageTemplate, id)
+	var i WikiTypePageTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.CategoryID,
+		&i.Slug,
+		&i.Label,
+		&i.FieldGroupID,
+		&i.Position,
+		&i.IsSystem,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getWikiPageTemplateBySlug = `-- name: GetWikiPageTemplateBySlug :one
+SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.is_system, t.created_at,
+       c.category AS category_token,
+       cfg.slug AS field_group_slug
+FROM wiki_type_page_templates t
+JOIN wiki_type_categories c ON c.id = t.category_id
+JOIN spaces sp ON sp.space_type_id = c.space_type_id
+LEFT JOIN custom_field_groups cfg ON cfg.id = t.field_group_id
+WHERE sp.id = $1 AND t.slug = $2
+ORDER BY c.position, t.position
+LIMIT 1
+`
+
+type GetWikiPageTemplateBySlugParams struct {
+	SpaceID pgtype.UUID `json:"space_id"`
+	Slug    string      `json:"slug"`
+}
+
+type GetWikiPageTemplateBySlugRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	CategoryID     pgtype.UUID        `json:"category_id"`
+	Slug           string             `json:"slug"`
+	Label          string             `json:"label"`
+	FieldGroupID   pgtype.UUID        `json:"field_group_id"`
+	Position       int32              `json:"position"`
+	IsSystem       bool               `json:"is_system"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CategoryToken  string             `json:"category_token"`
+	FieldGroupSlug *string            `json:"field_group_slug"`
+}
+
+// Lazy-page resolution (§80): GET /wiki/{space}/{page} renders an
+// unmaterialized template page without a wiki_pages row. The URL carries
+// only the slug, so the template resolves slug-only across the space
+// type's categories — c.position, t.position ordering keeps the pick
+// deterministic when two categories reuse a slug. category_token is the
+// category's wiki_pages.category token (the lazy page's category).
+func (q *Queries) GetWikiPageTemplateBySlug(ctx context.Context, arg GetWikiPageTemplateBySlugParams) (GetWikiPageTemplateBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getWikiPageTemplateBySlug, arg.SpaceID, arg.Slug)
+	var i GetWikiPageTemplateBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.CategoryID,
+		&i.Slug,
+		&i.Label,
+		&i.FieldGroupID,
+		&i.Position,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.CategoryToken,
+		&i.FieldGroupSlug,
+	)
+	return i, err
+}
+
+const getWikiPageTemplateForSpace = `-- name: GetWikiPageTemplateForSpace :one
+SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.is_system, t.created_at
+FROM wiki_type_page_templates t
+JOIN wiki_type_categories c ON c.id = t.category_id
+JOIN spaces sp ON sp.space_type_id = c.space_type_id
+WHERE sp.id = $1 AND t.slug = $2
+  AND (lower(c.category) = lower($3)
+       OR lower(replace(c.slug, '-', '_')) = lower(replace($3, '-', '_')))
+LIMIT 1
+`
+
+type GetWikiPageTemplateForSpaceParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	Slug     string      `json:"slug"`
+	Category string      `json:"category"`
+}
+
+// Resolve a page slug to the space type's page template: space →
+// space_type_id → the page's category row → template. The category match
+// uses the same token normalization as ResolveCategoryTokenWikiType
+// (category token or dash/underscore-normalized slug) so 'cost_of_living'
+// and 'cost-of-living' both bind. Two categories on one type may declare
+// the same template slug — the category scope keeps resolution
+// deterministic. Returns NULL row (ErrNoRows) when the category has no
+// template for the slug — the page is then a freeform page.
+func (q *Queries) GetWikiPageTemplateForSpace(ctx context.Context, arg GetWikiPageTemplateForSpaceParams) (WikiTypePageTemplate, error) {
+	row := q.db.QueryRow(ctx, getWikiPageTemplateForSpace, arg.SpaceID, arg.Slug, arg.Category)
+	var i WikiTypePageTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.CategoryID,
+		&i.Slug,
+		&i.Label,
+		&i.FieldGroupID,
+		&i.Position,
+		&i.IsSystem,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getWikiTypeCategory = `-- name: GetWikiTypeCategory :one
 SELECT id, space_type_id, slug, category, label, field_group_id,
-       position, is_system, created_at
+       position, is_system, rollup, created_at
 FROM wiki_type_categories
 WHERE id = $1
 `
 
-func (q *Queries) GetWikiTypeCategory(ctx context.Context, id pgtype.UUID) (WikiTypeCategory, error) {
+type GetWikiTypeCategoryRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	SpaceTypeID  pgtype.UUID        `json:"space_type_id"`
+	Slug         string             `json:"slug"`
+	Category     string             `json:"category"`
+	Label        string             `json:"label"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	Position     int32              `json:"position"`
+	IsSystem     bool               `json:"is_system"`
+	Rollup       []byte             `json:"rollup"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetWikiTypeCategory(ctx context.Context, id pgtype.UUID) (GetWikiTypeCategoryRow, error) {
 	row := q.db.QueryRow(ctx, getWikiTypeCategory, id)
-	var i WikiTypeCategory
+	var i GetWikiTypeCategoryRow
 	err := row.Scan(
 		&i.ID,
 		&i.SpaceTypeID,
@@ -228,6 +483,7 @@ func (q *Queries) GetWikiTypeCategory(ctx context.Context, id pgtype.UUID) (Wiki
 		&i.FieldGroupID,
 		&i.Position,
 		&i.IsSystem,
+		&i.Rollup,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -288,7 +544,7 @@ func (q *Queries) InsertWikiTypeParent(ctx context.Context, arg InsertWikiTypePa
 }
 
 const listAllWikiCategories = `-- name: ListAllWikiCategories :many
-SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system,
+SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup,
        st.slug AS space_type_slug
 FROM wiki_type_categories wtc
 JOIN wiki_type_configs cfg ON cfg.space_type_id = wtc.space_type_id AND cfg.enabled = true
@@ -303,6 +559,7 @@ type ListAllWikiCategoriesRow struct {
 	FieldGroupID  pgtype.UUID `json:"field_group_id"`
 	Position      int32       `json:"position"`
 	IsSystem      bool        `json:"is_system"`
+	Rollup        []byte      `json:"rollup"`
 	SpaceTypeSlug string      `json:"space_type_slug"`
 }
 
@@ -325,6 +582,7 @@ func (q *Queries) ListAllWikiCategories(ctx context.Context) ([]ListAllWikiCateg
 			&i.FieldGroupID,
 			&i.Position,
 			&i.IsSystem,
+			&i.Rollup,
 			&i.SpaceTypeSlug,
 		); err != nil {
 			return nil, err
@@ -339,10 +597,15 @@ func (q *Queries) ListAllWikiCategories(ctx context.Context) ([]ListAllWikiCateg
 
 const listEnabledWikiTypes = `-- name: ListEnabledWikiTypes :many
 SELECT wtc.space_type_id, st.slug AS space_type_slug, st.name AS space_type_name,
-       COALESCE(wtc.label, st.name) AS label, wtc.icon, wtc.position
+       COALESCE(wtc.label, st.name) AS label, wtc.icon, wtc.position,
+       COALESCE(array_agg(DISTINCT wtp.parent_space_type_id::text)
+                FILTER (WHERE wtp.parent_space_type_id IS NOT NULL),
+                '{}')::text[] AS parent_type_ids
 FROM wiki_type_configs wtc
 JOIN space_types st ON st.id = wtc.space_type_id
+LEFT JOIN wiki_type_parents wtp ON wtp.space_type_id = wtc.space_type_id
 WHERE wtc.enabled = true
+GROUP BY wtc.space_type_id, st.slug, st.name, wtc.label, wtc.icon, wtc.position
 ORDER BY wtc.position, st.name
 `
 
@@ -353,6 +616,7 @@ type ListEnabledWikiTypesRow struct {
 	Label         string      `json:"label"`
 	Icon          *string     `json:"icon"`
 	Position      int32       `json:"position"`
+	ParentTypeIds []string    `json:"parent_type_ids"`
 }
 
 // Public list — enabled types only, for navigation/destination filters.
@@ -372,6 +636,7 @@ func (q *Queries) ListEnabledWikiTypes(ctx context.Context) ([]ListEnabledWikiTy
 			&i.Label,
 			&i.Icon,
 			&i.Position,
+			&i.ParentTypeIds,
 		); err != nil {
 			return nil, err
 		}
@@ -419,7 +684,7 @@ func (q *Queries) ListSeedCategoriesBySpaceType(ctx context.Context, spaceTypeID
 }
 
 const listWikiCategoriesBySpaceSlug = `-- name: ListWikiCategoriesBySpaceSlug :many
-SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system,
+SELECT wtc.id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup,
        st.slug AS space_type_slug
 FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
@@ -429,12 +694,14 @@ ORDER BY wtc.position, wtc.slug
 `
 
 type ListWikiCategoriesBySpaceSlugRow struct {
+	ID            pgtype.UUID `json:"id"`
 	Slug          string      `json:"slug"`
 	Category      string      `json:"category"`
 	Label         string      `json:"label"`
 	FieldGroupID  pgtype.UUID `json:"field_group_id"`
 	Position      int32       `json:"position"`
 	IsSystem      bool        `json:"is_system"`
+	Rollup        []byte      `json:"rollup"`
 	SpaceTypeSlug string      `json:"space_type_slug"`
 }
 
@@ -450,13 +717,272 @@ func (q *Queries) ListWikiCategoriesBySpaceSlug(ctx context.Context, spaceSlug s
 	for rows.Next() {
 		var i ListWikiCategoriesBySpaceSlugRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Slug,
 			&i.Category,
 			&i.Label,
 			&i.FieldGroupID,
 			&i.Position,
 			&i.IsSystem,
+			&i.Rollup,
 			&i.SpaceTypeSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWikiDescendantSpaces = `-- name: ListWikiDescendantSpaces :many
+WITH RECURSIVE descendants AS (
+    SELECT kid.id, 1 AS depth
+    FROM (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = $2
+        UNION
+        SELECT s.id FROM spaces s WHERE s.parent_id = $2
+    ) kid
+    UNION
+    SELECT kid.id, d.depth + 1
+    FROM descendants d
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = d.id
+        UNION
+        SELECT s2.id FROM spaces s2 WHERE s2.parent_id = d.id
+    ) kid ON true
+    WHERE d.depth < 3
+)
+SELECT DISTINCT ON (s.id) s.id, s.slug, s.name, s.level, s.space_type_id,
+       COALESCE(st.slug, '') AS space_type_slug, d.depth
+FROM descendants d
+JOIN spaces s ON s.id = d.id
+LEFT JOIN space_types st ON st.id = s.space_type_id
+WHERE s.deleted_at IS NULL AND s.status = 'active'
+  AND (cardinality($1::uuid[]) = 0 OR s.space_type_id = ANY($1::uuid[]))
+ORDER BY s.id, d.depth
+`
+
+type ListWikiDescendantSpacesParams struct {
+	TypeIds []pgtype.UUID `json:"type_ids"`
+	SpaceID pgtype.UUID   `json:"space_id"`
+}
+
+type ListWikiDescendantSpacesRow struct {
+	ID            pgtype.UUID `json:"id"`
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+	Level         string      `json:"level"`
+	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
+	SpaceTypeSlug string      `json:"space_type_slug"`
+	Depth         int32       `json:"depth"`
+}
+
+// Transitive descendants of a space (depth ≤3) whose space_type is in
+// @type_ids — the rollup row set. Declared type edges supply which types
+// are eligible; this query supplies the actual spaces via
+// space_parent_spaces ∪ parent_id (the same edges ?within= uses).
+// Postgres allows a single recursive self-reference: the seed and step
+// terms each union the two link sources (junction ∪ parent_id) inside one
+// recursive arm.
+func (q *Queries) ListWikiDescendantSpaces(ctx context.Context, arg ListWikiDescendantSpacesParams) ([]ListWikiDescendantSpacesRow, error) {
+	rows, err := q.db.Query(ctx, listWikiDescendantSpaces, arg.TypeIds, arg.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWikiDescendantSpacesRow
+	for rows.Next() {
+		var i ListWikiDescendantSpacesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Level,
+			&i.SpaceTypeID,
+			&i.SpaceTypeSlug,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWikiPageTemplates = `-- name: ListWikiPageTemplates :many
+
+SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.is_system, t.created_at,
+       cfg.slug AS field_group_slug, cfg.name AS field_group_name
+FROM wiki_type_page_templates t
+LEFT JOIN custom_field_groups cfg ON cfg.id = t.field_group_id
+WHERE t.category_id = $1
+ORDER BY t.position, t.slug
+`
+
+type ListWikiPageTemplatesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	CategoryID     pgtype.UUID        `json:"category_id"`
+	Slug           string             `json:"slug"`
+	Label          string             `json:"label"`
+	FieldGroupID   pgtype.UUID        `json:"field_group_id"`
+	Position       int32              `json:"position"`
+	IsSystem       bool               `json:"is_system"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	FieldGroupSlug *string            `json:"field_group_slug"`
+	FieldGroupName *string            `json:"field_group_name"`
+}
+
+// =====================
+// Wiki page templates (§80 Hierarchical UX & Itemized Pricing amendment)
+// =====================
+func (q *Queries) ListWikiPageTemplates(ctx context.Context, categoryID pgtype.UUID) ([]ListWikiPageTemplatesRow, error) {
+	rows, err := q.db.Query(ctx, listWikiPageTemplates, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWikiPageTemplatesRow
+	for rows.Next() {
+		var i ListWikiPageTemplatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CategoryID,
+			&i.Slug,
+			&i.Label,
+			&i.FieldGroupID,
+			&i.Position,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.FieldGroupSlug,
+			&i.FieldGroupName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWikiPageTemplatesBySpaceType = `-- name: ListWikiPageTemplatesBySpaceType :many
+SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.is_system, t.created_at,
+       cfg.slug AS field_group_slug, cfg.name AS field_group_name
+FROM wiki_type_page_templates t
+JOIN wiki_type_categories c ON c.id = t.category_id
+LEFT JOIN custom_field_groups cfg ON cfg.id = t.field_group_id
+WHERE c.space_type_id = $1
+ORDER BY c.position, t.position, t.slug
+`
+
+type ListWikiPageTemplatesBySpaceTypeRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	CategoryID     pgtype.UUID        `json:"category_id"`
+	Slug           string             `json:"slug"`
+	Label          string             `json:"label"`
+	FieldGroupID   pgtype.UUID        `json:"field_group_id"`
+	Position       int32              `json:"position"`
+	IsSystem       bool               `json:"is_system"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	FieldGroupSlug *string            `json:"field_group_slug"`
+	FieldGroupName *string            `json:"field_group_name"`
+}
+
+// All page templates across a type's categories — admin editor needs the
+// full set when rendering a category's template list.
+func (q *Queries) ListWikiPageTemplatesBySpaceType(ctx context.Context, spaceTypeID pgtype.UUID) ([]ListWikiPageTemplatesBySpaceTypeRow, error) {
+	rows, err := q.db.Query(ctx, listWikiPageTemplatesBySpaceType, spaceTypeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWikiPageTemplatesBySpaceTypeRow
+	for rows.Next() {
+		var i ListWikiPageTemplatesBySpaceTypeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CategoryID,
+			&i.Slug,
+			&i.Label,
+			&i.FieldGroupID,
+			&i.Position,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.FieldGroupSlug,
+			&i.FieldGroupName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWikiSpaceParentLinks = `-- name: ListWikiSpaceParentLinks :many
+SELECT DISTINCT s.id, s.slug, s.name, s.level, s.space_type_id,
+       COALESCE(st.slug, '') AS space_type_slug,
+       COALESCE(st.name, '') AS space_type_name,
+       COALESCE(wtc.label, st.name, '') AS space_type_label,
+       (s.id = (SELECT sp2.parent_id FROM spaces sp2 WHERE sp2.id = $1)) AS is_primary
+FROM (
+    SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = $1
+    UNION
+    SELECT parent_id FROM spaces WHERE id = $1 AND parent_id IS NOT NULL
+) links
+JOIN spaces s ON s.id = links.pid
+LEFT JOIN space_types st ON st.id = s.space_type_id
+LEFT JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id
+WHERE s.deleted_at IS NULL
+`
+
+type ListWikiSpaceParentLinksRow struct {
+	ID             pgtype.UUID `json:"id"`
+	Slug           string      `json:"slug"`
+	Name           string      `json:"name"`
+	Level          string      `json:"level"`
+	SpaceTypeID    pgtype.UUID `json:"space_type_id"`
+	SpaceTypeSlug  string      `json:"space_type_slug"`
+	SpaceTypeName  string      `json:"space_type_name"`
+	SpaceTypeLabel string      `json:"space_type_label"`
+	IsPrimary      bool        `json:"is_primary"`
+}
+
+// One hop up the actual space hierarchy: parents via the
+// space_parent_spaces junction ∪ spaces.parent_id, each with its type
+// identity and whether it is the primary (parent_id) link. The service
+// walks this per level (depth ≤3) and arbitrates multi-parent chains via
+// the declared wiki_type_parents edges.
+func (q *Queries) ListWikiSpaceParentLinks(ctx context.Context, spaceID pgtype.UUID) ([]ListWikiSpaceParentLinksRow, error) {
+	rows, err := q.db.Query(ctx, listWikiSpaceParentLinks, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWikiSpaceParentLinksRow
+	for rows.Next() {
+		var i ListWikiSpaceParentLinksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Level,
+			&i.SpaceTypeID,
+			&i.SpaceTypeSlug,
+			&i.SpaceTypeName,
+			&i.SpaceTypeLabel,
+			&i.IsPrimary,
 		); err != nil {
 			return nil, err
 		}
@@ -471,7 +997,7 @@ func (q *Queries) ListWikiCategoriesBySpaceSlug(ctx context.Context, spaceSlug s
 const listWikiTypeCategories = `-- name: ListWikiTypeCategories :many
 
 SELECT wtc.id, wtc.space_type_id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id,
-       wtc.position, wtc.is_system, wtc.created_at,
+       wtc.position, wtc.is_system, wtc.rollup, wtc.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_categories wtc
 LEFT JOIN custom_field_groups cfg ON cfg.id = wtc.field_group_id
@@ -488,6 +1014,7 @@ type ListWikiTypeCategoriesRow struct {
 	FieldGroupID   pgtype.UUID        `json:"field_group_id"`
 	Position       int32              `json:"position"`
 	IsSystem       bool               `json:"is_system"`
+	Rollup         []byte             `json:"rollup"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	FieldGroupSlug *string            `json:"field_group_slug"`
 	FieldGroupName *string            `json:"field_group_name"`
@@ -516,6 +1043,7 @@ func (q *Queries) ListWikiTypeCategories(ctx context.Context, spaceTypeID pgtype
 			&i.FieldGroupID,
 			&i.Position,
 			&i.IsSystem,
+			&i.Rollup,
 			&i.CreatedAt,
 			&i.FieldGroupSlug,
 			&i.FieldGroupName,
@@ -523,6 +1051,35 @@ func (q *Queries) ListWikiTypeCategories(ctx context.Context, spaceTypeID pgtype
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWikiTypeChildIDs = `-- name: ListWikiTypeChildIDs :many
+SELECT space_type_id
+FROM wiki_type_parents
+WHERE parent_space_type_id = $1
+`
+
+// Declared child types of a type — the reverse edge of
+// ListWikiTypeParentIDs. Drives rollup descendant scope and the landing
+// chooser's drill-down (§80 Hierarchical UX amendment).
+func (q *Queries) ListWikiTypeChildIDs(ctx context.Context, spaceTypeID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listWikiTypeChildIDs, spaceTypeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var space_type_id pgtype.UUID
+		if err := rows.Scan(&space_type_id); err != nil {
+			return nil, err
+		}
+		items = append(items, space_type_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -561,7 +1118,7 @@ const listWikiTypes = `-- name: ListWikiTypes :many
 
 SELECT wtc.space_type_id, st.slug AS space_type_slug, st.name AS space_type_name,
        wtc.enabled, wtc.label, wtc.icon, wtc.seed_stubs, wtc.position, wtc.created_at,
-       COALESCE(array_agg(wtp.parent_space_type_id::text) FILTER (WHERE wtp.parent_space_type_id IS NOT NULL), '{}') AS parent_type_ids
+       COALESCE(array_agg(wtp.parent_space_type_id::text) FILTER (WHERE wtp.parent_space_type_id IS NOT NULL), '{}')::text[] AS parent_type_ids
 FROM wiki_type_configs wtc
 JOIN space_types st ON st.id = wtc.space_type_id
 LEFT JOIN wiki_type_parents wtp ON wtp.space_type_id = wtc.space_type_id
@@ -580,7 +1137,7 @@ type ListWikiTypesRow struct {
 	SeedStubs     bool               `json:"seed_stubs"`
 	Position      int32              `json:"position"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	ParentTypeIds interface{}        `json:"parent_type_ids"`
+	ParentTypeIds []string           `json:"parent_type_ids"`
 }
 
 // Wiki types & category templates (§80 Wiki Types & Field-Group Pages
@@ -625,7 +1182,7 @@ func (q *Queries) ListWikiTypes(ctx context.Context) ([]ListWikiTypesRow, error)
 
 const resolveWikiTypeCategoryToken = `-- name: ResolveWikiTypeCategoryToken :one
 SELECT id, space_type_id, slug, category, label, field_group_id,
-       position, is_system, created_at
+       position, is_system, created_at, rollup
 FROM wiki_type_categories
 WHERE space_type_id = $1
   AND (lower(category) = lower($2)
@@ -658,8 +1215,43 @@ func (q *Queries) ResolveWikiTypeCategoryToken(ctx context.Context, arg ResolveW
 		&i.Position,
 		&i.IsSystem,
 		&i.CreatedAt,
+		&i.Rollup,
 	)
 	return i, err
+}
+
+const updateWikiPageTemplate = `-- name: UpdateWikiPageTemplate :execrows
+UPDATE wiki_type_page_templates
+SET label = COALESCE($1, label),
+    field_group_id = CASE WHEN $2::bool
+                     THEN $3
+                     ELSE field_group_id END,
+    position = COALESCE($4, position)
+WHERE id = $5
+`
+
+type UpdateWikiPageTemplateParams struct {
+	Label            *string     `json:"label"`
+	UpdateFieldGroup bool        `json:"update_field_group"`
+	FieldGroupID     pgtype.UUID `json:"field_group_id"`
+	Position         *int32      `json:"position"`
+	ID               pgtype.UUID `json:"id"`
+}
+
+// Slug is immutable (page URLs); label, bound group, and position are
+// editable. update_field_group distinguishes "don't touch" from "rebind".
+func (q *Queries) UpdateWikiPageTemplate(ctx context.Context, arg UpdateWikiPageTemplateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateWikiPageTemplate,
+		arg.Label,
+		arg.UpdateFieldGroup,
+		arg.FieldGroupID,
+		arg.Position,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateWikiTypeCategory = `-- name: UpdateWikiTypeCategory :execrows
@@ -668,8 +1260,11 @@ SET label = COALESCE($1, label),
     field_group_id = CASE WHEN $2::bool
                       THEN $3
                       ELSE field_group_id END,
-    position = COALESCE($4, position)
-WHERE id = $5
+    position = COALESCE($4, position),
+    rollup = CASE WHEN $5::bool
+             THEN $6::jsonb
+             ELSE rollup END
+WHERE id = $7
 `
 
 type UpdateWikiTypeCategoryParams struct {
@@ -677,6 +1272,8 @@ type UpdateWikiTypeCategoryParams struct {
 	UpdateFieldGroup bool        `json:"update_field_group"`
 	FieldGroupID     pgtype.UUID `json:"field_group_id"`
 	Position         *int32      `json:"position"`
+	UpdateRollup     bool        `json:"update_rollup"`
+	Rollup           []byte      `json:"rollup"`
 	ID               pgtype.UUID `json:"id"`
 }
 
@@ -688,6 +1285,8 @@ func (q *Queries) UpdateWikiTypeCategory(ctx context.Context, arg UpdateWikiType
 		arg.UpdateFieldGroup,
 		arg.FieldGroupID,
 		arg.Position,
+		arg.UpdateRollup,
+		arg.Rollup,
 		arg.ID,
 	)
 	if err != nil {

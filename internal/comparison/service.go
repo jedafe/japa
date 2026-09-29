@@ -179,6 +179,8 @@ func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string) (Com
 			return ComparisonTypeDetail{}, fmt.Errorf("listing type dimensions: %w", err)
 		}
 
+		fields = filterFieldsByConfigSections(fields, typeDef.Config)
+
 		for _, f := range fields {
 			dimensions = append(dimensions, ComparisonTypeDimension{
 				ID:          f.ID.String(),
@@ -353,7 +355,9 @@ func fieldTypeToDimensionType(fieldType string) string {
 	switch fieldType {
 	case "number", "integer":
 		return DimensionTypeNumber
-	case "currency":
+	case "currency", "price_range":
+		// §80 amendment: price_range composites compare on their avg value
+		// (hydrateMatrixCell extracts avg for map-shaped raw values).
 		return DimensionTypeCurrency
 	case "boolean", "checkbox":
 		return DimensionTypeBoolean
@@ -448,6 +452,39 @@ func (s *Service) canCreateComparisonForType(ctx context.Context, typeID, userID
 	return accessGrantsCreate(access, groupSet), nil
 }
 
+// filterFieldsByConfigSections limits a type's field-group fields to the
+// sections named in its config.sections (§80 itemized pricing): a type with
+// {"sections":["transportation"]} yields only that section's dims, so a
+// single shared group (wiki_city_prices) can power section-scoped
+// comparisons without a group per section. Empty/absent lists leave the
+// field set untouched.
+func filterFieldsByConfigSections(fields []gen.ListCustomFieldsByGroupRow, config []byte) []gen.ListCustomFieldsByGroupRow {
+	if len(config) == 0 {
+		return fields
+	}
+
+	var cfg struct {
+		Sections []string `json:"sections"`
+	}
+	if err := json.Unmarshal(config, &cfg); err != nil || len(cfg.Sections) == 0 {
+		return fields
+	}
+
+	set := make(map[string]bool, len(cfg.Sections))
+	for _, s := range cfg.Sections {
+		set[s] = true
+	}
+
+	out := make([]gen.ListCustomFieldsByGroupRow, 0, len(fields))
+	for _, f := range fields {
+		if f.Section != nil && set[*f.Section] {
+			out = append(out, f)
+		}
+	}
+
+	return out
+}
+
 // accessGrantsCreate reports whether a caller may create comparisons of a type
 // given its access rows: no rows means unrestricted, and a row with a NULL
 // user_group_id is a wildcard grant. A nil groupSet matches nothing.
@@ -532,7 +569,7 @@ func (s *Service) CreateComparison(ctx context.Context, userID pgtype.UUID, inpu
 			return CreateComparisonResult{}, fmt.Errorf("listing field-group fields: %w", ferr)
 		}
 
-		autoFields = fields
+		autoFields = filterFieldsByConfigSections(fields, typeDef.Config)
 	}
 
 	// Collapse duplicate inputs so the transaction cannot insert multiple
@@ -1651,6 +1688,14 @@ func matrixCellNumber(v any) (float64, bool) {
 	case string:
 		if f, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
 			return f, true
+		}
+	case map[string]any:
+		// §80 price_range composite {avg,min,max} — compare on avg, then
+		// the tighter bound when avg is absent.
+		for _, k := range []string{"avg", "min", "max"} {
+			if f, ok := matrixCellNumber(n[k]); ok {
+				return f, true
+			}
 		}
 	}
 

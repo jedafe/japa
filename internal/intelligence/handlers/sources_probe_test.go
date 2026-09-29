@@ -414,4 +414,26 @@ func TestHandleGetSourcesMeta_IntelChannels(t *testing.T) {
 			t.Errorf("categories missing %q", v)
 		}
 	}
+
+	// submittable_categories is the propose-form subset — domains with a
+	// deterministic (non-AI) path to content. Sorted for a stable contract.
+	subCats, ok := data["submittable_categories"].([]any)
+	if !ok {
+		t.Fatalf("submittable_categories missing or wrong type: %v", data["submittable_categories"])
+	}
+
+	subSet := map[string]bool{}
+	for _, c := range subCats {
+		subSet[c.(string)] = true
+	}
+	for _, v := range []string{"job", "internship", "work_career", "news", "blog", "video"} {
+		if !subSet[v] {
+			t.Errorf("submittable_categories missing %q", v)
+		}
+	}
+	for _, v := range []string{"scholarship", "visa", "event", "dataset", "housing"} {
+		if subSet[v] {
+			t.Errorf("submittable_categories must not contain %q", v)
+		}
+	}
 }

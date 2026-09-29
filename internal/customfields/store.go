@@ -411,6 +411,23 @@ func (s *Service) ListFieldValuesWithDefsByEntity(ctx context.Context, entityTyp
 	return rows, nil
 }
 
+// ListFieldValuesWithDefsForEntities is the batched counterpart of
+// ListFieldValuesWithDefsByEntity — one query returns display-ready values
+// for many entities (§80 rollup reads + tool surface hydration). Rows carry
+// the field's group id and section so callers can restrict to specific
+// groups or sub-group the results.
+func (s *Service) ListFieldValuesWithDefsForEntities(ctx context.Context, entityType string, entityIDs []pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsForEntitiesRow, error) {
+	rows, err := s.read.ListCustomFieldValuesWithDefsForEntities(ctx, gen.ListCustomFieldValuesWithDefsForEntitiesParams{
+		EntityType: entityType,
+		EntityIds:  entityIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing custom field values with defs for entities: %w", err)
+	}
+
+	return rows, nil
+}
+
 // CheckFieldPermissionForUser returns the can_view / can_edit flags for the
 // given user on the given field (Section 06 field-level RBAC). When no
 // permission rows exist for the field, both default to false (fail-closed).

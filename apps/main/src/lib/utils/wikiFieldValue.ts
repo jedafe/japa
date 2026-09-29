@@ -28,9 +28,44 @@ function optionLabel(options: ChoiceOption[], raw: unknown): string {
 	return objectLabel(raw);
 }
 
+/** §80 Itemized Pricing — the composite value shape stored by a
+ *  `price_range` field: {avg?, min?, max?} in value_json. */
+export interface PriceRangeValue {
+	avg?: number;
+	min?: number;
+	max?: number;
+}
+
+export function priceRangeParts(v: unknown): PriceRangeValue | null {
+	if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
+	const o = v as Record<string, unknown>;
+	const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined);
+	const parts = { avg: num(o.avg), min: num(o.min), max: num(o.max) };
+	return parts.avg !== undefined || parts.min !== undefined || parts.max !== undefined
+		? parts
+		: null;
+}
+
+function fmtNum(n: number): string {
+	return n.toLocaleString(i18n.locale, { maximumFractionDigits: 2 });
+}
+
+/** Display string for a price_range value — "1,200" for a lone avg,
+ *  "800 – 1,600" when bounds are set. */
+export function formatPriceRange(v: unknown): string {
+	const p = priceRangeParts(v);
+	if (!p) return '—';
+	if (p.min !== undefined && p.max !== undefined && p.min !== p.max) {
+		return `${fmtNum(p.min)} – ${fmtNum(p.max)}`;
+	}
+	const single = p.avg ?? p.min ?? p.max;
+	return single !== undefined ? fmtNum(single) : '—';
+}
+
 export function formatWikiFieldValue(f: WikiEntityField): string {
 	const v = f.value;
 	if (v === null || v === undefined || v === '') return '—';
+	if (f.field_type === 'price_range') return formatPriceRange(v);
 	if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');
 	if (typeof v === 'number') return v.toLocaleString(i18n.locale);
 	const options = choiceOptions(f.options);

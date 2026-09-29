@@ -19,6 +19,16 @@ export interface WikiEntityField {
 	value?: unknown;
 	can_edit: boolean;
 	visible: boolean;
+	/** §80 Itemized Pricing — the field's section token (e.g.
+	 *  'transportation'); fields sharing one render under one item table. */
+	section?: string;
+}
+
+/** §80 Itemized Pricing — one named section inside a field group: the
+ *  fields sharing a custom_fields.section token, in definition order. */
+export interface WikiEntityFieldSection {
+	key: string;
+	fields: WikiEntityField[];
 }
 
 /** A field group assigned to the entity's class, fields in display order. */
@@ -27,6 +37,8 @@ export interface WikiEntityFieldGroup {
 	slug: string;
 	name: string;
 	fields: WikiEntityField[];
+	/** Fields regrouped by section token for one-table-per-section UIs. */
+	sections?: WikiEntityFieldSection[];
 }
 
 /** GET /wiki/entities/{type}/{id}/fields response payload. */
@@ -48,6 +60,9 @@ export interface WikiFieldDefInput {
 	label: string;
 	field_type: string;
 	options?: Array<{ value: string; label: string }>;
+	/** §80 Itemized Pricing — the field's section token; groups the field
+	 *  into an item-table section when set. */
+	section?: string;
 }
 
 /** Group definition carried by propose_group ops. */

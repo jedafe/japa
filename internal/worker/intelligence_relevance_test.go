@@ -503,7 +503,9 @@ func TestHandleIntelExtract_RelevanceGate(t *testing.T) {
 		Url:         ch.EntryUrl,
 		HttpStatus:  200,
 		HttpHeaders: []byte(`{}`),
-		Body:        []byte("<html><body>page</body></html>"),
+		// ≥20 visible chars — HasExtractableText skips thinner HTML as
+		// JS-shell/blank pages before the extractor runs.
+		Body:        []byte("<html><body><article><h1>News page</h1><p>Visa bulletin and sports coverage.</p></article></body></html>"),
 		ContentHash: "relexthash",
 	})
 	if err != nil {

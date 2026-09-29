@@ -4,37 +4,48 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { WikiDestination, WikiTypeItem } from '$lib/types';
+import { wikiDrillChain } from '$lib/utils/wikiTypeChain';
 
-/** Geo chain types are covered by the continent→country→state→city chooser;
- *  every other enabled wiki type gets its own browse section (§80: "new wiki
- *  types appear in navigation with zero code"). */
-const GEO_WIKI_TYPES = new Set(['country', 'state', 'city']);
-
+/**
+ * §80 Hierarchical UX: the drill-down chain (country → state → city today)
+ * derives from the declared wiki_type_parents edges on GET /wiki/types, not
+ * a hardcoded type set — enabling a new child type extends the chooser
+ * without code. Enabled types outside the chain keep their own search +
+ * browse sections.
+ */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 
-	// Default landing view: active destination countries, plus every enabled
-	// non-geo wiki type's spaces that already carry wiki pages.
 	let destinations: WikiDestination[] = [];
 	let typeWikis: Record<string, WikiDestination[]> = {};
+	let types: WikiTypeItem[] = [];
+	let chain: WikiTypeItem[] = [];
 	let extraTypes: WikiTypeItem[] = [];
 	try {
-		const [countries, types] = await Promise.all([
-			apiList<WikiDestination>(ctx, '/wiki/destinations?level=country&has_wiki=false'),
-			apiList<WikiTypeItem>(ctx, '/wiki/types')
-		]);
-		destinations = countries.items;
-		extraTypes = (types.items ?? [])
-			.filter((t) => t.enabled !== false && !GEO_WIKI_TYPES.has(t.space_type_slug))
+		const typesRes = await apiList<WikiTypeItem>(ctx, '/wiki/types');
+		types = (typesRes.items ?? [])
+			.filter((t) => t.enabled !== false)
 			.sort((a, b) => a.position - b.position);
-		const perType = await Promise.all(
-			extraTypes.map((t) =>
+		chain = wikiDrillChain(types);
+		const chainIds = new Set(chain.map((c) => c.space_type_id));
+		extraTypes = types.filter((t) => !chainIds.has(t.space_type_id));
+
+		const rootSlug = chain[0]?.space_type_slug ?? '';
+		const [rootDest, ...perType] = await Promise.all([
+			rootSlug
+				? apiList<WikiDestination>(
+						ctx,
+						`/wiki/destinations?level=${encodeURIComponent(rootSlug)}&has_wiki=false`
+					)
+				: Promise.resolve(null),
+			...extraTypes.map((t) =>
 				apiList<WikiDestination>(
 					ctx,
 					`/wiki/destinations?level=${encodeURIComponent(t.space_type_slug)}&has_wiki=true`
 				).catch(() => null)
 			)
-		);
+		]);
+		destinations = rootDest?.items ?? [];
 		for (let i = 0; i < extraTypes.length; i++) {
 			typeWikis[extraTypes[i].space_type_slug] = perType[i]?.items ?? [];
 		}
@@ -42,5 +53,5 @@ export const load: PageServerLoad = async (event) => {
 		/* degrade to empty list */
 	}
 
-	return { destinations, extraTypes, typeWikis };
+	return { destinations, types, chain, extraTypes, typeWikis };
 };

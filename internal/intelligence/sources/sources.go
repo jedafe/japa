@@ -5,6 +5,8 @@
 package sources
 
 import (
+	"sort"
+
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -156,4 +158,46 @@ const (
 	CategoryRemittance  Category = "remittance"
 	CategoryNews        Category = "news"
 	CategoryTravelAlert Category = "travel_alert"
+	CategoryInternship  Category = "internship"
+	CategoryWorkCareer  Category = "work_career"
+	CategoryBlog        Category = "blog"
+	CategoryVideo       Category = "video"
 )
+
+// submittableCategories is the propose-form subset of the category
+// taxonomy: domains whose channels reach content end-to-end without an AI
+// provider — job-family pages via JSON-LD/static curation (job, internship,
+// work_career), news/article feeds via the RSS curator (news, blog), and
+// video via the channel_profile sync path. Every other valid category
+// waits on AI extraction and is excluded from public proposals until it is
+// configured.
+var submittableCategories = map[Category]struct{}{
+	CategoryJob:        {},
+	CategoryInternship: {},
+	CategoryWorkCareer: {},
+	CategoryNews:       {},
+	CategoryBlog:       {},
+	CategoryVideo:      {},
+}
+
+// IsSubmittable reports whether c may be chosen on a public source
+// proposal. Mirrors SourceKind.IsSubmittable; buildProposeParams rejects
+// proposals carrying any other category.
+func (c Category) IsSubmittable() bool {
+	_, ok := submittableCategories[c]
+
+	return ok
+}
+
+// SubmittableCategories returns the sorted propose-form category list —
+// exposed through /api/v1/sources/meta so the frontend renders the picker
+// from the API rather than a hardcoded list (Rule 16).
+func SubmittableCategories() []string {
+	out := make([]string, 0, len(submittableCategories))
+	for c := range submittableCategories {
+		out = append(out, string(c))
+	}
+	sort.Strings(out)
+
+	return out
+}

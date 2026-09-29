@@ -273,7 +273,7 @@ func TestDeleteWikiTypeCategory_SystemGuard(t *testing.T) {
 	svc := &Service{store: store}
 
 	sysSlug := "t-sys-" + genUUIDText(t)[:8]
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, sysSlug, strings.ReplaceAll(sysSlug, "-", "_"), "System Cat", groupID, 90, true)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, sysSlug, strings.ReplaceAll(sysSlug, "-", "_"), "System Cat", groupID, 90, true, nil)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestDeleteWikiTypeCategory_ProseGuard(t *testing.T) {
 	groupID := seedTestGroup(t, ctx, database, "t-grp-"+genUUIDText(t)[:8])
 	proseSlug := "t-prose-" + genUUIDText(t)[:8]
 	proseCat := strings.ReplaceAll(proseSlug, "-", "_")
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, proseSlug, proseCat, "Guarded", groupID, 91, false)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, proseSlug, proseCat, "Guarded", groupID, 91, false, nil)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestUpdateWikiTypeCategory_PatchesMutableFields(t *testing.T) {
 	svc.SetCustomFields(customfields.NewService(database))
 
 	updSlug := "t-upd-" + genUUIDText(t)[:8]
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, updSlug, strings.ReplaceAll(updSlug, "-", "_"), "Before", groupID, 92, false)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, updSlug, strings.ReplaceAll(updSlug, "-", "_"), "Before", groupID, 92, false, nil)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -563,7 +563,7 @@ func TestDeleteFieldGroup_BlockedWhileCategoryBound(t *testing.T) {
 	cfSvc := customfields.NewService(database)
 
 	catSlug := "t-fg-" + genUUIDText(t)[:8]
-	cat, err := store.CreateWikiTypeCategory(ctx, typeID, catSlug, strings.ReplaceAll(catSlug, "-", "_"), "Bound", groupID, 93, false)
+	cat, err := store.CreateWikiTypeCategory(ctx, typeID, catSlug, strings.ReplaceAll(catSlug, "-", "_"), "Bound", groupID, 93, false, nil)
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}

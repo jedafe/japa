@@ -51,12 +51,21 @@ func NewPreflightChecker(rdb valkeycompat.Cmdable, robots *RobotsChecker, settin
 	}
 }
 
-// rateLimitScript atomically increments the per-domain rate-limit counter and
-// sets the 60-second TTL only on the first increment. This prevents the race
-// where a process crashes after INCR but before EXPIRE, leaving the key
-// without a TTL and permanently blocking the domain (INTEL-013 fix, §18).
+// rateLimitScript checks the per-domain window before admitting a request:
+// when the counter is already at the limit it returns -1 WITHOUT
+// incrementing, so rejected attempts (retries of rate-limited tasks) do not
+// themselves consume the window and keep the domain saturated. Only an
+// admitted request INCRs. The 60-second TTL is set on the first admitted
+// increment — this prevents the race where a process crashes after INCR but
+// before EXPIRE, leaving the key without a TTL and permanently blocking the
+// domain (INTEL-013 fix, §18). ARGV[1] is the TTL seconds, ARGV[2] the
+// per-minute limit.
 const rateLimitScript = `
-local count = redis.call('INCR', KEYS[1])
+local count = tonumber(redis.call('GET', KEYS[1]) or '0')
+if count >= tonumber(ARGV[2]) then
+  return -1
+end
+count = redis.call('INCR', KEYS[1])
 if count == 1 then
   redis.call('EXPIRE', KEYS[1], ARGV[1])
 end
@@ -203,7 +212,7 @@ func (p *PreflightChecker) check(ctx context.Context, lockKey, domain, checkURL 
 func (p *PreflightChecker) checkRateLimit(ctx context.Context, domain string, rateLimitPerMin int, releaseLock func()) error {
 	rateKey := fmt.Sprintf("jc:intel:ratelimit::%s", domain)
 
-	result, err := p.rdb.Eval(ctx, rateLimitScript, []string{rateKey}, 60).Result()
+	result, err := p.rdb.Eval(ctx, rateLimitScript, []string{rateKey}, 60, rateLimitPerMin).Result()
 	if err != nil {
 		releaseLock()
 		return fmt.Errorf("fetcher: rate limit: %w", err)
@@ -215,7 +224,9 @@ func (p *PreflightChecker) checkRateLimit(ctx context.Context, domain string, ra
 		return fmt.Errorf("fetcher: rate limit: unexpected eval result type %T", result)
 	}
 
-	if count > int64(rateLimitPerMin) {
+	// -1 = window already full: reject WITHOUT having incremented, so a
+	// burst of rejected tasks cannot extend its own saturation.
+	if count == -1 {
 		releaseLock()
 		return ErrRateLimited
 	}

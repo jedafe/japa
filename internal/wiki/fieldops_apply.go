@@ -232,6 +232,10 @@ func applyUpsertField(ctx context.Context, q *gen.Queries, op FieldOp, schema ma
 		Sortable:       existing.Sortable,
 		Searchable:     existing.Searchable,
 		Position:       op.Field.Position,
+		// The op payload is authoritative (upsert semantics): every apply
+		// rewrites the section token, "" clearing it.
+		UpdateSection: true,
+		Section:       op.Field.Section,
 	}
 
 	if op.Field.Placeholder != "" {
@@ -299,6 +303,10 @@ func createFieldInGroup(ctx context.Context, q *gen.Queries, groupID pgtype.UUID
 		IsSystem:       false,
 		ShowInFrontend: true,
 		Position:       f.Position,
+	}
+
+	if f.Section != "" {
+		params.Section = &f.Section
 	}
 
 	if f.Placeholder != "" {
@@ -388,6 +396,17 @@ func valueToUpsertParams(field schemaField, entityType string, entityID pgtype.U
 	// JSON null clears the value — the upsert overwrites every column.
 	if string(v) == "null" {
 		return params, nil
+	}
+
+	// §80 Itemized Pricing: price_range is a composite {avg,min,max} object —
+	// coerce to the canonical shape before the raw-JSON column setter.
+	if field.fieldType == customfields.FieldTypePriceRange {
+		norm, nerr := normalizePriceRange(v, field.key)
+		if nerr != nil {
+			return params, nerr
+		}
+
+		v = norm
 	}
 
 	setter, ok := valueColumnSetters[column]
@@ -486,4 +505,47 @@ func parseDateValue(s string) (pgtype.Timestamptz, error) {
 	}
 
 	return pgtype.Timestamptz{}, fmt.Errorf("unrecognized date/timestamp %q", s)
+}
+
+// normalizePriceRange coerces a set_value payload into the canonical
+// price_range object {"avg":n,"min":n,"max":n} (§80 Itemized Pricing).
+// Each key is optional but at least one must be present; min <= max is
+// enforced when both are supplied. Only the three keys survive — stray
+// payload members are dropped so value_json stays diff-stable.
+func normalizePriceRange(v json.RawMessage, key string) (json.RawMessage, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(v, &raw); err != nil {
+		return nil, fmt.Errorf("field %q expects an {avg,min,max} object: %w", key, err)
+	}
+
+	out := make(map[string]float64, 3)
+
+	for _, k := range []string{"avg", "min", "max"} {
+		rv, present := raw[k]
+		if !present || string(rv) == "null" {
+			continue
+		}
+
+		var n float64
+		if err := json.Unmarshal(rv, &n); err != nil {
+			return nil, fmt.Errorf("field %q: %q must be a number: %w", key, k, err)
+		}
+		if n < 0 {
+			return nil, fmt.Errorf("field %q: %q must not be negative", key, k)
+		}
+
+		out[k] = n
+	}
+
+	if len(out) == 0 {
+		return nil, fmt.Errorf("field %q expects at least one of avg/min/max", key)
+	}
+
+	if lo, ok := out["min"]; ok {
+		if hi, ok2 := out["max"]; ok2 && lo > hi {
+			return nil, fmt.Errorf("field %q: min must not exceed max", key)
+		}
+	}
+
+	return json.Marshal(out)
 }

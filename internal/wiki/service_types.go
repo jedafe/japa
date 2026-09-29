@@ -9,6 +9,7 @@ package wiki
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -73,6 +74,10 @@ type WikiCategoryDTO struct {
 	FieldGroupName string `json:"field_group_name,omitempty"`
 	Position       int32  `json:"position"`
 	IsSystem       bool   `json:"is_system"`
+	// Rollup is the category's descendant-aggregation config (§80
+	// Hierarchical UX) — passed through verbatim so the admin editor and
+	// public readers share the shape.
+	Rollup json.RawMessage `json:"rollup,omitempty"`
 }
 
 func wikiTypeToDTO(t WikiType) WikiTypeDTO {
@@ -108,6 +113,9 @@ func wikiCategoryToDTO(c WikiCategory) WikiCategoryDTO {
 	}
 	if c.FieldGroupName != nil {
 		d.FieldGroupName = *c.FieldGroupName
+	}
+	if len(c.Rollup) > 0 {
+		d.Rollup = json.RawMessage(c.Rollup)
 	}
 
 	return d
@@ -315,6 +323,38 @@ func (s *Service) ListAllCategories(ctx context.Context) ([]WikiCategory, error)
 	return s.store.ListAllCategories(ctx)
 }
 
+// ListPageTemplatesForSpace returns the space type's page templates with
+// the `{name}` label token substituted for the space's display name —
+// the public discovery surface for lazy template pages
+// (/wiki/{space}/{template_slug}). Returns nil for a space whose type
+// declares none.
+func (s *Service) ListPageTemplatesForSpace(ctx context.Context, spaceSlug string) ([]WikiPageTemplate, error) {
+	spaceID, spaceName, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrSpaceNotFound
+		}
+
+		return nil, err
+	}
+
+	typeID, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	templates, err := s.store.ListPageTemplatesBySpaceType(ctx, typeID)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range templates {
+		templates[i].Label = substituteTemplateLabel(templates[i].Label, spaceName)
+	}
+
+	return templates, nil
+}
+
 // ListWikiTypeCategories returns a type's full category template (admin).
 func (s *Service) ListWikiTypeCategories(ctx context.Context, spaceTypeIDStr string) ([]WikiCategoryDTO, error) {
 	spaceTypeID, err := s.resolveSpaceTypeID(ctx, spaceTypeIDStr, spaceTypeIDStr)
@@ -360,6 +400,9 @@ type CreateWikiCategoryRequest struct {
 	Label        string `json:"label"`
 	FieldGroupID string `json:"field_group_id"`
 	Position     int32  `json:"position"`
+	// Rollup opts the category into descendant aggregation (§80); validated
+	// by parseWikiRollup — omitted leaves the category prose/fields only.
+	Rollup json.RawMessage `json:"rollup"`
 }
 
 // CreateWikiTypeCategory adds a category to a type's template. Every
@@ -407,7 +450,12 @@ func (s *Service) CreateWikiTypeCategory(ctx context.Context, spaceTypeIDStr str
 		return WikiCategoryDTO{}, err
 	}
 
-	c, err := s.store.CreateWikiTypeCategory(ctx, spaceTypeID, slug, category, label, fgID, req.Position, false)
+	rollup, err := validateRollupInput(req.Rollup)
+	if err != nil {
+		return WikiCategoryDTO{}, err
+	}
+
+	c, err := s.store.CreateWikiTypeCategory(ctx, spaceTypeID, slug, category, label, fgID, req.Position, false, rollup)
 	if err != nil {
 		return WikiCategoryDTO{}, err
 	}
@@ -524,6 +572,9 @@ type UpdateWikiCategoryRequest struct {
 	Label        *string `json:"label"`
 	FieldGroupID *string `json:"field_group_id"`
 	Position     *int32  `json:"position"`
+	// Rollup is three-state (§80): absent leaves the config untouched, an
+	// explicit null clears it, an object replaces it (validated).
+	Rollup json.RawMessage `json:"rollup"`
 }
 
 // UpdateWikiTypeCategory patches a category's label, group binding, and
@@ -551,7 +602,17 @@ func (s *Service) UpdateWikiTypeCategory(ctx context.Context, idStr string, req 
 		fgID = v
 	}
 
-	return s.store.UpdateWikiTypeCategory(ctx, id, req.Label, updateFG, fgID, req.Position)
+	var rollup []byte
+	updateRollup := len(req.Rollup) > 0
+	if updateRollup {
+		v, err := validateRollupInput(req.Rollup)
+		if err != nil {
+			return err
+		}
+		rollup = v
+	}
+
+	return s.store.UpdateWikiTypeCategory(ctx, id, req.Label, updateFG, fgID, req.Position, updateRollup, rollup)
 }
 
 // DeleteWikiTypeCategory removes a non-system category. Blocked while pages
@@ -581,4 +642,289 @@ func (s *Service) DeleteWikiTypeCategory(ctx context.Context, idStr string) erro
 	}
 
 	return s.store.DeleteWikiTypeCategory(ctx, id)
+}
+
+// ---------------------------------------------------------------------------
+// Rollup config + page templates (§80 Hierarchical UX & Itemized Pricing)
+// ---------------------------------------------------------------------------
+
+// validRollupMetrics is the aggregate vocabulary a category rollup may
+// request.
+var validRollupMetrics = map[string]bool{"min": true, "avg": true, "max": true}
+
+// validateRollupInput checks a rollup JSONB payload: null/empty clears,
+// otherwise {enabled bool, metrics ⊆ {min,avg,max}, levels []slug,
+// section_limit ≥ 0}.
+// Returns the canonical bytes to store (nil when clearing).
+func validateRollupInput(raw json.RawMessage) ([]byte, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var cfg WikiRollupConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("%w: rollup must be an object", ErrInvalidInput)
+	}
+
+	for _, m := range cfg.Metrics {
+		if !validRollupMetrics[m] {
+			return nil, fmt.Errorf("%w: unknown rollup metric %q", ErrInvalidInput, m)
+		}
+	}
+	for _, l := range cfg.Levels {
+		if !wikiCategoryPattern.MatchString(l) && !wikiSlugPattern.MatchString(l) {
+			return nil, fmt.Errorf("%w: invalid rollup level %q", ErrInvalidInput, l)
+		}
+	}
+	if cfg.SectionLimit < 0 {
+		return nil, fmt.Errorf("%w: rollup section_limit must be >= 0", ErrInvalidInput)
+	}
+
+	return raw, nil
+}
+
+// WikiPageTemplateDTO is the admin representation of a page template.
+// //nolint:revive // exported: DTO naming follows package convention
+type WikiPageTemplateDTO struct {
+	ID             string `json:"id,omitempty"`
+	CategoryID     string `json:"category_id"`
+	Slug           string `json:"slug"`
+	Label          string `json:"label"`
+	FieldGroupID   string `json:"field_group_id,omitempty"`
+	FieldGroupSlug string `json:"field_group_slug,omitempty"`
+	FieldGroupName string `json:"field_group_name,omitempty"`
+	Position       int32  `json:"position"`
+	IsSystem       bool   `json:"is_system"`
+}
+
+func wikiPageTemplateToDTO(t WikiPageTemplate) WikiPageTemplateDTO {
+	d := WikiPageTemplateDTO{
+		ID:         t.ID.String(),
+		CategoryID: t.CategoryID.String(),
+		Slug:       t.Slug,
+		Label:      t.Label,
+		Position:   t.Position,
+		IsSystem:   t.IsSystem,
+	}
+	if t.FieldGroupID.Valid {
+		d.FieldGroupID = t.FieldGroupID.String()
+	}
+	if t.FieldGroupSlug != nil {
+		d.FieldGroupSlug = *t.FieldGroupSlug
+	}
+	if t.FieldGroupName != nil {
+		d.FieldGroupName = *t.FieldGroupName
+	}
+
+	return d
+}
+
+// ListPageTemplates returns a category's page templates (admin).
+func (s *Service) ListPageTemplates(ctx context.Context, categoryIDStr string) ([]WikiPageTemplateDTO, error) {
+	var categoryID pgtype.UUID
+	if err := categoryID.Scan(categoryIDStr); err != nil || !categoryID.Valid {
+		return nil, ErrWikiCategoryNotFound
+	}
+	if _, err := s.store.GetWikiTypeCategory(ctx, categoryID); err != nil {
+		return nil, err
+	}
+
+	templates, err := s.store.ListPageTemplates(ctx, categoryID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]WikiPageTemplateDTO, 0, len(templates))
+	for _, t := range templates {
+		out = append(out, wikiPageTemplateToDTO(t))
+	}
+
+	return out, nil
+}
+
+// CreateWikiPageTemplateRequest is the admin add-template payload.
+// //nolint:revive // exported: request DTO naming follows package convention
+type CreateWikiPageTemplateRequest struct {
+	Slug         string `json:"slug"`
+	Label        string `json:"label"`
+	FieldGroupID string `json:"field_group_id"`
+	Position     int32  `json:"position"`
+}
+
+// CreateWikiPageTemplate adds a page template under a category. An omitted
+// field_group_id auto-provisions the shared group wiki_{type}_page_{slug}
+// assigned to space_type:{slug} — one group across every space of the type
+// keeps item field keys comparable for JCE (§80).
+func (s *Service) CreateWikiPageTemplate(ctx context.Context, categoryIDStr string, req CreateWikiPageTemplateRequest) (WikiPageTemplateDTO, error) {
+	var categoryID pgtype.UUID
+	if err := categoryID.Scan(categoryIDStr); err != nil || !categoryID.Valid {
+		return WikiPageTemplateDTO{}, ErrWikiCategoryNotFound
+	}
+
+	cat, err := s.store.GetWikiTypeCategory(ctx, categoryID)
+	if err != nil {
+		return WikiPageTemplateDTO{}, err
+	}
+
+	wt, err := s.store.GetWikiType(ctx, cat.SpaceTypeID)
+	if err != nil {
+		return WikiPageTemplateDTO{}, err
+	}
+
+	slug := strings.TrimSpace(strings.ToLower(req.Slug))
+	if !wikiSlugPattern.MatchString(slug) {
+		return WikiPageTemplateDTO{}, fmt.Errorf("%w: invalid template slug", ErrInvalidInput)
+	}
+
+	label := strings.TrimSpace(req.Label)
+	if label == "" {
+		return WikiPageTemplateDTO{}, fmt.Errorf("%w: template label required", ErrInvalidInput)
+	}
+
+	var fgID pgtype.UUID
+	if strings.TrimSpace(req.FieldGroupID) == "" {
+		fgID, err = s.provisionPageTemplateGroup(ctx, wt.SpaceTypeSlug, slug, label)
+	} else {
+		fgID, err = s.validateFieldGroup(ctx, req.FieldGroupID)
+	}
+	if err != nil {
+		return WikiPageTemplateDTO{}, err
+	}
+
+	t, err := s.store.CreatePageTemplate(ctx, categoryID, slug, label, fgID, req.Position, false)
+	if err != nil {
+		return WikiPageTemplateDTO{}, err
+	}
+
+	if t.FieldGroupID.Valid && s.fields != nil {
+		if g, err := s.fields.GetFieldGroup(ctx, t.FieldGroupID); err == nil {
+			t.FieldGroupSlug = &g.Slug
+			t.FieldGroupName = &g.Name
+		}
+	}
+
+	return wikiPageTemplateToDTO(t), nil
+}
+
+// provisionPageTemplateGroup get-or-creates the template's dedicated field
+// group (slug wiki_{type}_page_{slug}) + its space_type:{slug} assignment —
+// the same get-or-create pattern as provisionCategoryGroup.
+func (s *Service) provisionPageTemplateGroup(ctx context.Context, typeSlug, pageSlug, label string) (pgtype.UUID, error) {
+	if s.fieldProvisioner == nil || s.fields == nil {
+		return pgtype.UUID{}, fmt.Errorf("%w: field_group_id required (group provisioning unavailable)", ErrInvalidInput)
+	}
+
+	groupSlug := "wiki_" + typeSlug + "_page_" + strings.ReplaceAll(pageSlug, "-", "_")
+	group, err := s.fieldProvisioner.GetFieldGroupBySlug(ctx, groupSlug)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, err
+		}
+		group, err = s.fieldProvisioner.CreateFieldGroup(ctx, label+" ("+typeSlug+")", groupSlug, nil, false)
+		if err != nil {
+			group, err = s.fieldProvisioner.GetFieldGroupBySlug(ctx, groupSlug)
+			if err != nil {
+				return pgtype.UUID{}, err
+			}
+		}
+	}
+
+	entityClass := "space_type:" + typeSlug
+	assignments, err := s.fields.ListAssignmentsByEntityClass(ctx, entityClass)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	assigned := false
+	for _, a := range assignments {
+		if a.GroupID == group.ID && !a.EntityID.Valid {
+			assigned = true
+			break
+		}
+	}
+	if !assigned {
+		if _, err := s.fieldProvisioner.CreateAssignment(ctx, gen.CreateAssignmentParams{
+			GroupID:     group.ID,
+			EntityClass: entityClass,
+			Position:    0,
+		}); err != nil {
+			retry, rerr := s.fields.ListAssignmentsByEntityClass(ctx, entityClass)
+			if rerr != nil {
+				return pgtype.UUID{}, fmt.Errorf("wiki: provision template group: %w", rerr)
+			}
+			for _, a := range retry {
+				if a.GroupID == group.ID && !a.EntityID.Valid {
+					return group.ID, nil
+				}
+			}
+			return pgtype.UUID{}, fmt.Errorf("wiki: provision template group assignment: %w", err)
+		}
+	}
+
+	return group.ID, nil
+}
+
+// UpdateWikiPageTemplateRequest is the admin patch payload; nil fields are
+// left unchanged. field_group_id rebinding follows the category contract:
+// an explicit value must resolve to a real group.
+// //nolint:revive // exported: request DTO naming follows package convention
+type UpdateWikiPageTemplateRequest struct {
+	Label        *string `json:"label"`
+	FieldGroupID *string `json:"field_group_id"`
+	Position     *int32  `json:"position"`
+}
+
+// UpdateWikiPageTemplate patches a template's label, group binding, and
+// position. Slug is immutable (page URLs).
+func (s *Service) UpdateWikiPageTemplate(ctx context.Context, idStr string, req UpdateWikiPageTemplateRequest) error {
+	var id pgtype.UUID
+	if err := id.Scan(idStr); err != nil || !id.Valid {
+		return ErrWikiPageTemplateNotFound
+	}
+
+	if req.Label != nil {
+		*req.Label = strings.TrimSpace(*req.Label)
+		if *req.Label == "" {
+			return fmt.Errorf("%w: template label required", ErrInvalidInput)
+		}
+	}
+
+	updateFG := req.FieldGroupID != nil
+	var fgID pgtype.UUID
+	if updateFG {
+		v, err := s.validateFieldGroup(ctx, *req.FieldGroupID)
+		if err != nil {
+			return err
+		}
+		fgID = v
+	}
+
+	return s.store.UpdatePageTemplate(ctx, id, req.Label, updateFG, fgID, req.Position)
+}
+
+// DeleteWikiPageTemplate removes a non-system template. Blocked while bound
+// pages carry approved prose; bound pages otherwise keep their stored
+// field_group_id (the binding survives deletion).
+func (s *Service) DeleteWikiPageTemplate(ctx context.Context, idStr string) error {
+	var id pgtype.UUID
+	if err := id.Scan(idStr); err != nil || !id.Valid {
+		return ErrWikiPageTemplateNotFound
+	}
+
+	t, err := s.store.GetPageTemplate(ctx, id)
+	if err != nil {
+		return err
+	}
+	if t.IsSystem {
+		return ErrWikiPageTemplateProtected
+	}
+
+	n, err := s.store.CountTemplateContentPages(ctx, id)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return ErrWikiPageTemplateInUse
+	}
+
+	return s.store.DeletePageTemplate(ctx, id)
 }

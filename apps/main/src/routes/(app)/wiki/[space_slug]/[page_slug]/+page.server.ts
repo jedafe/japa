@@ -4,7 +4,14 @@ import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
 import type { WikiPage, WikiPageIndex, SpaceDetail } from '$lib/types';
 
-type WikiApiCategory = { slug: string; label_key: string; label: string };
+type WikiApiCategory = {
+	slug: string;
+	label_key: string;
+	label: string;
+	/** §80 lazy template pages — sibling page links under this category,
+	 *  {name} already substituted. Present only on ?space= requests. */
+	page_templates?: { slug: string; label: string; position: number }[];
+};
 
 /**
  * Wiki page view at /wiki/{space_slug}/{page_slug} — fetches the current
@@ -38,6 +45,9 @@ export const load: PageServerLoad = async (event) => {
 			spaceSlug,
 			pageSlug,
 			page,
+			// §80 §8: ?section={token} is the same page's section-filtered
+			// view — "View more {section} prices" links land here.
+			section: event.url.searchParams.get('section') ?? '',
 			authed,
 			userPermissions,
 			loadError: false,
@@ -54,6 +64,7 @@ export const load: PageServerLoad = async (event) => {
 			spaceSlug,
 			pageSlug,
 			page: null,
+			section: event.url.searchParams.get('section') ?? '',
 			authed,
 			userPermissions,
 			loadError: true,

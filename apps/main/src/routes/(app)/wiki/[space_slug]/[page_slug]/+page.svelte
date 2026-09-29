@@ -6,12 +6,14 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
+	import WikiItemTables from '$lib/components/wiki/WikiItemTables.svelte';
+	import WikiRollupPanel from '$lib/components/wiki/WikiRollupPanel.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 	import { searchEntities } from '$lib/api/jce';
 	import type { ResolvedItem } from '$lib/types/jce';
-	import { BookOpen, ChevronRight, Lock, Pencil, History, Send } from 'lucide-svelte';
+	import { BookOpen, ChevronLeft, ChevronRight, Lock, Pencil, History, Send } from 'lucide-svelte';
 	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
@@ -154,6 +156,30 @@
 	let childEntities = $state<ResolvedItem[]>([]);
 	let childEntitiesLoading = $state(false);
 
+	// §80 Hierarchical UX — Prev/Next derives from the page's ordered
+	// sibling set (position-ordered, current flagged by the backend).
+	const siblings = $derived(data.page?.siblings ?? []);
+	const prevSibling = $derived.by(() => {
+		const i = siblings.findIndex((s) => s.current);
+		return i > 0 ? siblings[i - 1] : null;
+	});
+	const nextSibling = $derived.by(() => {
+		const i = siblings.findIndex((s) => s.current);
+		return i >= 0 && i < siblings.length - 1 ? siblings[i + 1] : null;
+	});
+	// Sibling pages beyond Prev/Next (e.g. "Prices in Toronto" from the
+	// Cost of Living page) — the "View more …" links in the mockups.
+	const otherSiblings = $derived(siblings.filter((s) => !s.current));
+
+	// §80 lazy template pages — the category's declared template slugs that
+	// aren't already materialized siblings, linked as discoverable targets.
+	const templateLinks = $derived.by(() => {
+		const templates = data.page?.page_templates ?? [];
+		const materialized = new Set(siblings.map((s) => s.slug));
+		materialized.add(data.pageSlug);
+		return templates.filter((tm) => !materialized.has(tm.slug));
+	});
+
 	$effect(() => {
 		const type = dataEntityType;
 		const spaceId = panelSpaceId;
@@ -196,7 +222,10 @@
 </SetSidebar>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Breadcrumb: Wiki / {kind} Guides / {space} / {page} -->
+	<!-- Breadcrumb: Wiki / {ancestors…} / {space} / {page} — the chain
+	     resolves from actual space links arbitrated by the declared type
+	     edges (§80 Hierarchical UX); falls back to the static kind label
+	     when no ancestors resolve. -->
 	<div class="border-b border-[var(--color-border)] px-4 py-2.5 sm:px-6">
 		<nav aria-label={t('a11y.breadcrumb', 'Breadcrumb')} class="min-w-0 text-xs text-[var(--color-muted)]">
 			<ol class="flex items-center gap-1.5">
@@ -205,8 +234,22 @@
 						{t('wiki.heading', 'Wiki')}
 					</a>
 				</li>
-				<li aria-hidden="true"><ChevronRight size={12} /></li>
-				<li>{crumbKind}</li>
+				{#if data.page?.ancestors?.length}
+					{#each data.page.ancestors as anc (anc.slug)}
+						<li aria-hidden="true"><ChevronRight size={12} /></li>
+						<li>
+							<a
+								href="/wiki/{encodeURIComponent(anc.slug)}"
+								class="truncate transition-colors hover:text-[var(--color-text)]"
+							>
+								{anc.name}
+							</a>
+						</li>
+					{/each}
+				{:else}
+					<li aria-hidden="true"><ChevronRight size={12} /></li>
+					<li>{crumbKind}</li>
+				{/if}
 				<li aria-hidden="true"><ChevronRight size={12} /></li>
 				<li>
 					<a
@@ -385,6 +428,50 @@
 						</div>
 					{/if}
 
+					<!-- §80 Hierarchical UX — the read-facing structured render: the
+					     descendant rollup (country/state category pages) and the bound
+					     group's itemized sections (city prices pages). The
+					     EntityFieldsPanel below stays the edit surface. -->
+					{#if data.page.rollup}
+						<WikiRollupPanel rollup={data.page.rollup} spaceSlug={spaceName} />
+					{/if}
+					{#if data.page.fields}
+						<div class="mt-6">
+							<WikiItemTables
+								group={data.page.fields}
+								activeSection={data.section || undefined}
+								allHref="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(
+									data.pageSlug
+								)}"
+								moreHref={(key) =>
+									`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(
+										data.pageSlug
+									)}?section=${encodeURIComponent(key)}`}
+							/>
+						</div>
+					{/if}
+
+					{#if otherSiblings.length > 0 || templateLinks.length > 0}
+						<nav class="mt-6 flex flex-wrap items-center gap-1.5" aria-label={t('wiki.more_pages', 'More in this section')}>
+							{#each otherSiblings as sib (sib.slug)}
+								<a
+									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(sib.slug)}"
+									class="inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
+								>
+									{sib.title}
+								</a>
+							{/each}
+							{#each templateLinks as tmpl (tmpl.slug)}
+								<a
+									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(tmpl.slug)}"
+									class="inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+								>
+									{tmpl.label}
+								</a>
+							{/each}
+						</nav>
+					{/if}
+
 					{#if structuredEditsOn && panelSpaceId}
 						<EntityFieldsPanel
 							entityType="space"
@@ -392,6 +479,36 @@
 							groupId={data.page.field_group_id ?? undefined}
 							groupSlug={data.page.field_group_slug ?? undefined}
 						/>
+					{/if}
+
+					{#if prevSibling || nextSibling}
+						<nav
+							class="mt-8 flex items-stretch justify-between gap-3 border-t border-[var(--color-border)] pt-4"
+							aria-label={t('wiki.page_nav', 'Page navigation')}
+						>
+							{#if prevSibling}
+								<a
+									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(prevSibling.slug)}"
+									class="inline-flex min-w-0 items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+								>
+									<ChevronLeft size={14} class="shrink-0" />
+									<span class="truncate">{prevSibling.title}</span>
+								</a>
+							{:else}
+								<span></span>
+							{/if}
+							{#if nextSibling}
+								<a
+									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(nextSibling.slug)}"
+									class="inline-flex min-w-0 items-center justify-end gap-1.5 text-right text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+								>
+									<span class="truncate">{nextSibling.title}</span>
+									<ChevronRight size={14} class="shrink-0" />
+								</a>
+							{:else}
+								<span></span>
+							{/if}
+						</nav>
 					{/if}
 
 					{#if structuredEditsOn && dataEntityType}

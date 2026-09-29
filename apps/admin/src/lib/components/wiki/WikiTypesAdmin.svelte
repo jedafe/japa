@@ -12,11 +12,12 @@
 		fieldGroupsAdminApiExtended,
 		spaceTypesApi,
 		type WikiTypeItem,
-		type WikiCategoryItem
+		type WikiCategoryItem,
+		type WikiPageTemplateItem
 	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, Pencil, Trash2, FolderTree, X, CheckCircle, XCircle } from 'lucide-svelte';
+	import { Eye, Pencil, Trash2, FolderTree, Layers, X, CheckCircle, XCircle } from 'lucide-svelte';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 
 	const canManage = $derived(hasPermission('wiki.manage'));
@@ -81,7 +82,10 @@
 	// ── Types table ─────────────────────────────────────────────────────────
 	let typesController = $state<EntityPageController | undefined>(undefined);
 	let catsController = $state<EntityPageController | undefined>(undefined);
+	let tplsController = $state<EntityPageController | undefined>(undefined);
 	let selectedType = $state<WikiTypeItem | null>(null);
+	// §80 page templates — the category row whose template pages are open.
+	let selectedCategory = $state<WikiCategoryItem | null>(null);
 
 	// Map a type row: EntityPage's id-based row actions need `id`.
 	function mapType(row: WikiTypeItem) {
@@ -162,6 +166,7 @@
 			icon: FolderTree,
 			onclick: (row) => {
 				selectedType = row as WikiTypeItem;
+				selectedCategory = null;
 			}
 		},
 		{
@@ -308,8 +313,31 @@
 			getSelectedLabel: (id: string) => groupOptions.find((o) => o.value === id)?.label ?? id,
 			help: t('app.wiki.cat_group_help', 'The bound group is the page’s shared structured schema — a dedicated group is created automatically when none is picked. Only pick an existing group to deliberately share a schema.')
 		},
-		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' }
+		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' },
+		// §80 Hierarchical UX: descendant-aggregation config, edited as a
+		// JSON document — {enabled, metrics[], levels[]?}. Empty = disabled.
+		{
+			key: 'rollup_json',
+			label: t('app.wiki.cat_rollup', 'Rollup config (JSON)'),
+			type: 'textarea',
+			placeholder: '{"enabled": true, "metrics": ["min","avg","max"], "levels": ["city"]}',
+			help: t('app.wiki.cat_rollup_help', 'Aggregates descendant spaces’ numeric/price_range field values onto this category’s page. levels omitted = every declared child type.')
+		}
 	];
+
+	// Parse the rollup textarea into the PATCH payload — empty clears the
+	// config, valid JSON object sets it, anything else fails the submit.
+	function parseRollupJson(raw: unknown): { ok: boolean; value?: Record<string, unknown> | null; error?: string } {
+		const s = String(raw ?? '').trim();
+		if (!s) return { ok: true, value: null };
+		try {
+			const v = JSON.parse(s) as unknown;
+			if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new Error('not object');
+			return { ok: true, value: v as Record<string, unknown> };
+		} catch {
+			return { ok: false, error: t('app.wiki.cat_rollup_bad', 'Rollup config must be a JSON object — e.g. {"enabled":true,"metrics":["min","avg","max"]}') };
+		}
+	}
 
 	const catActions: ActionItem[] = [
 		{ label: t('common.view', 'View'), icon: Eye, onclick: (row, ctx) => ctx?.openView(row) },
@@ -318,6 +346,13 @@
 			icon: Pencil,
 			onclick: (row, ctx) => ctx?.openEdit(row),
 			show: () => canManage
+		},
+		{
+			label: t('app.wiki.manage_templates', 'Pages'),
+			icon: Layers,
+			onclick: (row) => {
+				selectedCategory = row as WikiCategoryItem;
+			}
 		},
 		{
 			label: t('common.delete', 'Delete'),
@@ -356,6 +391,14 @@
 									? `${v}<span class="block font-mono text-xs" style="color: var(--color-muted)">${row.field_group_slug ?? ''}</span>`
 									: `<span class="text-xs" style="color: var(--color-muted)">${t('app.wiki.unbound', 'unbound')}</span>`
 						},
+						{
+							key: 'rollup',
+							label: t('app.wiki.cat_rollup_col', 'Rollup'),
+							render: (v: unknown) =>
+								v && (v as { enabled?: boolean }).enabled
+									? `<span class="text-xs font-medium" style="color: var(--color-primary)">${t('app.wiki.rollup_on', 'on')}</span>`
+									: `<span class="text-xs" style="color: var(--color-muted)">—</span>`
+						},
 						{ key: 'position', label: t('app.wiki.cat_position', 'Pos'), width: 64 },
 						{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), componentSnippet: BoolCell }
 					],
@@ -367,7 +410,12 @@
 					load: async ({ page, pageSize, q }) => {
 						const res = await wikiAdminApi.listTypeCategories(sel.space_type_id);
 						if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load categories'));
-						let rows = (res.data as WikiCategoryItem[]) ?? [];
+						// The rollup JSONB edits as a JSON document — flatten it
+						// into a string field the textarea can bind.
+						let rows = ((res.data as WikiCategoryItem[]) ?? []).map((r) => ({
+							...r,
+							rollup_json: r.rollup ? JSON.stringify(r.rollup) : ''
+						}));
 						const query = (q ?? '').trim().toLowerCase();
 						if (query)
 							rows = rows.filter(
@@ -381,12 +429,15 @@
 						return { data: rows.slice(start, start + pageSize), total, totalPages };
 					},
 					create: async (body) => {
+						const rollup = parseRollupJson(body.rollup_json);
+						if (!rollup.ok) return { ok: false, error: rollup.error };
 						const res = await wikiAdminApi.createCategory(sel.space_type_id, {
 							slug: String(body.slug ?? '').trim(),
 							category: String(body.category ?? '').trim(),
 							label: String(body.label ?? '').trim(),
 							field_group_id: String(body.field_group_id ?? ''),
-							position: Number(body.position ?? 0)
+							position: Number(body.position ?? 0),
+							...(rollup.value !== null ? { rollup: rollup.value } : {})
 						});
 						return res.ok ? { ok: true } : { ok: false, error: res.error };
 					},
@@ -394,11 +445,16 @@
 						// Slug/category are immutable — the PATCH contract carries
 						// label, position, and the group binding. The binding is
 						// mandatory (NOT NULL), so an empty selection is omitted —
-						// the server rejects "" rather than clearing.
+						// the server rejects "" rather than clearing. Rollup is
+						// three-state: the seeded textarea round-trips the stored
+						// config, an emptied field clears it (null).
+						const rollup = parseRollupJson(body.rollup_json);
+						if (!rollup.ok) return { ok: false, error: rollup.error };
 						const res = await wikiAdminApi.updateCategory(id, {
 							label: String(body.label ?? '').trim(),
 							position: Number(body.position ?? 0),
-							field_group_id: String(body.field_group_id ?? '').trim() || undefined
+							field_group_id: String(body.field_group_id ?? '').trim() || undefined,
+							rollup: rollup.value
 						});
 						return res.ok ? { ok: true } : { ok: false, error: res.error };
 					},
@@ -406,6 +462,122 @@
 						const res = await wikiAdminApi.deleteCategory(id);
 						return res.ok ? { ok: true } : { ok: false, error: res.error };
 					}
+		};
+	});
+
+	// ── Page templates table (per selected category) ─────────────────────
+	// §80 page templates: sibling wiki pages under one category, each bound
+	// to a shared provisioned group so item keys stay JCE-comparable.
+
+	const tplFields: FieldDef[] = [
+		{
+			key: 'slug',
+			label: t('app.wiki.tpl_slug', 'Page slug'),
+			type: 'text',
+			required: true,
+			readonlyInEdit: true,
+			placeholder: 'prices',
+			help: t('app.wiki.tpl_slug_help', 'URL segment — /wiki/{entity}/{slug}. Lowercase, hyphenated; immutable once created.')
+		},
+		{ key: 'label', label: t('app.wiki.tpl_label', 'Label'), type: 'text', required: true, placeholder: 'Prices' },
+		{
+			key: 'field_group_id',
+			label: t('app.wiki.cat_group', 'Field group'),
+			type: 'autocomplete',
+			placeholder: t('app.wiki.cat_group_ph', 'Search field groups…'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: groupFetcher,
+			initialFetcher: async () => filterOptions(groupOptions, ''),
+			getSelectedLabel: (id: string) => groupOptions.find((o) => o.value === id)?.label ?? id,
+			help: t('app.wiki.tpl_group_help', 'Blank = auto-provision a shared wiki_{type}_page_{slug} group — keep it shared so item keys stay comparable across spaces.')
+		},
+		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' }
+	];
+
+	const tplActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row, ctx) => ctx?.openView(row) },
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row, ctx) => ctx?.openEdit(row),
+			show: () => canManage
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row, ctx) => ctx?.openDelete(row),
+			// System templates are undeletable (backend also rejects them).
+			show: (row) => canManage && !(row as WikiPageTemplateItem).is_system
+		}
+	];
+
+	const tplConfig = $derived.by<EntityPageConfig | null>(() => {
+		const sel = selectedCategory;
+		if (!sel) return null;
+		return {
+			title: t('app.wiki.templates_title', 'Pages — {category}').replace('{category}', sel.label || sel.slug),
+			description: t(
+				'app.wiki.templates_desc',
+				'Sibling pages under this category (e.g. "Prices in {city}"). Each may bind its own field group.'
+			),
+			createLabel: t('app.wiki.tpl_create', 'Add page template'),
+			createPermission: 'wiki.manage',
+			pageSize: 25,
+			columns: [
+				{ key: 'slug', label: t('app.wiki.tpl_slug', 'Slug'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+				{ key: 'label', label: t('app.wiki.tpl_label', 'Label') },
+				{
+					key: 'field_group_name',
+					label: t('app.wiki.cat_group', 'Field group'),
+					render: (v: string, row: WikiPageTemplateItem) =>
+						v
+							? `${v}<span class="block font-mono text-xs" style="color: var(--color-muted)">${row.field_group_slug ?? ''}</span>`
+							: `<span class="text-xs" style="color: var(--color-muted)">${t('app.wiki.unbound', 'unbound')}</span>`
+				},
+				{ key: 'position', label: t('app.wiki.cat_position', 'Pos'), width: 64 },
+				{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), componentSnippet: BoolCell }
+			],
+			actions: tplActions,
+			fields: tplFields,
+			urlSync: false,
+			load: async ({ page, pageSize, q }) => {
+				const res = await wikiAdminApi.listPageTemplates(sel.id);
+				if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load page templates'));
+				let rows = (res.data as WikiPageTemplateItem[]) ?? [];
+				const query = (q ?? '').trim().toLowerCase();
+				if (query)
+					rows = rows.filter(
+						(r) => r.slug.toLowerCase().includes(query) || r.label.toLowerCase().includes(query)
+					);
+				const total = rows.length;
+				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				const start = page * pageSize;
+				return { data: rows.slice(start, start + pageSize), total, totalPages };
+			},
+			create: async (body) => {
+				const res = await wikiAdminApi.createPageTemplate(sel.id, {
+					slug: String(body.slug ?? '').trim(),
+					label: String(body.label ?? '').trim(),
+					field_group_id: String(body.field_group_id ?? '').trim() || undefined,
+					position: Number(body.position ?? 0)
+				});
+				return res.ok ? { ok: true } : { ok: false, error: res.error };
+			},
+			update: async (id, body) => {
+				// Slug immutable; group binding omitted when empty (the server
+				// keeps the current binding rather than rejecting "").
+				const res = await wikiAdminApi.updatePageTemplate(id, {
+					label: String(body.label ?? '').trim(),
+					position: Number(body.position ?? 0),
+					field_group_id: String(body.field_group_id ?? '').trim() || undefined
+				});
+				return res.ok ? { ok: true } : { ok: false, error: res.error };
+			},
+			remove: async (id) => {
+				const res = await wikiAdminApi.deletePageTemplate(id);
+				return res.ok ? { ok: true } : { ok: false, error: res.error };
+			}
 		};
 	});
 </script>
@@ -433,6 +605,22 @@
 			</div>
 			{#key selectedType.space_type_id}
 				<EntityPage config={catConfig} bind:controller={catsController} />
+			{/key}
+		</section>
+	{/if}
+
+	{#if selectedCategory && tplConfig}
+		<section class="rounded-[12px] border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
+			<div class="mb-3 flex items-center justify-between">
+				<p class="text-xs" style="color: var(--color-muted)">
+					{t('app.wiki.templates_hint', 'Editing the page templates under this category.')}
+				</p>
+				<Button variant="ghost" onclick={() => (selectedCategory = null)}>
+					<X size={14} class="mr-1" />{t('common.close', 'Close')}
+				</Button>
+			</div>
+			{#key selectedCategory.id}
+				<EntityPage config={tplConfig} bind:controller={tplsController} />
 			{/key}
 		</section>
 	{/if}

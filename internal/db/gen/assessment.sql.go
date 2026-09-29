@@ -394,7 +394,7 @@ func (q *Queries) GetAssessmentFormByID(ctx context.Context, id pgtype.UUID) (Fo
 
 const getAssessmentFormFields = `-- name: GetAssessmentFormFields :many
 
-SELECT cf.id, cf.group_id, cf.label, cf.key, cf.field_type, cf.options, cf.embed_platforms, cf.placeholder, cf.default_value, cf.is_required, cf.is_system, cf.show_in_frontend, cf.filterable, cf.sortable, cf.searchable, cf.position, cf.created_at, cf.config
+SELECT cf.id, cf.group_id, cf.label, cf.key, cf.field_type, cf.options, cf.embed_platforms, cf.placeholder, cf.default_value, cf.is_required, cf.is_system, cf.show_in_frontend, cf.filterable, cf.sortable, cf.searchable, cf.position, cf.created_at, cf.config, cf.section
 FROM custom_field_group_assignments a
 JOIN custom_fields cf ON cf.group_id = a.group_id
 WHERE a.entity_class = 'form' AND a.entity_id = $1
@@ -434,6 +434,7 @@ func (q *Queries) GetAssessmentFormFields(ctx context.Context, formID pgtype.UUI
 			&i.Position,
 			&i.CreatedAt,
 			&i.Config,
+			&i.Section,
 		); err != nil {
 			return nil, err
 		}

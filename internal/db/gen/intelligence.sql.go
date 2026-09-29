@@ -2326,6 +2326,28 @@ func (q *Queries) ListVideoChannelSourcesDue(ctx context.Context, arg ListVideoC
 	return items, nil
 }
 
+const purgeRejectedIntelRecords = `-- name: PurgeRejectedIntelRecords :execrows
+DELETE FROM intel_records
+WHERE status = 'rejected' AND $1::int > 0
+  AND last_verified_at < now() - make_interval(days => $1)
+`
+
+// Retention sweep (intel:prune_rejected_records): permanently deletes
+// records whose status is 'rejected' and whose last_verified_at — stamped
+// by UpdateIntelRecordStatus on every status transition — is older than
+// $1 days (intel.rejected_retention_days). Rejected records are terminal:
+// they can never promote, so retention is bounded for auditability only.
+// $1 <= 0 deletes nothing — the guard makes "retention disabled" safe even
+// if a caller forgets the check (the task handler already guards).
+// Returns the deleted row count.
+func (q *Queries) PurgeRejectedIntelRecords(ctx context.Context, dollar_1 int32) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeRejectedIntelRecords, dollar_1)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateIntelRecordExtracted = `-- name: UpdateIntelRecordExtracted :exec
 UPDATE intel_records SET extracted = $2, last_verified_at = now() WHERE id = $1
 `
