@@ -25,6 +25,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func main() {
@@ -37,6 +38,14 @@ func main() {
 
 	if *sourceID == "" {
 		slog.Error("-source flag is required")
+		os.Exit(1)
+	}
+
+	// Validate the flag locally — a malformed value would fail opaquely as a
+	// Postgres "invalid input syntax for type uuid" mid-query.
+	var sourceUUID pgtype.UUID
+	if err := sourceUUID.Scan(*sourceID); err != nil || !sourceUUID.Valid {
+		slog.Error("-source must be a valid UUID", "value", *sourceID)
 		os.Exit(1)
 	}
 

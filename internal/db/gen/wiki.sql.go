@@ -655,7 +655,7 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
 WHERE sp.slug = $1 AND wp.slug = $2
-  AND wp.is_active = true
+  AND wp.is_active = true AND wp.deleted_at IS NULL
 LIMIT 1
 `
 
@@ -1560,6 +1560,29 @@ SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE id = $1) AS exists
 // 409 page_not_deleted.
 func (q *Queries) WikiPageExists(ctx context.Context, id pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, wikiPageExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const wikiPageRowExistsBySlug = `-- name: WikiPageRowExistsBySlug :one
+SELECT EXISTS (
+    SELECT 1 FROM wiki_pages wp
+    JOIN spaces sp ON sp.id = wp.space_id
+    WHERE sp.slug = $1 AND wp.slug = $2
+) AS exists
+`
+
+type WikiPageRowExistsBySlugParams struct {
+	SpaceSlug string `json:"space_slug"`
+	PageSlug  string `json:"page_slug"`
+}
+
+// Filter-free existence check (§80 lazy pages): distinguishes "no row —
+// eligible for lazy template render" from "row exists but is inactive or
+// soft-deleted — real 404, the lazy path must not resurrect it".
+func (q *Queries) WikiPageRowExistsBySlug(ctx context.Context, arg WikiPageRowExistsBySlugParams) (bool, error) {
+	row := q.db.QueryRow(ctx, wikiPageRowExistsBySlug, arg.SpaceSlug, arg.PageSlug)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

@@ -704,10 +704,19 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 
 	input.SpaceSlug = spaceSlug
 
-	pageID, revID, err := h.service.CreatePageWithRevision(r.Context(), user.UserID, input)
+	pageID, revID, pageSlug, err := h.service.CreatePageWithRevision(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidInput) {
+			// Strip the sentinel's own text — clients see the specific
+			// detail ("invalid page slug"), not "invalid input: …".
+			msg := strings.TrimPrefix(err.Error(), ErrInvalidInput.Error()+": ")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", msg)
+
 			return
 		}
 
@@ -731,7 +740,7 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]any{
 			"page_id":     pageID,
 			"revision_id": revID,
-			"slug":        input.Slug,
+			"slug":        pageSlug,
 			"status":      "pending",
 		},
 	})
@@ -846,6 +855,13 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidInput) {
+			msg := strings.TrimPrefix(err.Error(), ErrInvalidInput.Error()+": ")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", msg)
+
 			return
 		}
 

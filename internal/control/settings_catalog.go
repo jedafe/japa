@@ -383,9 +383,10 @@ var settingsCatalog = map[string]settingMeta{
 	"story.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 
 	// Destination Wiki (§80, ADR-088)
-	"wiki.enabled":                {Type: "bool", DefaultValue: "false", Description: "Global wiki toggle.", Panel: "control"},
-	"wiki.community_edits":        {Type: "bool", DefaultValue: "true", Description: "Allow community edits when wiki is enabled.", Panel: "control"},
-	"wiki.min_reputation_to_edit": {Type: "int", DefaultValue: "100", Description: "Reputation score required to submit a wiki edit.", Panel: "control"},
+	"wiki.enabled":                   {Type: "bool", DefaultValue: "false", Description: "Global wiki toggle.", Panel: "control"},
+	"wiki.community_edits":           {Type: "bool", DefaultValue: "true", Description: "Allow community edits when wiki is enabled.", Panel: "control"},
+	"wiki.min_reputation_to_edit":    {Type: "int", DefaultValue: "100", Description: "Reputation score required to submit a wiki edit.", Panel: "control"},
+	"wiki.rollup_default_rows_limit": {Type: "int", DefaultValue: "50", Min: 1, Description: "Fallback cap on rollup descendant rows when a category's rollup.section_limit is unset or ≤0 (§80).", Panel: "control"},
 
 	// Scam Alert Board (§81, ADR-089)
 	"scam_alert.enabled":           {Type: "bool", DefaultValue: "false", Description: "Global scam alert board toggle.", Panel: "control"},
@@ -603,6 +604,7 @@ var settingsCatalog = map[string]settingMeta{
 	"intel.discovery.max_trust_level":     {Type: "int", DefaultValue: "2", Min: 1, Max: 5, Description: "Only sources at or above this trust tier (lower = more trusted) contribute outbound-link source candidates.", Panel: "control"},
 	"intel.discovery.domain_blocklist":    {Type: "json", DefaultValue: "[]", Description: "JSON array of hostnames never auto-proposed as sources (suffix match); supplements the built-in share/widget denylist.", Panel: "control"},
 	"intel.discovery.max_per_crawl":       {Type: "int", DefaultValue: "10", Min: 1, Description: "Max proposed sources a single intel:harvest_outbound task may create.", Panel: "control"},
+	"intel.rejected_retention_days":       {Type: "int", DefaultValue: "7", Min: 0, Description: "Days a rejected intel_records row is kept before the daily intel:prune_rejected_records sweep deletes it; 0 disables the sweep.", Panel: "control"},
 
 	// Generic Comparison System (§30, ADR-030)
 	"comparison.auto_dimension_hints":         {Type: "json", DefaultValue: `{"default":["Overview","Key features","Pros","Cons","Overall rating"],"groups":[{"hints":["price","cost","plan","package","version","edition","model"],"dimensions":["Price","Value for money"],"prepend":true},{"hints":["course","university","school","program","degree","certification"],"dimensions":["Curriculum","Duration","Cost","Accreditation"],"prepend":false}]}`, Description: "Heuristic hints used by POST /comparisons/auto-dimensions to derive dimension suggestions from item names. Admin-configurable per platform.", Panel: "control"},

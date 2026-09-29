@@ -138,7 +138,12 @@
 		bulkBusy = `${queueName}:${action}`;
 		bulkError = '';
 		try {
-			const result = await api<{ errors?: string[] }>(`/control/queue/${queueName}/${action}`, { method: 'POST' });
+			// Purge is irreversible — the API requires an explicit confirm flag
+			// in the body, on top of this dialog.
+			const result = await api<{ errors?: string[] }>(`/control/queue/${queueName}/${action}`, {
+				method: 'POST',
+				...(action === 'purge' ? { body: { confirm: true } } : {})
+			});
 			if (result.ok) {
 				// Partial failures ride the 200 payload — destructive ops must
 				// never report clean success while a queue errored.

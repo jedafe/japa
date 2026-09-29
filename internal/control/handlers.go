@@ -1037,6 +1037,50 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// existingQueues returns the set of queue names Asynq knows about
+// (Inspector.Queues is the only public existence check — the *All* delete
+// methods return an internal NotFound kind for never-created queues, not
+// the exported ErrQueueNotFound). The bool reports whether the lookup
+// succeeded; callers must ignore the map when it is false.
+func existingQueues(inspector *asynq.Inspector) (map[string]bool, bool) {
+	names, err := inspector.Queues()
+	if err != nil {
+		return nil, false
+	}
+
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+
+	return set, true
+}
+
+// listAllTasks pages through an Inspector list method — the Inspector's
+// default page size is 30, so a single call silently truncates larger
+// state sets (e.g. dead-letter queues).
+func listAllTasks(
+	listFn func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error),
+	queueName string,
+) ([]*asynq.TaskInfo, error) {
+	const pageSize = 200
+
+	var all []*asynq.TaskInfo
+
+	for page := 1; ; page++ {
+		entries, err := listFn(queueName, asynq.Page(page), asynq.PageSize(pageSize))
+		if err != nil {
+			return nil, err
+		}
+
+		all = append(all, entries...)
+
+		if len(entries) < pageSize {
+			return all, nil
+		}
+	}
+}
+
 // ListDLQ lists dead-letter queue tasks for the control-panel queue monitor.
 func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
@@ -1047,7 +1091,7 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	tasks := make([]map[string]any, 0)
 
 	for _, queueName := range []string{"critical", "default", "low"} {
-		entries, err := h.Inspector.ListArchivedTasks(queueName)
+		entries, err := listAllTasks(h.Inspector.ListArchivedTasks, queueName)
 		if err != nil {
 			slog.Debug("dlq: list tasks failed (queue may not exist yet)", "queue", queueName, "error", err)
 			continue
@@ -1133,12 +1177,13 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Collect tasks from each state, best-effort (skip non-existent queues).
-	pending, _ := h.Inspector.ListPendingTasks(queueName)
-	active, _ := h.Inspector.ListActiveTasks(queueName)
-	scheduled, _ := h.Inspector.ListScheduledTasks(queueName)
-	retry, _ := h.Inspector.ListRetryTasks(queueName)
-	archived, _ := h.Inspector.ListArchivedTasks(queueName)
-	completed, _ := h.Inspector.ListCompletedTasks(queueName)
+	// All states are paged — the Inspector caps a single call at 30 rows.
+	pending, _ := listAllTasks(h.Inspector.ListPendingTasks, queueName)
+	active, _ := listAllTasks(h.Inspector.ListActiveTasks, queueName)
+	scheduled, _ := listAllTasks(h.Inspector.ListScheduledTasks, queueName)
+	retry, _ := listAllTasks(h.Inspector.ListRetryTasks, queueName)
+	archived, _ := listAllTasks(h.Inspector.ListArchivedTasks, queueName)
+	completed, _ := listAllTasks(h.Inspector.ListCompletedTasks, queueName)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -1332,15 +1377,29 @@ func (h *Handlers) PurgeQueueTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !requireBulkConfirm(w, r, "purge") {
+		return
+	}
+
 	queues := queueBulkTargetQueues(chi.URLParam(r, "queue_name"))
 	if queues == nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_queue", "queue_name must be critical, default, low, or all")
 		return
 	}
 
+	// Asynq creates queues lazily on first enqueue and DeleteAllArchivedTasks
+	// returns an internal NotFound kind for never-created queues (not the
+	// exported ErrQueueNotFound), so gate on Inspector.Queues() — a queue
+	// that never existed is "0 deleted", not a failure. If the lookup itself
+	// fails, attempt deletes anyway and surface real errors.
+	queueExists, lookupOK := existingQueues(h.Inspector)
+
 	purged := 0
 	var failures []string
 	for _, queueName := range queues {
+		if lookupOK && !queueExists[queueName] {
+			continue
+		}
 		n, err := h.Inspector.DeleteAllArchivedTasks(queueName)
 		if err != nil {
 			slog.Warn("queue purge: partial failure", "queue", queueName, "error", err)
@@ -1358,29 +1417,74 @@ func (h *Handlers) PurgeQueueTasks(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"purged": purged, "errors": failures}})
 }
 
-// DiscardAllDLQ discards every task across the dead-letter queues.
+// requireBulkConfirm enforces the {"confirm":true} body contract on
+// irreversible bulk queue ops (purge, DLQ discard-all) — a bare POST
+// (script, replay, or fat-fingered fetch) cannot drain the dead-letter
+// queues. An absent body decodes as unconfirmed. Writes the error and
+// returns false when the gate fails; op names the operation in the
+// refusal message.
+func requireBulkConfirm(w http.ResponseWriter, r *http.Request, op string) bool {
+	var body struct {
+		Confirm bool `json:"confirm"`
+	}
+
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+			return false
+		}
+	}
+
+	if !body.Confirm {
+		errpkg.WriteError(w, http.StatusBadRequest, "confirmation_required", "Queue "+op+" permanently deletes queued tasks; resend with {\"confirm\": true}")
+		return false
+	}
+
+	return true
+}
+
+// DiscardAllDLQ discards every task across the dead-letter queues —
+// permanently; gated by requireBulkConfirm like PurgeQueueTasks. Uses
+// DeleteAllArchivedTasks (atomic, unbounded) — ListArchivedTasks is
+// capped at 30 rows per call and would silently strand the remainder.
 func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
 		return
 	}
 
+	if !requireBulkConfirm(w, r, "discard-all") {
+		return
+	}
+
+	queueExists, lookupOK := existingQueues(h.Inspector)
+
 	totalDiscarded := 0
 
+	var failures []string
+
 	for _, queueName := range []string{"critical", "default", "low"} {
-		entries, err := h.Inspector.ListArchivedTasks(queueName)
-		if err != nil {
+		if lookupOK && !queueExists[queueName] {
 			continue
 		}
 
-		for _, entry := range entries {
-			if err := h.Inspector.DeleteTask(queueName, entry.ID); err == nil {
-				totalDiscarded++
-			}
+		n, err := h.Inspector.DeleteAllArchivedTasks(queueName)
+		if err != nil {
+			slog.Warn("dlq discard-all: delete failed", "queue", queueName, "error", err)
+			failures = append(failures, queueName+": "+err.Error())
+
+			continue
 		}
+
+		totalDiscarded += n
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"discarded": totalDiscarded}})
+	if totalDiscarded == 0 && len(failures) > 0 {
+		errpkg.WriteError(w, http.StatusInternalServerError, "queue_op_failed", "Discard failed: "+strings.Join(failures, "; "))
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"discarded": totalDiscarded, "errors": failures}})
 }
 
 // ---------------------------------------------------------------------------
