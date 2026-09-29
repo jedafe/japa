@@ -945,6 +945,9 @@ WHERE sp.status = 'active'
   AND ($2::text = '' OR sp.region = $2)
   AND ($3::text = '' OR sp.name ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = $4))
+  -- A space is never "within" itself — also guards a cyclic link that
+  -- would otherwise let the target match its own ancestor walk.
+  AND ($5::text = '' OR sp.slug <> $5)
   AND ($5::text = '' OR EXISTS (
         -- §80 directories: ancestor walk (≤3 hops) over
         -- space_parent_spaces ∪ parent_id — the same edges

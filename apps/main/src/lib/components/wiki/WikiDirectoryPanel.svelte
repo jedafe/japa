@@ -22,14 +22,13 @@
 
 	// Distinct child types in the listing — a multi-level directory (e.g.
 	// states + universities) gets a type filter; single-type directories
-	// render flat.
+	// render flat. directory.levels covers the full (uncapped) listing —
+	// children alone would hide a type whose entries all sit past the cap.
 	const childTypes = $derived.by(() => {
-		const seen = new Map<string, string>();
-		for (const c of directory.children) {
-			const key = c.type_slug || c.level;
-			if (!seen.has(key)) seen.set(key, key);
-		}
-		return [...seen.keys()];
+		if (directory.levels?.length) return directory.levels;
+		const seen = new Set<string>();
+		for (const c of directory.children) seen.add(c.type_slug || c.level);
+		return [...seen];
 	});
 
 	let selectedType = $state<string | null>(null); // null = all types

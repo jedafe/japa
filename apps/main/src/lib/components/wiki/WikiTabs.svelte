@@ -23,9 +23,6 @@
 		/** §80 directories — the stub IS the child listing; link it rather
 		 *  than a sibling page that lacks the directory payload. */
 		directory?: boolean;
-		/** §80 lazy template pages — declared sibling links; used for the
-		 *  stub fallback when nothing is materialized. */
-		page_templates?: { slug: string; label: string; position: number }[];
 	}
 
 	interface Props {

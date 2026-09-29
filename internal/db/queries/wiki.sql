@@ -77,6 +77,9 @@ WHERE sp.status = 'active'
   AND (@region::text = '' OR sp.region = @region)
   AND (@search::text = '' OR sp.name ILIKE '%' || @search || '%')
   AND (@parent::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = @parent))
+  -- A space is never "within" itself — also guards a cyclic link that
+  -- would otherwise let the target match its own ancestor walk.
+  AND (@within::text = '' OR sp.slug <> @within)
   AND (@within::text = '' OR EXISTS (
         -- §80 directories: ancestor walk (≤3 hops) over
         -- space_parent_spaces ∪ parent_id — the same edges
