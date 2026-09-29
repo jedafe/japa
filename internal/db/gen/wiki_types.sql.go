@@ -142,9 +142,9 @@ func (q *Queries) CreateWikiPageTemplate(ctx context.Context, arg CreateWikiPage
 }
 
 const createWikiTypeCategory = `-- name: CreateWikiTypeCategory :one
-INSERT INTO wiki_type_categories (space_type_id, slug, category, label, field_group_id, position, is_system, rollup)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, space_type_id, slug, category, label, field_group_id, position, is_system, rollup, created_at
+INSERT INTO wiki_type_categories (space_type_id, slug, category, label, field_group_id, position, is_system, rollup, icon)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, space_type_id, slug, category, label, field_group_id, position, is_system, rollup, icon, created_at
 `
 
 type CreateWikiTypeCategoryParams struct {
@@ -156,6 +156,7 @@ type CreateWikiTypeCategoryParams struct {
 	Position     int32       `json:"position"`
 	IsSystem     bool        `json:"is_system"`
 	Rollup       []byte      `json:"rollup"`
+	Icon         *string     `json:"icon"`
 }
 
 type CreateWikiTypeCategoryRow struct {
@@ -168,6 +169,7 @@ type CreateWikiTypeCategoryRow struct {
 	Position     int32              `json:"position"`
 	IsSystem     bool               `json:"is_system"`
 	Rollup       []byte             `json:"rollup"`
+	Icon         *string            `json:"icon"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -181,6 +183,7 @@ func (q *Queries) CreateWikiTypeCategory(ctx context.Context, arg CreateWikiType
 		arg.Position,
 		arg.IsSystem,
 		arg.Rollup,
+		arg.Icon,
 	)
 	var i CreateWikiTypeCategoryRow
 	err := row.Scan(
@@ -193,6 +196,7 @@ func (q *Queries) CreateWikiTypeCategory(ctx context.Context, arg CreateWikiType
 		&i.Position,
 		&i.IsSystem,
 		&i.Rollup,
+		&i.Icon,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -279,7 +283,7 @@ func (q *Queries) GetSpaceTypeIDBySlug(ctx context.Context, slug string) (pgtype
 
 const getWikiCategoryForSpace = `-- name: GetWikiCategoryForSpace :one
 SELECT wtc.id, wtc.space_type_id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id,
-       wtc.position, wtc.is_system, wtc.rollup, wtc.created_at,
+       wtc.position, wtc.is_system, wtc.rollup, wtc.icon, wtc.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
@@ -303,6 +307,7 @@ type GetWikiCategoryForSpaceRow struct {
 	Position       int32              `json:"position"`
 	IsSystem       bool               `json:"is_system"`
 	Rollup         []byte             `json:"rollup"`
+	Icon           *string            `json:"icon"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	FieldGroupSlug *string            `json:"field_group_slug"`
 	FieldGroupName *string            `json:"field_group_name"`
@@ -324,6 +329,7 @@ func (q *Queries) GetWikiCategoryForSpace(ctx context.Context, arg GetWikiCatego
 		&i.Position,
 		&i.IsSystem,
 		&i.Rollup,
+		&i.Icon,
 		&i.CreatedAt,
 		&i.FieldGroupSlug,
 		&i.FieldGroupName,
@@ -454,7 +460,7 @@ func (q *Queries) GetWikiPageTemplateForSpace(ctx context.Context, arg GetWikiPa
 
 const getWikiTypeCategory = `-- name: GetWikiTypeCategory :one
 SELECT id, space_type_id, slug, category, label, field_group_id,
-       position, is_system, rollup, created_at
+       position, is_system, rollup, icon, created_at
 FROM wiki_type_categories
 WHERE id = $1
 `
@@ -469,6 +475,7 @@ type GetWikiTypeCategoryRow struct {
 	Position     int32              `json:"position"`
 	IsSystem     bool               `json:"is_system"`
 	Rollup       []byte             `json:"rollup"`
+	Icon         *string            `json:"icon"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -485,6 +492,7 @@ func (q *Queries) GetWikiTypeCategory(ctx context.Context, id pgtype.UUID) (GetW
 		&i.Position,
 		&i.IsSystem,
 		&i.Rollup,
+		&i.Icon,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -545,7 +553,7 @@ func (q *Queries) InsertWikiTypeParent(ctx context.Context, arg InsertWikiTypePa
 }
 
 const listAllWikiCategories = `-- name: ListAllWikiCategories :many
-SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup,
+SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,
        st.slug AS space_type_slug
 FROM wiki_type_categories wtc
 JOIN wiki_type_configs cfg ON cfg.space_type_id = wtc.space_type_id AND cfg.enabled = true
@@ -561,6 +569,7 @@ type ListAllWikiCategoriesRow struct {
 	Position      int32       `json:"position"`
 	IsSystem      bool        `json:"is_system"`
 	Rollup        []byte      `json:"rollup"`
+	Icon          *string     `json:"icon"`
 	SpaceTypeSlug string      `json:"space_type_slug"`
 }
 
@@ -584,6 +593,7 @@ func (q *Queries) ListAllWikiCategories(ctx context.Context) ([]ListAllWikiCateg
 			&i.Position,
 			&i.IsSystem,
 			&i.Rollup,
+			&i.Icon,
 			&i.SpaceTypeSlug,
 		); err != nil {
 			return nil, err
@@ -685,7 +695,7 @@ func (q *Queries) ListSeedCategoriesBySpaceType(ctx context.Context, spaceTypeID
 }
 
 const listWikiCategoriesBySpaceSlug = `-- name: ListWikiCategoriesBySpaceSlug :many
-SELECT wtc.id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup,
+SELECT wtc.id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,
        st.slug AS space_type_slug
 FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
@@ -703,6 +713,7 @@ type ListWikiCategoriesBySpaceSlugRow struct {
 	Position      int32       `json:"position"`
 	IsSystem      bool        `json:"is_system"`
 	Rollup        []byte      `json:"rollup"`
+	Icon          *string     `json:"icon"`
 	SpaceTypeSlug string      `json:"space_type_slug"`
 }
 
@@ -726,6 +737,7 @@ func (q *Queries) ListWikiCategoriesBySpaceSlug(ctx context.Context, spaceSlug s
 			&i.Position,
 			&i.IsSystem,
 			&i.Rollup,
+			&i.Icon,
 			&i.SpaceTypeSlug,
 		); err != nil {
 			return nil, err
@@ -1091,7 +1103,7 @@ func (q *Queries) ListWikiSpaceParentLinks(ctx context.Context, spaceID pgtype.U
 const listWikiTypeCategories = `-- name: ListWikiTypeCategories :many
 
 SELECT wtc.id, wtc.space_type_id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id,
-       wtc.position, wtc.is_system, wtc.rollup, wtc.created_at,
+       wtc.position, wtc.is_system, wtc.rollup, wtc.icon, wtc.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_categories wtc
 LEFT JOIN custom_field_groups cfg ON cfg.id = wtc.field_group_id
@@ -1109,6 +1121,7 @@ type ListWikiTypeCategoriesRow struct {
 	Position       int32              `json:"position"`
 	IsSystem       bool               `json:"is_system"`
 	Rollup         []byte             `json:"rollup"`
+	Icon           *string            `json:"icon"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	FieldGroupSlug *string            `json:"field_group_slug"`
 	FieldGroupName *string            `json:"field_group_name"`
@@ -1138,6 +1151,7 @@ func (q *Queries) ListWikiTypeCategories(ctx context.Context, spaceTypeID pgtype
 			&i.Position,
 			&i.IsSystem,
 			&i.Rollup,
+			&i.Icon,
 			&i.CreatedAt,
 			&i.FieldGroupSlug,
 			&i.FieldGroupName,
@@ -1276,7 +1290,7 @@ func (q *Queries) ListWikiTypes(ctx context.Context) ([]ListWikiTypesRow, error)
 
 const resolveWikiTypeCategoryToken = `-- name: ResolveWikiTypeCategoryToken :one
 SELECT id, space_type_id, slug, category, label, field_group_id,
-       position, is_system, created_at, rollup
+       position, is_system, created_at, rollup, icon
 FROM wiki_type_categories
 WHERE space_type_id = $1
   AND (lower(category) = lower($2)
@@ -1310,6 +1324,7 @@ func (q *Queries) ResolveWikiTypeCategoryToken(ctx context.Context, arg ResolveW
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.Rollup,
+		&i.Icon,
 	)
 	return i, err
 }
@@ -1357,8 +1372,11 @@ SET label = COALESCE($1, label),
     position = COALESCE($4, position),
     rollup = CASE WHEN $5::bool
              THEN $6::jsonb
-             ELSE rollup END
-WHERE id = $7
+             ELSE rollup END,
+    icon = CASE WHEN $7::bool
+           THEN $8
+           ELSE icon END
+WHERE id = $9
 `
 
 type UpdateWikiTypeCategoryParams struct {
@@ -1368,11 +1386,13 @@ type UpdateWikiTypeCategoryParams struct {
 	Position         *int32      `json:"position"`
 	UpdateRollup     bool        `json:"update_rollup"`
 	Rollup           []byte      `json:"rollup"`
+	UpdateIcon       bool        `json:"update_icon"`
+	Icon             *string     `json:"icon"`
 	ID               pgtype.UUID `json:"id"`
 }
 
 // Slug is immutable (page URLs are /wiki/{entity}/{slug}); label, bound
-// group, and position are editable.
+// group, position, and icon are editable.
 func (q *Queries) UpdateWikiTypeCategory(ctx context.Context, arg UpdateWikiTypeCategoryParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateWikiTypeCategory,
 		arg.Label,
@@ -1381,6 +1401,8 @@ func (q *Queries) UpdateWikiTypeCategory(ctx context.Context, arg UpdateWikiType
 		arg.Position,
 		arg.UpdateRollup,
 		arg.Rollup,
+		arg.UpdateIcon,
+		arg.Icon,
 		arg.ID,
 	)
 	if err != nil {

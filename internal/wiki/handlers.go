@@ -351,6 +351,9 @@ type wikiCategoryItem struct {
 	// template pages the frontend links into (§80); empty when the
 	// category declares none or the request has no space context.
 	PageTemplates []wikiPageTemplateItem `json:"page_templates,omitempty"`
+	// Icon is the admin-configured lucide icon name; empty falls back to
+	// the frontend's slug→icon map.
+	Icon string `json:"icon,omitempty"`
 }
 
 func categoryItem(c WikiCategory) wikiCategoryItem {
@@ -362,6 +365,9 @@ func categoryItem(c WikiCategory) wikiCategoryItem {
 		Label:    c.Label,
 		Position: c.Position,
 		IsSystem: c.IsSystem,
+	}
+	if c.Icon != nil {
+		item.Icon = *c.Icon
 	}
 	if c.FieldGroupID.Valid {
 		item.FieldGroupID = c.FieldGroupID.String()

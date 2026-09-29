@@ -97,7 +97,7 @@ SELECT EXISTS(SELECT 1 FROM wiki_type_configs WHERE space_type_id = @space_type_
 -- Category template for a type, with the bound field group's identity for
 -- admin display. Ordered by position.
 SELECT wtc.id, wtc.space_type_id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id,
-       wtc.position, wtc.is_system, wtc.rollup, wtc.created_at,
+       wtc.position, wtc.is_system, wtc.rollup, wtc.icon, wtc.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_categories wtc
 LEFT JOIN custom_field_groups cfg ON cfg.id = wtc.field_group_id
@@ -109,7 +109,7 @@ ORDER BY wtc.position, wtc.slug;
 -- category template row (+ bound group). Used by the page route to attach
 -- the group's schema to the response.
 SELECT wtc.id, wtc.space_type_id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id,
-       wtc.position, wtc.is_system, wtc.rollup, wtc.created_at,
+       wtc.position, wtc.is_system, wtc.rollup, wtc.icon, wtc.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
@@ -120,7 +120,7 @@ LIMIT 1;
 -- name: ListWikiCategoriesBySpaceSlug :many
 -- Public category list for a space (replaces the hardcoded geo/university
 -- slices): resolves the space's type template.
-SELECT wtc.id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup,
+SELECT wtc.id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,
        st.slug AS space_type_slug
 FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
@@ -137,13 +137,13 @@ WHERE wtc.space_type_id = @space_type_id
 ORDER BY wtc.position, wtc.slug;
 
 -- name: CreateWikiTypeCategory :one
-INSERT INTO wiki_type_categories (space_type_id, slug, category, label, field_group_id, position, is_system, rollup)
-VALUES (@space_type_id, @slug, @category, @label, @field_group_id, @position, @is_system, sqlc.narg(rollup))
-RETURNING id, space_type_id, slug, category, label, field_group_id, position, is_system, rollup, created_at;
+INSERT INTO wiki_type_categories (space_type_id, slug, category, label, field_group_id, position, is_system, rollup, icon)
+VALUES (@space_type_id, @slug, @category, @label, @field_group_id, @position, @is_system, sqlc.narg(rollup), sqlc.narg(icon))
+RETURNING id, space_type_id, slug, category, label, field_group_id, position, is_system, rollup, icon, created_at;
 
 -- name: UpdateWikiTypeCategory :execrows
 -- Slug is immutable (page URLs are /wiki/{entity}/{slug}); label, bound
--- group, and position are editable.
+-- group, position, and icon are editable.
 UPDATE wiki_type_categories
 SET label = COALESCE(sqlc.narg(label), label),
     field_group_id = CASE WHEN @update_field_group::bool
@@ -152,7 +152,10 @@ SET label = COALESCE(sqlc.narg(label), label),
     position = COALESCE(sqlc.narg(position), position),
     rollup = CASE WHEN @update_rollup::bool
              THEN sqlc.narg(rollup)::jsonb
-             ELSE rollup END
+             ELSE rollup END,
+    icon = CASE WHEN @update_icon::bool
+           THEN sqlc.narg(icon)
+           ELSE icon END
 WHERE id = @id;
 
 -- name: DeleteWikiTypeCategory :execrows
@@ -175,7 +178,7 @@ WHERE wp.category = @category AND sp.space_type_id = @space_type_id
 
 -- name: GetWikiTypeCategory :one
 SELECT id, space_type_id, slug, category, label, field_group_id,
-       position, is_system, rollup, created_at
+       position, is_system, rollup, icon, created_at
 FROM wiki_type_categories
 WHERE id = @id;
 
@@ -194,7 +197,7 @@ JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id
 WHERE sp.id = @space_id;
 
 -- name: ListAllWikiCategories :many
-SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup,
+SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,
        st.slug AS space_type_slug
 FROM wiki_type_categories wtc
 JOIN wiki_type_configs cfg ON cfg.space_type_id = wtc.space_type_id AND cfg.enabled = true
@@ -212,7 +215,7 @@ ORDER BY wtc.position, wtc.slug, st.slug;
 -- are compared underscore-normalized so both forms resolve.
 -- Ref: §80 Intel ingestion → wiki_pages.
 SELECT id, space_type_id, slug, category, label, field_group_id,
-       position, is_system, created_at, rollup
+       position, is_system, created_at, rollup, icon
 FROM wiki_type_categories
 WHERE space_type_id = @space_type_id
   AND (lower(category) = lower(@token)

@@ -10,7 +10,7 @@
 	import { DropdownMenu } from 'bits-ui';
 	import { ChevronDown } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import { categoryIcon } from './icons';
+	import { categoryIcon, categoryIconResolved } from './icons';
 	import type { WikiPageIndex } from '$lib/types';
 
 	export interface WikiTabCategory {
@@ -23,6 +23,9 @@
 		/** §80 directories — the stub IS the child listing; link it rather
 		 *  than a sibling page that lacks the directory payload. */
 		directory?: boolean;
+		/** §80 category icon — admin-configured lucide name; overrides the
+		 *  slug→icon map when recognized. */
+		icon?: string;
 	}
 
 	interface Props {
@@ -91,7 +94,7 @@
 				slug: c.slug,
 				label: catLabel(c),
 				href,
-				icon: categoryIcon(c.slug)
+				icon: categoryIconResolved(c.slug, c.icon)
 			});
 		}
 		// Pages whose category isn't in the canonical set still get a tab —

@@ -15,7 +15,7 @@
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
 	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
-	import { categoryIcon, categoryTint } from '$lib/components/wiki/icons';
+	import { categoryIconResolved, categoryTint } from '$lib/components/wiki/icons';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import {
 		BookOpen,
@@ -47,6 +47,8 @@
 		page_slug?: string;
 		/** §80 directories — the stub page is the child-space listing. */
 		directory?: boolean;
+		/** §80 category icon — admin-configured lucide name. */
+		icon?: string;
 	};
 	// svelte-ignore state_referenced_locally
 	const apiCategories: ApiCategory[] = data.apiCategories ?? [];
@@ -128,6 +130,8 @@
 		/** §80 directories — the stub is the child listing; the card links
 		 *  it rather than a sibling page. */
 		directory: boolean;
+		/** §80 category icon — admin-configured lucide name override. */
+		icon?: string;
 	}
 	const cardGroups = $derived.by<CardGroup[]>(() => {
 		const order = new Map(apiCategories.map((c, i) => [c.slug, i]));
@@ -159,7 +163,8 @@
 					pages,
 					templates,
 					pageSlug: apiCat?.page_slug,
-					directory: apiCat?.directory ?? false
+					directory: apiCat?.directory ?? false,
+					icon: apiCat?.icon
 				};
 			})
 			.sort((a, b) => {
@@ -383,7 +388,7 @@
 			<!-- Section cards — one per category; sibling pages as sub-links -->
 			<div class="mt-5 divide-y divide-[var(--color-border)] rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)]">
 				{#each cardGroups as group (group.category)}
-					{@const Icon = categoryIcon(group.category)}
+					{@const Icon = categoryIconResolved(group.category, group.icon)}
 					{@const tint = categoryTint(group.category)}
 					{@const first = group.pages[0]}
 					<!-- Directory cards link the stub (the child listing); others

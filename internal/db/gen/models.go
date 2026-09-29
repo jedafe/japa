@@ -4455,6 +4455,7 @@ type WikiRevision struct {
 	TargetEntityType *string            `json:"target_entity_type"`
 	TargetEntityID   pgtype.UUID        `json:"target_entity_id"`
 	ApplyError       *string            `json:"apply_error"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type WikiTypeCategory struct {
@@ -4468,6 +4469,7 @@ type WikiTypeCategory struct {
 	IsSystem     bool               `json:"is_system"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	Rollup       []byte             `json:"rollup"`
+	Icon         *string            `json:"icon"`
 }
 
 type WikiTypeConfig struct {
