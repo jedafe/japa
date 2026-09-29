@@ -800,7 +800,13 @@ func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) 
 				"cost_of_living", "university", "video", "organization", "people",
 				"blog", "event", "dataset", "announcement", "scam_alert",
 			},
-			"source_types": []string{"rss", "video", "api", "static"},
+			// submittable_categories is the propose-form subset — domains
+			// whose channels reach content without AI extraction
+			// (job-family, news/article feeds, video). Mirrors the
+			// submittable_source_kinds / source_kinds split;
+			// buildProposeParams rejects proposals outside it.
+			"submittable_categories": sources.SubmittableCategories(),
+			"source_types":           []string{"rss", "video", "api", "static"},
 			// source_kinds is the full 10-kind set for the directory filter
 			// and admin forms; submittable_source_kinds is the propose-form
 			// subset (entity-stub kinds excluded — see IsSubmittable).
@@ -884,6 +890,8 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case strings.Contains(err.Error(), "source_kind"):
 				code, msg = "invalid_source_kind", "source_kind is not a supported value"
+			case strings.Contains(err.Error(), "category"):
+				code, msg = "category_not_submittable", "that category is not open for proposals yet"
 			case strings.Contains(err.Error(), "probe_snapshot"):
 				code, msg = "invalid_probe_snapshot", "probe_snapshot must be a JSON object"
 			case strings.Contains(err.Error(), "video"):

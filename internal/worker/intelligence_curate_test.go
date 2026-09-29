@@ -26,11 +26,13 @@ type fakeIntelCurator struct {
 	err      error
 	calls    int
 	lastBody []byte
+	lastCh   sources.Channel
 }
 
-func (f *fakeIntelCurator) Curate(_ context.Context, body []byte, _ string, _ sources.Channel) ([]IntelCuratedRecord, error) {
+func (f *fakeIntelCurator) Curate(_ context.Context, body []byte, _ string, ch sources.Channel) ([]IntelCuratedRecord, error) {
 	f.calls++
 	f.lastBody = body
+	f.lastCh = ch
 
 	return f.recs, f.err
 }
@@ -569,6 +571,163 @@ func TestHandleIntelCurateChannel_SitemapManifestSkipsExtract(t *testing.T) {
 
 	if n := len(pendingTasks(t, inspector, TypeIntelExtract)); n != 0 {
 		t.Errorf("sitemap manifest enqueued %d intel:extract tasks, want 0", n)
+	}
+}
+
+// TestHandleIntelCurateChannel_DerivedDocDispatchesEffectiveMethod covers
+// the manifest-child re-dispatch: a doc fetched as a sitemap child was
+// retrieved via the static adapter, so the curator port must be invoked
+// with crawl_method 'static' — not the channel's 'sitemap', which has no
+// curator and would otherwise dead-hop into the extract fallback.
+func TestHandleIntelCurateChannel_DerivedDocDispatchesEffectiveMethod(t *testing.T) {
+	_, srcStore, intelDocStore, _ := wireIntelChannelDeps(t)
+
+	src := mkIntelTestSource(t, srcStore, "derived-curate-src", nil)
+	ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
+		a.CrawlMethod = "sitemap"
+		a.Pipeline = "curate"
+		a.EntityTypes = []string{"job"}
+	})
+
+	parent, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+		SourceID:    src.ID,
+		ChannelID:   ch.ID,
+		Url:         ch.EntryUrl,
+		HttpStatus:  200,
+		HttpHeaders: []byte(`{}`),
+		ContentType: strPtr(fetcher.ManifestContentType),
+		Body:        []byte("https://example.com/jobs/1\t2025-01-01\n"),
+		ContentHash: "derived-parent-hash",
+	})
+	if err != nil {
+		t.Fatalf("create parent doc: %v", err)
+	}
+
+	derived, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+		SourceID:         src.ID,
+		ChannelID:        ch.ID,
+		Url:              "https://example.com/jobs/1",
+		HttpStatus:       200,
+		HttpHeaders:      []byte(`{}`),
+		ContentType:      strPtr("text/html"),
+		Body:             []byte(`<html><script type="application/ld+json">{"@type":"JobPosting"}</script></html>`),
+		ContentHash:      "derived-child-hash",
+		ParentDocumentID: parent.ID,
+	})
+	if err != nil {
+		t.Fatalf("create derived doc: %v", err)
+	}
+
+	fake := &fakeIntelCurator{recs: []IntelCuratedRecord{
+		{
+			RawExtraction:     marshalCuratedExtraction(t, map[string]any{"title": "Baker", "article_url": "https://example.com/jobs/1"}),
+			ConfidenceOverall: 1.0,
+			ExternalKey:       "https://example.com/jobs/1",
+			EntityType:        "job",
+		},
+	}}
+	setIntelCurator(t, fake)
+
+	payload, _ := json.Marshal(intelCurateChannelPayload{
+		Version:   intelPayloadVersion,
+		SourceID:  src.ID.String(),
+		ChannelID: ch.ID.String(),
+		RawDocID:  derived.ID.String(),
+	})
+
+	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+		t.Fatalf("HandleIntelCurateChannel: %v", err)
+	}
+
+	if fake.calls != 1 {
+		t.Fatalf("curator calls = %d, want 1", fake.calls)
+	}
+	if fake.lastCh.CrawlMethod != "static" {
+		t.Errorf("curator dispatched on crawl_method %q, want %q (effective fetch method)", fake.lastCh.CrawlMethod, "static")
+	}
+	// entry_url must be the fetched child page, not the channel's manifest
+	// URL — the curator's page-level key falls back to entry_url.
+	if fake.lastCh.EntryUrl != "https://example.com/jobs/1" {
+		t.Errorf("curator dispatched with entry_url %q, want the derived doc URL", fake.lastCh.EntryUrl)
+	}
+	if fake.lastCh.ID != ch.ID {
+		t.Errorf("curator dispatched with channel id %q, want %q (clone must keep identity)", fake.lastCh.ID, ch.ID)
+	}
+}
+
+// TestHandleIntelDetectChanges_DerivedDocKeepsChannelPipeline covers the
+// detect_changes side: a derived child of a sitemap channel now follows
+// the channel's declared pipeline — 'curate' enqueues intel:curate_channel
+// (the handler re-dispatches on the effective fetch method) instead of
+// being force-routed to intel:extract.
+func TestHandleIntelDetectChanges_DerivedDocKeepsChannelPipeline(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		pipeline   string
+		wantTask   string
+		wantAbsent string
+	}{
+		{"curate pipeline curates derived doc", "curate", TypeIntelCurateChannel, TypeIntelExtract},
+		{"extract pipeline still extracts derived doc", "extract", TypeIntelExtract, TypeIntelCurateChannel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, srcStore, intelDocStore, inspector := wireIntelChannelDeps(t)
+
+			src := mkIntelTestSource(t, srcStore, "derived-dc-"+tc.pipeline, nil)
+			ch := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
+				a.CrawlMethod = "sitemap"
+				a.Pipeline = tc.pipeline
+				a.EntityTypes = []string{"job"}
+			})
+
+			parent, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+				SourceID:    src.ID,
+				ChannelID:   ch.ID,
+				Url:         ch.EntryUrl,
+				HttpStatus:  200,
+				HttpHeaders: []byte(`{}`),
+				ContentType: strPtr(fetcher.ManifestContentType),
+				Body:        []byte("https://example.com/jobs/1\t2025-01-01\n"),
+				ContentHash: "parent-hash-" + tc.pipeline,
+			})
+			if err != nil {
+				t.Fatalf("create parent doc: %v", err)
+			}
+
+			derived, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+				SourceID:         src.ID,
+				ChannelID:        ch.ID,
+				Url:              "https://example.com/jobs/1",
+				HttpStatus:       200,
+				HttpHeaders:      []byte(`{}`),
+				ContentType:      strPtr("text/html"),
+				Body:             []byte("<html><body>job page</body></html>"),
+				ContentHash:      "derived-hash-" + tc.pipeline,
+				ParentDocumentID: parent.ID,
+			})
+			if err != nil {
+				t.Fatalf("create derived doc: %v", err)
+			}
+
+			payload, _ := json.Marshal(intelDetectChangesPayload{
+				Version:   intelPayloadVersion,
+				SourceID:  src.ID.String(),
+				ChannelID: ch.ID.String(),
+				RawDocID:  derived.ID.String(),
+				PriorHash: "", // first capture of this URL → downstream fires
+			})
+
+			if err := HandleIntelDetectChanges(context.Background(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
+				t.Fatalf("HandleIntelDetectChanges: %v", err)
+			}
+
+			if n := len(pendingTasks(t, inspector, tc.wantTask)); n == 0 {
+				t.Fatalf("no %s task enqueued for derived doc", tc.wantTask)
+			}
+			if n := len(pendingTasks(t, inspector, tc.wantAbsent)); n != 0 {
+				t.Errorf("%d %s tasks enqueued, want 0", n, tc.wantAbsent)
+			}
+		})
 	}
 }
 

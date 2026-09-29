@@ -78,6 +78,7 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
        wp.data_entity_type, wp.deleted_at,
+       wp.page_template_id, wp.field_group_id, wp.position,
        sp.slug AS space_slug, sp.name AS space_name,
        lr.id AS latest_revision_id,
        COALESCE(lr.status, '') AS latest_revision_status,
@@ -157,6 +158,9 @@ type AdminListWikiPagesRow struct {
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 	DataEntityType       *string            `json:"data_entity_type"`
 	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
+	PageTemplateID       pgtype.UUID        `json:"page_template_id"`
+	FieldGroupID         pgtype.UUID        `json:"field_group_id"`
+	Position             int32              `json:"position"`
 	SpaceSlug            string             `json:"space_slug"`
 	SpaceName            string             `json:"space_name"`
 	LatestRevisionID     pgtype.UUID        `json:"latest_revision_id"`
@@ -205,6 +209,9 @@ func (q *Queries) AdminListWikiPages(ctx context.Context, arg AdminListWikiPages
 			&i.IsJapabotIndexed,
 			&i.DataEntityType,
 			&i.DeletedAt,
+			&i.PageTemplateID,
+			&i.FieldGroupID,
+			&i.Position,
 			&i.SpaceSlug,
 			&i.SpaceName,
 			&i.LatestRevisionID,
@@ -480,18 +487,24 @@ func (q *Queries) CountWikiRevisionsByTarget(ctx context.Context, arg CountWikiR
 }
 
 const createWikiPage = `-- name: CreateWikiPage :one
-INSERT INTO wiki_pages (space_id, slug, title, category, created_by)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO wiki_pages (space_id, slug, title, category, created_by,
+    page_template_id, field_group_id, position)
+VALUES ($1, $2, $3, $4, $5,
+    $6, $7,
+    COALESCE($8, 0))
 ON CONFLICT (space_id, slug) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id
 `
 
 type CreateWikiPageParams struct {
-	SpaceID   pgtype.UUID `json:"space_id"`
-	Slug      string      `json:"slug"`
-	Title     string      `json:"title"`
-	Category  string      `json:"category"`
-	CreatedBy pgtype.UUID `json:"created_by"`
+	SpaceID        pgtype.UUID `json:"space_id"`
+	Slug           string      `json:"slug"`
+	Title          string      `json:"title"`
+	Category       string      `json:"category"`
+	CreatedBy      pgtype.UUID `json:"created_by"`
+	PageTemplateID pgtype.UUID `json:"page_template_id"`
+	FieldGroupID   pgtype.UUID `json:"field_group_id"`
+	Position       interface{} `json:"position"`
 }
 
 // ON CONFLICT carries the partial-index predicate (deleted_at IS NULL) so
@@ -504,6 +517,9 @@ func (q *Queries) CreateWikiPage(ctx context.Context, arg CreateWikiPageParams) 
 		arg.Title,
 		arg.Category,
 		arg.CreatedBy,
+		arg.PageTemplateID,
+		arg.FieldGroupID,
+		arg.Position,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -631,12 +647,10 @@ func (q *Queries) GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (Get
 }
 
 const getWikiPageBySlug = `-- name: GetWikiPageBySlug :one
-
-
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       wp.data_entity_type,
+       wp.data_entity_type, wp.page_template_id, wp.field_group_id, wp.position,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -664,15 +678,13 @@ type GetWikiPageBySlugRow struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed *bool              `json:"is_japabot_indexed"`
 	DataEntityType   *string            `json:"data_entity_type"`
+	PageTemplateID   pgtype.UUID        `json:"page_template_id"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
 	SpaceSlug        string             `json:"space_slug"`
 	SpaceName        string             `json:"space_name"`
 }
 
-// Wiki (§80) queries — consolidated from internal/wiki/store.go.
-// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-// =====================
-// Pages
-// =====================
 func (q *Queries) GetWikiPageBySlug(ctx context.Context, arg GetWikiPageBySlugParams) (GetWikiPageBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getWikiPageBySlug, arg.SpaceSlug, arg.PageSlug)
 	var i GetWikiPageBySlugRow
@@ -690,6 +702,9 @@ func (q *Queries) GetWikiPageBySlug(ctx context.Context, arg GetWikiPageBySlugPa
 		&i.UpdatedAt,
 		&i.IsJapabotIndexed,
 		&i.DataEntityType,
+		&i.PageTemplateID,
+		&i.FieldGroupID,
+		&i.Position,
 		&i.SpaceSlug,
 		&i.SpaceName,
 	)
@@ -1010,11 +1025,66 @@ func (q *Queries) ListWikiDestinations(ctx context.Context, arg ListWikiDestinat
 	return items, nil
 }
 
+const listWikiPageSiblings = `-- name: ListWikiPageSiblings :many
+
+
+SELECT wp.id, wp.slug, wp.title, wp.position
+FROM wiki_pages wp
+WHERE wp.space_id = $1 AND wp.category = $2
+  AND wp.is_active = true AND wp.deleted_at IS NULL
+ORDER BY wp.position ASC, wp.created_at ASC, wp.slug ASC
+`
+
+type ListWikiPageSiblingsParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	Category string      `json:"category"`
+}
+
+type ListWikiPageSiblingsRow struct {
+	ID       pgtype.UUID `json:"id"`
+	Slug     string      `json:"slug"`
+	Title    string      `json:"title"`
+	Position int32       `json:"position"`
+}
+
+// Wiki (§80) queries — consolidated from internal/wiki/store.go.
+// Ref: japaconnect-engineering/sections/80-destination-wiki.md
+// =====================
+// Pages
+// =====================
+// Ordered sibling pages within a space+category — the Prev/Next set (§80
+// Hierarchical UX amendment). position ASC, then created_at for stability.
+// Soft-deleted pages are excluded like every other wiki_pages read.
+func (q *Queries) ListWikiPageSiblings(ctx context.Context, arg ListWikiPageSiblingsParams) ([]ListWikiPageSiblingsRow, error) {
+	rows, err := q.db.Query(ctx, listWikiPageSiblings, arg.SpaceID, arg.Category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWikiPageSiblingsRow
+	for rows.Next() {
+		var i ListWikiPageSiblingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWikiPagesBySpaceID = `-- name: ListWikiPagesBySpaceID :many
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       wp.data_entity_type,
+       wp.data_entity_type, wp.page_template_id, wp.field_group_id, wp.position,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -1036,6 +1106,9 @@ type ListWikiPagesBySpaceIDRow struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed *bool              `json:"is_japabot_indexed"`
 	DataEntityType   *string            `json:"data_entity_type"`
+	PageTemplateID   pgtype.UUID        `json:"page_template_id"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
 	SpaceSlug        string             `json:"space_slug"`
 	SpaceName        string             `json:"space_name"`
 }
@@ -1063,6 +1136,9 @@ func (q *Queries) ListWikiPagesBySpaceID(ctx context.Context, spaceID pgtype.UUI
 			&i.UpdatedAt,
 			&i.IsJapabotIndexed,
 			&i.DataEntityType,
+			&i.PageTemplateID,
+			&i.FieldGroupID,
+			&i.Position,
 			&i.SpaceSlug,
 			&i.SpaceName,
 		); err != nil {
@@ -1080,7 +1156,7 @@ const listWikiPagesBySpaceSlug = `-- name: ListWikiPagesBySpaceSlug :many
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       wp.data_entity_type,
+       wp.data_entity_type, wp.page_template_id, wp.field_group_id, wp.position,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -1102,6 +1178,9 @@ type ListWikiPagesBySpaceSlugRow struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed *bool              `json:"is_japabot_indexed"`
 	DataEntityType   *string            `json:"data_entity_type"`
+	PageTemplateID   pgtype.UUID        `json:"page_template_id"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
 	SpaceSlug        string             `json:"space_slug"`
 	SpaceName        string             `json:"space_name"`
 }
@@ -1129,6 +1208,9 @@ func (q *Queries) ListWikiPagesBySpaceSlug(ctx context.Context, spaceSlug string
 			&i.UpdatedAt,
 			&i.IsJapabotIndexed,
 			&i.DataEntityType,
+			&i.PageTemplateID,
+			&i.FieldGroupID,
+			&i.Position,
 			&i.SpaceSlug,
 			&i.SpaceName,
 		); err != nil {
@@ -1424,17 +1506,19 @@ UPDATE wiki_pages
 SET is_locked = COALESCE($1, is_locked),
     is_featured = COALESCE($2, is_featured),
     is_active = COALESCE($3, is_active),
-    data_entity_type = CASE WHEN $4::bool
-                        THEN NULLIF($5, '')
+    position = COALESCE($4, position),
+    data_entity_type = CASE WHEN $5::bool
+                        THEN NULLIF($6, '')
                         ELSE data_entity_type END,
     updated_at = now()
-WHERE id = $6
+WHERE id = $7
 `
 
 type UpdateWikiPageParams struct {
 	IsLocked             *bool       `json:"is_locked"`
 	IsFeatured           *bool       `json:"is_featured"`
 	IsActive             *bool       `json:"is_active"`
+	Position             *int32      `json:"position"`
 	UpdateDataEntityType bool        `json:"update_data_entity_type"`
 	DataEntityType       interface{} `json:"data_entity_type"`
 	ID                   pgtype.UUID `json:"id"`
@@ -1448,6 +1532,7 @@ func (q *Queries) UpdateWikiPage(ctx context.Context, arg UpdateWikiPageParams) 
 		arg.IsLocked,
 		arg.IsFeatured,
 		arg.IsActive,
+		arg.Position,
 		arg.UpdateDataEntityType,
 		arg.DataEntityType,
 		arg.ID,

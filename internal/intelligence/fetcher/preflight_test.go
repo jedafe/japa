@@ -162,6 +162,58 @@ func TestPreflightCheck_RateLimited(t *testing.T) {
 	}
 }
 
+// TestPreflightCheck_RateLimitRejectedNoConsume: a rejected attempt must not
+// INCR the window counter — otherwise a burst of retries keeps the domain
+// saturated (each rejection still pushed the counter higher, inflating the
+// key's value far past the limit while continuing to fail).
+func TestPreflightCheck_RateLimitRejectedNoConsume(t *testing.T) {
+	t.Parallel()
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	vk, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress:  []string{mr.Addr()},
+		DisableCache: true,
+	})
+	if err != nil {
+		t.Fatalf("valkey.NewClient: %v", err)
+	}
+	defer vk.Close()
+
+	p := NewPreflightChecker(valkeycompat.NewAdapter(vk), nil, mockSettings{
+		crawlLockTTL:    3600,
+		rateLimitPerMin: 2,
+	})
+
+	src := sources.Source{ID: validUUID(), Domain: "storm.example.com", TrustLevel: 1}
+	for i := 1; i <= 2; i++ {
+		if err := p.Check(t.Context(), src); err != nil {
+			t.Fatalf("check %d: %v", i, err)
+		}
+		p.ReleaseCrawlLock(t.Context(), src.ID.String())
+	}
+
+	// Three rejected attempts — the counter must stay at the limit, not grow.
+	for i := 0; i < 3; i++ {
+		if err := p.Check(t.Context(), src); !errors.Is(err, ErrRateLimited) {
+			t.Fatalf("rejected check %d: got %v, want ErrRateLimited", i, err)
+		}
+		p.ReleaseCrawlLock(t.Context(), src.ID.String())
+	}
+
+	got, err := mr.Get("jc:intel:ratelimit::storm.example.com")
+	if err != nil {
+		t.Fatalf("rate-limit key missing: %v", err)
+	}
+	if got != "2" {
+		t.Errorf("counter after rejections: got %q, want %q", got, "2")
+	}
+}
+
 // channelUUID returns a deterministic valid pgtype.UUID distinct from
 // validUUID so channel and source lock keys never collide in tests.
 func channelUUID(b byte) pgtype.UUID {

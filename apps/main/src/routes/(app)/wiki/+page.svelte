@@ -1,6 +1,8 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-	// Global wiki landing at /wiki — geo-aware destination chooser and directory.
+	// Global wiki landing at /wiki — edge-driven destination chooser: the
+	// drill-down levels come from the declared wiki_type_parents edges
+	// (parent_type_ids on GET /wiki/types), not a hardcoded geo chain.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -11,6 +13,10 @@
 	import { page } from '$app/state';
 	import { BookOpen, Globe, MapPin, GraduationCap, Table2 } from 'lucide-svelte';
 	import { ListPageBar } from '$lib/components/ui';
+	import {
+		wikiPrimaryChild,
+		wikiSidelinedChildren
+	} from '$lib/utils/wikiTypeChain';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -27,25 +33,40 @@
 		wikiEnabled && data.features?.['wiki.structured_edits'] === true
 	);
 
+	// svelte-ignore state_referenced_locally
+	const allTypes: WikiTypeItem[] = data.types ?? [];
+	// svelte-ignore state_referenced_locally
+	const chain: WikiTypeItem[] = data.chain ?? [];
+	const rootType = chain[0] ?? null;
+	// spaces.region only exists on country rows — the continent picker is
+	// rendered only when the drill chain roots at the country type.
+	const showContinent = rootType?.space_type_slug === 'country';
+	// Every chain level but the leaf gets a picker — the leaf type's spaces
+	// land in the browse grid (picking a city means reading its wiki).
+	const pickable = chain.slice(0, -1);
+
 	let selectedContinent = $state<string | null>(null);
-	let selectedCountry = $state<WikiDestination | null>(null);
-	let selectedState = $state<WikiDestination | null>(null);
+	// Selections aligned to `pickable`; null = that level not picked.
+	let picks = $state<(WikiDestination | null)[]>(pickable.map(() => null));
 
 	function toAutocompleteItem(d: WikiDestination): AutocompleteItem {
 		return { id: d.slug, label: d.name, sublabel: d.geo_code ?? '' };
 	}
 
-	async function searchSpaces(q: string, levelFilter: 'country' | 'state' | 'city', parentSlug?: string, region?: string): Promise<AutocompleteItem[]> {
-		const params = new URLSearchParams();
-		params.set('has_wiki', 'false');
-		params.set('level', levelFilter);
-		if (parentSlug) params.set('parent', parentSlug);
-		if (region) params.set('region', region);
+	function typeLabel(wt: WikiTypeItem): string {
+		return t(`wiki.type_${wt.space_type_slug}`, wt.label ?? wt.space_type_name);
+	}
 
+	async function searchDestinations(
+		q: string,
+		params: Record<string, string>
+	): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
 		try {
-			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${params.toString()}`);
+			const usp = new URLSearchParams({ has_wiki: 'false', ...params });
+			if (query) usp.set('q', query);
+			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${usp.toString()}`);
 			let list = res.data ?? [];
-			const query = q.toLowerCase().trim();
 			if (query) {
 				list = list.filter(
 					(s) =>
@@ -62,8 +83,12 @@
 
 	async function allContinents(q: string): Promise<AutocompleteItem[]> {
 		try {
-			const res = await api.get<WikiDestination[]>(`/wiki/destinations?level=country&has_wiki=false`);
-			const regions = Array.from(new Set((res.data ?? []).map((d) => d.region).filter((r): r is string => !!r))).sort();
+			const res = await api.get<WikiDestination[]>(
+				`/wiki/destinations?level=country&has_wiki=false`
+			);
+			const regions = Array.from(
+				new Set((res.data ?? []).map((d) => d.region).filter((r): r is string => !!r))
+			).sort();
 			const query = q.toLowerCase().trim();
 			const filtered = query ? regions.filter((r) => r.toLowerCase().includes(query)) : regions;
 			return filtered.map((r) => ({ id: r, label: r, sublabel: '' }));
@@ -75,37 +100,95 @@
 		return allContinents('');
 	}
 
-	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
-		return searchSpaces(q, 'country', undefined, selectedContinent ?? undefined);
-	}
-	function fetchCountriesInitial(): Promise<AutocompleteItem[]> {
-		return fetchCountries('');
+	/** Picker fetcher for chain level i — root filters by region, deeper
+	 *  levels filter by their parent's slug (?parent=, direct parent_id). */
+	function levelFetcher(i: number): (q: string) => Promise<AutocompleteItem[]> {
+		return (q: string) => {
+			const lt = pickable[i];
+			if (!lt) return Promise.resolve([]);
+			if (i === 0) {
+				return searchDestinations(q, {
+					level: lt.space_type_slug,
+					...(selectedContinent ? { region: selectedContinent } : {})
+				});
+			}
+			const parent = picks[i - 1];
+			if (!parent) return Promise.resolve([]);
+			return searchDestinations(q, { level: lt.space_type_slug, parent: parent.slug });
+		};
 	}
 
-	function fetchStates(q: string): Promise<AutocompleteItem[]> {
-		if (!selectedCountry) return Promise.resolve([]);
-		return searchSpaces(q, 'state', selectedCountry.slug);
+	function onSelectLevel(i: number, item: AutocompleteItem) {
+		const lt = pickable[i];
+		picks[i] = {
+			space_id: '',
+			slug: item.id,
+			name: item.label,
+			geo_code: item.sublabel || undefined,
+			level: lt.space_type_slug,
+			page_count: 0
+		};
+		for (let j = i + 1; j < picks.length; j++) picks[j] = null;
+		loadBrowse();
 	}
-	function fetchStatesInitial(): Promise<AutocompleteItem[]> {
-		return fetchStates('');
+
+	function onClearLevel(i: number) {
+		picks[i] = null;
+		for (let j = i + 1; j < picks.length; j++) picks[j] = null;
+		loadBrowse();
 	}
+
+	function onSelectContinent(item: AutocompleteItem) {
+		selectedContinent = item.id;
+		for (let j = 0; j < picks.length; j++) picks[j] = null;
+		loadBrowse();
+	}
+
+	function onClearContinent() {
+		selectedContinent = null;
+		for (let j = 0; j < picks.length; j++) picks[j] = null;
+		loadBrowse();
+	}
+
+	// Deepest picked level — the browse grid lists that space's children of
+	// the next chain type, or the space itself when the chain ends there.
+	const deepestIdx = $derived(picks.reduce((acc, p, i) => (p ? i : acc), -1));
+	const gridType = $derived.by<WikiTypeItem | null>(() => {
+		if (deepestIdx < 0) return chain[0] ?? null;
+		const selType = chain[deepestIdx];
+		return wikiPrimaryChild(allTypes, selType) ?? null;
+	});
+	// Declared child types beyond the drill chain (e.g. universities under a
+	// selected country) get their own scoped search pickers — ?within= so
+	// junction-linked (space_parent_spaces) children resolve.
+	const sidelinedTypes = $derived.by<WikiTypeItem[]>(() => {
+		if (deepestIdx < 0) return [];
+		const selType = chain[deepestIdx];
+		if (!selType) return [];
+		return wikiSidelinedChildren(allTypes, selType);
+	});
+	const deepestSpace = $derived(deepestIdx >= 0 ? picks[deepestIdx] : null);
 
 	async function loadBrowse() {
 		browseLoading = true;
 		try {
 			const params = new URLSearchParams();
 			params.set('has_wiki', 'false');
-			if (selectedState) {
-				params.set('level', 'city');
-				params.set('parent', selectedState.slug);
-			} else if (selectedCountry) {
-				params.set('level', 'state');
-				params.set('parent', selectedCountry.slug);
-			} else if (selectedContinent) {
-				params.set('level', 'country');
-				params.set('region', selectedContinent);
+			if (deepestSpace) {
+				if (gridType) {
+					params.set('level', gridType.space_type_slug);
+					params.set('parent', deepestSpace.slug);
+				} else {
+					// Chain ends at the selection — show it as the result card.
+					browseOptions = [deepestSpace];
+					return;
+				}
+			} else if (rootType) {
+				params.set('level', rootType.space_type_slug);
+				if (selectedContinent) params.set('region', selectedContinent);
 			} else {
-				params.set('level', 'country');
+				browseOptions = [];
+				return;
 			}
 			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${params.toString()}`);
 			browseOptions = res.data ?? [];
@@ -121,42 +204,6 @@
 	// loadBrowse here double-fetches on mount — the reads inside loadBrowse
 	// are tracked — and again on each selection change.)
 
-	function onSelectContinent(item: AutocompleteItem) {
-		selectedContinent = item.id;
-		selectedCountry = null;
-		selectedState = null;
-		loadBrowse();
-	}
-
-	function onClearContinent() {
-		selectedContinent = null;
-		selectedCountry = null;
-		selectedState = null;
-		loadBrowse();
-	}
-
-	function onSelectCountry(item: AutocompleteItem) {
-		selectedCountry = { space_id: '', slug: item.id, name: item.label, geo_code: item.sublabel || undefined, level: 'country', page_count: 0 };
-		selectedState = null;
-		loadBrowse();
-	}
-
-	function onClearCountry() {
-		selectedCountry = null;
-		selectedState = null;
-		loadBrowse();
-	}
-
-	function onSelectState(item: AutocompleteItem) {
-		selectedState = { space_id: '', slug: item.id, name: item.label, geo_code: item.sublabel || undefined, level: 'state', page_count: 0 };
-		loadBrowse();
-	}
-
-	function onClearState() {
-		selectedState = null;
-		loadBrowse();
-	}
-
 	function pageCountLabel(count: number): string {
 		return t(
 			count === 1 ? 'wiki.destination_page_count_one' : 'wiki.destination_page_count',
@@ -164,17 +211,12 @@
 		).replace('{count}', String(count));
 	}
 
-	// §80 Wiki Types: every enabled non-geo wiki type gets a search + browse
-	// section driven by GET /wiki/types, so newly enabled types surface here
-	// with zero code. `?level=` matches the space type slug server-side.
+	// §80 Wiki Types: every enabled type outside the drill chain gets a
+	// search + browse section — new types surface here with zero code.
 	// svelte-ignore state_referenced_locally
 	const extraTypes = data.extraTypes ?? [];
 	// svelte-ignore state_referenced_locally
 	const typeWikis = data.typeWikis ?? {};
-
-	function typeLabel(wt: WikiTypeItem): string {
-		return t(`wiki.type_${wt.space_type_slug}`, wt.label ?? wt.space_type_name);
-	}
 
 	function typeSectionLabel(wt: WikiTypeItem): string {
 		return t(`wiki.${wt.space_type_slug}_wikis`, t('wiki.type_wikis', '{type} wikis', { type: typeLabel(wt) }));
@@ -187,13 +229,14 @@
 		);
 	}
 
-	function searchTypeEntities(typeSlug: string): (q: string) => Promise<AutocompleteItem[]> {
+	function searchTypeEntities(typeSlug: string, withinSlug?: string): (q: string) => Promise<AutocompleteItem[]> {
 		return async (q: string) => {
 			// Require a query — non-geo entity sets are too large to list.
 			const query = q.trim();
 			if (!query) return [];
 			try {
 				const params = new URLSearchParams({ level: typeSlug, has_wiki: 'false', q: query });
+				if (withinSlug) params.set('within', withinSlug);
 				const res = await api.get<WikiDestination[]>(`/wiki/destinations?${params.toString()}`);
 				return (res.data ?? []).map(toAutocompleteItem);
 			} catch {
@@ -247,49 +290,64 @@
 			</div>
 
 			<div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-				<Autocomplete
-					id="wiki-continent"
-					placeholder={t('wiki.continent_label', 'Continent')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={allContinents}
-					initialFetcher={allContinentsInitial}
-					selectedId={selectedContinent}
-					selectedLabel={selectedContinent}
-					onSelect={onSelectContinent}
-					onClear={onClearContinent}
-				/>
-				<Autocomplete
-					id="wiki-country"
-					placeholder={t('wiki.country_label', 'Country')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={fetchCountries}
-					initialFetcher={fetchCountriesInitial}
-					selectedId={selectedCountry?.slug ?? null}
-					selectedLabel={selectedCountry?.name ?? null}
-					onSelect={onSelectCountry}
-					onClear={onClearCountry}
-				/>
-				<Autocomplete
-					id="wiki-state"
-					placeholder={t('wiki.state_label', 'State')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={fetchStates}
-					initialFetcher={fetchStatesInitial}
-					selectedId={selectedState?.slug ?? null}
-					selectedLabel={selectedState?.name ?? null}
-					onSelect={onSelectState}
-					onClear={onClearState}
-				/>
+				{#if showContinent}
+					<Autocomplete
+						id="wiki-continent"
+						placeholder={t('wiki.continent_label', 'Continent')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={allContinents}
+						initialFetcher={allContinentsInitial}
+						selectedId={selectedContinent}
+						selectedLabel={selectedContinent}
+						onSelect={onSelectContinent}
+						onClear={onClearContinent}
+					/>
+				{/if}
+				{#each pickable as lt, i (lt.space_type_id)}
+					<Autocomplete
+						id="wiki-level-{lt.space_type_slug}"
+						placeholder={typeLabel(lt)}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={levelFetcher(i)}
+						initialFetcher={() => levelFetcher(i)('')}
+						selectedId={picks[i]?.slug ?? null}
+						selectedLabel={picks[i]?.name ?? null}
+						onSelect={(item) => onSelectLevel(i, item)}
+						onClear={() => onClearLevel(i)}
+					/>
+				{/each}
 			</div>
+
+			<!-- Declared child types off the drill chain (e.g. universities
+			     under a country) get scoped search pickers once the parent
+			     space is chosen. -->
+			{#if deepestSpace && sidelinedTypes.length > 0}
+				<div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+					{#each sidelinedTypes as wt (wt.space_type_id)}
+						<Autocomplete
+							id="wiki-side-{wt.space_type_slug}"
+							placeholder={t('wiki.type_within_hint', '{type} in {name}…', {
+								type: typeLabel(wt),
+								name: deepestSpace.name
+							})}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={searchTypeEntities(wt.space_type_slug, deepestSpace.slug)}
+							selectedId={null}
+							selectedLabel={null}
+							onSelect={onSelectTypeEntity}
+						/>
+					{/each}
+				</div>
+			{/if}
 
 			{#if browseLoading}
 				<p class="mt-4 text-xs text-[var(--color-muted)]">{t('wiki.destination_loading', 'Loading destinations…')}</p>
 			{/if}
 		</div>
 
-		<!-- §80 Wiki Types — one search + browse section per enabled non-geo
-		     wiki type (university today; new types appear without code). Rendered
-		     above the (long) destination grid so it stays visible. -->
+		<!-- §80 Wiki Types — one search + browse section per enabled type
+		     outside the drill chain. Rendered above the (long) destination
+		     grid so it stays visible. -->
 		{#each extraTypes as wt (wt.space_type_slug)}
 			{@const wikis = typeWikis[wt.space_type_slug] ?? []}
 			<div class="mt-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -348,7 +406,7 @@
 				</div>
 			{:else}
 				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-					{t('wiki.browse_destinations', 'Browse destinations')}
+					{gridType ? typeLabel(gridType) : t('wiki.browse_destinations', 'Browse destinations')}
 				</h2>
 				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each browseOptions as dest (dest.slug)}

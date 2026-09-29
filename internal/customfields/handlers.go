@@ -203,6 +203,7 @@ type fieldSummary struct {
 	Sortable       bool               `json:"sortable"`
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
+	Section        *string            `json:"section,omitempty"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -231,6 +232,7 @@ func toFieldSummary(f gen.ListAllCustomFieldsRow) fieldSummary {
 		Sortable:       f.Sortable,
 		Searchable:     f.Searchable,
 		Position:       f.Position,
+		Section:        f.Section,
 		CreatedAt:      f.CreatedAt,
 	}
 }
@@ -261,6 +263,7 @@ func toFieldSummaryFromGroup(f gen.ListCustomFieldsByGroupRow) fieldSummary {
 		Sortable:       f.Sortable,
 		Searchable:     f.Searchable,
 		Position:       f.Position,
+		Section:        f.Section,
 		CreatedAt:      f.CreatedAt,
 	}
 }
@@ -695,6 +698,10 @@ type fieldRequest struct {
 	Sortable       bool          `json:"sortable"`
 	Searchable     bool          `json:"searchable"`
 	Position       int32         `json:"position"`
+	// Section groups fields sharing a token under one item table / sub-tab
+	// (§80 Itemized Pricing). Pointer so PATCH distinguishes an omitted key
+	// (leave untouched) from an explicit "" (clear the section).
+	Section *string `json:"section"`
 }
 
 // marshalOptions encodes select/multiselect options to the JSON bytes the
@@ -771,6 +778,11 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Section != nil && !ValidSectionToken(*req.Section) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_section", "Section must match ^[a-z0-9_]+$")
+		return
+	}
+
 	field, err := h.Service.CreateField(r.Context(), gen.CreateCustomFieldParams{
 		GroupID: groupID,
 
@@ -788,6 +800,7 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		Sortable:       req.Sortable,
 		Searchable:     req.Searchable,
 		Position:       req.Position,
+		Section:        req.Section,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -852,6 +865,17 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
+	// §80 Itemized Pricing: section travels three-state — the pointer's
+	// presence flips update_section so "" clears and a token sets.
+	section := ""
+	if req.Section != nil {
+		section = *req.Section
+	}
+	if !ValidSectionToken(section) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_section", "Section must match ^[a-z0-9_]+$")
+		return
+	}
+
 	field, err := h.Service.UpdateField(r.Context(), gen.UpdateCustomFieldParams{
 		Label:          req.Label,
 		FieldType:      req.FieldType,
@@ -865,6 +889,8 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		Sortable:       req.Sortable,
 		Searchable:     req.Searchable,
 		Position:       req.Position,
+		UpdateSection:  req.Section != nil,
+		Section:        section,
 		ID:             id,
 	})
 	if err != nil {

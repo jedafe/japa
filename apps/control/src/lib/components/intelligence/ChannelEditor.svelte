@@ -413,7 +413,7 @@
 					</div>
 				</div>
 
-				{#if form.relevance_mode === 'custom'}
+				{#if form.relevance_mode !== 'open'}
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<label for="ce-topics" class={labelClass}>{t('intel.channel_relevance_topics', 'Relevance topics')}</label>
@@ -425,7 +425,9 @@
 								placeholder={t('intel.csv_placeholder', 'comma, separated, values')}
 							/>
 							<p class="text-muted-foreground mt-1 text-xs">
-								{t('intel.channel_relevance_topics_hint', 'Items must mention one of these topics to pass the gate.')}
+								{form.relevance_mode === 'custom'
+									? t('intel.channel_relevance_topics_hint', 'Items must mention one of these topics to pass the gate.')
+									: t('intel.channel_relevance_topics_filtered_hint', 'Added to the category-map defaults when gating items.')}
 							</p>
 						</div>
 						<div>
@@ -442,6 +444,9 @@
 							</p>
 						</div>
 					</div>
+					<p class="text-muted-foreground text-xs">
+						{t('intel.channel_relevance_cache_hint', 'Verdicts are cached for 7 days — saved topic changes apply to newly crawled items.')}
+					</p>
 				{/if}
 
 				<div class="flex items-center gap-6">

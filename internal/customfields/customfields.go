@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -69,6 +70,12 @@ const (
 	FieldTypeReference     = "reference"
 	FieldTypeRepeater      = "repeater"
 	FieldTypeGroup         = "group"
+	// FieldTypePriceRange is a composite price datum — one field carries an
+	// item's {"avg","min","max"} object in value_json (§80 Hierarchical UX &
+	// Itemized Pricing amendment): each field is one row of an itemized
+	// prices table, and the shared page-template group keeps the keys
+	// comparable across spaces for JCE.
+	FieldTypePriceRange = "price_range"
 )
 
 // FieldOption represents a single option in a select or multiselect field.
@@ -89,11 +96,22 @@ var validFieldTypes = map[string]bool{
 	FieldTypeImageSingle: true, FieldTypeImageMulti: true, FieldTypeMedia: true,
 	FieldTypePlatformEmbed: true, FieldTypeReference: true,
 	FieldTypeRepeater: true, FieldTypeGroup: true,
+	FieldTypePriceRange: true,
 }
 
 // IsValidFieldType returns true if the given string is a recognized field type.
 func IsValidFieldType(ft string) bool {
 	return validFieldTypes[ft]
+}
+
+// SectionTokenPattern constrains custom_fields.section — the §80
+// itemized-pricing sub-grouping token — to a URL/query-safe identifier.
+var SectionTokenPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
+
+// ValidSectionToken reports whether s is a usable section token; the empty
+// string is valid (it means "no section").
+func ValidSectionToken(s string) bool {
+	return s == "" || SectionTokenPattern.MatchString(s)
 }
 
 // ProposableFieldTypes returns the field types community members may propose
@@ -113,6 +131,7 @@ func ProposableFieldTypes() []string {
 		FieldTypeColor, FieldTypeRating,
 		FieldTypeImageSingle, FieldTypeImageMulti, FieldTypeMedia,
 		FieldTypeRepeater, FieldTypeGroup,
+		FieldTypePriceRange,
 	}
 }
 
@@ -126,7 +145,7 @@ func FieldTypeValueColumn(ft string) (column string, ok bool) {
 		return "value_text", true
 	case FieldTypeRichText, FieldTypeSelect, FieldTypeMultiselect,
 		FieldTypeMedia, FieldTypeImageSingle, FieldTypeImageMulti,
-		FieldTypeReference, FieldTypeRepeater:
+		FieldTypeReference, FieldTypeRepeater, FieldTypePriceRange:
 		return "value_json", true
 	case FieldTypeNumber, FieldTypeCurrency, FieldTypePercentage,
 		FieldTypeRating:

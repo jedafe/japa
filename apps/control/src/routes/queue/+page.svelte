@@ -6,7 +6,7 @@
 	import { api } from '$lib/api';
 	import type { QueueInfo, QueueStats, QueueTask, QueueTasksResponse } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { ListTodo, Clock, RefreshCw, X, AlertTriangle, CheckCircle, Timer, RotateCw, RotateCcw } from 'lucide-svelte';
+	import { ListTodo, Clock, RefreshCw, X, AlertTriangle, CheckCircle, Timer, RotateCw, RotateCcw, Archive, Trash2 } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 
 	let {} = $props();
@@ -120,6 +120,53 @@
 		}
 	}
 
+	// Bulk queue ops: archive (clear → DLQ, recoverable), requeue (run all
+	// back to pending), purge (permanently delete archived). queueName='all'
+	// hits every managed queue; otherwise one queue. Failures surface in a
+	// banner — destructive ops must never fail silently.
+	let bulkBusy = $state('');
+	let bulkError = $state('');
+
+	async function queueBulkAction(queueName: string, action: 'archive' | 'requeue' | 'purge') {
+		if (bulkBusy) return;
+		const confirmDefaults: Record<string, string> = {
+			archive: 'Archive all pending, scheduled, and retry tasks in {queue}? They move to the dead-letter queue and can be requeued.',
+			requeue: 'Requeue all scheduled, retry, and archived tasks in {queue} for immediate processing?',
+			purge: 'Permanently delete all archived tasks in {queue}? This cannot be undone.'
+		};
+		if (!window.confirm(t(`queue.confirm_${action}`, confirmDefaults[action]).replace('{queue}', queueName))) return;
+		bulkBusy = `${queueName}:${action}`;
+		bulkError = '';
+		try {
+			const result = await api<{ errors?: string[] }>(`/control/queue/${queueName}/${action}`, { method: 'POST' });
+			if (result.ok) {
+				// Partial failures ride the 200 payload — destructive ops must
+				// never report clean success while a queue errored.
+				const partial = result.data?.errors;
+				if (Array.isArray(partial) && partial.length > 0) {
+					bulkError = t('queue.bulk_failed', 'Queue operation failed: {error}').replace(
+						'{error}',
+						partial.join('; ')
+					);
+				}
+				await refresh();
+				if (selectedQueue) await openQueueDetail(selectedQueue);
+			} else {
+				bulkError = t('queue.bulk_failed', 'Queue operation failed: {error}').replace(
+					'{error}',
+					result.error
+				);
+			}
+		} catch (e) {
+			bulkError = t('queue.bulk_failed', 'Queue operation failed: {error}').replace(
+				'{error}',
+				e instanceof Error ? e.message : String(e)
+			);
+		} finally {
+			bulkBusy = '';
+		}
+	}
+
 	function formatTaskTime(ts: string | undefined): string {
 		if (!ts) return '—';
 		try {
@@ -169,6 +216,12 @@
 	</div>
 {/if}
 
+{#if bulkError}
+	<div class="mb-4 flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+		{bulkError}
+	</div>
+{/if}
+
 <div class="mb-4 flex items-center justify-between">
 	<div class="flex items-center gap-3">
 		<p class="text-muted-foreground text-xs">
@@ -179,14 +232,40 @@
 			{t('queue.auto_refresh')}
 		</span>
 	</div>
-	<button
-		class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-		disabled={refreshing}
-		onclick={() => refresh()}
-	>
-		<RefreshCw class="size-3 {refreshing ? 'animate-spin' : ''}" />
-		{t('common.refresh')}
-	</button>
+	<div class="flex items-center gap-2">
+		<button
+			class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+			disabled={bulkBusy !== ''}
+			onclick={() => queueBulkAction('all', 'requeue')}
+		>
+			<RotateCcw class="size-3" />
+			{t('queue.requeue_all', 'Requeue all')}
+		</button>
+		<button
+			class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+			disabled={bulkBusy !== ''}
+			onclick={() => queueBulkAction('all', 'archive')}
+		>
+			<Archive class="size-3" />
+			{t('queue.archive_all', 'Archive all')}
+		</button>
+		<button
+			class="border-border-input bg-background-alt hover:bg-muted text-destructive flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+			disabled={bulkBusy !== ''}
+			onclick={() => queueBulkAction('all', 'purge')}
+		>
+			<Trash2 class="size-3" />
+			{t('queue.purge_archived', 'Purge archived')}
+		</button>
+		<button
+			class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+			disabled={refreshing}
+			onclick={() => refresh()}
+		>
+			<RefreshCw class="size-3 {refreshing ? 'animate-spin' : ''}" />
+			{t('common.refresh')}
+		</button>
+	</div>
 </div>
 
 <Tabs.Root bind:value={activeTab}>
@@ -439,7 +518,35 @@
 					</div>
 				{/if}
 			</div>
-			<div class="border-border-card flex justify-end border-t px-6 py-3">
+			<div class="border-border-card flex items-center justify-between border-t px-6 py-3">
+				{#if selectedQueue}
+					<div class="flex items-center gap-2">
+						<button
+							class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+							disabled={bulkBusy !== ''}
+							onclick={() => queueBulkAction(selectedQueue!.name, 'requeue')}
+						>
+							<RotateCcw class="size-3" />
+							{t('queue.requeue_all', 'Requeue all')}
+						</button>
+						<button
+							class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+							disabled={bulkBusy !== ''}
+							onclick={() => queueBulkAction(selectedQueue!.name, 'archive')}
+						>
+							<Archive class="size-3" />
+							{t('queue.archive_all', 'Archive all')}
+						</button>
+						<button
+							class="border-border-input bg-background-alt hover:bg-muted text-destructive flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+							disabled={bulkBusy !== ''}
+							onclick={() => queueBulkAction(selectedQueue!.name, 'purge')}
+						>
+							<Trash2 class="size-3" />
+							{t('queue.purge_archived', 'Purge archived')}
+						</button>
+					</div>
+				{/if}
 				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-1.5 text-sm font-medium transition-colors">
 					{t('common.close')}
 				</Dialog.Close>

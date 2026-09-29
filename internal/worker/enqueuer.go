@@ -331,6 +331,8 @@ var taskTier = func() map[string]string {
 		TypeIntelWebSubRenew,
 		// §intel-channels — daily inbound-event retention sweep, low tier.
 		TypeIntelPurgeInboundEvents,
+		// Daily rejected-record retention sweep, low tier.
+		TypeIntelPruneRejectedRecords,
 		// §intel-channels Phase 4 — outbound source discovery, low tier.
 		TypeIntelHarvestOutbound,
 	} {
@@ -446,6 +448,7 @@ var taskTypeCatalog = []struct {
 	{TypeIntelWebSubRenew, "low", "Re-subscribe a webhook channel before the hub-granted lease lapses (§intel-channels Phase 3)"},
 	{TypeIntelSearchPoll, "default", "Poll the configured SERP provider for a search channel; stores the result page as NDJSON (§intel-channels Phase 3)"},
 	{TypeIntelPurgeInboundEvents, "low", "Daily sweep deleting intel_inbound_events rows older than intel.inbound.retention_days (§intel-channels)"},
+	{TypeIntelPruneRejectedRecords, "low", "Daily sweep deleting rejected intel_records older than intel.rejected_retention_days"},
 	// §intel-channels Phase 4 — domain-scoped spider + outbound discovery.
 	{TypeIntelHarvestOutbound, "low", "Harvest a raw doc's external links into proposed intel_sources rows (§intel-channels Phase 4)"},
 	// Low tier

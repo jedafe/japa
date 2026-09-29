@@ -59,6 +59,55 @@
 		setField(key, arr);
 	}
 
+	// The three bounds a price_range value carries — typed tuple so part is
+	// 'min'|'avg'|'max' in the template.
+	const PRICE_PARTS = ['min', 'avg', 'max'] as const;
+
+	// §06/§80 price_range — three bound inputs (min / avg / max) emitting one
+	// structured {min?, avg?, max?} value. Raw-string drafts ride alongside
+	// `values` so partial keystrokes ("2.") aren't clobbered by the
+	// round-trip through the parent; seeds re-derive whenever the stored
+	// object changes (post-submit refetch, dialog reseed).
+	const priceSeeds = $derived.by(() => {
+		const out: Record<string, Record<'min' | 'avg' | 'max', string>> = {};
+		for (const f of fields) {
+			if (f.field_type !== 'price_range') continue;
+			const v = values[f.key];
+			const o =
+				v && typeof v === 'object' && !Array.isArray(v)
+					? (v as Record<string, unknown>)
+					: {};
+			out[f.key] = {
+				min: typeof o.min === 'number' && Number.isFinite(o.min) ? String(o.min) : '',
+				avg: typeof o.avg === 'number' && Number.isFinite(o.avg) ? String(o.avg) : '',
+				max: typeof o.max === 'number' && Number.isFinite(o.max) ? String(o.max) : ''
+			};
+		}
+		return out;
+	});
+	let priceEdits = $state<Record<string, Record<'min' | 'avg' | 'max', string>>>({});
+
+	function pricePart(field: CustomFieldDef, part: 'min' | 'avg' | 'max'): string {
+		return priceEdits[field.key]?.[part] ?? priceSeeds[field.key]?.[part] ?? '';
+	}
+
+	// Emits the structured object the backend normalizePriceRange expects;
+	// all three cleared collapses to '' (the shared "no value" convention).
+	function setPricePart(field: CustomFieldDef, part: 'min' | 'avg' | 'max', raw: string) {
+		const cur: Record<'min' | 'avg' | 'max', string> = {
+			...(priceSeeds[field.key] ?? { min: '', avg: '', max: '' }),
+			...(priceEdits[field.key] ?? {})
+		};
+		cur[part] = raw;
+		priceEdits = { ...priceEdits, [field.key]: cur };
+		const out: Record<string, number> = {};
+		for (const p of ['min', 'avg', 'max'] as const) {
+			const n = Number(cur[p]);
+			if (cur[p] !== '' && Number.isFinite(n)) out[p] = n;
+		}
+		setField(field.key, Object.keys(out).length > 0 ? out : '');
+	}
+
 	// Multiselect helpers — toggle a value in/out of the array.
 	function multiselectToggle(key: string, opt: string) {
 		const arr = Array.isArray(values[key]) ? [...(values[key] as string[])] : [];
@@ -193,6 +242,7 @@
 		'rich_text',
 		'repeater',
 		'multiselect',
+		'price_range',
 		'group'
 	]);
 
@@ -255,6 +305,24 @@
 					<span>{optLabel}</span>
 				</label>
 			{/each}
+			</div>
+		{:else if field.field_type === 'price_range'}
+			<!-- §80 Itemized Pricing — one field, three bounds; emits the
+			     {min?,avg?,max?} object normalizePriceRange expects. -->
+			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
+			<div class="cf-price-range">
+				{#each PRICE_PARTS as part}
+					<label class="cf-price-bound">
+						<span class="cf-price-bound-label">{t(`wiki.price_${part}`, part.toUpperCase())}</span>
+						<input
+							type="number"
+							class="cf-input"
+							step="any"
+							value={pricePart(field, part)}
+							oninput={(e) => setPricePart(field, part, e.currentTarget.value)}
+						/>
+					</label>
+				{/each}
 			</div>
 		{:else if field.field_type === 'number' || field.field_type === 'currency' || field.field_type === 'percentage' || field.field_type === 'rating'}
 			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
@@ -477,6 +545,23 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
+	}
+	.cf-price-range {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 8px;
+	}
+	.cf-price-bound {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.cf-price-bound-label {
+		font-size: 10px;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-muted);
 	}
 	.cf-color {
 		width: 100%;

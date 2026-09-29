@@ -1370,6 +1370,7 @@ type CustomField struct {
 	Position       int32              `json:"position"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	Config         []byte             `json:"config"`
+	Section        *string            `json:"section"`
 }
 
 type CustomFieldEntityType struct {
@@ -4427,6 +4428,9 @@ type WikiPage struct {
 	EditorialOverrides []byte             `json:"editorial_overrides"`
 	DataEntityType     *string            `json:"data_entity_type"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	PageTemplateID     pgtype.UUID        `json:"page_template_id"`
+	FieldGroupID       pgtype.UUID        `json:"field_group_id"`
+	Position           int32              `json:"position"`
 }
 
 type WikiRevision struct {
@@ -4463,6 +4467,7 @@ type WikiTypeCategory struct {
 	Position     int32              `json:"position"`
 	IsSystem     bool               `json:"is_system"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Rollup       []byte             `json:"rollup"`
 }
 
 type WikiTypeConfig struct {
@@ -4473,6 +4478,17 @@ type WikiTypeConfig struct {
 	SeedStubs   bool               `json:"seed_stubs"`
 	Position    int32              `json:"position"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type WikiTypePageTemplate struct {
+	ID           pgtype.UUID        `json:"id"`
+	CategoryID   pgtype.UUID        `json:"category_id"`
+	Slug         string             `json:"slug"`
+	Label        string             `json:"label"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	Position     int32              `json:"position"`
+	IsSystem     bool               `json:"is_system"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type WikiTypeParent struct {

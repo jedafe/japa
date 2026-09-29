@@ -24,6 +24,10 @@
 		searchable: boolean;
 		position: number;
 		options: FieldOption[] | null;
+		/** §80 Itemized Pricing — sub-grouping token inside the group
+		 *  (e.g. 'transportation'); fields sharing one render as one item
+		 *  table on the wiki page. */
+		section?: string | null;
 	};
 
 	type FieldGroup = {
@@ -64,6 +68,7 @@
 	let sortable = $state(false);
 	let searchable = $state(false);
 	let options = $state<FieldOption[]>([]);
+	let section = $state('');
 	let newOptionValue = $state('');
 	let newOptionLabel = $state('');
 
@@ -92,6 +97,7 @@
 		{ value: 'phone', label: 'Phone' },
 		{ value: 'color', label: 'Color Picker' },
 		{ value: 'rating', label: 'Rating (1-5)' },
+		{ value: 'price_range', label: 'Price Range (avg + min–max)' },
 		{ value: 'image_single', label: 'Image (Single Upload)' },
 		{ value: 'image_multi', label: 'Images (Multi Upload)' },
 		{ value: 'media', label: 'Media (File Upload)' },
@@ -123,6 +129,14 @@
 			label: t('fieldGroups.field_type'),
 			sortable: true,
 			render: (v: string) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-muted-muted); color: var(--color-muted)">${fieldTypeLabel(v)}</span>`
+		},
+		{
+			key: 'section',
+			label: t('fieldGroups.section', 'Section'),
+			render: (v: string) =>
+				v
+					? `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
+					: `<span class="text-xs" style="color: var(--color-muted)">—</span>`
 		},
 		{
 			key: 'is_required',
@@ -189,6 +203,7 @@
 		sortable = false;
 		searchable = false;
 		options = [];
+		section = '';
 		newOptionValue = '';
 		newOptionLabel = '';
 		fieldError = '';
@@ -206,6 +221,7 @@
 		sortable = f.sortable;
 		searchable = f.searchable;
 		options = f.options ?? [];
+		section = f.section ?? '';
 		newOptionValue = '';
 		newOptionLabel = '';
 		fieldError = '';
@@ -264,6 +280,9 @@
 				filterable,
 				sortable,
 				searchable,
+				// §80 Itemized Pricing — three-state on update: a token sets the
+				// section, "" clears it.
+				section: section.trim(),
 				position: editingField?.position ?? fields.length,
 			};
 			if (needsOptions) {
@@ -423,6 +442,23 @@
 			{#if editingField}
 				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('fieldGroups.type_immutable')}</p>
 			{/if}
+		</div>
+
+		<!-- §80 Itemized Pricing — section token groups this field into an
+		     item table with its section-mates on the wiki page. -->
+		<div>
+			<label for="fld-section" class="mb-1 block text-sm font-medium">{t('fieldGroups.section', 'Section')}</label>
+			<input
+				id="fld-section"
+				type="text"
+				bind:value={section}
+				placeholder="transportation"
+				class="w-full rounded-lg border px-3 py-2 font-mono text-sm"
+				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+			/>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('fieldGroups.section_help', 'Optional — fields sharing a token render as one item table (e.g. transportation, accommodation).')}
+			</p>
 		</div>
 
 		<!-- Options for select / multiselect -->

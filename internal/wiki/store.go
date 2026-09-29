@@ -60,6 +60,14 @@ type WikiPage struct {
 	UpdatedAt        pgtype.Timestamptz
 	IsJapabotIndexed bool
 	DataEntityType   *string
+	// §80 Hierarchical UX: PageTemplateID records the wiki_type_page_templates
+	// row this page was created from (NULL for freeform pages); FieldGroupID
+	// stores the resolved page-level group binding so it survives template
+	// deletion (effective group = field_group_id ?? category.field_group_id);
+	// Position orders sibling pages inside a category for Prev/Next.
+	PageTemplateID pgtype.UUID
+	FieldGroupID   pgtype.UUID
+	Position       int32
 }
 
 // WikiPageWithSpace includes the space slug/name for the wiki index listing.
@@ -149,6 +157,7 @@ func mapWikiPage(
 	id, spaceID pgtype.UUID, slug, title, category string,
 	isActive, isFeatured, isLocked bool, createdBy pgtype.UUID,
 	createdAt, updatedAt pgtype.Timestamptz, indexed *bool, det *string,
+	ptID, fgID pgtype.UUID, position int32,
 	spaceSlug, spaceName string,
 ) WikiPageWithSpace {
 	return WikiPageWithSpace{
@@ -166,6 +175,9 @@ func mapWikiPage(
 			UpdatedAt:        updatedAt,
 			IsJapabotIndexed: boolDeref(indexed),
 			DataEntityType:   det,
+			PageTemplateID:   ptID,
+			FieldGroupID:     fgID,
+			Position:         position,
 		},
 		SpaceSlug: spaceSlug,
 		SpaceName: spaceName,
@@ -175,19 +187,25 @@ func mapWikiPage(
 func pageFromSlugRow(r gen.GetWikiPageBySlugRow) WikiPageWithSpace {
 	return mapWikiPage(r.ID, r.SpaceID, r.Slug, r.Title, r.Category,
 		r.IsActive, r.IsFeatured, r.IsLocked, r.CreatedBy, r.CreatedAt,
-		r.UpdatedAt, r.IsJapabotIndexed, r.DataEntityType, r.SpaceSlug, r.SpaceName)
+		r.UpdatedAt, r.IsJapabotIndexed, r.DataEntityType,
+		r.PageTemplateID, r.FieldGroupID, r.Position,
+		r.SpaceSlug, r.SpaceName)
 }
 
 func pageFromSpaceSlugRow(r gen.ListWikiPagesBySpaceSlugRow) WikiPageWithSpace {
 	return mapWikiPage(r.ID, r.SpaceID, r.Slug, r.Title, r.Category,
 		r.IsActive, r.IsFeatured, r.IsLocked, r.CreatedBy, r.CreatedAt,
-		r.UpdatedAt, r.IsJapabotIndexed, r.DataEntityType, r.SpaceSlug, r.SpaceName)
+		r.UpdatedAt, r.IsJapabotIndexed, r.DataEntityType,
+		r.PageTemplateID, r.FieldGroupID, r.Position,
+		r.SpaceSlug, r.SpaceName)
 }
 
 func pageFromSpaceIDRow(r gen.ListWikiPagesBySpaceIDRow) WikiPageWithSpace {
 	return mapWikiPage(r.ID, r.SpaceID, r.Slug, r.Title, r.Category,
 		r.IsActive, r.IsFeatured, r.IsLocked, r.CreatedBy, r.CreatedAt,
-		r.UpdatedAt, r.IsJapabotIndexed, r.DataEntityType, r.SpaceSlug, r.SpaceName)
+		r.UpdatedAt, r.IsJapabotIndexed, r.DataEntityType,
+		r.PageTemplateID, r.FieldGroupID, r.Position,
+		r.SpaceSlug, r.SpaceName)
 }
 
 // mapRevision fills a WikiRevision from a generated revision row — the
@@ -842,7 +860,7 @@ func (s *Store) GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (pgtyp
 // UpdatePage updates wiki page admin-managed fields (lock, feature, active,
 // data entity binding). dataEntityType binds the page to a child entity
 // class (§80 community field ops); an empty string clears it to NULL.
-func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, isFeatured, isActive *bool, dataEntityType *string) error {
+func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, isFeatured, isActive *bool, dataEntityType *string, position *int32) error {
 	var detVal any
 	if dataEntityType != nil {
 		detVal = *dataEntityType
@@ -852,6 +870,7 @@ func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, is
 		IsLocked:             isLocked,
 		IsFeatured:           isFeatured,
 		IsActive:             isActive,
+		Position:             position,
 		UpdateDataEntityType: dataEntityType != nil,
 		DataEntityType:       detVal,
 		ID:                   pageID,
@@ -976,16 +995,22 @@ func (s *Store) GetSpaceByID(ctx context.Context, spaceID pgtype.UUID) (slug, le
 // CreatePage creates a new wiki page. Used by the admin generate endpoint
 // and the space activation seed job.
 func (s *Store) CreatePage(ctx context.Context, spaceID, createdBy pgtype.UUID, slug, title, category string) (pgtype.UUID, error) {
-	return s.createPage(ctx, s.write, spaceID, createdBy, slug, title, category)
+	return s.createPageBound(ctx, s.write, spaceID, createdBy, slug, title, category, pgtype.UUID{}, pgtype.UUID{}, 0)
 }
 
-func (s *Store) createPage(ctx context.Context, q *gen.Queries, spaceID, createdBy pgtype.UUID, slug, title, category string) (pgtype.UUID, error) {
+// createPageBound is createPage with the page-template binding + sibling
+// position (§80 Hierarchical UX). pageTemplateID/fieldGroupID are the
+// resolved template binding — an invalid UUID stores NULL (freeform page).
+func (s *Store) createPageBound(ctx context.Context, q *gen.Queries, spaceID, createdBy pgtype.UUID, slug, title, category string, pageTemplateID, fieldGroupID pgtype.UUID, position int32) (pgtype.UUID, error) {
 	pageID, err := q.CreateWikiPage(ctx, gen.CreateWikiPageParams{
-		SpaceID:   spaceID,
-		Slug:      slug,
-		Title:     title,
-		Category:  category,
-		CreatedBy: createdBy,
+		SpaceID:        spaceID,
+		Slug:           slug,
+		Title:          title,
+		Category:       category,
+		CreatedBy:      createdBy,
+		PageTemplateID: pageTemplateID,
+		FieldGroupID:   fieldGroupID,
+		Position:       position,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1000,7 +1025,7 @@ func (s *Store) createPage(ctx context.Context, q *gen.Queries, spaceID, created
 
 // CreatePageWithRevision creates a new wiki page and its initial pending
 // revision inside a single transaction.
-func (s *Store) CreatePageWithRevision(ctx context.Context, spaceID, userID pgtype.UUID, slug, title, category string, content []byte, summary string) (pageID, revID pgtype.UUID, err error) {
+func (s *Store) CreatePageWithRevision(ctx context.Context, spaceID, userID pgtype.UUID, slug, title, category string, content []byte, summary string, pageTemplateID, fieldGroupID pgtype.UUID, position int32) (pageID, revID pgtype.UUID, err error) {
 	tx, err := s.pool.Writer.Begin(ctx)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page tx: %w", err)
@@ -1010,7 +1035,7 @@ func (s *Store) CreatePageWithRevision(ctx context.Context, spaceID, userID pgty
 	q := s.write.WithTx(tx)
 
 	// Insert the page, ignoring duplicate (space_id, slug).
-	pageIDResult, err := s.createPage(ctx, q, spaceID, userID, slug, title, category)
+	pageIDResult, err := s.createPageBound(ctx, q, spaceID, userID, slug, title, category, pageTemplateID, fieldGroupID, position)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, err
 	}
@@ -1108,7 +1133,8 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 				r.ID, r.SpaceID, r.Slug, r.Title, r.Category,
 				r.IsActive, r.IsFeatured, r.IsLocked, r.CreatedBy,
 				r.CreatedAt, r.UpdatedAt, r.IsJapabotIndexed,
-				r.DataEntityType, r.SpaceSlug, r.SpaceName,
+				r.DataEntityType, r.PageTemplateID, r.FieldGroupID,
+				r.Position, r.SpaceSlug, r.SpaceName,
 			),
 		}
 		if r.LatestRevisionID.Valid {
@@ -1134,4 +1160,135 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 	}
 
 	return out, total, nil
+}
+
+// ---------------------------------------------------------------------------
+// Hierarchy reads (§80 Hierarchical UX & Itemized Pricing amendment)
+// ---------------------------------------------------------------------------
+
+// WikiSibling is one sibling page in a category's Prev/Next ordering.
+type WikiSibling struct {
+	ID       pgtype.UUID
+	Slug     string
+	Title    string
+	Position int32
+}
+
+// ListPageSiblings returns a space's pages inside one category in display
+// order — the Prev/Next navigation set.
+func (s *Store) ListPageSiblings(ctx context.Context, spaceID pgtype.UUID, category string) ([]WikiSibling, error) {
+	rows, err := s.read.ListWikiPageSiblings(ctx, gen.ListWikiPageSiblingsParams{
+		SpaceID:  spaceID,
+		Category: category,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list siblings: %w", err)
+	}
+
+	out := make([]WikiSibling, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, WikiSibling{ID: r.ID, Slug: r.Slug, Title: r.Title, Position: r.Position})
+	}
+
+	return out, nil
+}
+
+// WikiParentLink is one space one hop up the actual hierarchy — parents via
+// space_parent_spaces ∪ spaces.parent_id. IsPrimary marks the parent_id
+// link so the service can prefer it when arbitrating breadcrumb chains.
+type WikiParentLink struct {
+	ID            pgtype.UUID
+	Slug          string
+	Name          string
+	Level         string
+	SpaceTypeID   pgtype.UUID
+	SpaceTypeSlug string
+	// SpaceTypeLabel is the display label of the parent's type — the
+	// wiki_type_configs label with the raw space_type name as fallback —
+	// so ancestor crumbs can render "Country"/"City" without a second
+	// lookup.
+	SpaceTypeLabel string
+	IsPrimary      bool
+}
+
+// ListSpaceParentLinks returns the space's direct parents.
+func (s *Store) ListSpaceParentLinks(ctx context.Context, spaceID pgtype.UUID) ([]WikiParentLink, error) {
+	rows, err := s.read.ListWikiSpaceParentLinks(ctx, spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list parent links: %w", err)
+	}
+
+	out := make([]WikiParentLink, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, WikiParentLink{
+			ID: r.ID, Slug: r.Slug, Name: r.Name, Level: r.Level,
+			SpaceTypeID: r.SpaceTypeID, SpaceTypeSlug: r.SpaceTypeSlug,
+			SpaceTypeLabel: r.SpaceTypeLabel,
+			IsPrimary:      r.IsPrimary,
+		})
+	}
+
+	return out, nil
+}
+
+// WikiDescendant is one descendant space row for rollup reads.
+type WikiDescendant struct {
+	ID            pgtype.UUID
+	Slug          string
+	Name          string
+	Level         string
+	SpaceTypeID   pgtype.UUID
+	SpaceTypeSlug string
+	Depth         int32
+}
+
+// ListDescendantSpaces returns the space's transitive descendants (depth
+// ≤3) restricted to the given space types — an empty typeIDs list returns
+// every descendant.
+func (s *Store) ListDescendantSpaces(ctx context.Context, spaceID pgtype.UUID, typeIDs []pgtype.UUID) ([]WikiDescendant, error) {
+	if typeIDs == nil {
+		typeIDs = []pgtype.UUID{}
+	}
+
+	rows, err := s.read.ListWikiDescendantSpaces(ctx, gen.ListWikiDescendantSpacesParams{
+		SpaceID: spaceID,
+		TypeIds: typeIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list descendants: %w", err)
+	}
+
+	out := make([]WikiDescendant, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, WikiDescendant{
+			ID: r.ID, Slug: r.Slug, Name: r.Name, Level: r.Level,
+			SpaceTypeID: r.SpaceTypeID, SpaceTypeSlug: r.SpaceTypeSlug,
+			Depth: r.Depth,
+		})
+	}
+
+	return out, nil
+}
+
+// ListTypeChildIDs returns the space types that declare the given type as
+// a parent (wiki_type_parents reverse edges) — the declared child types
+// driving rollup scope and the landing drill-down.
+func (s *Store) ListTypeChildIDs(ctx context.Context, spaceTypeID pgtype.UUID) ([]pgtype.UUID, error) {
+	ids, err := s.read.ListWikiTypeChildIDs(ctx, spaceTypeID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list type children: %w", err)
+	}
+
+	return ids, nil
+}
+
+// ListTypeParentIDs returns the type's declared parent types — the
+// arbitration input for multi-parent breadcrumb chains.
+func (s *Store) ListTypeParentIDs(ctx context.Context, spaceTypeID pgtype.UUID) ([]pgtype.UUID, error) {
+	ids, err := s.read.ListWikiTypeParentIDs(ctx, spaceTypeID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list type parents: %w", err)
+	}
+
+	return ids, nil
 }

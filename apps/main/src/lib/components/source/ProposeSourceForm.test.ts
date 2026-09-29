@@ -25,7 +25,9 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 const meta: SourceMeta = {
 	categories: ['news', 'job', 'blog'],
-	// The form's category picker prefers the full taxonomy list.
+	// The form's category picker prefers the submittable subset — only
+	// domains with a deterministic (non-AI) content path are offered.
+	submittable_categories: ['blog', 'job', 'news', 'video'],
 	admin_categories: ['news', 'job', 'blog', 'grants', 'housing'],
 	source_types: ['rss', 'video', 'api', 'static'],
 	source_kinds: [
@@ -113,11 +115,13 @@ describe('ProposeSourceForm', () => {
 		expect(container.querySelector('#psf-source-type')).toBeNull();
 		expect(queryByLabelText(/source type/i)).toBeNull();
 		expect(container.querySelector('#psf-categories')).toBeTruthy();
-		// The picker lists admin_categories (full taxonomy), not just the
-		// curated categories list — 'grants'/'housing' are admin-only values.
+		// The picker lists submittable_categories only — 'grants'/'housing'
+		// are valid taxonomy values but stay hidden until AI extraction is
+		// configured.
 		await fireEvent.focus(container.querySelector('#psf-categories')!);
 		expect(await screen.findByRole('option', { name: 'News' })).toBeTruthy();
-		expect(await screen.findByRole('option', { name: /grants/i })).toBeTruthy();
+		expect(screen.queryByRole('option', { name: /grants/i })).toBeNull();
+		expect(screen.queryByRole('option', { name: /housing/i })).toBeNull();
 		expect(getByRole('button', { name: /propose source/i })).toBeTruthy();
 	});
 
@@ -176,6 +180,38 @@ describe('ProposeSourceForm', () => {
 			const body = postedBody('/sources/propose');
 			expect(body.probe_snapshot).toMatchObject({ final_url: 'https://example.com/blog' });
 		});
+	});
+
+	it('groups same-method proposed channels into one row with expandable endpoint URLs', async () => {
+		const multiReport: ProbeReport = {
+			...probeReport,
+			channels: [
+				{ label: 'RSS feed', entry_url: 'https://example.com/feed.xml', crawl_method: 'rss', pipeline: 'curate', confidence: 0.95 },
+				{ label: 'RSS feed', entry_url: 'https://example.com/comments.xml', crawl_method: 'rss', pipeline: 'curate', confidence: 0.95 },
+				{ label: 'Sitemap manifest', entry_url: 'https://example.com/a.xml', crawl_method: 'sitemap', pipeline: 'curate', confidence: 0.7 },
+				{ label: 'Sitemap manifest', entry_url: 'https://example.com/b.xml', crawl_method: 'sitemap', pipeline: 'curate', confidence: 0.7 },
+				{ label: 'Sitemap manifest', entry_url: 'https://example.com/c.xml', crawl_method: 'sitemap', pipeline: 'curate', confidence: 0.7 }
+			]
+		};
+		mockApi((url) => {
+			if (url.includes('/sources/probe')) return jsonResponse({ data: multiReport });
+			return undefined;
+		});
+
+		const { container, getByRole, findByText } = render(ProposeSourceForm, { props: { meta } });
+		await fireEvent.input(container.querySelector('#psf-source-url')!, {
+			target: { value: 'https://example.com/blog' }
+		});
+		await fireEvent.click(getByRole('button', { name: /check url/i }));
+
+		// Each method+label collapses to a single row labelled with an
+		// endpoint count; the URLs themselves are inside the expandable.
+		expect(await findByText(/^proposed channels$/i)).toBeTruthy();
+		expect(screen.getByText('2 endpoints')).toBeTruthy();
+		expect(screen.getByText('3 endpoints')).toBeTruthy();
+		expect(screen.getAllByText('Sitemap manifest').length).toBe(1);
+		expect(screen.getByText('https://example.com/a.xml')).toBeTruthy();
+		expect(screen.getByText('https://example.com/c.xml')).toBeTruthy();
 	});
 
 	it('degrades gracefully when the probe fails — form still submits without a snapshot', async () => {

@@ -11,8 +11,12 @@
 //	DELETE /api/v1/admin/wiki/types/:space_type_id             — remove; 409 while pages exist (wiki.manage)
 //	GET    /api/v1/admin/wiki/types/:space_type_id/categories  — category template (wiki.manage)
 //	POST   /api/v1/admin/wiki/types/:space_type_id/categories  — add category (wiki.manage)
-//	PATCH  /api/v1/admin/wiki/categories/:id                   — label/group/position (wiki.manage)
+//	PATCH  /api/v1/admin/wiki/categories/:id                   — label/group/position/rollup (wiki.manage)
 //	DELETE /api/v1/admin/wiki/categories/:id                   — non-system; 409 while prose exists
+//	GET    /api/v1/admin/wiki/categories/:id/page-templates    — page templates (wiki.manage)
+//	POST   /api/v1/admin/wiki/categories/:id/page-templates    — add page template (wiki.manage)
+//	PATCH  /api/v1/admin/wiki/page-templates/:id               — label/group/position (wiki.manage)
+//	DELETE /api/v1/admin/wiki/page-templates/:id               — non-system; 409 while prose exists
 //
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 package wiki
@@ -163,6 +167,67 @@ func (h *Handlers) HandleDeleteWikiCategory(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// HandleListPageTemplates handles
+// GET /admin/wiki/categories/{id}/page-templates — a category's page
+// templates with bound group identities (§80 Hierarchical UX).
+func (h *Handlers) HandleListPageTemplates(w http.ResponseWriter, r *http.Request) {
+	templates, err := h.service.ListPageTemplates(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeWikiTypeErr(w, err, "list page templates")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": templates})
+}
+
+// HandleCreatePageTemplate handles
+// POST /admin/wiki/categories/{id}/page-templates — adds a page template;
+// an omitted field_group_id auto-provisions the shared
+// wiki_{type}_page_{slug} group.
+func (h *Handlers) HandleCreatePageTemplate(w http.ResponseWriter, r *http.Request) {
+	var req CreateWikiPageTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
+		return
+	}
+
+	t, err := h.service.CreateWikiPageTemplate(r.Context(), chi.URLParam(r, "id"), req)
+	if err != nil {
+		writeWikiTypeErr(w, err, "create page template")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": t})
+}
+
+// HandleUpdatePageTemplate handles PATCH /admin/wiki/page-templates/{id} —
+// label, bound group, and position are editable; slug is not.
+func (h *Handlers) HandleUpdatePageTemplate(w http.ResponseWriter, r *http.Request) {
+	var req UpdateWikiPageTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
+		return
+	}
+
+	if err := h.service.UpdateWikiPageTemplate(r.Context(), chi.URLParam(r, "id"), req); err != nil {
+		writeWikiTypeErr(w, err, "update page template")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+}
+
+// HandleDeletePageTemplate handles DELETE /admin/wiki/page-templates/{id} —
+// removes a non-system template; blocked while bound pages carry prose.
+func (h *Handlers) HandleDeletePageTemplate(w http.ResponseWriter, r *http.Request) {
+	if err := h.service.DeleteWikiPageTemplate(r.Context(), chi.URLParam(r, "id")); err != nil {
+		writeWikiTypeErr(w, err, "delete page template")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // writeWikiTypeErr maps wiki type/category service errors to the standard
 // error envelope (Rule 5 — snake_case codes).
 func writeWikiTypeErr(w http.ResponseWriter, err error, op string) {
@@ -183,6 +248,14 @@ func writeWikiTypeErr(w http.ResponseWriter, err error, op string) {
 		errpkg.WriteError(w, http.StatusConflict, "wiki_category_exists", "A category with this slug or token already exists on this type")
 	case errors.Is(err, ErrFieldGroupNotFound):
 		errpkg.WriteError(w, http.StatusBadRequest, "field_group_not_found", "Field group not found")
+	case errors.Is(err, ErrWikiPageTemplateNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "wiki_page_template_not_found", "Wiki page template not found")
+	case errors.Is(err, ErrWikiPageTemplateExists):
+		errpkg.WriteError(w, http.StatusConflict, "wiki_page_template_exists", "A page template with this slug already exists on this category")
+	case errors.Is(err, ErrWikiPageTemplateProtected):
+		errpkg.WriteError(w, http.StatusConflict, "wiki_page_template_protected", "System page templates cannot be deleted")
+	case errors.Is(err, ErrWikiPageTemplateInUse):
+		errpkg.WriteError(w, http.StatusConflict, "wiki_page_template_in_use", "Pages bound to this template still have content")
 	default:
 		slog.Error("wiki: "+op+" failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Operation failed")

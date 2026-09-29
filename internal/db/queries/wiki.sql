@@ -5,11 +5,22 @@
 -- Pages
 -- =====================
 
+-- name: ListWikiPageSiblings :many
+-- Ordered sibling pages within a space+category — the Prev/Next set (§80
+-- Hierarchical UX amendment). position ASC, then created_at for stability.
+-- Soft-deleted pages are excluded like every other wiki_pages read.
+SELECT wp.id, wp.slug, wp.title, wp.position
+FROM wiki_pages wp
+WHERE wp.space_id = @space_id AND wp.category = @category
+  AND wp.is_active = true AND wp.deleted_at IS NULL
+ORDER BY wp.position ASC, wp.created_at ASC, wp.slug ASC;
+
+
 -- name: GetWikiPageBySlug :one
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       wp.data_entity_type,
+       wp.data_entity_type, wp.page_template_id, wp.field_group_id, wp.position,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -21,7 +32,7 @@ LIMIT 1;
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       wp.data_entity_type,
+       wp.data_entity_type, wp.page_template_id, wp.field_group_id, wp.position,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -32,7 +43,7 @@ ORDER BY wp.category, wp.title;
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       wp.data_entity_type,
+       wp.data_entity_type, wp.page_template_id, wp.field_group_id, wp.position,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
@@ -278,6 +289,7 @@ UPDATE wiki_pages
 SET is_locked = COALESCE(sqlc.narg(is_locked), is_locked),
     is_featured = COALESCE(sqlc.narg(is_featured), is_featured),
     is_active = COALESCE(sqlc.narg(is_active), is_active),
+    position = COALESCE(sqlc.narg(position), position),
     data_entity_type = CASE WHEN @update_data_entity_type::bool
                         THEN NULLIF(@data_entity_type, '')
                         ELSE data_entity_type END,
@@ -337,8 +349,11 @@ LIMIT 1;
 -- ON CONFLICT carries the partial-index predicate (deleted_at IS NULL) so
 -- inference matches wiki_pages_space_id_slug_key — a soft-deleted page no
 -- longer blocks the slug (000744).
-INSERT INTO wiki_pages (space_id, slug, title, category, created_by)
-VALUES (@space_id, @slug, @title, @category, sqlc.narg(created_by))
+INSERT INTO wiki_pages (space_id, slug, title, category, created_by,
+    page_template_id, field_group_id, position)
+VALUES (@space_id, @slug, @title, @category, sqlc.narg(created_by),
+    sqlc.narg(page_template_id), sqlc.narg(field_group_id),
+    COALESCE(sqlc.narg(position), 0))
 ON CONFLICT (space_id, slug) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id;
 
@@ -365,6 +380,7 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
        wp.data_entity_type, wp.deleted_at,
+       wp.page_template_id, wp.field_group_id, wp.position,
        sp.slug AS space_slug, sp.name AS space_name,
        lr.id AS latest_revision_id,
        COALESCE(lr.status, '') AS latest_revision_status,

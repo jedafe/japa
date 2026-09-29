@@ -74,6 +74,7 @@ type fieldReadStore interface {
 	GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error)
 	ListAssignmentsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroupAssignment, error)
 	ListFieldValuesWithDefsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error)
+	ListFieldValuesWithDefsForEntities(ctx context.Context, entityType string, entityIDs []pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsForEntitiesRow, error)
 	GetFieldGroup(ctx context.Context, id pgtype.UUID) (gen.CustomFieldGroup, error)
 	GetFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error)
 	ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
@@ -136,6 +137,17 @@ type EntityFieldDTO struct {
 	Value     json.RawMessage `json:"value"`
 	CanEdit   bool            `json:"can_edit"`
 	Visible   bool            `json:"visible"`
+	// Section is the §80 itemized-pricing sub-grouping token — fields
+	// sharing one render under one item table (e.g. 'transportation').
+	Section string `json:"section,omitempty"`
+}
+
+// EntityFieldSectionDTO is one named section inside a field group — fields
+// sharing a custom_fields.section token in definition order. The empty key
+// collects section-less fields (rendered first, unlabeled).
+type EntityFieldSectionDTO struct {
+	Key    string           `json:"key"`
+	Fields []EntityFieldDTO `json:"fields"`
 }
 
 // EntityFieldGroupDTO is a field group assigned to the entity's class, with
@@ -145,6 +157,10 @@ type EntityFieldGroupDTO struct {
 	Slug   string           `json:"slug"`
 	Name   string           `json:"name"`
 	Fields []EntityFieldDTO `json:"fields"`
+	// Sections regroups Fields by their section token (§80 Itemized
+	// Pricing) — same field objects in stable order, for UIs that render
+	// one table per section.
+	Sections []EntityFieldSectionDTO `json:"sections,omitempty"`
 }
 
 // EntityFieldsDTO is the response shape of GET /wiki/entities/:type/:id/fields
@@ -176,12 +192,49 @@ type EntityFieldsDTO struct {
 // applied immediately in one transaction; the approved row is kept for
 // audit. Returns the revision ID and whether it was auto-approved.
 func (s *Service) SubmitFieldOps(ctx context.Context, userID, pageID pgtype.UUID, entityType string, entityID pgtype.UUID, body []byte, ops []FieldOp, summary string, canManage bool) (revID string, autoApproved bool, err error) {
+	normBody, targetType, targetID, err := s.validateFieldOps(ctx, userID, entityType, entityID, body, ops, canManage)
+	if err != nil {
+		return "", false, err
+	}
+
+	return s.persistFieldOps(ctx, userID, pageID, normBody, targetType, targetID, ops, summary, canManage)
+}
+
+// SubmitPageFieldOps is the page-slug-keyed ops entry behind
+// POST /wiki/spaces/{space}/pages/{page}/revisions (§80): ops validate
+// BEFORE the target resolves so a rejected submission never materializes a
+// lazy template page into an empty wiki_pages row. The revision target is
+// derived from the ops themselves — the same way the handler invoked
+// SubmitFieldOps with an empty entity target.
+func (s *Service) SubmitPageFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, body []byte, ops []FieldOp, summary string, canManage bool) (string, bool, error) {
+	normBody, targetType, targetID, err := s.validateFieldOps(ctx, userID, "", pgtype.UUID{}, body, ops, canManage)
+	if err != nil {
+		return "", false, err
+	}
+
+	pageID, _, locked, err := s.GetPageEntityTarget(ctx, userID, spaceSlug, pageSlug)
+	if err != nil {
+		return "", false, err
+	}
+	if locked {
+		return "", false, ErrPageLocked
+	}
+
+	return s.persistFieldOps(ctx, userID, pageID, normBody, targetType, targetID, ops, summary, canManage)
+}
+
+// validateFieldOps runs every pageID-independent check on a field-ops
+// submission: op shape/count, prose normalization (BUG-020), target
+// resolution, per-op RBAC, entity schema lookup, set_value semantics, and
+// schema-op target checks. Returns the normalized body and the resolved
+// revision target for persistFieldOps.
+func (s *Service) validateFieldOps(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, body []byte, ops []FieldOp, canManage bool) (normBody []byte, targetType string, targetID pgtype.UUID, err error) {
 	if len(ops) == 0 {
-		return "", false, errors.New("wiki: submit fields: at least one op is required")
+		return nil, "", pgtype.UUID{}, errors.New("wiki: submit fields: at least one op is required")
 	}
 
 	if err := ValidateOps(ops, s.maxOpsPerRevision(ctx)); err != nil {
-		return "", false, fmt.Errorf("wiki: submit fields: %w", err)
+		return nil, "", pgtype.UUID{}, fmt.Errorf("wiki: submit fields: %w", err)
 	}
 
 	// Mixed revisions carry prose — run it through the same
@@ -189,21 +242,21 @@ func (s *Service) SubmitFieldOps(ctx context.Context, userID, pageID pgtype.UUID
 	if len(body) > 0 {
 		normalized, nerr := normalizeWikiContent(body)
 		if nerr != nil {
-			return "", false, fmt.Errorf("wiki: submit fields: invalid content: %w", nerr)
+			return nil, "", pgtype.UUID{}, fmt.Errorf("wiki: submit fields: invalid content: %w", nerr)
 		}
 
 		body = normalized
 	}
 
-	targetType, targetID, err := resolveOpsTarget(entityType, entityID, ops)
+	targetType, targetID, err = resolveOpsTarget(entityType, entityID, ops)
 	if err != nil {
-		return "", false, fmt.Errorf("wiki: submit fields: %w", err)
+		return nil, "", pgtype.UUID{}, fmt.Errorf("wiki: submit fields: %w", err)
 	}
 
 	// Per-op RBAC gate (§10): each op maps to a wiki.fields.* node and a
 	// submission is rejected when any op exceeds the submitter's grants.
 	if err := s.checkOpsPermissions(ctx, userID, ops, canManage); err != nil {
-		return "", false, err
+		return nil, "", pgtype.UUID{}, err
 	}
 
 	// The entity's assigned-group field schema — set_value resolves
@@ -211,7 +264,7 @@ func (s *Service) SubmitFieldOps(ctx context.Context, userID, pageID pgtype.UUID
 	// for target-less submissions; ops that need a schema field then fail.
 	schema, err := s.entitySchema(ctx, targetType, targetID)
 	if err != nil {
-		return "", false, err
+		return nil, "", pgtype.UUID{}, err
 	}
 
 	// set_value semantic validation: field exists in the entity schema (or
@@ -219,16 +272,24 @@ func (s *Service) SubmitFieldOps(ctx context.Context, userID, pageID pgtype.UUID
 	// field's value column and belongs to its options, and field-level
 	// can_edit allows the submitter.
 	if err := s.checkSetValueFields(ctx, userID, ops, canManage, schema); err != nil {
-		return "", false, err
+		return nil, "", pgtype.UUID{}, err
 	}
 
 	// Schema-op targets: groups must exist (or be proposed earlier in the
 	// same array), field keys/group slugs must be free — a revision that
 	// can never apply must not queue as an unapprovable pending row.
 	if err := s.checkSchemaOpTargets(ctx, ops); err != nil {
-		return "", false, err
+		return nil, "", pgtype.UUID{}, err
 	}
 
+	return body, targetType, targetID, nil
+}
+
+// persistFieldOps is the insert half of SubmitFieldOps/SubmitPageFieldOps —
+// edit lock (B6, page-scoped), ops marshal, revision insert, and the
+// canManage auto-approve (§6 step 2). Validation must already have run via
+// validateFieldOps; body is the normalized form it returns.
+func (s *Service) persistFieldOps(ctx context.Context, userID, pageID pgtype.UUID, body []byte, targetType string, targetID pgtype.UUID, ops []FieldOp, summary string, canManage bool) (revID string, autoApproved bool, err error) {
 	// B6 edit lock — reused only when a host page exists. Page-less suggest
 	// submissions take no lock: two pending revisions may target the same
 	// entity+field and both can be approved (last-approver wins on the value —
@@ -438,6 +499,9 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 				Label:     f.Label,
 				FieldType: f.FieldType,
 			}
+			if f.Section != nil {
+				dto.Section = *f.Section
+			}
 
 			if len(f.Options) > 0 {
 				dto.Options = json.RawMessage(f.Options)
@@ -468,10 +532,11 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 		}
 
 		groups = append(groups, EntityFieldGroupDTO{
-			ID:     group.ID.String(),
-			Slug:   group.Slug,
-			Name:   group.Name,
-			Fields: dtos,
+			ID:       group.ID.String(),
+			Slug:     group.Slug,
+			Name:     group.Name,
+			Fields:   dtos,
+			Sections: fieldSections(dtos),
 		})
 	}
 
@@ -584,6 +649,9 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 			Label:     f.Label,
 			FieldType: f.FieldType,
 		}
+		if f.Section != nil {
+			dto.Section = *f.Section
+		}
 
 		if len(f.Options) > 0 {
 			dto.Options = json.RawMessage(f.Options)
@@ -608,11 +676,50 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 	}
 
 	return &EntityFieldGroupDTO{
-		ID:     group.ID.String(),
-		Slug:   group.Slug,
-		Name:   group.Name,
-		Fields: dtos,
+		ID:       group.ID.String(),
+		Slug:     group.Slug,
+		Name:     group.Name,
+		Fields:   dtos,
+		Sections: fieldSections(dtos),
 	}, nil
+}
+
+// fieldSections groups fields by their section token preserving first-seen
+// order — the "" bucket (section-less fields) sorts first so unsectioned
+// rows render before the named item tables (§80 Itemized Pricing).
+func fieldSections(fields []EntityFieldDTO) []EntityFieldSectionDTO {
+	order := []string{}
+	byKey := map[string][]EntityFieldDTO{}
+
+	for _, f := range fields {
+		if _, ok := byKey[f.Section]; !ok {
+			order = append(order, f.Section)
+		}
+		byKey[f.Section] = append(byKey[f.Section], f)
+	}
+
+	if len(order) <= 1 {
+		return nil // single implicit section — the flat fields list suffices
+	}
+
+	// The "" bucket (unsectioned fields) renders first regardless of
+	// where it first appeared in field order.
+	if order[0] != "" {
+		for i, k := range order {
+			if k == "" {
+				copy(order[1:i+1], order[:i])
+				order[0] = ""
+				break
+			}
+		}
+	}
+
+	out := make([]EntityFieldSectionDTO, 0, len(order))
+	for _, k := range order {
+		out = append(out, EntityFieldSectionDTO{Key: k, Fields: byKey[k]})
+	}
+
+	return out
 }
 
 // StructuredEditsEnabled reports whether the wiki.structured_edits feature
@@ -637,10 +744,14 @@ func (s *Service) StructuredEditsEnabled(ctx context.Context) bool {
 // the IDs an entity-targeted ops submission needs: the page ID the revision
 // attaches to, the host space ID the ops apply to, and whether the page is
 // locked to mod-only edits (§80 — ops submissions on a locked page are
-// rejected with the same rule as prose submissions). Returns
-// ErrSpaceNotFound for unknown spaces and pgx.ErrNoRows for unknown pages.
-func (s *Service) GetPageEntityTarget(ctx context.Context, spaceSlug, pageSlug string) (pageID, spaceID pgtype.UUID, locked bool, err error) {
-	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
+// rejected with the same rule as prose submissions). A slug matching a
+// page template but no wiki_pages row materializes the lazy template page
+// on the spot (§80: template pages materialize on first submission).
+// Returns ErrSpaceNotFound for unknown spaces and pgx.ErrNoRows for
+// unknown/untemplated pages.
+func (s *Service) GetPageEntityTarget(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string) (pageID, spaceID pgtype.UUID, locked bool, err error) {
+	resolvedSpaceID, spaceName, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, pgtype.UUID{}, false, ErrSpaceNotFound
 		}
@@ -651,10 +762,11 @@ func (s *Service) GetPageEntityTarget(ctx context.Context, spaceSlug, pageSlug s
 	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return pgtype.UUID{}, pgtype.UUID{}, false, pgx.ErrNoRows
+			page, err = s.materializeTemplatePage(ctx, resolvedSpaceID, spaceSlug, spaceName, userID, pageSlug)
 		}
-
-		return pgtype.UUID{}, pgtype.UUID{}, false, fmt.Errorf("wiki: entity target: get page: %w", err)
+		if err != nil {
+			return pgtype.UUID{}, pgtype.UUID{}, false, err
+		}
 	}
 
 	return page.ID, page.SpaceID, page.IsLocked, nil

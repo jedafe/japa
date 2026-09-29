@@ -49,7 +49,11 @@ type WikiCategory struct {
 	FieldGroupName *string
 	Position       int32
 	IsSystem       bool
-	CreatedAt      pgtype.Timestamptz
+	// Rollup is the category's descendant-aggregation config (§80
+	// Hierarchical UX): {"enabled":true,"metrics":[...],"levels":[...]} —
+	// nil when the category does not roll up.
+	Rollup    []byte
+	CreatedAt pgtype.Timestamptz
 }
 
 // ErrWikiTypeNotFound is returned when a wiki_type_configs row does not
@@ -113,6 +117,7 @@ func (s *Store) ListCategoriesBySpaceSlug(ctx context.Context, spaceSlug string)
 	out := make([]WikiCategory, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, WikiCategory{
+			ID:            r.ID,
 			SpaceTypeSlug: r.SpaceTypeSlug,
 			Slug:          r.Slug,
 			Category:      r.Category,
@@ -120,6 +125,7 @@ func (s *Store) ListCategoriesBySpaceSlug(ctx context.Context, spaceSlug string)
 			FieldGroupID:  r.FieldGroupID,
 			Position:      r.Position,
 			IsSystem:      r.IsSystem,
+			Rollup:        r.Rollup,
 		})
 	}
 
@@ -144,6 +150,7 @@ func (s *Store) ListAllCategories(ctx context.Context) ([]WikiCategory, error) {
 			FieldGroupID:  r.FieldGroupID,
 			Position:      r.Position,
 			IsSystem:      r.IsSystem,
+			Rollup:        r.Rollup,
 		})
 	}
 
@@ -178,6 +185,7 @@ func (s *Store) GetCategoryForSpace(ctx context.Context, spaceID pgtype.UUID, sl
 		FieldGroupName: r.FieldGroupName,
 		Position:       r.Position,
 		IsSystem:       r.IsSystem,
+		Rollup:         r.Rollup,
 		CreatedAt:      r.CreatedAt,
 	}, nil
 }
@@ -192,6 +200,11 @@ func (s *Store) ListEnabledWikiTypes(ctx context.Context) ([]WikiType, error) {
 
 	out := make([]WikiType, 0, len(rows))
 	for _, r := range rows {
+		// §80 Hierarchical UX: the public type list carries the declared
+		// parent edges — they drive the landing drill-down, breadcrumb
+		// arbitration, and rollup descendant scoping.
+		parents := r.ParentTypeIds
+
 		out = append(out, WikiType{
 			SpaceTypeID:   r.SpaceTypeID,
 			SpaceTypeSlug: r.SpaceTypeSlug,
@@ -200,6 +213,7 @@ func (s *Store) ListEnabledWikiTypes(ctx context.Context) ([]WikiType, error) {
 			Label:         r.Label,
 			Icon:          r.Icon,
 			Position:      r.Position,
+			ParentTypeIDs: parents,
 		})
 	}
 
@@ -220,7 +234,7 @@ func (s *Store) ListWikiTypes(ctx context.Context) ([]WikiType, error) {
 			label = *r.Label
 		}
 
-		parents, _ := r.ParentTypeIds.([]string)
+		parents := r.ParentTypeIds
 
 		out = append(out, WikiType{
 			SpaceTypeID:   r.SpaceTypeID,
@@ -433,6 +447,7 @@ func (s *Store) ListWikiTypeCategories(ctx context.Context, spaceTypeID pgtype.U
 			FieldGroupName: r.FieldGroupName,
 			Position:       r.Position,
 			IsSystem:       r.IsSystem,
+			Rollup:         r.Rollup,
 			CreatedAt:      r.CreatedAt,
 		})
 	}
@@ -461,12 +476,13 @@ func (s *Store) GetWikiTypeCategory(ctx context.Context, id pgtype.UUID) (WikiCa
 		FieldGroupID: r.FieldGroupID,
 		Position:     r.Position,
 		IsSystem:     r.IsSystem,
+		Rollup:       r.Rollup,
 		CreatedAt:    r.CreatedAt,
 	}, nil
 }
 
 // CreateWikiTypeCategory adds a category to a type's template.
-func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.UUID, slug, category, label string, fieldGroupID pgtype.UUID, position int32, isSystem bool) (WikiCategory, error) {
+func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.UUID, slug, category, label string, fieldGroupID pgtype.UUID, position int32, isSystem bool, rollup []byte) (WikiCategory, error) {
 	r, err := s.write.CreateWikiTypeCategory(ctx, gen.CreateWikiTypeCategoryParams{
 		SpaceTypeID:  spaceTypeID,
 		Slug:         slug,
@@ -475,6 +491,7 @@ func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.U
 		FieldGroupID: fieldGroupID,
 		Position:     position,
 		IsSystem:     isSystem,
+		Rollup:       rollup,
 	})
 	if err != nil {
 		// Unique collision on (space_type_id, slug|category) → 409, not 500.
@@ -495,6 +512,7 @@ func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.U
 		FieldGroupID: r.FieldGroupID,
 		Position:     r.Position,
 		IsSystem:     r.IsSystem,
+		Rollup:       r.Rollup,
 		CreatedAt:    r.CreatedAt,
 	}, nil
 }
@@ -504,12 +522,14 @@ func (s *Store) CreateWikiTypeCategory(ctx context.Context, spaceTypeID pgtype.U
 // updateFieldGroup distinguishes "don't touch" from "rebind": when true,
 // fieldGroupID replaces the binding (the column is NOT NULL — callers must
 // pass a validated group id, never a zero UUID).
-func (s *Store) UpdateWikiTypeCategory(ctx context.Context, id pgtype.UUID, label *string, updateFieldGroup bool, fieldGroupID pgtype.UUID, position *int32) error {
+func (s *Store) UpdateWikiTypeCategory(ctx context.Context, id pgtype.UUID, label *string, updateFieldGroup bool, fieldGroupID pgtype.UUID, position *int32, updateRollup bool, rollup []byte) error {
 	affected, err := s.write.UpdateWikiTypeCategory(ctx, gen.UpdateWikiTypeCategoryParams{
 		Label:            label,
 		UpdateFieldGroup: updateFieldGroup,
 		FieldGroupID:     fieldGroupID,
 		Position:         position,
+		UpdateRollup:     updateRollup,
+		Rollup:           rollup,
 		ID:               id,
 	})
 	if err != nil {
@@ -554,4 +574,250 @@ func (s *Store) CountCategoryProsePages(ctx context.Context, category string, sp
 	}
 
 	return n, nil
+}
+
+// ---------------------------------------------------------------------------
+// Page templates (§80 Hierarchical UX & Itemized Pricing amendment)
+// ---------------------------------------------------------------------------
+
+// WikiPageTemplate is one row of a category's page template — a named
+// sibling page (e.g. "prices" under cost_of_living) binding a shared
+// type-level field group so item keys stay comparable across spaces.
+type WikiPageTemplate struct {
+	ID             pgtype.UUID
+	CategoryID     pgtype.UUID
+	Slug           string
+	Label          string
+	FieldGroupID   pgtype.UUID
+	FieldGroupSlug *string
+	FieldGroupName *string
+	Position       int32
+	IsSystem       bool
+	CreatedAt      pgtype.Timestamptz
+}
+
+// ErrWikiPageTemplateNotFound is returned when a wiki_type_page_templates
+// row does not exist.
+var ErrWikiPageTemplateNotFound = errors.New("wiki page template not found")
+
+// ErrWikiPageTemplateExists is returned when a template's slug collides
+// with an existing template row on the same category.
+var ErrWikiPageTemplateExists = errors.New("wiki page template already exists")
+
+// ErrWikiPageTemplateProtected is returned when mutating a system template.
+var ErrWikiPageTemplateProtected = errors.New("wiki page template is system-protected")
+
+// ErrWikiPageTemplateInUse is returned when deleting a template whose bound
+// pages carry approved prose.
+var ErrWikiPageTemplateInUse = errors.New("wiki page template has pages with content")
+
+func pageTemplateFromRow(id, categoryID pgtype.UUID, slug, label string, fieldGroupID pgtype.UUID, fgSlug, fgName *string, position int32, isSystem bool, createdAt pgtype.Timestamptz) WikiPageTemplate {
+	return WikiPageTemplate{
+		ID: id, CategoryID: categoryID, Slug: slug, Label: label,
+		FieldGroupID: fieldGroupID, FieldGroupSlug: fgSlug, FieldGroupName: fgName,
+		Position: position, IsSystem: isSystem, CreatedAt: createdAt,
+	}
+}
+
+// ListPageTemplates returns a category's ordered page templates with bound
+// group identities (admin editor).
+func (s *Store) ListPageTemplates(ctx context.Context, categoryID pgtype.UUID) ([]WikiPageTemplate, error) {
+	rows, err := s.read.ListWikiPageTemplates(ctx, categoryID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list page templates: %w", err)
+	}
+
+	out := make([]WikiPageTemplate, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, r.FieldGroupName, r.Position, r.IsSystem, r.CreatedAt))
+	}
+
+	return out, nil
+}
+
+// ListPageTemplatesBySpaceType returns every page template across a type's
+// categories — one fetch for the admin editor's per-category template lists.
+func (s *Store) ListPageTemplatesBySpaceType(ctx context.Context, spaceTypeID pgtype.UUID) ([]WikiPageTemplate, error) {
+	rows, err := s.read.ListWikiPageTemplatesBySpaceType(ctx, spaceTypeID)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list page templates by type: %w", err)
+	}
+
+	out := make([]WikiPageTemplate, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, r.FieldGroupName, r.Position, r.IsSystem, r.CreatedAt))
+	}
+
+	return out, nil
+}
+
+// GetPageTemplate returns one template row by id.
+func (s *Store) GetPageTemplate(ctx context.Context, id pgtype.UUID) (WikiPageTemplate, error) {
+	r, err := s.read.GetWikiPageTemplate(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WikiPageTemplate{}, ErrWikiPageTemplateNotFound
+		}
+
+		return WikiPageTemplate{}, fmt.Errorf("wiki: get page template: %w", err)
+	}
+
+	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.Position, r.IsSystem, r.CreatedAt), nil
+}
+
+// GetPageTemplateForSpace resolves a (category, slug) pair to the space
+// type's page template — the binding wiki_pages rows store at create.
+// Category scoping keeps resolution deterministic when two categories on
+// one type declare the same template slug. Returns
+// ErrWikiPageTemplateNotFound for freeform (untemplated) slugs.
+func (s *Store) GetPageTemplateForSpace(ctx context.Context, spaceID pgtype.UUID, category, slug string) (WikiPageTemplate, error) {
+	r, err := s.read.GetWikiPageTemplateForSpace(ctx, gen.GetWikiPageTemplateForSpaceParams{
+		SpaceID:  spaceID,
+		Slug:     slug,
+		Category: category,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WikiPageTemplate{}, ErrWikiPageTemplateNotFound
+		}
+
+		return WikiPageTemplate{}, fmt.Errorf("wiki: page template for space: %w", err)
+	}
+
+	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.Position, r.IsSystem, r.CreatedAt), nil
+}
+
+// WikiPageTemplateRef is a page template plus its owning category's token
+// — the lazy-page read needs the category to set the synthesized page's
+// `category` (siblings and the field-group fallback key on it).
+type WikiPageTemplateRef struct {
+	WikiPageTemplate
+	// CategoryToken is the owning category's wiki_pages.category value.
+	CategoryToken string
+}
+
+// GetPageTemplateBySlug resolves a slug-only template across all of the
+// space type's categories (§80 lazy pages — the /wiki/{space}/{slug} URL
+// carries no category). Category/template position ordering keeps the pick
+// deterministic when two categories reuse a slug.
+func (s *Store) GetPageTemplateBySlug(ctx context.Context, spaceID pgtype.UUID, slug string) (WikiPageTemplateRef, error) {
+	r, err := s.read.GetWikiPageTemplateBySlug(ctx, gen.GetWikiPageTemplateBySlugParams{
+		SpaceID: spaceID,
+		Slug:    slug,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WikiPageTemplateRef{}, ErrWikiPageTemplateNotFound
+		}
+
+		return WikiPageTemplateRef{}, fmt.Errorf("wiki: page template by slug: %w", err)
+	}
+
+	return WikiPageTemplateRef{
+		WikiPageTemplate: pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, nil, r.Position, r.IsSystem, r.CreatedAt),
+		CategoryToken:    r.CategoryToken,
+	}, nil
+}
+
+// CreatePageTemplate adds a page template to a category.
+func (s *Store) CreatePageTemplate(ctx context.Context, categoryID pgtype.UUID, slug, label string, fieldGroupID pgtype.UUID, position int32, isSystem bool) (WikiPageTemplate, error) {
+	r, err := s.write.CreateWikiPageTemplate(ctx, gen.CreateWikiPageTemplateParams{
+		CategoryID:   categoryID,
+		Slug:         slug,
+		Label:        label,
+		FieldGroupID: fieldGroupID,
+		Position:     position,
+		IsSystem:     isSystem,
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return WikiPageTemplate{}, fmt.Errorf("%w: %s", ErrWikiPageTemplateExists, pgErr.ConstraintName)
+		}
+
+		return WikiPageTemplate{}, fmt.Errorf("wiki: create page template: %w", err)
+	}
+
+	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.Position, r.IsSystem, r.CreatedAt), nil
+}
+
+// UpdatePageTemplate patches label, bound group, and position — slug is
+// immutable (page URLs). updateFieldGroup distinguishes "don't touch" from
+// "rebind" (field_group_id is NOT NULL — pass a validated id, never zero).
+func (s *Store) UpdatePageTemplate(ctx context.Context, id pgtype.UUID, label *string, updateFieldGroup bool, fieldGroupID pgtype.UUID, position *int32) error {
+	affected, err := s.write.UpdateWikiPageTemplate(ctx, gen.UpdateWikiPageTemplateParams{
+		Label:            label,
+		UpdateFieldGroup: updateFieldGroup,
+		FieldGroupID:     fieldGroupID,
+		Position:         position,
+		ID:               id,
+	})
+	if err != nil {
+		return fmt.Errorf("wiki: update page template: %w", err)
+	}
+
+	if affected == 0 {
+		return ErrWikiPageTemplateNotFound
+	}
+
+	return nil
+}
+
+// DeletePageTemplate removes a non-system template. Bound pages keep their
+// field_group_id (the page's schema survives — §80: deleting a template
+// must not invalidate existing page bindings).
+func (s *Store) DeletePageTemplate(ctx context.Context, id pgtype.UUID) error {
+	affected, err := s.write.DeleteWikiPageTemplate(ctx, id)
+	if err != nil {
+		return fmt.Errorf("wiki: delete page template: %w", err)
+	}
+
+	if affected == 0 {
+		return ErrWikiPageTemplateNotFound
+	}
+
+	return nil
+}
+
+// CountTemplateContentPages is the delete-template guard: pages bound to
+// the template carrying approved prose/field revisions or stored values in
+// the template's group. Reads through the write pool so a lagging replica
+// can't mask fresh content.
+func (s *Store) CountTemplateContentPages(ctx context.Context, id pgtype.UUID) (int64, error) {
+	n, err := s.write.CountTemplateContentPages(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("wiki: count template content: %w", err)
+	}
+
+	return n, nil
+}
+
+// ResolveCategoryToken canonicalizes a category token/slug to the type's
+// managed category row — the rollup source-group lookup by
+// (space_type_id, category) (§80 Hierarchical UX).
+func (s *Store) ResolveCategoryToken(ctx context.Context, spaceTypeID pgtype.UUID, token string) (WikiCategory, error) {
+	r, err := s.read.ResolveWikiTypeCategoryToken(ctx, gen.ResolveWikiTypeCategoryTokenParams{
+		SpaceTypeID: spaceTypeID,
+		Token:       token,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WikiCategory{}, ErrWikiCategoryNotFound
+		}
+
+		return WikiCategory{}, fmt.Errorf("wiki: resolve category token: %w", err)
+	}
+
+	return WikiCategory{
+		ID:           r.ID,
+		SpaceTypeID:  r.SpaceTypeID,
+		Slug:         r.Slug,
+		Category:     r.Category,
+		Label:        r.Label,
+		FieldGroupID: r.FieldGroupID,
+		Position:     r.Position,
+		IsSystem:     r.IsSystem,
+		Rollup:       r.Rollup,
+		CreatedAt:    r.CreatedAt,
+	}, nil
 }

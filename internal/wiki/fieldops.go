@@ -55,6 +55,10 @@ type FieldDefInput struct {
 	Position     int32                      `json:"position,omitempty"`
 	Placeholder  string                     `json:"placeholder,omitempty"`
 	DefaultValue string                     `json:"default_value,omitempty"`
+	// Section is the §80 itemized-pricing sub-grouping token written to
+	// custom_fields.section — fields sharing a token render as one item
+	// table (e.g. 'transportation'). Empty = no section.
+	Section string `json:"section,omitempty"`
 }
 
 // GroupDefInput is the group definition payload carried by propose_group.
@@ -205,6 +209,10 @@ func validateFieldDef(f *FieldDefInput, where string, proposable bool) error {
 
 	if msg, ok := customfields.ValidOptionsShape(f.FieldType, f.Options); !ok {
 		return fmt.Errorf("%s: %s", where, msg)
+	}
+
+	if !customfields.ValidSectionToken(f.Section) {
+		return fmt.Errorf("%s has invalid section %q (want ^[a-z0-9_]+$)", where, f.Section)
 	}
 
 	return nil

@@ -297,7 +297,10 @@ func TestDefaultCategoryMap(t *testing.T) {
 	}
 
 	// Spec §2 categories — the embedded map is the canonical copy.
-	want := []string{"job", "news", "blog", "event", "scholarship", "visa", "dataset", "video"}
+	// internship/work_career are job-family aliases: they share the job
+	// method set so JobPosting JSON-LD (which emits entity_type "job") and
+	// category-typed extract records both pass the channel contract.
+	want := []string{"job", "internship", "work_career", "news", "blog", "event", "scholarship", "visa", "dataset", "video"}
 	for _, cat := range want {
 		if _, ok := catMap[cat]; !ok {
 			t.Errorf("embedded map missing category %q", cat)
@@ -368,5 +371,29 @@ func TestCategoryMapJSONIsObject(t *testing.T) {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(defaultCategoryMapJSON, &doc); err != nil {
 		t.Fatalf("category_map.json is not a JSON object: %v", err)
+	}
+}
+
+func TestSubmittableCategoriesAllMapped(t *testing.T) {
+	t.Parallel()
+
+	// Guard: every category the propose form advertises must resolve to a
+	// mapped entry with a non-empty method set — an unmapped submittable
+	// category probes unrestricted and lands proposals on the typeless
+	// static+extract fallback channel.
+	resolved := ResolveCategoryMap(nil, SubmittableCategories())
+	for _, entry := range resolved.Entries {
+		if len(entry.Mapping.Methods) == 0 {
+			t.Errorf("submittable category %q resolves to no methods", entry.Category)
+		}
+	}
+	mapped := make(map[string]bool, len(resolved.Entries))
+	for _, entry := range resolved.Entries {
+		mapped[entry.Category] = true
+	}
+	for _, cat := range SubmittableCategories() {
+		if !mapped[cat] {
+			t.Errorf("submittable category %q has no category_map entry", cat)
+		}
 	}
 }

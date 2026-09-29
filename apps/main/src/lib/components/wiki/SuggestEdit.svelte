@@ -79,6 +79,7 @@
 	let pfType = $state('');
 	let pfOptions = $state('');
 	let pfGroupSlug = $state('');
+	let pfSection = $state('');
 	let pfError = $state('');
 	// Ops queued by the propose form — submitted alongside set_value ops.
 	let proposedOps = $state<WikiFieldOp[]>([]);
@@ -123,6 +124,21 @@
 	const showGroupPicker = $derived(!resolvedProposeGroup && (schema?.groups.length ?? 0) > 1);
 	const pfOptionsRequired = $derived(pfType === 'select' || pfType === 'multiselect');
 
+	// §80 Itemized Pricing: section tokens already used in the proposal's
+	// target group — offered as a datalist so a new item slots into an
+	// existing item table instead of fragmenting sections.
+	const existingSections = $derived.by(() => {
+		const target = resolvedProposeGroup || pfGroupSlug;
+		const seen = new Set<string>();
+		for (const g of schema?.groups ?? []) {
+			if (target && g.slug !== target) continue;
+			for (const f of g.fields) {
+				if (f.section) seen.add(f.section);
+			}
+		}
+		return [...seen].sort();
+	});
+
 	function addProposedField() {
 		pfError = '';
 		const label = pfLabel.trim();
@@ -146,6 +162,10 @@
 		}
 		const field: WikiFieldDefInput = { key, label, field_type: pfType };
 		if (options.length > 0) field.options = options;
+		// §80: a section token places the field in that item-table section;
+		// slugified to the ^[a-z0-9_]+$ token the backend validates.
+		const section = slugifyFieldKey(pfSection);
+		if (section) field.section = section;
 		const targetGroup = resolvedProposeGroup || pfGroupSlug;
 		if (!targetGroup) {
 			pfError = 'wiki.missing_fields';
@@ -160,6 +180,7 @@
 		pfKey = '';
 		pfKeyTouched = false;
 		pfOptions = '';
+		pfSection = '';
 	}
 
 	$effect(() => {
@@ -520,6 +541,26 @@
 													/>
 												</div>
 											{/if}
+											<div class="flex flex-col gap-1">
+												<label for="pf-section" class="text-xs font-medium text-[var(--color-text)]">
+													{t('wiki.field_section', 'Section')}
+												</label>
+												<input
+													id="pf-section"
+													type="text"
+													list="pf-section-list"
+													bind:value={pfSection}
+													placeholder={t('wiki.field_section_hint', 'Optional — groups the field into an item table')}
+													class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+												/>
+												{#if existingSections.length > 0}
+													<datalist id="pf-section-list">
+														{#each existingSections as s (s)}
+															<option value={s}></option>
+														{/each}
+													</datalist>
+												{/if}
+											</div>
 											{#if showGroupPicker}
 												<div class="flex flex-col gap-1">
 													<label for="pf-group" class="text-xs font-medium text-[var(--color-text)]">

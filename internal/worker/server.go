@@ -315,6 +315,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// intel.inbound.retention_days — raw delivery payloads carry sender
 	// PII, so retention is bounded. Low queue.
 	schedule("45 4 * * *", TypeIntelPurgeInboundEvents, 24*time.Hour)
+	// Daily rejected-record retention sweep at 04:50 UTC (offset from the
+	// other 04:xx tasks): deletes intel_records rows in status='rejected'
+	// older than intel.rejected_retention_days (default 7). Low queue.
+	schedule("50 4 * * *", TypeIntelPruneRejectedRecords, 24*time.Hour)
 
 	// §106 channel-sync amendment — hourly YouTube Atom-feed poll for
 	// video_channel directory sources. Runs at :20 to avoid the top-of-hour

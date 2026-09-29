@@ -110,6 +110,10 @@ func (f *fakeFieldReader) ListAssignmentsByEntityClass(_ context.Context, _ stri
 	return f.assignments, nil
 }
 
+func (f *fakeFieldReader) ListFieldValuesWithDefsForEntities(_ context.Context, _ string, _ []pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsForEntitiesRow, error) {
+	return nil, nil
+}
+
 func (f *fakeFieldReader) ListFieldValuesWithDefsByEntity(_ context.Context, _ string, _ pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error) {
 	return f.values, nil
 }

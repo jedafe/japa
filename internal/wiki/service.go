@@ -43,6 +43,11 @@ type WikiPageDTO struct {
 	SpaceSlug      string  `json:"space_slug,omitempty"`
 	SpaceName      string  `json:"space_name,omitempty"`
 	DataEntityType *string `json:"data_entity_type,omitempty"`
+	// §80 Hierarchical UX: page_template_id echoes the template the page was
+	// bound to at create (omitted for freeform pages); position orders
+	// siblings inside the category for Prev/Next navigation.
+	PageTemplateID string `json:"page_template_id,omitempty"`
+	Position       int32  `json:"position"`
 }
 
 // AdminWikiPageDTO extends WikiPageDTO with the latest revision metadata
@@ -78,14 +83,66 @@ type WikiPageDetailDTO struct {
 	// when the group has no fields — the frontend scopes the entity-fields
 	// panel by it, and without it an empty bound group would leave the
 	// panel unscoped (showing every class-assigned group on a prose page).
-	Fields        *EntityFieldGroupDTO `json:"fields,omitempty"`
-	FieldGroupID  string               `json:"field_group_id,omitempty"`
+	Fields       *EntityFieldGroupDTO `json:"fields,omitempty"`
+	FieldGroupID string               `json:"field_group_id,omitempty"`
 	// FieldGroupSlug mirrors FieldGroupID for ops submissions — the
 	// propose_field op targets groups by slug, and the bound group's slug
 	// must reach the client even when the group has no fields (then
 	// Fields is nil).
 	FieldGroupSlug string `json:"field_group_slug,omitempty"`
 	CategoryLabel  string `json:"category_label,omitempty"`
+	// §80 Hierarchical UX additions: Ancestors is the resolved breadcrumb
+	// chain (root-first) walked over space_parent_spaces ∪ parent_id and
+	// arbitrated by the declared type edges; Siblings is the category's
+	// ordered page set for Prev/Next; Rollup is the read-time descendant
+	// aggregate when the category opts in (nil otherwise).
+	Ancestors []WikiSpaceRefDTO `json:"ancestors,omitempty"`
+	// AncestorsAlt holds the multi-parent links not picked into the
+	// breadcrumb chain — undeclared junction parents and declared
+	// runners-up — rendered as "also under X" (§80 amendment §6).
+	AncestorsAlt []WikiSpaceRefDTO `json:"ancestors_alt,omitempty"`
+	Siblings     []WikiSiblingDTO  `json:"siblings,omitempty"`
+	Rollup       *WikiRollupDTO    `json:"rollup,omitempty"`
+	// PageTemplates lists the page's category's declared sibling template
+	// pages (§80 lazy pages) — labels carry the space's name substituted
+	// for the {name} token. The frontend links them for discovery; lazy
+	// ones resolve without a wiki_pages row.
+	PageTemplates []WikiPageTemplateItemDTO `json:"page_templates,omitempty"`
+	// Lazy marks a page rendered straight from its page template — no
+	// wiki_pages row exists yet (§80: template pages are lazy like category
+	// pages, materializing on the first prose/ops submission). The frontend
+	// uses it to show the "not yet created" affordance instead of revision
+	// history.
+	Lazy bool `json:"lazy,omitempty"`
+}
+
+// WikiPageTemplateItemDTO is the public shape for one page template link —
+// slug (the /wiki/{space}/{slug} target), label ({name} substituted), and
+// template ordering position.
+// //nolint:revive // exported: stutter naming is intentional
+type WikiPageTemplateItemDTO struct {
+	Slug     string `json:"slug"`
+	Label    string `json:"label"`
+	Position int32  `json:"position"`
+}
+
+// pageTemplateItems maps a category's stored templates to the public
+// link DTOs, substituting the {name} token with the space's name.
+func pageTemplateItems(templates []WikiPageTemplate, spaceName string) []WikiPageTemplateItemDTO {
+	if len(templates) == 0 {
+		return nil
+	}
+
+	out := make([]WikiPageTemplateItemDTO, 0, len(templates))
+	for _, tm := range templates {
+		out = append(out, WikiPageTemplateItemDTO{
+			Slug:     tm.Slug,
+			Label:    substituteTemplateLabel(tm.Label, spaceName),
+			Position: tm.Position,
+		})
+	}
+
+	return out
 }
 
 // WikiDestinationDTO is the API response shape for a destination with wikis.
@@ -145,6 +202,8 @@ type UpdatePageInput struct {
 	IsFeatured     *bool   `json:"is_featured"`
 	IsActive       *bool   `json:"is_active"`
 	DataEntityType *string `json:"data_entity_type"`
+	// Position orders the page among its category siblings (§80 Prev/Next).
+	Position *int32 `json:"position"`
 }
 
 // CreateWikiPageInput is the request body for POST /wiki/:space_slug.
@@ -155,6 +214,7 @@ type CreateWikiPageInput struct {
 	Category  string          `json:"category"`
 	Content   json.RawMessage `json:"content"`
 	Summary   string          `json:"summary"`
+	Position  *int32          `json:"position"`
 }
 
 // GeneratePageInput is the request body for POST /admin/wiki/generate.
@@ -339,7 +399,16 @@ func (s *Service) IsUniversitySpace(ctx context.Context, spaceSlug string) (bool
 }
 
 // GetWikiIndex returns all active wiki pages for a destination space (by space slug).
-func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) ([]WikiPageDTO, error) {
+// WikiIndexDTO is the space-level index payload — the page list plus the
+// space's ancestor chain (§80 Hierarchical UX: the index page renders the
+// same breadcrumb as its pages).
+type WikiIndexDTO struct {
+	Pages        []WikiPageDTO     `json:"pages"`
+	Ancestors    []WikiSpaceRefDTO `json:"ancestors,omitempty"`
+	AncestorsAlt []WikiSpaceRefDTO `json:"ancestors_alt,omitempty"`
+}
+
+func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiIndexDTO, error) {
 	spaceID, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -368,7 +437,12 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) ([]WikiPag
 		dtos = append(dtos, pageToDTO(p))
 	}
 
-	return dtos, nil
+	out := &WikiIndexDTO{Pages: dtos}
+	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
+	}
+
+	return out, nil
 }
 
 // enqueueStubSeed fire-and-forget enqueues wiki:seed_stub_pages for one
@@ -391,7 +465,7 @@ func (s *Service) enqueueStubSeed(ctx context.Context, spaceID pgtype.UUID) {
 
 // GetWikiIndexByDestSpaceID returns all active wiki pages for a destination space by its ID.
 // Used by the ?dest= geo-aware query parameter.
-func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.UUID) ([]WikiPageDTO, error) {
+func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.UUID) (*WikiIndexDTO, error) {
 	if _, _, err := s.store.GetSpaceByID(ctx, spaceID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSpaceNotFound
@@ -410,7 +484,12 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 		dtos = append(dtos, pageToDTO(p))
 	}
 
-	return dtos, nil
+	out := &WikiIndexDTO{Pages: dtos}
+	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
+	}
+
+	return out, nil
 }
 
 // GetWikiPage returns a single wiki page with its current approved
@@ -421,7 +500,7 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 // userID drives field-level can_view/can_edit (invalid UUID = anonymous,
 // fail-closed per §06).
 func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string) (WikiPageDetailDTO, error) {
-	spaceID, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
+	spaceID, spaceName, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WikiPageDetailDTO{}, ErrSpaceNotFound
@@ -433,7 +512,11 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return WikiPageDetailDTO{}, pgx.ErrNoRows
+			// §80 lazy template pages: a slug matching the space type's
+			// (category-scoped) page templates renders without a
+			// wiki_pages row — the page materializes on the first
+			// prose/ops submission.
+			return s.getLazyTemplatePage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
 		}
 
 		return WikiPageDetailDTO{}, fmt.Errorf("wiki: get page: %w", err)
@@ -462,24 +545,139 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 
 	// §80 Wiki Types: resolve the page's category template and attach the
 	// bound field group's schema+values. Failures degrade to a prose-only
-	// page — a missing template or group never blocks the page itself.
-	if cat, cerr := s.store.GetCategoryForSpace(ctx, spaceID, pageSlug); cerr == nil {
+	// page — a missing template or group never blocks the page itself. The
+	// category resolves by the page's stored category token (page templates
+	// give sibling pages their own slugs under one category), falling back
+	// to the slug for pages whose token predates the template columns.
+	cat, cerr := s.store.GetCategoryForSpace(ctx, spaceID, page.Category)
+	if cerr != nil && page.Category != pageSlug {
+		cat, cerr = s.store.GetCategoryForSpace(ctx, spaceID, pageSlug)
+	}
+	if cerr == nil {
 		dto.CategoryLabel = cat.Label
-		if cat.FieldGroupID.Valid {
-			dto.FieldGroupID = cat.FieldGroupID.String()
+
+		// §80 lazy template pages: the category's declared template pages —
+		// the discovery links for pages that render without a wiki_pages row.
+		if tmpls, terr := s.store.ListPageTemplates(ctx, cat.ID); terr == nil {
+			dto.PageTemplates = pageTemplateItems(tmpls, page.SpaceName)
+		}
+
+		// Effective group: the page-level binding wins over the category's
+		// (§80 — template-bound pages carry their own group).
+		groupID := cat.FieldGroupID
+		if page.FieldGroupID.Valid {
+			groupID = page.FieldGroupID
+		}
+
+		if groupID.Valid {
+			dto.FieldGroupID = groupID.String()
 			if s.fields != nil {
-				if g, gerr := s.fields.GetFieldGroup(ctx, cat.FieldGroupID); gerr == nil {
+				if g, gerr := s.fields.GetFieldGroup(ctx, groupID); gerr == nil {
 					dto.FieldGroupSlug = g.Slug
 				}
 			}
-			if grp, ferr := s.GetPageFields(ctx, userID, spaceID, cat.FieldGroupID); ferr == nil && grp != nil {
+			if grp, ferr := s.GetPageFields(ctx, userID, spaceID, groupID); ferr == nil && grp != nil {
 				dto.Fields = grp
 			} else if ferr != nil {
 				slog.Warn("wiki: page fields load failed",
-					"space_id", spaceID.String(), "group_id", cat.FieldGroupID.String(), "error", ferr)
+					"space_id", spaceID.String(), "group_id", groupID.String(), "error", ferr)
+			}
+		}
+
+		// Rollup: only on the category's own page (sibling template pages
+		// render their bound group's items, not the aggregate).
+		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && page.Slug == cat.Slug {
+			if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+				dto.Rollup = s.computeRollup(ctx, userID, spaceID, spaceTypeID, rcfg, cat.Category)
 			}
 		}
 	}
+
+	// §80 Hierarchical UX: ancestors (breadcrumb chain) + siblings
+	// (Prev/Next) accompany every page read — both degrade to empty on
+	// lookup failure rather than failing the page.
+	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
+	}
+	dto.Siblings = s.getSiblings(ctx, spaceID, page.Category, page.Slug)
+
+	return dto, nil
+}
+
+// substituteTemplateLabel expands the `{name}` token in a page-template
+// label ("Prices in {name}") with the space's display name. Labels
+// without the token pass through unchanged.
+func substituteTemplateLabel(label, spaceName string) string {
+	return strings.ReplaceAll(label, "{name}", spaceName)
+}
+
+// getLazyTemplatePage renders a wiki page straight from the space type's
+// page template when no wiki_pages row exists (§80: template pages are
+// lazy — they materialize on the first prose/ops submission). The
+// synthesized page carries the template's category token, bound field
+// group, and ancestors/siblings like a materialized page; prose is empty
+// and Lazy=true marks the unmaterialized state. Returns pgx.ErrNoRows
+// when no template declares the slug (→ 404).
+func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtype.UUID, spaceSlug, spaceName, pageSlug string) (WikiPageDetailDTO, error) {
+	tmpl, err := s.store.GetPageTemplateBySlug(ctx, spaceID, pageSlug)
+	if err != nil {
+		if errors.Is(err, ErrWikiPageTemplateNotFound) {
+			return WikiPageDetailDTO{}, pgx.ErrNoRows // no template → real 404
+		}
+
+		return WikiPageDetailDTO{}, err
+	}
+
+	dto := WikiPageDetailDTO{
+		WikiPageDTO: WikiPageDTO{
+			SpaceID:   spaceID.String(),
+			Slug:      pageSlug,
+			Title:     substituteTemplateLabel(tmpl.Label, spaceName),
+			Category:  tmpl.CategoryToken,
+			IsActive:  true,
+			SpaceSlug: spaceSlug,
+			SpaceName: spaceName,
+			Position:  tmpl.Position,
+		},
+		SpaceSlug: spaceSlug,
+		SpaceName: spaceName,
+		Lazy:      true,
+	}
+	dto.PageTemplateID = tmpl.ID.String()
+	if tmpl.FieldGroupID.Valid {
+		dto.FieldGroupID = tmpl.FieldGroupID.String()
+	}
+	if tmpl.FieldGroupSlug != nil {
+		dto.FieldGroupSlug = *tmpl.FieldGroupSlug
+	}
+
+	// CategoryLabel mirrors the materialized path — the owning category's
+	// admin-set label, best-effort.
+	if cat, cerr := s.store.GetWikiTypeCategory(ctx, tmpl.CategoryID); cerr == nil {
+		dto.CategoryLabel = cat.Label
+	}
+
+	// The category's sibling template pages — discovery links, same as a
+	// materialized page's.
+	if tmpls, terr := s.store.ListPageTemplates(ctx, tmpl.CategoryID); terr == nil {
+		dto.PageTemplates = pageTemplateItems(tmpls, spaceName)
+	}
+
+	// The bound template group's schema + this space's stored values —
+	// the same block a materialized template page renders.
+	if tmpl.FieldGroupID.Valid && s.fields != nil {
+		if grp, ferr := s.GetPageFields(ctx, userID, spaceID, tmpl.FieldGroupID); ferr == nil && grp != nil {
+			dto.Fields = grp
+		} else if ferr != nil {
+			slog.Warn("wiki: lazy page fields load failed",
+				"space_id", spaceID.String(), "group_id", tmpl.FieldGroupID.String(), "error", ferr)
+		}
+	}
+
+	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
+	}
+	dto.Siblings = s.getSiblings(ctx, spaceID, tmpl.CategoryToken, pageSlug)
 
 	return dto, nil
 }
@@ -546,7 +744,8 @@ func (s *Service) GetRevisionHistory(ctx context.Context, viewerID pgtype.UUID, 
 // The lock is released on success or failure; a 5-minute TTL auto-expires
 // if the process crashes mid-request.
 func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, input SubmitRevisionInput) (string, error) {
-	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
+	spaceID, spaceName, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrSpaceNotFound
 		}
@@ -573,10 +772,14 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", pgx.ErrNoRows
+			// §80 lazy template pages: the first prose submission
+			// materializes the row (bound to the resolved page template),
+			// then the revision attaches normally.
+			page, err = s.materializeTemplatePage(ctx, spaceID, spaceSlug, spaceName, userID, pageSlug)
 		}
-
-		return "", fmt.Errorf("wiki: submit: get page: %w", err)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	if page.IsLocked {
@@ -616,6 +819,55 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 	return revID.String(), nil
 }
 
+// materializeTemplatePage creates the wiki_pages row for a lazy template
+// page (§80): the slug must resolve to a page template on the space's
+// type — untemplated slugs keep returning pgx.ErrNoRows. Returns the
+// synthesized page for callers that need the row id (revision attach,
+// edit lock).
+func (s *Service) materializeTemplatePage(ctx context.Context, spaceID pgtype.UUID, spaceSlug, spaceName string, createdBy pgtype.UUID, pageSlug string) (WikiPageWithSpace, error) {
+	tmpl, err := s.store.GetPageTemplateBySlug(ctx, spaceID, pageSlug)
+	if err != nil {
+		if errors.Is(err, ErrWikiPageTemplateNotFound) {
+			return WikiPageWithSpace{}, pgx.ErrNoRows
+		}
+
+		return WikiPageWithSpace{}, fmt.Errorf("wiki: materialize page: resolve template: %w", err)
+	}
+
+	title := substituteTemplateLabel(tmpl.Label, spaceName)
+	pageID, err := s.store.createPageBound(ctx, s.store.write, spaceID, createdBy, pageSlug, title, tmpl.CategoryToken, tmpl.ID, tmpl.FieldGroupID, tmpl.Position)
+	if err != nil {
+		if errors.Is(err, ErrPageExists) {
+			// Concurrent first submission lost the create race — the page
+			// row exists now; re-resolve and continue.
+			page, rerr := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
+			if rerr != nil {
+				return WikiPageWithSpace{}, pgx.ErrNoRows
+			}
+
+			return page, nil
+		}
+
+		return WikiPageWithSpace{}, fmt.Errorf("wiki: materialize page: %w", err)
+	}
+
+	return WikiPageWithSpace{
+		WikiPage: WikiPage{
+			ID:             pageID,
+			SpaceID:        spaceID,
+			Slug:           pageSlug,
+			Title:          title,
+			Category:       tmpl.CategoryToken,
+			IsActive:       true,
+			PageTemplateID: tmpl.ID,
+			FieldGroupID:   tmpl.FieldGroupID,
+			Position:       tmpl.Position,
+		},
+		SpaceSlug: spaceSlug,
+		SpaceName: spaceName,
+	}, nil
+}
+
 // CreatePageWithRevision creates a new wiki page for the given space slug and
 // immediately submits an initial pending revision. The caller (handler) is
 // responsible for permission and reputation checks.
@@ -642,7 +894,22 @@ func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID
 		return "", "", fmt.Errorf("wiki: create page: resolve space: %w", err)
 	}
 
-	pageID, revID, err := s.store.CreatePageWithRevision(ctx, spaceID, userID, input.Slug, input.Title, input.Category, normalizedContent, input.Summary)
+	// §80 Hierarchical UX: when a page template declares this (category,
+	// slug) pair on the space's type, the page row stores the resolved
+	// binding — the group survives a later template deletion (effective
+	// group falls back to the category's when absent).
+	var tmplID, tmplGroupID pgtype.UUID
+	if t, terr := s.store.GetPageTemplateForSpace(ctx, spaceID, input.Category, input.Slug); terr == nil {
+		tmplID = t.ID
+		tmplGroupID = t.FieldGroupID
+	}
+
+	var position int32
+	if input.Position != nil {
+		position = *input.Position
+	}
+
+	pageID, revID, err := s.store.CreatePageWithRevision(ctx, spaceID, userID, input.Slug, input.Title, input.Category, normalizedContent, input.Summary, tmplID, tmplGroupID, position)
 	if err != nil {
 		if errors.Is(err, ErrPageExists) {
 			return "", "", ErrPageExists
@@ -710,7 +977,7 @@ func (s *Service) RejectRevision(ctx context.Context, revID, pageID, reviewerID 
 // UpdatePage updates admin-managed wiki page fields (lock, feature, active,
 // data entity binding).
 func (s *Service) UpdatePage(ctx context.Context, pageID pgtype.UUID, input UpdatePageInput) error {
-	if err := s.store.UpdatePage(ctx, pageID, input.IsLocked, input.IsFeatured, input.IsActive, input.DataEntityType); err != nil {
+	if err := s.store.UpdatePage(ctx, pageID, input.IsLocked, input.IsFeatured, input.IsActive, input.DataEntityType, input.Position); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -830,7 +1097,16 @@ func (s *Service) GeneratePage(ctx context.Context, userID pgtype.UUID, input Ge
 		category = "other"
 	}
 
-	pageID, err := s.store.CreatePage(ctx, spaceID, userID, input.PageSlug, input.Title, category)
+	// §80: template-bound slugs are reserved per type — a generated page at
+	// a declared (category, slug) lands on the template's binding like a
+	// hand-created one.
+	var tmplID, tmplGroupID pgtype.UUID
+	if t, terr := s.store.GetPageTemplateForSpace(ctx, spaceID, category, input.PageSlug); terr == nil {
+		tmplID = t.ID
+		tmplGroupID = t.FieldGroupID
+	}
+
+	pageID, err := s.store.createPageBound(ctx, s.store.write, spaceID, userID, input.PageSlug, input.Title, category, tmplID, tmplGroupID, 0)
 	if err != nil {
 		if errors.Is(err, ErrPageExists) {
 			// Page already exists — return a sentinel so the handler can 200
@@ -846,7 +1122,7 @@ func (s *Service) GeneratePage(ctx context.Context, userID pgtype.UUID, input Ge
 
 // pageToDTO converts a WikiPage (with its space context) to a WikiPageDTO.
 func pageToDTO(p WikiPageWithSpace) WikiPageDTO {
-	return WikiPageDTO{
+	dto := WikiPageDTO{
 		ID:             p.ID.String(),
 		SpaceID:        p.SpaceID.String(),
 		Slug:           p.Slug,
@@ -860,7 +1136,13 @@ func pageToDTO(p WikiPageWithSpace) WikiPageDTO {
 		SpaceSlug:      p.SpaceSlug,
 		SpaceName:      p.SpaceName,
 		DataEntityType: p.DataEntityType,
+		Position:       p.Position,
 	}
+	if p.PageTemplateID.Valid {
+		dto.PageTemplateID = p.PageTemplateID.String()
+	}
+
+	return dto
 }
 
 // revisionToDTO converts a WikiRevision to a WikiRevisionDTO.
@@ -992,7 +1274,15 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 	// Create the wiki page.
 	var createdBy pgtype.UUID // zero UUID — AI-generated, no human author
 
-	pageID, err := s.store.CreatePage(ctx, spaceID, createdBy, slug, input.Title, input.Category)
+	// §80: an AI draft at a template-bound slug stores the resolved
+	// (category, slug) binding, same as member/admin-created pages.
+	var tmplID, tmplGroupID pgtype.UUID
+	if t, terr := s.store.GetPageTemplateForSpace(ctx, spaceID, input.Category, slug); terr == nil {
+		tmplID = t.ID
+		tmplGroupID = t.FieldGroupID
+	}
+
+	pageID, err := s.store.createPageBound(ctx, s.store.write, spaceID, createdBy, slug, input.Title, input.Category, tmplID, tmplGroupID, 0)
 	if err != nil {
 		return GenerateDraftResponse{}, fmt.Errorf("wiki: generate draft: create page: %w", err)
 	}

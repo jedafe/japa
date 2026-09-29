@@ -2003,6 +2003,24 @@ export type WikiCategoryItem = {
 	field_group_name?: string;
 	position: number;
 	is_system: boolean;
+	/** §80 Hierarchical UX — descendant-aggregation config
+	 *  ({enabled, metrics[], levels[]?}); absent = no rollup. */
+	rollup?: Record<string, unknown> | null;
+};
+
+// WikiPageTemplateItem is one row of a category's page-template list —
+// GET /admin/wiki/categories/:id/page-templates (§80 page templates under
+// category templates).
+export type WikiPageTemplateItem = {
+	id: string;
+	category_id: string;
+	slug: string;
+	label: string;
+	field_group_id?: string;
+	field_group_slug?: string;
+	field_group_name?: string;
+	position: number;
+	is_system: boolean;
 };
 
 export const wikiAdminApi = {
@@ -2051,6 +2069,16 @@ export const wikiAdminApi = {
 	updateCategory: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/wiki/categories/${id}`, { method: 'PATCH', body }),
 	deleteCategory: (id: string) => api<unknown>(`/admin/wiki/categories/${id}`, { method: 'DELETE' }),
+	// §80 Hierarchical UX — page templates beneath a category (each binds a
+	// shared field group so item keys stay comparable across spaces).
+	listPageTemplates: (categoryId: string) =>
+		api<WikiPageTemplateItem[]>(`/admin/wiki/categories/${categoryId}/page-templates`),
+	createPageTemplate: (categoryId: string, body: Record<string, unknown>) =>
+		api<WikiPageTemplateItem>(`/admin/wiki/categories/${categoryId}/page-templates`, { method: 'POST', body }),
+	updatePageTemplate: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/wiki/page-templates/${id}`, { method: 'PATCH', body }),
+	deletePageTemplate: (id: string) =>
+		api<unknown>(`/admin/wiki/page-templates/${id}`, { method: 'DELETE' }),
 };
 
 export const scamAlertAdminApi = {

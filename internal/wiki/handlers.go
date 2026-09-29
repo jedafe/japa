@@ -276,7 +276,7 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		pages, err := h.service.GetWikiIndexByDestSpaceID(r.Context(), destSpaceID)
+		index, err := h.service.GetWikiIndexByDestSpaceID(r.Context(), destSpaceID)
 		if err != nil {
 			if errors.Is(err, ErrSpaceNotFound) {
 				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -289,9 +289,9 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.resolveLiterals(r, &pages)
+		h.resolveLiterals(r, &index.Pages)
 
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt})
 
 		return
 	}
@@ -302,7 +302,7 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages, err := h.service.GetWikiIndex(r.Context(), spaceSlug)
+	index, err := h.service.GetWikiIndex(r.Context(), spaceSlug)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -315,9 +315,19 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &pages)
+	h.resolveLiterals(r, &index.Pages)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt})
+}
+
+// wikiPageTemplateItem is the public shape for one page template under a
+// category — the link target for a lazy template page
+// (/wiki/{space}/{slug}); label already has {name} substituted when the
+// request carries ?space=.
+type wikiPageTemplateItem struct {
+	Slug     string `json:"slug"`
+	Label    string `json:"label"`
+	Position int32  `json:"position"`
 }
 
 // wikiCategoryItem is the public GET /wiki/categories payload shape.
@@ -333,6 +343,10 @@ type wikiCategoryItem struct {
 	FieldGroupID string `json:"field_group_id,omitempty"`
 	Position     int32  `json:"position"`
 	IsSystem     bool   `json:"is_system"`
+	// PageTemplates lists the category's declared sibling pages — lazy
+	// template pages the frontend links into (§80); empty when the
+	// category declares none or the request has no space context.
+	PageTemplates []wikiPageTemplateItem `json:"page_templates,omitempty"`
 }
 
 func categoryItem(c WikiCategory) wikiCategoryItem {
@@ -367,8 +381,26 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 		scope = "all"
 	)
 
+	var templatesByCat map[pgtype.UUID][]wikiPageTemplateItem
 	if spaceSlug := strings.TrimSpace(r.URL.Query().Get("space")); spaceSlug != "" {
 		cats, scope, err = h.service.ListCategoriesForSpace(r.Context(), spaceSlug)
+		// §80 lazy template pages: surface each category's declared
+		// templates so the frontend can link them — the pages need no
+		// wiki_pages row to resolve.
+		if err == nil {
+			if tmpls, terr := h.service.ListPageTemplatesForSpace(r.Context(), spaceSlug); terr == nil {
+				templatesByCat = make(map[pgtype.UUID][]wikiPageTemplateItem, len(tmpls))
+				for _, tm := range tmpls {
+					templatesByCat[tm.CategoryID] = append(templatesByCat[tm.CategoryID], wikiPageTemplateItem{
+						Slug:     tm.Slug,
+						Label:    tm.Label,
+						Position: tm.Position,
+					})
+				}
+			} else {
+				slog.Warn("wiki: categories page-templates lookup failed", "error", terr)
+			}
+		}
 	} else {
 		cats, err = h.service.ListAllCategories(r.Context())
 	}
@@ -391,7 +423,9 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		seen[c.Category] = true
-		out = append(out, categoryItem(c))
+		item := categoryItem(c)
+		item.PageTemplates = templatesByCat[c.ID]
+		out = append(out, item)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out, "scope": scope})
@@ -769,38 +803,23 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		pageID, _, locked, err := h.service.GetPageEntityTarget(r.Context(), spaceSlug, pageSlug)
-		if err != nil {
-			if errors.Is(err, ErrSpaceNotFound) {
-				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
-				return
-			}
-
-			if errors.Is(err, pgx.ErrNoRows) {
-				errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
-				return
-			}
-
-			slog.Error("wiki: resolve field-ops target failed", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
-
-			return
-		}
-
-		if locked {
-			errpkg.WriteError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
-			return
-		}
-
 		canManage := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, PermFieldsManage)
 
-		// Pass an empty entity target — resolveOpsTarget derives it from the
-		// ops themselves, so pages bound to a child entity class
-		// (data_entity_type) can submit ops against those entities and the
-		// common space-targeted case still resolves (ops carry entity fields).
-		revID, autoApproved, err := h.service.SubmitFieldOps(r.Context(), user.UserID, pageID, "", pgtype.UUID{}, input.Content, input.Ops, input.Summary, canManage)
+		// Validate-then-resolve ordering lives in the service (§80): a
+		// rejected ops submission must not materialize a lazy template page
+		// into an empty wiki_pages row.
+		revID, autoApproved, err := h.service.SubmitPageFieldOps(r.Context(), user.UserID, spaceSlug, pageSlug, input.Content, input.Ops, input.Summary, canManage)
 		if err != nil {
-			writeFieldOpsError(w, err)
+			switch {
+			case errors.Is(err, ErrSpaceNotFound):
+				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			case errors.Is(err, pgx.ErrNoRows):
+				errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+			case errors.Is(err, ErrPageLocked):
+				errpkg.WriteError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
+			default:
+				writeFieldOpsError(w, err)
+			}
 			return
 		}
 

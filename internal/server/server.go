@@ -6525,6 +6525,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/wiki/categories/{id}", wikiHandlers.HandleUpdateWikiCategory)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Delete("/admin/wiki/categories/{id}", wikiHandlers.HandleDeleteWikiCategory)
+				// §80 Hierarchical UX: page templates under categories.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Get("/admin/wiki/categories/{id}/page-templates", wikiHandlers.HandleListPageTemplates)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Post("/admin/wiki/categories/{id}/page-templates", wikiHandlers.HandleCreatePageTemplate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Patch("/admin/wiki/page-templates/{id}", wikiHandlers.HandleUpdatePageTemplate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Delete("/admin/wiki/page-templates/{id}", wikiHandlers.HandleDeletePageTemplate)
 
 				// §80 Community Field Ops — structured entity-field edits.
 				// Nested under wiki.enabled AND wiki.structured_edits (§80:
@@ -7509,6 +7518,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/queue/{queue_name}/tasks", controlHandlers.ListQueueTasks)
 			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
 				Post("/queue/{queue_name}/tasks/{task_id}/retry", controlHandlers.RetryQueueTask)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Post("/queue/{queue_name}/archive", controlHandlers.ArchiveAllQueueTasks)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Post("/queue/{queue_name}/requeue", controlHandlers.RequeueAllQueueTasks)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Post("/queue/{queue_name}/purge", controlHandlers.PurgeQueueTasks)
 			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.view")).
 				Get("/queue/dlq", controlHandlers.ListDLQ)
 			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).

@@ -53,7 +53,7 @@ WHERE cf.group_id = @group_id;
 -- name: ListCustomFieldsByGroup :many
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 WHERE group_id = @group_id
 ORDER BY position ASC, created_at ASC;
@@ -63,7 +63,7 @@ ORDER BY position ASC, created_at ASC;
 -- ListFieldGroups with fields[] without N+1 per-group field lookups.
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 
 ORDER BY group_id, position ASC, created_at ASC;
@@ -71,7 +71,7 @@ ORDER BY group_id, position ASC, created_at ASC;
 -- name: GetCustomFieldByID :one
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 WHERE id = @id;
 
@@ -81,7 +81,7 @@ WHERE id = @id;
 -- destination_country when saving geo profile fields.
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 WHERE key = @key;
 
@@ -91,15 +91,15 @@ WHERE key = @key;
 -- target group — a same-named key in another group must never be touched.
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at
+ filterable, sortable, searchable, position, section, created_at
 FROM custom_fields
 WHERE group_id = @group_id AND key = @key;
 
 -- name: CreateCustomField :one
-INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position) VALUES (@group_id, @label, @key, @field_type, @options, @embed_platforms, @placeholder, @default_value, @is_required, @is_system, @show_in_frontend, @filterable, @sortable, @searchable, @position)
+INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, section) VALUES (@group_id, @label, @key, @field_type, @options, @embed_platforms, @placeholder, @default_value, @is_required, @is_system, @show_in_frontend, @filterable, @sortable, @searchable, @position, sqlc.narg(section))
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at;
+ filterable, sortable, searchable, position, section, created_at;
 
 -- name: UpdateCustomField :one
 UPDATE custom_fields
@@ -107,11 +107,14 @@ SET label = @label, field_type = @field_type, options = @options,
  embed_platforms = @embed_platforms, placeholder = @placeholder,
  default_value = @default_value, is_required = @is_required,
  show_in_frontend = @show_in_frontend, filterable = @filterable,
- sortable = @sortable, searchable = @searchable, position = @position
+ sortable = @sortable, searchable = @searchable, position = @position,
+ section = CASE WHEN @update_section::bool
+           THEN NULLIF(@section::text, '')
+           ELSE section END
 WHERE id = @id AND is_system = false
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, created_at;
+ filterable, sortable, searchable, position, section, created_at;
 
 -- name: DeleteCustomField :exec
 DELETE FROM custom_fields
@@ -242,7 +245,8 @@ SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
  cfv.created_at, cfv.updated_at,
  cf.label AS field_label, cf.key AS field_key, cf.field_type,
- cf.options AS field_options, cf.position AS field_position
+ cf.options AS field_options, cf.position AS field_position,
+ cf.group_id AS field_group_id, cf.section AS field_section
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
@@ -258,7 +262,8 @@ SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
  cfv.created_at, cfv.updated_at,
  cf.label AS field_label, cf.key AS field_key, cf.field_type,
- cf.options AS field_options, cf.position AS field_position
+ cf.options AS field_options, cf.position AS field_position,
+ cf.group_id AS field_group_id, cf.section AS field_section
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.entity_type = @entity_type AND cfv.entity_id = ANY(@entity_ids::uuid[])

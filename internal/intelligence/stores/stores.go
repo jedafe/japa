@@ -412,6 +412,19 @@ func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateInt
 	return nil
 }
 
+// PurgeRejectedIntelRecords permanently deletes records that have sat in
+// status='rejected' for longer than retentionDays — the write side of the
+// intel:prune_rejected_records sweep (intel.rejected_retention_days).
+// Returns the deleted row count.
+func (s *Store) PurgeRejectedIntelRecords(ctx context.Context, retentionDays int32) (int64, error) {
+	n, err := s.queries.PurgeRejectedIntelRecords(ctx, retentionDays)
+	if err != nil {
+		return 0, fmt.Errorf("stores: purge rejected intel records: %w", err)
+	}
+
+	return n, nil
+}
+
 // UpdateIntelRecordExtracted replaces the extracted payload of an intel
 // record and stamps last_verified_at to now(). Used by the review-edit
 // endpoint so reviewer edits persist on records that have no domain

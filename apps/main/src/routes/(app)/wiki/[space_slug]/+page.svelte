@@ -35,7 +35,15 @@
 
 	// The canonical category list is scoped to the space type server-side:
 	// university spaces get the university set (§80 amendment).
-	type ApiCategory = { slug: string; label_key: string; label: string };
+	type ApiCategory = {
+		slug: string;
+		label_key: string;
+		label: string;
+		/** §80 lazy template pages — declared sibling page links under the
+		 *  category ({name} substituted server-side). Present only on
+		 *  ?space= requests. */
+		page_templates?: { slug: string; label: string; position: number }[];
+	};
 	// svelte-ignore state_referenced_locally
 	const apiCategories: ApiCategory[] = data.apiCategories ?? [];
 	// svelte-ignore state_referenced_locally
@@ -107,6 +115,9 @@
 		category: string;
 		label: string;
 		pages: WikiPageIndex[];
+		/** §80 lazy template pages — declared slugs with no materialized
+		 *  page yet, rendered as discoverable sub-links. */
+		templates: { slug: string; label: string }[];
 	}
 	const cardGroups = $derived.by<CardGroup[]>(() => {
 		const order = new Map(apiCategories.map((c, i) => [c.slug, i]));
@@ -116,14 +127,23 @@
 			if (arr) arr.push(p);
 			else groups.set(p.category, [p]);
 		}
-		return [...groups.entries()]
-			.map(([category, pages]) => ({
-				category,
-				label: categoryLabel(category),
-				pages: [...pages].sort(
+		// Lazy template pages: a category with only unmaterialized template
+		// pages still gets a card so the links are reachable.
+		const cats = new Set(groups.keys());
+		for (const c of apiCategories) {
+			if ((c.page_templates?.length ?? 0) > 0) cats.add(c.slug);
+		}
+		return [...cats]
+			.map((category) => {
+				const pages = [...(groups.get(category) ?? [])].sort(
 					(a, b) => Number(b.is_featured) - Number(a.is_featured)
-				)
-			}))
+				);
+				const materialized = new Set(pages.map((p) => p.slug));
+				const templates = (apiCategories.find((c) => c.slug === category)?.page_templates ?? [])
+					.filter((tm) => !materialized.has(tm.slug))
+					.map((tm) => ({ slug: tm.slug, label: tm.label }));
+				return { category, label: categoryLabel(category), pages, templates };
+			})
 			.sort((a, b) => {
 				const ca = order.get(a.category) ?? Number.MAX_SAFE_INTEGER;
 				const cb = order.get(b.category) ?? Number.MAX_SAFE_INTEGER;
@@ -219,12 +239,40 @@
 						{t('wiki.heading', 'Wiki')}
 					</a>
 				</li>
-				<li aria-hidden="true"><ChevronRight size={12} /></li>
-				<li>{crumbKind}</li>
+				{#if data.ancestors?.length}
+					{#each data.ancestors as anc (anc.slug)}
+						<li aria-hidden="true"><ChevronRight size={12} /></li>
+						<li>
+							<a
+								href="/wiki/{encodeURIComponent(anc.slug)}"
+								class="truncate transition-colors hover:text-[var(--color-text)]"
+							>
+								{anc.name}
+							</a>
+						</li>
+					{/each}
+				{:else}
+					<li aria-hidden="true"><ChevronRight size={12} /></li>
+					<li>{crumbKind}</li>
+				{/if}
 				<li aria-hidden="true"><ChevronRight size={12} /></li>
 				<li class="truncate font-medium text-[var(--color-text)]">{spaceName}</li>
 			</ol>
 		</nav>
+		{#if data.ancestorsAlt?.length}
+			<!-- §80 multi-parent spaces: the alternate parent links not picked
+			     into the breadcrumb chain ("also under X"). -->
+			<p class="min-w-0 text-xs text-[var(--color-muted)]">
+				{t('wiki.also_under', 'Also under:')}
+				{#each data.ancestorsAlt as alt, i (alt.slug)}
+					{#if i > 0},
+					{/if}<a
+						href="/wiki/{encodeURIComponent(alt.slug)}"
+						class="transition-colors hover:text-[var(--color-text)]"
+					>{alt.name}</a>
+				{/each}
+			</p>
+		{/if}
 		<div class="flex shrink-0 items-center gap-2">
 			{#if canCreate && data.index.length > 0}
 				<a
@@ -300,7 +348,7 @@
 			<div class="mt-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3 text-sm text-[var(--color-text-subtle)]">
 				{t('wiki.load_error', 'Wiki could not be loaded.')}
 			</div>
-		{:else if data.index.length === 0}
+		{:else if cardGroups.length === 0}
 			<div class="mt-6">
 				<EmptyState
 					icon={BookOpen}
@@ -320,9 +368,10 @@
 					{@const Icon = categoryIcon(group.category)}
 					{@const tint = categoryTint(group.category)}
 					{@const first = group.pages[0]}
+					{@const firstSlug = first?.slug ?? group.templates[0]?.slug ?? ''}
 					<div>
 						<a
-							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(first.slug)}"
+							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(firstSlug)}"
 							class="flex items-center gap-3.5 px-4 py-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span
@@ -334,10 +383,10 @@
 							<span class="min-w-0 flex-1">
 								<span class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
 									{group.label}
-									{#if first.is_featured}
+									{#if first?.is_featured}
 										<Star size={12} class="shrink-0 text-[var(--color-warning)]" role="img" aria-label={t('wiki.featured', 'Featured')} />
 									{/if}
-									{#if first.is_locked}
+									{#if first?.is_locked}
 										<Lock size={12} class="shrink-0 text-[var(--color-muted)]" role="img" aria-label={t('wiki.locked', 'Locked')} />
 									{/if}
 									{#if structuredEditsOn && group.pages.some((p) => p.data_entity_type)}
@@ -355,7 +404,7 @@
 							</span>
 							<ChevronRight size={18} class="shrink-0 text-[var(--color-muted)]" aria-hidden="true" />
 						</a>
-						{#if group.pages.length > 1}
+						{#if group.pages.length > 1 || group.templates.length > 0}
 							<div class="flex flex-wrap items-center gap-1.5 border-t border-[var(--color-border)] px-4 py-2.5 pl-[4.25rem]">
 								{#each group.pages.slice(1) as p (p.id)}
 									<a
@@ -366,6 +415,14 @@
 										{#if p.is_locked}
 											<Lock size={10} class="shrink-0 text-[var(--color-muted)]" role="img" aria-label={t('wiki.locked', 'Locked')} />
 										{/if}
+									</a>
+								{/each}
+								{#each group.templates as tm (tm.slug)}
+									<a
+										href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(tm.slug)}"
+										class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+									>
+										{tm.label}
 									</a>
 								{/each}
 							</div>

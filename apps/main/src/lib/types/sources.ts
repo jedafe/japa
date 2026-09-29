@@ -76,6 +76,10 @@ export interface SourceOption {
 export interface SourceMeta {
 	/** Curated proposal-catalog categories. */
 	categories: string[];
+	/** Propose-form subset of categories — domains whose channels reach
+	 *  content without AI extraction (job-family, news/article, video).
+	 *  buildProposeParams rejects proposals outside it. */
+	submittable_categories?: string[];
 	/** Full extraction-domain taxonomy (schemas.RegisteredCategories) —
 	 *  the propose form's category picker uses this superset. */
 	admin_categories?: string[];
