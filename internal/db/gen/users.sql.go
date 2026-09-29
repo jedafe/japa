@@ -2100,7 +2100,7 @@ func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksPa
 }
 
 const listUserContent = `-- name: ListUserContent :many
-SELECT c.id, c.title, c.slug, c.content_type, c.status, c.view_count, c.comment_count, c.created_at, c.updated_at
+SELECT c.id, c.title, c.slug, c.content_type, c.status, c.view_count, c.comment_count, c.publish_at, c.created_at, c.updated_at
 FROM contents c
 WHERE c.author_id = $1 AND c.deleted_at IS NULL
  AND ($2::text = '' OR c.status = $2)
@@ -2134,6 +2134,7 @@ type ListUserContentRow struct {
 	Status       string             `json:"status"`
 	ViewCount    int32              `json:"view_count"`
 	CommentCount int32              `json:"comment_count"`
+	PublishAt    pgtype.Timestamptz `json:"publish_at"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
@@ -2142,7 +2143,9 @@ type ListUserContentRow struct {
 // content_type, and a free-text search over title/slug. An empty status,
 // content_type, q, or sort string means "no filter" / "default newest".
 // Supports ?sort=newest|oldest|most_viewed for GET /me/content (JEOS §50).
-// Used by GET /me/content (published), /me/drafts (draft), and /me/scheduled (scheduled).
+// Used by GET /me/content (published), /me/drafts (draft), /me/scheduled
+// (scheduled), /me/in-review (in_review), and /me/archived (archived).
+// publish_at is returned so the Scheduled tab can show the go-live time.
 func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams) ([]ListUserContentRow, error) {
 	rows, err := q.db.Query(ctx, listUserContent,
 		arg.AuthorID,
@@ -2168,6 +2171,7 @@ func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams
 			&i.Status,
 			&i.ViewCount,
 			&i.CommentCount,
+			&i.PublishAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -2257,14 +2261,28 @@ WHERE ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' |
  JOIN user_groups ug ON ug.id = ugm.group_id
  WHERE ugm.user_id = u.id AND ug.slug = $3
  ))
-ORDER BY u.created_at DESC
-LIMIT $5 OFFSET $4
+ORDER BY
+ CASE WHEN $4::text = 'username' AND $5::text = 'asc' THEN u.username END ASC,
+ CASE WHEN $4::text = 'username' AND $5::text = 'desc' THEN u.username END DESC,
+ CASE WHEN $4::text = 'email' AND $5::text = 'asc' THEN u.email END ASC,
+ CASE WHEN $4::text = 'email' AND $5::text = 'desc' THEN u.email END DESC,
+ CASE WHEN $4::text = 'profile_type' AND $5::text = 'asc' THEN u.profile_type END ASC,
+ CASE WHEN $4::text = 'profile_type' AND $5::text = 'desc' THEN u.profile_type END DESC,
+ CASE WHEN $4::text = 'status' AND $5::text = 'asc' THEN u.status END ASC,
+ CASE WHEN $4::text = 'status' AND $5::text = 'desc' THEN u.status END DESC,
+ CASE WHEN $4::text = 'follower_count' AND $5::text = 'asc' THEN u.follower_count END ASC,
+ CASE WHEN $4::text = 'follower_count' AND $5::text = 'desc' THEN u.follower_count END DESC,
+ CASE WHEN $4::text = 'created_at' AND $5::text = 'asc' THEN u.created_at END ASC,
+ u.created_at DESC, u.id
+LIMIT $7 OFFSET $6
 `
 
 type ListUsersParams struct {
 	Search     string `json:"search"`
 	Status     string `json:"status"`
 	GroupSlug  string `json:"group_slug"`
+	SortKey    string `json:"sort_key"`
+	SortDir    string `json:"sort_dir"`
 	PageOffset int32  `json:"page_offset"`
 	PageLimit  int32  `json:"page_limit"`
 }
@@ -2286,6 +2304,8 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 		arg.Search,
 		arg.Status,
 		arg.GroupSlug,
+		arg.SortKey,
+		arg.SortDir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -2342,6 +2362,23 @@ type RevokeUserSessionParams struct {
 
 func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) error {
 	_, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.UserID)
+	return err
+}
+
+const setUserDisplayName = `-- name: SetUserDisplayName :exec
+INSERT INTO user_profiles (user_id, display_name) VALUES ($1, $2)
+ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name
+`
+
+type SetUserDisplayNameParams struct {
+	UserID      pgtype.UUID `json:"user_id"`
+	DisplayName *string     `json:"display_name"`
+}
+
+// Minimal profile upsert used by admin user creation — writes only
+// display_name without touching the other profile columns.
+func (q *Queries) SetUserDisplayName(ctx context.Context, arg SetUserDisplayNameParams) error {
+	_, err := q.db.Exec(ctx, setUserDisplayName, arg.UserID, arg.DisplayName)
 	return err
 }
 

@@ -1,12 +1,23 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import Modal from '$lib/components/Modal.svelte';
-	import { api } from '$lib/api';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
+	import { api, apiRaw, formsAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import type { FilterDef } from '$lib/components/ui/data-table';
 	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 
+	// Seeded form nodes are forms.edit/forms.delete/forms.submissions.view —
+	// "space.forms.manage" does not exist.
+	const canEdit = $derived(hasPermission('forms.edit'));
+	const canDelete = $derived(hasPermission('forms.delete'));
+	const canViewSubmissions = $derived(hasPermission('forms.submissions.view'));
+
+	// GET /forms/{id} returns a flat form object — fields carry
+	// {id,label,type,required,sort_order,options}.
 	type FieldDef = {
 		id: string;
 		label: string;
@@ -19,23 +30,27 @@
 	type FormDef = {
 		id: string;
 		name: string;
-		description: string;
+		description?: string;
 		fields: FieldDef[];
 		created_at: string;
 	};
 
+	// ListFormSubmissionsByFormRow — there is no `data`/`submitter_id`;
+	// answers live in the JSONB `field_values` map, keyed by field label
+	// (or field key for API callers).
 	type Submission = {
 		id: string;
-		submitter_id: string;
-		data: Record<string, unknown>;
+		user_id?: string;
+		ip_address?: string;
+		field_values: Record<string, unknown>;
+		status: string;
 		created_at: string;
 	};
 
-	const spaceId = $derived(page.params.spaceId);
-	const formId = $derived(page.params.formId);
+	const spaceId = $derived(page.params.spaceId ?? '');
+	const formId = $derived(page.params.formId ?? '');
 
 	let form = $state<FormDef | null>(null);
-	let submissions = $state<Submission[]>([]);
 	let loading = $state(true);
 	const FORM_TABS = ['edit', 'submissions'] as const;
 	let activeTab = $state<'edit' | 'submissions'>(initTabParam('edit', { valid: FORM_TABS }));
@@ -43,43 +58,70 @@
 	let errorMessage = $state('');
 	let saveMsg = $state('');
 
-	let searchQuery = $state('');
-
 	let editName = $state('');
 	let editDescription = $state('');
 	let saving = $state(false);
 
 	let showDelete = $state(false);
+	let deleting = $state(false);
+
+	// ── Server-paginated submissions ─────────────────────────────────────
+	let submissions = $state<Submission[]>([]);
+	let subLoading = $state(false);
+	let subPage = $state(0); // DataTable pages are 0-based
+	let subPageSize = $state(25);
+	let subTotal = $state(0);
+	let subFilter = $state<Record<string, string>>({});
+	const subTotalPages = $derived(Math.max(1, Math.ceil(subTotal / subPageSize)));
+
+	let statusOptions = $state<CatalogOption[]>([
+		{ value: 'new', label: 'New' },
+		{ value: 'reviewed', label: 'Reviewed' },
+		{ value: 'pending_payment', label: 'Pending Payment' }
+	]);
+
+	async function loadStatusOptions() {
+		try {
+			const res = await adminCatalogApi.get('forms.submission_status');
+			if (res.ok && res.data?.length) statusOptions = res.data;
+		} catch {
+			// fallback stays
+		}
+	}
+
+	// Option filters render through FilterPanel's shared Autocomplete.
+	const subFilters: FilterDef[] = $derived([
+		{ key: 'status', label: t('space_forms.status', 'Status'), options: statusOptions }
+	]);
+
+	// Field values are keyed by label or by the generated key
+	// (lowercase label, spaces → underscores).
+	function fieldValue(sub: Submission, field: FieldDef): unknown {
+		const fv = sub.field_values ?? {};
+		if (field.label in fv) return fv[field.label];
+		const key = field.label.toLowerCase().replace(/\s+/g, '_');
+		if (key in fv) return fv[key];
+		return undefined;
+	}
 
 	const submissionColumns = $derived([
-		{ key: 'created_at', label: t('space_forms.submitted'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'created_at', label: t('space_forms.submitted'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v ? new Date(v).toLocaleString() : '—'}</span>` },
+		{ key: 'status', label: t('space_forms.status', 'Status'), sortable: false, class: 'text-xs', render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-black/5 dark:bg-surface/10">${v || '—'}</span>` },
 		...(form?.fields ?? []).map((field: FieldDef) => ({
-			key: `field_${field.label}`,
+			key: `field_${field.id}`,
 			label: field.label,
 			sortable: false,
 			class: 'text-xs',
-			render: (_v: unknown, row: Submission) => formatFieldValue(row.data[field.label])
+			render: (_v: unknown, row: Record<string, unknown>) => formatFieldValue(row[`field_${field.id}`])
 		}))
 	]);
 
-	function getSubmissionData(sub: Submission): Record<string, unknown> {
-		const row: Record<string, unknown> = { id: sub.id, created_at: sub.created_at, submitter_id: sub.submitter_id };
-		for (const field of (form?.fields ?? [])) {
-			row[`field_${field.label}`] = sub.data[field.label];
+	function getSubmissionRow(sub: Submission): Record<string, unknown> {
+		const row: Record<string, unknown> = { id: sub.id, created_at: sub.created_at, status: sub.status };
+		for (const field of form?.fields ?? []) {
+			row[`field_${field.id}`] = fieldValue(sub, field);
 		}
 		return row;
-	}
-
-	function filteredSubmissions(): Record<string, unknown>[] {
-		const q = searchQuery.toLowerCase().trim();
-		const rows = submissions.map(getSubmissionData);
-		if (!q) return rows;
-		return rows.filter(r => {
-			return Object.values(r).some(v => {
-				if (v === null || v === undefined) return false;
-				return String(v).toLowerCase().includes(q);
-			});
-		});
 	}
 
 	async function load() {
@@ -90,7 +132,9 @@
 			if (result.ok) {
 				form = result.data;
 				editName = form.name;
-				editDescription = form.description;
+				editDescription = form.description ?? '';
+			} else {
+				errorMessage = result.error ?? t('space_forms.load_error');
 			}
 		} catch {
 			errorMessage = t('space_forms.load_error');
@@ -100,12 +144,25 @@
 	}
 
 	async function loadSubmissions() {
+		subLoading = true;
 		try {
-			const result = await api<Submission[]>(`/forms/${formId}/submissions`);
+			const params = new URLSearchParams({
+				page_size: String(subPageSize),
+				page_offset: String(subPage * subPageSize)
+			});
+			if (subFilter.status) params.set('status', subFilter.status);
+			// apiRaw keeps the top-level `total` the handler emits next to `data`.
+			const result = await apiRaw<{ data: Submission[]; total: number }>(`/forms/${formId}/submissions?${params}`);
 			if (result.ok) {
-				submissions = result.data;
+				submissions = Array.isArray(result.data?.data) ? result.data.data : [];
+				subTotal = result.data?.total ?? 0;
+			} else {
+				errorMessage = result.error ?? t('space_forms.load_error');
 			}
 		} catch {
+			errorMessage = t('space_forms.load_error');
+		} finally {
+			subLoading = false;
 		}
 	}
 
@@ -114,10 +171,14 @@
 		saving = true;
 		errorMessage = '';
 		try {
-			await api(`/forms/${formId}`, {
+			const result = await api(`/forms/${formId}`, {
 				method: 'PATCH',
 				body: { name: editName.trim(), description: editDescription.trim() }
 			});
+			if (!result.ok) {
+				errorMessage = result.error ?? t('space_forms.save_error');
+				return;
+			}
 			saveMsg = t('common.saved');
 			setTimeout(() => (saveMsg = ''), 3000);
 			load();
@@ -129,11 +190,19 @@
 	}
 
 	async function deleteForm() {
+		if (deleting) return;
+		deleting = true;
 		try {
-			await api(`/forms/${formId}`, { method: 'DELETE' });
+			const result = await formsAdminApi.delete(formId);
+			if (!result.ok) {
+				errorMessage = result.error ?? t('space_forms.delete_error');
+				return;
+			}
 			await goto(`/spaces/${spaceId}/forms`);
 		} catch {
 			errorMessage = t('space_forms.delete_error');
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -147,11 +216,12 @@
 	$effect(() => {
 		load();
 		loadSubmissions();
+		loadStatusOptions();
 	});
 </script>
 
 <svelte:head>
-	<title>Form Detail — JapaConnect Admin</title>
+	<title>{form?.name ?? t('space_forms.detail_title')} — JapaConnect Admin</title>
 </svelte:head>
 
 <div class="mb-4 flex items-center justify-between">
@@ -174,13 +244,15 @@
 		>
 			{t('space_forms.open_full_editor', 'Open Full Editor')}
 		</a>
-		<button
-			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
-			style="border-color: var(--color-border); color: var(--color-danger)"
-			onclick={() => (showDelete = true)}
-		>
-			{t('common.delete')}
-		</button>
+		{#if canDelete}
+			<button
+				class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
+				style="border-color: var(--color-border); color: var(--color-danger)"
+				onclick={() => (showDelete = true)}
+			>
+				{t('common.delete')}
+			</button>
+		{/if}
 	</div>
 </div>
 
@@ -204,7 +276,7 @@
 		style={activeTab === 'submissions' ? 'color: var(--color-primary); border-bottom: 2px solid var(--color-primary)' : 'color: var(--color-muted)'}
 		onclick={() => (activeTab = 'submissions')}
 	>
-		{t('space_forms.tab_submissions').replace('{count}', String(submissions.length))}
+		{t('space_forms.tab_submissions').replace('{count}', String(subTotal))}
 	</button>
 </div>
 
@@ -223,6 +295,7 @@
 						class="w-full rounded-md border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-background)"
 						bind:value={editName}
+						disabled={!canEdit}
 					/>
 				</div>
 				<div>
@@ -233,22 +306,25 @@
 						style="border-color: var(--color-border); background-color: var(--color-background)"
 						rows="2"
 						bind:value={editDescription}
+						disabled={!canEdit}
 					></textarea>
 				</div>
 			</div>
-			<div class="mt-4 flex items-center gap-3">
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-primary)"
-					disabled={saving}
-					onclick={saveMetadata}
-				>
-					{saving ? t('common.saving') : t('common.save')}
-				</button>
-				{#if saveMsg}
-					<span class="text-xs" style="color: var(--color-success)">{saveMsg}</span>
-				{/if}
-			</div>
+			{#if canEdit}
+				<div class="mt-4 flex items-center gap-3">
+					<button
+						class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+						style="background-color: var(--color-primary)"
+						disabled={saving || !editName.trim()}
+						onclick={saveMetadata}
+					>
+						{saving ? t('common.saving') : t('common.save')}
+					</button>
+					{#if saveMsg}
+						<span class="text-xs" style="color: var(--color-success)">{saveMsg}</span>
+					{/if}
+				</div>
+			{/if}
 		</div>
 
 		<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
@@ -264,7 +340,7 @@
 			</div>
 			{#if form?.fields && form.fields.length > 0}
 				<div class="space-y-3">
-					{#each form.fields as field (field)}
+					{#each form.fields as field (field.id)}
 						<div class="flex items-center justify-between rounded-md border px-4 py-3" style="border-color: var(--color-border); background-color: var(--color-background)">
 							<div>
 								<span class="text-sm font-medium">{field.label}</span>
@@ -285,24 +361,36 @@
 		</div>
 	</div>
 {:else}
-	{#if submissions.length === 0}
+	{#if !canViewSubmissions}
 		<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<p class="text-sm" style="color: var(--color-muted)">{t('space_forms.no_submissions')}</p>
+			<p class="text-sm" style="color: var(--color-muted)">{t('common.noPermission', 'You do not have permission to view submissions')}</p>
 		</div>
 	{:else}
 		<DataTable
 			columns={submissionColumns}
-			data={filteredSubmissions()}
-			pageSize={25}
+			data={submissions.map(getSubmissionRow)}
+			serverSide
+			loading={subLoading}
+			totalRows={subTotal}
+			totalPages={subTotalPages}
+			bind:page={subPage}
+			bind:pageSize={subPageSize}
+			onpagechange={(p) => { subPage = p; loadSubmissions(); }}
+			onpagesizechange={(s) => { subPageSize = s; subPage = 0; loadSubmissions(); }}
+			filters={subFilters}
+			bind:filterValue={subFilter}
+			onfilterapply={() => { subPage = 0; loadSubmissions(); }}
+			onfilterclear={() => { subPage = 0; loadSubmissions(); }}
 			emptyMessage={t('space_forms.no_submissions')}
-			searchable
-			searchPlaceholder={t('common.search')}
-			onsearch={(q) => { searchQuery = q; }}
 		/>
 	{/if}
 {/if}
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDelete} title={t('space_forms.delete_title')} onConfirm={deleteForm} confirmLabel={t('common.delete')}>
+<Modal bind:open={showDelete} title={t('space_forms.delete_title')} size="sm">
 	<p class="text-sm">{t('space_forms.delete_text').replace('{name}', form?.name ?? '')}</p>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showDelete = false; }}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={deleteForm} disabled={deleting}>{deleting ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}</Button>
+	</div>
 </Modal>

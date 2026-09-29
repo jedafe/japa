@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api } from '$lib/api';
-	import { Select } from '$lib/components/ui/select';
+	import { api, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	const spaceId = $derived(page.params.spaceId);
 
 	type FieldDef = {
 		label: string;
-		type: 'text' | 'number' | 'email' | 'boolean' | 'select' | 'textarea' | 'url';
+		type: string;
 		required: boolean;
 		options: string[];
 	};
@@ -20,7 +20,32 @@
 	let saving = $state(false);
 	let errorMessage = $state('');
 
-	const fieldTypes = $derived(['text', 'number', 'email', 'boolean', 'select', 'textarea', 'url'] as const);
+	// Field types come from the admin catalog (same subset the backend's
+	// CreateSpaceForm path accepts); fall back to the minimal set if the
+	// catalog call fails.
+	let fieldTypeOptions = $state<CatalogOption[]>([
+		{ value: 'text', label: 'Text' },
+		{ value: 'number', label: 'Number' },
+		{ value: 'email', label: 'Email' },
+		{ value: 'boolean', label: 'Yes / No' },
+		{ value: 'select', label: 'Select (dropdown)' },
+		{ value: 'textarea', label: 'Long text' },
+		{ value: 'url', label: 'URL' }
+	]);
+
+	const fieldTypeFetcher = (q: string): AutocompleteItem[] =>
+		fieldTypeOptions
+			.filter((o) => o.label.toLowerCase().includes(q.toLowerCase()) || o.value.includes(q.toLowerCase()))
+			.map((o) => ({ id: o.value, label: o.label }));
+
+	async function loadFieldTypes() {
+		try {
+			const res = await adminCatalogApi.get('forms.field_type');
+			if (res.ok && res.data?.length) fieldTypeOptions = res.data;
+		} catch {
+			// fallback stays
+		}
+	}
 
 	function addField() {
 		fields = [...fields, { label: '', type: 'text', required: false, options: [] }];
@@ -55,6 +80,11 @@
 			errorMessage = t('space_forms.fields_required');
 			return;
 		}
+		// A select field with no options can never collect a value.
+		if (validFields.some((f) => f.type === 'select' && !f.options.some((o) => o.trim()))) {
+			errorMessage = t('space_forms.options_required', 'Select fields need at least one option');
+			return;
+		}
 
 		saving = true;
 		errorMessage = '';
@@ -84,6 +114,10 @@
 			saving = false;
 		}
 	}
+
+	$effect(() => {
+		loadFieldTypes();
+	});
 </script>
 
 <svelte:head>
@@ -174,9 +208,15 @@
 						</div>
 						<div>
 						<label for="field-type-{i}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_type')}</label>
-						<Select
-							options={fieldTypes.map(ft => ({ value: ft, label: ft }))}
-							bind:value={field.type}
+						<Autocomplete
+							id="field-type-{i}"
+							placeholder={t('space_forms.field_type')}
+							emptyMessage={t('common.no_data', 'No matching types')}
+							fetcher={async (q: string) => fieldTypeFetcher(q)}
+							initialFetcher={async () => fieldTypeFetcher('')}
+							selectedId={field.type || null}
+							selectedLabel={fieldTypeOptions.find((o) => o.value === field.type)?.label ?? field.type}
+							onSelect={(item: AutocompleteItem) => (field.type = item.id)}
 						/>
 						</div>
 					</div>

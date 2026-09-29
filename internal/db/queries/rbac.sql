@@ -38,6 +38,29 @@ FROM user_groups
 
 ORDER BY name;
 
+-- name: ListUserGroupsPaged :many
+-- Paginated variant for the admin groups table — supports search over
+-- name/description and whitelisted sort on name/member_count. member_count
+-- is computed inline so ordering by it works in the same query.
+SELECT sub.id, sub.name, sub.slug, sub.is_system, sub.description, sub.member_count
+FROM (
+ SELECT g.id, g.name, g.slug, g.is_system, g.description,
+  (SELECT COUNT(*)::int FROM user_group_memberships ugm WHERE ugm.group_id = g.id) AS member_count
+ FROM user_groups g
+ WHERE (@search::text = '' OR g.name ILIKE '%' || @search || '%' OR COALESCE(g.description, '') ILIKE '%' || @search || '%')
+) sub
+ORDER BY
+ CASE WHEN @sort_key::text = 'name' AND @sort_dir::text = 'desc' THEN sub.name END DESC,
+ CASE WHEN @sort_key::text = 'member_count' AND @sort_dir::text = 'asc' THEN sub.member_count END ASC,
+ CASE WHEN @sort_key::text = 'member_count' AND @sort_dir::text = 'desc' THEN sub.member_count END DESC,
+ sub.name
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountUserGroups :one
+SELECT COUNT(*)::int AS count
+FROM user_groups g
+WHERE (@search::text = '' OR g.name ILIKE '%' || @search || '%' OR COALESCE(g.description, '') ILIKE '%' || @search || '%');
+
 -- name: CountGroupMembers :many
 SELECT ug.id AS group_id, COUNT(ugm.user_id)::int AS member_count
 FROM user_groups ug
@@ -81,10 +104,24 @@ FROM user_roles
 ORDER BY name;
 
 -- name: ListRolesPaginated :many
-SELECT id, name, slug
-FROM user_roles
-WHERE (@search::text = '' OR name ILIKE '%' || @search || '%')
-ORDER BY name
+-- user_count = distinct users holding the role through their group
+-- memberships (role → group_roles → user_group_memberships), not the
+-- number of groups assigned the role.
+SELECT sub.id, sub.name, sub.slug, sub.user_count
+FROM (
+ SELECT ur.id, ur.name, ur.slug,
+  (SELECT COUNT(DISTINCT ugm.user_id)::int
+   FROM group_roles gr
+   JOIN user_group_memberships ugm ON ugm.group_id = gr.group_id
+   WHERE gr.role_id = ur.id) AS user_count
+ FROM user_roles ur
+ WHERE (@search::text = '' OR ur.name ILIKE '%' || @search || '%')
+) sub
+ORDER BY
+ CASE WHEN @sort_key::text = 'name' AND @sort_dir::text = 'desc' THEN sub.name END DESC,
+ CASE WHEN @sort_key::text = 'user_count' AND @sort_dir::text = 'asc' THEN sub.user_count END ASC,
+ CASE WHEN @sort_key::text = 'user_count' AND @sort_dir::text = 'desc' THEN sub.user_count END DESC,
+ sub.name
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountRoles :one

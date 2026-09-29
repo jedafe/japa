@@ -632,9 +632,17 @@ func (s *Service) GetUserModerationConfig(ctx context.Context) (*UserModerationC
 	}, nil
 }
 
+// adminUserSortKeys is the whitelist of ListUsers sort columns. The SQL
+// maps each key via CASE — anything else falls back to created_at DESC.
+var adminUserSortKeys = map[string]bool{
+	"username": true, "email": true, "profile_type": true,
+	"status": true, "follower_count": true, "created_at": true,
+}
+
 // ListUsers returns a paginated list of users for admin use, with optional
-// search filtering by username/email, status filter, and group slug filter.
-func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug string, limit, offset int32) (*ListUsersResponse, error) {
+// search filtering by username/email, status filter, group slug filter, and
+// whitelisted sort (sortKey + sortDir "asc"/"desc").
+func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug, sortKey, sortDir string, limit, offset int32) (*ListUsersResponse, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -643,7 +651,14 @@ func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug strin
 		offset = 0
 	}
 
-	users, err := s.store.listUsers(ctx, search, status, groupSlug, limit, offset)
+	if !adminUserSortKeys[sortKey] {
+		sortKey = ""
+	}
+	if sortDir != "asc" {
+		sortDir = "desc"
+	}
+
+	users, err := s.store.listUsers(ctx, search, status, groupSlug, sortKey, sortDir, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
 	}
@@ -1003,6 +1018,11 @@ func (s *Service) listUserContentInternal(ctx context.Context, userID pgtype.UUI
 
 	result := make([]ContentListItem, len(content))
 	for i, c := range content {
+		var publishAt *string
+		if c.PublishAt.Valid {
+			s := c.PublishAt.Time.Format(time.RFC3339)
+			publishAt = &s
+		}
 		result[i] = ContentListItem{
 			ID:           c.ID.String(),
 			Title:        c.Title,
@@ -1011,6 +1031,7 @@ func (s *Service) listUserContentInternal(ctx context.Context, userID pgtype.UUI
 			Status:       c.Status,
 			ViewCount:    c.ViewCount,
 			CommentCount: c.CommentCount,
+			PublishAt:    publishAt,
 			CreatedAt:    c.CreatedAt.Time.Format(time.RFC3339),
 			UpdatedAt:    c.UpdatedAt.Time.Format(time.RFC3339),
 		}

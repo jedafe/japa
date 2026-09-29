@@ -315,6 +315,85 @@ func (s *Store) ListGroups(ctx context.Context) ([]Group, error) {
 	return groups, nil
 }
 
+// groupSortKeys is the whitelist of ListUserGroupsPaged sort columns.
+var groupSortKeys = map[string]bool{"name": true, "member_count": true}
+
+// ListGroupsPaged returns a searched/sorted/paginated list of groups for
+// the admin groups table, plus the total match count for pagination.
+// Permission sets are batch-loaded the same way as ListGroups.
+func (s *Store) ListGroupsPaged(ctx context.Context, search, sortKey, sortDir string, limit, offset int32) ([]Group, int32, error) {
+	if !groupSortKeys[sortKey] {
+		sortKey = "name"
+	}
+	if sortDir != "desc" {
+		sortDir = "asc"
+	}
+
+	rows, err := s.read.ListUserGroupsPaged(ctx, gen.ListUserGroupsPagedParams{
+		Search:     search,
+		SortKey:    sortKey,
+		SortDir:    sortDir,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing groups paged: %w", err)
+	}
+
+	total, err := s.read.CountUserGroups(ctx,
+		search,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting groups: %w", err)
+	}
+
+	// Batch-load permissions for the page's groups only (same enrichment
+	// as ListGroups — the query returns every group's permission rows and
+	// we filter to the page's IDs).
+	permRows, err := s.read.ListGroupPermissions(ctx)
+	if err != nil {
+		slog.Warn("rbac: failed to batch list group permissions", "error", err)
+
+		permRows = nil
+	}
+
+	groupPerms := make(map[pgtype.UUID]map[string]struct{})
+	for _, r := range permRows {
+		if groupPerms[r.GroupID] == nil {
+			groupPerms[r.GroupID] = make(map[string]struct{})
+		}
+
+		groupPerms[r.GroupID][r.Key] = struct{}{}
+	}
+
+	groups := make([]Group, 0, len(rows))
+
+	for _, r := range rows {
+		g := Group{
+			ID: r.ID,
+
+			Name:        r.Name,
+			Slug:        r.Slug,
+			IsSystem:    r.IsSystem,
+			MemberCount: r.MemberCount,
+		}
+		if r.Description != nil {
+			g.Description = *r.Description
+		}
+
+		if perms, ok := groupPerms[r.ID]; ok {
+			g.Permissions = make([]string, 0, len(perms))
+			for k := range perms {
+				g.Permissions = append(g.Permissions, k)
+			}
+		}
+
+		groups = append(groups, g)
+	}
+
+	return groups, total, nil
+}
+
 // GroupMember represents a user within a group.
 type GroupMember struct {
 	ID          pgtype.UUID `json:"id"`
@@ -396,12 +475,25 @@ func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
 	return roles, nil
 }
 
+// roleSortKeys is the whitelist of ListRolesPaginated sort columns.
+var roleSortKeys = map[string]bool{"name": true, "user_count": true}
+
 // ListRolesPaginated returns a paginated list of roles with optional search.
-// Uses batch queries for permissions and group counts to avoid N+1 lookups.
-func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, offset int32) ([]Role, int32, error) {
+// user_count comes from the SQL (distinct users holding the role via group
+// memberships); permissions are batch-loaded to avoid N+1 lookups.
+func (s *Store) ListRolesPaginated(ctx context.Context, search, sortKey, sortDir string, limit, offset int32) ([]Role, int32, error) {
+	if !roleSortKeys[sortKey] {
+		sortKey = "name"
+	}
+	if sortDir != "desc" {
+		sortDir = "asc"
+	}
+
 	rows, err := s.read.ListRolesPaginated(ctx, gen.ListRolesPaginatedParams{
 
 		Search:     search,
+		SortKey:    sortKey,
+		SortDir:    sortDir,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -422,19 +514,6 @@ func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, of
 		rolePerms[r.RoleID] = append(rolePerms[r.RoleID], r.Key)
 	}
 
-	// Batch query: group counts per role for this platform.
-	groupCountRows, err := s.read.CountGroupsByRole(ctx)
-	if err != nil {
-		slog.Warn("rbac: failed to batch count groups by role", "error", err)
-
-		groupCountRows = nil
-	}
-
-	groupCounts := make(map[pgtype.UUID]int32)
-	for _, r := range groupCountRows {
-		groupCounts[r.RoleID] = r.GroupCount
-	}
-
 	roles := make([]Role, 0, len(rows))
 
 	for _, r := range rows {
@@ -442,7 +521,7 @@ func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, of
 			ID:        r.ID,
 			Name:      r.Name,
 			Slug:      r.Slug,
-			UserCount: groupCounts[r.ID],
+			UserCount: r.UserCount,
 		}
 		role.Permissions = rolePerms[r.ID]
 

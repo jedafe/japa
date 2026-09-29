@@ -11,6 +11,8 @@
   import { DataTable } from "$lib/components/ui/data-table";
   import type { ActionItem } from "$lib/components/ui/data-table";
   import Pagination from "$lib/components/ui/Pagination.svelte";
+  import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
+  import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
   import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw } from "lucide-svelte";
    import { userManagementApi, impersonationApi, usersWarningsAdminApi, type UserSession, type ModerationConfigOption } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -55,8 +57,6 @@
      expires_at: string | null;
      created_at: string;
    };
-
-   let { data } = $props();
 
    let user = $state<UserDetail | null>(null);
    let activities = $state<Activity[]>([]);
@@ -126,7 +126,6 @@
 
   let showBanConfirm = $state(false);
   let showUnbanConfirm = $state(false);
-  let showSuspendConfirm = $state(false);
   let showDeleteConfirm = $state(false);
   let showWarningModal = $state(false);
   let showGroupModal = $state(false);
@@ -134,7 +133,7 @@
   let showRestrictModal = $state(false);
   let showSuspendModal = $state(false);
   let warningReason = $state("");
-  let warningViolationType = $state("spam");
+  let warningViolationType = $state("");
   let selectedGroups = $state<string[]>([]);
   let selectedProfileType = $state("personal");
   // Restrict modal state
@@ -193,9 +192,19 @@
   ];
 
   const warningColumns = [
+    { key: 'violation_type', label: t('users.userId.violation_type', 'Violation'), sortable: false, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-warning) 15%, transparent); color: var(--color-foreground)">${v || '—'}</span>` },
     { key: 'reason', label: t('users.userId.reason'), sortable: false },
-    { key: 'created_at', label: t('users.userId.issued'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-    { key: 'expires_at', label: t('users.userId.expires'), sortable: false, class: 'text-xs', render: (v: string | undefined) => `<span style="color: var(--color-muted)">${v ?? t('users.userId.never', 'Never')}</span>` }
+    { key: 'created_at', label: t('users.userId.issued'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
+  ];
+
+  const warningActions: ActionItem[] = [
+    {
+      label: t('common.delete', 'Delete'),
+      icon: Trash2,
+      variant: 'destructive',
+      onclick: (row: Warning) => deleteWarning(row.id),
+      show: () => canManageUsers
+    }
   ];
 
   async function loadUser() {
@@ -267,18 +276,19 @@
     }
   }
 
-  // Lazy-load a tab's data the first time it is activated — covers tab
-  // clicks, ?tab= deep-links, and back/forward navigation. (The shared
-  // Tabs component binds `activeTab` directly, so this must be an effect,
-  // not a click handler.)
-  const loadedTabs = new Set<string>();
+  // Load a tab's data when it becomes active — covers tab clicks, ?tab=
+  // deep-links, and back/forward navigation. Kept fresh on each activation
+  // so moderation state is never stale. (The shared Tabs component binds
+  // `activeTab` directly, so this must be an effect, not a click handler.)
+  function loadTabData(tab: string) {
+    if (tab === "activity") void loadActivity();
+    else if (tab === "ai") void loadAiContext();
+    else if (tab === "sessions") void loadSessions();
+    else if (tab === "warnings") void loadWarnings();
+  }
   $effect(() => {
-    if (loadedTabs.has(activeTab)) return;
-    loadedTabs.add(activeTab);
-    if (activeTab === "activity") void loadActivity();
-    else if (activeTab === "ai") void loadAiContext();
-    else if (activeTab === "sessions") void loadSessions();
-    else if (activeTab === "warnings") void loadWarnings();
+    if (!userId) return;
+    loadTabData(activeTab);
   });
 
   function flash(msg: string, isError = false) {
@@ -296,7 +306,7 @@
     if (result.ok) {
       flash(t('users.detail.ban_success', 'User banned'));
       loadUser();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function handleUnban() {
@@ -305,16 +315,7 @@
     if (result.ok) {
       flash(t('users.detail.unban_success', 'Ban lifted'));
       loadUser();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
-  }
-
-  async function handleSuspend() {
-    showSuspendConfirm = false;
-    const result = await userManagementApi.suspendUser(userId, { status: "suspended" });
-    if (result.ok) {
-      flash(t('users.detail.suspend_success', 'User suspended'));
-      loadUser();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function handleDelete() {
@@ -323,15 +324,19 @@
     if (result.ok) {
       flash(t('users.detail.delete_success', 'User deleted'));
       goto("/users");
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function handleUnsuspend() {
-    const result = await userManagementApi.suspendUser(userId, { status: "active" });
+    // POST /suspend bans every operation permanently AND sets status —
+    // unsuspending must lift all operation bans (which also restores
+    // status='active'), not just patch the status field.
+    const result = await userManagementApi.liftAllRestrictions(userId);
     if (result.ok) {
       flash(t('users.detail.unsuspend_success', 'User unsuspended'));
       loadUser();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+      loadRestrictions();
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function handleRestore() {
@@ -339,17 +344,7 @@
     if (result.ok) {
       flash(t('users.restore', 'User restored'));
       loadUser();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
-  }
-
-  async function handleWarning() {
-    showWarningModal = false;
-    if (!warningReason.trim()) return;
-    const result = await userManagementApi.issueWarning(userId, { reason: warningReason });
-    if (result.ok) {
-      flash(t('users.detail.warning_sent', 'Warning issued'));
-      warningReason = "";
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function handleWarnTyped() {
@@ -369,7 +364,7 @@
       warningReason = "";
       loadWarnings();
       loadRestrictions();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function handleRestrict() {
@@ -385,7 +380,8 @@
       restrictOperations = [];
       restrictReason = "";
       loadRestrictions();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+      loadUser(); // backend also sets status='restricted'
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function handleSuspendUser() {
@@ -395,7 +391,16 @@
       flash(t('users.detail.suspended', 'User suspended'));
       suspendReason = "";
       loadUser();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+      loadRestrictions();
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
+  }
+
+  async function deleteWarning(warningId: string) {
+    const result = await usersWarningsAdminApi.delete(userId, warningId);
+    if (result.ok) {
+      flash(t('users.detail.warning_deleted', 'Warning deleted'));
+      loadWarnings();
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function liftRestriction(operation: string) {
@@ -403,7 +408,8 @@
     if (result.ok) {
       flash(t('users.detail.restriction_lifted', 'Restriction lifted'));
       loadRestrictions();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+      loadUser(); // status flips back to 'active' when no bans remain
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function liftAllRestrictions() {
@@ -411,7 +417,8 @@
     if (result.ok) {
       flash(t('users.detail.all_restrictions_lifted', 'All restrictions lifted'));
       loadRestrictions();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+      loadUser(); // backend restores status='active'
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function handleGroupChange() {
@@ -422,6 +429,7 @@
     const removed = [...current].filter((g) => !selected.has(g));
 
     let allOk = true;
+    let lastError: string | undefined;
     for (const name of added) {
       const groupId = groupIdsByName[name];
       if (!groupId) {
@@ -429,7 +437,7 @@
         continue;
       }
       const result = await userManagementApi.addGroupMember(groupId, userId);
-      if (!result.ok) allOk = false;
+      if (!result.ok) { allOk = false; lastError = result.error; }
     }
     for (const name of removed) {
       const groupId = groupIdsByName[name];
@@ -438,46 +446,25 @@
         continue;
       }
       const result = await userManagementApi.removeGroupMember(groupId, userId);
-      if (!result.ok) allOk = false;
+      if (!result.ok) { allOk = false; lastError = result.error; }
     }
 
     if (allOk) {
       flash(t('users.detail.group_changed', 'Group updated'));
       loadUser();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+    } else flash(lastError ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
-  // Moderation config options — fetched from backend (BUG-019/BUG-020/BUG-021).
-  // No hardcoded fallback per Rule 16; the loadModerationConfig() call
-  // populates these from /admin/users/config.
+  // Moderation config options — fetched from the backend only (Rule 16).
+  // No hardcoded fallbacks; loadModerationConfig() populates these from
+  // /admin/users/config on mount.
   let profileTypeOptions = $state<string[]>([]);
-  let violationTypes = $state<ModerationConfigOption[]>([
-    { value: 'spam', label: 'Spam' },
-    { value: 'harassment', label: 'Harassment' },
-    { value: 'misinformation', label: 'Misinformation' },
-    { value: 'hate_speech', label: 'Hate Speech' },
-    { value: 'other', label: 'Other' },
-  ]);
-  let restrictionOps = $state<ModerationConfigOption[]>([
-    { value: 'post', label: 'Post' },
-    { value: 'comment', label: 'Comment' },
-    { value: 'discussion', label: 'Discussion' },
-    { value: 'blog', label: 'Blog' },
-    { value: 'message', label: 'Message' },
-  ]);
-  let restrictionDurations = $state<ModerationConfigOption[]>([
-    { value: '1h', label: '1 Hour' },
-    { value: '2h', label: '2 Hours' },
-    { value: '6h', label: '6 Hours' },
-    { value: '12h', label: '12 Hours' },
-    { value: '1d', label: '1 Day' },
-    { value: '7d', label: '7 Days' },
-    { value: '30d', label: '30 Days' },
-    { value: 'permanent', label: 'Permanent' },
-  ]);
+  let violationTypes = $state<ModerationConfigOption[]>([]);
+  let restrictionOps = $state<ModerationConfigOption[]>([]);
+  let restrictionDurations = $state<ModerationConfigOption[]>([]);
 
-  // Fetch moderation config from the backend; on failure keep the fallback
-  // defaults above. (BUG-019/BUG-020/BUG-021)
+  // Fetch moderation config from the backend; on failure the option lists
+  // stay empty rather than silently using stale hardcoded values.
   async function loadModerationConfig() {
     try {
       const result = await userManagementApi.getModerationConfig();
@@ -489,7 +476,7 @@
         if (cfg.restriction_durations?.length) restrictionDurations = cfg.restriction_durations;
       }
     } catch {
-      // keep fallback defaults
+      // Options stay empty — the modals disable submit until config loads.
     }
   }
 
@@ -499,7 +486,7 @@
     if (result.ok) {
       flash(t('users.detail.profile_type_changed', 'Tier updated'));
       loadUser();
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   async function deleteAiEntry(entryId: string) {
@@ -510,13 +497,25 @@
     } else flash(t('users.detail.ai_entry_delete_error', 'Failed to delete entry'), true);
   }
 
+  async function checkImpersonation() {
+    try {
+      const result = await impersonationApi.status();
+      if (result.ok) {
+        impersonating = result.data.active;
+        impersonatingTargetId = result.data.target_user_id;
+      }
+    } catch {
+      // banner simply stays hidden
+    }
+  }
+
   async function startImpersonate() {
     if (!user) return;
     const result = await impersonationApi.start(user.id);
     if (result.ok) {
       await invalidateAll();
       goto("/", { invalidateAll: true });
-    } else flash(t('users.detail.action_error', 'Action failed'), true);
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
   let groupsLoaded = false;
@@ -539,19 +538,12 @@
     }
   });
 
-  $effect(() => {
-    const tab = activeTab;
-    if (!userId) return;
-    if (tab === "activity") loadActivity();
-    else if (tab === "ai") loadAiContext();
-    else if (tab === "sessions") loadSessions();
-    else if (tab === "warnings") loadWarnings();
-  });
-
   // Load moderation config (profile types, violation types, restriction
-  // operations + durations) from the backend on mount. BUG-019/BUG-020/BUG-021
+  // operations + durations) from the backend on mount, and pick up an
+  // active impersonation session for the banner.
   $effect(() => {
     loadModerationConfig();
+    checkImpersonation();
   });
 </script>
 
@@ -646,11 +638,22 @@
           <!-- Action Buttons -->
           <div class="mt-4 flex flex-wrap gap-2">
             {#if canManageUsers}
-              <Button variant="outline" size="sm" onclick={() => { warningReason = ""; warningViolationType = "spam"; showWarningModal = true; }}>
+              <Button variant="outline" size="sm" onclick={() => { warningReason = ""; warningViolationType = violationTypes[0]?.value ?? ''; showWarningModal = true; }}>
                 <AlertTriangle class="h-4 w-4 mr-2" />
                 {t('users.detail.warning', 'Warn')}
               </Button>
-              {#if user.status === "active" || user.status === "banned" || user.status === "restricted"}
+              {#if user.status === "banned"}
+                <Button variant="outline" size="sm" onclick={() => (showUnbanConfirm = true)}>
+                  <RotateCcw class="h-4 w-4 mr-2" />
+                  {t('users.detail.unban', 'Unban')}
+                </Button>
+              {:else if user.status !== "deleted"}
+                <Button variant="destructive" size="sm" onclick={() => (showBanConfirm = true)}>
+                  <Ban class="h-4 w-4 mr-2" />
+                  {t('users.detail.ban', 'Ban')}
+                </Button>
+              {/if}
+              {#if user.status === "active" || user.status === "restricted"}
                 <Button variant="destructive" size="sm" onclick={() => { restrictOperations = []; restrictDuration = "7d"; restrictReason = ""; showRestrictModal = true; }}>
                   <Ban class="h-4 w-4 mr-2" />
                   {t('users.detail.restrict', 'Restrict')}
@@ -742,7 +745,7 @@
                     </tr>
                   </thead>
                   <tbody>
-                    {#each restrictions as r (r)}
+                    {#each restrictions as r (r.id)}
                       <tr style="border-color: var(--color-border)">
                         <td class="px-4 py-2">
                           <span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-warning/15 text-warning dark:text-warning">{r.operation}</span>
@@ -764,19 +767,21 @@
         </div>
 
       {:else if activeTab === "activity"}
-        <DataTable columns={activityColumns} data={pagedActivities} searchable={true} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { activitySearch = q; activityPage = 0; }} emptyMessage={t('users.userId.no_activity_yet')} />
+        <!-- urlSync={false}: tab-level search/sort is internal state — it must
+             not write ?q=/?sort= into the user-detail URL. -->
+        <DataTable columns={activityColumns} data={pagedActivities} searchable={true} urlSync={false} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { activitySearch = q; activityPage = 0; }} emptyMessage={t('users.userId.no_activity_yet')} />
         <Pagination bind:page={activityPage} totalPages={activityTotalPages} totalItems={filteredActivities.length} bind:pageSize={activityPageSize} />
 
       {:else if activeTab === "ai"}
-        <DataTable columns={aiColumns} data={pagedAiEntries} searchable={true} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { aiSearch = q; aiPage = 0; }} actions={aiActions} emptyMessage={t('users.userId.no_ai_context_entries')} />
+        <DataTable columns={aiColumns} data={pagedAiEntries} searchable={true} urlSync={false} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { aiSearch = q; aiPage = 0; }} actions={aiActions} emptyMessage={t('users.userId.no_ai_context_entries')} />
         <Pagination bind:page={aiPage} totalPages={aiTotalPages} totalItems={filteredAiEntries.length} bind:pageSize={aiPageSize} />
 
       {:else if activeTab === "sessions"}
-        <DataTable columns={sessionColumns} data={pagedSessions} searchable={true} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { sessionSearch = q; sessionPage = 0; }} emptyMessage={t('users.userId.no_sessions_yet')} />
+        <DataTable columns={sessionColumns} data={pagedSessions} searchable={true} urlSync={false} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { sessionSearch = q; sessionPage = 0; }} emptyMessage={t('users.userId.no_sessions_yet')} />
         <Pagination bind:page={sessionPage} totalPages={sessionTotalPages} totalItems={filteredSessions.length} bind:pageSize={sessionPageSize} />
 
       {:else if activeTab === "warnings"}
-        <DataTable columns={warningColumns} data={pagedWarnings} searchable={true} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { warningSearch = q; warningPage = 0; }} emptyMessage={t('users.userId.no_warnings_yet')} />
+        <DataTable columns={warningColumns} data={pagedWarnings} searchable={true} urlSync={false} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { warningSearch = q; warningPage = 0; }} actions={warningActions} emptyMessage={t('users.userId.no_warnings_yet')} />
         <Pagination bind:page={warningPage} totalPages={warningTotalPages} totalItems={filteredWarnings.length} bind:pageSize={warningPageSize} />
       {/if}
     </CardContent>
@@ -790,7 +795,7 @@
       <div class="rounded-md border p-3" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent)">
         <p class="text-xs font-medium mb-2" style="color: var(--color-warning)">Currently restricted operations:</p>
         <div class="flex flex-wrap gap-2">
-          {#each restrictions as r (r)}
+          {#each restrictions as r (r.id)}
             <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-warning/15 text-warning dark:text-warning">
               {r.operation} — {r.expires_at ? new Date(r.expires_at).toLocaleDateString() : 'Permanent'}
               <button type="button" class="ml-1 hover:opacity-70" onclick={() => liftRestriction(r.operation)}>&times;</button>
@@ -815,15 +820,23 @@
       </div>
     </div>
     <div>
-      <p class="mb-1 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Duration</p>
-      <div class="grid grid-cols-4 gap-2">
-        {#each restrictionDurations as d (d)}
-          <label class="flex items-center gap-2 text-sm">
-            <input type="radio" name="restrict_duration" value={d.value} bind:group={restrictDuration} class="rounded" />
-            {d.label}
-          </label>
-        {/each}
-      </div>
+      <label for="restrict-duration" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Duration</label>
+      <Autocomplete
+        id="restrict-duration"
+        placeholder={t('users.detail.select_duration', 'Select duration')}
+        emptyMessage={t('common.no_results', 'No results found')}
+        fetcher={async (q: string) => {
+          const needle = q.trim().toLowerCase();
+          return restrictionDurations
+            .filter((d) => !needle || d.label.toLowerCase().includes(needle) || d.value.toLowerCase().includes(needle))
+            .map((d) => ({ id: d.value, label: d.label }));
+        }}
+        initialFetcher={async () => restrictionDurations.map((d) => ({ id: d.value, label: d.label }))}
+        selectedId={restrictDuration || null}
+        selectedLabel={restrictDuration ? (restrictionDurations.find((d) => d.value === restrictDuration)?.label ?? restrictDuration) : null}
+        onSelect={(item: AutocompleteItem) => { restrictDuration = item.id; }}
+        onClear={() => { restrictDuration = ''; }}
+      />
     </div>
     <div>
       <label for="restrict-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Reason</label>
@@ -854,6 +867,31 @@
   </div>
 </Modal>
 
+<!-- Ban Confirmation -->
+<Modal bind:open={showBanConfirm} title={t('users.detail.ban', 'Ban User')} size="sm">
+  <p class="text-sm" style="color: var(--color-foreground)">
+    {t('users.detail.ban_confirm', 'Are you sure you want to ban this user?')} <strong>{user?.username}</strong>
+  </p>
+  <p class="mt-2 text-sm" style="color: var(--color-danger)">
+    {t('users.detail.ban_notice', 'The user will lose access to the platform until the ban is lifted.')}
+  </p>
+  <div class="mt-6 flex justify-end gap-3">
+    <Button variant="outline" onclick={() => (showBanConfirm = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="destructive" onclick={handleBan}>{t('users.detail.ban', 'Ban')}</Button>
+  </div>
+</Modal>
+
+<!-- Unban Confirmation -->
+<Modal bind:open={showUnbanConfirm} title={t('users.detail.unban', 'Unban User')} size="sm">
+  <p class="text-sm" style="color: var(--color-foreground)">
+    {t('users.detail.unban_confirm', 'Are you sure you want to lift the ban for this user?')} <strong>{user?.username}</strong>
+  </p>
+  <div class="mt-6 flex justify-end gap-3">
+    <Button variant="outline" onclick={() => (showUnbanConfirm = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="default" onclick={handleUnban}>{t('users.detail.unban', 'Unban')}</Button>
+  </div>
+</Modal>
+
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title={t('users.detail.delete', 'Delete User')} size="sm">
   <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_delete_this_use')}</p>
@@ -868,11 +906,22 @@
   <div class="space-y-3">
     <div>
       <label for="warning-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Violation Type</label>
-      <select id="warning-violation" bind:value={warningViolationType} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)">
-        {#each violationTypes as vt (vt)}
-          <option value={vt.value}>{vt.label}</option>
-        {/each}
-      </select>
+      <Autocomplete
+        id="warning-violation"
+        placeholder={t('users.detail.select_violation', 'Select violation type')}
+        emptyMessage={t('common.no_results', 'No results found')}
+        fetcher={async (q: string) => {
+          const needle = q.trim().toLowerCase();
+          return violationTypes
+            .filter((vt) => !needle || vt.label.toLowerCase().includes(needle) || vt.value.toLowerCase().includes(needle))
+            .map((vt) => ({ id: vt.value, label: vt.label }));
+        }}
+        initialFetcher={async () => violationTypes.map((vt) => ({ id: vt.value, label: vt.label }))}
+        selectedId={warningViolationType || null}
+        selectedLabel={warningViolationType ? (violationTypes.find((vt) => vt.value === warningViolationType)?.label ?? warningViolationType) : null}
+        onSelect={(item: AutocompleteItem) => { warningViolationType = item.id; }}
+        onClear={() => { warningViolationType = ''; }}
+      />
     </div>
     <div>
       <label for="warning-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.reason_for_warning')}</label>
@@ -882,7 +931,7 @@
   </div>
   <div class="mt-6 flex justify-end gap-3">
     <Button variant="outline" onclick={() => (showWarningModal = false)}>{t('users.userId.cancel')}</Button>
-    <Button variant="default" onclick={handleWarnTyped} disabled={!warningReason.trim()}>{t('users.userId.send_warning')}</Button>
+    <Button variant="default" onclick={handleWarnTyped} disabled={!warningReason.trim() || !warningViolationType}>{t('users.userId.send_warning')}</Button>
   </div>
 </Modal>
 
@@ -902,16 +951,27 @@
 </Modal>
 
 <Modal bind:open={showProfileTypeModal} title={t('users.detail.change_profile_type', 'Change Profile Type')} size="sm">
-  <div class="space-y-2">
-    {#each profileTypeOptions as pt (pt)}
-      <label class="flex items-center gap-2 text-sm">
-        <input type="radio" name="profile_type" value={pt} bind:group={selectedProfileType} class="rounded" />
-        {t('users.profile_type_' + pt, pt)}
-      </label>
-    {/each}
+  <div>
+    <label for="profile-type-select" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.profile_type', 'Profile Type')}</label>
+    <Autocomplete
+      id="profile-type-select"
+      placeholder={t('users.detail.select_profile_type', 'Select profile type')}
+      emptyMessage={t('common.no_results', 'No results found')}
+      fetcher={async (q: string) => {
+        const needle = q.trim().toLowerCase();
+        return profileTypeOptions
+          .map((pt) => ({ id: pt, label: t('users.profile_type_' + pt, pt) }))
+          .filter((o) => !needle || o.label.toLowerCase().includes(needle) || o.id.toLowerCase().includes(needle));
+      }}
+      initialFetcher={async () => profileTypeOptions.map((pt) => ({ id: pt, label: t('users.profile_type_' + pt, pt) }))}
+      selectedId={selectedProfileType || null}
+      selectedLabel={selectedProfileType ? t('users.profile_type_' + selectedProfileType, selectedProfileType) : null}
+      onSelect={(item: AutocompleteItem) => { selectedProfileType = item.id; }}
+      onClear={() => { selectedProfileType = ''; }}
+    />
   </div>
   <div class="mt-6 flex justify-end gap-3">
     <Button variant="outline" onclick={() => (showProfileTypeModal = false)}>{t('users.userId.cancel')}</Button>
-    <Button variant="default" onclick={handleProfileTypeChange}>{t('users.userId.save_changes')}</Button>
+    <Button variant="default" onclick={handleProfileTypeChange} disabled={!selectedProfileType}>{t('users.userId.save_changes')}</Button>
   </div>
 </Modal>

@@ -8,18 +8,20 @@
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 
-	// Ref: jc-admin-develop — RBAC gate for join request management
-	const canManage = $derived(hasPermission('space.join_requests.manage'));
+	// GET/PATCH /admin/spaces/{id}/join-requests* are gated by
+	// spaces.moderate (space-scoped) — "space.join_requests.manage" is not a
+	// seeded node. The row model is { user_id, username, display_name,
+	// avatar_url, joined_at, status } — there is no request id, message, or
+	// requested_at; the PATCH {uid} segment is the USER id.
+	const canManage = $derived(hasPermission('spaces.moderate') || hasPermission('spaces.admin'));
 
 	type JoinRequest = {
-		id: string;
 		user_id: string;
-		space_id: string;
-		status: string;
-		message?: string;
-		requested_at: string;
 		username?: string;
 		display_name?: string;
+		avatar_url?: string;
+		joined_at: string;
+		status: string;
 	};
 
 	let requests = $state<JoinRequest[]>([]);
@@ -28,28 +30,28 @@
 
 	let searchQuery = $state('');
 
-	let spaceId = $derived(page.params.id);
+	let spaceId = $derived(page.params.spaceId ?? '');
 
 	const columns = [
 		{ key: 'display_name', label: t('joinRequests.user'), sortable: true,
 			render: (v: string, row: JoinRequest) => v || row.username || 'anonymous' },
-		{ key: 'message', label: t('joinRequests.message'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
+		{ key: 'username', label: t('joinRequests.username', 'Username'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'status', label: t('joinRequests.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'approved' ? 'bg-success/15 text-success dark:text-success' : v === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
-		{ key: 'requested_at', label: t('joinRequests.requested'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+		{ key: 'joined_at', label: t('joinRequests.requested'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v ? new Date(v).toLocaleDateString() : '—'}</span>` }
 	];
 
 	const rowActions: ActionItem[] = [
 		{
 			label: t('joinRequests.approve'),
 			icon: CheckCircle,
-			onclick: (row: JoinRequest) => updateRequest(row.id, 'approved'),
+			onclick: (row: JoinRequest) => updateRequest(row.user_id, 'approved'),
 			show: (row: JoinRequest) => canManage && row.status === 'pending'
 		},
 		{
 			label: t('joinRequests.reject'),
 			icon: XCircle,
 			variant: 'destructive',
-			onclick: (row: JoinRequest) => updateRequest(row.id, 'rejected'),
+			onclick: (row: JoinRequest) => updateRequest(row.user_id, 'rejected'),
 			show: (row: JoinRequest) => canManage && row.status === 'pending'
 		}
 	];
@@ -59,8 +61,7 @@
 		if (!q) return requests;
 		return requests.filter(r =>
 			(r.display_name || r.username || '').toLowerCase().includes(q) ||
-			r.status.toLowerCase().includes(q) ||
-			(r.message ?? '').toLowerCase().includes(q)
+			r.status.toLowerCase().includes(q)
 		);
 	}
 
@@ -81,13 +82,17 @@
 		}
 	}
 
-	async function updateRequest(requestId: string, status: string) {
+	async function updateRequest(userId: string, status: string) {
 		errorMessage = '';
 		try {
-			await api(`/admin/spaces/${spaceId}/join-requests/${requestId}`, {
+			const result = await api(`/admin/spaces/${spaceId}/join-requests/${userId}`, {
 				method: 'PATCH',
 				body: { status }
 			});
+			if (!result.ok) {
+				errorMessage = result.error;
+				return;
+			}
 			load();
 		} catch {
 			errorMessage = t('common.error');

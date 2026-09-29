@@ -2,6 +2,8 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
+	import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
+	import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
 	import { userManagementApi, impersonationApi } from "$lib/api";
 	import type { ModerationConfig } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -28,29 +30,19 @@
 	const canImpersonate = $derived(hasPermission("admin.impersonate"));
 
 	// ── Filter options ──────────────────────────────────────────────────────
-	// Hardcoded fallback defaults, refreshed from backend on mount (status via getModerationConfig, groups via listGroups); failures keep defaults.
+	// Options come entirely from the backend (statuses via /admin/users/config,
+	// groups via /admin/user-groups) — no hardcoded fallbacks (Rule 16).
+	// Until the config loads, the dropdowns show no options.
 	let filterDefs = $state<FilterDef[]>([
 		{
 			key: "status",
 			label: t("common.status", "Status"),
-			options: [
-				{ value: "active", label: t("users.status_active", "Active") },
-				{ value: "pending", label: t("users.status_pending", "Pending") },
-				{ value: "restricted", label: t("users.status_restricted", "Restricted") },
-				{ value: "suspended", label: t("users.status_suspended", "Suspended") },
-				{ value: "banned", label: t("users.status_banned", "Banned") },
-				{ value: "deleted", label: t("users.status_deleted", "Deleted") }
-			]
+			options: []
 		},
 		{
 			key: "group",
 			label: t("users.group", "Group"),
-			options: [
-				{ value: "user", label: t("users.role_user", "User") },
-				{ value: "moderator", label: t("users.role_moderator", "Moderator") },
-				{ value: "admin", label: t("users.role_admin", "Admin") },
-				{ value: "super_admin", label: t("users.role_super_admin", "Super Admin") }
-			]
+			options: []
 		}
 	]);
 
@@ -66,6 +58,9 @@
 				const cfg = configResult.data as ModerationConfig;
 				if (cfg?.statuses?.length) {
 					statusOptions = cfg.statuses.map((s) => ({ value: s.value, label: s.label }));
+				}
+				if (cfg?.violation_types?.length) {
+					violationTypeOptions = cfg.violation_types.map((v) => ({ value: v.value, label: v.label }));
 				}
 			}
 
@@ -87,7 +82,7 @@
 				return def;
 			});
 		} catch {
-			// Keep hardcoded fallback defaults on failure.
+			// Options stay empty — the filter still works once reloaded.
 		}
 	}
 
@@ -118,23 +113,10 @@
 
 	// ── Bulk actions ────────────────────────────────────────────────────────
 	// EntityPage auto-reloads + clears selection after bulk handlers, so no remount key is needed.
+	// "Delete Selected" is covered by the built-in confirm-gated bulk delete
+	// (config.remove is set) — only the hard-delete action is declared here.
 	let pageError = $state("");
 	let bulkDeleting = $state(false);
-
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0) return;
-		if (bulkDeleting) return; // in-flight guard
-		bulkDeleting = true;
-		pageError = "";
-		try {
-			await Promise.all(idArr.map((id) => userManagementApi.deleteUser(id)));
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete users");
-		} finally {
-			bulkDeleting = false;
-		}
-	}
 
 	// Bulk hard-delete only applies to already-soft-deleted users; the disabled predicate hides it when none of the selected rows are deleted.
 	async function bulkHardDelete(ids: Set<string>) {
@@ -144,7 +126,11 @@
 		bulkDeleting = true;
 		pageError = "";
 		try {
-			await Promise.all(idArr.map((id) => userManagementApi.hardDeleteUser(id)));
+			const results = await Promise.all(idArr.map((id) => userManagementApi.hardDeleteUser(id)));
+			const failed = results.filter((r) => !r.ok);
+			if (failed.length > 0) {
+				pageError = failed[0].error ?? t("common.error", "Failed to hard delete users");
+			}
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t("common.error", "Failed to hard delete users");
 		} finally {
@@ -165,13 +151,18 @@
 	let showRestoreConfirm = $state(false);
 	let showDeleteConfirm = $state(false);
 	let warnReason = $state("");
+	let warnViolationType = $state("");
+	let suspendReason = $state("");
+	// Violation-type options for the warn modal — from /admin/users/config
+	// (populated by loadFilterOptions, which already fetches the config).
+	let violationTypeOptions = $state<Array<{ value: string; label: string }>>([]);
 
 	const isBanned = $derived(actionTarget?.status === "banned");
 	const isSuspended = $derived(actionTarget?.status === "suspended");
 
 	function openBan(user: User) { actionTarget = user; showBanConfirm = true; }
-	function openSuspend(user: User) { actionTarget = user; showSuspendConfirm = true; }
-	function openWarn(user: User) { actionTarget = user; warnReason = ""; showWarnModal = true; }
+	function openSuspend(user: User) { actionTarget = user; suspendReason = ""; showSuspendConfirm = true; }
+	function openWarn(user: User) { actionTarget = user; warnReason = ""; warnViolationType = violationTypeOptions[0]?.value ?? ""; showWarnModal = true; }
 	function openHardDelete(user: User) { actionTarget = user; showHardDeleteConfirm = true; }
 	function openRestore(user: User) { actionTarget = user; showRestoreConfirm = true; }
 	function openDelete(user: User) { actionTarget = user; showDeleteConfirm = true; }
@@ -200,9 +191,13 @@
 		if (!actionTarget) return;
 		acting = true;
 		try {
-			const result = await userManagementApi.suspendUser(actionTarget.id, {
-				status: isSuspended ? "active" : "suspended"
-			});
+			// Canonical suspend pair: POST /suspend creates a suspension record
+			// plus permanent bans on every operation; unsuspend lifts all
+			// operation bans (which also restores status='active'). Patching
+			// status alone would leave op-bans behind.
+			const result = isSuspended
+				? await userManagementApi.liftAllRestrictions(actionTarget.id)
+				: await userManagementApi.suspendUserFull(actionTarget.id, { reason: suspendReason });
 			if (result.ok) {
 				showSuspendConfirm = false;
 				entityController?.reload();
@@ -217,10 +212,13 @@
 	}
 
 	async function confirmWarn() {
-		if (!warnReason.trim() || !actionTarget) return;
+		if (!warnReason.trim() || !warnViolationType || !actionTarget) return;
 		acting = true;
 		try {
-			const result = await userManagementApi.issueWarning(actionTarget.id, { reason: warnReason });
+			const result = await userManagementApi.warnUserTyped(actionTarget.id, {
+				reason: warnReason,
+				violation_type: warnViolationType
+			});
 			if (result.ok) {
 				showWarnModal = false;
 				entityController?.reload();
@@ -394,12 +392,13 @@
 		createPermission: "admin.users.manage",
 		pageSize: 25,
 		columns: [
-			{ key: "username", label: t("users.username", "Username") },
-			{ key: "email", label: t("users.email", "Email") },
-			{ key: "profile_type", label: t("users.profile_type", "Profile Type") },
+			{ key: "username", label: t("users.username", "Username"), sortable: true },
+			{ key: "email", label: t("users.email", "Email"), sortable: true },
+			{ key: "profile_type", label: t("users.profile_type", "Profile Type"), sortable: true },
 			{
 				key: "status",
 				label: t("common.status", "Status"),
+				sortable: true,
 				render: (v: string) => {
 					const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : v === "deleted" ? "bg-muted/30 text-muted dark:text-muted" : v === "restricted" ? "bg-warning/15 text-warning dark:text-warning" : "bg-info/15 text-info dark:text-info";
 					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
@@ -416,23 +415,19 @@
 			{
 				key: "follower_count",
 				label: t("users.followers", "Followers"),
+				sortable: true,
 				render: (v: number) => (v ?? 0).toLocaleString()
 			},
 			{
 				key: "created_at",
 				label: t("users.joined", "Joined"),
+				sortable: true,
 				render: (value: string) => new Date(value).toLocaleDateString()
 			}
 		],
 		filters: filterDefs,
 		actions: rowActions,
 		bulkActions: [
-			{
-				label: t("users.bulk_delete", "Delete Selected"),
-				icon: Trash2,
-				variant: "destructive",
-				onclick: bulkDelete
-			},
 			{
 				label: t("users.bulk_hard_delete", "Hard Delete Selected"),
 				icon: Trash,
@@ -442,7 +437,7 @@
 			}
 		],
 		fields,
-		load: async ({ page, pageSize, q, filter }) => {
+		load: async ({ page, pageSize, q, sort, filter }) => {
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
 				page_offset: String(page * pageSize)
@@ -450,6 +445,12 @@
 			if (q) params.set("search", q);
 			if (filter.status) params.set("status", filter.status);
 			if (filter.group) params.set("group", filter.group);
+			// EntityPage passes sort as "key:dir"; the API takes sort + sort_dir.
+			if (sort) {
+				const [key, dir] = sort.split(":");
+				params.set("sort", key);
+				params.set("sort_dir", dir === "desc" ? "desc" : "asc");
+			}
 			const result = await userManagementApi.list(params.toString());
 			if (result.ok) {
 				const d = result.data as unknown as { items: User[]; total: number; page: number; total_pages: number };
@@ -550,6 +551,17 @@
 			<p class="mt-2 text-sm" style="color: var(--color-warning)">
 				{t("users.suspend_warning", "The user will be unable to access the platform until unsuspended.")}
 			</p>
+			<div class="mt-3">
+				<label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.suspend_reason", "Reason")}</label>
+				<textarea
+					id="suspend-reason"
+					rows="2"
+					class="w-full rounded-lg border p-3 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					placeholder={t("users.suspend_reason_ph", "Reason for suspension...")}
+					bind:value={suspendReason}
+				></textarea>
+			</div>
 		{/if}
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
@@ -560,11 +572,30 @@
 	</div>
 </Modal>
 
-<!-- Warn -->
+<!-- Warn (typed — matches the detail page's warn-typed flow) -->
 <Modal bind:open={showWarnModal} title={t("users.warn_user", "Warn User")}>
 	<p class="mb-4 text-sm" style="color: var(--color-foreground)">
 		{t("users.warn_confirm", "Issue a warning to")} <strong>{actionTarget?.username}</strong>
 	</p>
+	<div class="mb-3">
+		<label for="warn-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.warn_violation", "Violation Type")}</label>
+		<Autocomplete
+			id="warn-violation"
+			placeholder={t("users.warn_violation_ph", "Select violation type")}
+			emptyMessage={t("common.no_results", "No results found")}
+			fetcher={async (q: string) => {
+				const needle = q.trim().toLowerCase();
+				return violationTypeOptions
+					.filter((v) => !needle || v.label.toLowerCase().includes(needle) || v.value.toLowerCase().includes(needle))
+					.map((v) => ({ id: v.value, label: v.label }));
+			}}
+			initialFetcher={async () => violationTypeOptions.map((v) => ({ id: v.value, label: v.label }))}
+			selectedId={warnViolationType || null}
+			selectedLabel={warnViolationType ? (violationTypeOptions.find((v) => v.value === warnViolationType)?.label ?? warnViolationType) : null}
+			onSelect={(item: AutocompleteItem) => { warnViolationType = item.id; }}
+			onClear={() => { warnViolationType = ""; }}
+		/>
+	</div>
 	<textarea
 		class="w-full rounded-lg border p-3 text-sm"
 		style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
@@ -574,7 +605,7 @@
 	></textarea>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showWarnModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={confirmWarn} disabled={!warnReason.trim() || acting}>
+		<Button variant="destructive" onclick={confirmWarn} disabled={!warnReason.trim() || !warnViolationType || acting}>
 			{t("users.issue_warning", "Issue Warning")}
 		</Button>
 	</div>

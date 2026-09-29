@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Accordion } from "bits-ui";
-  import { Select } from "$lib/components/ui/select";
   import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
   import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
   import { Button } from "$lib/components/ui/button";
@@ -57,11 +56,26 @@
                 onClear={() => { value[filter.key] = ''; }}
               />
             {:else}
-              <Select
-                value={value[filter.key]}
-                options={filter.options ?? []}
-                placeholder={filter.label}
-                onchange={(val) => { value[filter.key] = val; }}
+              <!-- Option filters render through Autocomplete (static options
+                   filtered client-side) — every dropdown uses the shared
+                   Autocomplete component. -->
+              {@const opts = filter.options ?? []}
+              {@const selVal = value[filter.key] ?? ''}
+              <Autocomplete
+                id={`filter-${filter.key}`}
+                placeholder={filter.placeholder ?? filter.label}
+                emptyMessage={filter.emptyMessage ?? t('common.no_results', 'No results found')}
+                fetcher={async (q: string) => {
+                  const needle = q.trim().toLowerCase();
+                  return opts
+                    .filter((o) => !needle || o.label.toLowerCase().includes(needle) || o.value.toLowerCase().includes(needle))
+                    .map((o) => ({ id: o.value, label: o.label }));
+                }}
+                initialFetcher={async () => opts.map((o) => ({ id: o.value, label: o.label }))}
+                selectedId={selVal || null}
+                selectedLabel={selVal ? (opts.find((o) => o.value === selVal)?.label ?? selVal) : null}
+                onSelect={(item: AutocompleteItem) => { value[filter.key] = item.id; }}
+                onClear={() => { value[filter.key] = ''; }}
               />
             {/if}
           </div>

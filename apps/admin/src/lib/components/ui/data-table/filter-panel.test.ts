@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/svelte";
 import FilterPanel from "./filter-panel.svelte";
 
 describe("FilterPanel", () => {
-  it("renders a Select per filter definition", async () => {
+  it("renders an Autocomplete per filter definition", async () => {
     render(FilterPanel, {
       filters: [
         {
@@ -14,8 +14,13 @@ describe("FilterPanel", () => {
       ],
       value: {},
     });
+    // Expand the accordion so the filter inputs mount.
+    const trigger = await screen.findByText("Filters");
+    await fireEvent.click(trigger);
+    // Option filters render through the shared Autocomplete — the field is
+    // identifiable by its placeholder text.
     await waitFor(() => {
-      expect(screen.getByText("Status")).toBeTruthy();
+      expect(screen.getByPlaceholderText("Status")).toBeTruthy();
     });
   });
 

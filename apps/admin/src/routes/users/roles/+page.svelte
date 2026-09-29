@@ -53,7 +53,11 @@
 		bulkDeleting = true;
 		pageError = '';
 		try {
-			await Promise.all(idArr.map((id) => userManagementApi.deleteRole(id)));
+			const results = await Promise.all(idArr.map((id) => userManagementApi.deleteRole(id)));
+			const failed = results.filter((r) => !r.ok);
+			if (failed.length > 0) {
+				pageError = failed[0].error ?? t('users.roles.delete_error', 'Failed to delete role');
+			}
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('users.roles.delete_error', 'Failed to delete role');
 		} finally {
@@ -75,7 +79,7 @@
 		createPermission: 'admin.rbac.manage',
 		pageSize: 25,
 		columns: [
-			{ key: 'name', label: t('users.roles.name', 'Name') },
+			{ key: 'name', label: t('users.roles.name', 'Name'), sortable: true },
 			{
 				key: 'permissions',
 				label: t('users.roles.permissions', 'Permissions'),
@@ -88,6 +92,7 @@
 			{
 				key: 'user_count',
 				label: t('users.roles.user_count', 'Users'),
+				sortable: true,
 				render: (v: number) => `<span class="rounded-full px-2 py-0.5 text-xs font-bold" style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">${v}</span>`
 			}
 		],
@@ -100,12 +105,18 @@
 			}
 		],
 		fields,
-		load: async ({ page, pageSize, q }) => {
+		load: async ({ page, pageSize, q, sort }) => {
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
 				page_offset: String(page * pageSize)
 			});
 			if (q) params.set('search', q);
+			// EntityPage passes sort as "key:dir"; the API takes sort + sort_dir.
+			if (sort) {
+				const [key, dir] = sort.split(':');
+				params.set('sort', key);
+				params.set('sort_dir', dir === 'desc' ? 'desc' : 'asc');
+			}
 			const result = await userManagementApi.listRoles(params.toString());
 			if (result.ok) {
 				const d = result.data as { roles: Role[]; total: number; total_pages: number };

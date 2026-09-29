@@ -302,23 +302,36 @@
 <svelte:window onclick={onWindowClick} onkeydown={onKeydown} onscroll={measurePlacement} onresize={measurePlacement} />
 
 <div class="autocomplete-field" bind:this={fieldEl}>
+	<!-- Click-to-focus forwarding is a UX nicety on a purely visual wrapper —
+	     the interactive element inside is the combobox input itself. -->
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 	<div
 		class="autocomplete-input-wrapper {wrapperClass}"
 		class:focused
 		class:has-value={!!selectedId}
+		onclick={(e) => {
+			// The selection chip is pointer-events:none — a click landing on it
+			// reaches this wrapper instead of the input. Forward focus so the
+			// dropdown opens; ignore clicks on the chip's clear button.
+			if (!(e.target as HTMLElement).closest('.autocomplete-chip-clear')) {
+				inputEl?.focus();
+			}
+		}}
 	>
 		{#if selectedId && !focused}
 			<div class="autocomplete-chip">
 				{#if selectedBadge}<span class="autocomplete-badge">{selectedBadge}</span>{/if}
 				<span class="autocomplete-chip-label">{selectedDisplay}</span>
-			<button
-				type="button"
-				class="autocomplete-chip-clear"
-				onmousedown={(e) => { e.preventDefault(); clearSelection(); }}
-				aria-label={t('common.clear')}
-			>
-					<X size={12} />
-				</button>
+				{#if onClear}
+					<button
+						type="button"
+						class="autocomplete-chip-clear"
+						onmousedown={(e) => { e.preventDefault(); clearSelection(); }}
+						aria-label={t('common.clear')}
+					>
+						<X size={12} />
+					</button>
+				{/if}
 			</div>
 		{/if}
 

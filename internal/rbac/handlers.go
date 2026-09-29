@@ -24,8 +24,55 @@ func NewHandlers(store *Store, rbac *RBAC) *Handlers {
 	return &Handlers{store: store, rbac: rbac}
 }
 
-// ListGroups handles GET /api/v1/admin/rbac/groups.
+// ListGroups handles GET /api/v1/admin/user-groups.
+// Two modes: when `page_size` is present the request is paginated
+// (page_size, page_offset, search, sort, sort_dir — used by the admin
+// groups table); without it the full, unpaginated list is returned (used
+// by dropdown option loaders on other admin pages).
 func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
+
+	// Paged mode — the admin groups table drives these params.
+	if r.URL.Query().Get("page_size") != "" {
+		limit := int32(25)
+		offset := int32(0)
+		search := r.URL.Query().Get("search")
+		sortKey := r.URL.Query().Get("sort")
+		sortDir := r.URL.Query().Get("sort_dir")
+
+		if s := r.URL.Query().Get("page_size"); s != "" {
+			if n, err := strconv.ParseInt(s, 10, 32); err == nil && n > 0 {
+				limit = int32(n)
+				if limit > 100 {
+					limit = 100
+				}
+			}
+		}
+
+		if s := r.URL.Query().Get("page_offset"); s != "" {
+			if n, err := strconv.ParseInt(s, 10, 32); err == nil && n >= 0 {
+				offset = int32(n)
+			}
+		}
+
+		groups, total, err := h.store.ListGroupsPaged(r.Context(), search, sortKey, sortDir, limit, offset)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list groups")
+			return
+		}
+
+		totalPages := total / limit
+		if total%limit > 0 {
+			totalPages++
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			"groups":      groups,
+			"total":       total,
+			"page":        offset / limit,
+			"total_pages": totalPages,
+		}})
+		return
+	}
 
 	groups, err := h.store.ListGroups(r.Context())
 	if err != nil {
@@ -117,6 +164,19 @@ func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
+		return
+	}
+
+	// The delete query silently no-ops on system groups (is_system = false
+	// filter) and missing rows alike — distinguish them so the API doesn't
+	// report success for a group that still exists.
+	group, err := h.store.GetGroupByID(r.Context(), groupID)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+	if group.IsSystem {
+		errpkg.WriteError(w, http.StatusConflict, "system_group", "System groups cannot be deleted")
 		return
 	}
 
@@ -257,6 +317,8 @@ func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 	limit := int32(25)
 	offset := int32(0)
 	search := r.URL.Query().Get("search")
+	sortKey := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("sort_dir")
 
 	if s := r.URL.Query().Get("page_size"); s != "" {
 		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n > 0 {
@@ -273,7 +335,7 @@ func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	roles, total, err := h.store.ListRolesPaginated(r.Context(), search, limit, offset)
+	roles, total, err := h.store.ListRolesPaginated(r.Context(), search, sortKey, sortDir, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list roles")
 		return

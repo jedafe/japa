@@ -7,7 +7,8 @@
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
 	import { Plus, Trash2, RefreshCw, ArrowLeft, Shield } from "lucide-svelte";
-	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
+	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import { apiFetch } from "$lib/api";
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import { spacesAdminApi, spacesModeratorsAdminApi } from "$lib/api";
@@ -27,13 +28,17 @@
 		created_at: string;
 	};
 
+	// GET /admin/spaces/{id} returns { space: <spaces row>, rules: [] } —
+	// the row has no owner username or space_type name (those are only
+	// joined on the admin LIST query), so show the real columns.
 	type SpaceDetail = {
 		id: string;
 		name: string;
-		owner: string;
+		slug: string;
+		level: string;
+		visibility: string;
 		member_count: number;
 		status: string;
-		space_type: string;
 		description?: string;
 	};
 
@@ -47,16 +52,37 @@
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
-	// Add moderator modal
+	// Add moderator modal — user picked via the shared Autocomplete and
+	// submitted by user_id (username resolves server-side as fallback).
 	let showAddModal = $state(false);
-	let newModeratorUsername = $state("");
+	let newModeratorId = $state("");
+	let newModeratorLabel = $state("");
 	let adding = $state(false);
 
 	// Remove moderator
 	let showRemoveConfirm = $state(false);
 	let removeTarget = $state<Moderator | null>(null);
 
-	const canManageModerators = $derived(hasPermission("spaces.manage"));
+	// POST/DELETE /admin/spaces/{id}/moderators are gated by
+	// spaces.moderator.assign — spaces.manage is not a seeded node.
+	const canManageModerators = $derived(hasPermission("spaces.moderator.assign"));
+
+	async function userFetcher(q: string): Promise<AutocompleteItem[]> {
+		const res = await apiFetch<{ items: { id: string; username: string; display_name?: string }[] }>(
+			`/admin/users?page_size=10&search=${encodeURIComponent(q)}`
+		);
+		if (res.error || !res.data?.items) return [];
+		return res.data.items.map((u) => ({ id: u.id, label: u.username, sublabel: u.display_name }));
+	}
+
+	function filteredModerators(): Moderator[] {
+		const q = searchQuery.toLowerCase().trim();
+		if (!q) return moderators;
+		return moderators.filter((m) =>
+			m.user_username?.toLowerCase().includes(q) ||
+			(m.user_display_name ?? "").toLowerCase().includes(q)
+		);
+	}
 
 	const columns = [
 		{ key: "user_username", label: t("spaces.moderator", "Moderator"), sortable: true,
@@ -109,29 +135,27 @@
 		try {
 			const result = await spacesAdminApi.getModerators(spaceId);
 			if (result.ok) {
-				let items = (result.data as Moderator[]) ?? [];
-				if (searchQuery) {
-					const q = searchQuery.toLowerCase();
-					items = items.filter((m: Moderator) => m.user_username?.toLowerCase().includes(q));
-				}
-				moderators = items;
+				moderators = (result.data as Moderator[]) ?? [];
+			} else {
+				error = result.error ?? t("common.error", "Failed to load moderators");
 			}
 		} catch {
-			// moderators endpoint may not return list directly; handled in add/remove
+			error = t("common.error", "Failed to load moderators");
 		} finally {
 			loadingModerators = false;
 		}
 	}
 
 	async function addModerator() {
-		if (!newModeratorUsername.trim()) return;
+		if (!newModeratorId) return;
 		adding = true;
 		error = "";
 		try {
-			const result = await spacesAdminApi.assignModerator(spaceId, { username: newModeratorUsername.trim() });
+			const result = await spacesModeratorsAdminApi.add(spaceId, { user_id: newModeratorId });
 			if (result.ok) {
 				showAddModal = false;
-				newModeratorUsername = "";
+				newModeratorId = "";
+				newModeratorLabel = "";
 				success = t("spaces.moderator_added", "Moderator added");
 				await loadModerators();
 			} else {
@@ -162,14 +186,22 @@
 		if (idArr.length === 0 || bulkDeleting) return;
 		bulkDeleting = true;
 		error = "";
+		success = "";
 		try {
 			// Map moderator record IDs to user IDs
 			const userIds = idArr.map((modId) => {
 				const mod = moderators.find((m) => m.id === modId);
 				return mod ? mod.user_id : modId;
 			});
-			await Promise.all(userIds.map((userId) => spacesModeratorsAdminApi.remove(spaceId, userId)));
-			success = t("spaces.moderators_removed", "Moderators removed");
+			const results = await Promise.all(userIds.map((userId) => spacesModeratorsAdminApi.remove(spaceId, userId)));
+			const failed = results.filter((r) => !r.ok).length;
+			if (failed === 0) {
+				success = t("spaces.moderators_removed", "Moderators removed");
+			} else {
+				error = t("common.bulkDeletePartial", "{failed} of {n} items could not be deleted")
+					.replace("{failed}", String(failed))
+					.replace("{n}", String(userIds.length));
+			}
 			await loadModerators();
 		} catch {
 			error = t("common.error", "Failed to remove moderators");
@@ -217,18 +249,22 @@
 {:else if space}
 	<Card class="mb-6">
 		<CardContent>
-			<div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+			<div class="grid grid-cols-2 gap-4 md:grid-cols-5">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("spaces.owner", "Owner")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{space.owner}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("spaces.slug", "Slug")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{space.slug}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("spaces.level", "Level")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{space.level}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("spaces.visibility", "Visibility")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{space.visibility}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("spaces.members", "Members")}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{space.member_count.toLocaleString()}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("spaces.type", "Type")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{space.space_type || "—"}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("spaces.status", "Status")}</p>
@@ -254,7 +290,7 @@
 				{t("spaces.no_moderators", "No moderators assigned")}
 			</div>
 		{:else}
-			<DataTable {columns} data={moderators} pageSize={10} searchable onsearch={(q) => { searchQuery = q; loadModerators(); }} selectable bind:selectedIds actions={rowActions} bulkActionsList={bulkActions} />
+			<DataTable {columns} data={filteredModerators()} pageSize={10} searchable onsearch={(q) => { searchQuery = q; }} selectable bind:selectedIds actions={rowActions} bulkActionsList={bulkActions} />
 		{/if}
 	</CardContent>
 </Card>
@@ -262,14 +298,29 @@
 <!-- Add Moderator Modal -->
 <Modal bind:open={showAddModal} title={t("spaces.add_moderator", "Add Moderator")}>
 	<div>
-		<label for="mod-username" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spaces.moderator_username", "Username")}</label>
+		<label for="mod-user" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spaces.user", "User")}</label>
 		<div class="mt-1">
-			<UserAutocomplete bind:value={newModeratorUsername} placeholder={t("spaces.moderator_username", "Username")} />
+			<Autocomplete
+				id="mod-user"
+				placeholder={t("spaces.search_users", "Search users...")}
+				emptyMessage={t("common.no_data", "No matching users")}
+				fetcher={userFetcher}
+				selectedId={newModeratorId || null}
+				selectedLabel={newModeratorLabel}
+				onSelect={(item: AutocompleteItem) => {
+					newModeratorId = item.id;
+					newModeratorLabel = item.label;
+				}}
+				onClear={() => {
+					newModeratorId = "";
+					newModeratorLabel = "";
+				}}
+			/>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => showAddModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={addModerator} disabled={adding || !newModeratorUsername.trim()}>
+		<Button onclick={addModerator} disabled={adding || !newModeratorId}>
 			{adding ? t("common.adding", "Adding...") : t("common.add", "Add")}
 		</Button>
 	</div>

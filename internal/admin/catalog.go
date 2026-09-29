@@ -26,11 +26,54 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "active", Label: "Active"},
 		{Value: "suspended", Label: "Suspended"},
 		{Value: "archived", Label: "Archived"},
+		{Value: "draft", Label: "Draft"},
 	},
 	"spaces.level": {
-		{Value: "1", Label: "1"},
-		{Value: "2", Label: "2"},
-		{Value: "3", Label: "3"},
+		{Value: "country", Label: "Country"},
+		{Value: "state", Label: "State"},
+		{Value: "city", Label: "City"},
+		{Value: "custom", Label: "Custom"},
+		{Value: "global", Label: "Global"},
+	},
+	"spaces.visibility": {
+		{Value: "public", Label: "Public"},
+		{Value: "members", Label: "Members"},
+		{Value: "private", Label: "Private"},
+	},
+	// Posting, replying, and commenting share the same axis value set
+	// (spaces.go validPostingPerm).
+	"spaces.posting_perm": {
+		{Value: "open", Label: "Open"},
+		{Value: "members", Label: "Members"},
+		{Value: "verified", Label: "Verified"},
+		{Value: "moderators", Label: "Moderators"},
+		{Value: "admins", Label: "Admins"},
+	},
+	"spaces.joining_perm": {
+		{Value: "open", Label: "Open"},
+		{Value: "request", Label: "Request"},
+		{Value: "invite", Label: "Invite"},
+	},
+	// Field types the space-scoped form builder exposes — the simple input
+	// subset of customfields.validFieldTypes (composite types like
+	// repeater/group/price_range need dedicated editors, not the basic
+	// label/type/options UI).
+	"forms.field_type": {
+		{Value: "text", Label: "Text"},
+		{Value: "number", Label: "Number"},
+		{Value: "email", Label: "Email"},
+		{Value: "boolean", Label: "Yes / No"},
+		{Value: "select", Label: "Select (dropdown)"},
+		{Value: "textarea", Label: "Long text"},
+		{Value: "url", Label: "URL"},
+	},
+	// form_submissions.status values — ?status= filter on
+	// GET /forms/{id}/submissions (§06: new|reviewed + payment-gated
+	// pending_payment).
+	"forms.submission_status": {
+		{Value: "new", Label: "New"},
+		{Value: "reviewed", Label: "Reviewed"},
+		{Value: "pending_payment", Label: "Pending Payment"},
 	},
 	"scholarships.verification_status": {
 		{Value: "verified", Label: "Verified"},

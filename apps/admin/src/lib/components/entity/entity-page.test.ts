@@ -108,4 +108,15 @@ describe('EntityPage', () => {
 		await waitFor(() => expect(screen.getByText('Alpha')).toBeTruthy());
 		expect(screen.queryByRole('button', { name: 'Create Tag' })).toBeNull();
 	});
+
+	it('hides the Create button when hideCreate=true but keeps edit/delete flows', async () => {
+		const config = makeConfig({ hideCreate: true });
+		const { container } = render(EntityPage, { config });
+		await waitFor(() => expect(screen.getByText('Alpha')).toBeTruthy());
+		expect(screen.queryByRole('button', { name: 'Create Tag' })).toBeNull();
+		// Unlike readonly, edit/delete row actions remain available.
+		const trigger = container.querySelector('[data-action-menu-trigger]') as HTMLElement;
+		await fireEvent.click(trigger);
+		await waitFor(() => expect(screen.getByText('Edit')).toBeTruthy());
+	});
 });

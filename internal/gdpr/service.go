@@ -1757,7 +1757,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		}
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE eca_community_updates
-			SET user_id = $2, updated_at = now()
+			SET user_id = $2
 			WHERE user_id = $1 AND deleted_at IS NULL
 		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning eca_community_updates user_id: %w", err)

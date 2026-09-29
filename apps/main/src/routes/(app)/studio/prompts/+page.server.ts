@@ -179,8 +179,24 @@ export const actions: Actions = {
 		}
 
 		// Always validate in member mode — the tab never reassigns authorship,
-		// so persona_id is never a requirement here.
-		const fieldErrors = validateFrontmatter(fm, status, 'member');
+		// so persona_id is never a requirement here. Status/visibility are
+		// validated against the live catalogs (Rule 16); validateFrontmatter
+		// falls back to its defaults when a catalog is unreachable.
+		const [statusOpts, visOpts] = await Promise.all([
+			apiGet<{ value: string; label: string }[]>(ctx, '/content/status-options').catch(
+				() => [] as { value: string; label: string }[]
+			),
+			apiGet<{ value: string; label: string }[]>(ctx, '/content/visibility-options').catch(
+				() => [] as { value: string; label: string }[]
+			)
+		]);
+		const fieldErrors = validateFrontmatter(
+			fm,
+			status,
+			'member',
+			statusOpts.map((o) => o.value),
+			visOpts.map((o) => o.value)
+		);
 		const bodyError = validateBody(getStr(fm, 'body'), status);
 		if (Object.keys(fieldErrors).length > 0 || bodyError) {
 			return {

@@ -6,6 +6,8 @@
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import { Modal } from '$lib/components/ui/modal';
 	import { SlideOver } from '$lib/components/ui/slide-over';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import { Plus, RefreshCw, Trash2, Pencil } from 'lucide-svelte';
 	import { userManagementApi, permissionsApi } from '$lib/api';
@@ -21,6 +23,12 @@
 	let pageSize = $state(pageSizeFromUrl(25));
 	let totalPages = $state(1);
 
+	// URL-seeded sort state (DataTable writes ?sort=/?dir=; seeding here means
+	// the first load() already sends the restored sort to the backend).
+	const initialParams = typeof window !== 'undefined' ? new URL(window.location.href).searchParams : new URLSearchParams();
+	let sortKey = $state(initialParams.get('sort') ?? '');
+	let sortDir = $state<'asc' | 'desc'>(initialParams.get('dir') === 'desc' ? 'desc' : 'asc');
+
 	let showSlideOver = $state(false);
 	let editingGroup = $state<UserGroup | null>(null);
 	let formName = $state('');
@@ -32,6 +40,7 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<UserGroup | null>(null);
 	let bulkDeleting = $state(false);
+	let pageError = $state('');
 
 	let selectedIds = $state<Set<string>>(new Set());
 
@@ -61,12 +70,20 @@
 
 	async function load() {
 		loading = true;
+		// Server-side list state changed — stale selections must not carry over.
+		selectedIds = new Set();
 		try {
+			// Contract: page_size/page_offset/search/sort/sort_dir — the backend
+			// consumes all of them when page_size is present.
 			const params = new URLSearchParams({
-				page: String(currentPage + 1),
-				limit: String(pageSize)
+				page_size: String(pageSize),
+				page_offset: String(currentPage * pageSize)
 			});
 			if (searchQuery) params.set('search', searchQuery);
+			if (sortKey) {
+				params.set('sort', sortKey);
+				params.set('sort_dir', sortDir);
+			}
 			const [groupsResult, permsResult] = await Promise.all([
 				userManagementApi.listGroups(params.toString()),
 				permissionsApi.list()
@@ -75,7 +92,10 @@
 				const d = groupsResult.data;
 				groups = d.groups ?? [];
 				totalItems = d.total ?? 0;
-				totalPages = Math.ceil(totalItems / pageSize) || 1;
+				totalPages = d.total_pages ?? (Math.ceil(totalItems / pageSize) || 1);
+				pageError = '';
+			} else {
+				pageError = groupsResult.error ?? t('common.error', 'Failed to load groups');
 			}
 			if (permsResult.ok) allPermissions = permsResult.data;
 		} catch (e) {
@@ -135,6 +155,9 @@
 			showDeleteConfirm = false;
 			deleteTarget = null;
 			load();
+		} else {
+			pageError = result.error ?? t('users.groups.delete_error', 'Failed to delete group');
+			showDeleteConfirm = false;
 		}
 	}
 
@@ -143,20 +166,25 @@
 		if (idArr.length === 0 || bulkDeleting) return;
 		bulkDeleting = true;
 		try {
-			await Promise.all(idArr.map((id) => userManagementApi.deleteGroup(id)));
+			const results = await Promise.all(idArr.map((id) => userManagementApi.deleteGroup(id)));
+			const failed = results.filter((r) => !r.ok);
+			if (failed.length > 0) {
+				pageError = failed[0].error ?? t('users.groups.delete_error', 'Failed to delete group');
+			}
 			load();
 		} catch (e) {
-			console.error('Bulk delete failed:', e instanceof Error ? e.message : String(e));
+			pageError = e instanceof Error ? e.message : t('users.groups.delete_error', 'Failed to delete group');
 		}
 		bulkDeleting = false;
 	}
 
 	const columns = [
-		{ key: 'name', label: t('users.groups.name', 'Name') },
+		{ key: 'name', label: t('users.groups.name', 'Name'), sortable: true },
 		{ key: 'description', label: t('users.groups.description_label', 'Description') },
 		{
 			key: 'member_count',
 			label: t('users.groups.members', 'Members'),
+			sortable: true,
 			render: (v: number) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold" style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">${v}</span>`
 		},
 		{
@@ -192,6 +220,7 @@
 		: []);
 
 	// Sync list state (page, search) to URL for back/forward survival.
+	// ?sort=/?dir= are written by the DataTable itself (urlSync).
 	$effect(() => {
 		void currentPage;
 		void pageSize;
@@ -208,6 +237,8 @@
 		void currentPage;
 		void pageSize;
 		void searchQuery;
+		void sortKey;
+		void sortDir;
 		load();
 	});
 </script>
@@ -225,6 +256,15 @@
 	]}
 />
 
+{#if pageError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{pageError}
+	</div>
+{/if}
+
 <Card>
 	<CardContent>
 		{#if loading}
@@ -233,12 +273,14 @@
 			<DataTable
 				{columns}
 				data={groups}
+				serverSide
 				page={currentPage}
 				{pageSize}
 				totalRows={totalItems}
 				{totalPages}
 				onpagechange={(p) => { currentPage = p; }}
 				onpagesizechange={(s) => { pageSize = s; currentPage = 0; }}
+				onsortchange={(s) => { sortKey = s.key ?? ''; sortDir = s.dir; currentPage = 0; }}
 				emptyMessage={t('users.groups.empty', 'No groups found')}
 				searchable
 				onsearch={(q) => { searchQuery = q; currentPage = 0; }}
@@ -282,17 +324,33 @@
 		<div>
 			<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.permissions', 'Permissions')}</p>
 			<div class="mb-2 flex gap-2">
-				<select
-					class="flex-1 rounded-md border px-2 py-1.5 text-xs"
-					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-					bind:value={permCategory}
-				>
-					<option value="">All categories</option>
-					{#each permissionCategories() as cat (cat)}
-						<option value={cat}>{cat}</option>
-					{/each}
-					<option value="other">Other</option>
-				</select>
+				<div class="flex-1">
+					<!-- 'all' sentinel maps to '' (all categories) -->
+					<Autocomplete
+						id="group-perm-category"
+						placeholder={t('users.groups.all_categories', 'All categories')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={async (q: string) => {
+							const needle = q.trim().toLowerCase();
+							return [
+								{ id: 'all', label: t('users.groups.all_categories', 'All categories') },
+								...permissionCategories().map((c) => ({ id: c, label: c })),
+								{ id: 'other', label: t('users.groups.other', 'Other') }
+							].filter((o) => !needle || o.label.toLowerCase().includes(needle));
+						}}
+						initialFetcher={async () => [
+							{ id: 'all', label: t('users.groups.all_categories', 'All categories') },
+							...permissionCategories().map((c) => ({ id: c, label: c })),
+							{ id: 'other', label: t('users.groups.other', 'Other') }
+						]}
+						selectedId={permCategory || 'all'}
+						selectedLabel={permCategory
+							? (permCategory === 'other' ? t('users.groups.other', 'Other') : permCategory)
+							: t('users.groups.all_categories', 'All categories')}
+						onSelect={(item: AutocompleteItem) => { permCategory = item.id === 'all' ? '' : item.id; }}
+						onClear={() => { permCategory = ''; }}
+					/>
+				</div>
 				<input
 					type="text"
 					class="flex-1 rounded-md border px-2 py-1.5 text-xs"

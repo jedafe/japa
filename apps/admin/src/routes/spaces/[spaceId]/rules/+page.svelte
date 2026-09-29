@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { Modal } from '$lib/components/ui/modal';
 	import { SlideOver } from '$lib/components/ui/slide-over';
-	import { api } from '$lib/api';
+	import { api, spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
@@ -15,19 +15,24 @@
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Plus, Pencil, Trash2, RefreshCw, ArrowUp, ArrowDown } from 'lucide-svelte';
 
-	// Ref: jc-admin-develop — RBAC gate for rule management
-	const canManage = $derived(hasPermission('space.rules.manage'));
+	// Backend routes are slug-resolved via SpaceResolver and gated by
+	// spaces.moderate — the admin URL only carries the space UUID, so we
+	// resolve the slug through /admin/spaces/{id} once on mount.
+	const canManage = $derived(hasPermission('spaces.moderate') || hasPermission('spaces.admin'));
 
+	// Backend contract: { id, title, body, position, created_at } — there is
+	// no "description"/"sort_order" (space_rules_handlers.go).
 	type Rule = {
 		id: string;
 		title: string;
-		description: string;
-		sort_order: number;
+		body: string;
+		position: number;
 		created_at: string;
 	};
 
-	const spaceId = $derived(page.params.spaceId);
+	const spaceId = $derived(page.params.spaceId ?? '');
 
+	let spaceSlug = $state('');
 	let rules = $state<Rule[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
@@ -37,16 +42,16 @@
 	let showSlideOver = $state(false);
 	let editingRule = $state<Rule | null>(null);
 	let formTitle = $state('');
-	let formDescription = $state('');
+	let formBody = $state('');
 	let saving = $state(false);
 
 	let showDelete = $state(false);
 	let deletingRule = $state<Rule | null>(null);
 
 	const columns = [
-		{ key: 'sort_order', label: '#', sortable: true, class: 'text-xs', render: (_v: number, _row: Rule, i?: number) => String((i ?? 0) + 1) },
+		{ key: 'position', label: '#', sortable: true, class: 'text-xs', render: (v: number) => String((v ?? 0) + 1) },
 		{ key: 'title', label: t('space_rules.title_label'), sortable: true },
-		{ key: 'description', label: t('space_rules.description_label'), sortable: true, class: 'text-xs max-w-xs truncate', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
+		{ key: 'body', label: t('space_rules.description_label'), sortable: true, class: 'text-xs max-w-xs truncate', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'order', label: t('space_rules.order'), class: 'w-20', componentSnippet: RuleOrderCell }
 	];
 
@@ -71,17 +76,35 @@
 		if (!q) return rules;
 		return rules.filter(r =>
 			r.title.toLowerCase().includes(q) ||
-			(r.description ?? '').toLowerCase().includes(q)
+			(r.body ?? '').toLowerCase().includes(q)
 		);
 	}
+
+	const rulesBase = $derived(`/spaces/${spaceSlug}/rules`);
 
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<Rule[]>(`/spaces/${spaceId}/rules`);
-			if (result.ok) {
-				rules = result.data.sort((a, b) => a.sort_order - b.sort_order);
+			if (!spaceSlug) {
+				// Rules endpoints resolve {slug}; the admin route only has the UUID.
+				const spaceRes = await spacesAdminApi.get(spaceId);
+				if (!spaceRes.ok) {
+					errorMessage = (spaceRes as { error?: string }).error ?? t('space_rules.load_error');
+					return;
+				}
+				const d = spaceRes.data as { space?: { slug?: string }; slug?: string };
+				spaceSlug = d?.space?.slug ?? d?.slug ?? '';
+				if (!spaceSlug) {
+					errorMessage = t('space_rules.load_error');
+					return;
+				}
+			}
+			const result = await api<Rule[]>(rulesBase);
+			if (result.ok && Array.isArray(result.data)) {
+				rules = result.data.sort((a, b) => a.position - b.position);
+			} else if (!result.ok) {
+				errorMessage = (result as { error?: string }).error ?? t('space_rules.load_error');
 			}
 		} catch {
 			errorMessage = t('space_rules.load_error');
@@ -93,32 +116,30 @@
 	function openCreate() {
 		editingRule = null;
 		formTitle = '';
-		formDescription = '';
+		formBody = '';
 		showSlideOver = true;
 	}
 
 	function openEdit(rule: Rule) {
 		editingRule = rule;
 		formTitle = rule.title;
-		formDescription = rule.description;
+		formBody = rule.body;
 		showSlideOver = true;
 	}
 
 	async function saveRule() {
-		if (!formTitle.trim()) return;
+		// Backend requires BOTH title and body (missing_fields otherwise).
+		if (!formTitle.trim() || !formBody.trim()) return;
 		saving = true;
 		errorMessage = '';
 		try {
-			if (editingRule) {
-				await api(`/spaces/${spaceId}/rules/${editingRule.id}`, {
-					method: 'PATCH',
-					body: { title: formTitle.trim(), description: formDescription.trim() }
-				});
-			} else {
-				await api(`/spaces/${spaceId}/rules`, {
-					method: 'POST',
-					body: { title: formTitle.trim(), description: formDescription.trim(), sort_order: rules.length }
-				});
+			const payload = { title: formTitle.trim(), body: formBody.trim(), position: editingRule?.position ?? rules.length };
+			const result = editingRule
+				? await api<Rule>(`${rulesBase}/${editingRule.id}`, { method: 'PATCH', body: payload })
+				: await api<Rule>(rulesBase, { method: 'POST', body: payload });
+			if (!result.ok) {
+				errorMessage = (result as { error?: string }).error ?? t('space_rules.save_error');
+				return;
 			}
 			showSlideOver = false;
 			load();
@@ -137,7 +158,11 @@
 	async function deleteRule() {
 		if (!deletingRule) return;
 		try {
-			await api(`/spaces/${spaceId}/rules/${deletingRule.id}`, { method: 'DELETE' });
+			const result = await api(`${rulesBase}/${deletingRule.id}`, { method: 'DELETE' });
+			if (!result.ok) {
+				errorMessage = (result as { error?: string }).error ?? t('space_rules.delete_error');
+				return;
+			}
 			showDelete = false;
 			load();
 		} catch {
@@ -145,13 +170,20 @@
 		}
 	}
 
+	// PATCH requires the full rule (title+body+position) — swap positions by
+	// re-sending both complete records.
+	async function swapPositions(a: Rule, b: Rule) {
+		const ra = await api(`${rulesBase}/${a.id}`, { method: 'PATCH', body: { title: a.title, body: a.body, position: b.position } });
+		if (!ra.ok) return false;
+		const rb = await api(`${rulesBase}/${b.id}`, { method: 'PATCH', body: { title: b.title, body: b.body, position: a.position } });
+		return rb.ok;
+	}
+
 	async function moveUp(rule: Rule, index: number) {
 		if (index === 0) return;
-		const prev = rules[index - 1];
 		try {
-			await api(`/spaces/${spaceId}/rules/${rule.id}`, { method: 'PATCH', body: { sort_order: prev.sort_order } });
-			await api(`/spaces/${spaceId}/rules/${prev.id}`, { method: 'PATCH', body: { sort_order: rule.sort_order } });
-			load();
+			if (await swapPositions(rule, rules[index - 1])) load();
+			else errorMessage = t('space_rules.reorder_error');
 		} catch {
 			errorMessage = t('space_rules.reorder_error');
 		}
@@ -159,11 +191,9 @@
 
 	async function moveDown(rule: Rule, index: number) {
 		if (index >= rules.length - 1) return;
-		const next = rules[index + 1];
 		try {
-			await api(`/spaces/${spaceId}/rules/${rule.id}`, { method: 'PATCH', body: { sort_order: next.sort_order } });
-			await api(`/spaces/${spaceId}/rules/${next.id}`, { method: 'PATCH', body: { sort_order: rule.sort_order } });
-			load();
+			if (await swapPositions(rule, rules[index + 1])) load();
+			else errorMessage = t('space_rules.reorder_error');
 		} catch {
 			errorMessage = t('space_rules.reorder_error');
 		}
@@ -232,21 +262,21 @@
 			/>
 		</div>
 		<div>
-			<label for="rule-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_rules.description_label')}</label>
+			<label for="rule-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_rules.description_label')} <span style="color: var(--color-danger)">*</span></label>
 			<textarea
 				id="rule-desc"
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface)"
 				rows="3"
 				placeholder={t('space_rules.desc_placeholder')}
-				bind:value={formDescription}
+				bind:value={formBody}
 			></textarea>
 		</div>
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
 			<Button variant="outline" onclick={() => { showSlideOver = false; }}>{t('common.cancel')}</Button>
-			<Button onclick={saveRule} disabled={saving || !formTitle.trim()}>
+			<Button onclick={saveRule} disabled={saving || !formTitle.trim() || !formBody.trim()}>
 				{saving ? t('common.saving') : t('common.save')}
 			</Button>
 		</div>

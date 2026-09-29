@@ -3,22 +3,30 @@ import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	api: vi.fn().mockRejectedValue(new Error('not connected'))
-}));
-
-vi.mock('$app/stores', () => ({
-	page: {
-		subscribe: (fn: Function) => {
-			fn({ params: { spaceId: 'test-space', formId: 'test-form' } });
-			return () => {};
-		}
+	api: vi.fn().mockRejectedValue(new Error('not connected')),
+	apiRaw: vi.fn().mockRejectedValue(new Error('not connected')),
+	formsAdminApi: {
+		delete: vi.fn().mockResolvedValue({ ok: true })
+	},
+	adminCatalogApi: {
+		get: vi.fn().mockResolvedValue({ ok: true, data: [] })
 	}
 }));
 
-vi.mock('$lib/components/Modal.svelte', async () => {
-	const { default: Stub } = await import('$lib/components/Modal.stub.svelte');
-	return { default: Stub };
-});
+vi.mock('$app/state', () => ({
+	page: {
+		params: { spaceId: 'test-space', formId: 'test-form' },
+		url: new URL('http://localhost/spaces/test-space/forms/test-form')
+	}
+}));
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+
+vi.mock('$lib/stores/permissions.svelte', () => ({
+	hasPermission: () => true,
+	getPermissions: () => ['*'],
+	getPermissionState: () => ({ permissions: ['*'], loaded: true })
+}));
 
 describe('Form Detail +page.svelte', () => {
 	it('shows loading state initially', () => {

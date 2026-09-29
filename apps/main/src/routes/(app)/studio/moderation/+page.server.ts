@@ -71,7 +71,9 @@ export const load: PageServerLoad = async (event) => {
 		scope = await apiGet<ModerationScope>(ctx, '/me/moderation/scope');
 	} catch (e) {
 		if (e instanceof ApiError && e.status === 403) throw error(403, { code: 'forbidden', message: 'No moderation access' });
-		scope = null;
+		// A 5xx/network failure is not a permission problem — surface it as a
+		// real error instead of misleadingly rendering "no moderation access".
+		throw error(502, { code: 'scope_unavailable', message: 'Moderation service unavailable' });
 	}
 
 	const active =
@@ -85,10 +87,18 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const qs = new URLSearchParams();
-	for (const k of ['status', 'entity_type', 'space_id', 'tag_id', 'assigned', 'q', 'page'] as const) {
+	for (const k of ['entity_type', 'space_id', 'tag_id', 'assigned', 'q', 'page', 'page_size'] as const) {
 		const v = params.get(k);
 		if (v) qs.set(k, v);
 	}
+
+	// Status contract: no param = the default "pending" view (the Pending tab
+	// is the highlighted default); `status=all` is a UI sentinel for the
+	// unfiltered list and is not forwarded — the backend treats an absent
+	// status as "all". Anything else passes through verbatim.
+	const statusParam = params.get('status');
+	if (!statusParam) qs.set('status', 'pending');
+	else if (statusParam !== 'all') qs.set('status', statusParam);
 
 	let queue: QueuePage = { items: [], page: 0, total: 0, total_pages: 0 };
 	try {
