@@ -185,6 +185,9 @@ type WikiRevisionDTO struct {
 	// can see why an approve attempt rolled back.
 	ApplyError string `json:"apply_error,omitempty"`
 	CreatedAt  string `json:"created_at"`
+	// DeletedAt is set on soft-deleted rows — only populated by the admin
+	// queue's ?deleted=only|all listing (§80 revision deletion).
+	DeletedAt string `json:"deleted_at,omitempty"`
 }
 
 // SubmitRevisionInput is the request body for POST /wiki/:space_slug/:page_slug/revisions.
@@ -1261,6 +1264,26 @@ func (s *Service) DeletePage(ctx context.Context, pageID pgtype.UUID, force bool
 	return nil
 }
 
+// DeleteRevision soft-deletes a revision row; force=true permanently removes
+// an already-soft-deleted one (§80 revision deletion, Rule 11). Errors are
+// pgx.ErrNoRows (missing/already-deleted) and ErrRevisionNotDeleted (force
+// on a live row) — the handler maps them to 404/409.
+func (s *Service) DeleteRevision(ctx context.Context, revID pgtype.UUID, force bool) error {
+	var err error
+	if force {
+		err = s.store.HardDeleteWikiRevision(ctx, revID)
+	} else {
+		err = s.store.DeleteWikiRevision(ctx, revID)
+	}
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrRevisionNotDeleted) {
+			return err
+		}
+		return fmt.Errorf("wiki: delete revision: %w", err)
+	}
+	return nil
+}
+
 // ErrPageLocked is returned when a wiki page is locked and cannot accept
 // community edits.
 var ErrPageLocked = errors.New("wiki page is locked to mod-only edits")
@@ -1385,6 +1408,8 @@ func revisionToDTO(r WikiRevision) WikiRevisionDTO {
 	if r.ApplyError != nil {
 		dto.ApplyError = *r.ApplyError
 	}
+
+	dto.DeletedAt = formatTs(r.DeletedAt)
 
 	return dto
 }

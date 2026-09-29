@@ -6558,6 +6558,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 						Post("/admin/wiki/revisions/{id}/approve", wikiHandlers.HandleApproveRevisionByID)
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.review")).
 						Post("/admin/wiki/revisions/{id}/reject", wikiHandlers.HandleRejectRevisionByID)
+					// §80 revision deletion: soft delete under wiki.delete;
+					// ?force=true additionally requires admin.hard_delete
+					// (RequireForceDelete inspects the query flag).
+					r.With(
+						auth.RequireAuth(kr, vkClient.Redis()),
+						rbac.RequirePermission(rbacResolver, "wiki.delete"),
+						rbac.RequireForceDelete(rbacResolver),
+					).Delete("/admin/wiki/revisions/{id}", wikiHandlers.HandleDeleteWikiRevision)
 				})
 			})
 

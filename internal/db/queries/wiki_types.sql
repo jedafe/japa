@@ -170,7 +170,7 @@ WHERE wp.category = @category AND sp.space_type_id = @space_type_id
   AND EXISTS (
       SELECT 1 FROM wiki_revisions wr
       WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
-        AND wr.kind IN ('content', 'mixed')
+        AND wr.kind IN ('content', 'mixed') AND wr.deleted_at IS NULL
   );
 
 -- name: GetWikiTypeCategory :one
@@ -325,6 +325,7 @@ WHERE wp.page_template_id = @id AND wp.deleted_at IS NULL
       EXISTS (
           SELECT 1 FROM wiki_revisions wr
           WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
+            AND wr.deleted_at IS NULL
       )
       OR EXISTS (
           SELECT 1

@@ -150,7 +150,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
 WHERE wr.wiki_page_id = @page_id AND wr.status = 'approved'
-  AND wr.kind IN ('content', 'mixed')
+  AND wr.kind IN ('content', 'mixed') AND wr.deleted_at IS NULL
 ORDER BY wr.created_at DESC
 LIMIT 1;
 
@@ -167,12 +167,13 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
 LEFT JOIN users ru ON ru.id = wr.reviewed_by
-WHERE wr.wiki_page_id = @page_id
+WHERE wr.wiki_page_id = @page_id AND wr.deleted_at IS NULL
 ORDER BY wr.created_at DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: CountWikiRevisionsByPage :one
-SELECT COUNT(*) FROM wiki_revisions WHERE wiki_page_id = @page_id;
+SELECT COUNT(*) FROM wiki_revisions
+WHERE wiki_page_id = @page_id AND deleted_at IS NULL;
 
 -- name: InsertWikiRevision :one
 -- Shared INSERT for SubmitRevision/SubmitAIRevision. content_hash is
@@ -193,7 +194,7 @@ UPDATE wiki_revisions
 SET status = 'approved', reviewed_by = @reviewed_by, reviewed_at = now(),
     hitl_reviewed_by = @reviewed_by, hitl_reviewed_at = now(),
     hitl_review_notes = sqlc.narg(hitl_review_notes)
-WHERE id = @id AND status = 'pending'
+WHERE id = @id AND status = 'pending' AND deleted_at IS NULL
 RETURNING content;
 
 -- name: ApproveWikiRevisionByID :one
@@ -204,7 +205,7 @@ SET status = 'approved', reviewed_by = @reviewed_by, reviewed_at = now(),
     apply_error = NULL,
     hitl_reviewed_by = @reviewed_by, hitl_reviewed_at = now(),
     hitl_review_notes = sqlc.narg(hitl_review_notes)
-WHERE id = @id AND status = 'pending'
+WHERE id = @id AND status = 'pending' AND deleted_at IS NULL
 RETURNING id, wiki_page_id, content, summary,
     kind, ops, target_entity_type, target_entity_id,
     status, submitted_by, reviewed_by, reviewed_at,
@@ -223,7 +224,7 @@ UPDATE wiki_revisions
 SET status = 'rejected', reviewed_by = @reviewed_by, reviewed_at = now(),
     hitl_reviewed_by = @reviewed_by, hitl_reviewed_at = now(),
     hitl_review_notes = sqlc.narg(hitl_review_notes)
-WHERE id = @id AND status = 'pending';
+WHERE id = @id AND status = 'pending' AND deleted_at IS NULL;
 
 -- name: GetWikiRevision :one
 SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
@@ -260,24 +261,27 @@ LEFT JOIN users u ON u.id = wr.submitted_by
 LEFT JOIN users ru ON ru.id = wr.reviewed_by
 WHERE wr.target_entity_type = @target_entity_type
   AND wr.target_entity_id = @target_entity_id
+  AND wr.deleted_at IS NULL
 ORDER BY wr.created_at DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: CountWikiRevisionsByTarget :one
 SELECT COUNT(*) FROM wiki_revisions
 WHERE target_entity_type = @target_entity_type
-  AND target_entity_id = @target_entity_id;
+  AND target_entity_id = @target_entity_id
+  AND deleted_at IS NULL;
 
 -- name: AdminListWikiRevisions :many
 -- The admin UI's search box sends ?q= — matched against the revision
--- summary and the submitter's username (§80 review queue).
+-- summary and the submitter's username (§80 review queue). ?deleted=only|all
+-- toggles soft-deleted rows ('' keeps the queue to live revisions).
 SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.kind, wr.ops, wr.target_entity_type, wr.target_entity_id,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
        wr.apply_error,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
-       wr.created_at,
+       wr.created_at, wr.deleted_at,
        COALESCE(u.username, '') AS submitted_by_name,
        COALESCE(ru.username, '') AS reviewed_by_name
 FROM wiki_revisions wr
@@ -287,6 +291,10 @@ WHERE (@kind::text = '' OR wr.kind = @kind)
   AND (@status::text = '' OR wr.status = @status)
   AND (@q::text = '' OR wr.summary ILIKE '%' || @q || '%'
        OR u.username ILIKE '%' || @q || '%')
+  AND (CASE @deleted::text
+         WHEN 'only' THEN wr.deleted_at IS NOT NULL
+         WHEN 'all'  THEN TRUE
+         ELSE wr.deleted_at IS NULL END)
 ORDER BY
   CASE WHEN @sort = 'created_at:asc'  THEN wr.created_at END ASC NULLS LAST,
   CASE WHEN @sort = 'created_at:desc' THEN wr.created_at END DESC NULLS LAST,
@@ -299,13 +307,35 @@ LEFT JOIN users u ON u.id = wr.submitted_by
 WHERE (@kind::text = '' OR wr.kind = @kind)
   AND (@status::text = '' OR wr.status = @status)
   AND (@q::text = '' OR wr.summary ILIKE '%' || @q || '%'
-       OR u.username ILIKE '%' || @q || '%');
+       OR u.username ILIKE '%' || @q || '%')
+  AND (CASE @deleted::text
+         WHEN 'only' THEN wr.deleted_at IS NOT NULL
+         WHEN 'all'  THEN TRUE
+         ELSE wr.deleted_at IS NULL END);
 
 -- name: CountPendingRevisionsByTarget :one
 SELECT COUNT(*) FROM wiki_revisions
 WHERE target_entity_type = @target_entity_type
   AND target_entity_id = @target_entity_id
-  AND status = 'pending';
+  AND status = 'pending'
+  AND deleted_at IS NULL;
+
+-- name: SoftDeleteWikiRevision :execrows
+-- Admin delete on a revision row (§80): marks deleted_at — every reader
+-- (public history, approved-content lookup, moderation) excludes the row
+-- via its deleted_at IS NULL predicate.
+UPDATE wiki_revisions SET deleted_at = now()
+WHERE id = @id AND deleted_at IS NULL;
+
+-- name: HardDeleteWikiRevision :execrows
+-- Permanent delete — only for already-soft-deleted revisions
+-- (admin.hard_delete-gated ?force=true path, Rule 11).
+DELETE FROM wiki_revisions WHERE id = @id AND deleted_at IS NOT NULL;
+
+-- name: WikiRevisionExists :one
+-- Existence probe for the hard-delete path: distinguishes 404
+-- revision_not_found from 409 revision_not_deleted.
+SELECT EXISTS(SELECT 1 FROM wiki_revisions WHERE id = @id) AS exists;
 
 -- =====================
 -- Page writes & spaces
@@ -443,7 +473,7 @@ LEFT JOIN LATERAL (
         SELECT string_agg(t.txt #>> '{}', ' ') AS excerpt_text
         FROM jsonb_path_query(wr.content, '$.**.text ? (@.type() == "string")') AS t(txt)
     ) x ON true
-    WHERE wr.wiki_page_id = wp.id
+    WHERE wr.wiki_page_id = wp.id AND wr.deleted_at IS NULL
     ORDER BY wr.created_at DESC
     LIMIT 1
 ) lr ON true

@@ -277,7 +277,7 @@ func TestAdminListRevisions_KindFilter(t *testing.T) {
 	}
 
 	// kind=fields → only the fields revision.
-	fieldsOnly, total, err := store.AdminListRevisions(ctx, "fields", "", "", "", 50, 0)
+	fieldsOnly, total, err := store.AdminListRevisions(ctx, "fields", "", "", "", "", 50, 0)
 	if err != nil {
 		t.Fatalf("AdminListRevisions kind=fields: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestAdminListRevisions_KindFilter(t *testing.T) {
 	}
 
 	// No filter → both revisions present.
-	all, _, err := store.AdminListRevisions(ctx, "", "", "", "", 50, 0)
+	all, _, err := store.AdminListRevisions(ctx, "", "", "", "", "", 50, 0)
 	if err != nil {
 		t.Fatalf("AdminListRevisions unfiltered: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestAdminListRevisions_KindFilter(t *testing.T) {
 	}
 
 	// status filter composes with kind.
-	pendingFields, _, err := store.AdminListRevisions(ctx, "fields", "pending", "", "", 50, 0)
+	pendingFields, _, err := store.AdminListRevisions(ctx, "fields", "pending", "", "", "", 50, 0)
 	if err != nil {
 		t.Fatalf("AdminListRevisions kind+status: %v", err)
 	}
@@ -429,5 +429,92 @@ func TestFindHostPageID(t *testing.T) {
 
 	if !typeID.Valid {
 		t.Fatal("expected valid space_type_id")
+	}
+}
+
+// TestDeleteWikiRevision_SoftAndHard covers §80 revision deletion: a soft
+// delete removes the row from every default reader while leaving it under
+// ?deleted=only|all; hard delete requires the prior soft delete and removes
+// the row permanently. The partial duplicate-content index means resubmitting
+// the same body succeeds once the original is deleted.
+func TestDeleteWikiRevision_SoftAndHard(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+
+	body := []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`)
+
+	revID, err := store.SubmitRevision(ctx, fx.pageID, fx.userID, "content", body, nil, "first draft", nil, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("SubmitRevision: %v", err)
+	}
+
+	// Force on a live revision → ErrRevisionNotDeleted (409 path).
+	if err := store.HardDeleteWikiRevision(ctx, revID); !errors.Is(err, ErrRevisionNotDeleted) {
+		t.Fatalf("force on live revision: got %v want ErrRevisionNotDeleted", err)
+	}
+
+	// Soft delete.
+	if err := store.DeleteWikiRevision(ctx, revID); err != nil {
+		t.Fatalf("DeleteWikiRevision: %v", err)
+	}
+
+	// Default readers exclude it.
+	revs, total, err := store.ListRevisions(ctx, fx.pageID, 20, 0)
+	if err != nil {
+		t.Fatalf("ListRevisions: %v", err)
+	}
+	if total != 0 || len(revs) != 0 {
+		t.Fatalf("deleted revision leaked into page history: total=%d", total)
+	}
+
+	revsAdmin, total, err := store.AdminListRevisions(ctx, "", "", "", "", "", 20, 0)
+	if err != nil {
+		t.Fatalf("AdminListRevisions: %v", err)
+	}
+	for _, r := range revsAdmin {
+		if r.ID == revID {
+			t.Fatal("deleted revision leaked into default admin queue")
+		}
+	}
+
+	// ?deleted=only surfaces it with the marker populated.
+	revsAdmin, total, err = store.AdminListRevisions(ctx, "", "", "", "", "only", 20, 0)
+	if err != nil {
+		t.Fatalf("AdminListRevisions deleted=only: %v", err)
+	}
+	var found *WikiRevision
+	for i := range revsAdmin {
+		if revsAdmin[i].ID == revID {
+			found = &revsAdmin[i]
+		}
+	}
+	if found == nil || !found.DeletedAt.Valid {
+		t.Fatalf("deleted=only missing the revision or DeletedAt unset: total=%d found=%v", total, found != nil)
+	}
+
+	// Double soft delete behaves like not-found (rows-affected 0).
+	if err := store.DeleteWikiRevision(ctx, revID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("second soft delete: got %v want pgx.ErrNoRows", err)
+	}
+
+	// The partial hash index frees the content hash — resubmit succeeds.
+	rev2, err := store.SubmitRevision(ctx, fx.pageID, fx.userID, "content", body, nil, "resubmit", nil, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("resubmit after delete: %v", err)
+	}
+	t.Cleanup(func() {
+		database.Writer.Exec(context.Background(), `DELETE FROM wiki_revisions WHERE id = $1`, rev2)
+	})
+
+	// Hard delete removes the row for good.
+	if err := store.HardDeleteWikiRevision(ctx, revID); err != nil {
+		t.Fatalf("HardDeleteWikiRevision: %v", err)
+	}
+	if _, err := store.GetRevision(ctx, revID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("hard-deleted revision still readable: %v", err)
+	}
+	if err := store.HardDeleteWikiRevision(ctx, revID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("hard delete of gone row: got %v want pgx.ErrNoRows", err)
 	}
 }

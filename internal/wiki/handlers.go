@@ -1117,12 +1117,20 @@ func (h *Handlers) HandleAdminListRevisions(w http.ResponseWriter, r *http.Reque
 	// fall through to the created_at DESC default.
 	sort := r.URL.Query().Get("sort")
 
+	deleted := r.URL.Query().Get("deleted")
+	switch deleted {
+	case "", "only", "all":
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be one of only, all")
+		return
+	}
+
 	page, limit := parsePageParams(r)
 	if limit > 200 {
 		limit = 200
 	}
 
-	revs, total, err := h.service.AdminListRevisions(r.Context(), kind, status, q, sort, page, limit)
+	revs, total, err := h.service.AdminListRevisions(r.Context(), kind, status, q, sort, deleted, page, limit)
 	if err != nil {
 		slog.Error("wiki: admin list revisions failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list revisions")
@@ -1260,6 +1268,39 @@ func (h *Handlers) HandleRejectRevisionByID(w http.ResponseWriter, r *http.Reque
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"rejected": true}})
+}
+
+// HandleDeleteWikiRevision handles DELETE /admin/wiki/revisions/:id — soft
+// delete marks the row deleted_at (every reader excludes it); ?force=true
+// permanently removes an already-soft-deleted row (409 revision_not_deleted
+// on a live one). The route middleware enforces wiki.delete plus
+// admin.hard_delete when force=true (Rule 11).
+func (h *Handlers) HandleDeleteWikiRevision(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	revID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	force := r.URL.Query().Get("force") == "true"
+	if err := h.service.DeleteRevision(r.Context(), revID, force); err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			errpkg.WriteError(w, http.StatusNotFound, "revision_not_found", "Revision not found")
+		case errors.Is(err, ErrRevisionNotDeleted):
+			errpkg.WriteError(w, http.StatusConflict, "revision_not_deleted",
+				"Revision must be soft-deleted before it can be permanently removed")
+		default:
+			slog.Error("wiki: delete revision failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete revision")
+		}
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true, "force": force}})
 }
 
 // HandleUpdatePage handles PATCH /admin/wiki/:page_id — lock/unlock, feature,

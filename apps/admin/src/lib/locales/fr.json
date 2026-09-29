@@ -1364,6 +1364,8 @@
 	"app.wiki.force_delete": "Supprimer définitivement",
 	"app.wiki.force_delete_confirm": "Supprimer définitivement « {title} » ? La page et toutes ses révisions seront supprimées. Cette action est irréversible.",
 	"app.wiki.force_delete_confirm_bulk": "Supprimer définitivement les {count} pages sélectionnées ? Les pages et toutes leurs révisions seront supprimées. Cette action est irréversible.",
+	"app.wiki.force_delete_revision": "Supprimer définitivement la révision « {title} » ? Cette action est irréversible.",
+	"app.wiki.force_delete_revision_bulk": "Supprimer définitivement les {count} révisions sélectionnées ? Cette action est irréversible.",
 	"app.wiki.force_deleting": "Suppression...",
 	"app.wiki.gen_category": "Catégorie",
 	"app.wiki.gen_category_ph": "Rechercher des catégories…",

@@ -57,16 +57,26 @@ WHERE ($1::text = '' OR wr.kind = $1)
   AND ($2::text = '' OR wr.status = $2)
   AND ($3::text = '' OR wr.summary ILIKE '%' || $3 || '%'
        OR u.username ILIKE '%' || $3 || '%')
+  AND (CASE $4::text
+         WHEN 'only' THEN wr.deleted_at IS NOT NULL
+         WHEN 'all'  THEN TRUE
+         ELSE wr.deleted_at IS NULL END)
 `
 
 type AdminCountWikiRevisionsParams struct {
-	Kind   string `json:"kind"`
-	Status string `json:"status"`
-	Q      string `json:"q"`
+	Kind    string `json:"kind"`
+	Status  string `json:"status"`
+	Q       string `json:"q"`
+	Deleted string `json:"deleted"`
 }
 
 func (q *Queries) AdminCountWikiRevisions(ctx context.Context, arg AdminCountWikiRevisionsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountWikiRevisions, arg.Kind, arg.Status, arg.Q)
+	row := q.db.QueryRow(ctx, adminCountWikiRevisions,
+		arg.Kind,
+		arg.Status,
+		arg.Q,
+		arg.Deleted,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -96,7 +106,7 @@ LEFT JOIN LATERAL (
         SELECT string_agg(t.txt #>> '{}', ' ') AS excerpt_text
         FROM jsonb_path_query(wr.content, '$.**.text ? (@.type() == "string")') AS t(txt)
     ) x ON true
-    WHERE wr.wiki_page_id = wp.id
+    WHERE wr.wiki_page_id = wp.id AND wr.deleted_at IS NULL
     ORDER BY wr.created_at DESC
     LIMIT 1
 ) lr ON true
@@ -235,7 +245,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.apply_error,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
-       wr.created_at,
+       wr.created_at, wr.deleted_at,
        COALESCE(u.username, '') AS submitted_by_name,
        COALESCE(ru.username, '') AS reviewed_by_name
 FROM wiki_revisions wr
@@ -245,17 +255,22 @@ WHERE ($1::text = '' OR wr.kind = $1)
   AND ($2::text = '' OR wr.status = $2)
   AND ($3::text = '' OR wr.summary ILIKE '%' || $3 || '%'
        OR u.username ILIKE '%' || $3 || '%')
+  AND (CASE $4::text
+         WHEN 'only' THEN wr.deleted_at IS NOT NULL
+         WHEN 'all'  THEN TRUE
+         ELSE wr.deleted_at IS NULL END)
 ORDER BY
-  CASE WHEN $4 = 'created_at:asc'  THEN wr.created_at END ASC NULLS LAST,
-  CASE WHEN $4 = 'created_at:desc' THEN wr.created_at END DESC NULLS LAST,
+  CASE WHEN $5 = 'created_at:asc'  THEN wr.created_at END ASC NULLS LAST,
+  CASE WHEN $5 = 'created_at:desc' THEN wr.created_at END DESC NULLS LAST,
   wr.created_at DESC
-LIMIT $6 OFFSET $5
+LIMIT $7 OFFSET $6
 `
 
 type AdminListWikiRevisionsParams struct {
 	Kind      string      `json:"kind"`
 	Status    string      `json:"status"`
 	Q         string      `json:"q"`
+	Deleted   string      `json:"deleted"`
 	Sort      interface{} `json:"sort"`
 	OffsetVal int32       `json:"offset_val"`
 	LimitVal  int32       `json:"limit_val"`
@@ -282,17 +297,20 @@ type AdminListWikiRevisionsRow struct {
 	HitlReviewedAt   pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes  *string            `json:"hitl_review_notes"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	SubmittedByName  string             `json:"submitted_by_name"`
 	ReviewedByName   string             `json:"reviewed_by_name"`
 }
 
 // The admin UI's search box sends ?q= — matched against the revision
-// summary and the submitter's username (§80 review queue).
+// summary and the submitter's username (§80 review queue). ?deleted=only|all
+// toggles soft-deleted rows (” keeps the queue to live revisions).
 func (q *Queries) AdminListWikiRevisions(ctx context.Context, arg AdminListWikiRevisionsParams) ([]AdminListWikiRevisionsRow, error) {
 	rows, err := q.db.Query(ctx, adminListWikiRevisions,
 		arg.Kind,
 		arg.Status,
 		arg.Q,
+		arg.Deleted,
 		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,
@@ -325,6 +343,7 @@ func (q *Queries) AdminListWikiRevisions(ctx context.Context, arg AdminListWikiR
 			&i.HitlReviewedAt,
 			&i.HitlReviewNotes,
 			&i.CreatedAt,
+			&i.DeletedAt,
 			&i.SubmittedByName,
 			&i.ReviewedByName,
 		); err != nil {
@@ -343,7 +362,7 @@ UPDATE wiki_revisions
 SET status = 'approved', reviewed_by = $1, reviewed_at = now(),
     hitl_reviewed_by = $1, hitl_reviewed_at = now(),
     hitl_review_notes = $2
-WHERE id = $3 AND status = 'pending'
+WHERE id = $3 AND status = 'pending' AND deleted_at IS NULL
 RETURNING content
 `
 
@@ -369,7 +388,7 @@ SET status = 'approved', reviewed_by = $1, reviewed_at = now(),
     apply_error = NULL,
     hitl_reviewed_by = $1, hitl_reviewed_at = now(),
     hitl_review_notes = $2
-WHERE id = $3 AND status = 'pending'
+WHERE id = $3 AND status = 'pending' AND deleted_at IS NULL
 RETURNING id, wiki_page_id, content, summary,
     kind, ops, target_entity_type, target_entity_id,
     status, submitted_by, reviewed_by, reviewed_at,
@@ -443,6 +462,7 @@ SELECT COUNT(*) FROM wiki_revisions
 WHERE target_entity_type = $1
   AND target_entity_id = $2
   AND status = 'pending'
+  AND deleted_at IS NULL
 `
 
 type CountPendingRevisionsByTargetParams struct {
@@ -458,7 +478,8 @@ func (q *Queries) CountPendingRevisionsByTarget(ctx context.Context, arg CountPe
 }
 
 const countWikiRevisionsByPage = `-- name: CountWikiRevisionsByPage :one
-SELECT COUNT(*) FROM wiki_revisions WHERE wiki_page_id = $1
+SELECT COUNT(*) FROM wiki_revisions
+WHERE wiki_page_id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) CountWikiRevisionsByPage(ctx context.Context, pageID pgtype.UUID) (int64, error) {
@@ -472,6 +493,7 @@ const countWikiRevisionsByTarget = `-- name: CountWikiRevisionsByTarget :one
 SELECT COUNT(*) FROM wiki_revisions
 WHERE target_entity_type = $1
   AND target_entity_id = $2
+  AND deleted_at IS NULL
 `
 
 type CountWikiRevisionsByTargetParams struct {
@@ -564,7 +586,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
 WHERE wr.wiki_page_id = $1 AND wr.status = 'approved'
-  AND wr.kind IN ('content', 'mixed')
+  AND wr.kind IN ('content', 'mixed') AND wr.deleted_at IS NULL
 ORDER BY wr.created_at DESC
 LIMIT 1
 `
@@ -833,6 +855,20 @@ DELETE FROM wiki_pages WHERE id = $1 AND deleted_at IS NOT NULL
 // via wiki_revisions_wiki_page_id_fkey (ON DELETE CASCADE).
 func (q *Queries) HardDeleteWikiPage(ctx context.Context, id pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, hardDeleteWikiPage, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const hardDeleteWikiRevision = `-- name: HardDeleteWikiRevision :execrows
+DELETE FROM wiki_revisions WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Permanent delete — only for already-soft-deleted revisions
+// (admin.hard_delete-gated ?force=true path, Rule 11).
+func (q *Queries) HardDeleteWikiRevision(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteWikiRevision, id)
 	if err != nil {
 		return 0, err
 	}
@@ -1272,7 +1308,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
 LEFT JOIN users ru ON ru.id = wr.reviewed_by
-WHERE wr.wiki_page_id = $1
+WHERE wr.wiki_page_id = $1 AND wr.deleted_at IS NULL
 ORDER BY wr.created_at DESC
 LIMIT $3 OFFSET $2
 `
@@ -1366,6 +1402,7 @@ LEFT JOIN users u ON u.id = wr.submitted_by
 LEFT JOIN users ru ON ru.id = wr.reviewed_by
 WHERE wr.target_entity_type = $1
   AND wr.target_entity_id = $2
+  AND wr.deleted_at IS NULL
 ORDER BY wr.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -1484,7 +1521,7 @@ UPDATE wiki_revisions
 SET status = 'rejected', reviewed_by = $1, reviewed_at = now(),
     hitl_reviewed_by = $1, hitl_reviewed_at = now(),
     hitl_review_notes = $2
-WHERE id = $3 AND status = 'pending'
+WHERE id = $3 AND status = 'pending' AND deleted_at IS NULL
 `
 
 type RejectWikiRevisionParams struct {
@@ -1530,6 +1567,22 @@ WHERE id = $1 AND deleted_at IS NULL
 // the row without a schema-wide predicate change.
 func (q *Queries) SoftDeleteWikiPage(ctx context.Context, id pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, softDeleteWikiPage, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const softDeleteWikiRevision = `-- name: SoftDeleteWikiRevision :execrows
+UPDATE wiki_revisions SET deleted_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+// Admin delete on a revision row (§80): marks deleted_at — every reader
+// (public history, approved-content lookup, moderation) excludes the row
+// via its deleted_at IS NULL predicate.
+func (q *Queries) SoftDeleteWikiRevision(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteWikiRevision, id)
 	if err != nil {
 		return 0, err
 	}
@@ -1638,6 +1691,19 @@ type WikiPageSlugExistsParams struct {
 // pages no longer occupy their slug (000744).
 func (q *Queries) WikiPageSlugExists(ctx context.Context, arg WikiPageSlugExistsParams) (bool, error) {
 	row := q.db.QueryRow(ctx, wikiPageSlugExists, arg.SpaceID, arg.Slug)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const wikiRevisionExists = `-- name: WikiRevisionExists :one
+SELECT EXISTS(SELECT 1 FROM wiki_revisions WHERE id = $1) AS exists
+`
+
+// Existence probe for the hard-delete path: distinguishes 404
+// revision_not_found from 409 revision_not_deleted.
+func (q *Queries) WikiRevisionExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, wikiRevisionExists, id)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
