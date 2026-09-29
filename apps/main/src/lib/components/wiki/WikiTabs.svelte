@@ -80,13 +80,13 @@
 			// wiki_pages row. Directory categories link the stub
 			// unconditionally (the stub IS the listing — a sibling page
 			// lacks the directory payload); other categories prefer a
-			// materialized page and fall back to the stub only when they
-			// declare template pages.
+			// materialized page and otherwise fall back to the stub —
+			// every declared category is reachable.
 			const href = c.directory && c.page_slug
 				? `${base}/${encodeURIComponent(c.page_slug)}`
 				: p
 					? `${base}/${encodeURIComponent(p.slug)}`
-					: c.page_slug && (c.page_templates?.length ?? 0) > 0
+					: c.page_slug
 						? `${base}/${encodeURIComponent(c.page_slug)}`
 						: null;
 			if (!href) continue;

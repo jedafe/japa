@@ -137,11 +137,11 @@
 			if (arr) arr.push(p);
 			else groups.set(p.category, [p]);
 		}
-		// Lazy template pages and directory categories: a stub-only
+		// Every declared category is lazy-resolvable now — a stub-only
 		// category still gets a card so its listing/links stay reachable.
 		const cats = new Set(groups.keys());
 		for (const c of apiCategories) {
-			if ((c.page_templates?.length ?? 0) > 0 || c.directory) cats.add(c.slug);
+			if (c.page_slug) cats.add(c.slug);
 		}
 		return [...cats]
 			.map((category) => {

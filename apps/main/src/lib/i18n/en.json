@@ -4158,7 +4158,7 @@
 	"wiki.destination_page_count": "{count} guides",
 	"wiki.destination_page_count_one": "{count} guide",
 	"wiki.destination_placeholder": "Search destinations…",
-	"wiki.destination_search_hint": "Search any destination wiki…",
+	"wiki.destination_search_hint": "Search a country…",
 	"wiki.destinations_failed": "Failed to load destinations. Please try again.",
 	"wiki.directory_search_hint": "Search this list…",
 	"wiki.directory_truncated": "Showing {shown} of {total} — search to find the rest.",
